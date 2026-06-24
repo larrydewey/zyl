@@ -1,0 +1,343 @@
+================================================================================
+ZYL v2.4 FORMAL OPTIMIZATION META-SPEC
+"Safe Optimization Commutativity • Deterministic Performance Engineering"
+================================================================================
+
+PURPOSE
+This specification defines which compiler optimization passes MAY:
+- commute (reorder freely)
+- compose safely
+- be applied independently
+- be combined without semantic or performance unpredictability beyond bounded variance
+
+CORE PRINCIPLE
+    "Optimizations must be deterministic not only in result,
+     but in interaction behavior."
+
+This prevents optimization-pipeline instability as the system scales.
+
+================================================================================
+1. OPTIMIZATION MODEL OVERVIEW
+================================================================================
+
+The compiler optimization system is modeled as a sequence of passes:
+
+    P = {P1, P2, ... Pn}
+
+Each pass transforms intermediate representation IR:
+
+    IR0 → IR1 → IR2 → ... → IRn
+
+Each Pi has:
+
+- Precondition(Pi)
+- Effect(Pi)
+- SideEffectClass(Pi)
+- DependencySet(Pi)
+
+================================================================================
+2. EFFECT CLASSES (CRITICAL FOUNDATION)
+================================================================================
+
+Every optimization pass is classified into one of:
+
+--------------------------------------------------------------------------------
+2.1 PURE STRUCTURAL (PS)
+--------------------------------------------------------------------------------
+- No dependency on other passes
+- Only rewrites IR syntax structure
+
+Examples:
+- constant folding
+- dead code elimination
+- control-flow simplification
+
+Properties:
+- commutative with all PS passes
+- safe to reorder freely
+
+--------------------------------------------------------------------------------
+2.2 DATAFLOW (DF)
+--------------------------------------------------------------------------------
+- Requires correct SSA / control-flow graph
+- Depends on previous structural normalization
+
+Examples:
+- escape analysis
+- initialization analysis
+- effect inference
+- unreachable code detection
+
+Properties:
+- commutative within DF group ONLY
+- depends on PS completion
+
+--------------------------------------------------------------------------------
+2.3 RESOURCE MODELING (RM)
+--------------------------------------------------------------------------------
+- operates on memory, region, ownership model
+
+Examples:
+- region specialization
+- ARC elimination
+- escape batching
+- linear resource enforcement
+
+Properties:
+- must occur after DF stabilization
+- partially commutative (restricted rules apply)
+
+--------------------------------------------------------------------------------
+2.4 SCHEDULING / LAYOUT (SL)
+--------------------------------------------------------------------------------
+- affects execution layout, not semantics
+
+Examples:
+- cache-aware layout
+- actor scheduling locality
+- stack frame fusion
+- FFI fusion
+
+Properties:
+- order-sensitive within SL
+- must occur after RM stabilization
+
+--------------------------------------------------------------------------------
+2.5 BOUNDARY OPTIMIZATION (BO)
+--------------------------------------------------------------------------------
+- crosses subsystem boundaries (FFI / actors / contracts)
+
+Examples:
+- FFI fusion
+- contract hoisting
+- actor batching
+
+Properties:
+- non-commutative with RM and DF in general
+- requires fixed-point convergence
+
+================================================================================
+3. OPTIMIZATION LATTICE ORDER (GLOBAL RULE)
+================================================================================
+
+All compilation pipelines MUST respect this partial order:
+
+    PS → DF → RM → SL → BO
+
+Rule:
+    No pass in a higher class may invalidate assumptions of a lower class.
+
+Violation:
+    → compiler error (invalid optimization ordering)
+
+================================================================================
+4. COMMUTATIVITY RULES (CORE THEOREM)
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 SAFE COMMUTATIVITY (ALWAYS ALLOWED)
+--------------------------------------------------------------------------------
+
+If Pi, Pj ∈ PS:
+
+    Pi ∘ Pj == Pj ∘ Pi
+
+Meaning:
+- reorder freely
+- parallelize freely
+- cache freely
+
+--------------------------------------------------------------------------------
+4.2 CONDITIONAL COMMUTATIVITY (WITHIN CLASS)
+--------------------------------------------------------------------------------
+
+Within DF, RM, SL:
+
+    Pi ∘ Pj == Pj ∘ Pi
+    IF dependency sets are disjoint:
+
+        DependencySet(Pi) ∩ DependencySet(Pj) = ∅
+
+Otherwise:
+    compiler enforces ordering constraints
+
+--------------------------------------------------------------------------------
+4.3 NON-COMMUTATIVE PAIRS (STRICT ORDER REQUIRED)
+--------------------------------------------------------------------------------
+
+The following must NEVER commute:
+
+- DF ↔ RM (dataflow must stabilize before memory modeling)
+- RM ↔ BO (resource model must stabilize before boundary fusion)
+- DF ↔ BO (effect correctness must be fixed before external fusion)
+- PS ↔ BO (structural changes must stabilize IR first)
+
+Violation:
+    → invalid compilation plan
+
+================================================================================
+5. FIXED-POINT OPTIMIZATION RULE (CRITICAL STABILITY MECHANISM)
+================================================================================
+
+Certain optimization groups MUST converge to a fixed point:
+
+    DF group
+    RM group
+
+Definition:
+
+    Apply passes repeatedly until IR stabilizes:
+
+        IRn+1 == IRn
+
+Guarantee:
+    - no oscillation allowed
+    - no infinite refinement loops
+    - deterministic convergence bound required
+
+Compiler must enforce:
+    max_iterations(P_group) < CONSTANT_BOUND
+
+================================================================================
+6. EFFECT SYSTEM AS OPTIMIZATION GUARD (KEY INNOVATION)
+================================================================================
+
+The effect system acts as a HARD CONSTRAINT lattice:
+
+Effects:
+
+    PURE | MUT | FFI | ACTOR | ALLOC
+
+Rules:
+
+- PURE allows full reordering
+- MUT forbids cross-write reordering
+- FFI forbids motion across boundaries
+- ACTOR enforces message order preservation
+- ALLOC restricts hoisting unless escape-safe
+
+Core rule:
+
+    Effect correctness overrides all optimization heuristics
+
+Meaning:
+    If optimization violates effect ordering → invalid pass composition
+
+================================================================================
+7. REGION SAFETY AS OPTIMIZATION INVARIANT
+================================================================================
+
+All optimization passes MUST preserve:
+
+- Stack/Heap/Global separation
+- Valid escape transitions only
+- No premature deallocation reasoning
+- No speculative region collapse
+
+Rule:
+
+    Region inference is a FIXED POINT constraint system
+
+Meaning:
+    RM passes must converge before SL or BO begin
+
+================================================================================
+8. OPTIMIZATION INDEPENDENCE THEOREM (CORE RESULT)
+================================================================================
+
+THEOREM (SAFE COMPOSITION):
+
+Let A, B be optimization pipelines.
+
+They are independent iff:
+
+    1. Class(A) == Class(B) == PS
+    OR
+    2. Class(A) == Class(B) ∈ {DF, RM, SL}
+       AND DependencySet(A) ∩ DependencySet(B) = ∅
+    AND
+    3. Neither A nor B belongs to BO
+
+Then:
+
+    A ∘ B == B ∘ A (semantic equivalence preserved)
+
+COROLLARY:
+    Only PS passes are globally free-form commutative.
+
+================================================================================
+9. PIPELINE STABILITY GUARANTEE
+================================================================================
+
+Given a valid optimization ordering:
+
+- compilation result is deterministic
+- intermediate IR states are deterministic
+- final binary is reproducible
+
+Even if:
+- passes are parallelized
+- passes are reordered within commutativity class
+
+Guarantee:
+
+    NO OPTIMIZATION REORDERING CAN CHANGE OUTPUT SEMANTICS
+
+================================================================================
+10. PERFORMANCE VARIANCE BOUND (IMPORTANT PRACTICAL GUARANTEE)
+================================================================================
+
+While semantics are invariant:
+
+Performance is bounded:
+
+    BestCase ≤ ExecutionTime ≤ WorstCaseBound
+
+Where variance arises from:
+- cache layout decisions (SL)
+- ARC elimination choices (RM)
+- actor scheduling (SL)
+- FFI fusion grouping (BO)
+
+But:
+
+    variance is bounded, not chaotic
+
+No Heisenberg-style optimization instability is permitted.
+
+================================================================================
+11. IMPLEMENTATION CONSTRAINTS
+================================================================================
+
+Compiler MUST enforce:
+
+- deterministic pass ordering within classes
+- dependency graph validation
+- fixed-point convergence limits
+- no cyclic optimization dependencies
+- reproducible IR transitions
+
+Optional:
+- parallel execution of PS and DF groups
+- incremental recomputation of RM passes
+
+================================================================================
+12. NON-GOALS
+================================================================================
+
+This system does NOT attempt to:
+
+- guarantee optimal performance (NP-hard)
+- eliminate all performance variance
+- fully predict cache behavior across hardware
+- ensure identical runtime microarchitecture behavior
+
+It ONLY guarantees:
+
+- semantic stability under optimization
+- deterministic compilation
+- bounded interaction complexity
+
+================================================================================
+END OF ZYL v2.4 OPTIMIZATION META-SPEC
+================================================================================

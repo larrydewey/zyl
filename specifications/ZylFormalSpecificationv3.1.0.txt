@@ -1,0 +1,316 @@
+================================================================================
+ZYL v3.1 REFERENCE COMPILER ARCHITECTURE SPECIFICATION
+"Closed Theory → Constructive Implementation Mapping"
+================================================================================
+
+PURPOSE
+This specification defines the implementation layer for Zyl v3.0 by adding:
+
+1. Proof-carrying compilation interface (optional verification layer)
+2. Canonical backend lowering model (IR → target mapping)
+3. Register allocation and codegen invariants
+4. Debugging, stepping, and observability semantics
+5. IDE / tooling interaction contract
+6. Performance calibration and heuristic boundaries
+
+No changes are made to Zyl v3.0 semantics.
+
+This is the construction layer:
+    "How to implement the closed system safely and deterministically."
+
+================================================================================
+1. PROOF-CARRYING COMPILATION LAYER (OPTIONAL)
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 PROOF OBJECT MODEL
+--------------------------------------------------------------------------------
+
+Each compiler transformation MAY emit:
+
+    ProofObject {
+        pre_state: Σ
+        post_state: Σ
+        transformation_id
+        justification
+        validity_certificate
+    }
+
+--------------------------------------------------------------------------------
+1.2 VALIDATION RULE
+--------------------------------------------------------------------------------
+
+If enabled:
+
+    Verify(ProofObject) MUST succeed OR compilation fails
+
+If disabled:
+    system falls back to ICNF equivalence checks only
+
+--------------------------------------------------------------------------------
+1.3 PROPERTY
+--------------------------------------------------------------------------------
+
+Proof system is:
+
+- optional
+- non-invasive
+- does not affect ≈ₛ equivalence
+- purely observational layer
+
+================================================================================
+2. CANONICAL BACKEND LOWERING MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 LOWERING FUNCTION
+--------------------------------------------------------------------------------
+
+Define:
+
+    Lower : ICNF → TargetIR
+
+Where TargetIR is one of:
+
+- LLVM-like SSA IR
+- WASM IR
+- Native machine IR
+
+--------------------------------------------------------------------------------
+2.2 CANONICAL LOWERING RULE
+--------------------------------------------------------------------------------
+
+Lowering MUST satisfy:
+
+    ICNF-equivalent inputs → structurally equivalent TargetIR
+
+Modulo:
+    register renaming
+    physical layout assignment
+
+--------------------------------------------------------------------------------
+2.3 BACKEND INVARIANT
+--------------------------------------------------------------------------------
+
+All backends MUST preserve:
+
+    ≈ₛ semantic equivalence
+
+AND MUST NOT introduce:
+- nondeterministic instruction selection
+- unordered emission
+
+================================================================================
+3. REGISTER ALLOCATION & CODEGEN INVARIANTS
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 REGISTER ALLOCATION MODEL
+--------------------------------------------------------------------------------
+
+Register allocation is modeled as:
+
+    graph coloring over interference graph G
+
+with deterministic tie-breaking:
+
+    lexicographic ICNF order
+
+--------------------------------------------------------------------------------
+3.2 SPILLING RULE
+--------------------------------------------------------------------------------
+
+Spill decisions MUST be:
+
+- deterministic
+- independent of hardware state
+- invariant under thread scheduling
+
+--------------------------------------------------------------------------------
+3.3 CODEGEN DETERMINISM RULE
+--------------------------------------------------------------------------------
+
+Given same ICNF:
+
+    emitted machine code MUST be byte-identical per target triple
+
+================================================================================
+4. DEBUGGING, STEPPING & OBSERVABILITY MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 SOURCE-TO-IR MAPPING
+--------------------------------------------------------------------------------
+
+Every ICNF node maps to:
+
+    SourceSpan + TransformationTrace
+
+--------------------------------------------------------------------------------
+4.2 STEP SEMANTICS
+--------------------------------------------------------------------------------
+
+Stepping operates over:
+
+    Σ_debug = Σ + execution_cursor
+
+Where cursor transitions:
+
+    ICNF node → ICNF node
+
+--------------------------------------------------------------------------------
+4.3 BREAKPOINT RULE
+--------------------------------------------------------------------------------
+
+Breakpoints are:
+
+- ICNF node-aligned
+- unaffected by optimization passes
+- preserved across inlining and monomorphization
+
+--------------------------------------------------------------------------------
+4.4 BACKTRACE INVARIANT
+--------------------------------------------------------------------------------
+
+Backtraces MUST:
+
+- reconstruct ICNF path
+- ignore low-level register noise
+- remain stable across builds (given same Σ)
+
+================================================================================
+5. IDE / TOOLING CONTRACT (LSP SEMANTICS)
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 TOOLING MODEL
+--------------------------------------------------------------------------------
+
+Tools operate on:
+
+    Query(Σ) → Observational View
+
+--------------------------------------------------------------------------------
+5.2 REQUIRED SERVICES
+--------------------------------------------------------------------------------
+
+Compiler MUST support:
+
+- type resolution queries
+- effect queries
+- region ownership queries
+- escape analysis queries
+- optimization trace queries
+
+--------------------------------------------------------------------------------
+5.3 TOOLING DETERMINISM RULE
+--------------------------------------------------------------------------------
+
+All tooling responses MUST be:
+
+- deterministic
+- cache-consistent
+- independent of thread scheduling
+
+================================================================================
+6. PERFORMANCE CALIBRATION MODEL (HEURISTIC BOUNDARY LAYER)
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 HEURISTIC DEFINITION
+--------------------------------------------------------------------------------
+
+Heuristics MAY influence:
+
+- pass ordering
+- cache reuse strategy
+- inlining thresholds
+
+BUT MUST NOT affect ≈ₛ equivalence
+
+--------------------------------------------------------------------------------
+6.2 SAFE VARIANCE RULE
+--------------------------------------------------------------------------------
+
+All heuristic variance must satisfy:
+
+    Output_equivalence_class remains unchanged
+
+--------------------------------------------------------------------------------
+6.3 COST MODEL REFINEMENT LAYER
+--------------------------------------------------------------------------------
+
+Compiler may refine:
+
+- cost estimates
+- cache hit prediction
+- pass priority ranking
+
+ONLY within equivalence-safe bounds
+
+================================================================================
+7. IMPLEMENTATION INVARIANTS (FINAL ARCHITECTURAL GUARANTEES)
+================================================================================
+
+Reference compiler MUST guarantee:
+
+1. ICNF equivalence preservation across all stages
+2. Deterministic lowering to all supported backends
+3. Stable register allocation under canonical ordering
+4. Debug trace stability under optimization
+5. Tooling determinism across concurrency
+6. Optional proof-carrying verification compatibility
+7. No semantic drift under heuristics
+8. Full observability of all transformations
+9. Cache-consistent incremental compilation
+10. ≈ₛ preservation at every pipeline boundary
+
+================================================================================
+8. FINAL SYSTEM DECOMPOSITION MODEL
+================================================================================
+
+Compiler is decomposed into:
+
+A. Frontend
+    - parsing
+    - type inference
+    - effect/region/escape analysis
+
+B. Middle-end
+    - ICNF transformation
+    - fixed-point optimization
+    - monomorphization
+    - cache stabilization
+
+C. Backend
+    - lowering
+    - register allocation
+    - instruction selection
+    - code emission
+
+D. Observability Layer
+    - debugging
+    - LSP
+    - trace export
+
+E. Optional Verification Layer
+    - proof-carrying compilation
+    - external validation
+
+================================================================================
+9. FINAL IMPLEMENTABILITY THEOREM
+================================================================================
+
+For all valid Zyl programs P:
+
+There exists a reference compiler implementation C such that:
+
+    C(P) produces a binary satisfying v3.0 ≈ₛ semantics
+AND
+    C is fully deterministic under v3.0 + v3.1 constraints
+AND
+    C is implementable as a finite composition of bounded passes
+
+================================================================================
+END OF ZYL v3.1 REFERENCE COMPILER ARCHITECTURE SPECIFICATION
+================================================================================

@@ -1,0 +1,292 @@
+```text
+================================================================================
+ZYL FORMAL SPECIFICATION (v2.1)
+"Pure Lisp Syntax, Region-Inferred Ownership, Optional Contract Layer"
+================================================================================
+
+CHANGES FROM v2.0:
+- Reintroduces CONTRACT SYSTEM (requires, ensures, invariant)
+- Adds RECOVERY SYSTEM (recover, checkpoint)
+- Adds CONTRACT PROFILES (compile-time + runtime configuration)
+- Maintains v2.0 core guarantees (no GC dependency, deterministic ownership)
+- Explicitly defines OPTIONALITY AND NON-INTERFERENCE WITH CORE SEMANTICS
+
+================================================================================
+1. CORE PRINCIPLES (UNCHANGED)
+================================================================================
+
+- Ownership is inferred (no user annotations required)
+- Region inference is deterministic
+- ARC applies only to Global region
+- RcCycle handles cyclic ownership domains
+- FFI safety is enforced at compile time
+- No garbage collector required
+- No contract feature may alter core semantics
+
+Core rule:
+
+    CONTRACT LAYER MUST NEVER CHANGE CORE SEMANTICS
+
+================================================================================
+2. CONTRACT LAYER (OPTIONAL LANGUAGE OVERLAY)
+================================================================================
+
+Contract constructs are syntactic and semantic annotations that may be:
+
+- ENABLED (runtime enforced)
+- WARN-ONLY (logged failures)
+- DISABLED (compiled out)
+
+They NEVER affect:
+- type inference
+- ownership resolution
+- region assignment
+- monomorphization
+- concurrency model
+
+--------------------------------------------------------------------------------
+2.1 Preconditions
+
+Syntax:
+    (requires <Condition>)
+
+Semantics:
+    Checked at function entry (if enabled)
+
+Example:
+    (requires (!= b 0))
+
+Failure Modes:
+    strict   -> runtime error
+    warn     -> log only
+    off      -> no-op
+
+--------------------------------------------------------------------------------
+2.2 Postconditions
+
+Syntax:
+    (ensures <Condition>)
+
+Semantics:
+    Checked at function exit
+
+Special symbol:
+    result : bound return value
+
+Example:
+    (ensures (>= result 0))
+
+--------------------------------------------------------------------------------
+2.3 Invariants
+
+Syntax:
+    (invariant <Condition>)
+
+Semantics:
+    Checked after each externally visible mutation
+    (object methods, public API boundaries)
+
+Example:
+    (invariant (>= balance 0))
+
+================================================================================
+3. RECOVERY SYSTEM (OPTIONAL CONTROL FLOW LAYER)
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 Recover Blocks
+
+Syntax:
+    (recover
+        ((<ErrorType>) <Expr>)
+        ((<ErrorType>) <Expr>))
+
+Semantics:
+    Activated only if runtime error matches pattern.
+
+Example:
+    (recover
+        ((timeout) cached-value)
+        ((network-error) default-value))
+
+If disabled:
+    recover block is ignored entirely
+
+--------------------------------------------------------------------------------
+3.2 Checkpoint Scopes
+
+Syntax:
+    (checkpoint <Expr>)
+
+Semantics:
+    Creates a scoped rollback boundary for:
+
+    - stack state
+    - owned heap values
+    - capabilities
+    - local bindings
+
+NOT included:
+    - external FFI side effects
+    - OS-level irreversible operations
+
+Example:
+    (checkpoint
+        (let (f (open "file"))
+          (write f "hello")
+          (error "fail")))
+
+Behavior:
+    On failure:
+        local state restored
+        resources dropped deterministically
+
+================================================================================
+4. CONTRACT PROFILES (NEW)
+================================================================================
+
+Contract behavior is controlled by compilation/runtime profile.
+
+--------------------------------------------------------------------------------
+4.1 Profiles
+
+Profile options:
+
+    strict
+    debug
+    warn
+    off
+    production
+
+--------------------------------------------------------------------------------
+4.2 Profile Semantics
+
+| Feature     | strict | debug | warn | off | production |
+|-------------|--------|-------|------|-----|------------|
+| requires    | panic  | check | log  | no-op | no-op    |
+| ensures     | panic  | check | log  | no-op | no-op    |
+| invariant   | panic  | check | log  | no-op | no-op    |
+| recover     | active | active| active| no-op | active   |
+| checkpoint  | full   | full  | light| off   | light    |
+
+--------------------------------------------------------------------------------
+4.3 Local Overrides
+
+Contracts can be disabled per function:
+
+    (contracts off)
+
+or:
+
+    (contracts warn)
+
+================================================================================
+5. OPERATIONAL SEMANTICS EXTENSION
+================================================================================
+
+Core VM state (Sigma) remains unchanged:
+
+    Sigma = <Heap, Stack, ActorPool, Metrics, RcCycle>
+
+NEW RULE: CONTRACTS DO NOT MODIFY SIGMA STRUCTURE
+
+--------------------------------------------------------------------------------
+5.1 Requires Rule
+
+If enabled:
+
+    requires P in (F, Sigma) must hold before evaluation
+
+Else:
+
+    skip check
+
+--------------------------------------------------------------------------------
+5.2 Ensures Rule
+
+If enabled:
+
+    ensures Q must hold on return value
+
+Else:
+
+    skip check
+
+--------------------------------------------------------------------------------
+5.3 Checkpoint Rule
+
+If enabled:
+
+    checkpoint creates local rollback frame
+
+Else:
+
+    evaluate expression normally
+
+================================================================================
+6. NON-INTERFERENCE GUARANTEE
+================================================================================
+
+Contract system is explicitly non-interfering:
+
+Invariant:
+
+    Contract evaluation MUST NOT affect:
+        - memory layout
+        - ownership inference
+        - region inference
+        - concurrency safety
+        - ARC correctness
+        - RcCycle detection
+
+Contracts are:
+
+    observational + diagnostic + optional control flow only
+
+================================================================================
+7. FAILURE MODEL
+================================================================================
+
+Three failure modes:
+
+--------------------------------------------------------------------------------
+7.1 Strict Mode Failure
+
+→ Runtime panic
+→ Abort execution
+
+--------------------------------------------------------------------------------
+7.2 Warn Mode Failure
+
+→ Log diagnostic
+→ Continue execution
+
+--------------------------------------------------------------------------------
+7.3 Off Mode
+
+→ No evaluation
+→ No effect
+
+================================================================================
+8. UPDATED FORMAL GUARANTEE SET
+================================================================================
+
+Zyl v2.1 guarantees:
+
+CORE SYSTEM:
+- Deterministic ownership
+- Region inference soundness
+- ARC correctness
+- Actor isolation safety
+- FFI safety enforcement
+
+CONTRACT SYSTEM:
+- Optional execution
+- No influence on core semantics
+- Deterministic evaluation when enabled
+- Compile-time or runtime enforcement depending on profile
+
+================================================================================
+END OF ZYL v2.1 SPECIFICATION
+================================================================================
+```

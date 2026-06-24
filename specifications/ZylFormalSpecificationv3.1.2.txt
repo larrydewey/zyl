@@ -1,0 +1,403 @@
+================================================================================
+ZYL v3.1 UNIFIED ALL-INCLUSIVE SPECIFICATION
+"Complete Language + Compiler Theory + Architecture + Formal Closure"
+================================================================================
+
+THIS DOCUMENT
+This is the single consolidated specification of Zyl, including:
+
+1. Language semantics (user-level syntax + meaning)
+2. Type system, effects, ownership, regions
+3. Operational semantics (execution model)
+4. Memory + concurrency + FFI safety model
+5. Compiler IR (ICNF) and transformation system
+6. Deterministic compilation pipeline
+7. Caching + distributed compilation + trust model
+8. Optimization system + fixed-point behavior
+9. Debugging + tooling + IDE semantics
+10. Backend code generation model
+11. Proof-carrying compilation (optional layer)
+12. Formal closure axioms and consistency guarantees
+
+No external documents are required to interpret Zyl v3.1.
+
+================================================================================
+0. CORE PRINCIPLES
+================================================================================
+
+- Deterministic execution across time, machines, and threads
+- Explicit, verifiable state transitions
+- No hidden compiler or runtime state
+- Semantic equivalence classes define correctness
+- All nondeterminism is either eliminated or quotient-normalized
+- All transformations are ICNF-preserving
+
+================================================================================
+1. USER LANGUAGE SYNTAX
+================================================================================
+
+Expr :=
+    Atom
+  | (defun Name (Args*) Body)
+  | (fn (Args*) Body)
+  | (def Name Expr)
+  | (let (Var Expr) Body)
+  | (if Cond Then Else)
+  | (try Expr (catch Var Handler))
+  | (assert Condition Msg)
+  | (ffi-call Fn Args Timeout)
+  | (ffi-pin Expr)
+  | (pre Condition Expr)
+  | (post Condition Expr)
+  | (unsafe Expr)
+
+Evaluation:
+- Strict left-to-right evaluation
+- Pure Lisp syntax (minimal surface forms)
+- def, fn, defun are aliases
+
+================================================================================
+2. TYPE SYSTEM
+================================================================================
+
+Type :=
+    Int | Float | Bool | String | Unit
+  | Vec<T> | Map<K,V>
+  | TCap<T>        // immutable capability
+  | TMut<T>        // exclusive mutable capability
+  | TAtomic<T>
+  | TBox<T>        // heap-managed
+  | TWeak<T>
+  | TFun([T...], T)
+  | TPin<T>
+
+Rules:
+- TMut: exclusive ownership
+- TCap: shared immutable access
+- TBox: GC-managed or region-managed heap object
+- TPin: FFI-safe memory-only immutable exposure
+
+================================================================================
+3. EFFECTS, REGIONS, AND ESCAPE ANALYSIS
+================================================================================
+
+Regions:
+- Stack
+- Heap
+- Global (ARC)
+- Circular (cycle-managed)
+- Pin (FFI-safe)
+
+Rules:
+- escape → promote to Heap/Circular
+- single mutable owner invariant enforced
+- no aliasing violations permitted
+
+Effects tracked:
+- mutation
+- IO
+- FFI
+- concurrency
+
+================================================================================
+4. OPERATIONAL SEMANTICS
+================================================================================
+
+State Σ includes:
+- Heap
+- Stack
+- Region graph
+- Effect state
+- Dependency graph
+- Cache state
+- Diagnostics
+
+Execution:
+<Expr, Σ> → <Value, Σ'>
+
+Rules:
+- strict evaluation order
+- deterministic state transitions
+- all effects recorded
+
+================================================================================
+5. CONCURRENCY MODEL
+================================================================================
+
+- Actor model for concurrency
+- No shared mutable state across threads
+- Message passing only
+- Global region uses ARC (atomic reference counting)
+
+Spawn rule:
+- only Send-capable values may cross threads
+
+================================================================================
+6. FFI MODEL
+================================================================================
+
+ffi-call(Fn, Args, Timeout)
+
+Rules:
+- timeout enforced
+- calls must satisfy FFI_Pinnable constraints if pinned
+- no OS handles in pinned memory
+- violations trigger rollback
+
+ffi-pin:
+- only memory-safe types allowed
+- immutable view into foreign-accessible memory
+
+================================================================================
+7. ICNF (INTERNAL COMPILER NORMAL FORM)
+================================================================================
+
+ICNF is:
+- canonical IR representation
+- sorted, normalized, deterministic AST graph
+
+Properties:
+- stable hashing
+- structure-preserving transforms
+- basis of all optimization and caching
+
+================================================================================
+8. COMPILER PIPELINE
+================================================================================
+
+Phase 1: Parse → AST
+Phase 2: Type inference + effects
+Phase 3: ICNF conversion
+Phase 4: Monomorphization (alphabetical determinism)
+Phase 5: Region + escape analysis
+Phase 6: Fixed-point optimization
+Phase 7: FFI validation
+Phase 8: Backend lowering
+Phase 9: Code generation
+Phase 10: Linking + hash verification
+
+Invariant:
+- each phase preserves ≈ₛ
+
+================================================================================
+9. OPTIMIZATION MODEL
+================================================================================
+
+- Fixed-point based optimization passes
+- Deterministic pass ordering
+- Canonical ICNF-driven transformations
+
+Rules:
+- no optimization may change ≈ₛ class
+- optimization identity must be stable
+- speculative transforms must rollback if invalid
+
+================================================================================
+10. CACHING & DISTRIBUTION
+================================================================================
+
+Cache entries require:
+- ICNF_hash
+- compiler version
+- dependency graph signature
+- cryptographic signature
+
+Distributed model:
+- local + remote + signed caches
+- deterministic selection priority
+
+Invariant:
+- cached result ≈ₛ fresh result
+
+================================================================================
+11. DEBUGGING & OBSERVABILITY
+================================================================================
+
+- ICNF-aligned stepping
+- stable backtraces
+- transformation trace logging
+- breakpoint stability across optimization
+
+All debug info is deterministic and ICNF-based
+
+================================================================================
+12. BACKEND CODE GENERATION
+================================================================================
+
+Lowering:
+ICNF → TargetIR (LLVM/WASM/native)
+
+Rules:
+- deterministic instruction selection
+- deterministic register allocation
+- ICNF-driven layout decisions
+
+Guarantee:
+- same input → identical binary per target
+
+================================================================================
+13. TOOLING / LSP MODEL
+================================================================================
+
+Supports:
+- type queries
+- effect queries
+- region tracking
+- escape analysis
+- optimization trace inspection
+
+All tooling responses are deterministic views over Σ
+
+================================================================================
+14. PROOF-CARRYING COMPILATION (OPTIONAL)
+================================================================================
+
+Each transformation MAY emit ProofObject:
+
+- pre-state
+- post-state
+- justification
+- validity certificate
+
+Verification is optional and does not affect semantics
+
+================================================================================
+15. FORMAL SEMANTIC CORE
+================================================================================
+
+Define ≈ₛ (semantic equivalence):
+
+Two states are equivalent iff:
+- observable behavior matches
+- memory safety preserved
+- effect ordering preserved
+- concurrency behavior preserved
+- FFI behavior preserved
+
+Compiler preserves ≈ₛ:
+
+    T(Σ) ≈ₛ Σ
+
+================================================================================
+16. WELL-FOUNDED TERMINATION
+================================================================================
+
+All recursive compiler processes map into:
+
+    (W, <)
+
+Where W is well-founded.
+
+Guarantee:
+- no infinite descending chains
+- all fixed-point systems terminate
+
+================================================================================
+17. DETERMINISTIC PARALLEL EXECUTION
+================================================================================
+
+Execution model:
+- DAG-based scheduling
+- lexicographic ICNF ordering
+- deterministic tie-breaking
+
+Result:
+- parallel execution equivalent to sequential canonical execution
+
+================================================================================
+18. CACHE + DISTRIBUTION CONSISTENCY
+================================================================================
+
+- cache is signature-verified
+- distributed builds are equivalence-preserving
+- no stale artifact reuse allowed
+
+Result:
+    cached ≈ₛ fresh ≈ₛ distributed
+
+================================================================================
+19. GLOBAL SEMANTIC INVARIANT
+================================================================================
+
+All transformations preserve:
+
+    ≈ₛ
+
+This is the single unifying correctness relation.
+
+================================================================================
+20. COMPILER IDENTITY (IDEAL PROPERTY)
+================================================================================
+
+Compiler is a fixed-point operator:
+
+    Compile(Compile(P)) ≈ₛ Compile(P)
+
+Repeated compilation does not change equivalence class.
+
+================================================================================
+21. FINAL CLOSURE AXIOMS
+================================================================================
+
+- No hidden state exists outside Σ
+- No transformation escapes ICNF model
+- No nondeterminism affects ≈ₛ outcome
+- All execution is deterministic modulo equivalence classes
+- All analysis terminates under well-founded ordering
+- All distributed and cached executions are equivalent
+
+================================================================================
+22. IMPLEMENTATION ARCHITECTURE
+================================================================================
+
+Frontend:
+- parsing
+- type inference
+- effects
+
+Middle-end:
+- ICNF transformation
+- optimization
+- fixed-point solving
+- monomorphization
+
+Backend:
+- lowering
+- register allocation
+- code generation
+
+Runtime support:
+- FFI
+- concurrency (actors)
+- region + memory system
+
+Observability:
+- debugging
+- LSP
+- trace inspection
+
+================================================================================
+23. NON-GOALS
+================================================================================
+
+- hardware-cycle determinism
+- perfect cost prediction
+- elimination of all exponential cases
+- infinite optimization completeness
+
+================================================================================
+FINAL STATEMENT
+================================================================================
+
+Zyl v3.1 defines a fully closed, deterministic, equivalence-class-based
+programming language and compiler system in which:
+
+- semantics are invariant under transformation
+- execution is deterministic modulo ≈ₛ
+- compilation is well-founded and terminating
+- distributed systems are behaviorally identical
+- no hidden state or nondeterminism exists
+
+================================================================================
+END OF ZYL v3.1 UNIFIED SPECIFICATION
+================================================================================

@@ -1,0 +1,320 @@
+================================================================================
+ZYL v2.9 COMPILER FORMAL CLOSURE SPECIFICATION
+"Idempotent • Equivalence-Class Driven • Fully Deterministic Execution Theory"
+================================================================================
+
+PURPOSE
+This specification formally closes the remaining theoretical gaps in Zyl’s
+compiler system by defining:
+
+1. Deterministic parallel scheduling semantics
+2. Global compiler state equivalence classes
+3. Explicit compiler idempotence theorem
+4. Canonical error-state equivalence model
+5. Optimization trace equivalence formalization
+6. No-hidden-state invariant
+
+No runtime language semantics are changed.
+
+This is the final closure layer:
+    "Compiler execution is a well-defined equivalence-class transformation system."
+
+================================================================================
+1. GLOBAL COMPILER STATE EQUIVALENCE CLASS MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 COMPILER STATE DEFINITION
+--------------------------------------------------------------------------------
+
+Compiler state Σ is defined as:
+
+    Σ = (
+        IR_State,
+        Type_State,
+        Effect_State,
+        Region_State,
+        Escape_State,
+        Cache_State,
+        Dependency_Graph,
+        FixedPoint_State,
+        Diagnostic_State
+    )
+
+--------------------------------------------------------------------------------
+1.2 STATE EQUIVALENCE RELATION (~)
+--------------------------------------------------------------------------------
+
+Two states Σ1 and Σ2 are equivalent iff:
+
+    ICNF(Σ1.IR_State) == ICNF(Σ2.IR_State)
+AND Σ1.Type_State == Σ2.Type_State
+AND Σ1.Effect_State == Σ2.Effect_State
+AND Σ1.Region_State == Σ2.Region_State
+AND Σ1.Escape_State == Σ2.Escape_State
+AND Σ1.Dependency_Graph == Σ2.Dependency_Graph (up to ICNF normalization)
+AND Σ1.FixedPoint_State is convergence-equivalent
+AND Σ1.Diagnostic_State is trace-equivalent (see Section 4)
+
+Notation:
+
+    Σ1 ~ Σ2   (state equivalence class membership)
+
+--------------------------------------------------------------------------------
+1.3 CORE PROPERTY
+--------------------------------------------------------------------------------
+
+All compiler executions are functions over equivalence classes:
+
+    Compile : (Program × Config) → [Σ] equivalence class
+
+Meaning:
+    execution path is irrelevant; equivalence class is canonical result
+
+================================================================================
+2. DETERMINISTIC PARALLEL EXECUTION MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 DETERMINISTIC DAG EXECUTION
+--------------------------------------------------------------------------------
+
+All compiler tasks form a DAG:
+
+    TaskGraph = (Nodes, Edges, DependencyOrder)
+
+Execution rule:
+
+- nodes are scheduled by lexicographically sorted canonical keys:
+    (ICNF_hash, pass_class, dependency_depth)
+
+--------------------------------------------------------------------------------
+2.2 PARALLEL RESOLUTION RULE
+--------------------------------------------------------------------------------
+
+If multiple nodes are ready:
+
+    select node with minimal canonical key
+
+Ties resolved by:
+
+    deterministic hash ordering
+
+--------------------------------------------------------------------------------
+2.3 RESULT MERGE RULE
+--------------------------------------------------------------------------------
+
+Parallel outputs are merged using:
+
+    ICNF-stable reduction operator ⊕
+
+Properties:
+- associative
+- commutative within PS class
+- deterministic across thread counts
+
+--------------------------------------------------------------------------------
+2.4 GUARANTEE
+--------------------------------------------------------------------------------
+
+Parallel execution is equivalent to:
+
+    any sequential topological ordering consistent with DAG + canonical tie-break
+
+================================================================================
+3. COMPILER IDENTITY (IDEMPOTENCE THEOREM)
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 IDEMPOTENCE STATEMENT
+--------------------------------------------------------------------------------
+
+Let C be a valid compiler configuration.
+
+Then:
+
+    Compile(Compile(P, C), C) ~ Compile(P, C)
+
+--------------------------------------------------------------------------------
+3.2 INTERPRETATION
+--------------------------------------------------------------------------------
+
+Re-compiling compiler output yields:
+
+- identical ICNF structure
+- identical equivalence class
+- identical optimization trace class
+
+--------------------------------------------------------------------------------
+3.3 STRONG FORM
+--------------------------------------------------------------------------------
+
+For all n ≥ 1:
+
+    Compileⁿ(P, C) ~ Compile(P, C)
+
+Meaning:
+    compiler is a fixed-point operator over equivalence classes
+
+================================================================================
+4. OPTIMIZATION TRACE EQUIVALENCE MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 TRACE DEFINITION
+--------------------------------------------------------------------------------
+
+A trace T is:
+
+    T = sequence of:
+        (pass_id, ICNF_input_hash, ICNF_output_hash, cache_state, reason)
+
+--------------------------------------------------------------------------------
+4.2 TRACE EQUIVALENCE RELATION
+--------------------------------------------------------------------------------
+
+Two traces T1 and T2 are equivalent iff:
+
+- they produce same ICNF output
+- all pass transitions are ICNF-equivalent
+- cache hit/miss differences are explainable via valid cache rules
+- ordering differences are within allowed commutativity classes
+
+Notation:
+
+    T1 ≡ T2
+
+--------------------------------------------------------------------------------
+4.3 PROPERTY
+--------------------------------------------------------------------------------
+
+Multiple valid traces may exist, but all belong to:
+
+    single equivalence class per compilation result
+
+================================================================================
+5. CANONICAL ERROR STATE MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 ERROR STATE DEFINITION
+--------------------------------------------------------------------------------
+
+Error state E is:
+
+    E = (ErrorCode, Location, ICNF_context, DependencySlice)
+
+--------------------------------------------------------------------------------
+5.2 ERROR EQUIVALENCE
+--------------------------------------------------------------------------------
+
+Two errors are equivalent iff:
+
+- same root ICNF violation
+- same dependency slice root cause
+- same resolution class
+
+--------------------------------------------------------------------------------
+5.3 DETERMINISTIC DIAGNOSTICS RULE
+--------------------------------------------------------------------------------
+
+Given identical input:
+
+    error output MUST be identical across:
+        - machines
+        - threads
+        - cache states
+
+================================================================================
+6. NO-HIDDEN-STATE INVARIANT
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 CORE RULE
+--------------------------------------------------------------------------------
+
+Compiler contains NO hidden nondeterministic state.
+
+All state must be part of Σ:
+
+    IR, Type, Effect, Region, Escape, Cache, Graph, FixedPoint, Diagnostics
+
+--------------------------------------------------------------------------------
+6.2 PROHIBITED SOURCES OF ENTROPY
+--------------------------------------------------------------------------------
+
+Compiler MUST NOT use:
+
+- system time (unless explicitly logged and excluded from determinism)
+- thread scheduling order
+- memory address identity
+- hardware-specific randomness
+- unordered hash iteration
+
+--------------------------------------------------------------------------------
+6.3 HASH CANONICALIZATION RULE
+--------------------------------------------------------------------------------
+
+All hash maps MUST use:
+
+    deterministic insertion ordering via ICNF keys
+
+================================================================================
+7. FINAL COMPILER MODEL (CLOSURE THEOREM)
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 MAIN THEOREM
+--------------------------------------------------------------------------------
+
+Compiler is a deterministic mapping:
+
+    Compile : (Program, Config) → Σ / ~
+
+Meaning:
+    output is a single equivalence class, not a single execution artifact
+
+--------------------------------------------------------------------------------
+7.2 COROLLARY 1 (DISTRIBUTED EQUIVALENCE)
+--------------------------------------------------------------------------------
+
+Distributed compilation yields same equivalence class:
+
+    Compile_local(P) ~ Compile_cluster(P)
+
+--------------------------------------------------------------------------------
+7.3 COROLLARY 2 (CACHE INVARIANCE)
+--------------------------------------------------------------------------------
+
+Cache usage does not affect equivalence class:
+
+    CachedCompile(P) ~ FreshCompile(P)
+
+--------------------------------------------------------------------------------
+7.4 COROLLARY 3 (PARALLEL INVARIANCE)
+--------------------------------------------------------------------------------
+
+Thread count does not affect result:
+
+    Compile(P, threads=n) ~ Compile(P, threads=m)
+
+================================================================================
+8. FINAL SYSTEM GUARANTEES (CLOSED FORM)
+================================================================================
+
+Zyl compiler guarantees:
+
+1. Idempotence over equivalence classes
+2. Deterministic parallel execution
+3. Canonical trace equivalence
+4. Full state explicitness (no hidden state)
+5. Error determinism
+6. Cache invariance
+7. Distributed equivalence
+8. Cross-machine reproducibility
+9. Cross-time reproducibility (within version constraints)
+10. Fixed-point stability
+
+================================================================================
+END OF ZYL v2.9 COMPILER FORMAL CLOSURE SPECIFICATION
+================================================================================

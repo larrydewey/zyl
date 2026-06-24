@@ -1,0 +1,373 @@
+================================================================================
+ZYL v2.2 FORMAL SPECIFICATION
+"Pure Lisp Syntax • Region-Inferred Safety • Effect-Inferred Correctness"
+================================================================================
+
+CHANGE SUMMARY (v2.1 → v2.2)
+- Adds FULL EFFECT INFERENCE SYSTEM (pure / ffi / mutable / concurrent)
+- Adds EXHAUSTIVENESS + UNREACHABLE CODE ELIMINATION RULES
+- Adds INITIALIZATION SAFETY (definite assignment analysis)
+- Adds CAPABILITY LEAKAGE ANALYSIS (API boundary safety)
+- Adds LINEAR RESOURCE INFERENCE (optional consumable types)
+- Clarifies that MOST SAFETY SYSTEMS ARE INFERRED, NOT ANNOTATED
+- Preserves optional CONTRACT + RECOVERY SYSTEM unchanged
+
+CORE PRINCIPLE:
+    "If the compiler can prove it, the programmer does not write it."
+
+================================================================================
+1. CORE SEMANTIC MODEL (UNCHANGED)
+================================================================================
+
+Zyl programs execute under:
+
+    Sigma = <Stack, Heap, RcCycle, Global(ARC), ActorPool>
+
+Properties:
+- Deterministic evaluation order (left-to-right)
+- No undefined behavior in safe code
+- Ownership + region inference are primary memory safety model
+- ARC applies only to Global region
+- RcCycle handles cyclic structures
+- No GC required for correctness
+
+================================================================================
+2. TYPE SYSTEM EXTENSION: EFFECTS (NEW)
+================================================================================
+
+Every expression has an inferred EFFECT SET:
+
+    Effect ::= PURE | MUT | FFI | ACTOR | ALLOC | IO
+
+Effect rules:
+
+- PURE:
+    No mutation, no allocation, no FFI, no actor interaction
+
+- MUT:
+    Writes to TMut or mutable region
+
+- ALLOC:
+    Heap allocation (TBox creation, escape promotion)
+
+- FFI:
+    Any external call via ffi-call or ffi-pin
+
+- ACTOR:
+    spawn, send, receive
+
+Inference rule:
+
+    Effects are unioned across subexpressions
+
+Example:
+
+    (defun f (x)
+      (+ x 1))
+
+    ⇒ PURE
+
+    (defun g (x)
+      (ffi-call log x 0))
+
+    ⇒ FFI
+
+OPTIONAL SYNTAX OVERRIDES:
+
+    (:pure)
+    (:ffi)
+    (:no-effect)
+
+These NEVER change semantics; only override diagnostics.
+
+================================================================================
+3. EXHAUSTIVENESS & CONTROL FLOW COMPLETENESS (NEW)
+================================================================================
+
+3.1 MATCH EXHAUSTIVENESS
+
+Rule:
+
+    All constructors of a type must be covered unless explicitly marked.
+
+Example:
+
+    (match x
+      (Some v ...)
+      (None ...))
+
+Compiler requirement:
+    Must cover all variants OR error E_MATCH_NONEXHAUSTIVE
+
+Optional override:
+
+    :non-exhaustive
+
+3.2 UNREACHABLE CODE ELIMINATION
+
+If compiler proves branch cannot execute:
+
+    - branch is removed OR
+    - warning emitted in debug mode
+
+Example:
+
+    (if false A B) → B only
+
+3.3 CONTROL FLOW COMPLETENESS
+
+Compiler guarantees:
+- all function paths terminate or return
+- all match paths resolved
+- all recover paths explicitly modeled if enabled
+
+================================================================================
+4. INITIALIZATION SAFETY (NEW)
+================================================================================
+
+Rule: Definite Assignment
+
+A variable MUST be initialized before use on all paths.
+
+Example:
+
+    (let x
+      (if cond 1 2)
+      (+ x 1))   ; OK only if x is assigned on all paths
+
+Violation:
+    E_UNINITIALIZED_USE
+
+Analysis is:
+- control-flow sensitive
+- branch-aware
+- loop-aware
+
+No syntax required.
+
+================================================================================
+5. CAPABILITY LEAKAGE ANALYSIS (NEW)
+================================================================================
+
+Rule:
+
+    TMut and internal capabilities MUST NOT escape unsafe boundaries.
+
+Compiler checks:
+
+- return values
+- closures
+- actor messages
+- FFI boundaries
+
+Violation:
+    E_CAPABILITY_LEAK
+
+Example:
+
+    (defun leak ()
+      (let-mut x 10)
+      x)   ; ERROR if x is mutable capability
+
+Optional annotation:
+
+    (:capsule)
+
+Meaning:
+    enforce strict non-leak policy
+
+================================================================================
+6. LINEAR RESOURCE TRACKING (NEW, OPTIONAL TYPE BEHAVIOR)
+================================================================================
+
+Some resources are LINEAR:
+
+- File
+- Socket
+- Locks
+- Explicit Linear<T>
+
+Rule:
+
+    Must be used exactly once OR explicitly dropped
+
+Example:
+
+    (open-file "a.txt") : Linear<File>
+
+Compiler ensures:
+- no duplication
+- no silent drop
+- no aliasing
+
+Optional annotation:
+
+    (:linear)
+
+================================================================================
+7. EFFECT-AWARE FUNCTION MODEL (NEW)
+================================================================================
+
+Every function has inferred signature:
+
+    f : (Args) -> Ret | EffectSet
+
+Example:
+
+    (defun read-file (path)
+      (ffi-call open path 1000))
+
+    ⇒ Effect = FFI + ALLOC
+
+Effect propagation:
+- caller effect = union(callee effects)
+
+Pure function rule:
+
+    PURE functions MAY NOT call:
+        FFI | ACTOR | MUT | ALLOC (unless isolated)
+
+Violation:
+    E_EFFECT_VIOLATION
+
+================================================================================
+8. CONTRACT SYSTEM (UNCHANGED BUT INTEGRATED)
+================================================================================
+
+Contracts remain OPTIONAL overlays.
+
+8.1 Requires
+    (requires P)
+
+8.2 Ensures
+    (ensures Q)
+
+8.3 Invariant
+    (invariant Q)
+
+8.4 Recover
+    (recover ((E) expr)...)
+
+8.5 Checkpoint
+    (checkpoint expr)
+
+CONTRACT RULE:
+    Contracts are NOT part of type system or effect system.
+    They do NOT influence ownership, regions, or inference.
+
+================================================================================
+9. CONTRACT PROFILES (UNCHANGED)
+================================================================================
+
+Profiles:
+
+    strict | debug | warn | off | production
+
+Contracts may be:
+- enforced
+- logged
+- removed
+
+No effect on core semantics.
+
+================================================================================
+10. COMPILER PIPELINE (UPDATED)
+================================================================================
+
+1. Parse
+2. Macro Expansion
+3. Type Inference
+4. Effect Inference   (NEW)
+5. Trait Resolution
+6. Ownership Inference
+7. Region Inference
+8. Linear Resource Analysis (NEW)
+9. Exhaustiveness Analysis (NEW)
+10. Initialization Safety Analysis (NEW)
+11. Capability Leakage Analysis (NEW)
+12. Monomorphization
+13. Contract Injection (optional)
+14. Codegen
+15. Linking
+
+PIPELINE RULE:
+    Later phases MAY NOT invalidate earlier proven guarantees.
+
+================================================================================
+11. RUNTIME MODEL (UNCHANGED)
+================================================================================
+
+- Stack execution
+- Heap allocation for escaped values
+- RcCycle for cyclic structures
+- ARC for Global region
+- Actor model concurrency
+
+No hidden GC behavior.
+
+================================================================================
+12. ERROR MODEL (EXPANDED)
+================================================================================
+
+New compile-time errors:
+
+E_EFFECT_VIOLATION
+E_MATCH_NONEXHAUSTIVE
+E_UNINITIALIZED_USE
+E_CAPABILITY_LEAK
+
+Existing:
+E0403 Capability Moved
+E0501 Not Send
+E0701 FFI Contract Violation
+
+Errors are:
+- deterministic
+- source-mapped
+- phase-tagged
+
+================================================================================
+13. FORMAL GUARANTEE SET (UPDATED)
+================================================================================
+
+CORE SAFETY:
+- Memory safety (ownership + regions)
+- No use-after-free
+- No double free
+- No dangling references
+
+CONCURRENCY SAFETY:
+- No data races in safe code
+- Actor isolation guaranteed
+
+EFFECT SAFETY (NEW):
+- PURE functions are side-effect free (as proven by inference)
+- FFI and ACTOR effects are explicitly tracked
+
+CONTROL FLOW SAFETY:
+- Exhaustiveness enforced (or explicitly disabled)
+- All initialized-before-use guarantees enforced
+
+CAPABILITY SAFETY:
+- No TMut leakage across boundaries
+- No unsafe capability exposure
+
+DETERMINISM:
+- Monomorphization is deterministic
+- Execution order is deterministic
+- Build outputs are reproducible
+
+================================================================================
+14. NON-GOALS (EXPLICIT)
+================================================================================
+
+Zyl does NOT guarantee:
+- logical correctness
+- termination
+- external FFI correctness
+- recovery success
+- performance bounds
+
+================================================================================
+END OF ZYL v2.2 SPECIFICATION
+================================================================================

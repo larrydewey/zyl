@@ -1,0 +1,376 @@
+================================================================================
+ZYL v2.7 COMPILER OPERATING MODEL SPECIFICATION
+"Economics • Boundaries • Stability • Concurrency • Identity"
+================================================================================
+
+PURPOSE
+This specification completes Zyl’s compiler system design by adding:
+
+- Optimization Cost Model (OCM)
+- Module & Cross-Crate Compilation Semantics
+- ABI Stability Model
+- Compiler Concurrency Failure Semantics
+- Pass Dependency DAG Formalization
+- Speculative Optimization Rollback Semantics
+- Optimization Identity Stability Model
+- Build Profile System (SAFE / BALANCED / FAST)
+
+No runtime language semantics are changed.
+
+This layer defines:
+    "How the compiler behaves as a distributed, concurrent, incremental system."
+
+================================================================================
+1. OPTIMIZATION COST MODEL (OCM)
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 PASS COST FUNCTION
+--------------------------------------------------------------------------------
+
+Each compiler pass Pi has:
+
+    Cost(Pi) = CPU + Memory + CachePressure + FixedPointIterations
+
+Each pass also has:
+
+    Benefit(Pi) = ExpectedReuseGain + RuntimeSpeedup + CacheSavings
+
+Define:
+
+    Efficiency(Pi) = Benefit(Pi) / Cost(Pi)
+
+--------------------------------------------------------------------------------
+1.2 EXECUTION RULE
+--------------------------------------------------------------------------------
+
+A pass is executed ONLY IF:
+
+    Efficiency(Pi) ≥ Threshold(Profile)
+
+Where:
+
+- SAFE profile → high threshold (conservative optimization)
+- BALANCED profile → moderate threshold
+- FAST profile → low threshold (aggressive caching)
+
+--------------------------------------------------------------------------------
+1.3 AMORTIZATION RULE
+--------------------------------------------------------------------------------
+
+A pass may be skipped if:
+
+    Cost(Pi) > ExpectedFutureReuseBenefit(Pi)
+
+Guarantee:
+    no semantic change; only work avoidance
+
+================================================================================
+2. BUILD PROFILES SYSTEM
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 PROFILE DEFINITIONS
+--------------------------------------------------------------------------------
+
+SAFE:
+    - no speculative optimization
+    - minimal caching
+    - full validation at each stage
+
+BALANCED (default):
+    - full caching system enabled
+    - bounded speculation
+    - full correctness invariants
+
+FAST:
+    - maximal cache reuse
+    - aggressive fixed-point reuse
+    - reduced recomputation tolerance within bounds
+
+--------------------------------------------------------------------------------
+2.2 PROFILE INVARIANT
+--------------------------------------------------------------------------------
+
+All profiles MUST preserve:
+
+- ICNF correctness
+- cache soundness
+- deterministic output
+- FFI isolation
+- region/effect safety
+
+Only performance characteristics differ.
+
+================================================================================
+3. MODULE & CROSS-CRATE COMPILATION MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 COMPILATION UNIT MODEL
+--------------------------------------------------------------------------------
+
+Each module compiles to:
+
+    ModuleSummary {
+        ICNF_hash
+        effect_signature
+        region_signature
+        ABI_signature
+        dependency_graph
+    }
+
+--------------------------------------------------------------------------------
+3.2 INTERFACE FILES (.lii)
+--------------------------------------------------------------------------------
+
+Interface files contain:
+
+- exported function ICNF signatures
+- type declarations
+- effect summaries
+- ABI fingerprints
+
+Body is NOT required for dependent compilation.
+
+--------------------------------------------------------------------------------
+3.3 CROSS-MODULE INVALIDATION RULE
+--------------------------------------------------------------------------------
+
+If a module changes:
+
+Invalidate ONLY dependents where:
+
+    dependency_edge == (ABI OR effect OR type)
+
+Non-dependent modules remain cached.
+
+Guarantee:
+    localized recompilation
+
+================================================================================
+4. ABI STABILITY MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 ABI SIGNATURE DEFINITION
+--------------------------------------------------------------------------------
+
+ABI_signature is derived from:
+
+    ICNF(type)
+    + effect_signature
+    + region_layout_signature
+    + calling_convention_signature
+
+--------------------------------------------------------------------------------
+4.2 COMPATIBILITY RULE
+--------------------------------------------------------------------------------
+
+Two functions are ABI-compatible iff:
+
+    ABI_signature(A) == ABI_signature(B)
+
+--------------------------------------------------------------------------------
+4.3 VERSIONING RULE
+--------------------------------------------------------------------------------
+
+Any ABI_signature change:
+
+- invalidates dependent binaries
+- triggers monomorphization cache invalidation
+- preserves source-level compatibility unless explicitly broken
+
+Guarantee:
+    no silent ABI drift
+
+================================================================================
+5. COMPILER CONCURRENCY FAILURE MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 COMPILER STATE MODEL
+--------------------------------------------------------------------------------
+
+Compiler state is partitioned into:
+
+- IR state
+- cache state
+- fixed-point state
+- dependency graph state
+
+--------------------------------------------------------------------------------
+5.2 PARTIAL FAILURE RULE
+--------------------------------------------------------------------------------
+
+If any worker thread fails:
+
+- its partial results are discarded
+- dependent cache entries are invalidated
+- compilation resumes deterministically
+
+--------------------------------------------------------------------------------
+5.3 ATOMICITY GUARANTEE
+--------------------------------------------------------------------------------
+
+Each compilation phase is:
+
+    logically atomic
+
+Meaning:
+    no intermediate inconsistent compiler-visible state exists
+
+================================================================================
+6. PASS DEPENDENCY DAG FORMALIZATION
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 INTRA-CLASS DEPENDENCY DAG
+--------------------------------------------------------------------------------
+
+Each pass class has internal ordering constraints:
+
+DF:
+    type_inference → effect_analysis → escape_analysis
+
+RM:
+    escape_analysis → region_assignment → region_stabilization
+
+BO:
+    ABI_analysis → FFI_fusion → boundary_optimization
+
+--------------------------------------------------------------------------------
+6.2 DAG VALIDATION RULE
+--------------------------------------------------------------------------------
+
+Compiler MUST reject:
+
+- cyclic dependencies
+- missing prerequisite passes
+- invalid cross-class ordering
+
+================================================================================
+7. SPECULATIVE OPTIMIZATION ROLLBACK MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 SPECULATION DEFINITION
+--------------------------------------------------------------------------------
+
+A speculative optimization is:
+
+    a transformation applied before full proof completion
+
+--------------------------------------------------------------------------------
+7.2 VALIDATION POINT
+--------------------------------------------------------------------------------
+
+At fixed-point completion:
+
+If speculation is invalid:
+
+    rollback to last ICNF-stable state
+
+--------------------------------------------------------------------------------
+7.3 ROLLBACK GUARANTEE
+--------------------------------------------------------------------------------
+
+Rollback is:
+
+- deterministic
+- complete
+- lossless (no semantic change)
+
+================================================================================
+8. OPTIMIZATION IDENTITY STABILITY MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 IDENTITY DEFINITION
+--------------------------------------------------------------------------------
+
+An optimization identity is:
+
+    (ICNF_input → ICNF_output + pass_trace)
+
+--------------------------------------------------------------------------------
+8.2 EQUIVALENCE RULE
+--------------------------------------------------------------------------------
+
+Two compilations are identical if:
+
+    ICNF_output == ICNF_output'
+AND
+    pass_trace equivalence class matches
+
+--------------------------------------------------------------------------------
+8.3 PURPOSE
+--------------------------------------------------------------------------------
+
+Ensures:
+
+- reproducible builds
+- stable CI behavior
+- deterministic debugging
+
+Note:
+    internal cache paths may differ; identity remains stable
+
+================================================================================
+9. GLOBAL COMPILER GUARANTEES (EXPANDED)
+================================================================================
+
+Compiler guarantees:
+
+1. Determinism:
+    same source + same profile → identical output
+
+2. Incrementality:
+    unchanged modules are never recompiled
+
+3. Cache Safety:
+    no stale or cross-version reuse
+
+4. Concurrency Safety:
+    parallel compilation is deterministic
+
+5. Bounded Optimization:
+    all fixed-point systems terminate
+
+6. Isolation:
+    FFI nondeterminism cannot affect compiler state
+
+7. Identity Stability:
+    same inputs produce same optimization equivalence class
+
+================================================================================
+10. PERFORMANCE MODEL CLARIFICATION
+================================================================================
+
+Expected effects:
+
+- SAFE: predictable but slower compilation
+- BALANCED: best general-purpose performance
+- FAST: best cache reuse and incremental builds
+
+Critical property:
+
+    FAST cannot violate correctness bounds
+
+Only difference:
+    amount of recomputation allowed
+
+================================================================================
+11. NON-GOALS
+================================================================================
+
+This system does NOT attempt:
+
+- optimal global compilation scheduling (NP-hard)
+- perfect cache prediction
+- hardware-specific optimal code generation guarantees
+- elimination of all compile-time variance
+
+================================================================================
+END OF ZYL v2.7 COMPILER OPERATING MODEL SPECIFICATION
+================================================================================
