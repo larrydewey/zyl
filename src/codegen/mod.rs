@@ -152,6 +152,8 @@ pub struct AsmGenerator {
     output: Vec<String>,
     label_counter: usize,
     current_function: Option<String>,
+    /// Maps variable names to stack offsets for the current function
+    var_offsets: std::collections::HashMap<String, i64>,
 }
 
 impl AsmGenerator {
@@ -161,6 +163,7 @@ impl AsmGenerator {
             output: Vec::new(),
             label_counter: 0,
             current_function: None,
+            var_offsets: std::collections::HashMap::new(),
         }
     }
     
@@ -210,16 +213,29 @@ impl AsmGenerator {
         }
     }
     
+    /// Sanitize a Zyl identifier for use as an assembly label (replace hyphens with underscores)
+    fn sanitize_name(name: &str) -> String {
+        name.replace('-', "_")
+    }
+    
     fn gen_function(&mut self, func: &Function) -> Result<(), CodegenError> {
-        self.current_function = Some(func.name.clone());
+        let asm_name = Self::sanitize_name(&func.name);
+        self.current_function = Some(asm_name.clone());
         
-        // Function prologue
-        self.output.push(format!("{}:", func.name));
+        // Initialize variable offsets for function parameters
+        // x86_64 ABI: rdi=1st, rsi=2nd, rdx=3rd, rcx=4th, r8=5th, r9=6th
+        let mut offset = 16; // Start after saved rbp (8) and return address (8)
+        for (name, _ty) in &func.params {
+            self.var_offsets.insert(name.clone(), -offset as i64);
+            offset += 8;
+        }
+        
+        // Function prologue (use sanitized name for assembly)
+        self.output.push(format!("{}:", asm_name));
         self.output.push("\tpushq %rbp".to_string());
         self.output.push("\tmovq %rsp, %rbp".to_string());
         
         // Store function parameters in stack slots
-        // x86_64 ABI: rdi=1st, rsi=2nd, rdx=3rd, rcx=4th, r8=5th, r9=6th
         for (i, (_name, _ty)) in func.params.iter().enumerate() {
             let reg = match i {
                 0 => "rdi",
@@ -232,7 +248,7 @@ impl AsmGenerator {
             };
             
             let stack_offset = (i + 2) * 8; // Skip saved rbp and return address
-            self.output.push(format!("\tmovq {}, -{}(%rbp)", reg, stack_offset));
+            self.output.push(format!("\tmovq %{}, -{}(%rbp)", reg, stack_offset));
         }
         
         // Generate each block
@@ -253,18 +269,32 @@ impl AsmGenerator {
     }
     
     fn gen_block(&mut self, block: &Block, _func: &Function) -> Result<(), CodegenError> {
-        // Label for the block
-        self.output.push(format!("{}:", block.id));
+        // Label for the block — prefix with sanitized function name to avoid duplicates
+        let label = if let Some(ref func_name) = self.current_function {
+            format!("{}_{}", func_name, block.id)
+        } else {
+            block.id.to_string()
+        };
+        self.output.push(format!("{}:", label));
         
         // Generate each instruction
         for instr in &block.instructions {
-            self.gen_instruction(instr)?;
+            self.gen_instruction(instr, _func)?;
         }
         
         Ok(())
     }
     
-    fn gen_instruction(&mut self, instr: &Instruction) -> Result<(), CodegenError> {
+    /// Generate a qualified block label for the current function
+    fn qualified_label(&self, block_id: &BlockId) -> String {
+        if let Some(ref func_name) = self.current_function {
+            format!("{}_{}", func_name, block_id)
+        } else {
+            block_id.to_string()
+        }
+    }
+    
+    fn gen_instruction(&mut self, instr: &Instruction, _func: &Function) -> Result<(), CodegenError> {
         match instr {
             Instruction::Const { value, dest } => {
                 let dest_reg = self.gen_dest_reg(dest)?;
@@ -396,10 +426,11 @@ impl AsmGenerator {
                 }
                 
                 let dest_reg = self.gen_dest_reg(dest)?;
-                // func is an IrValue::FuncRef — resolve to function name
+                // func is an IrValue::FuncRef — resolve to function name (sanitize for assembly)
                 match func {
                     ir::IrValue::FuncRef(name) => {
-                        self.output.push(format!("\tcall {}", name));
+                        let asm_name = Self::sanitize_name(name);
+                        self.output.push(format!("\tcall {}", asm_name));
                     }
                     _ => {
                         return Err(CodegenError::UnsupportedInstruction(
@@ -459,20 +490,42 @@ impl AsmGenerator {
                 }
             }
             
-            Instruction::Load { name: _, region, dest } => {
+            Instruction::Load { name, region, dest } => {
                 let dest_reg = self.gen_dest_reg(dest)?;
-                let offset = match region {
-                    Region::Stack => "-(%rbp)".to_string(), // Simplified
-                    _ => "0(%rip)".to_string(),
-                };
-                self.output.push(format!("\tmovq {}, {}", offset, dest_reg));
+                match region {
+                    Region::Stack => {
+                        if let Some(&offset) = self.var_offsets.get(name) {
+                            self.output.push(format!("\tmovq {}(%rbp), {}", offset, dest_reg));
+                        } else {
+                            // Fallback: use SSA ID as offset
+                            self.output.push(format!("\tmovq -{}(%rbp), {}", name.len() * 8 + 16, dest_reg));
+                        }
+                    }
+                    _ => {
+                        self.output.push(format!("\tmovq 0(%rip), {}", dest_reg));
+                    }
+                }
             }
             
-            Instruction::Store { name: _, value, region } => {
+            Instruction::Store { name, value, region } => {
                 let reg = self.gen_load_operand(value)?;
                 match region {
                     Region::Stack => {
-                        self.output.push(format!("\tmovq {}, -(%rbp)", reg));
+                        // Assign a stack slot for this variable if not already assigned
+                        if !self.var_offsets.contains_key(name) {
+                            let existing: Vec<&i64> = self.var_offsets.values().collect();
+                            let max_offset = existing.iter()
+                                .map(|o| o.unsigned_abs())
+                                .max()
+                                .unwrap_or(16);
+                            let new_offset = -(max_offset as i64 + 8);
+                            self.var_offsets.insert(name.clone(), new_offset);
+                        }
+                        if let Some(&offset) = self.var_offsets.get(name) {
+                            self.output.push(format!("\tmovq {}, {}(%rbp)", reg, offset));
+                        } else {
+                            self.output.push(format!("\tmovq {}, -16(%rbp)", reg));
+                        }
                     }
                     _ => {
                         self.output.push(format!("\tmovq {}, 0(%rip)", reg));

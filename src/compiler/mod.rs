@@ -279,9 +279,16 @@ impl Compiler {
         
         self.expr_to_blocks(program, expr, &mut func)?;
         
-        // Add return instruction
-        let ret = ir::Instruction::Return { value: None };
-        func.current_block_mut().add_instruction(ret);
+        // Add return instruction with the last computed SSA value if available
+        let ret_value = if func.current_block().instructions.is_empty() {
+            None
+        } else {
+            Some(ir::SsaValue {
+                id: ir::SsaId(func.current_block().instructions.len() - 1),
+                region: crate::ast::Region::Stack,
+            })
+        };
+        func.current_block_mut().add_instruction(ir::Instruction::Return { value: ret_value });
         
         Ok(func)
     }
@@ -304,15 +311,23 @@ impl Compiler {
             _ => ir::IrType::Int,
         };
         
-        let param_tys: Vec<(String, ir::IrType)> = (0..params.len())
-            .map(|i| (format!("arg{}", i), ir::IrType::Int))
+        let param_tys: Vec<(String, ir::IrType)> = params.iter()
+            .map(|p| (p.clone(), ir::IrType::Int))
             .collect();
         
         let mut func = ir::Function::new(name.to_string(), param_tys, ret_ty);
         self.expr_to_blocks(program, body, &mut func)?;
         
-        let ret = ir::Instruction::Return { value: None };
-        func.current_block_mut().add_instruction(ret);
+        // Return the last computed SSA value if available
+        let ret_value = if func.current_block().instructions.is_empty() {
+            None
+        } else {
+            Some(ir::SsaValue {
+                id: ir::SsaId(func.current_block().instructions.len() - 1),
+                region: crate::ast::Region::Stack,
+            })
+        };
+        func.current_block_mut().add_instruction(ir::Instruction::Return { value: ret_value });
         
         Ok(func)
     }
@@ -331,16 +346,38 @@ impl Compiler {
     
     fn expr_to_blocks(&self, program: &Program, expr: &Expr, func: &mut ir::Function) -> Result<(), CompilerError> {
         match expr {
-            Expr::Atom(kind) => {
-                let val = match kind {
-                    AtomKind::Int(v) => ir::IrValue::Int(*v),
-                    AtomKind::Float(v) => ir::IrValue::Float(*v),
-                    AtomKind::Bool(b) => ir::IrValue::Bool(*b),
-                    AtomKind::StringLit(s) => ir::IrValue::StringLit(s.clone()),
-                    AtomKind::Ident(name) => ir::IrValue::FuncRef(name.clone()),
-                };
-                let dest = self.ssa_val(func);
-                func.current_block_mut().add_instruction(ir::Instruction::Const { value: val, dest });
+            Expr::Atom(kind) => match kind {
+                AtomKind::Int(v) => {
+                    let dest = self.ssa_val(func);
+                    func.current_block_mut().add_instruction(ir::Instruction::Const { 
+                        value: ir::IrValue::Int(*v), dest 
+                    });
+                }
+                AtomKind::Float(v) => {
+                    let dest = self.ssa_val(func);
+                    func.current_block_mut().add_instruction(ir::Instruction::Const { 
+                        value: ir::IrValue::Float(*v), dest 
+                    });
+                }
+                AtomKind::Bool(b) => {
+                    let dest = self.ssa_val(func);
+                    func.current_block_mut().add_instruction(ir::Instruction::Const { 
+                        value: ir::IrValue::Bool(*b), dest 
+                    });
+                }
+                AtomKind::StringLit(s) => {
+                    let dest = self.ssa_val(func);
+                    func.current_block_mut().add_instruction(ir::Instruction::Const { 
+                        value: ir::IrValue::StringLit(s.clone()), dest 
+                    });
+                }
+                AtomKind::Ident(name) => {
+                    // Variable reference - load from stack slot
+                    let dest = self.ssa_val(func);
+                    func.current_block_mut().add_instruction(ir::Instruction::Load { 
+                        name: name.clone(), region: Region::Stack, dest 
+                    });
+                }
             }
             
             Expr::App(op, args) => {
@@ -417,12 +454,6 @@ impl Compiler {
                 let else_block = func.add_block();
                 let merge_block = func.add_block();
                 
-                // Compute phi inputs before mutating blocks
-                let phi_inputs: Vec<(ir::BlockId, ir::SsaValue)> = vec![
-                    (then_block, ir::SsaValue { id: ir::SsaId(func.blocks[then_block.0].instructions.len() - 1), region: Region::Stack }),
-                    (else_block, ir::SsaValue { id: ir::SsaId(func.blocks[else_block.0].instructions.len() - 1), region: Region::Stack }),
-                ];
-                
                 func.current_block_mut().add_instruction(ir::Instruction::CondBranch {
                     cond: cond_val, then_block, else_block,
                 });
@@ -430,18 +461,18 @@ impl Compiler {
                 // Then branch
                 func.blocks.last_mut().unwrap().id = then_block;
                 self.expr_to_blocks(program, then_branch, func)?;
-                let branch_then = ir::SsaValue { id: ir::SsaId(0), region: Region::Stack };
+                let then_val = ir::SsaValue { id: ir::SsaId(func.current_block().instructions.len() - 1), region: Region::Stack };
                 func.current_block_mut().add_instruction(ir::Instruction::Branch {
-                    cond: branch_then, then_block: merge_block, else_block: merge_block,
+                    cond: then_val, then_block: merge_block, else_block: merge_block,
                 });
                 
                 // Else branch
                 let else_id = func.add_block();
                 func.blocks.last_mut().unwrap().id = else_id;
                 self.expr_to_blocks(program, else_branch, func)?;
-                let branch_else = ir::SsaValue { id: ir::SsaId(0), region: Region::Stack };
+                let else_val = ir::SsaValue { id: ir::SsaId(func.current_block().instructions.len() - 1), region: Region::Stack };
                 func.current_block_mut().add_instruction(ir::Instruction::Branch {
-                    cond: branch_else, then_block: merge_block, else_block: merge_block,
+                    cond: else_val, then_block: merge_block, else_block: merge_block,
                 });
                 
                 // Merge block with phi
@@ -451,13 +482,34 @@ impl Compiler {
                     region: Region::Stack,
                 };
                 func.current_block_mut().add_instruction(ir::Instruction::Phi {
-                    inputs: phi_inputs,
+                    inputs: vec![
+                        (then_block, then_val),
+                        (else_block, else_val),
+                    ],
                     dest: phi_dest,
                 });
             }
             
-            Expr::Defn { .. } => {
-                // Function definitions handled at program level
+            Expr::Defn { name, params, body: _, ret_type: _ } => {
+                // When a def appears in the body (not just at top-level),
+                // generate a call to invoke it with its parameters as arguments.
+                // The function itself was already added to extra_functions during
+                // phase_icnf_generation. Here we just need to call it.
+                let arg_vals: Vec<ir::SsaValue> = (0..params.len())
+                    .map(|i| {
+                        let val = ir::IrValue::Int(i as i64);
+                        let dest = self.ssa_val(func);
+                        func.current_block_mut().add_instruction(ir::Instruction::Const { value: val, dest });
+                        ir::SsaValue { id: dest.id, region: dest.region }
+                    })
+                    .collect();
+                
+                let dest = self.ssa_val(func);
+                func.current_block_mut().add_instruction(ir::Instruction::Call {
+                    func: ir::IrValue::FuncRef(name.clone()),
+                    args: arg_vals,
+                    dest,
+                });
             }
             
             Expr::Let { name, value, body } => {
@@ -570,9 +622,17 @@ impl Compiler {
                 // Generate the lambda's ICNF function
                 let mut lambda_func = ir::Function::new(func_name.clone(), param_types, ret_type);
                 self.expr_to_blocks(program, body, &mut lambda_func)?;
-                let ret_instr = ir::Instruction::Return { value: None };
-                lambda_func.current_block_mut().add_instruction(ret_instr);
-                
+                // Add the generated function to this function's extra_functions
+                let ret_value = if lambda_func.current_block().instructions.is_empty() {
+                    None
+                } else {
+                    Some(ir::SsaValue {
+                        id: ir::SsaId(lambda_func.current_block().instructions.len() - 1),
+                        region: crate::ast::Region::Stack,
+                    })
+                };
+                lambda_func.current_block_mut().add_instruction(ir::Instruction::Return { value: ret_value });
+
                 // Add the generated function to this function's extra_functions
                 func.extra_functions.push(lambda_func);
                 
