@@ -1,0 +1,482 @@
+================================================================================
+ZYL v2.1 LANGUAGE REFERENCE (CONCISE EXHAUSTIVE EDITION)
+================================================================================
+
+1. OVERVIEW
+2. SYNTAX CORE
+3. TYPES
+4. OWNERSHIP MODEL
+5. REGIONS
+6. MEMORY MODEL
+7. FUNCTIONS
+8. CONTROL FLOW
+9. PATTERN MATCHING
+10. ALGEBRAIC DATA TYPES
+11. TRAITS
+12. GENERICS
+13. CLOSURES
+14. MODULES
+15. MACROS
+16. CONTRACT SYSTEM (OPTIONAL)
+17. RECOVERY SYSTEM (OPTIONAL)
+18. CONCURRENCY MODEL
+19. ACTORS
+20. FFI SYSTEM
+21. ERROR MODEL
+22. COMPILATION MODEL
+23. RUNTIME MODEL
+24. TOOLING
+25. FORMAL GUARANTEES
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+Zyl is a:
+- Lisp-syntax systems language
+- Region-inferred memory model (no GC required)
+- Ownership-based safety system
+- Optional contract + recovery layer
+- Deterministic compilation model
+- Actor-based concurrency runtime
+
+Core philosophy:
+    "Safe by construction, expressive by default, recoverable by choice"
+
+================================================================================
+2. SYNTAX CORE
+================================================================================
+
+All code is expressions.
+
+Forms:
+
+    (operator arg1 arg2 ...)
+    (let (x expr) body)
+    (let-mut (x expr) body)
+    (def name expr)
+    (defun name (args...) body)
+    (fn (args...) body)
+
+Evaluation:
+    Strict left-to-right
+
+No operator precedence (fully prefix AST)
+
+================================================================================
+3. TYPES
+================================================================================
+
+Primitive:
+    Int, UInt, Float, Bool, String
+
+Composite:
+    Vec<T>, List<T>, Map<K,V>
+
+System Types:
+    TCap<T>     immutable capability
+    TMut<T>     exclusive mutable capability
+    TBox<T>     heap-managed object
+    TWeak<T>    non-owning reference
+    TAtomic<T>  atomic shared type
+    TActor<ID>  actor handle
+    TFun<A,R>   function type
+
+Type system:
+    Hindley-Milner style local inference
+    Monomorphized generics
+
+================================================================================
+4. OWNERSHIP MODEL
+================================================================================
+
+Invariant:
+
+    A value has either:
+        - N immutable references OR
+        - 1 mutable reference
+
+Rules:
+- Ownership inferred by compiler
+- No explicit borrow syntax
+- Moves are implicit
+- Escaping values are promoted to Heap or Global
+
+================================================================================
+5. REGIONS
+================================================================================
+
+Regions:
+
+    Stack   → non-escaping locals
+    Heap    → escaping allocations
+    RcCycle → cyclic ownership graphs
+    Global  → ARC-managed shared memory
+    Pin     → FFI-safe immutable memory
+
+Region inference determines placement automatically.
+
+================================================================================
+6. MEMORY MODEL
+================================================================================
+
+- No GC in core runtime
+- TBox uses precise mark/sweep internally
+- ARC used for Global region only
+- RcCycle collects cyclic structures
+
+Drop semantics:
+    deterministic, scope-based
+
+Zeroization:
+    TMut memory cleared on drop
+
+================================================================================
+7. FUNCTIONS
+================================================================================
+
+Definition:
+
+    (defun name (params...) body)
+
+Example:
+
+    (defun add (a b)
+      (+ a b))
+
+Functions are:
+- first-class
+- region-inferred
+- monomorphized if generic
+
+================================================================================
+8. CONTROL FLOW
+================================================================================
+
+Conditionals:
+
+    (if cond a b)
+
+Sequencing:
+    implicit via nesting
+
+Loops:
+    (while cond body)
+    (for x in xs body)
+
+All constructs are expressions.
+
+================================================================================
+9. PATTERN MATCHING
+================================================================================
+
+Syntax:
+
+    (match expr
+      (pattern body)
+      (pattern body))
+
+Exhaustiveness required.
+
+Example:
+
+    (match x
+      ((Some v) v)
+      (None 0))
+
+================================================================================
+10. ALGEBRAIC DATA TYPES
+================================================================================
+
+Definition:
+
+    (deftype Option
+      (Some T)
+      None)
+
+Sum + product types supported.
+
+================================================================================
+11. TRAITS
+================================================================================
+
+Definition:
+
+    (trait Name
+      (method (self args...) Type))
+
+Implementation:
+
+    (impl Trait Type body)
+
+Coherence:
+    one impl per (Trait, Type)
+
+================================================================================
+12. GENERICS
+================================================================================
+
+Syntax:
+
+    (defun sort ((T : Ord) xs) body)
+
+Monomorphization:
+    compile-time specialization
+
+================================================================================
+13. CLOSURES
+================================================================================
+
+Syntax:
+
+    (fn (x) body)
+
+Capture rules:
+- inferred
+- immutable or mutable capture via region inference
+- escaping closures allocated on Heap
+
+================================================================================
+14. MODULES
+================================================================================
+
+Declaration:
+
+    (module math)
+
+Import:
+
+    (use math { add })
+
+Visibility:
+    private by default
+    pub for exports
+
+================================================================================
+15. MACROS
+================================================================================
+
+Syntax:
+
+    (defmacro name (args...) body)
+
+Properties:
+- operate on AST
+- hygienic expansion
+- compile-time execution
+- must preserve safety invariants
+
+Pipeline:
+    parse → macro expand → typecheck
+
+================================================================================
+16. CONTRACT SYSTEM (OPTIONAL)
+================================================================================
+
+Contracts are optional overlays.
+
+--------------------------------------------------------------------------------
+16.1 Requires
+
+    (requires condition)
+
+Checked at function entry.
+
+--------------------------------------------------------------------------------
+16.2 Ensures
+
+    (ensures condition)
+
+Checked at function exit.
+
+result is bound return value.
+
+--------------------------------------------------------------------------------
+16.3 Invariant
+
+    (invariant condition)
+
+Checked at public mutation boundaries.
+
+--------------------------------------------------------------------------------
+16.4 Profiles
+
+strict | debug | warn | off | production
+
+Contracts do NOT affect:
+- ownership
+- regions
+- memory layout
+- concurrency
+
+================================================================================
+17. RECOVERY SYSTEM (OPTIONAL)
+================================================================================
+
+--------------------------------------------------------------------------------
+17.1 Recover
+
+    (recover ((ErrorType) expr) ...)
+
+Provides fallback execution paths.
+
+--------------------------------------------------------------------------------
+17.2 Checkpoint
+
+    (checkpoint expr)
+
+Creates scoped rollback boundary:
+
+Includes:
+- stack
+- local heap
+- capabilities
+
+Excludes:
+- external FFI side effects
+
+================================================================================
+18. CONCURRENCY MODEL
+================================================================================
+
+- No shared mutable state outside Global
+- Thread-safe via region system
+
+Rules:
+- Stack/Heap are thread-local
+- Global is ARC-safe shared memory
+
+Spawn:
+
+    (spawn fn)
+
+================================================================================
+19. ACTORS
+================================================================================
+
+Definition:
+- isolated threads
+- message-passing only
+
+Operations:
+
+    (send actor msg)
+    (receive actor)
+
+Messages:
+    immutable or moved values only
+
+================================================================================
+20. FFI SYSTEM
+================================================================================
+
+Call:
+
+    (ffi-call name args timeout)
+
+Pinned memory:
+
+    (ffi-pin expr)
+
+Rules:
+- only TCap-safe data may cross boundary
+- OS handles forbidden in Pin
+- contracts required for safety verification
+
+================================================================================
+21. ERROR MODEL
+================================================================================
+
+Compile-time:
+- type errors
+- ownership violations
+- trait mismatch
+- macro safety failure
+
+Runtime:
+- contract violation
+- FFI failure
+- out-of-bounds
+- actor crash
+
+Recovery:
+- optional via recover blocks
+- otherwise fatal
+
+================================================================================
+22. COMPILATION MODEL
+================================================================================
+
+Phases:
+
+1. Parse
+2. Macro expansion
+3. Type inference
+4. Trait resolution
+5. Ownership inference
+6. Region inference
+7. Monomorphization
+8. Contract injection
+9. Codegen
+10. Linking
+
+Deterministic build output guaranteed.
+
+================================================================================
+23. RUNTIME MODEL
+================================================================================
+
+State:
+
+- Stack
+- Heap
+- RcCycle store
+- Global ARC pool
+- Actor system
+
+Execution:
+- deterministic evaluation order
+- strict left-to-right
+
+================================================================================
+24. TOOLING
+================================================================================
+
+- LSP support
+- macro expansion inspection
+- region visualization
+- contract tracing
+- deterministic build hash
+
+REPL commands:
+    :state
+    :metrics
+    :macro
+    :verify
+
+================================================================================
+25. FORMAL GUARANTEES
+================================================================================
+
+CORE:
+- no data races in safe code
+- no use-after-free
+- deterministic destruction
+- region soundness
+- ownership soundness
+
+BUILD:
+- reproducible binaries
+- deterministic monomorphization
+
+FFI:
+- contract-verified external calls
+- no unsafe memory pinning
+
+CONTRACT SYSTEM:
+- optional
+- non-interfering with core semantics
+
+================================================================================
+END OF ZYL v2.1 REFERENCE
+================================================================================

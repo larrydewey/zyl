@@ -1,0 +1,77 @@
+; ============================================================================
+; Currying Test Suite — Zyl Language  
+; Tests curried function syntax and behavior using (fn (param) ...) syntax
+; ============================================================================
+
+; --- Helper definitions for testing ---
+(def inc (fn (x) (+ x 1)))
+(def double (fn (x) (* x 2)))
+
+; --- Basic lambda application ---
+((fn (x) x) 42)
+((fn (x) (+ x 1)) 4)
+
+; --- Two-level curried lambda using explicit fn nesting ---
+(((fn (a) (fn (b) (+ a b))) 3) 4)
+
+; --- Three-level curried lambda ---
+(((fn (a) (fn (b) (fn (c) (+ a (+ b c))))) 10) 20) 5
+
+; --- Curried function partially applied using defn ---
+(defn multiply (x y) (* x y))
+(multiply 3 4)
+
+; --- Curried addition builtin ---
+(((fn (a) (fn (b) (+ a b))) 7) 8)
+
+; --- Curried multiplication builtin ---
+(((fn (a) (fn (b) (* a b))) 4) 6)
+
+; --- Currying with let bindings ---
+(let ((x 5)) (+ x 10))
+
+; --- Recursive factorial using defn ---
+(defn fact (n) (if (<= n 1) 1 (* n (fact (- n 1)))))
+(fact 5)
+
+; --- Nested application of curried function ---
+(((fn (a) (fn (b) (+ a b))) 10) 20)
+
+; --- Curried string concatenation using list instead of + ---
+(defn str-concat (a b) (list a b))
+(str-concat "hello" "world")
+
+; --- Curried function returning unit ---
+((fn (_) (unit)) 42)
+
+; --- Curried float addition ---
+(((fn (a) (fn (b) (+ a b))) 1.14) 2.0)
+
+; --- Four-level currying using defn ---
+(defn add-four (w x y z) (+ w (+ x (+ y z))))
+(add-four 1 2 3 4)
+
+; --- Curried subtraction ---
+(((fn (a) (fn (b) (- a b))) 3) 8)
+
+; --- Curried division ---
+(((fn (a) (fn (b) (/ a b))) 10) 5)
+
+; --- Curried modulo ---
+(((fn (a) (fn (b) (% a b))) 7) 5)
+
+; --- Curried max using if ---
+(((fn (a) (fn (b) (if (> a b) a b))) 10) 5)
+
+; --- Curried min using if ---
+(((fn (a) (fn (b) (if (< a b) a b))) 3) 7)
+
+; --- Curried first element ---
+(first '((42 99)))
+
+; --- Curried transformation ---
+(((fn (f) (fn (x) (f x))) inc) 9)
+
+; --- Nested closure captures correctly using defn ---
+(defn outer (x) (fn () x))
+((outer 42))

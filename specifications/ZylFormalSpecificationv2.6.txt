@@ -1,0 +1,347 @@
+================================================================================
+ZYL v2.6 COMPILER CORRECTNESS + OBSERVABILITY SPECIFICATION
+"Deterministic Optimization • Bounded Reasoning • Fully Traceable Compilation"
+================================================================================
+
+PURPOSE
+This specification closes correctness, cache safety, convergence, and observability
+gaps in the Zyl v2.5 compiler acceleration model.
+
+It introduces:
+- canonical IR equivalence rules
+- fine-grained cache invalidation algebra
+- compiler resource governance
+- fixed-point convergence bounds
+- FFI isolation from compiler determinism
+- full observability/explainability model
+
+No runtime semantics are changed.
+
+================================================================================
+1. CANONICAL IR EQUIVALENCE MODEL (ICNF)
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 IR CANONICAL NORMAL FORM (ICNF)
+--------------------------------------------------------------------------------
+
+All IR structures MUST be transformed into ICNF before:
+
+- hashing
+- caching
+- memoization
+- fixed-point comparison
+
+ICNF rules:
+
+A. Commutativity Normalization
+    reorder all commutative operations:
+        +, *, AND, OR
+
+B. Alpha Normalization
+    rename all bindings to canonical symbols:
+        v0, v1, v2...
+
+C. SSA Renumbering Normalization
+    ensure deterministic SSA index assignment
+
+D. Expression Flattening
+    nested associative expressions are flattened:
+        (a + (b + c)) → (+ a b c)
+
+E. Dead Substructure Pruning
+    remove unreachable IR subgraphs before hashing
+
+Result:
+    structurally identical programs → identical IR hash
+
+Guarantee:
+    cache correctness becomes hash-equivalence correctness
+
+================================================================================
+2. MULTI-LAYER CACHE INVALIDATION ALGEBRA
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 INVALIDATION LAYERS
+--------------------------------------------------------------------------------
+
+Cache is partitioned into four independent layers:
+
+L0: STRUCTURAL IR CACHE
+L1: TYPE / EFFECT CACHE
+L2: REGION / ESCAPE CACHE
+L3: MONOMORPHIZATION CACHE
+
+Each layer invalidates independently.
+
+--------------------------------------------------------------------------------
+2.2 INVALIDATION RULES
+--------------------------------------------------------------------------------
+
+Let Δ denote change:
+
+IF Δ affects syntax only:
+    invalidate L0 only
+
+IF Δ affects type system:
+    invalidate L0 + L1
+
+IF Δ affects mutation/ownership/escape:
+    invalidate L0 + L1 + L2
+
+IF Δ affects generics or type instantiation:
+    invalidate L3 (and dependent downstream caches)
+
+--------------------------------------------------------------------------------
+2.3 DEPENDENCY SAFE REUSE RULE
+--------------------------------------------------------------------------------
+
+Cache reuse is valid iff:
+
+    All dependent layers remain unchanged
+AND
+    ICNF(IR_before) == ICNF(IR_after)
+
+Guarantee:
+    no stale cross-layer reuse is possible
+
+================================================================================
+3. COMPILER RESOURCE GOVERNANCE MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 CACHE MEMORY BUDGETS
+--------------------------------------------------------------------------------
+
+Compiler MUST enforce:
+
+    MaxIRCacheMemory
+    MaxEffectCacheMemory
+    MaxRegionCacheMemory
+    MaxMonomorphCacheMemory
+
+When exceeded:
+
+    Evict using deterministic policy:
+        Least-recently-used (LRU)
+        with dependency-aware protection
+
+--------------------------------------------------------------------------------
+3.2 EVICTION SAFETY RULE
+--------------------------------------------------------------------------------
+
+Never evict:
+- active fixed-point state
+- in-progress SCC region graphs
+- partially computed monomorphizations
+
+Rule:
+    eviction only applies to stable cached entries
+
+Guarantee:
+    no recomputation corruption or partial state loss
+
+================================================================================
+4. FIXED-POINT CONVERGENCE BOUNDS
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 PER-CLASS ITERATION LIMITS
+--------------------------------------------------------------------------------
+
+Each analysis class has a hard bound:
+
+DF (effect propagation):
+    max_iterations = 32
+
+RM (region inference):
+    max_iterations = 64
+
+ESCAPE ANALYSIS:
+    max_iterations = 64
+
+BO (boundary optimization):
+    max_iterations = 16
+
+--------------------------------------------------------------------------------
+4.2 NON-CONVERGENCE HANDLING
+--------------------------------------------------------------------------------
+
+If bound exceeded:
+
+    emit COMPILER_DIAGNOSTIC
+    fallback to conservative interpretation:
+        - disable speculative optimization
+        - preserve safety but reduce performance
+
+Guarantee:
+    compilation always terminates
+
+================================================================================
+5. COMPILER VERSION + CONFIG FINGERPRINTING
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 CACHE KEY EXTENSION
+--------------------------------------------------------------------------------
+
+All caches MUST include:
+
+    CompilerVersionHash
+    OptimizationProfileHash
+    FeatureFlagHash
+    PassConfigurationHash
+
+--------------------------------------------------------------------------------
+5.2 INVALIDATION RULE
+--------------------------------------------------------------------------------
+
+Any mismatch:
+    → full cache invalidation of affected layer
+
+Guarantee:
+    no cross-version cache poisoning
+
+================================================================================
+6. IMMUTABLE PASS EXECUTION MODEL (PS SAFETY FIX)
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 IMMUTABLE SNAPSHOT RULE
+--------------------------------------------------------------------------------
+
+All PS passes operate ONLY on:
+
+    immutable IR snapshots
+
+Rule:
+    no in-place mutation during PS execution
+
+--------------------------------------------------------------------------------
+6.2 DETERMINISTIC MERGE RULE
+--------------------------------------------------------------------------------
+
+Parallel PS outputs are merged using:
+
+    canonical reduction order defined by ICNF
+
+Guarantee:
+    identical results regardless of thread scheduling
+
+================================================================================
+7. FFI ISOLATION FROM COMPILER DETERMINISM
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 FFI EXCLUSION RULE
+--------------------------------------------------------------------------------
+
+FFI results MUST NOT participate in:
+
+- cache key generation
+- ICNF normalization
+- fixed-point state reuse
+- cross-compilation memoization
+
+--------------------------------------------------------------------------------
+7.2 FFI SAFETY BOUNDARY
+--------------------------------------------------------------------------------
+
+FFI is treated as:
+
+    non-deterministic external oracle
+
+Only allowed influence:
+    type-checking and effect labeling
+
+Never allowed influence:
+    structural caching decisions
+
+Guarantee:
+    external nondeterminism cannot poison compiler correctness
+
+================================================================================
+8. OBSERVABILITY + EXPLAINABILITY SYSTEM
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 OPTIMIZATION TRACE LOG
+--------------------------------------------------------------------------------
+
+Compiler MUST produce optional trace:
+
+    OptimizationTrace {
+        pass_name
+        input_IR_hash
+        output_IR_hash
+        cache_hit/miss
+        reason_for_application
+    }
+
+--------------------------------------------------------------------------------
+8.2 CACHE REASON EXPLANATION
+--------------------------------------------------------------------------------
+
+Every cache hit MUST be explainable via:
+
+- ICNF equality proof
+- dependency graph verification
+- invalidation layer check
+
+--------------------------------------------------------------------------------
+8.3 DEBUG RECONSTRUCTION GUARANTEE
+--------------------------------------------------------------------------------
+
+Given:
+    IR output + trace log
+
+It must be possible to reconstruct:
+
+    full optimization decision path
+
+Guarantee:
+    no “opaque optimization state”
+
+================================================================================
+9. GLOBAL COMPILER CORRECTNESS THEOREM
+================================================================================
+
+For all valid programs P:
+
+Compilation(P) satisfies:
+
+1. Determinism:
+    Compilation(P, config A) == Compilation(P, config A)
+
+2. Cache Soundness:
+    cached result == recomputed result under same ICNF state
+
+3. Termination:
+    compilation always completes under bounded iteration rules
+
+4. Semantic Preservation:
+    optimization does not alter runtime semantics
+
+5. Isolation:
+    FFI nondeterminism cannot influence compiler outputs
+
+================================================================================
+10. PERFORMANCE IMPACT SUMMARY
+================================================================================
+
+Expected effects after v2.6:
+
+- compile-time significantly more stable across builds
+- incremental compilation becomes dominant mode
+- cache hit reliability increases substantially
+- worst-case compile-time bounded by iteration limits
+- debugging becomes fully traceable
+
+Tradeoff:
+    Slight increase in cache bookkeeping overhead
+    (offset by large reduction in recomputation)
+
+================================================================================
+END OF ZYL v2.6 COMPILER CORRECTNESS + OBSERVABILITY SPECIFICATION
+================================================================================

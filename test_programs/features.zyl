@@ -1,0 +1,91 @@
+; Lithp feature test program
+; Tests closures, while, for, cond, match, and more
+
+; --- Closures (§7) ---
+(def add5 (fn (x) (+ x 5)))
+(print "Closure test:" (add5 10))
+
+; Higher-order function using closure
+(def apply-twice ((f) (fn (x) (f (f x)))))
+(def double (fn (x) (* x 2)))
+(print "Higher-order:" ((apply-twice double) 5))
+
+; --- While loop (§12.5) ---
+(def counter 0)
+(while (< counter 3)
+  (begin
+    (def counter (+ counter 1))
+    (print "While iteration:" counter)))
+
+; --- Cond (§12.7) ---
+(def classify (fn (n)
+  (cond
+    ((< n 0) "negative")
+    ((== n 0) "zero")
+    ((> n 0) "positive"))))
+(print "Cond test:" (classify -5) (classify 0) (classify 42))
+
+; --- Begin (§12.8) ---
+(print "Begin test:" (begin (print "first") (print "second") 42))
+
+; --- Assert ---
+(assert (> 10 5) "10 should be greater than 5")
+(print "Assert passed")
+
+; --- Type predicates ---
+(print "Type checks:" (int? 42) (float? 3.14) (bool? true) (string? "hello"))
+
+; --- String operations ---
+(print "String len:" (len "hello world"))
+
+; --- Unit ---
+(print "Unit:" (unit))
+
+; --- Recovery (§23) ---
+(def safe-divide (fn (a b)
+  (recover
+    ((division-by-zero) 0)
+    (/ a b))))
+(print "Recovery test:" (safe-divide 10 2) (safe-divide 10 0))
+
+; --- Contracts (§23) ---
+(def bounded-add (fn (a b)
+  (requires (> a 0))
+  (requires (> b 0))
+  (+ a b)))
+(print "Contract test:" (bounded-add 3 4))
+
+; --- For loop (§12.6) ---
+(for ch "abc"
+  (print "For char:" ch))
+
+; --- Match with ADT-like values (§8) ---
+(def describe (fn (x)
+  (match x
+    (0 "zero")
+    (1 "one")
+    (_ "other"))))
+(print "Match test:" (describe 0) (describe 1) (describe 5))
+
+; --- Nested let ---
+(print "Nested let:" 
+  (let (x 10)
+    (let (y 20)
+      (+ x y))))
+
+; --- Function composition ---
+(def compose ((f) (fn (g) 
+  (fn (x) (f (g x))))))
+(def inc (fn (x) (+ x 1)))
+(def sq (fn (x) (* x x)))
+(print "Compose:" ((compose sq) inc 5))
+
+; --- Recursion ---
+(def factorial (fn (n)
+  (if (<= n 1)
+    1
+    (* n (factorial (- n 1))))))
+(print "Factorial 6:" (factorial 6))
+
+; --- Print multiple args ---
+(print "Multi-arg print:" 1 "two" 3.0 true)

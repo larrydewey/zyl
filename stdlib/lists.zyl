@@ -1,0 +1,85 @@
+; ============================================================================
+; Standard Library — List Operations (§20.2)
+; Lists are represented as Value::Tuple in Lithp
+; Builtins: first, rest, nth, length, cons, append, list
+; ============================================================================
+
+; --- reverse: reverse a list using accumulator ---
+(defn reverse ((lst)
+  (let ((reverse-acc (fn ((lst) (fn ((acc)
+    (if (== lst '())
+      acc
+      (reverse-acc (rest lst) (cons (first lst) acc)))))))
+    (reverse-acc lst '()))))
+
+; --- append: concatenate two lists ---
+(defn append ((a) (fn (b)
+  (if (== a '())
+    b
+    (cons (first a) (append (rest a) b))))))
+
+; --- nth: get element at index ---
+(defn nth ((lst) (fn (i)
+  (if (== i 0)
+    (first lst)
+    (nth (rest lst) (- i 1))))))
+
+; --- map: apply function to each element ---
+(defn map ((f) (fn (lst)
+  (if (== lst '())
+    '()
+    (cons (f (first lst)) (map f (rest lst)))))))
+
+; --- filter: keep elements where predicate is true ---
+(defn filter ((pred) (fn (lst)
+  (if (== lst '())
+    '()
+    (if (pred (first lst))
+      (cons (first lst) (filter pred (rest lst)))
+      (filter pred (rest lst)))))))
+
+; --- fold-left: left fold / reduce ---
+(defn fold-left ((f) (fn (acc) (fn (lst)
+  (if (== lst '())
+    acc
+    (fold-left f (f acc (first lst)) (rest lst))))))
+
+; --- all?: check if all elements satisfy predicate ---
+(defn all? ((pred) (fn (lst)
+  (if (== lst '())
+    true
+    (and (pred (first lst)) (all? pred (rest lst)))))))
+
+; --- any?: check if any element satisfies predicate ---
+(defn any? ((pred) (fn (lst)
+  (if (== lst '())
+    false
+    (or (pred (first lst)) (any? pred (rest lst)))))))
+
+; --- find: find first element matching predicate ---
+(defn find ((pred) (fn (lst)
+  (if (== lst '())
+    (unit)
+    (if (pred (first lst))
+      (first lst)
+      (find pred (rest lst)))))))
+
+; --- zip: pair elements from two lists ---
+(defn zip ((a) (fn (b)
+  (if (or (== a '()) (== b '()))
+    '()
+    (cons (list (first a) (first b)) (zip (rest a) (rest b)))))))
+
+; --- curry: partial application for n-ary functions ---
+; Note: requires variadic function support
+; For now, implemented as a builtin helper
+(defn curry ((f) (fn (args)
+  (if (== (length args) 0)
+    f
+    (let ((partial-apply (fn ((fn-val) (fn (more-args)
+      (if (== (length more-args) 0)
+        fn-val
+        (let ((combined (append args more-args)))
+          ; This is a simplified curry — full implementation needs variadic calls
+          fn-val))))))
+      partial-apply)))))

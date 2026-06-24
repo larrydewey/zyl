@@ -1,0 +1,292 @@
+================================================================================
+ZYL FORMAL SPECIFICATION (v1.5) - PRODUCTION READY
+"Zero-GC, Pure Lisp, Deterministic Builds, Parallel-Safe FFI"
+================================================================================
+
+TABLE OF CONTENTS
+1. Core Philosophy & Design Goals
+2. Lexical Syntax (User View)
+3. Internal Type System & Region Inference
+4. Operational Semantics: Aliasing, Ownership, & Stack Migration
+5. The Escape Analysis & Monomorphization Algorithm (Canonicalized)
+6. Concurrency & FFI Safety (Parallel-Safe)
+7. Safety Contracts & Self-Healing
+8. Tooling, Debugging & Auditing
+9. Standard Library & Prelude (RAII + FFI Safety)
+10. Compilation Pipeline (Deterministic & Parallel-Safe)
+11. Error Handling & Recovery
+12. Runtime Safety & Fallback Mechanisms
+
+================================================================================
+1. CORE PHILOSOPHY & DESIGN GOALS
+================================================================================
+   - Syntax: Pure Lisp. No 'box', 'arena', 'weak', 'rc', or lifetime annotations.
+   - Memory: Implicit Region Inference (Stack, Heap, Circular, Global, Pin).
+   - Concurrency: Global Region (ARC). Local Region (Stack). No `share` for Local.
+   - Parallel Safety: FFI Pin only allows Memory-Only types (no OS handles).
+   - Generics: Monomorphization with Alphabetical Canonical Ordering.
+   - Determinism: Reproducible builds (Hash-verified) regardless of file order.
+   - Safety: Zero GC, Deterministic destruction, Stack Guard, FFI Timeout.
+
+================================================================================
+2. LEXICAL SYNTAX (User View)
+================================================================================
+   <Expr> ::= <Atom>
+            | (<Operator> <Expr>*)
+            | (let (<Var> <Expr>) <Body>)
+            | (let-mut (<Var> <Expr>) <Body>)
+            | (defn <Name> (<Args>*) <Body>)
+            | (def <Name> <Expr>)
+            | (assert <Condition> <Msg>)
+            | (try <Expr> (catch <Var> <Handler>))
+            | (ffi-call <Fn> <Args> <Timeout>)
+            | (impl <Trait> <Type> <Body>)
+            | (ffi-pin <Expr>)
+
+   -- Evaluation: Strictly Left-to-Right.
+   -- FFI Pin: Only allowed on types that implement FFI_Pinnable.
+
+================================================================================
+3. INTERNAL TYPE SYSTEM & REGION INFERENCE
+================================================================================
+   <Type> ::= <BaseType>
+            | TCap <Type> : r    -- Immutable (Shareable)
+            | TMut <Type> : r    -- Mutable (Exclusive Owner)
+            | TAtomic <Type> : r
+            | TActor <ID> : r
+            | TFun [Type] Type : r
+            | TBox <Type>        -- Dynamic Dispatch
+            | TPin <Type>        -- Pinned for FFI (Immutable)
+
+   <Region> ::= Stack | Heap | Circular | Global | Pin
+
+   -- FFI Pin Safety Constraint:
+   -- Only types with NO OS HANDLES (Mutex, File, Socket) can be TPin.
+   -- Attempting to pin a Mutex/Socket/File -> Compile Error.
+
+================================================================================
+4. OPERATIONAL SEMANTICS: ALIASING & STACK MIGRATION
+================================================================================
+
+   A. Single Mutable Owner Invariant
+      - A memory location can have N immutable references or 1 mutable reference.
+      - Mutable alias conflict = Compile Error.
+
+   B. Stack-to-Heap Migration Protocol (v1.5 Critical Fix)
+      - Trigger: Stack Guard Page hit (Stack Pointer enters Guard Region).
+      - Action:
+        1. Save Current SP to **Thread-Local Global Register** `RSP_MIGRATION_PTR`.
+           (This prevents recursive migrations from overwriting the return path).
+        2. Allocate Heap Block for current frame + local variables.
+        3. Call `Drop` for any partial objects on the old Stack (if migration is partial).
+        4. Copy valid state to Heap.
+        5. Update Local SP to point to Heap block.
+        6. Continue execution.
+      - Return Path:
+        - On function exit, restore SP from `RSP_MIGRATION_PTR` if migration occurred.
+        - If original stack was intact, use original SP.
+      - Guarantee: Recursive stack overflows never overwrite the return address.
+
+================================================================================
+5. THE ESCAPE ANALYSIS & MONOMORPHIZATION ALGORITHM (Canonicalized)
+================================================================================
+
+   Pass 1: Monomorphization & Canonical Ordering (Determinism Fix)
+      - For each generic function call site:
+        1. Capture concrete types: `Type1, Type2...`
+        2. Sort types alphabetically (e.g., `Int`, `Vec`).
+        3. Generate specialized function name: `FunctionName_Type1_Type2...`
+           (e.g., `process_Int_Vec`).
+        4. Generate specialized code.
+      - **Result:** Identical binary regardless of file compilation order.
+
+   Pass 2: Region Inference (Flow-Sensitive)
+      - Compute Reachability Set R(v) for all variables.
+      - Apply Aliasing Checks (Single Mutable Owner).
+      - Assign Regions (Stack vs Heap vs Circular vs Global).
+
+   Pass 3: FFI Pin Safety Check (Critical Fix)
+      - For every `ffi-pin <Expr>`:
+        1. Check if inferred type implements `FFI_Pinnable` trait.
+        2. Verify type has NO OS HANDLES (Mutex, File, Socket, Thread).
+        3. If not, REJECT with compile error:
+           "Cannot pin type <Type>: OS handles cannot be safely exposed to C."
+      - Guarantee: C code cannot corrupt Zyl memory or cause deadlocks.
+
+   Pass 4: Deterministic Build Hash
+      - Compute hash of all monomorphized functions using canonical names.
+      - Hash must be IDENTICAL across all build orders.
+      - Binary must be REPRODUCIBLE.
+
+================================================================================
+6. CONCURRENCY & FFI SAFETY (Parallel-Safe)
+================================================================================
+
+   A. Global Region (ARC)
+      - All Global objects use Atomic Reference Counting (ARC).
+      - No `share` allowed on Local Region (Stack, Heap, Circular).
+      - ARC ensures safe parallel access without locks.
+
+   B. FFI Pin Safety (v1.5 Fix)
+      - Only types that are **Memory-Only** (no OS handles) can be pinned.
+      - Types with OS HANDLES (Mutex, File, Socket) CANNOT be pinned.
+      - Compiler rejects `ffi-pin` on Mutex/Socket/File with error.
+      - C cannot corrupt Pin memory because Pin is immutable to C.
+
+   C. FFI Timeout
+      - All `ffi-call` operations have a configurable timeout.
+      - Timeout exceeded -> Terminate FFI call and report error.
+      - Prevents infinite blocking in C/Rust.
+
+================================================================================
+7. SAFETY CONTRACTS & SELF-HEALING
+================================================================================
+
+   A. Stack Guard
+      - Stack has guard page. Accessing guard page -> Migration to Heap.
+      - Migration saves SP to Thread-Local `RSP_MIGRATION_PTR`.
+      - Guarantee: Recursive migrations do not overwrite return path.
+
+   B. Escape Analysis
+      - If a variable escapes (used after function exit), it moves to Heap/Circular.
+      - If a variable is Local but escapes, compiler error.
+      - No implicit memory leaks.
+
+   C. FFI Safety
+      - FFI Pin only allows Memory-Only types.
+      - Compiler checks `FFI_Pinnable` trait before pinning.
+      - C cannot corrupt Pin memory because Pin is immutable to C.
+
+================================================================================
+8. TOOLING, DEBUGGING & AUDITING
+================================================================================
+
+   A. Deterministic Build Hash
+      - All monomorphized functions have canonical names.
+      - Build hash is IDENTICAL across architectures and build orders.
+      - Enables reproducible builds.
+
+   B. Debugging
+      - Source maps for every compiled function.
+      - Backtraces show original Lisp source locations.
+      - Region info shows where variables are allocated.
+
+   C. Auditing
+      - Compiler emits detailed error messages.
+      - FFI Pin violations are caught at compile time.
+      - Stack migration errors are caught at runtime.
+
+================================================================================
+9. STANDARD LIBRARY & PRELUDE (RAII + FFI SAFETY)
+================================================================================
+
+   A. RAII (Resource Acquisition Is Initialization)
+      - `File` type implements `Drop`.
+      - `Socket` type implements `Drop`.
+      - `Mutex` type implements `Drop`.
+      - All resources are automatically released when out of scope.
+
+   B. FFI Safety
+      - `FFI_Pinnable` trait for Memory-Only types (Int, Float, Vec, String, etc.).
+      - `ffi-pin` only accepts `FFI_Pinnable` types.
+      - `ffi-call` has timeout parameter.
+      - FFI errors are caught and reported.
+
+   C. Core Types
+      - Int, Float, Bool, String, Vec, List, Map.
+      - All core types are `FFI_Pinnable`.
+
+================================================================================
+10. COMPILATION PIPELINE (DETERMINISTIC & PARALLEL-SAFE)
+================================================================================
+
+   A. Phase 1: Parse & Type Check
+      - Parse Lisp code into AST.
+      - Infer types.
+      - Check type safety.
+
+   B. Phase 2: Monomorphization & Canonical Ordering
+      - Generate specialized function names (Alphabetical Sort).
+      - Ensure deterministic naming.
+
+   C. Phase 3: Region Inference & Escape Analysis
+      - Compute reachability sets.
+      - Assign regions (Stack, Heap, etc.).
+      - Check for escaping variables.
+
+   D. Phase 4: FFI Pin Safety Check
+      - Verify `FFI_Pinnable` trait for all pinned objects.
+      - Reject OS handles (Mutex, File, Socket).
+
+   E. Phase 5: Code Generation
+      - Generate C/LLVM code.
+      - Embed Stack Guard logic.
+      - Embed ARC logic.
+
+   F. Phase 6: Linking & Hashing
+      - Link all object files.
+      - Compute build hash.
+      - Output binary.
+
+================================================================================
+11. ERROR HANDLING & RECOVERY
+================================================================================
+
+   A. Compile Time Errors
+      - Mutable alias conflict.
+      - FFI Pin violation (OS handle).
+      - Region escape violation.
+      - Generic ordering inconsistency.
+
+   B. Runtime Errors
+      - Stack Overflow (Handled via Migration).
+      - FFI Timeout.
+      - ARC Reference Count Underflow.
+      - Invalid Cast.
+
+   C. Recovery
+      - Stack Migration: Continue execution with Heap frame.
+      - FFI Timeout: Terminate call, return error code.
+      - ARC Error: Abort with diagnostic.
+
+================================================================================
+12. RUNTIME SAFETY & FALLBACK MECHANISMS
+================================================================================
+
+   A. Stack Guard
+      - Guard page at end of stack.
+      - Access triggers signal -> Migration to Heap.
+      - Thread-Local `RSP_MIGRATION_PTR` ensures correctness.
+
+   B. FFI Timeout
+      - All FFI calls have timeout.
+      - Timeout -> Kill thread, return error.
+      - Prevents deadlocks.
+
+   C. ARC Safety
+      - Atomic operations for reference counting.
+      - No races in Global Region.
+      - Deterministic destruction.
+
+================================================================================
+13. FORMAL GUARANTEES & INVARIANTS
+================================================================================
+
+   A. Determinism
+      - Binary hash is identical for same source code.
+      - Monomorphization order is alphabetical.
+
+   B. Safety
+      - No GC pauses.
+      - No memory leaks.
+      - No data races in Global Region.
+      - No OS handle corruption in FFI.
+
+   C. Correctness
+      - Stack Migration preserves return path.
+      - FFI Pin preserves immutability.
+      - ARC preserves reference counts.
+
+================================================================================
+END OF SPECIFICATION (v1.5)
+================================================================================

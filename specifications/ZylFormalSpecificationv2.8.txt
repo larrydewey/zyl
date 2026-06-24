@@ -1,0 +1,366 @@
+================================================================================
+ZYL v2.8 COMPLETE COMPILER THEORY SPECIFICATION
+"Deterministic • Distributed • Reproducible • Adversarially Safe"
+================================================================================
+
+PURPOSE
+This specification closes the remaining system-level gaps in Zyl’s compiler
+model, including:
+
+- distributed build determinism
+- cache trust & integrity
+- long-term version evolution
+- optimization fairness
+- compiler adversarial security model
+- energy/resource governance
+- optimization semantic versioning
+- compiler intent model
+
+No runtime language semantics are changed.
+
+This defines:
+    "A compiler that remains correct, reproducible, and safe across time,
+     machines, and adversarial inputs."
+
+================================================================================
+1. DISTRIBUTED BUILD DETERMINISM MODEL (DBDM)
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 DISTRIBUTED COMPILATION PRINCIPLE
+--------------------------------------------------------------------------------
+
+Compilation is defined as:
+
+    Deterministic function:
+        Source + Config + TrustedCache → Binary
+
+This function MUST be invariant across machines.
+
+--------------------------------------------------------------------------------
+1.2 DISTRIBUTED CACHE MODEL
+--------------------------------------------------------------------------------
+
+Caches are partitioned into:
+
+- Local Cache (L)
+- Remote Cache (R)
+- Signed Artifact Cache (SAC)
+
+Rule:
+
+    R entries are usable ONLY if signature-valid under SAC trust root
+
+--------------------------------------------------------------------------------
+1.3 ARTIFACT MERGING RULE
+--------------------------------------------------------------------------------
+
+If multiple cache sources exist:
+
+    prefer highest trust level:
+        SAC > Local > Remote
+
+Tie-breaker:
+    ICNF deterministic hash ordering
+
+Guarantee:
+    identical builds across machines
+
+================================================================================
+2. CACHE TRUST & INTEGRITY MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 TRUST ROOT MODEL
+--------------------------------------------------------------------------------
+
+All cached artifacts MUST be signed:
+
+    Signature = Sign(ICNF_hash + CompilerVersion + ProfileHash)
+
+Trusted keys:
+
+- compiler authority key
+- CI pipeline key
+- optionally user-local keychain
+
+--------------------------------------------------------------------------------
+2.2 CACHE POISONING RESISTANCE
+--------------------------------------------------------------------------------
+
+A cache entry is INVALID if:
+
+- signature mismatch
+- ICNF mismatch
+- version mismatch
+- dependency graph mismatch
+
+Rule:
+    invalid cache entries are never partially trusted
+
+--------------------------------------------------------------------------------
+2.3 ATTACK MODEL
+--------------------------------------------------------------------------------
+
+Compiler assumes adversary may:
+- inject malicious cache entries
+- craft pathological IR graphs
+- attempt cache collision attacks
+
+Mitigation:
+    cryptographic + structural verification required for all reuse
+
+================================================================================
+3. LONG-TERM EVOLUTION & VERSION MIGRATION MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 ICNF VERSION LAYERS
+--------------------------------------------------------------------------------
+
+Each compiler version defines:
+
+    ICNF_vN
+
+Backward compatibility is defined via:
+
+    ICNF_projection_map(vN → vN+1)
+
+--------------------------------------------------------------------------------
+3.2 CACHE MIGRATION RULE
+--------------------------------------------------------------------------------
+
+Old caches are reusable ONLY if:
+
+    can_transform(ICNF_old → ICNF_new) == lossless
+
+Otherwise:
+    forced recomputation
+
+--------------------------------------------------------------------------------
+3.3 DEPRECATION SAFETY RULE
+--------------------------------------------------------------------------------
+
+No silent semantic drift allowed across versions.
+
+All breaking changes MUST:
+- invalidate dependent caches
+- trigger explicit rebuild path
+
+================================================================================
+4. OPTIMIZATION FAIRNESS MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 FAIRNESS CONSTRAINT
+--------------------------------------------------------------------------------
+
+Every reachable code region MUST eventually receive:
+
+- DF analysis
+- RM analysis
+- escape analysis
+
+within bounded compilation cycles.
+
+--------------------------------------------------------------------------------
+4.2 STARVATION PREVENTION RULE
+--------------------------------------------------------------------------------
+
+No module may be permanently deferred due to:
+- cache dominance
+- FAST profile bias
+- incremental build heuristics
+
+Rule:
+    periodic full-analysis refresh required per module age threshold
+
+Guarantee:
+    no infinite “never fully analyzed” code paths
+
+================================================================================
+5. COMPILER SECURITY MODEL (ADVERSARIAL IR)
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 THREAT MODEL
+--------------------------------------------------------------------------------
+
+Compiler assumes adversary may provide:
+
+- exponential CFG graphs
+- recursive macro expansion traps
+- cache flooding inputs
+- type explosion generics
+
+--------------------------------------------------------------------------------
+5.2 RESOURCE BOUND ENFORCEMENT
+--------------------------------------------------------------------------------
+
+All analysis stages MUST enforce:
+
+- max graph size per SCC
+- max recursion depth
+- max type expansion depth
+- max macro expansion steps
+
+Violation:
+    abort with deterministic error
+
+--------------------------------------------------------------------------------
+5.3 DENIAL-OF-SERVICE RESISTANCE
+--------------------------------------------------------------------------------
+
+Compiler guarantees:
+
+- bounded fixed-point iterations (already v2.6)
+- bounded type expansion
+- bounded macro execution
+- bounded dependency traversal
+
+================================================================================
+6. COMPILER RESOURCE + ENERGY MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 RESOURCE METRICS
+--------------------------------------------------------------------------------
+
+Compiler tracks:
+
+- CPU time
+- memory usage
+- cache pressure
+- energy estimate (abstract unit)
+
+--------------------------------------------------------------------------------
+6.2 BUDGET ENFORCEMENT
+--------------------------------------------------------------------------------
+
+Each build profile includes:
+
+    ResourceBudget {
+        cpu_limit
+        memory_limit
+        cache_limit
+        energy_limit
+    }
+
+If exceeded:
+
+    downgrade optimization aggressiveness
+    preserve correctness guarantees
+
+================================================================================
+7. OPTIMIZATION SEMANTIC VERSIONING MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 OPTIMIZATION IDENTITY REVISION
+--------------------------------------------------------------------------------
+
+Each optimization decision is tagged:
+
+    OptVersionID = hash(pass_version + ICNF_rules + profile)
+
+--------------------------------------------------------------------------------
+7.2 CHANGE CLASSIFICATION
+--------------------------------------------------------------------------------
+
+Changes are classified as:
+
+- SEMANTIC SAFE (no behavior change)
+- PERFORMANCE ONLY (allowed variance)
+- RECOMPUTATION REQUIRED (cache invalidation)
+- STRUCTURAL BREAKING (ICNF change)
+
+--------------------------------------------------------------------------------
+7.3 CI STABILITY RULE
+--------------------------------------------------------------------------------
+
+Only SEMANTIC SAFE changes:
+    do NOT invalidate identity equivalence
+
+================================================================================
+8. COMPILER INTENT MODEL
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 INTENT AXIOMS
+--------------------------------------------------------------------------------
+
+Compiler assumes:
+
+A1. Correctness is absolute:
+    no optimization may change program meaning
+
+A2. Performance is optional:
+    compiler may trade compile-time for runtime performance
+
+A3. Determinism is mandatory:
+    same inputs must produce same outputs
+
+A4. Observability is required:
+    all transformations must be explainable
+
+--------------------------------------------------------------------------------
+8.2 INTENT OVERRIDE RULE
+--------------------------------------------------------------------------------
+
+No optimization may violate:
+
+    ICNF correctness OR effect safety OR region safety
+
+Even under FAST profile.
+
+================================================================================
+9. GLOBAL REPRODUCIBILITY THEOREM (STRONG FORM)
+================================================================================
+
+For any program P and configuration C:
+
+    Compile(P, C) is a deterministic function satisfying:
+
+1. Cross-machine equivalence:
+    same output on all valid architectures
+
+2. Cross-time equivalence:
+    same compiler version + config → same binary
+
+3. Cross-cache equivalence:
+    cached or fresh computation → identical ICNF result
+
+4. Cross-distribution equivalence:
+    distributed builds → identical final artifact
+
+================================================================================
+10. FINAL SYSTEM GUARANTEES (COMPLETE SET)
+================================================================================
+
+Zyl compiler guarantees:
+
+1. Deterministic builds (single-machine + distributed)
+2. Cache soundness (no poisoning, no drift)
+3. Bounded compilation (all analyses terminate)
+4. Adversarial robustness (safe under malicious inputs)
+5. Cross-version migration safety (explicit, lossless only)
+6. Resource boundedness (CPU/memory/energy limits)
+7. Optimization fairness (no starvation of modules)
+8. Full observability (every decision explainable)
+9. Identity stability (trace-level reproducibility)
+10. FFI isolation (external nondeterminism cannot leak in)
+
+================================================================================
+11. NON-GOALS (FINAL CLARIFICATION)
+================================================================================
+
+Zyl compiler DOES NOT attempt:
+
+- perfect global optimization (NP-hard limit acknowledged)
+- hardware-specific optimality guarantees
+- elimination of all performance variance
+- speculative correctness beyond bounded rules
+
+================================================================================
+END OF ZYL v2.8 COMPLETE COMPILER THEORY SPECIFICATION
+================================================================================

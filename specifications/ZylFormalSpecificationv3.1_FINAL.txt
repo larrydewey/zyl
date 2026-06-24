@@ -1,0 +1,485 @@
+================================================================================
+ZYL FORMAL SPECIFICATION (v3.1-FINAL — CLOSED SYSTEM)
+"A Deterministic Lisp Systems Language with Region Inference, SSA IR, Actor
+Concurrency, and Capability-Based Safety"
+
+This document is the complete, authoritative specification for Zyl.
+It defines syntax, semantics, type system, memory model, concurrency model,
+FFI rules, compilation pipeline, IR, macro system, and determinism contract.
+
+No additional documents are required for implementation.
+
+================================================================================
+0. CORE DESIGN PRINCIPLES
+================================================================================
+
+P1. Determinism
+    Same source program + same inputs → identical observable outputs.
+
+P2. Safety
+    No undefined behavior exists in the language.
+
+P3. Explicit Effects
+    All effects are statically trackable (mutation, IO, FFI, concurrency).
+
+P4. Region-Based Memory
+    Memory is assigned via static region inference (no manual allocation).
+
+P5. Strict Evaluation
+    Evaluation order is deterministic and left-to-right.
+
+P6. Phase Isolation
+    Compilation phases are strictly ordered and non-circular.
+
+================================================================================
+1. LEXICAL STRUCTURE
+================================================================================
+
+Source encoding:
+    UTF-8
+
+Tokens:
+    IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN
+    "(" | ")" | SYMBOL | KEYWORD
+
+Keywords:
+    def, defn, let, let-mut, if, try, catch, spawn, send,
+    ffi-call, ffi-pin, assert
+
+Comments:
+    ; line comment
+
+Whitespace:
+    token separator only
+
+================================================================================
+2. ABSTRACT SYNTAX (AST)
+================================================================================
+
+Expr :=
+    Atom
+  | (Op Expr*)
+  | (def Name Expr)
+  | (defn Name (Params*) Body)
+  | (let (Name Expr) Body)
+  | (let-mut (Name Expr) Body)
+  | (if Expr Expr Expr)
+  | (try Expr (catch Name Expr))
+  | (spawn Expr)
+  | (send Expr Expr)
+  | (ffi-call String Expr* Integer)
+  | (ffi-pin Expr)
+  | (assert Expr String)
+
+Atom :=
+    Integer | Float | Boolean | String | Identifier
+
+================================================================================
+3. VALUE MODEL
+================================================================================
+
+Value V :=
+    Int64 | Float64 | Bool | String
+  | Tuple(V*)
+  | Closure(Environment, Expr)
+  | ActorRef(ID)
+  | Address(Region, ID)
+  | Unit
+
+All values are immutable unless capability TMut is applied.
+
+================================================================================
+4. TYPE SYSTEM
+================================================================================
+
+Primitive Types:
+    Int | Float | Bool | String | Unit
+
+Capability Types:
+    TCap<T>     immutable shared
+    TMut<T>     exclusive mutable
+    TAtomic<T>  atomic shared mutation
+    TBox<T>     heap-managed allocation
+    TPin<T>     FFI-pinned memory (no OS handles allowed)
+
+Function Types:
+    TFun([T*], TReturn)
+
+Inference:
+    Hindley-Milner-like inference with region + capability constraints.
+
+================================================================================
+5. REGION SYSTEM
+================================================================================
+
+Regions:
+    Stack | Heap | Global | Circular | Pin
+
+Region map:
+    Var → Region
+
+================================================================================
+5.1 REGION RULES
+================================================================================
+
+R1. Local stack allocation:
+    if variable does not escape → Stack
+
+R2. Escape allocation:
+    if returned or captured → Heap
+
+R3. Actor transfer:
+    spawn/send requires Send-capable type
+
+R4. FFI rule:
+    ffi-call requires Pin region AND FFI_Pinnable type
+
+================================================================================
+6. ALIASING & MUTABILITY
+================================================================================
+
+Invariant:
+
+    For any memory location:
+        either exactly one TMut reference
+        OR any number of TCap references
+
+Violation:
+    E_MUT_CONFLICT (compile-time error)
+
+================================================================================
+7. EVALUATION SEMANTICS (BIG-STEP)
+================================================================================
+
+Judgment:
+
+    ⟨E, Σ⟩ → ⟨V, Σ'⟩
+
+State:
+
+    Σ = ⟨H, S, R, A, F, M⟩
+
+    H = Heap
+    S = Stack
+    R = Region table
+    A = Actor system
+    F = FFI subsystem
+    M = Metrics
+
+Evaluation order:
+    STRICT LEFT-TO-RIGHT
+
+Function application:
+    evaluate function then arguments sequentially
+
+================================================================================
+8. CONTROL FLOW
+================================================================================
+
+if:
+    evaluate condition → branch selection
+
+try/catch:
+    on failure:
+        restore last checkpoint state if exists
+        else propagate error
+
+assert:
+    false condition → E_ASSERT_FAIL
+
+================================================================================
+9. MEMORY MODEL
+================================================================================
+
+Stack:
+    automatic scope-based allocation
+
+Heap:
+    used for escaped values
+
+Circular:
+    used for detected cyclic structures
+
+Pin:
+    used exclusively for FFI-safe memory exposure
+
+================================================================================
+10. STACK MIGRATION
+================================================================================
+
+Trigger:
+    stack pointer enters guard region
+
+Mechanism:
+    allocate heap frame
+    copy stack frame state
+    redirect references
+    store return pointer in RSP_MIGRATION_PTR
+
+Guarantee:
+    execution continues safely
+    return path preserved exactly once
+
+================================================================================
+11. CONCURRENCY MODEL (ACTORS)
+================================================================================
+
+Actor:
+    private state + FIFO mailbox
+
+Operations:
+    spawn, send
+
+Rules:
+    no shared mutable state
+    messages must be Send-capable
+    deterministic FIFO per actor
+
+================================================================================
+12. FFI MODEL
+================================================================================
+
+(ffi-call name args timeout)
+
+Rules:
+    all args must be FFI_Pinnable
+    memory passed is pinned
+    external execution isolated
+    timeout enforced
+
+Failure:
+    timeout → abort + error return
+
+Security:
+    external code cannot access non-pinned memory
+
+================================================================================
+13. MONOMORPHIZATION
+================================================================================
+
+Generic instantiation rule:
+
+    sort(type parameters alphabetically)
+    generate canonical specialization name
+
+Property:
+    f<Int,Vec> == f<Vec,Int>
+
+Deterministic output guaranteed.
+
+================================================================================
+14. ICNF (INTERMEDIATE CANONICAL NORMAL FORM)
+================================================================================
+
+Definition:
+
+ICNF is SSA-based intermediate representation:
+
+    Function := Name + Blocks
+    Block := Instruction*
+    Instruction :=
+        Op | Phi | Branch | Return
+
+Each value:
+    (SSA_ID, Region)
+
+All IR is region-annotated and SSA-unique.
+
+Rules:
+    - strict SSA
+    - dominance correctness enforced
+    - phi required at control merges
+
+================================================================================
+15. MACRO SYSTEM (FULL FORMALIZATION)
+================================================================================
+
+Macro expansion:
+
+    MacroExpansion : AST → AST
+
+Properties:
+    - AST-only (no ICNF visibility)
+    - hygienic by default
+    - deterministic expansion order
+
+Expansion order:
+    1. innermost first
+    2. lexical order
+    3. stable module order
+
+Hygiene:
+
+    gensym(x, context) =
+        x#hash(context,x,callsite)
+
+Constraints:
+    macros must terminate
+    macros cannot access runtime values
+    macros cannot observe types
+
+Errors:
+    E_MACRO_NON_TERMINATION
+    E_MACRO_ILLEGAL_ACCESS
+
+================================================================================
+16. NUMERIC MODEL
+================================================================================
+
+Integers:
+    Int64 signed
+    overflow = checked (default)
+
+Floats:
+    IEEE-754 binary64
+    NaN canonicalized
+
+Optional modes:
+    wrapping | saturating | checked
+
+Determinism:
+    bit-level reproducibility guaranteed
+
+================================================================================
+17. COMPILATION PIPELINE
+================================================================================
+
+Phases (strict order):
+
+    1. Macro expansion
+    2. Parsing
+    3. Type inference
+    4. Region inference
+    5. Monomorphization
+    6. ICNF generation
+    7. Optimization (safe only)
+    8. Code generation
+    9. Linking
+   10. Hash finalization
+
+Rule:
+    no phase may depend on a later phase
+
+================================================================================
+18. DETERMINISM CONTRACT
+================================================================================
+
+Observable behavior includes ONLY:
+
+    - return values
+    - explicit IO
+    - actor outputs
+    - FFI results
+    - runtime errors
+
+NOT observable:
+
+    - timing
+    - memory layout
+    - scheduling
+    - register allocation
+    - GC/stack migration timing
+
+Guarantee:
+
+    same program + same inputs → identical observable outputs
+
+================================================================================
+19. ERROR MODEL
+================================================================================
+
+Error format:
+
+    (code, location, message)
+
+Errors:
+
+    E_MUT_CONFLICT
+    E_ASSERT_FAIL
+    E_FFI_TIMEOUT
+    E_REGION_ESCAPE
+    E_MACRO_NON_TERMINATION
+
+Behavior:
+    compile-time errors abort compilation
+    runtime errors abort execution or revert state
+
+================================================================================
+20. STANDARD LIBRARY (ABSTRACT)
+================================================================================
+
+Core modules:
+
+core:
+    identity, control primitives
+
+collections:
+    Vec, Map
+
+option:
+    Some, None
+
+result:
+    Ok, Err
+
+io:
+    print, read
+
+atomic:
+    load, store, add
+
+actor:
+    spawn, send
+
+ffi:
+    ffi-call, ffi-pin
+
+All obey region + capability rules.
+
+================================================================================
+21. IMPLEMENTATION CONTRACT
+================================================================================
+
+Compiler MUST:
+    - preserve evaluation order
+    - enforce aliasing invariants
+    - enforce region rules
+    - enforce FFI safety
+    - enforce deterministic ICNF
+    - enforce macro hygiene
+
+Compiler MAY:
+    - optimize code (within semantics)
+    - inline functions
+    - remove dead code
+    - optimize registers
+    - refine escape analysis (without changing results)
+
+Compiler MUST NOT:
+    - reorder side effects
+    - violate determinism contract
+    - bypass region system
+    - weaken FFI guarantees
+
+================================================================================
+22. FORMAL GUARANTEES
+================================================================================
+
+G1. Safety:
+    no undefined behavior exists
+
+G2. Memory Safety:
+    no use-after-free, no double free, no invalid aliasing
+
+G3. Concurrency Safety:
+    no data races possible
+
+G4. Determinism:
+    identical inputs produce identical observable outputs
+
+G5. FFI Safety:
+    external code cannot corrupt Zyl memory
+
+================================================================================
+END OF ZYL FORMAL SPECIFICATION (v3.1 FINAL)
+================================================================================

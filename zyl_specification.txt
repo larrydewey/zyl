@@ -1,0 +1,1701 @@
+================================================================================
+ZYL FORMAL SPECIFICATION (v3.4 — CURRYING + MACRO SYSTEM)
+"A Deterministic Lisp Systems Language with Region Inference, SSA IR, Actor
+Concurrency, Capability-Based Safety, Traits, Generics, Closures, Currying,
+ADTs, Testing Framework, and Package Management"
+
+This document is the complete, authoritative specification for Zyl.
+It defines syntax, semantics, type system, memory model, concurrency model,
+FFI rules, compilation pipeline, IR, macro system, trait system, generics,
+closures, algebraic data types, contract/recovery system, module system,
+testing framework, package management roadmap, and determinism contract.
+
+No additional documents are required for implementation.
+
+================================================================================
+0. CORE DESIGN PRINCIPLES (NORMATIVE)
+================================================================================
+
+P1. Determinism
+    Same source program + same inputs → identical observable outputs.
+
+P2. Safety
+    No undefined behavior exists in the language.
+
+P3. Explicit Effects
+    All effects are statically trackable (mutation, IO, FFI, concurrency).
+
+P4. Region-Based Memory
+    Memory is assigned via static region inference (no manual allocation).
+
+P5. Strict Evaluation
+    Evaluation order is deterministic and left-to-right.
+
+P6. Phase Isolation
+    Compilation phases are strictly ordered and non-circular.
+
+P7. Inference Over Annotation
+    If the compiler can prove it, the programmer does not write it.
+    Syntax exists only where inference cannot decide.
+
+P8. Optional Layers Do Not Interfere
+    Any optional feature (contracts, recovery) must never alter core semantics,
+    ownership, regions, or type inference.
+
+P9. Testability
+    All language features must be verifiable through the testing framework.
+    Tests are first-class citizens: they define behavior, drive implementation,
+    and verify correctness. The testing framework is a core language built-in,
+    not an external tool.
+
+================================================================================
+1. LEXICAL STRUCTURE
+================================================================================
+
+1.1 Source encoding: UTF-8.
+
+1.2 Tokens:
+    IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN
+    "(" | ")" | SYMBOL | KEYWORD
+
+1.3 Keywords:
+    def, defn, defun, let, let-mut, if, try, catch, spawn, send,
+    ffi-call, ffi-pin, assert, trait, impl, fn, while, for,
+    cond, begin, pub, use, export, requires, ensures, invariant,
+    recover, checkpoint, contracts, defmacro
+
+1.4 Comments:
+    ; line comment
+
+1.5 Whitespace: token separator only.
+
+================================================================================
+2. ABSTRACT SYNTAX (AST)
+================================================================================
+
+Expr :=
+    Atom
+  | (Op Expr*)
+  | (def Name Expr)
+  | (defn Name (Params*) Body)   ; also accepts 'defun' as synonym for Lisp heritage
+  | (let (Name Expr) Body)
+  | (let-mut (Name Expr) Body)
+  | (if Expr Expr Expr)
+  | (try Expr (catch Name Expr))
+  | (spawn Expr)
+  | (send Expr Expr)
+  | (ffi-call String Expr* Integer)
+  | (ffi-pin Expr)
+  | (assert Expr String)
+  | (while Expr Expr)
+  | (for Name Expr Expr Body)
+  | (cond Clause*)
+  | (begin Expr+)
+  | (trait Name (TraitMethod*) TraitBound?)
+  | (impl TraitName TypeName (ImplBody*))
+  | (deftype Name (Variant*) VariantBound?)
+  
+  ;; Testing framework (§20.1)
+  | (test-suite String (TestOrSuite*) (:keyword Value*)*)
+  | (test String Body (:keyword Value*)*)
+  | (assert-equal Expr Expr)
+  | (assert-fail Expr String?)
+  | (assert-true Expr String?)
+  | (assert-false Expr String?)
+  | (test-property String Generator PropertyFn)
+  | (setup Body+)
+  | (teardown Body+)
+  | (run-tests (:keyword Value*)*)
+  | (test-compile Expr (:expect-error Bool)?)
+
+Generator :=
+    gen-int | gen-bool | gen-string | gen-float
+
+PropertyFn :=
+    (fn (Param+) Expr)
+
+Param :=
+    Name
+  | (Name Type)
+
+TypeExpr :=
+    BaseType
+  | (TFun [TypeExpr] TypeExpr)
+  | (TCap TypeExpr)
+  | (TMut TypeExpr)
+  | (TAtomic TypeExpr)
+  | (TBox TypeExpr)
+  | (TPin TypeExpr)
+  | (Vec TypeExpr)
+  | (Map TypeExpr TypeExpr)
+
+TraitMethod :=
+    (Name (Param*) TypeExpr)
+
+ImplBody :=
+    (defn Name (Params*) Body)
+
+Variant :=
+    (Name TypeExpr*)
+
+Clause :=
+    (Expr Expr)   ; (cond (condition body) ...)
+
+BaseType :=
+    Int | Float | Bool | String | Unit | Name
+
+Evaluation:
+    Strict left-to-right.
+
+================================================================================
+3. VALUE MODEL
+================================================================================
+
+Value V :=
+    Int64 | UInt64 | Float64 | Bool | String
+  | Tuple(V*)
+  | Closure(Environment, Expr, CaptureMap)
+  | ActorRef(ID)
+  | Address(Region, ID)
+  | Unit
+
+CaptureMap:
+    Maps captured variable names to their inferred regions and capabilities.
+    Determined by region inference at compile time; not observable at runtime.
+
+All values are immutable unless wrapped in TMut capability.
+
+================================================================================
+4. TYPE SYSTEM
+================================================================================
+
+4.1 Primitive Types:
+    Int | Float | Bool | String | Unit
+
+4.2 Composite Types:
+    Vec<T>   — homogeneous sequence
+    Map<K,V> — key-value mapping
+
+4.3 Capability Types:
+    TCap<T>     immutable shared access
+    TMut<T>     exclusive mutable ownership
+    TAtomic<T>  atomic shared mutation (lock-free)
+    TBox<T>     heap-managed allocation
+    TPin<T>     FFI-pinned memory (no OS handles allowed)
+
+4.4 Function Types:
+    TFun([T*], TReturn)
+    Where [T*] denotes zero or more parameter types, and TReturn is the
+    return type. Example: TFun([Int, String], Bool) means a function taking
+    Int and String returning Bool.
+
+4.5 Trait Bounds:
+    T : TraitName    — type T must implement TraitName
+
+4.6 Inference:
+    Hindley-Milner-style local inference with region and capability constraints.
+    Trait bounds are resolved during trait resolution (pipeline phase 3).
+    Generic types are monomorphized during pipeline phase 5.
+
+4.7 Type Equality:
+    Structural equality. Two types are equal iff their structural forms match
+    under alpha-equivalence of type variables.
+
+================================================================================
+5. TRAIT SYSTEM
+================================================================================
+
+5.1 Trait Declaration:
+
+    (trait Name
+      (method1 (params1) ReturnType1)
+      (method2 (params2) ReturnType2)
+      ...)
+    [where TypeParam : OtherTrait]   ; optional bound on type parameters
+
+Semantics:
+    Defines an interface: a named set of method signatures.
+    A trait may constrain its own type parameters with other trait bounds.
+    The `self` parameter is just a naming convention (following Rust);
+    it has no special semantics beyond being the first parameter name.
+
+Example:
+    (trait Ord
+      (< (self T) Bool)
+      (<= (self T) Bool))
+
+5.2 Trait Implementation:
+
+    (impl TraitName TypeName
+      (defn methodName (params) body)
+      ...)
+
+Semantics:
+    Provides concrete method bodies for a specific type.
+    All methods declared in the trait must be implemented.
+    Extra methods may be added (they are not part of the trait interface).
+
+Example:
+    (impl Ord Int
+      (defn < ((self Int) (other Int))
+        (< self other)))
+
+5.3 Coherence Rules:
+
+    C1. One impl per (Trait, Type) pair.
+        Duplicate impl → compile error E_DUPLICATE_IMPL.
+
+    C2. Orphan rule: a trait impl is valid only if either the trait
+        or the type is defined in the current crate.
+        Prevents downstream crates from adding impls to foreign traits/types.
+
+    C3. No conflicting impls:
+        If TraitA extends TraitB, and Type implements both,
+        the impl for TraitA must be compatible with TraitB's default methods.
+
+5.4 Trait Resolution:
+
+    During pipeline phase 3 (type inference), the compiler:
+    1. Collects all trait bounds from type annotations and generic constraints.
+    2. Resolves each bound by searching the impl table for a matching impl.
+    3. Recursively resolves transitive bounds (if T : Ord and Ord requires Eq,
+       then T must also implement Eq).
+    4. Reports E_TRAIT_NOT_FOUND if no impl exists.
+
+5.5 Trait Bounds in Generics:
+
+    Generic type parameters may be constrained by trait bounds:
+
+        (defun sort ((T : Ord) xs) body)
+
+    Semantics:
+        T is a type parameter that must implement Ord.
+        The monomorphized code for sort<T> is generated only if T : Ord holds.
+        If multiple bounds exist, all must be satisfied:
+
+            (defun compare ((T : Ord) (U : Ord)) body)
+
+5.6 Trait Bounds and Monomorphization:
+
+    Each distinct set of concrete types satisfying the trait bounds produces
+    a separate monomorphized function. The canonical name includes the bound
+    information for determinism:
+
+        sort_Int   (for T = Int, where Int : Ord)
+        sort_String (for T = String, where String : Ord)
+
+    If no type satisfies the bounds, the function is not monomorphized and
+    calling it produces E_TRAIT_NOT_FOUND at compile time.
+
+5.7 Trait Bounds and Effects:
+
+    A trait method's effect is inferred from its body. When a generic function
+    calls a trait method, the caller's effect set includes the callee's effect.
+    This ensures that PURE generic functions cannot call methods with FFI or
+    MUT effects.
+
+================================================================================
+6. GENERICS
+================================================================================
+
+6.1 Generic Function Declaration:
+
+    (defn name ((TypeParam : TraitBound*) (param Type) ...) body)
+    or equivalently: (defun name ((TypeParam : TraitBound*) (param Type) ...) body)
+
+    Where:
+        TypeParam is an uppercase identifier (convention).
+        TraitBound is optional; if absent, the type parameter has no constraints.
+        Multiple bounds: ((T : Ord Eq)) means T must implement both Ord and Eq.
+
+    Note:
+        `defun` and `defn` are synonyms. Both produce identical AST nodes.
+        `defun` is provided for Lisp heritage compatibility; `defn` is the
+        preferred Zyl style (consistent with `deftype`, `deftrait`).
+
+    Example:
+        (defn identity ((T) x) x)                    ; no bounds
+        (defun min ((T : Ord) a b)                     ; one bound — same as defn
+          (if (< a b) a b))
+        (defn pair ((T) (U)) (tuple t u))             ; multiple type params
+
+6.2 Generic Type in Collections:
+
+    Vec<T> and Map<K,V> are generic types. T, K, V are type parameters
+    that are inferred from usage context.
+
+    Example:
+        (def v (vec 1 2 3))    ; T inferred as Int
+        (def m (map "a" 1))    ; K inferred as String, V inferred as Int
+
+6.3 Monomorphization:
+
+    For each call site of a generic function, the compiler:
+    1. Infers concrete types for all type parameters from argument types.
+    2. Verifies that all trait bounds are satisfied by the concrete types.
+    3. Generates a specialized function with canonical name:
+           functionName_Type1_Type2_...
+       where types are sorted alphabetically (deterministic ordering).
+    4. Caches the monomorphized function for reuse at other call sites
+       with identical concrete types.
+
+    Example:
+        (min 3 5)          → generates min_Int
+        (min "a" "b")      → generates min_String
+        (identity 42)      → generates identity_Int
+        (identity "hi")    → generates identity_String
+
+6.4 Monomorphization Determinism:
+
+    The canonical ordering of type parameters is alphabetical by type name.
+    This ensures that f<Int, Vec> and f<Vec, Int> produce different functions
+    (as they should), but the naming is always consistent regardless of
+    declaration order or file compilation order.
+
+6.5 Generic ADTs:
+
+    Algebraic data types may have type parameters:
+
+        (deftype Option (Some T) None)
+        (deftype Result (Ok T) (Err E))
+
+    Semantics:
+        Option<Int> and Option<String> are distinct types.
+        Monomorphization applies to ADT constructors and pattern matching
+        on generic ADTs.
+
+================================================================================
+7. CLOSURES AND CURRYING
+================================================================================
+
+7.1 Closure Syntax:
+
+    (fn (param*) body)
+
+    Semantics:
+        Creates an anonymous function value (Closure).
+        The closure captures variables from its lexical environment that
+        are used in the body but not passed as parameters.
+
+    Example:
+        (def x 10)
+        (def f (fn (y) (+ x y)))   ; f captures x from enclosing scope
+
+7.2 Curried Function Syntax:
+
+    ((param*) body)
+
+    Semantics:
+        Syntactic sugar for a curried closure. The outer parens denote
+        the parameter list; if body itself starts with parens, it is
+        treated as another curried level.
+
+        Desugaring rules:
+            ((x) body)       → (fn ((x)) body)
+            ((x) (y) body)   → (fn ((x)) (fn ((y)) body))
+            ((x) (y) (z) b)  → (fn ((x)) (fn ((y)) (fn ((z)) b)))
+
+        Each level of currying produces a function that returns another
+        function. The final body is the innermost expression.
+
+    Type inference:
+        A curried function ((x) (y) (+ x y)) where x: Int, y: Int,
+        and (+ x y): Int has type Int → (Int → Int).
+        In general, ((p1) (p2) ... (pn) body) has type
+            T1 → (T2 → (... → Tn → TReturn)...)
+        where Ti is the inferred type of pi and TReturn is the inferred
+        type of body.
+
+    Usage contexts:
+        - In def: (def f ((x) (+ x 1))) defines f as a curried lambda
+        - In let: (let (g ((y) (* y y))) (g 5))
+        - As argument: (map ((x) (+ x 1)) [1 2 3])
+        - Nested: ((compose inc dec) 5)
+
+    Examples:
+        (def add-one ((x) (+ x 1)))                    ; Int → Int
+        (def add ((x) (y) (+ x y)))                     ; Int → Int → Int
+        (def compose (f g)                              ; (A→B) → (C→A) → C→B
+          (fn ((x) (g (f x)))))
+        (def curried-add ((a)                          ; Int → Int → Int
+          (fn ((b) (+ a b)))))
+
+    Note:
+        The `((param) body)` syntax is recognized by the parser in all
+        expression contexts, not just within def/defn. This means that
+        `(parse_expr "((x) x)")` produces a Closure AST node directly,
+        equivalent to `(fn ((x)) x)`.
+
+7.3 Capture Inference:
+
+    The compiler performs capture analysis during region inference:
+    - If a captured variable is only read → captured as TCap (immutable).
+    - If a captured variable is mutated → captured as TMut (exclusive).
+    - If the closure escapes its defining scope → the captured variables
+      are promoted to Heap region.
+    - If the closure does not escape → captured variables may remain on Stack.
+
+    Capture analysis is fully inferred; no annotation syntax is required.
+
+7.4 Closure Value:
+
+    A closure value is (Closure Environment Expr CaptureMap) where:
+    - Environment: mapping from parameter names to argument values.
+    - Expr: the closure body expression.
+    - CaptureMap: mapping from captured variable names to their runtime addresses
+      and capabilities (determined at compile time).
+
+7.5 Closure and Concurrency:
+
+    A closure may be passed to spawn only if all captured variables satisfy
+    the Send constraint (i.e., they are TCap or TAtomic, not TMut).
+    Attempting to capture a TMut variable in a spawned closure → compile error.
+
+7.6 Closure and Effects:
+
+    The effect set of a closure is the union of effects in its body plus
+    the effects of any captured variables' access patterns.
+    A PURE closure contains no MUT, FFI, ACTOR, or ALLOC effects.
+
+================================================================================
+8. ALGEBRAIC DATA TYPES (ADTs)
+================================================================================
+
+8.1 ADT Declaration:
+
+    (deftype Name
+      (Variant1 TypeExpr*)
+      (Variant2 TypeExpr*)
+      ...)
+
+    Semantics:
+        Defines a sum type with named variants.
+        Each variant has a name and zero or more typed fields.
+        Variants may reference type parameters defined on the ADT.
+
+    Example:
+        (deftype Option
+          (Some T)
+          None)
+
+        (deftype Color
+          (Red)
+          (Green)
+          (Blue))
+
+        (deftype Tree
+          (Leaf T)
+          (Node T (Tree T) (Tree T)))
+
+8.2 Variant Construction:
+
+    Variants are constructed by calling the variant name as a function:
+
+        (Some 42)           ; constructs Option<Int> with Some variant
+        None                ; constructs Option<Unit> with None variant
+        (Red)               ; constructs Color with Red variant
+        (Node 1 (Leaf 2) (Leaf 3))  ; constructs Tree<Int>
+
+    The type of the constructed value is inferred from context.
+
+8.3 Pattern Matching:
+
+    (match Expr
+      (VariantName pattern* body)
+      (VariantName pattern* body)
+      ...)
+
+    Semantics:
+        Evaluates Expr, then matches against each variant in order.
+        Patterns bind fields to names for use in the body.
+        A wildcard pattern (_) matches any value.
+
+    Pattern forms:
+        1. Variant constructors with field bindings: (Some v) — binds v to the first field
+        2. Literal values for exact matching: (0 "zero") — matches if variant fields equal literals
+        3. Wildcards (_): matches any single value without binding
+
+    Exhaustiveness:
+        All variants of the matched type must be covered, unless the match
+        is marked :non-exhaustive.
+        Violation → compile error E_MATCH_NONEXHAUSTIVE.
+
+    Example:
+        (match (Some 42)
+          ((Some v) v)
+          (None 0))
+
+        (match color
+          (Red #t)
+          (Green #f)
+          (Blue #f))
+
+8.4 ADTs and Generics:
+
+    Generic ADTs are monomorphized per concrete type instantiation:
+
+        Option<Int>   → distinct from Option<String>
+        Tree<Int>     → distinct from Tree<Float>
+
+    Pattern matching on generic ADTs is monomorphized at each call site.
+
+================================================================================
+9. REGION SYSTEM (CORE MEMORY MODEL)
+================================================================================
+
+Regions R:
+    Stack | Heap | Global | Circular | Pin
+
+Global region definition:
+    Static/compile-time allocated memory for constants, string literals,
+    and other values known at compile time. Equivalent to Rust's 'static.
+
+Region map:
+    Var → Region
+
+================================================================================
+9.1 REGION RULES (DETERMINISTIC)
+================================================================================
+
+R1. Local stack allocation:
+    If variable does not escape → Stack
+
+R2. Escape allocation:
+    If returned, captured by escaping closure, or sent to actor → Heap
+
+R3. Actor transfer:
+    spawn/send requires Send-capable type
+
+R4. FFI rule:
+    ffi-call requires Pin region AND FFI_Pinnable type
+
+R5. Closure capture promotion:
+    If a closure escapes its defining scope, captured variables are promoted
+    to Heap. Capture capability (TCap vs TMut) determines whether the heap
+    allocation is shared or exclusive.
+
+R6. Cyclic structures:
+    If cyclic references are detected among heap-allocated values → Circular region.
+
+================================================================================
+10. MUTABILITY AND ALIASING
+================================================================================
+
+Invariant:
+
+    For any memory location:
+        either exactly one TMut reference
+        OR any number of TCap references
+
+Violation:
+    E_MUT_CONFLICT (compile-time error)
+
+No runtime enforcement is required.
+
+================================================================================
+11. EVALUATION SEMANTICS (BIG-STEP)
+================================================================================
+
+Judgment:
+
+    ⟨E, Σ⟩ → ⟨V, Σ'⟩
+
+State:
+
+    Σ = ⟨H, S, R, A, F, M⟩
+
+    H = Heap
+    S = Stack
+    R = Region table
+    A = Actor system
+    F = FFI subsystem
+    M = Metrics
+
+Evaluation order:
+    STRICT LEFT-TO-RIGHT
+
+Function application:
+    evaluate function then arguments sequentially.
+
+Closure application:
+    (Closure(env, body, captures), args):
+        env' = env ∪ bind(params → args)
+        captures' = resolve captured variables from environment
+        evaluate body under env' with captures' available
+
+Test execution:
+    Test registration:
+        (test-suite "name" body...): register suite in global registry
+        (test "name" body...): register test in global registry
+        Tests are NOT executed at registration time.
+    
+    Test execution:
+        (run-tests):
+            for each registered test:
+                env' = fresh environment
+                execute setup (if present) under env'
+                result = evaluate test body under env'
+                execute teardown (if present) under env'
+                record {name, status, duration_ms, error_msg}
+            report results in TAP format (+ detailed if :verbose)
+            exit code: 0 = all passed, 1 = one or more failed
+    
+    Test isolation:
+        Each test runs in a fresh, isolated environment.
+        No state leakage between tests.
+        Platform-specific tests (:os, :arch) are skipped if conditions don't match.
+    
+    Parallel execution:
+        Tests run in parallel by default (using actor model).
+        Results collected and reported in registration order.
+        Serial mode: :parallel false runs tests sequentially.
+
+================================================================================
+12. CONTROL FLOW
+================================================================================
+
+12.1 IF:
+    if true branch else branch
+
+12.2 TRY/CATCH:
+    (try Expr (catch Name Expr))
+    Catches all runtime errors. The bound `Name` receives the error tuple
+    `(code, location, message)`. If a checkpoint is active, restores last
+    checkpoint state; else propagates error.
+
+12.3 ASSERT:
+    if condition false → runtime error E_ASSERT_FAIL
+
+12.4 MATCH:
+    Evaluates the scrutinee, then matches against variants in order.
+    First matching variant's body is evaluated with field bindings.
+
+12.5 WHILE:
+    (while condition body)
+    Evaluates condition; if true, evaluates body and repeats.
+    If false, returns Unit.
+    Semantically equivalent to: (if condition (begin body (while condition body)) Unit)
+    The compiler may optimize tail-recursive while loops into iteration.
+
+12.6 FOR:
+    (for name iterator body)
+    Evaluates iterator expression (must implement Iterator trait).
+    The Iterator trait defines: `(next () (Option T))`.
+    Binds `name` to each element in sequence order and evaluates `body`.
+    Returns Unit when iteration is complete (Iterator.next returns None).
+
+12.7 COND:
+    (cond (condition-1 body-1) (condition-2 body-2) ... (else body))
+    Evaluates each condition in order; returns the body of the first
+    condition that evaluates to true. An explicit `(else body)` keyword
+    is required for the fallback clause. If no else clause is present
+    and no condition matches, returns Unit.
+
+12.8 BEGIN:
+    (begin expr-1 expr-2 ... expr-n)
+    Evaluates each expression in order, discarding all results except
+    the last. Returns the value of the last expression.
+    Used for sequencing side effects.
+
+================================================================================
+13. MEMORY OPERATIONS
+================================================================================
+
+13.1 STACK:
+    automatic scope-based allocation
+
+13.2 HEAP:
+    used for escaped values and captured closure variables
+
+13.3 CIRCULAR:
+    used for detected cyclic structures
+
+13.4 PIN:
+    used exclusively for FFI-safe memory exposure
+
+================================================================================
+14. STACK SAFETY GUARANTEE
+================================================================================
+
+The compiler guarantees that deep recursion never causes stack overflow.
+Implementation details (guard regions, heap frame allocation, reference
+redirection) are internal to the compiler and do not affect the language
+contract.
+
+================================================================================
+15. CONCURRENCY MODEL (ACTORS)
+================================================================================
+
+Actor:
+    private state + FIFO mailbox
+
+Operations:
+    spawn, send
+
+Rules:
+    no shared mutable state
+    messages must be Send-capable
+    deterministic FIFO per actor
+
+Mailbox capacity: Unbounded (heap-allocated list).
+
+Spawn rule:
+    (spawn fn) creates a new actor. The function's captured variables
+    must all satisfy Send (TCap or TAtomic). TMut captures are forbidden.
+    Returns ActorRef(ID).
+
+Send rule:
+    (send actor value) enqueues value in actor's mailbox.
+    Value must be Send-capable. Ownership transfers to the actor.
+    Returns Unit.
+
+================================================================================
+16. FFI MODEL
+================================================================================
+
+(ffi-call name args timeout)
+
+Rules:
+    all args must be FFI_Pinnable
+    memory passed is pinned
+    external execution isolated
+    timeout enforced
+
+Failure:
+    timeout → abort + error return
+
+Security:
+    external code cannot access non-pinned memory
+
+(ffi-pin Expr):
+    Pins the evaluated expression's memory and returns Address(Region, ID).
+    User calls this explicitly when they need a raw pointer for FFI.
+    Primitives are auto-pinned by ffi-call; ffi-pin is for complex types.
+
+FFI_Pinnable types:
+    Int, Float, Bool, String, Vec<T> (where T is FFI_Pinnable),
+    and any type composed solely of FFI_Pinnable types.
+    Types with OS handles (File, Socket, Mutex, Thread) are NOT FFI_Pinnable.
+
+================================================================================
+17. MONOMORPHIZATION
+================================================================================
+
+Generic instantiation rule:
+
+    sort(type parameters alphabetically)
+    generate canonical specialization name
+
+Property:
+    f<Int,Vec> and f<Vec,Int> produce distinct functions.
+
+Deterministic output guaranteed.
+
+Trait bounds are included in the canonical name to ensure that
+different bound combinations produce distinct monomorphizations.
+
+================================================================================
+18. ICNF (INTERMEDIATE CANONICAL NORMAL FORM)
+================================================================================
+
+Definition:
+
+ICNF is SSA-based intermediate representation:
+
+    Function := Name + Blocks
+    Block := Instruction*
+    Instruction :=
+        Op | Phi | Branch | Return
+
+Each value:
+    (SSA_ID, Region)
+
+All IR is region-annotated and SSA-unique.
+
+Rules:
+    - strict SSA
+    - dominance correctness enforced
+    - phi required at control merges
+    - monomorphized functions have canonical names
+    - closure values are represented as heap allocations with captured env
+
+================================================================================
+19. MACRO SYSTEM (FULL FORMALIZATION)
+================================================================================
+
+Macros are an AST transformation system that operates on parsed source code
+before type checking. They enable compile-time code generation without
+runtime overhead.
+
+19.1 Macro Definition:
+
+    (defmacro name (pattern*) template)
+
+    Where:
+        name — identifier for the macro
+        pattern* — one or more pattern clauses, each matching input AST shape
+        template — output AST produced when a pattern matches
+
+    Pattern syntax:
+        - Literal atoms match themselves: `if` matches `(if ...)`
+        - Variables bind sub-expressions: `cond` binds the condition
+        - Quoted literals: `'x` or `(quote x)` matches literal atom x
+        - Unquote splicing: `,rest` captures remaining elements as a list
+        - Wildcard `_` matches any single expression
+        - Nested patterns match nested AST structure
+        - Trailing variables in patterns bind to remaining elements as a list
+
+    Template syntax:
+        - The template is an AST quote that produces output
+        - Bound variables from the pattern are substituted into the template
+        - `gensym` generates unique identifiers to avoid capture
+
+    Example:
+        (defmacro unless (cond body)
+          '(if (not ,cond) ,body))
+
+        Input:  (unless (> x 0) (set! x 0))
+        Output: (if (not (> x 0)) (set! x 0))
+
+19.2 Hygiene:
+
+    Zyl uses gensym-based hygiene to prevent variable capture.
+
+    Gensym generation:
+        gensym(prefix, context) = prefix#hash(context, callsite)
+
+    Where `context` is the macro definition location and `callsite`
+    is where the macro is invoked. This ensures that bound variables
+    in the template get unique names that cannot collide with any
+    identifiers in the caller's scope.
+
+    Hygiene rules:
+        - Each macro invocation gets its own fresh hygiene context;
+          nested macros do not share contexts with outer ones.
+        - Variables bound by the pattern are substituted literally into
+          the template (they refer to the matched AST nodes).
+        - Variables introduced in the template via gensym are guaranteed
+          unique and do not capture or shadow variables from the callsite.
+        - The user cannot observe or manipulate gensym names.
+
+    Example of hygiene in action:
+        (defmacro when (cond body)
+          '(if ,cond (begin ,body)))
+
+        (let ((x 10))
+          (when (> x 5)           ; x here is the let-bound variable
+            (print x)))           ; x here refers to the same binding
+
+        The macro does NOT capture or shadow `x`.
+
+19.3 Expansion Algorithm:
+
+    Phase 2 — Macro expansion (after parsing, before type checking):
+
+    1. Parse source into AST.
+    2. Walk the AST tree in innermost-first order (post-order traversal).
+    3. At each node, check if it matches a macro call pattern.
+       A macro call is an App node where the operator is an identifier
+       that has been registered as a macro.
+    4. If a match is found:
+       a. Bind pattern variables to matched sub-expressions.
+       b. Evaluate the template with bindings substituted.
+       c. Replace the macro call node with the expanded AST.
+       d. Recursively expand the result (macros can produce macros).
+    5. Continue until no more macro calls remain or termination limit reached.
+
+    Expansion order guarantees:
+        - Innermost macros expand first (post-order traversal)
+        - Within a level, lexical order is preserved
+        - The process is deterministic: same input → same expansion
+
+    Termination:
+        - A maximum expansion depth is enforced (implementation-defined,
+          typically 64 levels).
+        - If the limit is exceeded, E_MACRO_NON_TERMINATION is raised.
+        - This prevents infinite macro recursion.
+
+19.4 Macro Constraints:
+
+    Macros operate under strict constraints:
+
+    C1. AST-only: Macros see only parsed AST, not types or runtime values.
+        They cannot query type information (E_MACRO_ILLEGAL_ACCESS).
+
+    C2. No runtime access: Macros cannot observe or manipulate runtime
+        state. They are purely compile-time transformations.
+
+    C3. Deterministic: Given the same input AST, a macro always produces
+        the same output. No randomness, no side effects.
+
+    C4. Hygienic: Bound variables in templates use gensym to prevent
+        capture of caller identifiers.
+
+19.5 Macro Registration:
+
+    Macros are registered during Phase 1 before expansion begins.
+    The registration phase collects all (defmacro ...) forms from the
+    parsed AST and builds a macro table mapping names to their patterns
+    and templates.
+
+    Defmacro forms themselves are NOT expanded — they register macros
+    for use by other code. All defmacros are collected first, then
+    expansion begins — definition order does not matter.
+    Macros can be exported/imported across modules:
+        (export (defmacro name pattern* template))
+        (use module-name { macro-name })
+
+19.6 Example Macros:
+
+    (defmacro unless (cond body)
+      '(if (not ,cond) ,body))
+
+    (defmacro when (cond body)
+      '(if ,cond (begin ,body)))
+
+    (defmacro unless-else (cond then-body else-body)
+      '(if (not ,cond) ,then-body ,else-body))
+
+    (defmacro with-open (resource name body)
+      '(let ((,name ,resource))
+         (try ,body
+           (catch _ (close ,name)))))
+
+19.7 Errors:
+
+    E_MACRO_NON_TERMINATION — macro expansion exceeded maximum depth
+    E_MACRO_ILLEGAL_ACCESS — macro attempted to access runtime values or types
+
+================================================================================
+20. NUMERIC MODEL
+================================================================================
+
+20.1 Integers:
+    Int64 signed.
+    Overflow behavior is determined by the build profile:
+        checked (default): overflow → runtime error E_OVERFLOW
+        wrapping: overflow wraps modulo 2^64
+        saturating: overflow clamps to min/max
+
+20.2 Floats:
+    IEEE-754 binary64.
+    NaN values are canonicalized: quiet NaN preferred over signaling NaN;
+    payload bits preserved. +0.0 and -0.0 are distinct values.
+    NaN != NaN follows IEEE-754 strictly; structural equality does not
+    override floating-point semantics.
+
+20.3 Division by Zero:
+    Integer division by zero → runtime error E_DIVISION_BY_ZERO.
+    Float division by zero follows IEEE-754: produces ±Infinity or NaN.
+
+20.4 Determinism:
+    Bit-level reproducibility guaranteed for all numeric operations
+    under the same overflow mode and build configuration.
+
+================================================================================
+20.5 TESTING FRAMEWORK (CORE LANGUAGE BUILT-IN)
+================================================================================
+
+The testing framework is a core language built-in, not an external tool.
+Tests are first-class citizens that define behavior, drive implementation,
+and verify correctness.
+
+20.5.1 Test Registration:
+
+    (test-suite "name" (:keyword value*)* body...)
+    (test "name" (:keyword value*)* body...)
+
+    Semantics:
+        - Registers a test or test suite in the global test registry.
+        - Tests are NOT executed at registration time.
+        - Execution occurs when (run-tests) is called.
+        - Tests are registered in lexical order.
+        - Keywords: :parallel, :os, :arch, :tag
+
+    Example:
+        (test-suite "arithmetic"
+          (test "basic-add" (assert-equal 4 (+ 2 2)))
+          (test "overflow" :os "linux" (assert-fail (+ MAX_INT 1) "overflow")))
+
+20.5.2 Assertions:
+
+    (assert-equal expected actual)
+        Asserts that expected and actual are structurally equal.
+        Fails with E_TEST_FAILURE if not equal.
+
+    (assert-fail expr [msg])
+        Asserts that expr raises a runtime error.
+        Fails with E_TEST_FAILURE if expr succeeds or msg doesn't match.
+
+    (assert-true expr [msg])
+        Asserts that expr evaluates to true.
+        Fails with E_TEST_FAILURE if expr is false/nil.
+
+    (assert-false expr [msg])
+        Asserts that expr evaluates to false/nil.
+        Fails with E_TEST_FAILURE if expr is true.
+
+20.5.3 Test Fixtures:
+
+    (setup body...)
+        Executed before each test in the enclosing suite.
+        Runs in a fresh environment; changes are isolated per test.
+
+    (teardown body...)
+        Executed after each test in the enclosing suite.
+        Runs in a fresh environment; changes are isolated per test.
+
+    Example:
+        (test-suite "arithmetic"
+          (setup (set! *counter* 0))
+          (teardown (reset! *counter*))
+          (test "add" (assert-equal 4 (+ 2 2))))
+
+20.5.4 Property-Based Testing:
+
+    (test-property "name" generator property-fn)
+        Generates random values using the built-in generator and checks
+        that the property function holds for all generated values.
+
+    Determinism: Generators use a deterministic seed based on test ID +
+        source hash, ensuring reproducible results across runs.
+
+    Built-in generators:
+        gen-int     — generates random i64 values
+        gen-bool    — generates random bool values
+        gen-string  — generates random String values
+        gen-float   — generates random f64 values
+
+    Default iterations: 100. Configurable via `:iterations N` keyword.
+
+    Example:
+        (test-property "add-commutative" gen-int
+          (fn [a b] (== (+ a b) (+ b a))))
+
+20.5.5 Test Runner:
+
+    (run-tests (:keyword value*)*)
+        Executes all registered tests in registration order.
+        
+        Keywords:
+            :verbose true/false  — enable detailed output (default: false)
+            :fail-fast true/false — stop on first failure (default: false)
+            :parallel true/false  — run tests in parallel (default: true)
+
+        Execution model:
+            - Each test runs in a fresh, isolated environment.
+            - Platform-specific tests (:os, :arch) are skipped if conditions don't match.
+            - Results are collected and reported after all tests complete.
+            - Exit code: 0 = all passed, 1 = one or more failed, 2 = runner error.
+
+        Output format:
+            TAP (always):
+                ok 1 arithmetic/basic-add
+                not ok 2 match/wildcard - expected "other", got "zero"
+                1..42
+            
+            Detailed (when :verbose true):
+                test-suite: arithmetic
+                  test: basic-add ............... PASS (0.001s)
+                  test: overflow ................ FAIL (expected error, got 2147483648)
+                
+                Summary: 42 tests, 41 passed, 1 failed
+
+20.5.6 Compile-Time Tests:
+
+    (test-compile expr :expect-error)
+        Compiles expr and verifies compilation succeeds or fails as expected.
+        - Without :expect-error: asserts compilation succeeds.
+        - With :expect-error: asserts compilation fails with a type/region error.
+        
+        Semantics:
+            - Invokes the full compiler pipeline (not just interpreter).
+            - Results are cached; repeated runs use cached results.
+            - Can be run automatically with (run-tests) or explicitly via CLI.
+
+    Example:
+        (test-compile (+ 1 "two") :expect-error)
+        (test-compile (+ 1 2))
+
+================================================================================
+20.6 PACKAGE MANAGEMENT ROADMAP (v4.0 — DOCUMENTED, DEFERRED IMPLEMENTATION)
+================================================================================
+
+Package management is planned for v4.0. This section documents the design;
+implementations will follow in a subsequent specification version.
+
+20.6.1 Package Declaration:
+
+    (package "name"
+      :version "X.Y.Z"
+      :authors ["Author <email>"]
+      :license "MIT"
+      :description "Description"
+      :dependencies [("dep-name" "min-version" "max-version") ...])
+
+    Semantics:
+        - Declares a package with metadata and dependencies.
+        - Version uses SemVer 2.0.0 (major.minor.patch).
+        - Dependencies use caret ranges (^X.Y.Z = >=X.Y.Z, <(X+1).0.0).
+
+20.6.2 Dependency Resolution:
+
+    - Resolved at build-time.
+    - Highest compatible version selected for each dependency.
+    - Lock file (zyl.lock) records exact versions and SHA-256 hashes.
+    - Cycles allowed only for TBox-managed types (heap-allocated).
+
+20.6.3 Registry Support:
+
+    Priority-based registry selection (configurable by developer):
+        1. Git repositories (git clone)
+        2. Official registries (e.g., crates.io equivalent)
+        3. Self-hosted registries (HTTP/HTTPS)
+    
+    Configuration in zyl.toml:
+        [registries]
+        priority = ["git", "official", "self-hosted"]
+
+20.6.4 Security:
+
+    - Ed25519 signing via FFI (libsodium or similar).
+    - SHA-256 hash verification of package contents.
+    - Trust anchors: user-configurable list of trusted publishers.
+    - Reproducible builds: same source + same lock file → identical output.
+
+20.6.5 Workspace Support:
+
+    Multi-package workspaces (like Rust's [workspace]):
+        [workspace]
+        members = ["pkg-a", "pkg-b", "pkg-c"]
+        resolver = "highest-compatible"
+
+20.6.6 Feature Flags:
+
+    Optional features for conditional compilation:
+        :features [("simd" ["dep:math-simd"]) ("serde" ["dep:serde"])]
+
+20.6.7 Binary vs Library Packages:
+
+    - Library packages: produce .a/.so archives.
+    - Binary packages: produce executable tools.
+    - Both supported in the same package declaration.
+
+================================================================================
+21. BUILT-IN OPERATIONS (SEMANTICS)
+================================================================================
+
+All built-in operations are evaluated strictly left-to-right.
+Each operation is a primitive known to the compiler; they are not
+implemented as library functions.
+
+21.1 Arithmetic:
+    (+ a b ...)       — sum of all arguments (unary + returns 0)
+    (- a b)           — difference (unary - returns negation)
+    (* a b ...)       — product of all arguments (unary * returns a)
+    (/ a b)           — quotient; b must not be zero (§20.3)
+    (% a b)           — remainder; b must not be zero, sign follows dividend
+
+21.2 Comparison:
+    (== a b)          — structural equality
+    (!= a b)          — structural inequality
+    (< a b)           — less than (Int, Float only)
+    (> a b)           — greater than (Int, Float only)
+    (<= a b)          — less than or equal (Int, Float only)
+    (>= a b)          — greater than or equal (Int, Float only)
+
+21.3 Boolean:
+    (not x)           — logical negation; true if x is false/nil, else true
+    (and a b ...)     — short-circuit AND; returns first false value or last value
+    (or a b ...)      — short-circuit OR; returns first truthy value or last value
+
+21.4 Type Predicates:
+    (int? x)          — true if x is Int64
+    (float? x)        — true if x is Float64
+    (bool? x)         — true if x is Bool
+    (string? x)       — true if x is String
+
+21.5 Collection:
+    (len x)           — length of Vec, Map, or String; returns Int64
+    (vec elem*)       — constructs a new Vec from variadic arguments
+    (map key val ...) — constructs a new Map from alternating keys/values
+    (tuple elems...)  — constructs a Tuple value from arguments
+
+21.6 Mutation:
+    (set! var value)  — mutates the binding of `var` in current environment;
+                       only valid for variables declared with let-mut
+
+21.7 I/O & Resources:
+    (print x ...)     — prints arguments to stdout, separated by spaces
+    (read-line)       — reads a line from stdin, returns String
+    (exit code)       — terminates program with exit code (Int64)
+    (close handle)    — closes file/resource handles; frees associated resources
+
+21.8 Error Signaling:
+    (error msg)       — raises E_USER_ERROR with the given message string
+
+21.9 Truthiness:
+
+21.7 I/O:
+    (print x ...)     — prints arguments to stdout, separated by spaces
+    (read-line)       — reads a line from stdin, returns String
+    (exit code)       — terminates program with exit code (Int64)
+
+21.8 Sequencing:
+    (begin e1 e2 ... en) — evaluates each in order, returns value of en (§12.8)
+
+21.9 Iterator Trait:
+    Defines iteration protocol for `for` loops:
+        (trait Iterator
+          (next () (Option T)))
+    Collections implement this trait; `for` calls next() repeatedly until None.
+
+21.10 Truthiness:
+
+================================================================================
+22. COMPILATION PIPELINE
+================================================================================
+
+Phases (strict order):
+
+    1. Parsing — tokenize and parse source into AST
+    2. Macro expansion — expand all macro calls in the AST
+       (innermost-first, recursive, with termination check)
+    3. Type inference + trait resolution
+    4. Region inference + capture analysis
+    5. Monomorphization (alphabetical determinism)
+    6. ICNF generation
+    7. Optimization (safe only)
+    8. Code generation
+    9. Linking
+   10. Contract injection (optional; see §23)
+   11. Hash finalization
+
+Rule:
+    no phase may depend on a later phase.
+
+Phase details:
+
+    Phase 3 (Type inference + trait resolution):
+        - HM type inference with region and capability constraints.
+        - Trait bound resolution: for each T : Trait, find impl(T, Trait).
+        - Recursive resolution of transitive trait bounds.
+        - Error E_TRAIT_NOT_FOUND if no impl found.
+
+    Phase 4 (Region inference + capture analysis):
+        - Escape analysis for all variables.
+        - Capture analysis for closures: determine which variables are captured,
+          as TCap or TMut, and whether they escape.
+        - Region assignment: Stack for non-escaping, Heap for escaping,
+          Circular for cyclic, Global for ARC-shared, Pin for FFI.
+
+    Phase 5 (Monomorphization):
+        - For each generic function call site, infer concrete types.
+        - Verify trait bounds are satisfied.
+        - Generate monomorphized functions with canonical names.
+        - Cache monomorphized functions for reuse.
+
+    Phase 10 (Contract injection — optional):
+        When contract profiles are enabled (strict, debug, or warn),
+        inject runtime checks for requires, ensures, and invariant clauses.
+        When profile is off or production, contracts are erased entirely.
+        Contract injection never alters core semantics, ownership, regions,
+        or type inference (§8).
+
+================================================================================
+23. CONTRACT AND RECOVERY SYSTEM (OPTIONAL OVERLAY)
+================================================================================
+
+Contracts and recovery are optional language overlays that may be:
+    ENABLED   — runtime enforced (strict, debug profiles)
+    WARN-ONLY — logged failures, execution continues (warn profile)
+    DISABLED  — compiled out entirely (off, production profiles)
+
+They NEVER affect:
+    type inference, ownership resolution, region assignment,
+    monomorphization, or concurrency model.
+
+23.1 Preconditions:
+
+    (requires Condition)
+
+    Checked at function entry (if enabled).
+    The condition is evaluated before the function body.
+    If the condition is false in strict/debug mode → runtime error E_CONTRACT_VIOLATION.
+    In warn mode → diagnostic logged, execution continues.
+    In off/production mode → no evaluation, no effect.
+
+    Example:
+        (defun divide (a b)
+          (requires (!= b 0))
+          (/ a b))
+
+23.2 Postconditions:
+
+    (ensures Condition)
+
+    Checked at function exit.
+    The special symbol `result` is bound to the return value.
+    Same failure modes as requires.
+
+    Example:
+        (defun abs (x)
+          (let (r (if (< x 0) (- x) x))
+            (ensures (>= result 0))
+            r))
+
+23.3 Invariants:
+
+    (invariant Condition)
+
+    Checked after each externally visible mutation:
+        public method calls, function returns that modify shared state.
+    Same failure modes as requires.
+
+    Example:
+        (defn bank-account [balance]
+          (invariant (>= result 0))
+          ...)
+
+23.4 Recover Blocks:
+
+    (recover
+      ((ErrorType) fallback-expr)
+      ((ErrorType) fallback-expr)
+      ...)
+
+    Activated when a runtime error matches the specified ErrorType.
+    The fallback expression is evaluated and its value becomes the result.
+    If disabled → recover block is ignored; errors propagate normally.
+
+    Supported error types: timeout, network-error, io-error, overflow,
+        division-by-zero, contract-violation, assertion-failure.
+
+    Example:
+        (recover
+          ((timeout) default-cache-value)
+          ((division-by-zero) 0))
+
+23.5 Checkpoint Scopes:
+
+    (checkpoint expr)
+
+    Creates a scoped rollback boundary for:
+        stack state, owned heap values, capabilities, local bindings.
+
+    NOT included in rollback:
+        external FFI side effects, OS-level irreversible operations.
+
+    On failure within the checkpoint scope:
+        local state is restored to the checkpoint image.
+        resources are dropped deterministically.
+
+    If disabled → checkpoint evaluates expr normally with no overhead.
+
+    Example:
+        (checkpoint
+          (let (f (open "file"))
+            (write f "data")
+            (error "fail")))
+        ; On error: file is closed, state restored
+
+23.6 Contract Profiles:
+
+    Profile options: strict | debug | warn | off | production
+
+    | Feature     | strict | debug | warn | off | production |
+    |-------------|--------|-------|------|-----|------------|
+    | requires    | panic  | check | log  | no-op | no-op    |
+    | ensures     | panic  | check | log  | no-op | no-op    |
+    | invariant   | panic  | check | log  | no-op | no-op    |
+    | recover     | active | active| active| no-op | active   |
+    | checkpoint  | full   | full  | light| off   | light    |
+
+23.7 Local Overrides:
+
+    Contracts can be disabled per function:
+
+        (contracts off)
+        (defun foo () ...)
+
+    or:
+
+        (contracts warn)
+        (defun bar () ...)
+
+================================================================================
+24. MODULE SYSTEM
+================================================================================
+
+24.1 Module Declaration:
+
+    A module is defined by the file structure and optional module declaration:
+
+        (module module-name)
+
+    If no explicit declaration, the module name is derived from the file path.
+    File `src/math/core.zyl` → module `math::core`.
+
+24.2 Importing Symbols:
+
+    (use module-name { symbol })
+    (use module-name { symbol => alias })
+    (use module-name :unsafe { symbol })
+    (use module-name *)   ; wildcard import all public symbols
+
+    Semantics:
+        Brings exported symbols from another module into the current scope.
+        `alias` renames the imported symbol locally.
+        `:unsafe` allows importing symbols marked as unsafe (FFI wrappers, etc.).
+        Wildcard `*` imports all public symbols; use with caution.
+
+    Example:
+        (use math::core { add })
+        (use math::core { multiply => mul })
+        (use ffi::raw :unsafe { c_syscall })
+
+24.3 Exporting Symbols:
+
+    (export symbol)
+    (export (defn name (params) body))
+    (export (deftype Name (Variant*) ...))
+
+    Semantics:
+        Makes a symbol visible to other modules.
+        By default, all definitions are private.
+        `pub` keyword can also mark a definition as exported:
+
+            (pub (defn name (params) body))
+
+    Example:
+        (pub (defn add (a b) (+ a b)))
+        (export (deftype Option (Some T) None))
+
+24.4 Visibility Rules:
+
+    - Private (default): visible only within the defining module.
+    - Public (pub / export): visible to all importing modules.
+    - Unsafe: public symbols that may have unsafe semantics (e.g., FFI wrappers).
+      Requires `:unsafe` in the use clause.
+
+24.5 Module Resolution:
+
+    1. The compiler resolves module names by searching the dependency graph.
+    2. Dependencies are declared in zyl.toml:
+
+           [package]
+           name = "my-project"
+           version = "0.1.0"
+
+           [dependencies]
+           math = { version = "1.0", signature = "sha256:..." }
+
+    3. The dependency graph is constructed as a DAG.
+       Cycles are allowed only for TBox-managed types (heap-allocated).
+    4. Interface files (.lii) contain exported signatures and are checked
+       before body compilation. This enables incremental compilation.
+
+24.6 Crate Boundaries:
+
+    A crate is a compilation unit consisting of one or more modules.
+    The crate root is `src/lib.zyl` (library crate) or `src/main.zyl` (binary crate).
+    Trait impl coherence rule (§5.3 C2) applies at the crate boundary:
+    an impl is valid only if either the trait or the type is defined in the current crate.
+
+================================================================================
+25. STANDARD LIBRARY (ABSTRACT)
+================================================================================
+
+Core modules:
+
+core:
+    identity, const, compose, when, unless, cond
+    +, -, *, /, %, ==, !=, <, >, <=, >=, not, and, or
+    len, unit, print, read-line, exit, begin
+    int?, float?, bool?, string?
+    first, rest, nth, length, cons, append, list   ; list operations
+
+collections:
+    Vec — vec, push, pop, get, set, len, iter
+    Map — map, insert, get, remove, len, keys, values
+
+option:
+    (deftype Option (Some T) None)
+    is-some, is-none, unwrap, map, unwrap-or
+
+result:
+    (deftype Result (Ok T) (Err E))
+    is-ok, is-err, unwrap, map, unwrap-or
+
+io:
+    print, read-line, file-open, file-read, file-write, file-close
+
+atomic:
+    load, store, add
+
+actor:
+    spawn, send, receive
+
+ffi:
+    ffi-call, ffi-pin
+
+testing (core language built-in, not stdlib):
+    test-suite, test, assert-equal, assert-fail, assert-true, assert-false
+    test-property, setup, teardown, run-tests, test-compile
+    gen-int, gen-bool, gen-string, gen-float
+
+All obey region + capability rules.
+
+================================================================================
+26. IMPLEMENTATION CONTRACT
+================================================================================
+
+Compiler MUST:
+    - preserve evaluation order
+    - enforce aliasing invariants
+    - enforce region rules
+    - enforce FFI safety
+    - enforce deterministic ICNF
+    - enforce macro hygiene
+    - enforce trait coherence (one impl per Trait-Type pair)
+    - enforce exhaustiveness of match patterns
+
+Compiler MAY:
+    - optimize code (within semantics)
+    - inline functions
+    - remove dead code
+    - optimize registers
+    - refine escape analysis (without changing results)
+    - monomorphize generic functions with canonical naming
+    - inject contract checks when profiles require it
+
+Compiler MUST NOT:
+    - reorder side effects
+    - violate determinism contract
+    - bypass region system
+    - weaken FFI guarantees
+    - relax trait coherence rules
+
+================================================================================
+27. DETERMINISM CONTRACT
+================================================================================
+
+Observable behavior includes ONLY:
+
+    - return values
+    - explicit IO
+    - actor outputs
+    - FFI results
+    - runtime errors
+
+NOT observable:
+
+    - timing
+    - memory layout
+    - scheduling
+    - register allocation
+    - GC/stack migration timing
+
+Guarantee:
+
+    same program + same inputs → identical observable outputs
+
+================================================================================
+28. ERROR MODEL
+================================================================================
+
+Error format:
+
+    (code, location, message)
+
+Errors:
+
+    E_USER_ERROR                — user-signaled error via (error msg)
+    E_MUT_CONFLICT              — aliasing invariant violation
+    E_ASSERT_FAIL               — runtime assertion failure
+    E_FFI_TIMEOUT               — FFI call exceeded timeout
+    E_REGION_ESCAPE             — region rule violation
+    E_MACRO_NON_TERMINATION     — macro expansion loop
+    E_MATCH_NONEXHAUSTIVE       — match pattern not covering all variants
+    E_UNINITIALIZED_USE         — variable used before initialization
+    E_CAPABILITY_LEAK           — TMut leaked across unsafe boundary
+    E_TRAIT_NOT_FOUND           — no impl for required trait bound
+    E_DUPLICATE_IMPL            — multiple impls for same (Trait, Type)
+    E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime values or types
+    E_CONTRACT_VIOLATION        — contract condition failed at runtime
+    E_OVERFLOW                  — integer overflow in checked mode
+    E_DIVISION_BY_ZERO          — division or remainder by zero
+    E_TEST_FAILURE              — test assertion failed (runtime)
+    E_TEST_RUNNER_ERROR         — test harness error (parse, runtime crash)
+
+Behavior:
+    compile-time errors abort compilation
+    runtime errors abort execution or revert state (if checkpoint active)
+
+================================================================================
+29. FORMAL GUARANTEES
+================================================================================
+
+G1. Safety:
+    no undefined behavior exists
+
+G2. Memory Safety:
+    no use-after-free, no double free, no invalid aliasing
+
+G3. Concurrency Safety:
+    no data races possible
+
+G4. Determinism:
+    identical inputs produce identical observable outputs and identical binaries
+
+G5. FFI Safety:
+    external code cannot corrupt Zyl memory
+
+G6. Trait Coherence:
+    no conflicting trait implementations; all bounds are resolvable
+
+G7. Closure Capture Safety:
+    captured variables are correctly region-assigned; TMut captures in
+    spawned closures are forbidden at compile time
+
+G8. Contract Non-Interference:
+    contract and recovery features never alter core semantics, ownership,
+    regions, or type inference
+
+================================================================================
+30. VERSION ROADMAP
+================================================================================
+
+v3.4 (CURRENT):
+    - Curried function syntax: `((x) body)` sugar for `(fn ((x)) body)` (§7.2)
+    - Formal macro system specification with pattern matching and gensym hygiene (§19)
+    - Testing framework as core language built-in (§20.5)
+    - Package management roadmap documented (§20.6)
+    - defun/defn synonyms, wildcard imports, Iterator trait, error/close/tuple/vec/map builtins
+    - Global region definition, NaN != NaN IEEE-754 compliance, unbounded mailboxes
+    - Test organization: Rust-style modules within files + tests/ for integration
+    - Parallel test execution with serial opt-in
+    - Compile-time tests with automatic execution
+    - Property-based testing with built-in generators
+
+v4.0 (PLANNED):
+    - Package management implementation
+    - zyl.toml package declaration format
+    - Dependency resolution (highest compatible version)
+    - Git + official registry + self-hosted registry support
+    - Lock files with SHA-256 hashes
+    - Ed25519 package signing via FFI
+    - Workspace support for multi-package projects
+    - Feature flags for conditional compilation
+    - Binary vs library package distinction
+
+v4.1 (FUTURE):
+    - Property-based testing with custom generators
+    - Test coverage reporting
+    - Snapshot testing for codegen regression
+    - Test parallelization with deterministic ordering
+    - FFI safety verification in tests
+
+================================================================================
+END OF ZYL FORMAL SPECIFICATION (v3.4 — CURRYING + MACRO SYSTEM)
+================================================================================

@@ -1,0 +1,389 @@
+================================================================================
+ZYL FORMAL SPECIFICATION (v1.0) - PRODUCTION READY
+"Safe by Stone, Dynamic by Nature"
+================================================================================
+
+TABLE OF CONTENTS
+1. Abstract Syntax (AST) & Core Types
+2. Operational Semantics (The CVM Machine)
+3. Type System, Traits & Linear Logic
+4. Memory Management (GC, Cycles, Weak Refs)
+5. Concurrency, Threading & Actors
+6. Safety Contracts, Macros & FFI
+7. Standard Library & Prelude
+8. Module System, Build & Package Verification
+9. Tooling, Error Codes & LSP
+10. REPL Semantics & Interactive State
+11. Deployment, ABI & Security Hardening
+12. Documentation & Metrics
+
+================================================================================
+1. ABSTRACT SYNTAX (AST) & CORE TYPES
+================================================================================
+
+-- Primitive Types
+data Type
+  = TInt | TReal | TString | TBool | TNil
+  | TAny             -- Dynamic (Runtime Checked)
+
+-- Capability & Ownership Types
+  | TCap Type        -- Immutable Capability (Shared, Send/Sync if T is)
+  | TMut Type        -- Mutable Capability (Exclusive, NOT Send, NOT Sync)
+  | TBox Type        -- GC-managed Heap Object (Can form cycles)
+  | TWeak Type       -- Weak Reference to TBox (Does not prevent GC)
+  | TAtomic Type     -- Atomic Type (Lock-free, Send/Sync)
+  | TActor ID        -- Capability to an Actor (Thread)
+  | TFun [Type] Type -- Function Type
+
+-- Expressions
+data Expr
+  -- Core
+  | Lit Literal | Var Symbol | Lam [Param] Expr | App Expr [Expr]
+  | Let Symbol Expr Expr | If Expr Expr Expr
+
+  -- Safety & Control
+  | Pre  Condition Expr   -- (<pre: P> E)
+  | Post Condition Expr   -- (<post: Q> E)
+  | Unsafe Expr           -- (<unsafe: true> E)
+  | Checkpoint Expr       -- Implicit state boundary
+  | Revert                -- State restoration command
+
+  -- Memory & Cycles
+  | Box Expr              -- box(v) -> TBox
+  | Upgrade Expr          -- upgrade(w) -> Option(TCap)
+  | Downgrade Expr Expr   -- downgrade(c) -> TWeak
+
+  -- Concurrency
+  | Spawn Expr            -- (spawn (fn [] ...))
+  | Send Expr Expr        -- (send actor msg)
+  | Receive Expr          -- (receive actor)
+  | AtomicOp Type Expr Expr
+
+  -- FFI & Macros
+  | ExternCall String [Expr] SafetyContract
+  | MacroDef Symbol [Param] Expr
+  | MacroApply Symbol [Expr]
+
+-- Conditions (Predicates)
+data Condition
+  = CBool Bool | CNot Condition | CAnd Condition Condition
+  | CApp Symbol [Expr]    -- e.g., (not= y 0)
+
+-- Safety Contract for FFI
+data SafetyContract
+  = Contract {
+      reads: [Symbol],
+      writes: [Symbol],
+      no_escape: [Symbol],  -- C code cannot store pointer globally
+      no_free: [Symbol],    -- C code cannot free pointer
+      signature_hash: Str   -- Cryptographic hash of the C function
+    }
+
+-- Parameters & Docstrings
+data Param = Param Symbol Type
+data Doc = Doc Str [SafetyTag]  -- Structured documentation
+
+================================================================================
+2. OPERATIONAL SEMANTICS (The CVM Machine)
+================================================================================
+
+-- Machine State: Sigma = <Heap, Stack, CheckpointLog, ActorPool, Metrics>
+-- Heap (H): Map<Address, Value>
+-- Stack (S): List<Frame> where Frame = {Locals, CheckpointID, Capabilities}
+-- ActorPool: Map<ActorID, Queue<Message>>
+-- Metrics: Map<String, Int> (Opt-in telemetry)
+
+-- Evaluation Judgment: <E, Sigma> --> <V, Sigma'>
+
+-- Rule: Let (Capability Creation)
+< Let x E B, Sigma > --> < B, Sigma' >
+  WHERE <E, Sigma> --> <V, Sigma_temp>
+  AND   Sigma' = Sigma_temp with x bound to Cap(V)
+
+-- Rule: Pre (Pre-Condition Check)
+< Pre P E, Sigma > --> Revert(Sigma)
+  WHERE Eval(P, Sigma) == false
+< Pre P E, Sigma > --> < V, Sigma' >
+  WHERE Eval(P, Sigma) == true AND <E, Sigma> --> <V, Sigma'>
+
+-- Rule: Post (Post-Condition Check)
+< Post Q E, Sigma > --> Revert(Sigma')
+  WHERE <E, Sigma> --> <V, Sigma'>
+     AND Eval(Q, Sigma' with result=V) == false
+< Post Q E, Sigma > --> < V, Sigma' >
+  WHERE <E, Sigma> --> <V, Sigma'>
+     AND Eval(Q, Sigma' with result=V) == true
+
+-- Rule: Box (Linear to GC)
+< Box E, Sigma > --> < BoxPtr, Sigma' >
+  WHERE <E, Sigma> --> <V, Sigma_temp>
+  AND   Sigma' = Sigma_temp with V moved to Heap (TBox)
+
+-- Rule: Spawn (Thread Creation)
+< Spawn L, Sigma > --> < ThreadID, Sigma' >
+  WHERE L = Lam([], Body)
+  AND   FORALL v in Captured(L): v : Send
+  AND   Sigma' = Sigma with new Thread added to ActorPool
+
+-- Rule: Send (Message Passing)
+< Send A M, Sigma > --> < Unit, Sigma' >
+  WHERE <M, Sigma> --> <V, Sigma_temp>
+  AND   V : Send
+  AND   Sigma' = Sigma_temp with V added to Queue(A)
+  AND   Ownership(V) transferred to Actor A
+
+-- Rule: Revert (Self-Healing)
+Revert(Sigma) --> <H_last, S_last, L_last, Metrics_last>
+  WHERE (H_last, S_last, Metrics_last) = L[LastCheckpointID]
+
+-- Rule: ExternCall (FFI)
+< ExternCall "func" [Args], Sigma > --> < Res, Sigma' >
+  WHERE Contract = GetContract("func")
+  AND   FORALL a in Args: a : Capability
+  AND   (If Contract.writes contains a, then a is borrowed as TMut)
+  AND   (If Contract.no_free contains a, then a is NOT freed by C)
+  AND   IF C violates Contract -> Revert(Sigma)
+
+================================================================================
+3. TYPE SYSTEM, TRAITS & LINEAR LOGIC
+================================================================================
+
+-- Context Gamma: Map<Symbol, Type>
+-- Judgment: Gamma |- E : T
+
+-- Trait Rules (Send/Sync)
+  TCap(T) : Send, Sync  IF  T : Send, Sync
+  TMut(T) : NOT Send, NOT Sync
+  TBox(T) : Send, Sync  IF  T : Send, Sync
+  TAtomic(T) : Send, Sync
+  TWeak(T) : Send, Sync IF  T : Send, Sync
+
+-- Rule: Spawn (Send Check)
+  Gamma |- Spawn L : Thread
+    WHERE L = Lam([], Body)
+    AND   FORALL v in Captured(L): Gamma |- v : Send
+    ELSE  Error: "Cannot capture mutable capability in thread"
+
+-- Rule: Box (Cycle Detection)
+  Gamma |- Box E : TBox(T)
+    WHERE Gamma |- E : T
+    AND   IF E forms a cycle (A->B->A) THEN Box is REQUIRED
+    ELSE  Error: "Cycle detected without box()"
+
+-- Rule: Macro Expansion (Safety)
+  ValidMacro(M) = TRUE
+    IF  FORALL Inputs V:
+          G = Expand(M, V)
+          Safe(G, Context) == TRUE
+    ELSE  CompilationError("Macro violates safety invariant")
+
+-- Rule: FFI Contract Check
+  Gamma |- ExternCall "func" [Args] : Ret
+    WHERE Contract = GetContract("func")
+    AND   Contract.signature_hash matches the binary
+    AND   FORALL i: Gamma |- Args[i] : ArgType[i]
+    AND   Contract reads/writes match the capability types
+
+================================================================================
+4. MEMORY MANAGEMENT (GC, Cycles, Weak Refs)
+================================================================================
+
+-- GC Strategy: Precise Mark-and-Sweep for TBox only.
+-- Linear data (TCap, TMut) is zero-cost (stack/ownership).
+
+-- Cycle Resolution
+  If a cycle is detected in linear code:
+    1. Compiler inserts implicit (box()) or raises Error.
+    2. If (box()) is present, the cycle is managed by GC.
+
+-- Weak References
+  TWeak(T) does not count toward reachability.
+  upgrade(w) returns Option(TCap(T)) or None if the object is dead.
+
+-- Zeroization
+  When a TMut capability goes out of scope, the memory is zeroed
+  before being freed to prevent secret leakage.
+
+================================================================================
+5. CONCURRENCY, THREADING & ACTORS
+================================================================================
+
+-- No Shared Mutable State: TMut is thread-local.
+-- Communication: Message Passing (Actors).
+-- Shared State: Mutex<T> or Atomic<T>.
+
+-- Atomic Operations
+  Atomic(T) allows lock-free read/write.
+  Operations: atomic_add, atomic_load, atomic_store.
+
+-- Actor Model
+  Actors are isolated threads.
+  State is private to the actor.
+  Messages are immutable (TCap) or moved (TMut).
+
+================================================================================
+6. SAFETY CONTRACTS, MACROS & FFI
+================================================================================
+
+-- Contracts
+  Pre-conditions: Checked before execution.
+  Post-conditions: Checked after execution.
+  Invariants: Checked at function boundaries.
+  Failure: Triggers Revert.
+
+-- Macros
+  Verified at expansion time.
+  If generated code is unsafe, compilation fails.
+  Unsafe macros require <unsafe: true> and explicit verification.
+
+-- FFI
+  All FFI calls require a SafetyContract.
+  Violations trigger Revert.
+  Legacy code must be wrapped in a sandboxed process.
+
+================================================================================
+7. STANDARD LIBRARY & PRELUDE
+================================================================================
+
+-- Auto-imported module: std/prelude.zyl
+
+-- Core Types
+  Str: TBox<String> (Send, Sync)
+  Vec<T>: TBox<List<T>> (Send if T:Send, Sync if T:Sync)
+  Map<K,V>: TBox<Hash<K,V>> (Send/Sync if K,V:Send/Sync)
+  File: TMut<Resource> (NOT Send, NOT Sync)
+  Socket: TMut<Resource> (NOT Send, NOT Sync)
+  Result<T,E>: Enum (Send/Sync if T,E:Send/Sync)
+  Option<T>: Enum (Send/Sync if T:Send/Sync)
+  Mutex<T>: TBox<Lock<T>> (Send, Sync)
+  Atomic<T>: TAtomic (Send, Sync)
+
+-- Standard Functions
+  vec(args...) -> Vec
+  str(val) -> Str
+  lock(m) -> TMut<T>
+  open(path, mode) -> File
+
+================================================================================
+8. MODULE SYSTEM, BUILD & PACKAGE VERIFICATION
+================================================================================
+
+-- Manifest: zyl.toml
+  [package] name, version, edition, authors
+  [dependencies] version, features, signature (SHA-256)
+  [build] opt-level, strict-macros, ffi-verify
+
+-- Module Resolution
+  src/main.zyl -> main
+  src/lib.zyl -> lib
+  src/utils/io.zyl -> lib::utils::io
+
+-- Import Syntax
+  (use module { symbol })
+  (use module { symbol => alias })
+  (use module :unsafe { symbol })
+
+-- Verification
+  1. Manifest parsed.
+  2. Dependencies verified against cryptographic signature.
+  3. DAG constructed (cycles allowed only for TBox).
+  4. Interface files (.lii) checked before body compilation.
+
+================================================================================
+9. TOOLING, ERROR CODES & LSP
+================================================================================
+
+-- Error Format
+  [E####] <Severity>: <Message>
+    --> File:Line:Col
+     |
+  LL | Code
+     | Pointer
+     |
+     = Explanation
+     = Suggestion
+
+-- Error Codes
+  E0403: Capability Moved
+  E0404: Mutable Borrow Conflict
+  E0501: Not Send
+  E0502: Data Race
+  E0601: Macro Verification Failed
+  E0701: FFI Contract Violation
+
+-- LSP Extensions
+  zyl/verifyMacro
+  zyl/getCapabilityPath
+  zyl/checkContract
+  Hover: Shows Capability Type & Status
+
+-- Metrics (Opt-in)
+  Runtime exposes GC pauses, revert counts, contract failure rates.
+  Accessible via :metrics REPL command.
+
+================================================================================
+10. REPL SEMANTICS & INTERACTIVE STATE
+================================================================================
+
+-- Stateful Environment
+  Every command creates a Checkpoint.
+  Failure triggers automatic Revert to previous state.
+
+-- Special Commands
+  :state          -> Show capabilities and heap usage.
+  :verify <expr>  -> Static verification only.
+  :unsafe <expr>  -> Execute in unsafe block (requires confirm).
+  :gc             -> Force GC.
+  :macro <name>   -> Show expanded code and verification log.
+  :metrics        -> Show performance telemetry.
+
+-- Formal Rule: REPL Step
+  <Command, Sigma> --> <Result, Sigma' or Revert(Sigma)>
+  WHERE Sigma' includes updated state and metrics.
+
+================================================================================
+11. DEPLOYMENT, ABI & SECURITY HARDENING
+================================================================================
+
+-- Binary Format
+  Header: Magic, Security Manifest, Capability Table, Contract Log.
+  Sections: .text, .data, .dynamic.
+
+-- Security Manifest
+  safety_level: "strict"
+  features: ["stack_canaries", "aslr", "nx_bit", "cfi"]
+  ffi_verified: true
+  macro_verified: true
+
+-- ABI (Capability-Aware Calling Convention)
+  TMut: Passed by move (register/stack).
+  TCap: Passed by reference.
+  TAny: Tagged pointer.
+  Stack: Capability Frame Pointer (CFP) maintained.
+
+-- Hardening (Default)
+  Stack Canaries, ASLR, NX Bit, CFI, Zeroization on free.
+
+-- Targets
+  Native (ELF/Mach-O), WebAssembly (.wasm), Shared Lib (.so/.dll).
+
+================================================================================
+12. DOCUMENTATION & METRICS
+================================================================================
+
+-- Docstrings
+  (defn add [a b]
+    (doc "Adds two integers."
+      @safety: "Pure function, no side effects."
+      @params: "a: integer, b: integer"
+      @returns: "integer")
+    (+ a b))
+
+-- Metrics
+  Collected by the runtime if enabled.
+  Includes: GC time, Revert count, Contract failure rate.
+  Exported via standard interface for monitoring systems.
+
+================================================================================
+END OF SPECIFICATION (v1.0)
+================================================================================

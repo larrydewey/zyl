@@ -1,0 +1,382 @@
+================================================================================
+ZYL v2.5 COMPILER ACCELERATION SPECIFICATION
+"Same Guarantees • Less Recompute • Faster Proofs"
+================================================================================
+
+PURPOSE
+This specification adds compile-time acceleration mechanisms to Zyl without
+modifying:
+- language syntax
+- runtime semantics
+- memory safety guarantees
+- determinism guarantees
+- effect/region correctness
+
+CORE PRINCIPLE
+    "Never recompute a proof that is already implied by a cached one."
+
+All optimizations below are:
+- semantics-preserving
+- determinism-preserving
+- proof-preserving
+- compositional with v2.4 optimization lattice
+
+================================================================================
+1. GLOBAL COMPILER ACCELERATION MODEL
+================================================================================
+
+Compiler is now explicitly a:
+
+    Deterministic Incremental Proof Engine
+
+All analyses (DF, RM, BO, SL) are treated as:
+- memoizable
+- cacheable
+- invalidation-driven computations
+
+Key invariant:
+    Cache reuse MUST be bitwise equivalent to recomputation.
+
+================================================================================
+2. INCREMENTAL FIXED-POINT CACHE SYSTEM (CORE OPTIMIZATION)
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 FIXED-POINT RESULT CACHE
+--------------------------------------------------------------------------------
+
+All fixed-point systems MUST cache:
+
+- region inference results (RM)
+- effect propagation results (DF)
+- escape analysis convergence results (DF/RM hybrid)
+
+Cache key:
+
+    Hash(SourceIR + DependencyGraph + TypeEnvironment)
+
+Cache value:
+
+    ConvergedFixedPointState
+
+Rule:
+    If cache hit → skip full recomputation loop
+
+--------------------------------------------------------------------------------
+2.2 FIXED-POINT VALIDATION RULE
+--------------------------------------------------------------------------------
+
+Cached result is valid if:
+
+- dependency graph unchanged
+- type environment unchanged
+- IR structural hash unchanged
+
+Otherwise:
+    invalidate and recompute
+
+Guarantee:
+    identical output to full recomputation
+
+================================================================================
+3. DEPENDENCY GRAPH MEMOIZATION SYSTEM
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 FUNCTION-LEVEL SUMMARY CACHE
+--------------------------------------------------------------------------------
+
+Each function stores:
+
+    FunctionSummary {
+        effect_signature
+        escape_signature
+        region_signature
+        allocation_signature
+    }
+
+Rule:
+    If summary unchanged → downstream passes skipped
+
+--------------------------------------------------------------------------------
+3.2 CROSS-FUNCTION INVALIDATION PROPAGATION
+--------------------------------------------------------------------------------
+
+When a function changes:
+
+- only dependent SCC nodes are invalidated
+- unrelated graph regions remain cached
+
+This enables:
+    localized recompilation
+
+Guarantee:
+    no stale analysis leakage
+
+================================================================================
+4. PARALLEL PURE PASS EXECUTION (PS CLASS)
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 FULL PARALLELIZATION RULE
+--------------------------------------------------------------------------------
+
+All PS-class passes MUST execute:
+
+- in parallel
+- without ordering constraints
+- with deterministic reduction
+
+PS passes include:
+- constant folding
+- dead code elimination
+- CFG simplification
+- algebraic rewriting
+
+--------------------------------------------------------------------------------
+4.2 DETERMINISTIC MERGE RULE
+--------------------------------------------------------------------------------
+
+Parallel results MUST merge using:
+
+    canonical reduction order
+
+ensuring:
+    identical output across thread counts
+
+================================================================================
+5. LAZY LOWERING MODEL (IR STAGING OPTIMIZATION)
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 DELAYED IR LOWERING RULE
+--------------------------------------------------------------------------------
+
+AST → IR lowering is delayed until:
+
+    DF + RM reach stable fixed-point
+
+Rule:
+    No premature IR lowering before stability
+
+Effect:
+    prevents repeated IR reconstruction
+
+--------------------------------------------------------------------------------
+5.2 STAGED REPRESENTATION
+--------------------------------------------------------------------------------
+
+Representations:
+
+    AST → Typed AST → High IR → Stable IR → Lowered IR
+
+Each stage is cached independently.
+
+================================================================================
+6. SCC-BASED REGION COLLAPSING
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 STRONGLY CONNECTED COMPONENT MODEL
+--------------------------------------------------------------------------------
+
+Region inference operates on SCCs:
+
+    SCC = maximal mutually-referential region cluster
+
+Rule:
+    All nodes in SCC treated as single region unit
+
+--------------------------------------------------------------------------------
+6.2 EFFECT:
+--------------------------------------------------------------------------------
+
+- reduces RM graph complexity
+- eliminates per-variable recomputation
+- stabilizes escape analysis convergence
+
+Guarantee:
+    no change in region correctness semantics
+
+================================================================================
+7. IR HASH-CONSING SYSTEM
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 STRUCTURAL INTERNING
+--------------------------------------------------------------------------------
+
+All IR nodes are canonicalized:
+
+    identical structure → identical pointer
+
+Applies to:
+- expressions
+- types
+- effect nodes
+- region nodes
+
+--------------------------------------------------------------------------------
+7.2 BENEFITS
+--------------------------------------------------------------------------------
+
+- O(1) structural equality checks
+- reduced memory footprint
+- faster fixpoint convergence checks
+
+Guarantee:
+    purely representational optimization
+
+================================================================================
+8. EFFECT PROPAGATION PRUNING
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 PURE SUBGRAPH ELISION
+--------------------------------------------------------------------------------
+
+If a subgraph is:
+
+- PURE
+- has no external dependency edges
+- fully inlined or terminal
+
+Then:
+    effect propagation is skipped entirely
+
+--------------------------------------------------------------------------------
+8.2 MONOTONICITY GUARANTEE
+--------------------------------------------------------------------------------
+
+Effect system is monotonic:
+    pruning cannot remove required constraints
+
+================================================================================
+9. MONOMORPHIZATION CACHE SYSTEM
+================================================================================
+
+--------------------------------------------------------------------------------
+9.1 GLOBAL SPECIALIZATION CACHE
+--------------------------------------------------------------------------------
+
+Key:
+
+    (function_name + canonical_type_list)
+
+Value:
+
+    compiled monomorphized IR
+
+Rule:
+    reuse across:
+        - modules
+        - incremental builds
+        - crate boundaries
+
+--------------------------------------------------------------------------------
+9.2 DETERMINISTIC CANONICALIZATION
+--------------------------------------------------------------------------------
+
+Type lists MUST be:
+
+- alphabetically sorted
+- structurally normalized
+- hash-stable across builds
+
+Guarantee:
+    cache correctness independent of file order
+
+================================================================================
+10. EARLY FAILURE PRUNING (PROOF SHORT-CIRCUITING)
+================================================================================
+
+--------------------------------------------------------------------------------
+10.1 INVALID PATH ELIMINATION RULE
+--------------------------------------------------------------------------------
+
+If analysis determines:
+
+    region violation OR effect violation OR escape contradiction
+
+Then:
+    terminate branch immediately
+
+--------------------------------------------------------------------------------
+10.2 GUARANTEE
+--------------------------------------------------------------------------------
+
+- no valid computation path is discarded
+- pruning only removes provably invalid branches
+
+Effect:
+    reduces exponential worst-case behavior
+
+================================================================================
+11. COMPOSABILITY GUARANTEE (NEW CORE PROPERTY)
+================================================================================
+
+All optimizations in v2.5 MUST satisfy:
+
+--------------------------------------------------------------------------------
+11.1 COMMUTATIVITY WITHIN CLASS
+--------------------------------------------------------------------------------
+
+PS passes:
+    fully commutative
+
+DF / RM passes:
+    commutative under dependency equality
+
+--------------------------------------------------------------------------------
+11.2 PIPELINE SAFETY
+--------------------------------------------------------------------------------
+
+Optimization pipeline must still satisfy:
+
+    PS → DF → RM → SL → BO
+
+No optimization may violate this order.
+
+--------------------------------------------------------------------------------
+11.3 FIXED-POINT COMPATIBILITY
+--------------------------------------------------------------------------------
+
+All cached values MUST remain valid across:
+
+- reordering of PS passes
+- parallel execution of DF passes
+- incremental RM recomputation
+
+================================================================================
+12. COMPILER PERFORMANCE GUARANTEE (INFORMAL BUT IMPORTANT)
+================================================================================
+
+Under this system:
+
+EXPECTED EFFECTS:
+
+- large projects: major compile-time reduction
+- incremental builds: near O(changed_subgraph)
+- generic-heavy code: drastic reduction via monomorphization cache
+- analysis-heavy code: fixed-point reuse dominates cost
+
+================================================================================
+13. NON-BEHAVIORAL GUARANTEE
+================================================================================
+
+This specification does NOT alter:
+
+- runtime execution semantics
+- memory model
+- actor model
+- FFI safety model
+- effect system rules
+- determinism guarantees
+
+It only changes:
+
+    how proofs are computed, cached, and reused
+
+================================================================================
+END OF ZYL v2.5 COMPILER ACCELERATION SPECIFICATION
+================================================================================
