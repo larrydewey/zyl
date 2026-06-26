@@ -32,7 +32,7 @@
       (if (== lst '())
         acc
         (rev-step (rest lst) (cons (first lst) acc)))))))
-      (rev-step lst acc)))))
+      (rev-step lst acc))))))
 
 (def append-fn ((a) (fn (b)
   (if (== a '())

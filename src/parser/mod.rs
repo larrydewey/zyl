@@ -201,36 +201,69 @@ impl Parser {
     
     /// Check if current position starts a curried lambda: ((param) body)
     fn is_curried_lambda(&self) -> bool {
-        // Must be LParen followed by another LParen
+        // Must be LParen followed by another LParen (the outer parens of the first param group)
         if !matches!(self.current(), Some(Token::LParen(_))) {
             return false;
         }
-        
-        // Look ahead past the first LParen
-        let mut pos = self.pos + 1;
+
+        let mut pos = self.pos + 1; // skip outer (
         while pos < self.tokens.len() {
             match &self.tokens[pos] {
                 Token::LParen(_) => {
-                    // Found (( — check if next is an identifier (param name)
-                    // AND that the param group is complete: (name) where name is followed by RParen
-                    if pos + 1 < self.tokens.len()
-                        && matches!(self.tokens[pos + 1], Token::Ident(_, _))
-                    {
-                        let after_ident = pos + 2;
-                        // Verify the param group closes immediately: (name)
-                        return after_ident < self.tokens.len()
-                            && matches!(self.tokens[after_ident], Token::RParen(_));
+                    // Found ( — check if this is a param group: LPAREN IDENT RPAREN
+                    if pos + 2 >= self.tokens.len() {
+                        return false; // Not enough tokens for (name)
                     }
+                    let ident_pos = pos + 1;
+                    let rparen_pos = pos + 2;
+                    
+                    match (&self.tokens[ident_pos], &self.tokens[rparen_pos]) {
+                        (Token::Ident(_, _), Token::RParen(_)) => {
+                            // This is a valid param group: (name)
+                            let after_group = rparen_pos + 1;
+                            if after_group >= self.tokens.len() {
+                                return false; // No body content — not valid curried lambda
+                            }
+                            match &self.tokens[after_group] {
+                                Token::LParen(_) => {
+                                    // Another opening paren follows. Check if it's another param group.
+                                    let next_pos = after_group;
+                                    if next_pos + 2 >= self.tokens.len() {
+                                        return false; // Not enough tokens for more params or body
+                                    }
+                                    match (&self.tokens[next_pos + 1], &self.tokens[next_pos + 2]) {
+                                        (Token::Ident(_, _), Token::RParen(_)) => {
+                                            // Another param group — continue scanning
+                                            pos = next_pos;
+                                            continue;
+                                        }
+                                        (_, _) => {
+                                            // Not a param group pattern — this is the body!
+                                            return true;
+                                        }
+                                    }
+                                }
+                                Token::RParen(_) => {
+                                    // Closing paren immediately after params — no body content
+                                    return false; // Not valid curried lambda (no body)
+                                }
+                                _ => {
+                                    // Non-paren token starts the body — valid curried lambda
+                                    return true;
+                                }
+                            }
+                        }
+                        (_, _) => {
+                            // Not a param group pattern at this position
+                            return false;
+                        }
+                    }
+                }
+                _ => {
+                    // Non-paren token at top level inside outer parens — not curried syntax
                     return false;
                 }
-                Token::RParen(_) | Token::Ident(_, _) | Token::Int(_, _) | Token::Float(_, _)
-                | Token::Bool(_, _) | Token::StringLit(_, _) => {
-                    // Not a curried lambda
-                    return false;
-                }
-                _ => {}
             }
-            pos += 1;
         }
         false
     }
@@ -272,21 +305,31 @@ impl Parser {
         let body = match body_exprs.len() {
             0 => Expr::Atom(AtomKind::Ident("unit".into())),
             1 => body_exprs.pop().unwrap(),
-            _ => Expr::App("begin".into(), body_exprs),
+            _ => Expr::Begin(body_exprs),
         };
-        
+
         self.expect_kind(|t| matches!(t, Token::RParen(_)))?;
-        
-        // Desugar to (fn ((param)) body)
-        Ok(Expr::Fn {
-            params,
-            body: Box::new(body),
-        })
+
+        // Build NESTED closures for proper partial application support.
+        // ((p1) (p2) ... (pn) body) -> (fn (p1) (fn (p2) ... (fn (pn) body)...))
+        let mut inner_body = Box::new(body);
+        for param in params.into_iter().rev() {
+            inner_body = Box::new(Expr::Fn {
+                params: vec![param],
+                body: inner_body,
+            });
+        }
+
+        Ok(*inner_body)
     }
     
     /// Check if current position starts a param group: (name)
     /// A param group is exactly 3 tokens: LParen, Ident, RParen.
     /// This distinguishes `(x)` from `(fn ...)` or other expressions.
+    ///
+    /// IMPORTANT: We also verify that consuming this pattern leaves valid
+    /// body content after it. If the next token after (name) is only RParen,
+    /// then what looks like a param group is actually part of the function body.
     fn is_param_group(&self) -> bool {
         if !matches!(self.current(), Some(Token::LParen(_))) {
             return false;
@@ -299,8 +342,20 @@ impl Parser {
         match &self.tokens[pos] {
             Token::Ident(_, _) => {
                 let after_ident = pos + 1;
-                if after_ident < self.tokens.len() {
-                    matches!(self.tokens[after_ident], Token::RParen(_))
+                // Must have RParen immediately after the identifier
+                if after_ident < self.tokens.len()
+                    && matches!(self.tokens[after_ident], Token::RParen(_))
+                {
+                    // Now check what follows: there must be more content for body.
+                    let after_group = after_ident + 1;
+                    if after_group >= self.tokens.len() {
+                        return false; // No body — not a valid param group in curried context
+                    }
+                    match &self.tokens[after_group] {
+                        Token::LParen(_) => true,   // More params or nested expr (body)
+                        _ => true,                   // Non-paren token starts the body
+                        // RParen here means no body content — not a valid param group
+                    }
                 } else {
                     false
                 }
@@ -650,13 +705,54 @@ impl Parser {
         if matches!(self.current(), Some(Token::LParen(_))) {
             let saved_pos = self.pos;
             match self.parse_curried_lambda_inner() {
-                Ok(Expr::Fn { params: p, body }) => {
+                Ok(fn_expr) => {
+                    // parse_curried_lambda_inner returns nested Fns for curried lambdas.
+                    // Flatten all parameters into a single list and extract the innermost body.
+                    let mut flat_params = Vec::new();
+                    
+                    // Walk through ALL levels of Fn nesting to collect params
+                    let mut current: &Expr = &fn_expr;
+                    loop {
+                        match current {
+                            Expr::Fn { params, ref body } => {
+                                for param in params {
+                                    flat_params.push(param.clone());
+                                }
+                                // Continue into the next Fn level if present
+                                if matches!(&**body, Expr::Fn { .. }) {
+                                    current = body;
+                                } else {
+                                    break; // Reached innermost non-Fn body
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                    
+                    // Extract the final (innermost) body expression by walking down again
+                    let mut final_body: Box<Expr> = match &fn_expr {
+                        Expr::Fn { ref params, ref body } => (*body).clone(),
+                        _ => return Err(ParseError::InvalidExpr {
+                            loc: self.loc(),
+                            msg: "Expected Fn from curried lambda".into(),
+                        }),
+                    };
+                    // Walk down to the innermost body
+                    loop {
+                        match &*final_body {
+                            Expr::Fn { ref params, ref body } => {
+                                let _ = (params); // already counted above
+                                final_body = (*body).clone();
+                            }
+                            _ => break,
+                        }
+                    }
+                    
                     // parse_curried_lambda_inner already consumed the RParen for its param list.
-                    // Return immediately — parse_list will consume the final RParen for the defn.
                     return Ok(Expr::Defn {
                         name,
-                        params: p,
-                        body,
+                        params: flat_params,
+                        body: final_body,
                         ret_type: None,
                     });
                 }
@@ -745,20 +841,23 @@ impl Parser {
         let body = match body_exprs.len() {
             0 => Expr::Atom(AtomKind::Ident("unit".into())),
             1 => body_exprs.pop().unwrap(),
-            _ => Expr::App("begin".into(), body_exprs),
+            _ => Expr::Begin(body_exprs),
         };
 
         // Consume the closing RParen of the curried lambda expression itself.
-        // This is the paren that wraps (p1) (p2) ... body — distinct from the
-        // outer parens of fn/defn/list. Without this, callers like parse_defn_inner
-        // see an unexpected RParen after returning from a successful parse.
         self.expect_kind(|t| matches!(t, Token::RParen(_)))?;
-        
-        // Desugar to (fn ((param)) body)
-        Ok(Expr::Fn {
-            params,
-            body: Box::new(body),
-        })
+
+        // Build NESTED closures for proper partial application support.
+        // ((p1) (p2) ... (pn) body) -> (fn (p1) (fn (p2) ... (fn (pn) body)...))
+        let mut inner_body = Box::new(body);
+        for param in params.into_iter().rev() {
+            inner_body = Box::new(Expr::Fn {
+                params: vec![param],
+                body: inner_body,
+            });
+        }
+
+        Ok(*inner_body)
     }
     
     /// Parse (let ((Name Expr)* ) Body) or (let-mut ((Name Expr)* ) Body)
@@ -2353,3 +2452,232 @@ mod tests {
         assert!(result.is_ok(), "Should parse ((fn (x) x) 3): {:?}", result);
     }
     }
+
+#[cfg(test)]  
+mod currying_fix_tests {
+    use super::*;
+    
+    #[test]
+    fn test_curried_lambda_simple() {
+        let result = parse_expr("((x) (+ x 1))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Fn { params, body } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(&params[0], "x");
+                match body.as_ref() {
+                    Expr::App(op, args) => {
+                        assert_eq!(op, "+");
+                        assert_eq!(args.len(), 2);
+                    }
+                    _ => panic!("Expected App for body: {:?}", body),
+                }
+            }
+            other => panic!("Expected Fn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_curried_lambda_multi_level() {
+        let result = parse_expr("((a) (b) (+ a b))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Fn { params, body } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(&params[0], "a");
+                match body.as_ref() {
+                    Expr::Fn { params: inner_params, .. } => {
+                        assert_eq!(inner_params.len(), 1);
+                        assert_eq!(&inner_params[0], "b");
+                    }
+                    other => panic!("Expected nested Fn for body: {:?}", other),
+                }
+            }
+            other => panic!("Expected outer Fn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_curried_lambda_three_level() {
+        let result = parse_expr("((a) (b) (c) (+ a (+ b c)))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Fn { params, body } => {
+                assert_eq!(params.len(), 1);
+                assert_eq!(&params[0], "a");
+                match body.as_ref() {
+                    Expr::Fn { params: inner_params, body: inner_body } => {
+                        assert_eq!(inner_params.len(), 1);
+                        assert_eq!(&inner_params[0], "b");
+                        match inner_body.as_ref() {
+                            Expr::Fn { params, .. } => {
+                                assert_eq!(params.len(), 1);
+                                assert_eq!(&params[0], "c");
+                            }
+                            other => panic!("Expected nested Fn for c: {:?}", other),
+                        }
+                    }
+                    other => panic!("Expected inner Fn for b: {:?}", other),
+                }
+            }
+            other => panic!("Expected outer Fn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_def_curried_lambda() {
+        let result = parse_expr("(def add ((x) (y) (+ x y)))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Def(name, value) => {
+                assert_eq!(name, "add");
+                match value.as_ref() {
+                    Expr::Fn { params, .. } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(&params[0], "x");
+                    }
+                    other => panic!("Expected Fn for def value: {:?}", other),
+                }
+            }
+            other => panic!("Expected Def, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_defn_curried_lambda() {
+        let result = parse_expr("(defn f ((x) x))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Defn { name, params, .. } => {
+                assert_eq!(name, "f");
+                assert_eq!(params.len(), 1);
+                assert_eq!(&params[0], "x");
+            }
+            other => panic!("Expected Defn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_defn_three_param_curried() {
+        let result = parse_expr("(defn add-three ((a) (b) (c) (+ a (+ b c))))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Defn { name, params, .. } => {
+                assert_eq!(name, "add-three");
+                assert_eq!(params.len(), 3);
+                assert_eq!(&params[0], "a");
+                assert_eq!(&params[1], "b");
+                assert_eq!(&params[2], "c");
+            }
+            other => panic!("Expected Defn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_curried_in_let() {
+        let result = parse_expr("(let (f ((a) (+ a 1))) (f 5))");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_curried_as_function_argument() {
+        let result = parse_expr("(map ((x) (+ x 1)) '(1 2 3))");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_normal_fn_still_works() {
+        let result = parse_expr("(fn (x y z) (+ x (+ y z)))");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::Fn { params, .. } => {
+                assert_eq!(params.len(), 3);
+            }
+            other => panic!("Expected Fn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_regular_application_plus() {
+        let result = parse_expr("(+ 1 2)");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::App(op, args) => {
+                assert_eq!(op, "+");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected App, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_regular_application_map() {
+        let result = parse_expr("(map f xs)");
+        assert!(result.is_ok());
+        match &result.unwrap() {
+            Expr::App(op, args) => {
+                assert_eq!(op, "map");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected App, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_nested_application_with_curried_lambda() {
+        let result = parse_expr("(((a) (b) (+ a b)) 1 2)");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_is_curried_lambda_detection() {
+        // Simple: ((x) body) — IS curried
+        let tokens = crate::lexer::lex("((x) x)").unwrap();
+        let mut parser = Parser::new(tokens);
+        assert!(parser.is_curried_lambda());
+
+        // Multi-level: ((a) (b) (+ a b)) — IS curried
+        let tokens2 = crate::lexer::lex("((a) (b) (+ a b))").unwrap();
+        let mut parser2 = Parser::new(tokens2);
+        assert!(parser2.is_curried_lambda());
+
+        // Three-level: ((a) (b) (c) body) — IS curried
+        let tokens3 = crate::lexer::lex("((a) (b) (c) (+ a b))").unwrap();
+        let mut parser3 = Parser::new(tokens3);
+        assert!(parser3.is_curried_lambda());
+
+        // NOT curried: ((fn (x) x) 1) — this is an application, not currying
+        let tokens4 = crate::lexer::lex("((fn (x) x) 1)").unwrap();
+        let mut parser4 = Parser::new(tokens4);
+        assert!(!parser4.is_curried_lambda());
+
+        // NOT curried: (+ 1 2) — regular application
+        let tokens5 = crate::lexer::lex("(+ 1 2)").unwrap();
+        let mut parser5 = Parser::new(tokens5);
+        assert!(!parser5.is_curried_lambda());
+
+        // NOT curried: (f x y z) — regular application with multiple args
+        let tokens6 = crate::lexer::lex("(f x y z)").unwrap();
+        let mut parser6 = Parser::new(tokens6);
+        assert!(!parser6.is_curried_lambda());
+    }
+
+    #[test]
+    fn test_no_body_after_params() {
+        // ((a)) should NOT be curried (no body after params)
+        let tokens = crate::lexer::lex("((a))").unwrap();
+        let mut parser = Parser::new(tokens);
+        assert!(!parser.is_curried_lambda());
+
+        // ((a) ()) — empty list as "body" is not valid curried lambda
+        let tokens2 = crate::lexer::lex("((a) (b))").unwrap();
+        let mut parser2 = Parser::new(tokens2);
+        assert!(!parser2.is_curried_lambda());
+
+        // ((a) x y z) — multiple body expressions, IS curried
+        let tokens3 = crate::lexer::lex("((a) (+ a 1))").unwrap();
+        let mut parser3 = Parser::new(tokens3);
+        assert!(parser3.is_curried_lambda());
+    }
+
+}

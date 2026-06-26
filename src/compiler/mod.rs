@@ -392,21 +392,70 @@ impl Compiler {
                 let dest = self.ssa_val(func);
                 
                 if is_icnf_builtin(op) {
-                    if arg_vals.len() == 2 {
-                        let bin_op = match op.as_str() {
-                            "+" => ir::BinOp::Add,
-                            "-" => ir::BinOp::Sub,
-                            "*" => ir::BinOp::Mul,
-                            "/" => ir::BinOp::Div,
-                            "==" => ir::BinOp::Eq,
-                            "!=" => ir::BinOp::Ne,
-                            "<" => ir::BinOp::Lt,
-                            ">" => ir::BinOp::Gt,
-                            _ => ir::BinOp::Add,
-                        };
-                        func.current_block_mut().add_instruction(ir::Instruction::BinOp {
-                            op: bin_op, left: arg_vals[0], right: arg_vals[1], dest,
-                        });
+                    match op.as_str() {
+                        // Binary operations
+                        "+" | "-" | "*" | "/" | "%" => {
+                            if arg_vals.len() == 2 {
+                                let bin_op = match op.as_str() {
+                                    "+" => ir::BinOp::Add,
+                                    "-" => ir::BinOp::Sub,
+                                    "*" => ir::BinOp::Mul,
+                                    "/" => ir::BinOp::Div,
+                                    "%" => ir::BinOp::Mod,
+                                    _ => ir::BinOp::Add,
+                                };
+                                func.current_block_mut().add_instruction(ir::Instruction::BinOp {
+                                    op: bin_op, left: arg_vals[0], right: arg_vals[1], dest,
+                                });
+                            }
+                        }
+                        // Comparison operations
+                        "==" | "!=" | "<" | ">" | "<=" | ">=" => {
+                            if arg_vals.len() == 2 {
+                                let bin_op = match op.as_str() {
+                                    "==" => ir::BinOp::Eq,
+                                    "!=" => ir::BinOp::Ne,
+                                    "<" => ir::BinOp::Lt,
+                                    ">" => ir::BinOp::Gt,
+                                    "<=" => ir::BinOp::Le,
+                                    ">=" => ir::BinOp::Ge,
+                                    _ => ir::BinOp::Add,
+                                };
+                                func.current_block_mut().add_instruction(ir::Instruction::BinOp {
+                                    op: bin_op, left: arg_vals[0], right: arg_vals[1], dest,
+                                });
+                            }
+                        }
+                        // Unary operations (type predicates)
+                        "int?" | "float?" | "bool?" | "string?" => {
+                            if arg_vals.len() == 1 {
+                                let pred_name = match op.as_str() {
+                                    "int?" => "__pred_int",
+                                    "float?" => "__pred_float",
+                                    "bool?" => "__pred_bool",
+                                    "string?" => "__pred_string",
+                                    _ => unreachable!(),
+                                };
+                                func.current_block_mut().add_instruction(ir::Instruction::Call {
+                                    func: ir::IrValue::FuncRef(pred_name.to_string()),
+                                    args: vec![arg_vals[0]], dest,
+                                });
+                            }
+                        }
+                        // Unit - returns no value
+                        "unit" => {
+                            let dest_val = ir::SsaValue { id: ir::SsaId(func.current_block().instructions.len()), region: crate::ast::Region::Stack };
+                            func.current_block_mut().add_instruction(ir::Instruction::Const {
+                                value: ir::IrValue::Unit, dest: dest_val,
+                            });
+                        }
+                        _ => {
+                            // Direct call to a named function
+                            let call_func = ir::IrValue::FuncRef(op.clone());
+                            func.current_block_mut().add_instruction(ir::Instruction::Call {
+                                func: call_func, args: arg_vals, dest,
+                            });
+                        }
                     }
                 } else {
                     // Direct call to a named function
@@ -906,7 +955,7 @@ impl Compiler {
 
 /// Check if an operation maps to an ICNF builtin
 fn is_icnf_builtin(op: &str) -> bool {
-    matches!(op, "+" | "-" | "*" | "/" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "not" | "and" | "or")
+    matches!(op, "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "not" | "and" | "or" | "int?" | "float?" | "bool?" | "string?" | "unit")
 }
 
 // ============================================================================

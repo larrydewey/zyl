@@ -317,10 +317,9 @@ impl TypeInferencer {
                 let arg_tys: Vec<Ty> = args.iter()
                     .map(|a| self.infer(a))
                     .collect::<Result<Vec<_>, _>>()?;
-                // The operator should be a function that accepts these args
-                let ret_ty = Ty::Var(self.fresh_var());
-                self.constraints.push(Constraint::Equal(op_ty, Ty::Fun { args: arg_tys, ret: Box::new(ret_ty.clone()) }));
-                Ok(ret_ty)
+                
+                // Handle curried function application: apply arguments one at a time
+                self.apply_curried(op_ty, &arg_tys)
             }
             Expr::Def(name, body) => {
                 let body_ty = self.infer(body)?;
@@ -622,37 +621,67 @@ impl TypeInferencer {
         // Infer argument types
         let arg_tys: Vec<Ty> = args.iter().map(|a| self.infer(a)).collect::<Result<Vec<_>, _>>()?;
         
-        // Check that function type matches
+        // Check that function type matches - use curried application logic
+        self.apply_curried(func_ty, &arg_tys)
+    }
+    
+    /// Apply a curried function to multiple arguments, one at a time.
+    /// For a function of type TFun([A], TFun([B], C)) called with args [a, b],
+    /// this produces: (TFun([A], TFun([B], C))) a → TFun([B], C), then TFun([B], C) b → C
+    fn apply_curried(&mut self, func_ty: Ty, arg_tys: &[Ty]) -> Result<Ty, TypeError> {
+        if arg_tys.is_empty() {
+            return Ok(func_ty);
+        }
+        
         match func_ty {
             Ty::Fun { args: expected_args, ret } => {
-                if expected_args.len() != arg_tys.len() {
+                if expected_args.len() == 0 {
+                    // Function takes no arguments but we have args - error
                     return Err(TypeError::TypeMismatch {
-                        expected: Ty::Fun { args: expected_args, ret: ret.clone() },
-                        got: Ty::Fun { args: arg_tys.clone(), ret: ret.clone() },
+                        expected: Ty::Fun { args: vec![], ret: ret.clone() },
+                        got: Ty::Fun { args: arg_tys.to_vec(), ret: Box::new(Ty::Var(self.fresh_var())) },
                     });
                 }
                 
-                // Check each argument type
-                for (expected, actual) in expected_args.iter().zip(&arg_tys) {
-                    self.constraints.push(Constraint::Equal(expected.clone(), actual.clone()));
-                }
+                // Check if this is a curried function (returns another function)
+                let is_curried = matches!(ret.as_ref(), Ty::Fun { .. }) || matches!(ret.as_ref(), Ty::Var(_));
                 
-                Ok(*ret.clone())
+                if expected_args.len() >= arg_tys.len() {
+                    // All args fit in this function's parameter list
+                    for (i, expected) in expected_args.iter().enumerate() {
+                        let actual = &arg_tys[i];
+                        self.constraints.push(Constraint::Equal(expected.clone(), actual.clone()));
+                    }
+                    Ok(*ret)
+                } else if is_curried || matches!(ret.as_ref(), Ty::Var(_)) {
+                    // Partial application: apply first arg, recurse with remaining
+                    let first_expected = expected_args[0].clone();
+                    self.constraints.push(Constraint::Equal(first_expected, arg_tys[0].clone()));
+                    let ret_clone = *ret.clone();
+                    self.apply_curried(ret_clone, &arg_tys[1..])
+                } else {
+                    // Return type is not a function but we have more args - error
+                    Err(TypeError::TypeMismatch {
+                        expected: Ty::Fun { args: expected_args, ret },
+                        got: Ty::Fun { args: arg_tys.to_vec(), ret: Box::new(Ty::Var(self.fresh_var())) },
+                    })
+                }
             }
             Ty::Var(_) => {
-                // Fresh function type variable
+                // Fresh type variable - assume it's a function that can accept all remaining args
                 let ret = Ty::Var(self.fresh_var());
-                let expected_args: Vec<Ty> = (0..arg_tys.len()).map(|_| Ty::Var(self.fresh_var())).collect();
-                
-                for (expected, actual) in expected_args.iter().zip(&arg_tys) {
-                    self.constraints.push(Constraint::Equal(expected.clone(), actual.clone()));
-                }
-                
+                self.constraints.push(Constraint::Equal(
+                    func_ty,
+                    Ty::Fun { 
+                        args: arg_tys.to_vec(), 
+                        ret: Box::new(ret.clone()) 
+                    }
+                ));
                 Ok(ret)
             }
             other => Err(TypeError::TypeMismatch {
                 expected: Ty::Fun { args: vec![], ret: Box::new(other.clone()) },
-                got: Ty::Fun { args: arg_tys, ret: Box::new(other.clone()) },
+                got: Ty::Fun { args: arg_tys.to_vec(), ret: Box::new(Ty::Var(self.fresh_var())) },
             }),
         }
     }
@@ -661,7 +690,10 @@ impl TypeInferencer {
     fn get_builtin_type(&mut self, op: &str) -> Option<Ty> {
         match op {
             "+" => Some(Ty::Fun { args: vec![Ty::prim(PrimType::Int), Ty::prim(PrimType::Int)], ret: Box::new(Ty::prim(PrimType::Int)) }),
+            // Binary subtraction
             "-" => Some(Ty::Fun { args: vec![Ty::prim(PrimType::Int), Ty::prim(PrimType::Int)], ret: Box::new(Ty::prim(PrimType::Int)) }),
+            // Unary negation (also handled as builtin for type checking)
+            "negate" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var())], ret: Box::new(Ty::Var(self.fresh_var())) }),
             "*" => Some(Ty::Fun { args: vec![Ty::prim(PrimType::Int), Ty::prim(PrimType::Int)], ret: Box::new(Ty::prim(PrimType::Int)) }),
             "/" => Some(Ty::Fun { args: vec![Ty::prim(PrimType::Int), Ty::prim(PrimType::Int)], ret: Box::new(Ty::prim(PrimType::Int)) }),
             "%" => Some(Ty::Fun { args: vec![Ty::prim(PrimType::Int), Ty::prim(PrimType::Int)], ret: Box::new(Ty::prim(PrimType::Int)) }),
@@ -684,12 +716,25 @@ impl TypeInferencer {
             "cons" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var()), Ty::Tuple(vec![Ty::Var(self.fresh_var()), Ty::Var(self.fresh_var())])], ret: Box::new(Ty::Tuple(vec![Ty::Var(self.fresh_var()), Ty::Var(self.fresh_var())])) }),
             "append" => Some(Ty::Fun { args: vec![Ty::Tuple(vec![Ty::Var(self.fresh_var()), Ty::Var(self.fresh_var())]), Ty::Tuple(vec![Ty::Var(self.fresh_var()), Ty::Var(self.fresh_var())])], ret: Box::new(Ty::Tuple(vec![Ty::Var(self.fresh_var()), Ty::Var(self.fresh_var())])) }),
             "list" => Some(Ty::Fun { args: vec![], ret: Box::new(Ty::Tuple(vec![])) }),
+            // Unit
+            "unit" => Some(Ty::Fun { args: vec![], ret: Box::new(Ty::prim(PrimType::Unit)) }),
+            // Type predicates
+            "int?" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var())], ret: Box::new(Ty::prim(PrimType::Bool)) }),
+            "float?" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var())], ret: Box::new(Ty::prim(PrimType::Bool)) }),
+            "bool?" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var())], ret: Box::new(Ty::prim(PrimType::Bool)) }),
+            "string?" => Some(Ty::Fun { args: vec![Ty::Var(self.fresh_var())], ret: Box::new(Ty::prim(PrimType::Bool)) }),
             _ => None,
         }
     }
     
     /// Check builtin application against its type
-    fn check_builtin(&mut self, _op: &str, builtin_ty: &Ty, args: &[Expr]) -> Result<Ty, TypeError> {
+    fn check_builtin(&mut self, op: &str, builtin_ty: &Ty, args: &[Expr]) -> Result<Ty, TypeError> {
+        // Special case: unary negation (- x) when only 1 arg provided to binary -
+        if op == "-" && args.len() == 1 {
+            let arg_ty = self.infer(&args[0])?;
+            return Ok(arg_ty);
+        }
+        
         match builtin_ty {
             Ty::Fun { args: expected_args, ret } => {
                 if expected_args.len() != args.len() {
@@ -906,7 +951,19 @@ pub fn check(expr: &Expr) -> Result<Ty, TypeError> {
 pub fn check_program(program: &Program) -> Result<(TypeEnv, Substitution), TypeError> {
     let mut inferencer = TypeInferencer::new();
     
-    // Check all definitions first
+    // Two-pass approach for forward reference support:
+    // Pass 1: Register all function names in the environment (without type-checking bodies)
+    for def in &program.defs {
+        if let Expr::Defn { name, params, .. } = def {
+            let param_types: Vec<Ty> = (0..params.len())
+                .map(|_| Ty::Var(inferencer.fresh_var()))
+                .collect();
+            let func_ty = Ty::Fun { args: param_types.clone(), ret: Box::new(Ty::Var(inferencer.fresh_var())) };
+            inferencer.env = inferencer.env.with_binding(name.clone(), func_ty);
+        }
+    }
+    
+    // Pass 2: Type-check all definition bodies
     for def in &program.defs {
         inferencer.infer(def)?;
     }
