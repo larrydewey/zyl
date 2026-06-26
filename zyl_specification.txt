@@ -391,9 +391,9 @@ Example:
         treated as another curried level.
 
         Desugaring rules:
-            ((x) body)       → (fn ((x)) body)
-            ((x) (y) body)   → (fn ((x)) (fn ((y)) body))
-            ((x) (y) (z) b)  → (fn ((x)) (fn ((y)) (fn ((z)) b)))
+            ((x) body)       → (fn (x) body)
+            ((x) (y) body)   → (fn (x) (fn (y) body))
+            ((x) (y) (z) b)  → (fn (x) (fn (y) (fn (z) b)))
 
         Each level of currying produces a function that returns another
         function. The final body is the innermost expression.
@@ -416,15 +416,15 @@ Example:
         (def add-one ((x) (+ x 1)))                    ; Int → Int
         (def add ((x) (y) (+ x y)))                     ; Int → Int → Int
         (def compose (f g)                              ; (A→B) → (C→A) → C→B
-          (fn ((x) (g (f x)))))
-        (def curried-add ((a)                          ; Int → Int → Int
-          (fn ((b) (+ a b)))))
+          (fn (x) (g (f x))))
+        (def curried-add ((a)                            ; Int → Int → Int
+          (b) (+ a b)))
 
     Note:
         The `((param) body)` syntax is recognized by the parser in all
         expression contexts, not just within def/defn. This means that
         `(parse_expr "((x) x)")` produces a Closure AST node directly,
-        equivalent to `(fn ((x)) x)`.
+        equivalent to `(fn (x) x)`.
 
 7.3 Capture Inference:
 
@@ -1667,7 +1667,7 @@ G8. Contract Non-Interference:
 ================================================================================
 
 v3.4 (CURRENT):
-    - Curried function syntax: `((x) body)` sugar for `(fn ((x)) body)` (§7.2)
+    - Curried function syntax: `((x) body)` sugar for `(fn (x) body)` (§7.2)
     - Formal macro system specification with pattern matching and gensym hygiene (§19)
     - Testing framework as core language built-in (§20.5)
     - Package management roadmap documented (§20.6)

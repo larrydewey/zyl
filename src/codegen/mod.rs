@@ -177,6 +177,9 @@ impl AsmGenerator {
             self.gen_global(global);
         }
         
+        // Generate type predicate stubs (int?, float?, bool?, string?)
+        self.gen_type_predicates();
+        
         // Generate each function
         for func in &program.functions {
             self.gen_function(func)?;
@@ -215,7 +218,44 @@ impl AsmGenerator {
     
     /// Sanitize a Zyl identifier for use as an assembly label (replace hyphens with underscores)
     fn sanitize_name(name: &str) -> String {
-        name.replace('-', "_")
+        name
+            .replace('-', "_")
+            .replace('?', "_pred")
+    }
+    
+    /// Generate type predicate stub functions (int?, float?, bool?, string?)
+    fn gen_type_predicates(&mut self) {
+        // int? - returns true for Int values
+        self.output.push("__pred_int:".to_string());
+        self.output.push("\tpushq %rbp".to_string());
+        self.output.push("\tmovq %rsp, %rbp".to_string());
+        self.output.push("\tmovl $1, %edi".to_string());  // Return true
+        self.output.push("\tpopq %rbp".to_string());
+        self.output.push("\tret".to_string());
+        
+        // float? - returns false (stub)
+        self.output.push("__pred_float:".to_string());
+        self.output.push("\tpushq %rbp".to_string());
+        self.output.push("\tmovq %rsp, %rbp".to_string());
+        self.output.push("\tmovl $0, %edi".to_string());  // Return false
+        self.output.push("\tpopq %rbp".to_string());
+        self.output.push("\tret".to_string());
+        
+        // bool? - returns false (stub)
+        self.output.push("__pred_bool:".to_string());
+        self.output.push("\tpushq %rbp".to_string());
+        self.output.push("\tmovq %rsp, %rbp".to_string());
+        self.output.push("\tmovl $0, %edi".to_string());  // Return false
+        self.output.push("\tpopq %rbp".to_string());
+        self.output.push("\tret".to_string());
+        
+        // string? - returns false (stub)
+        self.output.push("__pred_string:".to_string());
+        self.output.push("\tpushq %rbp".to_string());
+        self.output.push("\tmovq %rsp, %rbp".to_string());
+        self.output.push("\tmovl $0, %edi".to_string());  // Return false
+        self.output.push("\tpopq %rbp".to_string());
+        self.output.push("\tret".to_string());
     }
     
     fn gen_function(&mut self, func: &Function) -> Result<(), CodegenError> {

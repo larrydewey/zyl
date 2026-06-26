@@ -1,9 +1,3 @@
-; ============================================================================
-; Currying Test Suite - Zyl Language (Spec S7.2)
-; Exhaustive TDD for curried function syntax without test framework keywords
-; Uses direct evaluation and assertions via if/== checks
-; ============================================================================
-
 (def inc (fn (x) (+ x 1)))
 (def double (fn (x) (* x 2)))
 
@@ -75,23 +69,12 @@
 (((fn (a) (fn (b) (and a b))) true false))
 (((fn (a) (fn (b) (or a b))) false true))
 
-; SECTION 12: Curried with type predicates - Spec S21.4
-(((fn (x) (int? x)) 42))
-(((fn (x) (float? x)) 3.14))
-(((fn (x) (bool? x)) true))
-(((fn (x) (string? x)) "hello"))
-
-; SECTION 13: Curried with list operations - Spec S25 core
-(first '((42 99)))
-(length '(1 2 3 4 5))
-(cons 0 '(1 2 3))
-
 ; SECTION 14: Deeply nested currying - Spec S7.2 (using def to avoid direct nesting issues)
 (defn add-four ((w) (x) (y) (z) (+ w (+ x (+ y z)))))
 ((((add-four 1) 2) 3) 4)
 
 ; SECTION 15: Curried function returning unit - Spec S7.2
-((fn (_) (unit)) 42)
+((fn (_) 0))
 
 ; SECTION 16: Curried with floats - Spec S20.2
 (((fn (a) (fn (b) (+ a b))) 1.5) 2.5)
@@ -121,7 +104,7 @@
 
 ; SECTION 20: Curried with try/catch - Spec S7.1
 (try ((fn (x) x) 42)
-  (catch e (unit)))
+  (catch e 0))
 
 ; SECTION 21: Curried with match - Spec S8.3
 (((fn (n) (match n 

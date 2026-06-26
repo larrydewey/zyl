@@ -600,13 +600,11 @@ pub fn register_builtin_macros(expander: &mut MacroExpander) {
         name: "when".into(),
         pattern: MacroPattern::App("when".into(), vec![
             MacroPattern::Any("cond".into()),
-            MacroPattern::List(vec![MacroPattern::Any("body".into())]),
+            MacroPattern::Any("body".into()),
         ]),
         template: Expr::If {
             cond: Box::new(Expr::Atom(AtomKind::Ident("cond".into()))),
-            then_branch: Box::new(Expr::App("begin".into(), vec![
-                Expr::Atom(AtomKind::Ident("body".into())),
-            ])),
+            then_branch: Box::new(Expr::Atom(AtomKind::Ident("body".into()))),
             else_branch: Box::new(Expr::Atom(AtomKind::Ident("unit".into()))),
         },
     }).ok();

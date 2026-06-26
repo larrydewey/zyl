@@ -1,0 +1,7 @@
+; Test: let inside let, inner let has curried lambda with if in body
+(let (acc '())
+  (let (rev-step (fn ((lst) (fn ((acc)
+    (if (== lst '())
+      acc
+      (rev-step (rest lst) (cons (first lst) acc)))))))
+    (rev-step lst acc))))

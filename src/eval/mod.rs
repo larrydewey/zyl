@@ -209,6 +209,9 @@ pub struct EvalState {
     /// Recursion depth limit (for stack overflow protection)
     pub depth: usize,
     pub max_depth: usize,
+    /// Loop iteration counter (prevents infinite while/for loops)
+    pub loop_iterations: usize,
+    pub max_loop_iterations: usize,
     /// Test registry (§20.5 — v3.3)
     pub test_registry: Vec<TestRegistration>,
     /// Test results
@@ -223,6 +226,8 @@ impl EvalState {
             ffi: FfiRegistry::new(),
             depth: 0,
             max_depth: 10000,
+            loop_iterations: 0,
+            max_loop_iterations: 10000,
             test_registry: Vec::new(),
             test_results: Vec::new(),
         }
@@ -235,6 +240,8 @@ impl EvalState {
             ffi: FfiRegistry::new(),
             depth: 0,
             max_depth: 10000,
+            loop_iterations: 0,
+            max_loop_iterations: 10000,
             test_registry: Vec::new(),
             test_results: Vec::new(),
         }
@@ -439,6 +446,24 @@ fn eval_builtin(op: &str, args: &[Value]) -> Result<Value, EvalError> {
             }
         }
         
+        // Type predicates
+        "int?" => {
+            if args.len() != 1 { return Err(EvalError::TypeError { msg: "int? expects 1 arg".into() }); }
+            Ok(Value::Bool(matches!(&args[0], Value::Int(_))))
+        }
+        "float?" => {
+            if args.len() != 1 { return Err(EvalError::TypeError { msg: "float? expects 1 arg".into() }); }
+            Ok(Value::Bool(matches!(&args[0], Value::Float(_))))
+        }
+        "bool?" => {
+            if args.len() != 1 { return Err(EvalError::TypeError { msg: "bool? expects 1 arg".into() }); }
+            Ok(Value::Bool(matches!(&args[0], Value::Bool(_))))
+        }
+        "string?" => {
+            if args.len() != 1 { return Err(EvalError::TypeError { msg: "string? expects 1 arg".into() }); }
+            Ok(Value::Bool(matches!(&args[0], Value::StringVal(_))))
+        }
+        
         // Unit
         "unit" => Ok(Value::Unit),
         
@@ -588,13 +613,28 @@ impl<'a> Evaluator<'a> {
                 
                 match func_val {
                     Value::Closure { params, body, env: closure_env, self_ref } => {
-                        if params.len() != evaluated_args.len() {
+                        if evaluated_args.len() > params.len() {
                             return Err(EvalError::TypeError {
                                 msg: format!("Function expects {} args, got {}", params.len(), evaluated_args.len()),
                             });
                         }
                         
-                        // Create new environment with bound parameters
+                        // Partial application: fewer args than params → return new closure
+                        if evaluated_args.len() < params.len() {
+                            let remaining_params: Vec<String> = params[evaluated_args.len()..].to_vec();
+                            let mut partial_env = closure_env.extend();
+                            for (param, arg) in params.iter().zip(&evaluated_args) {
+                                partial_env.bind(param.clone(), arg.clone());
+                            }
+                            return Ok(Value::Closure {
+                                params: remaining_params,
+                                body,
+                                env: partial_env,
+                                self_ref: None,
+                            });
+                        }
+                        
+                        // Full application — create new environment with bound parameters
                         let mut new_env = closure_env.extend();
                         for (param, arg) in params.iter().zip(&evaluated_args) {
                             new_env.bind(param.clone(), arg.clone());
@@ -749,6 +789,14 @@ impl<'a> Evaluator<'a> {
             // While loop (§12.5)
             Expr::While { condition, body } => {
                 loop {
+                    // Check iteration limit to prevent infinite loops.
+                    // The recursion depth counter doesn't help here because
+                    // each eval() call increments and decrements depth within itself,
+                    // so the outer while loop never sees a depth increase.
+                    self.state.loop_iterations += 1;
+                    if self.state.loop_iterations >= self.state.max_loop_iterations {
+                        return Err(EvalError::StackOverflow);
+                    }
                     let cond_val = self.eval(condition)?;
                     if !cond_val.is_truthy() {
                         return Ok(Value::Unit);
@@ -1141,13 +1189,28 @@ impl<'a> Evaluator<'a> {
         
         match func_val {
             Value::Closure { params, body, env: closure_env, self_ref } => {
-                if params.len() != evaluated_args.len() {
+                if evaluated_args.len() > params.len() {
                     return Err(EvalError::TypeError {
                         msg: format!("Function {} expects {} args, got {}", op, params.len(), evaluated_args.len()),
                     });
                 }
                 
-                // Create new environment with bound parameters
+                // Partial application: fewer args than params → return new closure
+                if evaluated_args.len() < params.len() {
+                    let remaining_params: Vec<String> = params[evaluated_args.len()..].to_vec();
+                    let mut partial_env = closure_env.extend();
+                    for (param, arg) in params.iter().zip(&evaluated_args) {
+                        partial_env.bind(param.clone(), arg.clone());
+                    }
+                    return Ok(Value::Closure {
+                        params: remaining_params,
+                        body,
+                        env: partial_env,
+                        self_ref: None,
+                    });
+                }
+                
+                // Full application — create new environment with bound parameters
                 let mut new_env = closure_env.extend();
                 for (param, arg) in params.iter().zip(&evaluated_args) {
                     new_env.bind(param.clone(), arg.clone());
