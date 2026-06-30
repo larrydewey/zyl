@@ -45,6 +45,22 @@ impl fmt::Display for AtomKind {
 }
 
 // ============================================================================
+// ADDRESS TYPE (Spec §3 — FFI pinning results)
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Address {
+    pub region: Region,
+    pub id: usize,
+}
+
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Address({}, {})", self.region, self.id)
+    }
+}
+
+// ============================================================================
 // REGION ANNOTATIONS (Section 5)
 // ============================================================================
 

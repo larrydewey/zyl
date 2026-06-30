@@ -1,7 +1,7 @@
 ================================================================================
-ZYL FORMAL SPECIFICATION (v3.5 — UPDATED SPECIFICATION)
+ZYL FORMAL SPECIFICATION (v3.5 — EXPLICIT CLOSURES + MACRO SYSTEM)
 "A Deterministic Lisp Systems Language with Region Inference, SSA IR, Actor
-Concurrency, Capability-Based Safety, Traits, Generics, Closures, Currying,
+Concurrency, Capability-Based Safety, Traits, Generics, Explicit Closures,
 ADTs, Testing Framework, and Package Management"
 
 This document is the complete, authoritative specification for Zyl.
@@ -60,7 +60,7 @@ P9. Testability
 
 1.3 Keywords:
     def, defn, defun, let, let-mut, if, try, catch, spawn, send,
-    ffi-call, ffi-pin, assert, trait, impl, fn, while, for,
+    ffi-call, ffi-pin, assert, trait, impl, fn, lambda, while, for,
     cond, begin, pub, use, export, requires, ensures, invariant,
     recover, checkpoint, contracts, defmacro
 
@@ -315,9 +315,9 @@ Example:
 
     Example:
         (defn identity ((T) x) x)                    ; no bounds
-        (defun min ((T : Ord) a b)                     ; one bound — same as defn
+        (defun min ((T : Ord) a b)                   ; one bound — same as defn
           (if (< a b) a b))
-        (defn pair ((T) (U)) (tuple t u))             ; multiple type params
+        (defn pair ((T) (U)) (tuple t u))            ; multiple type params
 
 6.2 Generic Type in Collections:
 
@@ -365,68 +365,28 @@ Example:
         on generic ADTs.
 
 ================================================================================
-7. CLOSURES AND CURRYING
+7. CLOSURES
 ================================================================================
 
 7.1 Closure Syntax:
 
     (fn (param*) body)
+  or equivalently:
+    (lambda (param*) body)
 
     Semantics:
         Creates an anonymous function value (Closure).
         The closure captures variables from its lexical environment that
         are used in the body but not passed as parameters.
 
+    `fn` and `lambda` are synonyms. Both produce identical AST nodes.
+    `fn` is the preferred Zyl style; `lambda` is provided for Lisp heritage.
+
     Example:
         (def x 10)
         (def f (fn (y) (+ x y)))   ; f captures x from enclosing scope
 
-7.2 Curried Function Syntax:
-
-    ((param*) body)
-
-    Semantics:
-        Syntactic sugar for a curried closure. The outer parens denote
-        the parameter list; if body itself starts with parens, it is
-        treated as another curried level.
-
-        Desugaring rules:
-            ((x) body)       → (fn (x) body)
-            ((x) (y) body)   → (fn (x) (fn (y) body))
-            ((x) (y) (z) b)  → (fn (x) (fn (y) (fn (z) b)))
-
-        Each level of currying produces a function that returns another
-        function. The final body is the innermost expression.
-
-    Type inference:
-        A curried function ((x) (y) (+ x y)) where x: Int, y: Int,
-        and (+ x y): Int has type Int → (Int → Int).
-        In general, ((p1) (p2) ... (pn) body) has type
-            T1 → (T2 → (... → Tn → TReturn)...)
-        where Ti is the inferred type of pi and TReturn is the inferred
-        type of body.
-
-    Usage contexts:
-        - In def: (def f ((x) (+ x 1))) defines f as a curried lambda
-        - In let: (let (g ((y) (* y y))) (g 5))
-        - As argument: (map ((x) (+ x 1)) [1 2 3])
-        - Nested: ((compose inc dec) 5)
-
-    Examples:
-        (def add-one ((x) (+ x 1)))                    ; Int → Int
-        (def add ((x) (y) (+ x y)))                     ; Int → Int → Int
-        (def compose (f g)                              ; (A→B) → (C→A) → C→B
-          (fn (x) (g (f x))))
-        (def curried-add ((a)                          ; Int → Int → Int
-          (fn (b) (+ a b))))
-
-    Note:
-        The `((param) body)` syntax is recognized by the parser in all
-        expression contexts, not just within def/defn. This means that
-        `(parse_expr "((x) x)")` produces a Closure AST node directly,
-        equivalent to `(fn (x) x)`.
-
-7.3 Capture Inference:
+7.2 Capture Inference:
 
     The compiler performs capture analysis during region inference:
     - If a captured variable is only read → captured as TCap (immutable).
@@ -437,7 +397,7 @@ Example:
 
     Capture analysis is fully inferred; no annotation syntax is required.
 
-7.4 Closure Value:
+7.3 Closure Value:
 
     A closure value is (Closure Environment Expr CaptureMap) where:
     - Environment: mapping from parameter names to argument values.
@@ -445,13 +405,13 @@ Example:
     - CaptureMap: mapping from captured variable names to their runtime addresses
       and capabilities (determined at compile time).
 
-7.5 Closure and Concurrency:
+7.4 Closure and Concurrency:
 
     A closure may be passed to spawn only if all captured variables satisfy
     the Send constraint (i.e., they are TCap or TAtomic, not TMut).
     Attempting to capture a TMut variable in a spawned closure → compile error.
 
-7.6 Closure and Effects:
+7.5 Closure and Effects:
 
     The effect set of a closure is the union of effects in its body plus
     the effects of any captured variables' access patterns.
@@ -1666,8 +1626,8 @@ G8. Contract Non-Interference:
 30. VERSION ROADMAP
 ================================================================================
 
-v3.4 (CURRENT):
-    - Curried function syntax: `((x) body)` sugar for `(fn (x) body)` (§7.2)
+v3.5 (CURRENT):
+    - Explicit closure syntax only: `(fn ...)` or `(lambda ...)` — curried `((x) body)` sugar removed (§7, §19.3)
     - Formal macro system specification with pattern matching and gensym hygiene (§19)
     - Testing framework as core language built-in (§20.5)
     - Package management roadmap documented (§20.6)
@@ -1697,5 +1657,5 @@ v4.1 (FUTURE):
     - FFI safety verification in tests
 
 ================================================================================
-END OF ZYL FORMAL SPECIFICATION (v3.5 — UPDATED SPECIFICATION)
+END OF ZYL FORMAL SPECIFICATION (v3.5 — EXPLICIT CLOSURES + MACRO SYSTEM)
 ================================================================================

@@ -1,17 +1,18 @@
 //! Compiler Pipeline for Zyl
 //! 
-//! Per specification section 17:
+//! Per specification section 22:
 //! Phases (strict order):
-//! 1. Macro expansion
-//! 2. Parsing
-//! 3. Type inference
-//! 4. Region inference
-//! 5. Monomorphization
+//! 1. Parsing — tokenize and parse source into AST
+//! 2. Macro expansion — expand all macro calls in the AST
+//! 3. Type inference + trait resolution
+//! 4. Region inference + capture analysis
+//! 5. Monomorphization (alphabetical determinism)
 //! 6. ICNF generation
-//! 7. Optimization (safe only)
-//! 8. Code generation
+//! 7. Optimization (safe only: DCE, inline, loop unroll)
+//! 8. Code generation (x86_64 asm + LLVM IR interface)
 //! 9. Linking
-//! 10. Hash finalization
+//! 10. Contract injection (optional; see §23)
+//! 11. Hash finalization
 
 use crate::ast::*;
 use crate::lexer;
@@ -120,34 +121,39 @@ impl Compiler {
     
     /// Compile Zyl source code to native object code
     pub fn compile(&mut self, source: &str) -> Result<CompilationResult, CompilerError> {
-        // Phase 1: Macro expansion (includes parsing)
-        let program = self.phase_macro_expansion(source)?;
+        // Phase 1: Parsing — tokenize and parse source into AST
+        let program = self.phase_parsing(source)?;
         
-        // Phase 2: Parsing validation (already done in phase 1)
-        // The program from macro expansion is already a valid parsed AST
+        // Phase 2: Macro expansion — expand all macro calls in the AST (innermost-first)
+        let program = self.phase_macro_expansion(&program)?;
         
-        // Phase 3: Type inference
+        // Phase 3: Type inference + trait resolution
         let (_env, subst) = self.phase_type_inference(&program)?;
         
-        // Phase 4: Region inference
+        // Phase 4: Region inference + capture analysis
         let _region_map = self.phase_region_inference(&program)?;
         
-        // Phase 5: Monomorphization
+        // Phase 5: Monomorphization (alphabetical determinism)
         let program = self.phase_monomorphization(&program, &subst)?;
         
-        // Phase 6: ICNF generation (with closure support)
+        // Phase 6: ICNF generation (SSA IR with closure support)
         let icnf = self.phase_icnf_generation(&program)?;
         
-        // Phase 7: Optimization (safe only)
+        // Phase 7: Optimization (safe only: DCE, inline, loop unroll)
         let icnf = self.phase_optimization(&icnf)?;
         
-        // Phase 8: Code generation
+        // Phase 8: Code generation (x86_64 asm + LLVM IR interface)
         let object_code = self.phase_code_generation(&icnf)?;
         
         // Phase 9: Linking
         let linked = self.phase_linking(&object_code)?;
         
-        // Phase 10: Hash finalization (determinism contract)
+        // Phase 10: Contract injection (optional; see §23)
+        // When contract profiles are enabled, inject runtime checks for requires,
+        // ensures, and invariant clauses. Otherwise contracts are erased entirely.
+        let linked = self.phase_contract_injection(&linked)?;
+        
+        // Phase 11: Hash finalization (determinism contract — SHA-256)
         let hash = self.phase_hash_finalization(&linked);
         
         Ok(CompilationResult {
@@ -158,13 +164,20 @@ impl Compiler {
     }
     
     // ------------------------------------------------------------------------
-    // PHASE 1: Macro Expansion
+    // PHASE 1: Parsing
     // ------------------------------------------------------------------------
     
-    fn phase_macro_expansion(&self, source: &str) -> Result<Program, CompilerError> {
-        let program = parser::parse(source)?;
+    fn phase_parsing(&self, source: &str) -> Result<Program, CompilerError> {
+        parser::parse(source).map_err(CompilerError::Parse)
+    }
+    
+    // ------------------------------------------------------------------------
+    // PHASE 2: Macro Expansion (innermost-first, recursive, with termination check)
+    // ------------------------------------------------------------------------
+    
+    fn phase_macro_expansion(&self, program: &Program) -> Result<Program, CompilerError> {
         let mut expander = macros::new_expander();
-        let expanded = expander.expand_program(&program)?;
+        let expanded = expander.expand_program(program)?;
         Ok(expanded)
     }
     
@@ -941,7 +954,19 @@ impl Compiler {
     }
     
     // ------------------------------------------------------------------------
-    // PHASE 10: Hash Finalization (Determinism Contract - Section 18)
+    // PHASE 10: Contract Injection (Optional; see §23)
+    // ------------------------------------------------------------------------
+    
+    fn phase_contract_injection(&self, data: &[u8]) -> Result<Vec<u8>, CompilerError> {
+        // Per spec §23: contracts are optional overlays that never alter core semantics.
+        // When disabled (off/production profile), contracts are erased entirely.
+        // For now, pass through unchanged — contract injection is deferred to v4.1+.
+        let _ = data;
+        Ok(data.to_vec())
+    }
+    
+    // ------------------------------------------------------------------------
+    // PHASE 11: Hash Finalization (Determinism Contract - Section 27)
     // ------------------------------------------------------------------------
     
     fn phase_hash_finalization(&self, data: &[u8]) -> String {

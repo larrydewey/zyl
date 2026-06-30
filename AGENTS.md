@@ -83,3 +83,5 @@ See **`PROGRESS.md`** for the latest status. It tracks:
 - Design decisions made
 
 Always read PROGRESS.md before making changes to avoid duplicating work or going in the wrong direction.
+
+Always update PROGRESS.md after tests and validation successfully prove working state.
