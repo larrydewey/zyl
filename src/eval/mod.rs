@@ -72,6 +72,7 @@ pub enum Value {
         self_ref: Option<Rc<RefCell<Value>>>,
     },
     ActorRef(ActorId),
+    Address(crate::ast::Address),  // FFI pinning result — spec §3
     Unit,
 }
 
@@ -90,6 +91,7 @@ impl Clone for Value {
                 self_ref: self_ref.clone(),
             },
             Value::ActorRef(id) => Value::ActorRef(*id),
+            Value::Address(addr) => Value::Address(*addr),
             Value::Unit => Value::Unit,
         }
     }
@@ -103,7 +105,7 @@ impl Value {
             Value::Float(f) => *f != 0.0,
             Value::StringVal(s) => !s.is_empty(),
             Value::Unit => false,
-            _ => true, // Non-false values are truthy
+            _ => true, // Non-false values are truthy (including Address)
         }
     }
 }
@@ -121,6 +123,7 @@ impl std::fmt::Display for Value {
             }
             Value::Closure { .. } => write!(f, "<closure>"),
             Value::ActorRef(id) => write!(f, "{}", id),
+            Value::Address(addr) => write!(f, "{:?}", addr),
             Value::Unit => write!(f, "unit"),
         }
     }
@@ -578,7 +581,66 @@ fn eval_builtin(op: &str, args: &[Value]) -> Result<Value, EvalError> {
             Ok(Value::Tuple(args.to_vec()))
         }
         
-        _ => Err(EvalError::RuntimeError { msg: format!("Unknown builtin: {}", op) }),
+        // Error signaling (§21.8)
+        "error" => {
+            if args.len() != 1 {
+                return Err(EvalError::TypeError { msg: "error expects 1 arg (message string)".into() });
+            }
+            match &args[0] {
+                Value::StringVal(msg) => Err(EvalError::RuntimeError { msg: format!("E_USER_ERROR: {}", msg) }),
+                _ => Err(EvalError::TypeError { msg: "error requires a string message".into() }),
+            }
+        }
+        
+        // Close resource handle (§21.7)
+        "close" => {
+            if args.len() != 1 {
+                return Err(EvalError::TypeError { msg: "close expects 1 arg (handle)".into() });
+            }
+            // In the interpreter, close is a no-op for non-file handles
+            Ok(Value::Unit)
+        }
+        
+        // Tuple construction (§21.5)
+        "tuple" => {
+            Ok(Value::Tuple(args.to_vec()))
+        }
+        
+        // Vec construction (§21.5) — represented as a tuple in the interpreter
+        "vec" => {
+            Ok(Value::Tuple(args.to_vec()))
+        }
+        
+        // Map construction (§21.5) — alternating keys/values → list of tuples
+        "map" => {
+            if args.len() % 2 != 0 {
+                return Err(EvalError::TypeError { msg: "map requires even number of arguments (key val pairs)".into() });
+            }
+            let mut result = Vec::new();
+            for chunk in args.chunks(2) {
+                result.push(Value::Tuple(vec![chunk[0].clone(), chunk[1].clone()]));
+            }
+            Ok(Value::Tuple(result))
+        }
+        
+        // Mutation primitive (§21.6) — actual mutation done via eval_set! method
+        "set!" => {
+            if args.len() != 2 {
+                return Err(EvalError::TypeError { msg: "set! expects 2 args (var value)".into() });
+            }
+            // set! is handled specially in eval_app via self.eval_set!
+            Ok(args[1].clone())
+        }
+        
+        // Actor receive (§25) — actual implementation in eval_receive method
+        "receive" => {
+            if args.len() != 1 {
+                return Err(EvalError::TypeError { msg: "receive expects 1 arg (actor ref)".into() });
+            }
+            Ok(Value::Unit)
+        }
+        
+        _ => Err(EvalError::RuntimeError { msg: format!("Unknown builtin: {}", op) })
     }
 }
 
@@ -604,52 +666,27 @@ impl<'a> Evaluator<'a> {
             Expr::Atom(kind) => self.eval_atom(kind),
             Expr::App(op, args) => self.eval_app(op, args),
             Expr::AppExpr(operator, args) => {
-                // Evaluate the operator expression first (could be a nested call)
-                let func_val = self.eval(operator)?;
-                // Evaluate arguments left-to-right
+                // Evaluate arguments left-to-right first
                 let evaluated_args: Vec<Value> = args.iter()
                     .map(|a| self.eval(a))
                     .collect::<Result<Vec<_>, _>>()?;
                 
+                // Check if the operator is a builtin name (Atom(Ident(name))) before evaluating it,
+                // since builtins aren't stored in env and would fail lookup.
+                match &**operator {
+                    Expr::Atom(AtomKind::Ident(name)) if is_builtin(&name) => {
+                        return eval_builtin(&name, &evaluated_args);
+                    }
+                    _ => {}
+                }
+                
+                // Evaluate the operator expression (closure or function reference)
+                let func_val = self.eval(operator)?;
+                
                 match func_val {
                     Value::Closure { params, body, env: closure_env, self_ref } => {
-                        if evaluated_args.len() > params.len() {
-                            return Err(EvalError::TypeError {
-                                msg: format!("Function expects {} args, got {}", params.len(), evaluated_args.len()),
-                            });
-                        }
-                        
-                        // Partial application: fewer args than params → return new closure
-                        if evaluated_args.len() < params.len() {
-                            let remaining_params: Vec<String> = params[evaluated_args.len()..].to_vec();
-                            let mut partial_env = closure_env.extend();
-                            for (param, arg) in params.iter().zip(&evaluated_args) {
-                                partial_env.bind(param.clone(), arg.clone());
-                            }
-                            return Ok(Value::Closure {
-                                params: remaining_params,
-                                body,
-                                env: partial_env,
-                                self_ref: None,
-                            });
-                        }
-                        
-                        // Full application — create new environment with bound parameters
-                        let mut new_env = closure_env.extend();
-                        for (param, arg) in params.iter().zip(&evaluated_args) {
-                            new_env.bind(param.clone(), arg.clone());
-                        }
-                        
-                        // Bind self_ref for recursive calls
-                        if let Some(ref ref_cell) = self_ref {
-                            let actual_closure = ref_cell.borrow().clone();
-                            new_env.bind("__self__".to_string(), actual_closure);
-                        }
-                        
-                        let saved_env = std::mem::replace(&mut self.state.env, new_env);
-                        let result = self.eval(body.as_ref());
-                        self.state.env = saved_env;
-                        result
+                        // Use curried application helper — no named function for AppExpr
+                        self.apply_closure_curried(&closure_env, self_ref.as_ref(), String::new(), params, body, evaluated_args)
                     }
                     _ => Err(EvalError::TypeError { msg: "Operator is not a function".into() }),
                 }
@@ -763,8 +800,10 @@ impl<'a> Evaluator<'a> {
                 ffi_result_to_value(result)
             }
             Expr::FfiPin(inner) => {
-                // Pinning is a compile-time concern; at runtime it's a no-op
-                self.eval(inner)
+                // ffi-pin returns Address(Region, ID) per spec §16
+                let _val = self.eval(inner)?;
+                // In the interpreter, generate a synthetic address for the pinned value
+                Ok(Value::Address(Address { region: Region::Pin, id: 0 }))
             }
             Expr::Assert { condition, message } => {
                 let cond_val = self.eval(condition)?;
@@ -1172,12 +1211,157 @@ impl<'a> Evaluator<'a> {
         }
     }
     
+    /// Apply a closure with curried argument chaining.
+    /// Evaluate set! — mutates a let-mut binding in the environment (§21.6)
+    fn eval_set_bang(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
+        if args.len() != 2 {
+            return Err(EvalError::TypeError { msg: "set! expects 2 args (var value)".into() });
+        }
+        let name = match &args[0] {
+            Value::StringVal(n) => n.clone(),
+            _ => return Err(EvalError::TypeError { msg: "set! first arg must be a variable name string".into() }),
+        };
+        // Find the binding in env and mutate it
+        if let Some(val) = self.state.env.get_mut(&name) {
+            *val = args[1].clone();
+            Ok(args[1].clone())
+        } else {
+            Err(EvalError::RuntimeError { msg: format!("set! variable '{}' not found (must be let-mut)", name) })
+        }
+    }
+
+    /// Evaluate receive — gets next message from actor's mailbox (§25)
+    fn eval_receive(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
+        if args.len() != 1 {
+            return Err(EvalError::TypeError { msg: "receive expects 1 arg (actor ref)".into() });
+        }
+        match &args[0] {
+            Value::ActorRef(id) => {
+                // Check if actor exists
+                if self.state.actors.exists(*id) {
+                    Ok(Value::Unit) // In interpreter, receive returns Unit (actual message handling deferred)
+                } else {
+                    Err(EvalError::ActorError(format!("Actor {} not found", id)))
+                }
+            }
+            _ => Err(EvalError::TypeError { msg: "receive requires an ActorRef".into() }),
+        }
+    }
+
+    /// When more arguments are provided than parameters, applies what fits
+    /// and recursively calls the result with remaining args (currying).
+    fn apply_closure_curried(
+        &mut self,
+        closure_env: &Env,
+        self_ref: Option<&Rc<RefCell<Value>>>,
+        func_name: String,
+        params: Vec<String>,
+        body: Box<Expr>,
+        mut remaining_args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        // Iteratively apply arguments to the closure
+        let mut current_params = params;
+        let mut current_env = closure_env.clone();
+        let mut current_body = body;
+        
+        loop {
+            // If no args remain and there are also no params, evaluate the body (zero-arg function)
+            if remaining_args.is_empty() && current_params.is_empty() {
+                let saved_env = std::mem::replace(&mut self.state.env, current_env);
+                return self.eval(current_body.as_ref());
+            }
+            
+            // If no args remain but there are params left, return partial application
+            if remaining_args.is_empty() {
+                return Ok(Value::Closure {
+                    params: current_params,
+                    body: current_body,
+                    env: current_env,
+                    self_ref: None,
+                });
+            }
+            
+            if remaining_args.len() <= current_params.len() {
+                // We have enough or exactly the right number of args
+                let mut new_env = current_env.extend();
+                for (param, arg) in current_params.iter().zip(&remaining_args) {
+                    new_env.bind(param.clone(), arg.clone());
+                }
+                
+                // Bind self_ref for recursive calls
+                if let Some(ref ref_cell) = self_ref {
+                    let actual_closure = ref_cell.borrow().clone();
+                    new_env.bind(func_name, actual_closure);
+                }
+                
+                let saved_env = std::mem::replace(&mut self.state.env, new_env);
+                let result = self.eval(current_body.as_ref());
+                self.state.env = saved_env;
+                return result;
+            } else {
+                // More args than params — apply what fits and continue
+                let mut partial_env = current_env.extend();
+                for (param, arg) in current_params.iter().zip(&remaining_args) {
+                    partial_env.bind(param.clone(), arg.clone());
+                }
+                
+                if let Some(ref ref_cell) = self_ref {
+                    // For recursive functions, bind the closure so it can call itself
+                    let actual_closure = Value::Closure {
+                        params: current_params.clone(),
+                        body: current_body.clone(),
+                        env: partial_env.clone(),
+                        self_ref: Some((*ref_cell).clone()),
+                    };
+                    *ref_cell.borrow_mut() = actual_closure;
+                }
+                
+                let saved_env = std::mem::replace(&mut self.state.env, partial_env);
+                // Evaluate the body to get a result (which should be a closure for currying)
+                let result = self.eval(current_body.as_ref());
+                self.state.env = saved_env;
+                
+                match result? {
+                    Value::Closure { params: next_params, body: next_body, env: next_env, .. } => {
+                        // Consume only the number of args we used
+                        let consumed = current_params.len();
+                        remaining_args.drain(..consumed);
+                        
+                        // Now call this new closure with remaining args
+                        return Self::apply_closure_curried(
+                            self,
+                            &next_env,
+                            None,  // self_ref already captured in the nested closure's env
+                            func_name.clone(),
+                            next_params,
+                            next_body,
+                            remaining_args,
+                        );
+                    }
+                    other => {
+                        return Err(EvalError::TypeError {
+                            msg: format!("Curried function returned non-function value {:?}", other),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// Evaluate a function application (strict left-to-right - Section 7)
     fn eval_app(&mut self, op: &str, args: &[Expr]) -> Result<Value, EvalError> {
         // Strict left-to-right evaluation order (P5)
         let evaluated_args: Vec<Value> = args.iter()
             .map(|a| self.eval(a))
             .collect::<Result<Vec<_>, _>>()?;
+        
+        // Special handling for set! and receive — need state access
+        if op == "set!" {
+            return self.eval_set_bang(evaluated_args);
+        }
+        if op == "receive" {
+            return self.eval_receive(evaluated_args);
+        }
         
         // Check if it's a builtin
         if is_builtin(op) {
@@ -1189,44 +1373,7 @@ impl<'a> Evaluator<'a> {
         
         match func_val {
             Value::Closure { params, body, env: closure_env, self_ref } => {
-                if evaluated_args.len() > params.len() {
-                    return Err(EvalError::TypeError {
-                        msg: format!("Function {} expects {} args, got {}", op, params.len(), evaluated_args.len()),
-                    });
-                }
-                
-                // Partial application: fewer args than params → return new closure
-                if evaluated_args.len() < params.len() {
-                    let remaining_params: Vec<String> = params[evaluated_args.len()..].to_vec();
-                    let mut partial_env = closure_env.extend();
-                    for (param, arg) in params.iter().zip(&evaluated_args) {
-                        partial_env.bind(param.clone(), arg.clone());
-                    }
-                    return Ok(Value::Closure {
-                        params: remaining_params,
-                        body,
-                        env: partial_env,
-                        self_ref: None,
-                    });
-                }
-                
-                // Full application — create new environment with bound parameters
-                let mut new_env = closure_env.extend();
-                for (param, arg) in params.iter().zip(&evaluated_args) {
-                    new_env.bind(param.clone(), arg.clone());
-                }
-                
-                // If this is a recursive function (has self_ref), also bind it
-                // so the recursive call can find itself in the extended env.
-                if let Some(ref ref_cell) = self_ref {
-                    let actual_closure = ref_cell.borrow().clone();
-                    new_env.bind(op.to_string(), actual_closure);
-                }
-                
-                let saved_env = std::mem::replace(&mut self.state.env, new_env);
-                let result = self.eval(body.as_ref());
-                self.state.env = saved_env;
-                result
+                self.apply_closure_curried(&closure_env, self_ref.as_ref(), op.to_string(), params, body, evaluated_args)
             }
             _ => Err(EvalError::TypeError { msg: format!("{} is not a function", op) }),
         }
@@ -1384,8 +1531,15 @@ fn is_builtin(op: &str) -> bool {
         "==" | "!=" | "<" | ">" | "<=" | ">=" |
         "not" | "and" | "or" |
         "int?" | "float?" | "bool?" | "string?" |
+        // Collection operations (§21.5)
         "len" | "unit" | "print" | "read-line" | "exit" |
-        "begin" |
+        "begin" | "tuple" | "vec" | "map" |
+        // Error signaling (§21.8) & resource management (§21.7)
+        "error" | "close" |
+        // Mutation primitive (§21.6)
+        "set!" |
+        // Actor receive (§25)
+        "receive" |
         // List operations
         "first" | "rest" | "nth" | "length" | "cons" | "append" | "list"
     )
@@ -1399,8 +1553,26 @@ fn value_to_actor_message(val: Value) -> ActorMessage {
         Value::StringVal(v) => ActorMessage::String(v),
         Value::Tuple(vals) => ActorMessage::Tuple(vals.into_iter().map(value_to_actor_message).collect()),
         Value::ActorRef(id) => ActorMessage::ActorRef(id),
+        Value::Address(_) => ActorMessage::Unit, // Addresses aren't directly sendable
         Value::Unit => ActorMessage::Unit,
         Value::Closure { .. } => ActorMessage::Unit, // Closures aren't directly sendable
+    }
+}
+
+/// Convert ActorMessage back to Value (reverse of value_to_actor_message)
+fn message_to_value(msg: ActorMessage) -> Value {
+    match msg {
+        ActorMessage::Int(v) => Value::Int(v),
+        ActorMessage::Float(v) => Value::Float(v),
+        ActorMessage::Bool(v) => Value::Bool(v),
+        ActorMessage::String(s) => Value::StringVal(s),
+        ActorMessage::Tuple(vals) => {
+            let vals: Vec<Value> = vals.into_iter().map(message_to_value).collect();
+            Value::Tuple(vals)
+        }
+        ActorMessage::ActorRef(id) => Value::ActorRef(id),
+        ActorMessage::SpawnBody(_) => Value::Unit, // Spawn bodies aren't directly convertible
+        ActorMessage::Unit => Value::Unit,
     }
 }
 
@@ -1419,6 +1591,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
             xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| values_equal(x, y))
         }
         (Value::ActorRef(x), Value::ActorRef(y)) => x == y,
+        (Value::Address(a1), Value::Address(a2)) => a1 == a2,
         (Value::Unit, Value::Unit) => true,
         // Closures are never equal (different environments)
         (Value::Closure { .. }, Value::Closure { .. }) => false,
