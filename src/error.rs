@@ -131,6 +131,34 @@ pub enum ZylError {
     #[error("trait: cannot derive '{}' for type '{}' at {}", .1, .2, .0)]
     E_TRAIT_NOT_DERIVABLE(Span, String, String),
 
+    // --- Type inference errors (Phase 3) ---
+    #[error("type: type mismatch at {} — expected {}, found {}", .0, .1, .2)]
+    E_TYPE_MISMATCH(Span, String, String),
+
+    #[error("type: unbound variable '{}' at {}", .1, .0)]
+    E_UNBOUND_VARIABLE(Span, String),
+
+    #[error("type: unknown type '{}' at {}", .1, .0)]
+    E_UNKNOWN_TYPE(Span, String),
+
+    #[error("type: invalid capability usage for '{}' — {} at {}", .2, .1, .0)]
+    E_INVALID_CAPABILITY(Span, String, String),
+
+    #[error("type: unsatisfied trait bound '{}' : {} at {}", .3, .1, .0)]
+    E_TRAIT_BOUND_NOT_SATISFIED(Span, String, String, String),
+
+    #[error("type: duplicate definition of '{}' at {}. previously defined at {}", .1, .0, .2)]
+    E_DUPLICATE_DEFINITION(Span, String, Span),
+
+    #[error("type: unknown generic parameter '{}' at {}", .1, .0)]
+    E_UNKNOWN_GENERIC_PARAM(Span, String),
+
+    #[error("type: function arity mismatch for '{}' — expected {} arguments, found {}", .0, .1, .2)]
+    E_ARITY_MISMATCH(String, usize, usize),
+
+    #[error("type: return type mismatch in '{}': expected {}, got {} at {}", .1, .2, .3, .0)]
+    E_RETURN_TYPE_MISMATCH(Span, String, String, String),
+
     // --- Reserved keyword errors (Phase 1.5) ---
     #[error("parser: reserved keyword '{}' cannot be used as identifier at {}", .1, .0)]
     E_RESERVED_KEYWORD(Span, String),

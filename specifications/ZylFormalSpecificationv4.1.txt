@@ -58,6 +58,14 @@ P9. Testability
     make-, test-suite, test, assert-equal, assert-fail, assert-true, 
     assert-false, test-property, setup, teardown, run-tests, test-compile
 
+1.3.1 Reserved Keywords as Identifiers:
+    The keywords listed in §1.3 are reserved and MUST NOT be used as identifiers
+    (variable names, function names, type names) in any definition form (def, defn,
+    defun, let, let-mut, fn, lambda, trait, impl, deftype, alias, derive, 
+    defstruct, defstruct+, module, use, export). Attempting to do so is a compile-time
+    error: E_RESERVED_KEYWORD. This prevents users from accidentally shadowing core
+    language constructs and breaking the compiler's dispatch mechanism.
+
 1.4 Comments:
     ; line comment
 
@@ -749,6 +757,7 @@ Errors:
     E_TEST_FAILURE              — test assertion failed
     E_TEST_RUNNER_ERROR         — test harness error
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
+    E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
 
 Behavior:
     Compile-time errors abort compilation.
@@ -792,6 +801,7 @@ v5.0 (PLANNED):
     - Feature flags.
 
 v4.2 (FUTURE):
+    - Reserved keyword enforcement in definition forms (§1.3.1).
     - Custom generators for property testing.
     - Coverage reporting.
     - Snapshot testing.
