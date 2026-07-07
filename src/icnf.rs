@@ -16,6 +16,7 @@ pub struct ICNFFuncSig {
     pub name: String,
     pub params: Vec<(String, Type)>,       // param_name -> type
     pub return_type: Option<Type>,          // None = Unit
+    pub body: Vec<ICNFNode>,               // converted function body statements
 }
 
 /// A single statement in the SSA IR. Each has a unique SSA ID and region annotation.
@@ -151,11 +152,13 @@ pub struct IcnfConverter {
     emitted_branch_ids: std::collections::HashSet<usize>,
     /// When false, convert_expr does not push results to global_stmts. Used for branch body conversion.
     push_to_globals: bool,
+    /// Temporary buffer for intermediate nodes during function body conversion.
+    body_intermediates: Vec<ICNFNode>,
 }
 
 impl IcnfConverter {
     pub fn new() -> Self {
-        Self { ssa_id_counter: std::cell::Cell::new(0), functions: Vec::new(), global_stmts: Vec::new(), current_scope: IndexMap::new(), emitted_branch_ids: std::collections::HashSet::new(), push_to_globals: true }
+        Self { ssa_id_counter: std::cell::Cell::new(0), functions: Vec::new(), global_stmts: Vec::new(), current_scope: IndexMap::new(), emitted_branch_ids: std::collections::HashSet::new(), push_to_globals: true, body_intermediates: Vec::new() }
     }
 
     /// Set whether expression conversion should push results to globals.
@@ -175,8 +178,20 @@ impl IcnfConverter {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
-                    let _body_stmts = self.convert_expr_to_stmts(body)?;
-                    let func_sig = ICNFFuncSig { name: name.clone(), params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)) };
+                    // Save current globals, use a temp buffer for function body.
+                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
+                    let body_stmts = self.convert_expr_to_stmts(body)?;
+                    // Push top-level body statements to temp buffer.
+                    for stmt in body_stmts {
+                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
+                            self.global_stmts.push(stmt);
+                        }
+                    }
+                    let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    let func_sig = ICNFFuncSig { name: name.clone(), params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -197,9 +212,20 @@ impl IcnfConverter {
                     let body_expr = if args.len() == 3 { &args[2] } else { 
                         &Expr { span: crate::error::Span::default(), inner: ExprInner::Begin(args[2..].to_vec()) }
                     };
-                    let _body_stmts = self.convert_expr_to_stmts(body_expr)?;
+                    // Save globals, use temp buffer for function body.
+                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
+                    let body_stmts = self.convert_expr_to_stmts(body_expr)?;
+                    for stmt in body_stmts {
+                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
+                            self.global_stmts.push(stmt);
+                        }
+                    }
+                    let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
 
-                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)) };
+                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -218,9 +244,20 @@ impl IcnfConverter {
                     let body_expr = if args.len() == 3 { &args[2] } else { 
                         &Expr { span: crate::error::Span::default(), inner: ExprInner::Begin(args[2..].to_vec()) }
                     };
-                    let _body_stmts = self.convert_expr_to_stmts(body_expr)?;
+                    // Save globals, use temp buffer for function body.
+                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
+                    let body_stmts = self.convert_expr_to_stmts(body_expr)?;
+                    for stmt in body_stmts {
+                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
+                            self.global_stmts.push(stmt);
+                        }
+                    }
+                    let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
 
-                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)) };
+                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -278,13 +315,18 @@ impl IcnfConverter {
     fn convert_expr_collect_id(&mut self, expr: &Expr) -> Result<usize, ZylError> {
         let stmts = self.convert_expr_to_stmts(expr)?;
         // Push all nodes for operand lookup (needed by BinOp/Print handlers).
-        if !stmts.is_empty() && self.global_stmts.iter().all(|n| n.id != stmts.last().unwrap().id) {
-            let mut last = stmts.last().unwrap().clone();
-            match &last.node { ICNFInner::Const(_) | ICNFInner::Load(_) => {
-                // Mark intermediate values as branch body to skip emission at top-level.
-                last.is_branch_body = true;
-            }, _ => {} }
-            self.global_stmts.push(last);
+        if !stmts.is_empty() {
+            let last = stmts.last().unwrap().clone();
+            // Check if already in target storage to avoid duplicates.
+            if self.global_stmts.iter().all(|n| n.id != last.id) {
+                let mut node = last;
+                if self.push_to_globals {
+                    match &node.node { ICNFInner::Const(_) | ICNFInner::Load(_) => {
+                        node.is_branch_body = true;
+                    }, _ => {} }
+                }
+                self.global_stmts.push(node);
+            }
         }
         if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
     }
@@ -292,6 +334,15 @@ impl IcnfConverter {
     /// Convert a single AST expression into one or more ICNF nodes.
     fn convert_expr_to_stmts(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
         match &expr.inner {
+            ExprInner::Atom(Atom::Ident(name)) => {
+                // Variable reference: look up in current scope for SSA ID.
+                if let Some(&ssa_id) = self.current_scope.get(name) {
+                    Ok(vec![ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name.clone()) }])
+                } else {
+                    // Not in scope — treat as a constant (for literals, type metadata, etc.).
+                    Ok(vec![self.emit(ICNFInner::Const(Atom::Ident(name.clone())))])
+                }
+            }
             ExprInner::Atom(atom) => Ok(vec![self.emit(ICNFInner::Const(atom.clone()))]),
 
             // Print from raw Call form: (print e1 ... en).
@@ -317,9 +368,10 @@ impl IcnfConverter {
                 Ok(vec![self.emit(ICNFInner::Print(arg_ids))])
             }
 
-            // Variable reference (bare identifier as expression).
-            ExprInner::Call(op, _) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) 
-                && !is_arithmetic_or_cmp_expr(op) => {
+            // Variable reference (bare identifier as expression — no arguments).
+            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) 
+                && !is_arithmetic_or_cmp_expr(op)
+                && args.is_empty() => {
                 let name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
                 if let Some(&ssa_id) = self.current_scope.get(&name) {
                     Ok(vec![ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name) }])
@@ -511,16 +563,11 @@ impl IcnfConverter {
                 && !is_arithmetic_or_cmp_expr(op) => {
                 let func_name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
 
-                // Convert all arguments to SSA IDs.
+                // Convert all arguments to SSA IDs (using convert_expr to ensure args are pushed to globals).
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for a in args.iter() {
-                    let stmts = self.convert_expr_to_stmts(a)?;
-                    if !stmts.is_empty() {
-                        arg_ids.push(stmts.last().unwrap().id);
-                    } else {
-                        let id = self.next_ssa_id();
-                        arg_ids.push(id);
-                    }
+                    let id = self.convert_expr(a)?;
+                    arg_ids.push(id);
                 }
 
                 Ok(vec![self.emit(ICNFInner::Call(func_name, arg_ids))])
