@@ -753,7 +753,70 @@ $ cat a.out.s | head -10
 
 ### Known Remaining Issues for Next Session
 - [ ] While loop code generation — not yet tested with actual runtime execution
-- [ ] For loop desugaring to while — needs testing
-- [ ] Function call codegen (user-defined functions) — stub only, no body emission
+- [ ] For loop desugaring to while — needs testing  
+- [x] **Function call codegen (partial)**: Added `body` field to ICNFFuncSig, fixed bare identifier handler (`Call(op, _)` → `Call(op, args)` with empty check so `(add 3 4)` no longer treated as variable reference), added non-pushing mode for defn body conversion. **Blocker**: Changing emit_node parameter from `&[ICNFNode]` to `&[&ICNFNode]` (needed for ID-based operand lookup) causes scope conflicts in While/For/If branch handlers — each needs its own local stmt_refs vector but sed replacements create variable shadowing issues.
 - [ ] Struct/ADT memory layout and pattern matching — not implemented in codegen
+
+---
+
+## Session Update: Function Call Codegen (In Progress)
+
+### Completed This Session
+- [x] **ICNFFuncSig.body field**: Added `body: Vec<ICNFNode>` to ICNFFuncSig struct for storing converted function bodies.
+- [x] **Bare identifier handler fix** (`src/icnf.rs`): Changed pattern from `Call(op, _)` → `Call(op, args)` with `args.is_empty()` guard. This prevents `(add 3 4)` (a Call form) from being matched as a bare variable reference and creating phantom `Load("5")` nodes instead of processing the actual function call arguments.
+- [x] **Non-pushing mode for defn bodies**: Updated all three defn handlers (Specialized Defn, Raw Call form, Apply form) to use non-pushing mode (`push_to_globals = false`) and collect ALL converted statements into `func.body`. Previously body conversion pushed everything to globals which mixed function-local nodes with top-level expressions.
+- [x] **convert_expr_collect_id respects push_to_globals**: Only pushes intermediate nodes when in global mode; in non-pushing mode (defn bodies), the caller collects all stmts directly.
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/icnf.rs` | ~86 added/modified | ICNFFuncSig.body field, bare identifier handler fix, non-pushing mode for defn handlers, convert_expr_collect_id push guard |
+
+---
+
+## Session Update: Function Call Codegen + Register Fixes
+
+### Completed This Session
+- [x] **Fixed compilation error**: `emitted_ids` not in scope — added `func_emitted_ids` for function body loop
+- [x] **Fixed function body variable mapping**: Parameters and local vars now correctly mapped via pre-pass slot assignment + `local_vars` lookup
+- [x] **Fixed ICNF Call node matching**: Variable reference handler (`Call(op, _)`) was matching function calls like `Call(add, [3, 4])` — added `args.is_empty()` guard
+- [x] **Fixed function body ICNF generation**: Function body nodes (including intermediate Load/Const/Call) now properly collected into `func.body` using temp buffer approach
+- [x] **Fixed intermediate node skipping in codegen**: Added `operand_ids` collection pass to skip Load/Const nodes whose IDs are operands to other nodes (prevents duplicate emission)
+- [x] **Fixed BinOp right operand lookup**: Changed from index-based `stmts.get(*right_id)` to ID-based `emit_load_into` for both operands
+- [x] **Fixed `emit_load_into`**: Added `local_vars` parameter for proper Load node lookup; added Call node handler (function results in eax)
+- [x] **Fixed register size mismatches**: Extended `reg_to_32()` to handle 64→32-bit register names; fixed BinOp handlers to use consistent register sizes
+- [x] **Fixed BinOp Mul handler**: Changed from `mov eax, rax` (size mismatch) to `mov eax, ecx` (src1 → dest)
+- [x] **Fixed Print handler**: Added `emit_load_into` call before `emit_int_to_str` to load argument value into eax
+- [x] **String literals in rodata**: All strings emitted in .rodata section before code (prevents mid-function data leaks)
+
+### Test Results
+```bash
+# Simple integer print — WORKS ✓
+$ echo '(print 42)' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+42
+
+# String print — WORKS ✓  
+$ echo '(print "hello")' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+hello
+
+# Function definition + call — WORKS ✓
+$ echo '(defn add (x y) (+ x y))(print (add 3 4))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+7
+
+# If/else with string prints — WORKS ✓
+$ echo '(if (> 10 5) (print "yes") (print "no"))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+yes
+```
+
+### Known Remaining Issues
+- [ ] **Recursive functions with complex control flow** (factorial): Assembly compiles but segfaults at runtime. Issue likely in how the If condition is computed or stack management during recursion.
+- [ ] **While loop code generation**: Not yet tested with actual runtime execution
+- [ ] **Struct/ADT memory layout and pattern matching**: Not implemented in codegen
+- [ ] **Floating-point support**: Not implemented
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/codegen.rs` | ~300 modified | Variable mapping fix, emit_node signature update, operand_ids collection, Load/Const skip logic, emit_load_into fix, reg_to_32 extension, BinOp handler fixes, Print handler fix |
+| `src/icnf.rs` | ~200 modified | Atom(Ident) handler for variable refs, Call handler args.is_empty() guard, function body temp buffer approach, convert_expr_collect_id fix |
 
