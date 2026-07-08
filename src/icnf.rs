@@ -305,27 +305,30 @@ impl IcnfConverter {
         &self.emitted_branch_ids
     }
 
-    /// Convert a single AST expression into one or more ICNF nodes (without pushing to globals).
+    /// Convert a single AST expression into one or more ICNF nodes.
+    /// When push_to_globals is true, pushes all nodes to global_stmts.
     fn convert_expr_collect(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
-        let stmts = self.convert_expr_to_stmts(expr)?;
+        let mut stmts = self.convert_expr_to_stmts(expr)?;
+        // Push collected nodes to global_stmts when in pushing mode.
+        if self.push_to_globals && !stmts.is_empty() {
+            for stmt in &stmts {
+                if self.global_stmts.iter().all(|n| n.id != stmt.id) {
+                    self.global_stmts.push(stmt.clone());
+                }
+            }
+        }
         Ok(stmts)
     }
 
     /// Convert an expression and return its SSA ID without pushing to globals.
     fn convert_expr_collect_id(&mut self, expr: &Expr) -> Result<usize, ZylError> {
         let stmts = self.convert_expr_to_stmts(expr)?;
-        // Push all nodes for operand lookup (needed by BinOp/Print handlers).
-        if !stmts.is_empty() {
+        // Only push last node to target storage for operand lookup when in pushing mode.
+        if !stmts.is_empty() && self.push_to_globals {
             let last = stmts.last().unwrap().clone();
             // Check if already in target storage to avoid duplicates.
             if self.global_stmts.iter().all(|n| n.id != last.id) {
-                let mut node = last;
-                if self.push_to_globals {
-                    match &node.node { ICNFInner::Const(_) | ICNFInner::Load(_) => {
-                        node.is_branch_body = true;
-                    }, _ => {} }
-                }
-                self.global_stmts.push(node);
+                self.global_stmts.push(last);
             }
         }
         if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
@@ -337,13 +340,24 @@ impl IcnfConverter {
             ExprInner::Atom(Atom::Ident(name)) => {
                 // Variable reference: look up in current scope for SSA ID.
                 if let Some(&ssa_id) = self.current_scope.get(name) {
+                    // Create a proper Load node with emit() so it gets pushed to global_stmts.
+                    // The pre-allocated ssa_id from scope setup is reused.
+                    if self.push_to_globals {
+                        // Check if already in global_stmts to avoid duplicates.
+                        if self.global_stmts.iter().all(|n| n.id != ssa_id) {
+                            self.global_stmts.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name.clone()) });
+                        }
+                    }
                     Ok(vec![ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name.clone()) }])
                 } else {
                     // Not in scope — treat as a constant (for literals, type metadata, etc.).
                     Ok(vec![self.emit(ICNFInner::Const(Atom::Ident(name.clone())))])
                 }
             }
-            ExprInner::Atom(atom) => Ok(vec![self.emit(ICNFInner::Const(atom.clone()))]),
+            ExprInner::Atom(atom) => {
+                let result = vec![self.emit(ICNFInner::Const(atom.clone()))];
+                Ok(result)
+            }
 
             // Print from raw Call form: (print e1 ... en).
             ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "print") && !args.is_empty() => {
@@ -425,21 +439,6 @@ impl IcnfConverter {
                     ICNFNode { id: if_node_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::If { cond_ssa: cond_id, then_body: then_stmts, else_body: else_stmts, result_var } },
                     ICNFNode { id: phi_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(result_var_clone, cond_id) },
                 ])
-            }
-
-            // While loop.
-            // Let binding.
-            ExprInner::Let(name, val, body) => {
-                let saved_scope = std::mem::take(&mut self.current_scope);
-                let val_id = self.convert_expr(val)?;
-                let ssa_id = self.next_ssa_id();
-                let assign_node = ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(name.clone(), val_id) };
-                self.current_scope.insert(name.clone(), ssa_id);
-                let body_stmts = self.convert_expr_to_stmts(body)?;
-                self.current_scope = saved_scope;
-                let mut result = vec![assign_node];
-                result.extend(body_stmts);
-                Ok(result)
             }
 
             // Let binding.
@@ -563,14 +562,18 @@ impl IcnfConverter {
                 && !is_arithmetic_or_cmp_expr(op) => {
                 let func_name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
 
-                // Convert all arguments to SSA IDs (using convert_expr to ensure args are pushed to globals).
+                // Convert all arguments, collecting ALL intermediate nodes (not just the last ID).
+                let mut result = Vec::new();
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for a in args.iter() {
-                    let id = self.convert_expr(a)?;
+                    let mut stmts = self.convert_expr_collect(a)?;
+                    let id = if !stmts.is_empty() { stmts.last().unwrap().id } else { self.next_ssa_id() };
                     arg_ids.push(id);
+                    result.append(&mut stmts);
                 }
 
-                Ok(vec![self.emit(ICNFInner::Call(func_name, arg_ids))])
+                result.push(self.emit(ICNFInner::Call(func_name, arg_ids)));
+                Ok(result)
             }
 
             // Begin block.
@@ -832,23 +835,13 @@ impl IcnfConverter {
         if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
     }
 
-    /// Convert a branch body expression: collect statements, push all to globals for operand lookup.
+    /// Convert a branch body expression: collect statements WITHOUT pushing to globals.
+    /// Branch body nodes stay embedded in the ICNF If/While/For node, not interleaved in func.body.
     fn convert_branch_body(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
-        // Use non-pushing mode for branch bodies - we'll push manually with proper flags.
+        // Use non-pushing mode — branch body nodes stay embedded in control flow nodes.
         let saved = std::mem::replace(&mut self.push_to_globals, false);
-        
-        // Temporarily restore pushing so Print handlers can create their arg nodes in globals.
-        // We'll mark them all as is_branch_body=true after conversion.
-        self.push_to_globals = true;
         let stmts = self.convert_expr_to_stmts(expr)?;
         self.push_to_globals = saved;
-        
-        // Mark ALL branch body nodes (including intermediates) as is_branch_body=true.
-        for g in self.global_stmts.iter_mut() {
-            if !stmts.iter().any(|s| s.id == g.id) { continue; }  // only mark nodes from this conversion
-            g.is_branch_body = true;
-        }
-        
         Ok(stmts)
     }
 
@@ -909,23 +902,26 @@ impl IcnfConverter {
             result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::UnOp(UnOpKind::Negate, arg_id) });
 
         } else if args.len() == 2 {
-            let left_id = self.convert_expr_collect_id(&args[0])?;
-            let right_id = self.convert_expr_collect_id(&args[1])?;
+            let mut left_stmts = self.convert_expr_collect(&args[0])?;
+            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut left_stmts);
+            let mut right_stmts = self.convert_expr_collect(&args[1])?;
+            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut right_stmts);
             let ssa_id = self.next_ssa_id();
             result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(BinOpKind::Sub, left_id, right_id) });
 
         } else if args.len() > 2 {
-            // N-ary -: fold left-to-right (strict evaluation order).
-            let mut acc_id = self.convert_expr_collect_id(&args[0])?;
+            let mut acc_stmts = self.convert_expr_collect(&args[0])?;
+            let mut acc_id = if !acc_stmts.is_empty() { acc_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut acc_stmts);
             for arg in &args[1..] {
-                let arg_id = self.convert_expr_collect_id(arg)?;
+                let mut arg_stmts = self.convert_expr_collect(arg)?;
+                let arg_id = if !arg_stmts.is_empty() { arg_stmts.last().unwrap().id } else { self.next_ssa_id() };
+                result.append(&mut arg_stmts);
                 let ssa_id = self.next_ssa_id();
                 result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(BinOpKind::Sub, acc_id, arg_id) });
-                if !result.is_empty() {
-                    acc_id = result.last().unwrap().id;
-                } else {
-                    acc_id = ssa_id;
-                }
+                acc_id = ssa_id;
             }
         }
 
@@ -937,18 +933,17 @@ impl IcnfConverter {
         // Skip type annotation atoms like T_INT, ?0 etc. — these are from Phase 5's output replacement.
         if is_type_annotation_atom(name) { return Ok(Vec::new()); }
 
+        let mut result = Vec::new();
         let mut arg_ids = Vec::with_capacity(args.len());
         for a in args.iter() {
-            let stmts = self.convert_expr_to_stmts(a)?;
-            if !stmts.is_empty() {
-                arg_ids.push(stmts.last().unwrap().id);
-            } else {
-                let id = self.next_ssa_id();
-                arg_ids.push(id);
-            }
+            let mut stmts = self.convert_expr_collect(a)?;
+            let id = if !stmts.is_empty() { stmts.last().unwrap().id } else { self.next_ssa_id() };
+            arg_ids.push(id);
+            result.append(&mut stmts);
         }
 
-        Ok(vec![self.emit(ICNFInner::Call(name.to_string(), arg_ids))])
+        result.push(self.emit(ICNFInner::Call(name.to_string(), arg_ids)));
+        Ok(result)
     }
 
     /// Helper: convert N-ary fold operations (*, +).
@@ -966,23 +961,29 @@ impl IcnfConverter {
             result.push(ICNFNode { id: arg_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(format!("___fold_{}", arg_id)) });
 
         } else if args.len() == 2 {
-            let left_id = self.convert_expr_collect_id(&args[0])?;
-            let right_id = self.convert_expr_collect_id(&args[1])?;
+            let mut left_stmts = self.convert_expr_collect(&args[0])?;
+            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut left_stmts);
+            
+            let mut right_stmts = self.convert_expr_collect(&args[1])?;
+            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut right_stmts);
+            
             let ssa_id = self.next_ssa_id();
             result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, left_id, right_id) });
 
         } else if args.len() > 2 {
-            // N-ary fold left-to-right (strict evaluation order).
-            let mut acc_id = self.convert_expr_collect_id(&args[0])?;
+            let mut acc_stmts = self.convert_expr_collect(&args[0])?;
+            let mut acc_id = if !acc_stmts.is_empty() { acc_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut acc_stmts);
+            
             for arg in &args[1..] {
-                let arg_id = self.convert_expr_collect_id(arg)?;
+                let mut arg_stmts = self.convert_expr_collect(arg)?;
+                let arg_id = if !arg_stmts.is_empty() { arg_stmts.last().unwrap().id } else { self.next_ssa_id() };
+                result.append(&mut arg_stmts);
                 let ssa_id = self.next_ssa_id();
                 result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, acc_id, arg_id) });
-                if !result.is_empty() {
-                    acc_id = result.last().unwrap().id;
-                } else {
-                    acc_id = ssa_id;
-                }
+                acc_id = ssa_id;
             }
         }
 
@@ -994,13 +995,15 @@ impl IcnfConverter {
         let mut result = Vec::new();
 
         if args.len() == 2 {
-            // Use non-pushing conversion for operands to avoid emitting intermediates as standalone statements.
-            let left_id = self.convert_expr_collect_id(&args[0])?;
-            let right_id = self.convert_expr_collect_id(&args[1])?;
+            let mut left_stmts = self.convert_expr_collect(&args[0])?;
+            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut left_stmts);
+            let mut right_stmts = self.convert_expr_collect(&args[1])?;
+            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            result.append(&mut right_stmts);
             let ssa_id = self.next_ssa_id();
             result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, left_id, right_id) });
         } else if args.len() == 1 && is_unary_fold_candidate(&args[0]) {
-            // Unary case for / (division by zero check).
             let arg_id = self.convert_expr(&args[0])?;
             let ssa_id = self.next_ssa_id();
             result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::UnOp(UnOpKind::Negate, arg_id) });

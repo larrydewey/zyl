@@ -809,14 +809,168 @@ yes
 ```
 
 ### Known Remaining Issues
-- [ ] **Recursive functions with complex control flow** (factorial): Assembly compiles but segfaults at runtime. Issue likely in how the If condition is computed or stack management during recursion.
+- [x] **Recursive functions with complex control flow** (factorial): Assembly compiles but returns 0 instead of correct result. Root cause identified and partially fixed.
 - [ ] **While loop code generation**: Not yet tested with actual runtime execution
 - [ ] **Struct/ADT memory layout and pattern matching**: Not implemented in codegen
 - [ ] **Floating-point support**: Not implemented
 
+---
+
+## Session Update: Recursive Function Codegen — Deep Dive (IN PROGRESS)
+
+### Problem
+`(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))` returns 0 instead of 120.
+
+### Root Cause Analysis
+The Call node for the recursive `factorial` call was missing from the else branch of the If expression. Three layers of bugs:
+
+**Bug 1: ICNF converter discards intermediate nodes from function call operands**
+- `convert_apply_call()` calls `convert_expr_to_stmts(a)?` but only extracts the last SSA ID, discarding intermediate nodes (e.g., the BinOp(-) for `n-1`)
+- Same bug in `Call` form handler (line 552-563 in icnf.rs): `convert_expr(a)?` only returns the final SSA ID
+
+**Bug 2: `convert_expr_collect_id` discards intermediate nodes**
+- Used for BinOp operands in `convert_nary_fold`, `convert_sub`, `convert_binary_only`
+- When `push_to_globals = false` (branch bodies), intermediate nodes (BinOp, Call) were silently dropped
+- Only the final SSA ID was returned, losing the actual computation nodes
+
+**Bug 3: Codegen skip logic was too aggressive**
+- `operand_ids` HashSet caused BinOp/Call/Load nodes to be skipped in the emit loop
+- But unlike Load/Const, BinOp and Call COMPUTE values — they need to be emitted
+- When a BinOp/Call was referenced as an operand, the skip logic prevented its emission
+
+### Fixes Applied
+
+**Fix 1: `convert_expr_collect` — new helper to return all nodes, not just the last ID**
+```rust
+fn convert_expr_collect(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
+    let stmts = self.convert_expr_to_stmts(expr)?;
+    Ok(stmts)
+}
+```
+
+**Fix 2: Updated `convert_apply_call` to use `convert_expr_collect`**
+- Now collects ALL nodes from each argument, appends to result, then emits the Call node
+- Same fix applied to `Call` form handler (line 552-563)
+
+**Fix 3: Updated `convert_nary_fold`, `convert_sub`, `convert_binary_only`**
+- Changed from `convert_expr_collect_id` to `convert_expr_collect` for operand handling
+- Uses `result.append(&mut stmts)` to preserve all intermediate nodes
+
+**Fix 4: Codegen on-demand emission for computed operands**
+- Added `standalone_emitted: HashSet<usize>` to CodeGen struct to track on-demand emitted nodes
+- `emit_load_into` now handles BinOp/Call/UnOp by emitting them on-demand if not already emitted
+- New methods: `emit_binop_direct()`, `emit_call_direct()`, `emit_unop_direct()`
+- These methods accept the `node_id` parameter and mark it in `emitted_ids` after emission
+
+### Debugging Trail
+Key debug output from successful trace:
+```
+DEBUG convert_branch_body: returned 3 stmts, stmt ptrs=[0, 6, 7]
+DEBUG pre-opt func body [factorial] has 3 nodes:
+  else[0] id=0 node_type=Load(n)
+  else[1] id=0 node_type=Load(n)    <-- duplicate Load, need to check
+  else[2] id=4 node_type=Const(Int(1))
+  else[3] id=5 node_type=BinOp(-)   <-- BinOp(-) IS NOW PRESENT!
+  else[4] id=6 node_type=Call(factorial)  <-- Call IS NOW PRESENT!
+  else[5] id=7 node_type=BinOp(*)
+```
+
+### Still Broken
+The generated assembly STILL has the same problem — the Call node is not being emitted. Debug shows:
+- `DEBUG emit_node CALL: name=factorial args=[5]` — the Call IS being processed by emit_node
+- `DEBUG CALL: loading arg 5 into edi` — argument is being loaded
+- `DEBUG CALL: after load_into, asm has 158 lines` — but the Call instruction itself is missing
+
+**Hypothesis**: The Call handler in `emit_node` is being reached, but the `call _ZYL_factorial` instruction is not being written. Possible causes:
+1. The `name == "printf" || name == "exit"` early return in the Call handler might be triggered incorrectly
+2. The Call handler's `return` statement on line 142 of codegen.rs: `return;` exits the ENTIRE function instead of just skipping this branch — this is the BUG!
+
+### The BUG: `return` in `emit_node` Call handler
+In `codegen.rs` line ~1141-1143:
+```rust
+let fn_name = if name == "printf" || name == "exit" {
+    return;  // BUG: This exits the ENTIRE generate() method, not just the Call handler!
+} else {
+    format!("_ZYL_{}", name)
+};
+```
+
+Wait — looking more carefully, the Call handler is `ICNFInner::Call(name, args)` inside `emit_node`. The `return` exits `emit_node`, not `generate`. But looking at the code more carefully, the `return` IS in the `emit_node` method. However, the issue is that `emit_node` returns early when `name == "printf"` or `name == "exit"`, which is correct for those specific functions.
+
+**ACTUAL BUG**: The Call node has `name = "factorial"`, not "printf" or "exit". So it should NOT early-return. Let me look at the generated assembly again...
+
+The generated assembly shows:
+```asm
+_ZYL_factorial:
+    ...
+    mov rcx, [rbp-8]
+    mov edx, eax    <-- this loads the condition result (0 or 1) into edx, not the subtraction result!
+    mov eax, ecx
+    imul eax, edx   <-- multiplies n by the condition, NOT by the recursive call result!
+```
+
+The subtraction `(- n 1)` is being computed but its result is in `eax` (loaded from `n` for the comparison). Then the condition BinOp `<` overwrites `eax`. So when the recursive Call handler tries to load its argument, it gets the wrong value.
+
+**Actually looking at the assembly more carefully**: There is NO Call instruction at all for the recursive factorial call. The Call node is in the ICNF body (confirmed by debug) but `emit_node` for the Call handler is NOT producing any `call` instruction.
+
+Let me re-examine the Call handler flow:
+1. `ICNFInner::Call(name, args)` matches
+2. `emit_load_into(arg_id, reg, ...)` is called for each arg — this might recursively emit BinOp nodes
+3. The `call _ZYL_factorial` should be emitted
+
+**Wait — I see it now!** In the generated assembly, `mov edx, eax` is loading the COMPARISON RESULT (0 or 1) into `edx`, which is the 3rd ABI argument register. This means the Call handler IS running, but `emit_load_into` for the BinOp(-) is NOT emitting the subtraction — it's just reading `eax` which still has the comparison result!
+
+### Next Session Priority
+1. **Fix the Call handler**: The `call _ZYL_factorial` instruction IS in the generated assembly now. Need to verify with fresh build.
+2. **Fix BinOp(-) operand loading**: `emit_load_into` for BinOp operand (- n 1) loads from wrong SSA ID or doesn't emit the subtraction
+3. **Remove debug output** from codegen.rs and icnf.rs
+4. **Test full pipeline**: factorial(5) should output 120
+5. **Clean up duplicate Let handlers** in icnf.rs (lines 426-451 have duplicate patterns)
+
 ### Files Modified This Session
 | File | Lines Changed | Description |
 |------|---------------|-------------|
-| `src/codegen.rs` | ~300 modified | Variable mapping fix, emit_node signature update, operand_ids collection, Load/Const skip logic, emit_load_into fix, reg_to_32 extension, BinOp handler fixes, Print handler fix |
-| `src/icnf.rs` | ~200 modified | Atom(Ident) handler for variable refs, Call handler args.is_empty() guard, function body temp buffer approach, convert_expr_collect_id fix |
+| `src/codegen.rs` | ~400 modified | Added `standalone_emitted` field, `emit_binop_direct`, `emit_call_direct`, `emit_unop_direct` for on-demand operand emission, updated all `emit_load_into` call sites |
+| `src/icnf.rs` | ~150 modified | Fixed `convert_apply_call` to collect all nodes, fixed `Call` form handler, fixed `convert_nary_fold`, `convert_sub`, `convert_binary_only` to use `convert_expr_collect`, added debug tracing |
+
+---
+
+## Session Update: Factorial Recursive Function — FIXED
+
+### Completed This Session
+- [x] **Root cause: ICNF converter operand ID mismatch**. The condition BinOp's operands (Load/Const) were created with IDs that didn't correspond to nodes in `func.body` after DCE. Fixed by modifying `convert_expr_collect` to push nodes to `global_stmts` when `push_to_globals = true`.
+- [x] **Root cause: Parameter Load nodes not in global_stmts**. When a variable is looked up in scope, the Load node was returned but NOT pushed to `global_stmts`, creating dangling operand references. Fixed by pushing Load nodes when `push_to_globals = true`.
+- [x] **BinOp(Sub) handler missing left operand move**. The Sub handler did `sub eax, edx` without first moving the left operand into eax. Fixed: `mov eax, ecx; sub eax, edx`.
+- [x] **If condition BinOp emitted twice**. The condition was emitted both by the emit loop AND by the If handler's inline emission. Fixed by skipping condition BinOps in the emit loop.
+- [x] **Call operand re-emission**. When a Call node's argument (BinOp) was loaded via `emit_load_into`, the BinOp was re-emitted even though it was already emitted as a standalone node. Fixed by checking `operand_ids` in `emit_load_into`.
+- [x] **Call handler result in eax**. The Call handler stored result in target_reg but callers expected it in eax (e.g., for `imul`). Fixed to always keep result in eax.
+- [x] **Clean up debug output** from codegen.rs, icnf.rs, and main.rs
+
+### Test Results
+```bash
+# factorial(5) = 120 ✓
+$ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+120
+
+# add(3, 4) = 7 ✓
+$ echo '(defn add (x y) (+ x y))(print (add 3 4))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+7
+
+# print "hello world" ✓
+$ echo '(print "hello world")' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+hello world
+```
+
+### Known Remaining Issues
+- [ ] While loop code generation — crashes due to assembly warnings ("missing operand")
+- [ ] For loop code generation — crashes at runtime
+- [ ] If/else with string prints — condition operands leak into branch bodies
+- [ ] Function call parameter passing — some edge cases with register usage
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/codegen.rs` | ~80 modified | Fixed BinOp(Sub) handler, added condition ID skipping in emit loop, fixed Call handler result in eax, fixed emit_load_into to check operand_ids |
+| `src/icnf.rs` | ~40 modified | Fixed convert_expr_collect to push nodes when push_to_globals=true, fixed identifier Load to push when push_to_globals=true |
+| `src/main.rs` | ~80 removed | Removed debug print statements |
 
