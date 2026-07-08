@@ -18,7 +18,11 @@ pub struct CodeGen {
 
 impl CodeGen {
     pub fn new() -> Self {
-        Self { asm: Vec::new(), label_counter: 0, standalone_emitted: std::collections::HashSet::new() }
+        Self {
+            asm: Vec::new(),
+            label_counter: 0,
+            standalone_emitted: std::collections::HashSet::new(),
+        }
     }
 
     /// Generate assembly from an optimized ICNF program.
@@ -29,7 +33,7 @@ impl CodeGen {
         // Collect all string literals upfront and emit them in rodata before any code.
         let mut strings = HashSet::new();
         Self::collect_strings(program, &mut strings);
-        
+
         // Emit rodata section with all static data first (including collected strings).
         self.emit_rodata(&strings);
 
@@ -63,33 +67,61 @@ impl CodeGen {
         if !program.statements.is_empty() {
             let mut local_vars: HashMap<String, usize> = HashMap::new();
             // Track emitted IDs to avoid duplicate emission of branch body nodes.
-            let mut emitted_ids: std::collections::HashSet<usize> = program.emitted_branch_ids.clone();
-            
+            let mut emitted_ids: std::collections::HashSet<usize> =
+                program.emitted_branch_ids.clone();
+
             // Collect all IDs that appear inside embedded branch bodies (If/While/etc).
-            let mut branch_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut branch_body_ids: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
             for stmt in &program.statements {
-                match &stmt.node { ICNFInner::If { then_body, else_body, .. } => {
-                    for n in then_body.iter().chain(else_body.iter()) {
-                        branch_body_ids.insert(n.id);
-                        // Also collect operand IDs referenced by Print/Call nodes.
-                        if let ICNFInner::Print(args) = &n.node {
-                            for &arg_id in args { branch_body_ids.insert(arg_id); }
-                        } else if let ICNFInner::Call(_, args) = &n.node {
-                            for &arg_id in args { branch_body_ids.insert(arg_id); }
+                match &stmt.node {
+                    ICNFInner::If {
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
+                        for n in then_body.iter().chain(else_body.iter()) {
+                            branch_body_ids.insert(n.id);
+                            // Also collect operand IDs referenced by Print/Call nodes.
+                            if let ICNFInner::Print(args) = &n.node {
+                                for &arg_id in args {
+                                    branch_body_ids.insert(arg_id);
+                                }
+                            } else if let ICNFInner::Call(_, args) = &n.node {
+                                for &arg_id in args {
+                                    branch_body_ids.insert(arg_id);
+                                }
+                            }
                         }
                     }
-                }, _ => {} }
+                    _ => {}
+                }
             }
-            
+
             // Collect operand IDs for the main body to skip intermediate Load nodes.
             let mut main_operand_ids: std::collections::HashSet<usize> = HashSet::new();
             for stmt in &program.statements {
                 match &stmt.node {
-                    ICNFInner::BinOp(_, left, right) => { main_operand_ids.insert(*left); main_operand_ids.insert(*right); }
-                    ICNFInner::UnOp(_, id) => { main_operand_ids.insert(*id); }
-                    ICNFInner::Call(_, args) => { for &a in args { main_operand_ids.insert(a); } }
-                    ICNFInner::Print(args) => { for &a in args { main_operand_ids.insert(a); } }
-                    ICNFInner::If { cond_ssa, .. } => { main_operand_ids.insert(*cond_ssa); }
+                    ICNFInner::BinOp(_, left, right) => {
+                        main_operand_ids.insert(*left);
+                        main_operand_ids.insert(*right);
+                    }
+                    ICNFInner::UnOp(_, id) => {
+                        main_operand_ids.insert(*id);
+                    }
+                    ICNFInner::Call(_, args) => {
+                        for &a in args {
+                            main_operand_ids.insert(a);
+                        }
+                    }
+                    ICNFInner::Print(args) => {
+                        for &a in args {
+                            main_operand_ids.insert(a);
+                        }
+                    }
+                    ICNFInner::If { cond_ssa, .. } => {
+                        main_operand_ids.insert(*cond_ssa);
+                    }
                     _ => {}
                 }
             }
@@ -136,13 +168,22 @@ impl CodeGen {
                     }
                 }
                 let empty_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                self.emit_node(stmt, &program.statements, &local_vars, &mut emitted_ids, &main_operand_ids, &empty_lookup, &empty_phi);
+                self.emit_node(
+                    stmt,
+                    &program.statements,
+                    &local_vars,
+                    &mut emitted_ids,
+                    &main_operand_ids,
+                    &empty_lookup,
+                    &empty_phi,
+                );
             }
         }
 
         // Call exit(0).
         self.asm_push_align();
-        self.asm.push("    xor edi, edi           # exit code 0".to_string());
+        self.asm
+            .push("    xor edi, edi           # exit code 0".to_string());
         self.asm_push_align();
         self.asm.push("    call exit@plt".to_string());
 
@@ -174,14 +215,16 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!(
                         "    mov [rbp-{}], {} # {}",
-                        (i + 1) * 8, abi_regs[i], param.0
+                        (i + 1) * 8,
+                        abi_regs[i],
+                        param.0
                     ));
                 }
             }
 
             // Emit the function body statements inline.
             let mut local_vars: HashMap<String, usize> = HashMap::new();
-            
+
             // Pre-populate local_vars with parameter names pointing to their stack slot indices.
             // The offset formula is (slot_idx + 1) * 8, so params use (i + 1) as their slot index.
             for (i, param) in func.params.iter().enumerate() {
@@ -209,11 +252,29 @@ impl CodeGen {
                 }
                 // Collect all operand SSA IDs, including from embedded control flow bodies.
                 match &stmt.node {
-                    ICNFInner::BinOp(_, left, right) => { operand_ids.insert(*left); operand_ids.insert(*right); }
-                    ICNFInner::UnOp(_, id) => { operand_ids.insert(*id); }
-                    ICNFInner::Call(_, args) => { for &a in args { operand_ids.insert(a); } }
-                    ICNFInner::Print(args) => { for &a in args { operand_ids.insert(a); } }
-                    ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
+                    ICNFInner::BinOp(_, left, right) => {
+                        operand_ids.insert(*left);
+                        operand_ids.insert(*right);
+                    }
+                    ICNFInner::UnOp(_, id) => {
+                        operand_ids.insert(*id);
+                    }
+                    ICNFInner::Call(_, args) => {
+                        for &a in args {
+                            operand_ids.insert(a);
+                        }
+                    }
+                    ICNFInner::Print(args) => {
+                        for &a in args {
+                            operand_ids.insert(a);
+                        }
+                    }
+                    ICNFInner::If {
+                        cond_ssa,
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
                         operand_ids.insert(*cond_ssa);
                         collect_body_operand_ids(then_body, &mut operand_ids);
                         collect_body_operand_ids(else_body, &mut operand_ids);
@@ -229,10 +290,23 @@ impl CodeGen {
                     ICNFInner::Begin(stmts) => {
                         for s in stmts {
                             match &s.node {
-                                ICNFInner::BinOp(_, l, r) => { operand_ids.insert(*l); operand_ids.insert(*r); }
-                                ICNFInner::UnOp(_, id) => { operand_ids.insert(*id); }
-                                ICNFInner::Call(_, args) => { for &a in args { operand_ids.insert(a); } }
-                                ICNFInner::Print(args) => { for &a in args { operand_ids.insert(a); } }
+                                ICNFInner::BinOp(_, l, r) => {
+                                    operand_ids.insert(*l);
+                                    operand_ids.insert(*r);
+                                }
+                                ICNFInner::UnOp(_, id) => {
+                                    operand_ids.insert(*id);
+                                }
+                                ICNFInner::Call(_, args) => {
+                                    for &a in args {
+                                        operand_ids.insert(a);
+                                    }
+                                }
+                                ICNFInner::Print(args) => {
+                                    for &a in args {
+                                        operand_ids.insert(a);
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -249,7 +323,7 @@ impl CodeGen {
                     }
                 }
             }
-            
+
             // Second pass: emit code.
             // Collect condition IDs to skip them in the emit loop (they'll be emitted inline by If handler).
             let mut condition_ids: std::collections::HashSet<usize> = HashSet::new();
@@ -259,14 +333,24 @@ impl CodeGen {
                 }
             }
             let mut func_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-            for n in &body_stmts { func_lookup.insert(n.id, n); }
+            for n in &body_stmts {
+                func_lookup.insert(n.id, n);
+            }
             for stmt in &func.body {
                 // Skip condition BinOps — they're emitted inline by the If handler.
                 if condition_ids.contains(&stmt.id) {
                     func_emitted_ids.insert(stmt.id);
                     continue;
                 }
-                self.emit_node(stmt, &body_stmts, &local_vars, &mut func_emitted_ids, &operand_ids, &func_lookup, &phi_slots);
+                self.emit_node(
+                    stmt,
+                    &body_stmts,
+                    &local_vars,
+                    &mut func_emitted_ids,
+                    &operand_ids,
+                    &func_lookup,
+                    &phi_slots,
+                );
             }
 
             // Return result: if body ends with a value in eax, keep it; otherwise return 0.
@@ -280,7 +364,7 @@ impl CodeGen {
 
         // Emit string literals used in the program.
         for func in &program.functions {
-            let _ = func;  // Reserved for future use with closures capturing strings.
+            let _ = func; // Reserved for future use with closures capturing strings.
         }
     }
 
@@ -291,7 +375,12 @@ impl CodeGen {
         }
         // Also check branch body nodes embedded in If expressions in global statements.
         for stmt in &program.statements {
-            if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
+            if let ICNFInner::If {
+                then_body,
+                else_body,
+                ..
+            } = &stmt.node
+            {
                 for node in then_body.iter().chain(else_body.iter()) {
                     Self::collect_from_node(node, out);
                 }
@@ -301,7 +390,12 @@ impl CodeGen {
         for func in &program.functions {
             for stmt in &func.body {
                 Self::collect_from_node(stmt, out);
-                if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
+                if let ICNFInner::If {
+                    then_body,
+                    else_body,
+                    ..
+                } = &stmt.node
+                {
                     for node in then_body.iter().chain(else_body.iter()) {
                         Self::collect_from_node(node, out);
                     }
@@ -317,8 +411,14 @@ impl CodeGen {
 
     fn collect_from_node(node: &ICNFNode, out: &mut HashSet<String>) {
         match &node.node {
-            ICNFInner::Const(Atom::Str(s)) => { out.insert(s.clone()); }
-            ICNFInner::If { then_body, else_body, .. } => {
+            ICNFInner::Const(Atom::Str(s)) => {
+                out.insert(s.clone());
+            }
+            ICNFInner::If {
+                then_body,
+                else_body,
+                ..
+            } => {
                 for n in then_body.iter().chain(else_body.iter()) {
                     Self::collect_from_node(n, out);
                 }
@@ -338,7 +438,11 @@ impl CodeGen {
                     Self::collect_from_node(n, out);
                 }
             }
-            ICNFInner::TryCatch { try_body, catch_body, .. } => {
+            ICNFInner::TryCatch {
+                try_body,
+                catch_body,
+                ..
+            } => {
                 for n in try_body.iter().chain(catch_body.iter()) {
                     Self::collect_from_node(n, out);
                 }
@@ -355,15 +459,24 @@ impl CodeGen {
         // Emit all string literals first (sorted for determinism).
         let mut strings_vec: Vec<_> = collected_strings.iter().collect();
         strings_vec.sort();
-        self.asm_push_align();  // align before strings section
+        self.asm_push_align(); // align before strings section
         for s in &strings_vec {
-            let safe_name: String = s.chars()
-                .map(|c| if c.is_ascii_alphanumeric() { c.to_string() } else { "_".to_string() })
+            let safe_name: String = s
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() {
+                        c.to_string()
+                    } else {
+                        "_".to_string()
+                    }
+                })
                 .collect();
             let str_label = format!(".str_{}", safe_name);
             self.asm_push_align();
             self.asm.push(format!("{}:", str_label));
-            let escaped = s.replace('\\', "\\\\").replace('\n', "\\n")
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('\n', "\\n")
                 .replace('"', "\\\"");
             self.asm.push(format!(r#"    .string "{}""#, escaped));
         }
@@ -451,84 +564,149 @@ impl CodeGen {
         operand_ids: &std::collections::HashSet<usize>,
     ) {
         // Look up the statement by ID: check lookup first (branch bodies), then stmts.
-        let node = lookup.get(&src_ssa_id).copied().or_else(|| stmts.iter().find(|n| n.id == src_ssa_id));
+        let node = lookup
+            .get(&src_ssa_id)
+            .copied()
+            .or_else(|| stmts.iter().find(|n| n.id == src_ssa_id));
         match node {
-            Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
+            Some(ICNFNode {
+                node: ICNFInner::Const(atom),
+                ..
+            }) => {
                 self.emit_const_into(target_reg, atom);
             }
-            Some(ICNFNode { node: ICNFInner::Load(name), region, .. }) => {
+            Some(ICNFNode {
+                node: ICNFInner::Load(name),
+                region,
+                ..
+            }) => {
                 if let Some(&slot_idx) = local_vars.get(name) {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                    self.asm
+                        .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
                 } else {
                     let hash = simple_hash(name);
                     let offset = ((hash % 32) + 1) * 8;
                     match region {
                         Region::Stack | Region::Pin => {
                             self.asm_push_align();
-                            self.asm.push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                            self.asm
+                                .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
                         }
                         _ => {
                             let ssa_offset = (src_ssa_id % 32) + 1;
                             self.asm_push_align();
                             self.asm.push(format!(
-                                "    mov {}, [rbp-{}]", target_reg, ssa_offset * 8
+                                "    mov {}, [rbp-{}]",
+                                target_reg,
+                                ssa_offset * 8
                             ));
                         }
                     }
                 }
             }
-            Some(ICNFNode { node: ICNFInner::BinOp(op, left_id, right_id), .. }) => {
-                let already_emitted = emitted_ids.contains(&src_ssa_id) || self.standalone_emitted.contains(&src_ssa_id) || operand_ids.contains(&src_ssa_id);
+            Some(ICNFNode {
+                node: ICNFInner::BinOp(op, left_id, right_id),
+                ..
+            }) => {
+                let already_emitted = emitted_ids.contains(&src_ssa_id)
+                    || self.standalone_emitted.contains(&src_ssa_id)
+                    || operand_ids.contains(&src_ssa_id);
                 if already_emitted {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 } else {
-                    self.emit_binop_direct(op, *left_id, *right_id, target_reg, stmts, local_vars, lookup, emitted_ids, src_ssa_id);
+                    self.emit_binop_direct(
+                        op,
+                        *left_id,
+                        *right_id,
+                        target_reg,
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        src_ssa_id,
+                    );
                 }
             }
-            Some(ICNFNode { node: ICNFInner::Call(name, args), .. }) => {
-                let already_emitted = emitted_ids.contains(&src_ssa_id) || self.standalone_emitted.contains(&src_ssa_id) || operand_ids.contains(&src_ssa_id);
+            Some(ICNFNode {
+                node: ICNFInner::Call(name, args),
+                ..
+            }) => {
+                let already_emitted = emitted_ids.contains(&src_ssa_id)
+                    || self.standalone_emitted.contains(&src_ssa_id)
+                    || operand_ids.contains(&src_ssa_id);
                 if already_emitted {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 } else {
-                    self.emit_call_direct(name, args, target_reg, stmts, local_vars, lookup, emitted_ids, src_ssa_id);
+                    self.emit_call_direct(
+                        name,
+                        args,
+                        target_reg,
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        src_ssa_id,
+                    );
                 }
             }
-            Some(ICNFNode { node: ICNFInner::UnOp(op, arg_id), .. }) => {
-                let already_emitted = emitted_ids.contains(&src_ssa_id) || self.standalone_emitted.contains(&src_ssa_id) || operand_ids.contains(&src_ssa_id);
+            Some(ICNFNode {
+                node: ICNFInner::UnOp(op, arg_id),
+                ..
+            }) => {
+                let already_emitted = emitted_ids.contains(&src_ssa_id)
+                    || self.standalone_emitted.contains(&src_ssa_id)
+                    || operand_ids.contains(&src_ssa_id);
                 if already_emitted {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 } else {
-                    self.emit_unop_direct(op, *arg_id, target_reg, stmts, local_vars, lookup, emitted_ids, src_ssa_id);
+                    self.emit_unop_direct(
+                        op,
+                        *arg_id,
+                        target_reg,
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        src_ssa_id,
+                    );
                 }
             }
-            Some(ICNFNode { node: ICNFInner::Assign(var_name, _), .. }) => {
+            Some(ICNFNode {
+                node: ICNFInner::Assign(var_name, _),
+                ..
+            }) => {
                 if let Some(&slot_idx) = local_vars.get(var_name) {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                    self.asm
+                        .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
                 } else {
                     let hash = simple_hash(var_name);
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                    self.asm
+                        .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
                 }
             }
             Some(_) => {
                 let hash = simple_hash(&format!("{}", src_ssa_id));
                 let offset = ((hash % 32) + 1) * 8;
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    mov {}, [rbp-{}]", target_reg, offset
-                ));
+                self.asm
+                    .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
             }
             None => {
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                self.asm
+                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
             }
         }
     }
@@ -551,8 +729,24 @@ impl CodeGen {
         let src1 = "ecx";
         let src2 = "edx";
 
-        self.emit_load_into(left_id, src1, stmts, local_vars, lookup, emitted_ids, &std::collections::HashSet::new());
-        self.emit_load_into(right_id, src2, stmts, local_vars, lookup, emitted_ids, &std::collections::HashSet::new());
+        self.emit_load_into(
+            left_id,
+            src1,
+            stmts,
+            local_vars,
+            lookup,
+            emitted_ids,
+            &std::collections::HashSet::new(),
+        );
+        self.emit_load_into(
+            right_id,
+            src2,
+            stmts,
+            local_vars,
+            lookup,
+            emitted_ids,
+            &std::collections::HashSet::new(),
+        );
 
         match op {
             BinOpKind::Add => {
@@ -580,21 +774,30 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    idiv {}", src2));
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 } else {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, edx", reg_to_32(target_reg)));
+                    self.asm
+                        .push(format!("    mov {}, edx", reg_to_32(target_reg)));
                 }
             }
-            BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt
-            | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge => {
+            BinOpKind::Eq
+            | BinOpKind::Neq
+            | BinOpKind::Lt
+            | BinOpKind::Gt
+            | BinOpKind::Le
+            | BinOpKind::Ge => {
                 let d = reg_to_32(target_reg);
                 self.asm_push_align();
                 self.asm.push(format!("    cmp {}, {}", src1, src2));
                 let (set_instr, _) = match op {
-                    BinOpKind::Eq => ("sete", ""), BinOpKind::Neq => ("setne", ""),
-                    BinOpKind::Lt => ("setl", ""), BinOpKind::Gt => ("setg", ""),
-                    BinOpKind::Le => ("setle", ""), BinOpKind::Ge => ("setge", ""),
+                    BinOpKind::Eq => ("sete", ""),
+                    BinOpKind::Neq => ("setne", ""),
+                    BinOpKind::Lt => ("setl", ""),
+                    BinOpKind::Gt => ("setg", ""),
+                    BinOpKind::Le => ("setle", ""),
+                    BinOpKind::Ge => ("setge", ""),
                     _ => unreachable!(),
                 };
                 self.asm_push_align();
@@ -631,7 +834,15 @@ impl CodeGen {
         for (i, &arg_id) in args.iter().enumerate() {
             if i < 6 {
                 let reg = abi_regs[i];
-                self.emit_load_into(arg_id, reg, stmts, local_vars, lookup, emitted_ids, &std::collections::HashSet::new());
+                self.emit_load_into(
+                    arg_id,
+                    reg,
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    &std::collections::HashSet::new(),
+                );
             }
         }
 
@@ -641,12 +852,14 @@ impl CodeGen {
             self.asm.push(format!("    call {}", fn_name));
             // Always keep result in eax (ABI convention) — callers may need it there.
             self.asm_push_align();
-            self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+            self.asm
+                .push(format!("    mov {}, eax", reg_to_32(target_reg)));
         } else {
             // For printf/exit, move result to target_reg if specified.
             if !target_reg.is_empty() {
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                self.asm
+                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
             }
         }
         emitted_ids.insert(node_id);
@@ -665,12 +878,21 @@ impl CodeGen {
         emitted_ids: &mut std::collections::HashSet<usize>,
         node_id: usize,
     ) {
-        self.emit_load_into(arg_id, target_reg, stmts, local_vars, lookup, emitted_ids, &std::collections::HashSet::new());
+        self.emit_load_into(
+            arg_id,
+            target_reg,
+            stmts,
+            local_vars,
+            lookup,
+            emitted_ids,
+            &std::collections::HashSet::new(),
+        );
 
         match op {
             UnOpKind::Not => {
                 self.asm_push_align();
-                self.asm.push(format!("    xor {}, 1", reg_to_32(target_reg)));
+                self.asm
+                    .push(format!("    xor {}, 1", reg_to_32(target_reg)));
             }
             UnOpKind::Negate => {
                 self.asm_push_align();
@@ -684,31 +906,41 @@ impl CodeGen {
     fn emit_const_into(&mut self, dest_reg: &str, atom: &Atom) {
         match atom {
             Atom::Int(v) => {
-                self.asm.push(format!("    mov {}, {}", reg_to_32(dest_reg), v));
+                self.asm
+                    .push(format!("    mov {}, {}", reg_to_32(dest_reg), v));
             }
             Atom::Float(_v) => {
                 let xreg = format!("xmm{}", self.alloc_xmm());
                 self.asm_push_align();
                 self.asm.push(format!("    mov {}, 0", dest_reg));
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    cvtsi2sd {}, {}", xreg, reg_to_32(dest_reg)
-                ));
+                self.asm
+                    .push(format!("    cvtsi2sd {}, {}", xreg, reg_to_32(dest_reg)));
             }
             Atom::Bool(v) => {
                 self.asm.push(format!(
-                    "    mov {}, {}", reg_to_32(dest_reg), if *v { 1 } else { 0 }
+                    "    mov {}, {}",
+                    reg_to_32(dest_reg),
+                    if *v { 1 } else { 0 }
                 ));
             }
             Atom::Str(s) => {
-                let safe_name: String = s.chars()
-                    .map(|c| if c.is_ascii_alphanumeric() { c.to_string() } else { "_".to_string() })
+                let safe_name: String = s
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() {
+                            c.to_string()
+                        } else {
+                            "_".to_string()
+                        }
+                    })
                     .collect();
                 let str_label = format!(".str_{}", safe_name);
 
                 // Load pointer to string (already emitted in rodata section).
                 self.asm_push_align();
-                self.asm.push(format!("    lea {}, [{}] ", dest_reg, str_label));
+                self.asm
+                    .push(format!("    lea {}, [{}] ", dest_reg, str_label));
             }
             Atom::Ident(_) => {
                 self.asm.push(format!("    mov {}, 0", reg_to_32(dest_reg)));
@@ -716,7 +948,9 @@ impl CodeGen {
             _ => {
                 self.asm_push_align();
                 self.asm.push(format!(
-                    "    xor {}, {}", reg_to_32(dest_reg), reg_to_32(dest_reg)
+                    "    xor {}, {}",
+                    reg_to_32(dest_reg),
+                    reg_to_32(dest_reg)
                 ));
             }
         }
@@ -725,16 +959,24 @@ impl CodeGen {
     /// Emit condition computation inline: look up operands and compute.
     /// Used by the If handler when the condition BinOp's operands aren't
     /// findable via normal lookup (e.g., they were removed by DCE).
-    fn emit_condition_inline(&mut self, cond_node: &ICNFInner, local_vars: &HashMap<String, usize>, lookup: &std::collections::HashMap<usize, &ICNFNode>) {
+    fn emit_condition_inline(
+        &mut self,
+        cond_node: &ICNFInner,
+        local_vars: &HashMap<String, usize>,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+    ) {
         match cond_node {
             ICNFInner::BinOp(op, left_id, right_id) => {
                 // Look up actual operand nodes to determine types.
                 let left_node = lookup.get(left_id).copied();
                 let right_node = lookup.get(right_id).copied();
-                
+
                 // Emit left operand into ecx.
                 match left_node {
-                    Some(ICNFNode { node: ICNFInner::Load(name), .. }) => {
+                    Some(ICNFNode {
+                        node: ICNFInner::Load(name),
+                        ..
+                    }) => {
                         if let Some(&slot_idx) = local_vars.get(name) {
                             let offset = (slot_idx + 1) * 8;
                             self.asm_push_align();
@@ -744,7 +986,10 @@ impl CodeGen {
                             self.asm.push("    mov ecx, 0".to_string());
                         }
                     }
-                    Some(ICNFNode { node: ICNFInner::Const(Atom::Int(v)), .. }) => {
+                    Some(ICNFNode {
+                        node: ICNFInner::Const(Atom::Int(v)),
+                        ..
+                    }) => {
                         self.asm_push_align();
                         self.asm.push(format!("    mov ecx, {}", v));
                     }
@@ -753,10 +998,13 @@ impl CodeGen {
                         self.asm.push("    mov ecx, 0".to_string());
                     }
                 }
-                
+
                 // Emit right operand into edx.
                 match right_node {
-                    Some(ICNFNode { node: ICNFInner::Load(name), .. }) => {
+                    Some(ICNFNode {
+                        node: ICNFInner::Load(name),
+                        ..
+                    }) => {
                         if let Some(&slot_idx) = local_vars.get(name) {
                             let offset = (slot_idx + 1) * 8;
                             self.asm_push_align();
@@ -766,7 +1014,10 @@ impl CodeGen {
                             self.asm.push("    mov edx, 0".to_string());
                         }
                     }
-                    Some(ICNFNode { node: ICNFInner::Const(Atom::Int(v)), .. }) => {
+                    Some(ICNFNode {
+                        node: ICNFInner::Const(Atom::Int(v)),
+                        ..
+                    }) => {
                         self.asm_push_align();
                         self.asm.push(format!("    mov edx, {}", v));
                     }
@@ -775,7 +1026,7 @@ impl CodeGen {
                         self.asm.push("    mov edx, 0".to_string());
                     }
                 }
-                
+
                 // Emit the comparison into eax.
                 self.emit_cmp_and_set(op, "ecx", "edx", "eax");
             }
@@ -798,8 +1049,15 @@ impl CodeGen {
 
     /// Emit a string literal in rodata and return its label name.
     fn emit_string_literal(&mut self, s: &str) -> String {
-        let safe_name: String = s.chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c.to_string() } else { "_".to_string() })
+        let safe_name: String = s
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_string()
+                } else {
+                    "_".to_string()
+                }
+            })
             .collect();
         format!(".str_{}", safe_name)
     }
@@ -816,7 +1074,9 @@ impl CodeGen {
         let tmp = "ecx";
         self.asm_push_align();
         self.asm.push(format!(
-            "    mov {}, {}", reg_to_32(tmp), reg_to_32(int_reg_64)
+            "    mov {}, {}",
+            reg_to_32(tmp),
+            reg_to_32(int_reg_64)
         ));
 
         // Handle negative numbers.
@@ -835,18 +1095,20 @@ impl CodeGen {
         // Load '-' character into AL and store at buffer end.
         let out_ptr = "rdi";
         self.asm_push_align();
-        self.asm.push(format!("    mov al, byte ptr [{}]", minus_str));  // load '-' char (0x2D) into AL
+        self.asm
+            .push(format!("    mov al, byte ptr [{}]", minus_str)); // load '-' char (0x2D) into AL
         self.asm_push_align();
-        self.asm.push(format!("    lea {}, [{}] ", out_ptr, buf_label)); // RDI = buffer start
+        self.asm
+            .push(format!("    lea {}, [{}] ", out_ptr, buf_label)); // RDI = buffer start
         self.asm_push_align();
-        self.asm.push("    add rdi, 31".to_string());                    // point to end of buffer
+        self.asm.push("    add rdi, 31".to_string()); // point to end of buffer
         self.asm_push_align();
-        self.asm.push("    mov [rdi], al".to_string());         // write '-' at hexbuf[31]
+        self.asm.push("    mov [rdi], al".to_string()); // write '-' at hexbuf[31]
 
         self.asm_push_align();
-        self.asm.push(format!("    neg {}", tmp));                       // make value positive
+        self.asm.push(format!("    neg {}", tmp)); // make value positive
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string());                        // move pointer back one position (past '-')
+        self.asm.push("    dec rdi".to_string()); // move pointer back one position (past '-')
 
         // Common setup: RDI points to where we'll write the next digit.
         // For negative numbers, it's hexbuf[30]; for positive, hexbuf[31].
@@ -857,14 +1119,15 @@ impl CodeGen {
         self.asm.push(format!("{}:", neg_label));
         self.asm_push_align();
         self.asm.push(format!("    jmp {}", pos_label));
-        
+
         // Positive path: set up RDI to point to end of buffer.
         self.asm_push_align();
         self.asm.push(format!("{}:", pos_label));
         self.asm_push_align();
-        self.asm.push(format!("    lea {}, [{}] ", out_ptr, buf_label));  // RDI = hexbuf start (for positive numbers)
+        self.asm
+            .push(format!("    lea {}, [{}] ", out_ptr, buf_label)); // RDI = hexbuf start (for positive numbers)
         self.asm_push_align();
-        self.asm.push("    add rdi, 31".to_string());                    // point to end of buffer
+        self.asm.push("    add rdi, 31".to_string()); // point to end of buffer
 
         // Division loop: extract digits right-to-left using idiv.
         let div_loop = format!(".___divloop_{}", self.label_counter);
@@ -875,34 +1138,31 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("{}:", div_loop));
         self.asm_push_align();
-        self.asm.push(format!(
-            "    test {}, {}", tmp, tmp
-        ));
+        self.asm.push(format!("    test {}, {}", tmp, tmp));
         self.asm_push_align();
         self.asm.push(format!("    je {}", div_done));
 
         // Load value into eax for division. Use ebx as temp divisor register (edi is our buffer pointer).
         self.asm_push_align();
-        self.asm.push("    xor edx, edx".to_string());     // clear high half (value is positive after negation)
+        self.asm.push("    xor edx, edx".to_string()); // clear high half (value is positive after negation)
         self.asm_push_align();
-        self.asm.push(format!("    mov eax, {}", tmp));      // load value into eax
+        self.asm.push(format!("    mov eax, {}", tmp)); // load value into eax
 
         self.asm_push_align();
-        self.asm.push("    mov ebx, 10".to_string());       // divisor in EBX (edi holds buffer pointer!)
+        self.asm.push("    mov ebx, 10".to_string()); // divisor in EBX (edi holds buffer pointer!)
         self.asm_push_align();
-        self.asm.push("    idiv ebx".to_string());           // eax = quotient, edx = remainder (digit)
+        self.asm.push("    idiv ebx".to_string()); // eax = quotient, edx = remainder (digit)
 
         // Move quotient back to ecx for next iteration check.
         self.asm_push_align();
-        self.asm.push(format!("    mov {}, eax", tmp));      // update working register with new quotient
+        self.asm.push(format!("    mov {}, eax", tmp)); // update working register with new quotient
 
         // Store digit at buffer position pointed by rdi (working backwards).
-        let digit = "dl";  // remainder is in dl after div
+        let digit = "dl"; // remainder is in dl after div
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string());             // move pointer back one position
+        self.asm.push("    dec rdi".to_string()); // move pointer back one position
         self.asm_push_align();
-        self.asm.push(format!("    mov [rdi], {}", digit));   // store digit
-
+        self.asm.push(format!("    mov [rdi], {}", digit)); // store digit
 
         // Add '0' to the digit (convert from numeric to ASCII).
         self.asm_push_align();
@@ -914,7 +1174,6 @@ impl CodeGen {
         // Done: result pointer in rdi (points to first character of converted string).
         self.asm_push_align();
         self.asm.push(format!("{}:", div_done));
-
     }
 
     // ─── Node Emission ──────────────────────────────────────────────
@@ -951,24 +1210,22 @@ impl CodeGen {
                     // Load from stack slot.
                     let offset = (offset_idx + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov eax, [rbp-{}]", offset
-                    ));
-                } else if name.starts_with("___") || name.chars().next()
-                    .map(|c| c.is_ascii_digit())
-                    .unwrap_or(false) {
+                    self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                } else if name.starts_with("___")
+                    || name
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                {
                     // Numeric SSA reference — already in eax.
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov eax, {}", X86_REGISTERS[0]
-                    ));
+                    self.asm.push(format!("    mov eax, {}", X86_REGISTERS[0]));
                 } else {
                     let hash = simple_hash(name);
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov eax, [rbp-{}]", offset
-                    ));
+                    self.asm.push(format!("    mov eax, [rbp-{}]", offset));
                 }
             }
 
@@ -977,45 +1234,71 @@ impl CodeGen {
                 if let Some(&slot_idx) = local_vars.get(var_name) {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov [rbp-{}], {}", offset, X86_REGISTERS[0]
-                    ));
+                    self.asm
+                        .push(format!("    mov [rbp-{}], {}", offset, X86_REGISTERS[0]));
                 } else {
                     // Fallback: use hash-based offset if not in local_vars.
                     let hash = simple_hash(var_name);
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov [rbp-{}], {}", offset, X86_REGISTERS[0]
-                    ));
+                    self.asm
+                        .push(format!("    mov [rbp-{}], {}", offset, X86_REGISTERS[0]));
                 }
             }
 
             ICNFInner::BinOp(op, left_id, right_id) => {
                 // Use distinct registers for each operand.
-                let dest_reg = "rax";  // result goes here
-                let src1_reg = "rcx";  // left operand
-                let src2_reg = "rdx";  // right operand
+                let dest_reg = "rax"; // result goes here
+                let src1_reg = "rcx"; // left operand
+                let src2_reg = "rdx"; // right operand
 
                 // Load operands into specific registers via ID-based lookup.
-                self.emit_load_into(*left_id, src1_reg, stmts, local_vars, lookup, emitted_ids, operand_ids);
-                self.emit_load_into(*right_id, src2_reg, stmts, local_vars, lookup, emitted_ids, operand_ids);
+                self.emit_load_into(
+                    *left_id,
+                    src1_reg,
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    operand_ids,
+                );
+                self.emit_load_into(
+                    *right_id,
+                    src2_reg,
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    operand_ids,
+                );
 
                 match op {
                     BinOpKind::Add => {
                         self.asm_push_align();
-                        self.asm.push(format!("    mov {}, {}", reg_to_32(dest_reg), reg_to_32(src1_reg)));
+                        self.asm.push(format!(
+                            "    mov {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src1_reg)
+                        ));
                         self.asm_push_align();
                         self.asm.push(format!(
-                            "    add {}, {}", reg_to_32(dest_reg), reg_to_32(src2_reg)
+                            "    add {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src2_reg)
                         ));
                     }
                     BinOpKind::Sub => {
                         self.asm_push_align();
-                        self.asm.push(format!("    mov {}, {}", reg_to_32(dest_reg), reg_to_32(src1_reg)));
+                        self.asm.push(format!(
+                            "    mov {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src1_reg)
+                        ));
                         self.asm_push_align();
                         self.asm.push(format!(
-                            "    sub {}, {}", reg_to_32(dest_reg), reg_to_32(src2_reg)
+                            "    sub {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src2_reg)
                         ));
                     }
                     BinOpKind::Mul => {
@@ -1024,50 +1307,52 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push(format!("    mov {}, {}", d, s1));
                         self.asm_push_align();
-                        self.asm.push(format!(
-                            "    imul {}, {}", d, reg_to_32(src2_reg)
-                        ));
+                        self.asm
+                            .push(format!("    imul {}, {}", d, reg_to_32(src2_reg)));
                     }
                     BinOpKind::Div | BinOpKind::Rem => {
                         let d = reg_to_32(dest_reg);
                         // Use edx:eax for division.
                         self.asm_push_align();
-                        self.asm.push(format!("    mov eax, {}", reg_to_32(src1_reg)));
+                        self.asm
+                            .push(format!("    mov eax, {}", reg_to_32(src1_reg)));
                         self.asm_push_align();
-                        self.asm.push("    cdq".to_string());  // Sign-extend into edx:eax.
+                        self.asm.push("    cdq".to_string()); // Sign-extend into edx:eax.
                         if op == &BinOpKind::Div {
                             self.asm_push_align();
-                            self.asm.push(format!(
-                                "    idiv {}", reg_to_32(src2_reg)
-                            ));
+                            self.asm.push(format!("    idiv {}", reg_to_32(src2_reg)));
                             self.asm_push_align();
-                            self.asm.push(
-                                format!("    mov {}, eax", d),
-                            );
+                            self.asm.push(format!("    mov {}, eax", d));
                         } else {
                             // Remainder is in edx after idiv.
                             let dd = reg_to_32(dest_reg);
                             self.asm_push_align();
-                            self.asm.push(format!(
-                                "    mov {}, edx", dd
-                            ));  // Remainder in rdx.
+                            self.asm.push(format!("    mov {}, edx", dd)); // Remainder in rdx.
                         }
                     }
-                    BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt
-                    | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge => {
+                    BinOpKind::Eq
+                    | BinOpKind::Neq
+                    | BinOpKind::Lt
+                    | BinOpKind::Gt
+                    | BinOpKind::Le
+                    | BinOpKind::Ge => {
                         let d = reg_to_32(dest_reg);
                         self.emit_cmp_and_set(op, src1_reg, src2_reg, d);
                     }
                     BinOpKind::And => {
                         self.asm_push_align();
                         self.asm.push(format!(
-                            "    and {}, {}", reg_to_32(dest_reg), reg_to_32(src1_reg)
+                            "    and {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src1_reg)
                         ));
                     }
                     BinOpKind::Or => {
                         self.asm_push_align();
                         self.asm.push(format!(
-                            "    or {}, {}", reg_to_32(dest_reg), reg_to_32(src1_reg)
+                            "    or {}, {}",
+                            reg_to_32(dest_reg),
+                            reg_to_32(src1_reg)
                         ));
                     }
                 }
@@ -1077,16 +1362,17 @@ impl CodeGen {
                 let reg = self.alloc_reg();
                 // Load operand using ID-based lookup.
                 match stmts.iter().find(|n| n.id == *arg_id) {
-                    Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
+                    Some(ICNFNode {
+                        node: ICNFInner::Const(atom),
+                        ..
+                    }) => {
                         self.emit_const_into(&reg, atom);
                     }
                     _ => {
                         let hash = simple_hash(&format!("{}", arg_id));
                         let offset = ((hash % 32) + 1) * 8;
                         self.asm_push_align();
-                        self.asm.push(format!(
-                            "    mov {}, [rbp-{}]", reg, offset
-                        ));
+                        self.asm.push(format!("    mov {}, [rbp-{}]", reg, offset));
                     }
                 }
 
@@ -1094,40 +1380,46 @@ impl CodeGen {
                     UnOpKind::Not => {
                         // Logical not: xor with 1 (for boolean values).
                         self.asm_push_align();
-                        self.asm.push(format!(
-                            "    xor {}, 1", reg_to_32(&reg)
-                        ));
+                        self.asm.push(format!("    xor {}, 1", reg_to_32(&reg)));
                     }
                     UnOpKind::Negate => {
                         // Arithmetic negation.
                         self.asm_push_align();
-                        self.asm.push(
-                            format!("    neg {}", reg_to_32(&reg)),
-                        );
+                        self.asm.push(format!("    neg {}", reg_to_32(&reg)));
                     }
                 }
             }
-            ICNFInner::If { cond_ssa, then_body, else_body, result_var } => {
+            ICNFInner::If {
+                cond_ssa,
+                then_body,
+                else_body,
+                result_var,
+            } => {
                 // Emit the condition inline by looking up the condition node and
                 // computing it directly. This handles the case where the condition
                 // BinOp's operands are not findable via normal lookup.
                 let cond_label = self.new_label();
-                
+
                 // Collect all branch body nodes for operand lookup.
-                let all_branch_nodes: Vec<&ICNFNode> = then_body.iter()
-                    .chain(else_body.iter())
-                    .collect();
-                
+                let all_branch_nodes: Vec<&ICNFNode> =
+                    then_body.iter().chain(else_body.iter()).collect();
+
                 // Look up the condition node: check func.body stmts first,
                 // then branch bodies.
-                let cond_node = stmts.iter().find(|n| n.id == *cond_ssa)
+                let cond_node = stmts
+                    .iter()
+                    .find(|n| n.id == *cond_ssa)
                     .or_else(|| all_branch_nodes.iter().copied().find(|n| n.id == *cond_ssa));
-                
+
                 // Build a lookup that includes func.body AND branch bodies.
                 let mut full_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in stmts { full_lookup.insert(n.id, n); }
-                for n in &all_branch_nodes { full_lookup.insert(n.id, n); }
-                
+                for n in stmts {
+                    full_lookup.insert(n.id, n);
+                }
+                for n in &all_branch_nodes {
+                    full_lookup.insert(n.id, n);
+                }
+
                 // Emit condition computation if found.
                 if let Some(cond) = cond_node {
                     self.emit_condition_inline(&cond.node, local_vars, &full_lookup);
@@ -1149,9 +1441,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    test eax, eax".to_string());
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    je  {}", cond_label
-                ));
+                self.asm.push(format!("    je  {}", cond_label));
 
                 // Then branch — fall through (emit inline like While does).
                 let then_start = format!("{}.then", result_var);
@@ -1164,8 +1454,12 @@ impl CodeGen {
                 // Build combined lookup: branch body nodes take priority over func.body.
                 let then_stmts: Vec<ICNFNode> = stmts.to_vec();
                 let mut then_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in &then_stmts { then_lookup.insert(n.id, n); }
-                for n in then_body { then_lookup.insert(n.id, n); }
+                for n in &then_stmts {
+                    then_lookup.insert(n.id, n);
+                }
+                for n in then_body {
+                    then_lookup.insert(n.id, n);
+                }
 
                 // Emit the 'then' branch statements inline. Clone local_vars for each branch scope.
                 let mut then_local_vars = local_vars.clone();
@@ -1173,7 +1467,15 @@ impl CodeGen {
                     if let ICNFInner::Assign(name, _) = &stmt.node {
                         *then_local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
-                    self.emit_node(&stmt, &then_stmts, &mut then_local_vars, emitted_ids, &then_operand_ids, &then_lookup, phi_slots);
+                    self.emit_node(
+                        &stmt,
+                        &then_stmts,
+                        &mut then_local_vars,
+                        emitted_ids,
+                        &then_operand_ids,
+                        &then_lookup,
+                        phi_slots,
+                    );
                 }
 
                 // Store then branch result to phi slot.
@@ -1184,9 +1486,7 @@ impl CodeGen {
 
                 // Jump over else branch.
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    jmp {}", join_point
-                ));
+                self.asm.push(format!("    jmp {}", join_point));
 
                 // Else label (for false condition).
                 self.asm_push_align();
@@ -1197,8 +1497,12 @@ impl CodeGen {
                 // Build combined lookup for else branch.
                 let else_stmts: Vec<ICNFNode> = stmts.to_vec();
                 let mut else_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in &else_stmts { else_lookup.insert(n.id, n); }
-                for n in else_body { else_lookup.insert(n.id, n); }
+                for n in &else_stmts {
+                    else_lookup.insert(n.id, n);
+                }
+                for n in else_body {
+                    else_lookup.insert(n.id, n);
+                }
 
                 // Emit the 'else' branch statements inline. Clone local_vars for each branch scope.
                 let mut else_local_vars = local_vars.clone();
@@ -1206,7 +1510,15 @@ impl CodeGen {
                     if let ICNFInner::Assign(name, _) = &stmt.node {
                         *else_local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
-                    self.emit_node(&stmt, &else_stmts, &mut else_local_vars, emitted_ids, &else_operand_ids, &else_lookup, phi_slots);
+                    self.emit_node(
+                        &stmt,
+                        &else_stmts,
+                        &mut else_local_vars,
+                        emitted_ids,
+                        &else_operand_ids,
+                        &else_lookup,
+                        phi_slots,
+                    );
                 }
 
                 // Store else branch result to phi slot.
@@ -1218,12 +1530,10 @@ impl CodeGen {
                 // Join point (phi merge): load phi result into eax.
                 self.asm_push_align();
                 self.asm.push(format!("{}:", join_point));
-                
+
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
-                    self.asm.push(format!(
-                        "    mov eax, [rbp-{}]", slot
-                    ));
+                    self.asm.push(format!("    mov eax, [rbp-{}]", slot));
                 }
             }
 
@@ -1236,11 +1546,26 @@ impl CodeGen {
                 let mut while_operand_ids: std::collections::HashSet<usize> = HashSet::new();
                 for stmt in body {
                     match &stmt.node {
-                        ICNFInner::BinOp(_, l, r) => { while_operand_ids.insert(*l); while_operand_ids.insert(*r); }
-                        ICNFInner::UnOp(_, id) => { while_operand_ids.insert(*id); }
-                        ICNFInner::Call(_, args) => { for &a in args { while_operand_ids.insert(a); } }
-                        ICNFInner::Print(args) => { for &a in args { while_operand_ids.insert(a); } }
-                        ICNFInner::If { cond_ssa: c, .. } => { while_operand_ids.insert(*c); }
+                        ICNFInner::BinOp(_, l, r) => {
+                            while_operand_ids.insert(*l);
+                            while_operand_ids.insert(*r);
+                        }
+                        ICNFInner::UnOp(_, id) => {
+                            while_operand_ids.insert(*id);
+                        }
+                        ICNFInner::Call(_, args) => {
+                            for &a in args {
+                                while_operand_ids.insert(a);
+                            }
+                        }
+                        ICNFInner::Print(args) => {
+                            for &a in args {
+                                while_operand_ids.insert(a);
+                            }
+                        }
+                        ICNFInner::If { cond_ssa: c, .. } => {
+                            while_operand_ids.insert(*c);
+                        }
                         _ => {}
                     }
                 }
@@ -1252,34 +1577,44 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    test eax, eax".to_string());
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    je  {}", loop_end
-                ));
+                self.asm.push(format!("    je  {}", loop_end));
 
                 // Body.
                 let mut local_vars: HashMap<String, usize> = HashMap::new();
                 let mut while_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in stmts { while_lookup.insert(n.id, n); }
-                for n in body { while_lookup.insert(n.id, n); }
+                for n in stmts {
+                    while_lookup.insert(n.id, n);
+                }
+                for n in body {
+                    while_lookup.insert(n.id, n);
+                }
                 for stmt in body {
                     if let ICNFInner::Assign(name, _) = &stmt.node {
                         *local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
-                    self.emit_node(stmt, stmts, &local_vars, emitted_ids, &while_operand_ids,  &while_lookup, &std::collections::HashMap::new());
+                    self.emit_node(
+                        stmt,
+                        stmts,
+                        &local_vars,
+                        emitted_ids,
+                        &while_operand_ids,
+                        &while_lookup,
+                        &std::collections::HashMap::new(),
+                    );
                 }
 
                 // Back jump.
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    jmp {}", loop_start
-                ));
+                self.asm.push(format!("    jmp {}", loop_start));
                 self.asm_push_align();
-                self.asm.push(
-                    format!("{}:", loop_end),
-                );
+                self.asm.push(format!("{}:", loop_end));
             }
 
-            ICNFInner::For { var_name: _, iter_ssa: _, body } => {
+            ICNFInner::For {
+                var_name: _,
+                iter_ssa: _,
+                body,
+            } => {
                 let loop_start = format!(".for_{}", self.label_counter);
                 let loop_end = format!(".fend_{}", self.label_counter);
                 self.label_counter += 1;
@@ -1288,11 +1623,26 @@ impl CodeGen {
                 let mut for_operand_ids: std::collections::HashSet<usize> = HashSet::new();
                 for stmt in body {
                     match &stmt.node {
-                        ICNFInner::BinOp(_, l, r) => { for_operand_ids.insert(*l); for_operand_ids.insert(*r); }
-                        ICNFInner::UnOp(_, id) => { for_operand_ids.insert(*id); }
-                        ICNFInner::Call(_, args) => { for &a in args { for_operand_ids.insert(a); } }
-                        ICNFInner::Print(args) => { for &a in args { for_operand_ids.insert(a); } }
-                        ICNFInner::If { cond_ssa: c, .. } => { for_operand_ids.insert(*c); }
+                        ICNFInner::BinOp(_, l, r) => {
+                            for_operand_ids.insert(*l);
+                            for_operand_ids.insert(*r);
+                        }
+                        ICNFInner::UnOp(_, id) => {
+                            for_operand_ids.insert(*id);
+                        }
+                        ICNFInner::Call(_, args) => {
+                            for &a in args {
+                                for_operand_ids.insert(a);
+                            }
+                        }
+                        ICNFInner::Print(args) => {
+                            for &a in args {
+                                for_operand_ids.insert(a);
+                            }
+                        }
+                        ICNFInner::If { cond_ssa: c, .. } => {
+                            for_operand_ids.insert(*c);
+                        }
                         _ => {}
                     }
                 }
@@ -1302,37 +1652,53 @@ impl CodeGen {
                 self.asm.push(format!("{}:", loop_start));
                 let mut local_vars: HashMap<String, usize> = HashMap::new();
                 let mut for_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in stmts { for_lookup.insert(n.id, n); }
-                for n in body { for_lookup.insert(n.id, n); }
+                for n in stmts {
+                    for_lookup.insert(n.id, n);
+                }
+                for n in body {
+                    for_lookup.insert(n.id, n);
+                }
                 for stmt in body {
                     if let ICNFInner::Assign(name, _) = &stmt.node {
                         *local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
-                    self.emit_node(stmt, stmts, &local_vars, emitted_ids, &for_operand_ids, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+                    self.emit_node(
+                        stmt,
+                        stmts,
+                        &local_vars,
+                        emitted_ids,
+                        &for_operand_ids,
+                        &std::collections::HashMap::new(),
+                        &std::collections::HashMap::new(),
+                    );
                 }
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    jmp {}", loop_start
-                ));
+                self.asm.push(format!("    jmp {}", loop_start));
                 self.asm_push_align();
                 self.asm_push_align();
-                self.asm.push(
-                    format!("{}:", loop_end),
-                );
+                self.asm.push(format!("{}:", loop_end));
             }
 
             ICNFInner::Print(args) => {
-                if args.is_empty() { return; }
+                if args.is_empty() {
+                    return;
+                }
 
                 // Helper to find a node by ID: check lookup first (branch bodies), then stmts (func.body).
                 let find_node = |id: usize| -> Option<&ICNFNode> {
-                    lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id))
+                    lookup
+                        .get(&id)
+                        .copied()
+                        .or_else(|| stmts.iter().find(|n| n.id == id))
                 };
 
                 // Print each argument. Detect string vs int based on the node type.
                 for &arg_id in args.iter() {
                     let is_string = match find_node(arg_id) {
-                        Some(ICNFNode { node: ICNFInner::Const(Atom::Str(_)), .. }) => true,
+                        Some(ICNFNode {
+                            node: ICNFInner::Const(Atom::Str(_)),
+                            ..
+                        }) => true,
                         _ => false,
                     };
 
@@ -1340,12 +1706,13 @@ impl CodeGen {
                         // String argument — load pointer into rdi.
                         let reg = self.alloc_reg();
                         match find_node(arg_id) {
-                            Some(ICNFNode { node: ICNFInner::Const(Atom::Str(s)), .. }) => {
+                            Some(ICNFNode {
+                                node: ICNFInner::Const(Atom::Str(s)),
+                                ..
+                            }) => {
                                 let str_label = self.emit_string_literal(s);
                                 self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    lea rdi, [{}] ", str_label
-                                ));
+                                self.asm.push(format!("    lea rdi, [{}] ", str_label));
                             }
                             _ => {
                                 // String loaded from memory — already in a register.
@@ -1363,17 +1730,23 @@ impl CodeGen {
                         }
 
                         self.asm_push_align();
-                        self.asm.push(
-                            "    xor eax, eax           # No xmm args to printf"
-                                .to_string(),
-                        );
+                        self.asm
+                            .push("    xor eax, eax           # No xmm args to printf".to_string());
                         self.asm_push_align();
                         self.asm.push("    call printf@plt".to_string());
                     } else {
                         // Integer argument — convert to string and print.
                         // Load the argument value into eax first.
-                        self.emit_load_into(arg_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids);
-                        let int_reg = "eax";  // Value should be in eax from prior computation.
+                        self.emit_load_into(
+                            arg_id,
+                            "eax",
+                            stmts,
+                            local_vars,
+                            lookup,
+                            emitted_ids,
+                            operand_ids,
+                        );
+                        let int_reg = "eax"; // Value should be in eax from prior computation.
 
                         // First, emit the integer-to-string conversion.
                         self.emit_int_to_str(int_reg);
@@ -1388,12 +1761,10 @@ impl CodeGen {
                         }
 
                         // After int-to-str, rdi already points to the converted string.
-                        
+
                         self.asm_push_align();
-                        self.asm.push(
-                            "    xor eax, eax           # No xmm args to printf"
-                                .to_string(),
-                        );
+                        self.asm
+                            .push("    xor eax, eax           # No xmm args to printf".to_string());
                         self.asm_push_align();
                         self.asm.push("    call printf@plt".to_string());
                     }
@@ -1403,33 +1774,38 @@ impl CodeGen {
             ICNFInner::Call(name, args) => {
                 // Function call — pass arguments in registers per System V ABI.
                 let abi_regs = ["edi", "esi", "edx", "ecx", "r8d", "r9d"];
-                
+
                 for (i, &arg_id) in args.iter().enumerate() {
                     if i < 6 {
                         let reg = abi_regs[i];
-                        self.emit_load_into(arg_id, reg, stmts, local_vars, lookup, emitted_ids, operand_ids);
+                        self.emit_load_into(
+                            arg_id,
+                            reg,
+                            stmts,
+                            local_vars,
+                            lookup,
+                            emitted_ids,
+                            operand_ids,
+                        );
                     }
                 }
 
                 // User-defined functions use _ZYL_ prefix; skip libc calls.
                 let fn_name = if name == "printf" || name == "exit" {
-                    return;  // Skip — handled specially elsewhere.
+                    return; // Skip — handled specially elsewhere.
                 } else {
                     format!("_ZYL_{}", name)
                 };
 
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    call {}", fn_name
-                ));
+                self.asm.push(format!("    call {}", fn_name));
             }
 
             ICNFInner::Exit(_code_id) => {
                 // Exit with status code using exit() from libc.
                 self.asm_push_align();
-                self.asm.push(
-                    "    xor edi, edi           # exit(0)".to_string(),
-                );
+                self.asm
+                    .push("    xor edi, edi           # exit(0)".to_string());
                 self.asm_push_align();
                 self.asm.push("    call exit@plt".to_string());
             }
@@ -1443,10 +1819,23 @@ impl CodeGen {
                 let mut begin_operand_ids: std::collections::HashSet<usize> = HashSet::new();
                 for stmt in stmts.iter() {
                     match &stmt.node {
-                        ICNFInner::BinOp(_, l, r) => { begin_operand_ids.insert(*l); begin_operand_ids.insert(*r); }
-                        ICNFInner::UnOp(_, id) => { begin_operand_ids.insert(*id); }
-                        ICNFInner::Call(_, args) => { for &a in args { begin_operand_ids.insert(a); } }
-                        ICNFInner::Print(args) => { for &a in args { begin_operand_ids.insert(a); } }
+                        ICNFInner::BinOp(_, l, r) => {
+                            begin_operand_ids.insert(*l);
+                            begin_operand_ids.insert(*r);
+                        }
+                        ICNFInner::UnOp(_, id) => {
+                            begin_operand_ids.insert(*id);
+                        }
+                        ICNFInner::Call(_, args) => {
+                            for &a in args {
+                                begin_operand_ids.insert(a);
+                            }
+                        }
+                        ICNFInner::Print(args) => {
+                            for &a in args {
+                                begin_operand_ids.insert(a);
+                            }
+                        }
                         _ => {}
                     }
                     if let ICNFInner::Assign(name, _) = &stmt.node {
@@ -1455,9 +1844,19 @@ impl CodeGen {
                 }
                 // Build lookup from Begin's own stmts.
                 let mut begin_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
-                for n in stmts { begin_lookup.insert(n.id, n); }
+                for n in stmts {
+                    begin_lookup.insert(n.id, n);
+                }
                 for stmt in stmts {
-                    self.emit_node(stmt, stmts, &local_vars, emitted_ids, &begin_operand_ids, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+                    self.emit_node(
+                        stmt,
+                        stmts,
+                        &local_vars,
+                        emitted_ids,
+                        &begin_operand_ids,
+                        &std::collections::HashMap::new(),
+                        &std::collections::HashMap::new(),
+                    );
                 }
             }
 
@@ -1473,9 +1872,9 @@ impl CodeGen {
     fn emit_cmp_and_set(
         &mut self,
         op: &BinOpKind,
-        src1_reg: &str,   // first operand (already loaded)
-        src2_reg: &str,   // second operand (already loaded)
-        dest_reg: &str,   // destination for result (0 or 1).
+        src1_reg: &str, // first operand (already loaded)
+        src2_reg: &str, // second operand (already loaded)
+        dest_reg: &str, // destination for result (0 or 1).
     ) {
         let (set_instr, _comment) = match op {
             BinOpKind::Eq => ("sete", "equal"),
@@ -1489,27 +1888,27 @@ impl CodeGen {
 
         // Compare two registers and set destination to 0 or 1 based on condition.
         self.asm_push_align();
-        self.asm.push(format!(
-            "    cmp {}, {}", src1_reg, src2_reg
-        ));
+        self.asm.push(format!("    cmp {}, {}", src1_reg, src2_reg));
         // Zero-extend the result byte into full register (e.g., al → eax).
         match op {
-            BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt
-                | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge => {
+            BinOpKind::Eq
+            | BinOpKind::Neq
+            | BinOpKind::Lt
+            | BinOpKind::Gt
+            | BinOpKind::Le
+            | BinOpKind::Ge => {
                 self.asm_push_align();
                 self.asm.push(
-                    format!("    {} al", set_instr),  // Sets al.
+                    format!("    {} al", set_instr), // Sets al.
                 );
                 let dest_full = reg_to_32(dest_reg);
                 self.asm_push_align();
-                self.asm.push(format!(
-                    "    movzx {}, al", dest_full
-                ));
+                self.asm.push(format!("    movzx {}, al", dest_full));
             }
             _ => {}
         }
 
-        let _ = _comment;  // For debugging comments if needed later.
+        let _ = _comment; // For debugging comments if needed later.
     }
 
     /// Generate a unique label name (e.g., .L0, .L1).
@@ -1548,7 +1947,11 @@ impl CodeGen {
 
 /// Find the phi slot offset for an If result variable in local_vars.
 /// Returns the stack offset string (e.g., "24") if found, None otherwise.
-fn find_phi_slot(stmts: &[ICNFNode], result_var: &str, local_vars: &HashMap<String, usize>) -> Option<String> {
+fn find_phi_slot(
+    stmts: &[ICNFNode],
+    result_var: &str,
+    local_vars: &HashMap<String, usize>,
+) -> Option<String> {
     if let Some(&slot) = local_vars.get(result_var) {
         return Some(((slot + 1) * 8).to_string());
     }
@@ -1559,11 +1962,29 @@ fn find_phi_slot(stmts: &[ICNFNode], result_var: &str, local_vars: &HashMap<Stri
 fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
     for node in body {
         match &node.node {
-            ICNFInner::BinOp(_, l, r) => { out.insert(*l); out.insert(*r); }
-            ICNFInner::UnOp(_, id) => { out.insert(*id); }
-            ICNFInner::Call(_, args) => { for &a in args { out.insert(a); } }
-            ICNFInner::Print(args) => { for &a in args { out.insert(a); } }
-            ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
+            ICNFInner::BinOp(_, l, r) => {
+                out.insert(*l);
+                out.insert(*r);
+            }
+            ICNFInner::UnOp(_, id) => {
+                out.insert(*id);
+            }
+            ICNFInner::Call(_, args) => {
+                for &a in args {
+                    out.insert(a);
+                }
+            }
+            ICNFInner::Print(args) => {
+                for &a in args {
+                    out.insert(a);
+                }
+            }
+            ICNFInner::If {
+                cond_ssa,
+                then_body,
+                else_body,
+                ..
+            } => {
                 out.insert(*cond_ssa);
                 collect_body_operand_ids(then_body, out);
                 collect_body_operand_ids(else_body, out);
@@ -1579,10 +2000,23 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
             ICNFInner::Begin(stmts) => {
                 for s in stmts {
                     match &s.node {
-                        ICNFInner::BinOp(_, l, r) => { out.insert(*l); out.insert(*r); }
-                        ICNFInner::UnOp(_, id) => { out.insert(*id); }
-                        ICNFInner::Call(_, args) => { for &a in args { out.insert(a); } }
-                        ICNFInner::Print(args) => { for &a in args { out.insert(a); } }
+                        ICNFInner::BinOp(_, l, r) => {
+                            out.insert(*l);
+                            out.insert(*r);
+                        }
+                        ICNFInner::UnOp(_, id) => {
+                            out.insert(*id);
+                        }
+                        ICNFInner::Call(_, args) => {
+                            for &a in args {
+                                out.insert(a);
+                            }
+                        }
+                        ICNFInner::Print(args) => {
+                            for &a in args {
+                                out.insert(a);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1613,12 +2047,26 @@ const X86_REGISTERS: &[&str] = &["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9"];
 fn reg_to_32(name: &str) -> &str {
     match name {
         // 32-bit names pass through.
-        "eax" => "eax", "ecx" => "ecx", "edx" => "edx", "esi" => "esi",
-        "edi" => "edi", "r8d" => "r8d", "r9d" => "r9d",
+        "eax" => "eax",
+        "ecx" => "ecx",
+        "edx" => "edx",
+        "esi" => "esi",
+        "edi" => "edi",
+        "r8d" => "r8d",
+        "r9d" => "r9d",
         // 64-bit to 32-bit.
-        "rax" => "eax", "rcx" => "ecx", "rdx" => "edx", "rsi" => "esi",
-        "rdi" => "edi", "r8" => "r8d", "r9" => "r9d", "r10" => "r10d",
-        "r11" => "r11d", "r12" => "r12d", "r13" => "r13d", "r14" => "r14d",
+        "rax" => "eax",
+        "rcx" => "ecx",
+        "rdx" => "edx",
+        "rsi" => "esi",
+        "rdi" => "edi",
+        "r8" => "r8d",
+        "r9" => "r9d",
+        "r10" => "r10d",
+        "r11" => "r11d",
+        "r12" => "r12d",
+        "r13" => "r13d",
+        "r14" => "r14d",
         "r15" => "r15d",
         _ => name,
     }

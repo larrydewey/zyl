@@ -8,16 +8,16 @@ pub enum TokenKind {
     Float(f64),
     StringLit(String),
     Bool(bool),
-    Symbol(String),     // ~ prefixed
-    Keyword(String),    // : prefixed
+    Symbol(String),  // ~ prefixed
+    Keyword(String), // : prefixed
 
-    LParen,             // (
-    RParen,             // )
-    LBrace,             // {
-    RBrace,             // }
-    Colon,              // :
-    LBracket,           // [
-    RBracket,           // ]
+    LParen,   // (
+    RParen,   // )
+    LBrace,   // {
+    RBrace,   // }
+    Colon,    // :
+    LBracket, // [
+    RBracket, // ]
 
     EOF,
 }
@@ -32,14 +32,14 @@ impl PartialEq for TokenKind {
             (TokenKind::Bool(a), TokenKind::Bool(b)) => a == b,
             (TokenKind::Symbol(a), TokenKind::Symbol(b)) => a == b,
             (TokenKind::Keyword(a), TokenKind::Keyword(b)) => a == b,
-            (TokenKind::LParen, TokenKind::LParen) |
-            (TokenKind::RParen, TokenKind::RParen) |
-            (TokenKind::LBrace, TokenKind::LBrace) |
-            (TokenKind::RBrace, TokenKind::RBrace) |
-            (TokenKind::Colon, TokenKind::Colon) |
-            (TokenKind::LBracket, TokenKind::LBracket) |
-            (TokenKind::RBracket, TokenKind::RBracket) |
-            (TokenKind::EOF, TokenKind::EOF) => true,
+            (TokenKind::LParen, TokenKind::LParen)
+            | (TokenKind::RParen, TokenKind::RParen)
+            | (TokenKind::LBrace, TokenKind::LBrace)
+            | (TokenKind::RBrace, TokenKind::RBrace)
+            | (TokenKind::Colon, TokenKind::Colon)
+            | (TokenKind::LBracket, TokenKind::LBracket)
+            | (TokenKind::RBracket, TokenKind::RBracket)
+            | (TokenKind::EOF, TokenKind::EOF) => true,
             _ => false,
         }
     }
@@ -57,7 +57,7 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Keyword(kw) => write!(f, "keyword :{}", kw),
             TokenKind::LParen => f.write_str("'('"),
             TokenKind::RParen => f.write_str("')'"),
-            TokenKind::LBrace => f.write_str("'{'" ),
+            TokenKind::LBrace => f.write_str("'{'"),
             TokenKind::RBrace => f.write_str("'}'"),
             TokenKind::Colon => f.write_str("':'"),
             TokenKind::LBracket => f.write_str("'['"),
@@ -113,27 +113,45 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
 
         match chars[pos] {
             '(' => {
-                tokens.push(Token { kind: TokenKind::LParen, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::LParen,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             ')' => {
-                tokens.push(Token { kind: TokenKind::RParen, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::RParen,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             '{' => {
-                tokens.push(Token { kind: TokenKind::LBrace, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::LBrace,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             '}' => {
-                tokens.push(Token { kind: TokenKind::RBrace, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::RBrace,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             '[' => {
-                tokens.push(Token { kind: TokenKind::LBracket, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::LBracket,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             ']' => {
-                tokens.push(Token { kind: TokenKind::RBracket, span: make_span(&chars, pos, start_line, start_col) });
+                tokens.push(Token {
+                    kind: TokenKind::RBracket,
+                    span: make_span(&chars, pos, start_line, start_col),
+                });
                 pos += 1;
             }
             ':' => {
@@ -143,17 +161,25 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
                 while peek < chars.len() && chars[peek].is_whitespace() {
                     peek += 1;
                 }
-                if peek < chars.len() && !chars[peek].is_whitespace()
-                    && !"(){}[]:~".contains(chars[peek]) {
+                if peek < chars.len()
+                    && !chars[peek].is_whitespace()
+                    && !"(){}[]:~".contains(chars[peek])
+                {
                     // It's a keyword — lex the identifier part.
                     let (kw, end) = read_ident(&chars, peek);
                     let line = count_lines(&chars, pos);
                     let col = col_from_pos(&chars, pos);
-                    tokens.push(Token { kind: TokenKind::Keyword(kw), span: make_span(&chars, pos, line, col) });
+                    tokens.push(Token {
+                        kind: TokenKind::Keyword(kw),
+                        span: make_span(&chars, pos, line, col),
+                    });
                     pos = end;
                 } else {
                     // Standalone colon token.
-                    tokens.push(Token { kind: TokenKind::Colon, span: make_span(&chars, pos, start_line, start_col) });
+                    tokens.push(Token {
+                        kind: TokenKind::Colon,
+                        span: make_span(&chars, pos, start_line, start_col),
+                    });
                     pos += 1;
                 }
             }
@@ -162,23 +188,36 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
                 while peek < chars.len() && chars[peek].is_whitespace() {
                     peek += 1;
                 }
-                if peek < chars.len() && !chars[peek].is_whitespace()
-                    && !"(){}[]:~".contains(chars[peek]) {
+                if peek < chars.len()
+                    && !chars[peek].is_whitespace()
+                    && !"(){}[]:~".contains(chars[peek])
+                {
                     let (sym, end) = read_ident(&chars, peek);
                     let line = count_lines(&chars, pos);
                     let col = col_from_pos(&chars, pos);
-                    tokens.push(Token { kind: TokenKind::Symbol(sym), span: make_span(&chars, pos, line, col) });
+                    tokens.push(Token {
+                        kind: TokenKind::Symbol(sym),
+                        span: make_span(&chars, pos, line, col),
+                    });
                     pos = end;
                 } else {
                     return Err(ZylError::E_INVALID_CHAR(
-                        Location { line: start_line, col: start_col }, '~'));
+                        Location {
+                            line: start_line,
+                            col: start_col,
+                        },
+                        '~',
+                    ));
                 }
             }
             '"' => {
                 let (s, end_pos) = read_string(&chars, pos + 1)?;
                 let line = count_lines(&chars, pos);
                 let col = col_from_pos(&chars, pos);
-                tokens.push(Token { kind: TokenKind::StringLit(s), span: make_span(&chars, pos, line, col) });
+                tokens.push(Token {
+                    kind: TokenKind::StringLit(s),
+                    span: make_span(&chars, pos, line, col),
+                });
                 pos = end_pos + 1; // skip closing quote
             }
             c if c.is_ascii_digit() || (c == '-' && is_number_start(&chars, pos)) => {
@@ -188,15 +227,29 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
 
                 if num_str.contains('.') || num_str.to_lowercase().contains('e') {
                     match num_str.parse::<f64>() {
-                        Ok(v) => tokens.push(Token { kind: TokenKind::Float(v), span: make_span(&chars, pos, line, col) }),
-                        Err(_) => return Err(ZylError::E_FLOAT_OVERFLOW(
-                            make_span(&chars, pos, line, col), num_str)),
+                        Ok(v) => tokens.push(Token {
+                            kind: TokenKind::Float(v),
+                            span: make_span(&chars, pos, line, col),
+                        }),
+                        Err(_) => {
+                            return Err(ZylError::E_FLOAT_OVERFLOW(
+                                make_span(&chars, pos, line, col),
+                                num_str,
+                            ))
+                        }
                     }
                 } else {
                     match num_str.parse::<i64>() {
-                        Ok(v) => tokens.push(Token { kind: TokenKind::Integer(v), span: make_span(&chars, pos, line, col) }),
-                        Err(_) => return Err(ZylError::E_INTEGER_OVERFLOW(
-                            make_span(&chars, pos, line, col), num_str)),
+                        Ok(v) => tokens.push(Token {
+                            kind: TokenKind::Integer(v),
+                            span: make_span(&chars, pos, line, col),
+                        }),
+                        Err(_) => {
+                            return Err(ZylError::E_INTEGER_OVERFLOW(
+                                make_span(&chars, pos, line, col),
+                                num_str,
+                            ))
+                        }
                     }
                 }
                 pos = end;
@@ -208,31 +261,48 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
                 let col = col_from_pos(&chars, pos);
 
                 if ident == "true" || ident == "false" {
-                    tokens.push(Token { kind: TokenKind::Bool(ident == "true"), span: make_span(&chars, pos, line, col) });
+                    tokens.push(Token {
+                        kind: TokenKind::Bool(ident == "true"),
+                        span: make_span(&chars, pos, line, col),
+                    });
                 } else {
-                    tokens.push(Token { kind: TokenKind::Ident(ident), span: make_span(&chars, pos, line, col) });
+                    tokens.push(Token {
+                        kind: TokenKind::Ident(ident),
+                        span: make_span(&chars, pos, line, col),
+                    });
                 }
                 pos = end;
             }
             c => {
                 return Err(ZylError::E_INVALID_CHAR(
-                    Location { line: start_line, col: start_col }, c));
+                    Location {
+                        line: start_line,
+                        col: start_col,
+                    },
+                    c,
+                ));
             }
         }
     }
 
     let eof_line = count_lines(&chars, chars.len());
-    let eof_col = if !chars.is_empty() && chars[chars.len()-1] != '\n' {
+    let eof_col = if !chars.is_empty() && chars[chars.len() - 1] != '\n' {
         // Last char wasn't a newline; col is position in last line.
         let mut last_start = chars.len();
         for i in (0..chars.len()).rev() {
-            if chars[i] == '\n' { last_start = i + 1; break; }
+            if chars[i] == '\n' {
+                last_start = i + 1;
+                break;
+            }
         }
         chars.len() - last_start + 1
     } else {
         1
     };
-    tokens.push(Token { kind: TokenKind::EOF, span: make_span(&chars, chars.len(), eof_line, eof_col) });
+    tokens.push(Token {
+        kind: TokenKind::EOF,
+        span: make_span(&chars, chars.len(), eof_line, eof_col),
+    });
 
     Ok(tokens)
 }
@@ -261,12 +331,30 @@ fn read_string(chars: &[char], start: usize) -> Result<(String, usize), ZylError
     while i < chars.len() {
         if chars[i] == '\\' && i + 1 < chars.len() {
             match chars[i + 1] {
-                'n' => { s.push('\n'); i += 2; }
-                't' => { s.push('\t'); i += 2; }
-                '"' => { s.push('"'); i += 2; }
-                '\\' => { s.push('\\'); i += 2; }
-                _ => return Err(ZylError::E_UNTERMINATED_STRING(
-                    make_span(chars, start - 1, count_lines(chars, start), col_from_pos(chars, start)))), // -1 to include opening quote
+                'n' => {
+                    s.push('\n');
+                    i += 2;
+                }
+                't' => {
+                    s.push('\t');
+                    i += 2;
+                }
+                '"' => {
+                    s.push('"');
+                    i += 2;
+                }
+                '\\' => {
+                    s.push('\\');
+                    i += 2;
+                }
+                _ => {
+                    return Err(ZylError::E_UNTERMINATED_STRING(make_span(
+                        chars,
+                        start - 1,
+                        count_lines(chars, start),
+                        col_from_pos(chars, start),
+                    )))
+                } // -1 to include opening quote
             }
         } else if chars[i] == '"' {
             return Ok((s, i));
@@ -275,21 +363,32 @@ fn read_string(chars: &[char], start: usize) -> Result<(String, usize), ZylError
             i += 1;
         }
     }
-    Err(ZylError::E_UNTERMINATED_STRING(
-        make_span(chars, start - 1, count_lines(chars, start), col_from_pos(chars, start))))
+    Err(ZylError::E_UNTERMINATED_STRING(make_span(
+        chars,
+        start - 1,
+        count_lines(chars, start),
+        col_from_pos(chars, start),
+    )))
 }
 
 fn is_number_start(chars: &[char], pos: usize) -> bool {
-    if chars[pos] != '-' { return false; }
+    if chars[pos] != '-' {
+        return false;
+    }
     let mut i = pos + 1;
-    while i < chars.len() && chars[i].is_whitespace() { i += 1; }
+    while i < chars.len() && chars[i].is_whitespace() {
+        i += 1;
+    }
     i < chars.len() && (chars[i].is_ascii_digit())
 }
 
 fn read_numeric(chars: &[char], start: usize) -> (String, usize) {
     let mut s = String::new();
     let mut i = start;
-    if chars[i] == '-' { s.push('-'); i += 1; }
+    if chars[i] == '-' {
+        s.push('-');
+        i += 1;
+    }
     while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
         s.push(chars[i]);
         i += 1;
@@ -313,13 +412,17 @@ fn read_numeric(chars: &[char], start: usize) -> (String, usize) {
 fn count_lines(chars: &[char], pos: usize) -> usize {
     let mut lines = 1usize;
     for c in &chars[..pos] {
-        if *c == '\n' { lines += 1; }
+        if *c == '\n' {
+            lines += 1;
+        }
     }
     lines
 }
 
 fn col_from_pos(chars: &[char], pos: usize) -> usize {
-    let line_start = chars[..pos].iter().rposition(|&c| c == '\n')
+    let line_start = chars[..pos]
+        .iter()
+        .rposition(|&c| c == '\n')
         .map(|i| i + 1)
         .unwrap_or(0);
     (pos - line_start) + 1
@@ -345,7 +448,10 @@ fn make_span(chars: &[char], pos: usize, line: usize, col: usize) -> crate::erro
             } else if pos >= chars.len() || (end_col > col) {
                 // Single-char span.
             }
-            Location { line: e_line, col: e_col }
+            Location {
+                line: e_line,
+                col: e_col,
+            }
         } else {
             Location { line, col: end_col }
         },

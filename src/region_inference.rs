@@ -98,7 +98,10 @@ impl RegionEnv {
                 return Ok(());
             }
         }
-        Err(ZylError::E_UNINITIALIZED_USE(Span::default(), name.to_string()))
+        Err(ZylError::E_UNINITIALIZED_USE(
+            Span::default(),
+            name.to_string(),
+        ))
     }
 
     /// Enter a new scope (let bindings, closures, function bodies).
@@ -217,7 +220,11 @@ impl RegionInferer {
             result.push(expr.clone());
         }
 
-        if !result.is_empty() { Ok(result) } else { Err(ZylError::E_REGION_ESCAPE(Span::default())) }
+        if !result.is_empty() {
+            Ok(result)
+        } else {
+            Err(ZylError::E_REGION_ESCAPE(Span::default()))
+        }
     }
 
     /// First pass: collect definitions to establish baseline regions.
@@ -233,20 +240,29 @@ impl RegionInferer {
                     }
                     // Infer return region from body.
                     if let Ok(rr) = self.infer_expr(body) {
-                        self.func_signatures.insert(name.clone(), FuncSig {
-                            param_regions,
-                            return_region: rr.result_region,
-                        });
+                        self.func_signatures.insert(
+                            name.clone(),
+                            FuncSig {
+                                param_regions,
+                                return_region: rr.result_region,
+                            },
+                        );
                     } else {
-                        self.func_signatures.insert(name.clone(), FuncSig {
-                            param_regions,
-                            return_region: Region::Heap, // conservative default.
-                        });
+                        self.func_signatures.insert(
+                            name.clone(),
+                            FuncSig {
+                                param_regions,
+                                return_region: Region::Heap, // conservative default.
+                            },
+                        );
                     }
                 }
 
                 ExprInner::Call(op, args) if is_ident_op(op, "defn") && args.len() >= 3 => {
-                    let name = match &args[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => continue };
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
                     let params: Vec<Param> = parse_params_from_expr(&args[1]);
                     let mut param_regions = Vec::with_capacity(params.len());
                     for p in &params {
@@ -254,18 +270,29 @@ impl RegionInferer {
                         param_regions.push(Region::Stack);
                     }
                     if let Ok(rr) = self.infer_expr(&args[2]) {
-                        self.func_signatures.insert(name, FuncSig {
-                            param_regions, return_region: rr.result_region,
-                        });
+                        self.func_signatures.insert(
+                            name,
+                            FuncSig {
+                                param_regions,
+                                return_region: rr.result_region,
+                            },
+                        );
                     } else {
-                        self.func_signatures.insert(name, FuncSig {
-                            param_regions, return_region: Region::Heap,
-                        });
+                        self.func_signatures.insert(
+                            name,
+                            FuncSig {
+                                param_regions,
+                                return_region: Region::Heap,
+                            },
+                        );
                     }
                 }
 
                 ExprInner::Apply(fname, args) if fname == "defn" && args.len() >= 3 => {
-                    let name = match &args[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => continue };
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
                     let params: Vec<Param> = parse_params_from_expr(&args[1]);
                     let mut param_regions = Vec::with_capacity(params.len());
                     for p in &params {
@@ -273,13 +300,21 @@ impl RegionInferer {
                         param_regions.push(Region::Stack);
                     }
                     if let Ok(rr) = self.infer_expr(&args[2]) {
-                        self.func_signatures.insert(name, FuncSig {
-                            param_regions, return_region: rr.result_region,
-                        });
+                        self.func_signatures.insert(
+                            name,
+                            FuncSig {
+                                param_regions,
+                                return_region: rr.result_region,
+                            },
+                        );
                     } else {
-                        self.func_signatures.insert(name, FuncSig {
-                            param_regions, return_region: Region::Heap,
-                        });
+                        self.func_signatures.insert(
+                            name,
+                            FuncSig {
+                                param_regions,
+                                return_region: Region::Heap,
+                            },
+                        );
                     }
                 }
 
@@ -291,7 +326,9 @@ impl RegionInferer {
 
                 // struct/struct+ — fields default to Stack, promoted on escape.
                 ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
-                    let field_regions: Vec<(String, Region)> = sd.fields.iter()
+                    let field_regions: Vec<(String, Region)> = sd
+                        .fields
+                        .iter()
                         .map(|(name, _)| (name.clone(), Region::Stack))
                         .collect();
                     self.struct_regions.insert(sd.name.clone(), field_regions);
@@ -299,7 +336,8 @@ impl RegionInferer {
 
                 // deftype — variants default to Heap.
                 ExprInner::Deftype(name, _, _) => {
-                    let field_regions: Vec<(String, Region)> = vec![(format!("{}_instance", name), Region::Heap)];
+                    let field_regions: Vec<(String, Region)> =
+                        vec![(format!("{}_instance", name), Region::Heap)];
                     self.struct_regions.insert(name.clone(), field_regions);
                 }
 
@@ -321,9 +359,16 @@ impl RegionInferer {
             ExprInner::Def(name, val) => {
                 let val_result = self.infer_expr(val)?;
                 // If the value is a literal constant (no side effects), assign Global.
-                let region = if is_literal_constant(val) { Region::Global } else { val_result.result_region };
+                let region = if is_literal_constant(val) {
+                    Region::Global
+                } else {
+                    val_result.result_region
+                };
                 self.env.bind(name.clone(), region);
-                Ok(RegionResult { result_region: region, captures: None })
+                Ok(RegionResult {
+                    result_region: region,
+                    captures: None,
+                })
             }
 
             // defn — handled in collect_definitions; here just verify.
@@ -365,8 +410,12 @@ impl RegionInferer {
                 let then_result = self.infer_expr(then_)?;
                 let else_result = self.infer_expr(else_)?;
                 // Result region is the more permissive of the two branches.
-                let result_region = union_regions(then_result.result_region, else_result.result_region);
-                Ok(RegionResult { result_region, captures: None })
+                let result_region =
+                    union_regions(then_result.result_region, else_result.result_region);
+                Ok(RegionResult {
+                    result_region,
+                    captures: None,
+                })
             }
 
             // while — loop body inherits its parent's scope regions.
@@ -397,7 +446,10 @@ impl RegionInferer {
                     let br_result = self.infer_expr(body)?;
                     result_region = union_regions(result_region, br_result.result_region);
                 }
-                Ok(RegionResult { result_region, captures: None })
+                Ok(RegionResult {
+                    result_region,
+                    captures: None,
+                })
             }
 
             // begin — last expression determines the region.
@@ -407,7 +459,10 @@ impl RegionInferer {
                     let r = self.infer_expr(e)?;
                     result_region = union_regions(result_region, r.result_region);
                 }
-                Ok(RegionResult { result_region, captures: None })
+                Ok(RegionResult {
+                    result_region,
+                    captures: None,
+                })
             }
 
             // lambda/fn — closure creates a capture set (R5).
@@ -433,7 +488,11 @@ impl RegionInferer {
 
                 Ok(RegionResult {
                     result_region: Region::Heap, // closures themselves live on Heap.
-                    captures: if !captured.variables.is_empty() { Some(captured) } else { None },
+                    captures: if !captured.variables.is_empty() {
+                        Some(captured)
+                    } else {
+                        None
+                    },
                 })
             }
 
@@ -444,8 +503,12 @@ impl RegionInferer {
                 self.env.bind(name.clone(), Region::Heap); // error values are Heap.
                 let catch_result = self.infer_expr(h)?;
                 self.env.exit_scope();
-                let result_region = union_regions(expr_result.result_region, catch_result.result_region);
-                Ok(RegionResult { result_region, captures: None })
+                let result_region =
+                    union_regions(expr_result.result_region, catch_result.result_region);
+                Ok(RegionResult {
+                    result_region,
+                    captures: None,
+                })
             }
 
             // match — each arm analyzed independently.
@@ -456,53 +519,78 @@ impl RegionInferer {
                     let arm_result = self.infer_expr(&arm.body)?;
                     result_region = union_regions(result_region, arm_result.result_region);
                 }
-                Ok(RegionResult { result_region, captures: None })
+                Ok(RegionResult {
+                    result_region,
+                    captures: None,
+                })
             }
 
             // spawn — captured variables must be Send-capable (TCap/TAtomic), promoted to Heap (R3).
             ExprInner::Spawn(closure) => {
                 let _ = self.infer_expr(closure)?;
                 // Actor transfer requires Heap region for all captures.
-                Ok(RegionResult { result_region: Region::Heap, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
             }
 
             // send — message must be Send-capable (R3).
             ExprInner::Send(actor, msg) => {
                 let _ = self.infer_expr(actor)?;
                 let msg_result = self.infer_expr(msg)?;
-                Ok(RegionResult { result_region: Region::Heap, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
             }
 
             // ffi-call — requires Pin region (R4).
-            ExprInner::FfiCall(_, _, _) => {
-                Ok(RegionResult { result_region: Region::Pin, captures: None })
-            }
+            ExprInner::FfiCall(_, _, _) => Ok(RegionResult {
+                result_region: Region::Pin,
+                captures: None,
+            }),
 
             // ffi-pin — explicitly pins to Pin region.
             ExprInner::FfiPin(e) => {
                 let _ = self.infer_expr(e)?;
-                Ok(RegionResult { result_region: Region::Pin, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Pin,
+                    captures: None,
+                })
             }
 
             // ffi-unpin — unpinning returns the underlying value's region.
             ExprInner::FfiUnpin(e) => {
                 let result = self.infer_expr(e)?;
-                Ok(RegionResult { result_region: Region::Heap, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
             }
 
             // set! — rebinding a variable (R1). Must exist in scope.
             ExprInner::SetBang(name, val) => {
                 let val_result = self.infer_expr(val)?;
                 if !self.env.contains(name) {
-                    return Err(ZylError::E_UNINITIALIZED_USE(expr.span.clone(), name.clone()));
+                    return Err(ZylError::E_UNINITIALIZED_USE(
+                        expr.span.clone(),
+                        name.clone(),
+                    ));
                 }
-                Ok(RegionResult { result_region: val_result.result_region, captures: None })
+                Ok(RegionResult {
+                    result_region: val_result.result_region,
+                    captures: None,
+                })
             }
 
             // struct-get — returns reference to field; region = parent's region.
             ExprInner::StructGet(target, _field) => {
                 let target_result = self.infer_expr(target)?;
-                Ok(RegionResult { result_region: target_result.result_region, captures: None })
+                Ok(RegionResult {
+                    result_region: target_result.result_region,
+                    captures: None,
+                })
             }
 
             // make-struct — struct instance is Heap by default (R2).
@@ -510,7 +598,10 @@ impl RegionInferer {
                 for f in fields {
                     let _ = self.infer_expr(f)?;
                 }
-                Ok(RegionResult { result_region: Region::Heap, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
             }
 
             // Call/Apply — function application. Arguments evaluated left-to-right (spec §11).
@@ -519,18 +610,27 @@ impl RegionInferer {
                 for arg in args {
                     let _ = self.infer_expr(arg)?;
                 }
-                Ok(RegionResult { result_region: Region::Heap, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
             }
 
             ExprInner::Apply(name, args) => {
                 // Check if this is a known function with Pin return.
                 if name == "ffi-call" || name.starts_with("ffi_") {
-                    Ok(RegionResult { result_region: Region::Pin, captures: None })
+                    Ok(RegionResult {
+                        result_region: Region::Pin,
+                        captures: None,
+                    })
                 } else {
                     for arg in args {
                         let _ = self.infer_expr(arg)?;
                     }
-                    Ok(RegionResult { result_region: Region::Heap, captures: None })
+                    Ok(RegionResult {
+                        result_region: Region::Heap,
+                        captures: None,
+                    })
                 }
             }
 
@@ -548,22 +648,36 @@ impl RegionInferer {
             }
 
             // assert — no region impact.
-            ExprInner::Assert(_, _) => Ok(RegionResult { result_region: Region::Stack, captures: None }),
+            ExprInner::Assert(_, _) => Ok(RegionResult {
+                result_region: Region::Stack,
+                captures: None,
+            }),
 
             // error — runtime value on Heap.
-            ExprInner::Error(_) => Ok(RegionResult { result_region: Region::Heap, captures: None }),
+            ExprInner::Error(_) => Ok(RegionResult {
+                result_region: Region::Heap,
+                captures: None,
+            }),
 
             // unwrap — returns inner value's region.
             ExprInner::Unwrap(e) => self.infer_expr(e),
 
             // print — no region impact (side effect only).
             ExprInner::Print(exprs) => {
-                for e in exprs { let _ = self.infer_expr(e)?; }
-                Ok(RegionResult { result_region: Region::Stack, captures: None })
+                for e in exprs {
+                    let _ = self.infer_expr(e)?;
+                }
+                Ok(RegionResult {
+                    result_region: Region::Stack,
+                    captures: None,
+                })
             }
 
             // read-line — returns String on Heap.
-            ExprInner::ReadLine => Ok(RegionResult { result_region: Region::Heap, captures: None }),
+            ExprInner::ReadLine => Ok(RegionResult {
+                result_region: Region::Heap,
+                captures: None,
+            }),
 
             // exit — no region impact (terminates).
             ExprInner::Exit(e) => self.infer_expr(e),
@@ -572,58 +686,93 @@ impl RegionInferer {
             ExprInner::Close(e) => self.infer_expr(e),
 
             // defmacro — macro definitions are Global (compile-time only).
-            ExprInner::MacroDef(_, _, _) => Ok(RegionResult { result_region: Region::Global, captures: None }),
+            ExprInner::MacroDef(_, _, _) => Ok(RegionResult {
+                result_region: Region::Global,
+                captures: None,
+            }),
 
             // trait/impl/deftype/struct/alias/derive/export/module/use/test/* — compile-time constructs.
             ExprInner::TraitDecl(..) | ExprInner::ImplBlock(..) | ExprInner::Deftype(..) => {
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
                 let _ = sd; // already collected in collect_definitions.
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::AliasDecl(_, target) => self.infer_expr(target),
 
             ExprInner::Derive(..) | ExprInner::Export(_) | ExprInner::ModuleDecl(_) => {
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
-            ExprInner::UseModule(..) => Ok(RegionResult { result_region: Region::Stack, captures: None }),
+            ExprInner::UseModule(..) => Ok(RegionResult {
+                result_region: Region::Stack,
+                captures: None,
+            }),
 
             // Test constructs — compile-time or isolated runtime.
             ExprInner::TestSuite(_, tests, _) => {
                 let _ = flatten_tests(tests);
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::Setup(exprs_list) | ExprInner::Teardown(exprs_list) => {
-                for e in exprs_list { let _ = self.infer_expr(e)?; }
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                for e in exprs_list {
+                    let _ = self.infer_expr(e)?;
+                }
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::TestDecl(_, body, _) => {
                 self.infer_expr(body)?;
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::AssertEqual(a_expr, b_expr) => {
                 let _ = self.infer_expr(a_expr)?;
                 let _ = self.infer_expr(b_expr)?;
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
-            ExprInner::AssertFail(e, _) | ExprInner::AssertTrue(e, _) | ExprInner::AssertFalse(e, _) => {
+            ExprInner::AssertFail(e, _)
+            | ExprInner::AssertTrue(e, _)
+            | ExprInner::AssertFalse(e, _) => {
                 self.infer_expr(e)?;
-                Ok(RegionResult { result_region: Region::Global, captures: None })
+                Ok(RegionResult {
+                    result_region: Region::Global,
+                    captures: None,
+                })
             }
 
             ExprInner::TestProperty(_, _, body) => self.infer_expr(body),
 
-            ExprInner::RunTests(_) | ExprInner::TestCompile(..) => {
-                Ok(RegionResult { result_region: Region::Global, captures: None })
-            }
+            ExprInner::RunTests(_) | ExprInner::TestCompile(..) => Ok(RegionResult {
+                result_region: Region::Global,
+                captures: None,
+            }),
         }
     }
 }
@@ -682,13 +831,22 @@ impl PartialOrd for Region {
 impl Ord for Region {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use Region::*;
-        let rank = |r: &Region| match r { Stack => 0, Pin => 1, Heap => 2, Circular => 3, Global => 4 };
+        let rank = |r: &Region| match r {
+            Stack => 0,
+            Pin => 1,
+            Heap => 2,
+            Circular => 3,
+            Global => 4,
+        };
         rank(self).cmp(&rank(other))
     }
 }
 
 /// Analyze which outer-scope variables are referenced in an expression body.
-fn analyze_captures(inferer: &RegionInferer, expr: &Expr) -> std::result::Result<CaptureInfo, ZylError> {
+fn analyze_captures(
+    inferer: &RegionInferer,
+    expr: &Expr,
+) -> std::result::Result<CaptureInfo, ZylError> {
     let mut captured = IndexMap::<String, Region>::new();
     collect_capture_vars(expr, inferer.env.snapshot(), &mut captured)?;
 
@@ -832,52 +990,95 @@ fn annotate_with_region(expr: &Expr, region: Region) -> ExprInner {
 }
 
 /// Parse parameters from an S-expression (for no-dispatch parsing compatibility).
-fn parse_params_from_expr(expr: &Expr) -> Vec<Param> { 
-    match &expr.inner { 
+fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
+    match &expr.inner {
         // Call from special forms — all elements are params.
         ExprInner::Call(op, ref items) => {
             let mut params = Vec::new();
             if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) {
-                let all_simple = items.iter().all(|i| matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_))));
+                let all_simple = items.iter().all(|i| {
+                    matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_)))
+                });
                 if all_simple {
                     if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
-                        params.push(Param { span: Span::default(), name: n.clone(), typ: None });
+                        params.push(Param {
+                            span: Span::default(),
+                            name: n.clone(),
+                            typ: None,
+                        });
                     }
                 }
             }
-            for i in items { params.push(parse_single_param(i)); }
-            params
-        },
-        // Apply from generic calls — treat operator + args as params.
-        ExprInner::Apply(ref name, ref args) if !name.starts_with("make-") && name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!' )) => {
-            let mut params = Vec::new();
-            if name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!' )) {
-                params.push(Param { span: Span::default(), name: name.clone(), typ: None });
+            for i in items {
+                params.push(parse_single_param(i));
             }
-            for pe in args { params.push(parse_single_param(pe)); }
             params
         }
-        _ => Vec::new() 
-    } 
+        // Apply from generic calls — treat operator + args as params.
+        ExprInner::Apply(ref name, ref args)
+            if !name.starts_with("make-")
+                && name
+                    .chars()
+                    .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) =>
+        {
+            let mut params = Vec::new();
+            if name
+                .chars()
+                .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
+            {
+                params.push(Param {
+                    span: Span::default(),
+                    name: name.clone(),
+                    typ: None,
+                });
+            }
+            for pe in args {
+                params.push(parse_single_param(pe));
+            }
+            params
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn parse_single_param(expr: &Expr) -> Param {
     match &expr.inner {
         ExprInner::Call(_, inner) if !inner.is_empty() => {
-            let name = match &inner[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___".to_string() };
-            let typ = if inner.len() > 1 { 
-                match &inner[1].inner { ExprInner::Atom(Atom::Ident(s)) => Some(s.clone()), _ => None } 
-            } else { None };
-            Param { span: Span::default(), name, typ }
+            let name = match &inner[0].inner {
+                ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                _ => "___".to_string(),
+            };
+            let typ = if inner.len() > 1 {
+                match &inner[1].inner {
+                    ExprInner::Atom(Atom::Ident(s)) => Some(s.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            Param {
+                span: Span::default(),
+                name,
+                typ,
+            }
         }
         _ => {
-            let name = match &expr.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___".to_string() };
-            Param { span: Span::default(), name, typ: None }
+            let name = match &expr.inner {
+                ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                _ => "___".to_string(),
+            };
+            Param {
+                span: Span::default(),
+                name,
+                typ: None,
+            }
         }
     }
 }
 
-fn is_ident_op(op: &Expr, name: &str) -> bool { matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == name) }
+fn is_ident_op(op: &Expr, name: &str) -> bool {
+    matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == name)
+}
 fn flatten_tests(_tests: &[TestOrSuite]) -> Vec<&Expr> {
     // Phase 4 MVP: skip detailed test expression analysis.
     // Test bodies are handled by their individual expr arms in infer_expr.
