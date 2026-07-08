@@ -307,20 +307,26 @@ impl Optimizer {
                 }
             }
              ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
-                 used_ids.insert(*cond_ssa);
-                 for stmt in then_body {
-                     Self::collect_used_ssa(&stmt.node, used_ids);
-                 }
-                 for stmt in else_body {
-                     Self::collect_used_ssa(&stmt.node, used_ids);
-                 }
-             }
+                  used_ids.insert(*cond_ssa);
+                  for stmt in then_body {
+                      Self::collect_used_ssa(&stmt.node, used_ids);
+                  }
+                  for stmt in else_body {
+                      Self::collect_used_ssa(&stmt.node, used_ids);
+                  }
+              }
 
-            ICNFInner::While { cond_ssa, .. } => {
+            ICNFInner::While { cond_ssa, body } => {
                 used_ids.insert(*cond_ssa);
+                for stmt in body {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
             }
-            ICNFInner::For { iter_ssa: cond_ssa, .. } => {
+            ICNFInner::For { iter_ssa: cond_ssa, body, .. } => {
                 used_ids.insert(*cond_ssa);
+                for stmt in body {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
             }
             ICNFInner::Match { scrutinee_ssa, .. } => { used_ids.insert(*scrutinee_ssa); }
             ICNFInner::StructGet(val_id, _) => { used_ids.insert(*val_id); }
