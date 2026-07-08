@@ -84,7 +84,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(e) => e,
         Err(err) => return Err(Box::new(err)),
     };
-    println!("  Region inference complete: {} expressions.", regioned_exprs.len());
+    println!(
+        "  Region inference complete: {} expressions.",
+        regioned_exprs.len()
+    );
 
     // Phase 5 (part 1): Collect function definitions for monomorphization.
     // Full type inference runs after monomorphization to preserve AST structure.
@@ -103,14 +106,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(e) => e,
         Err(err) => return Err(Box::new(err)),
     };
-    println!("  Monomorphization complete: {} expressions.", regioned_for_mono.len());
+    println!(
+        "  Monomorphization complete: {} expressions.",
+        regioned_for_mono.len()
+    );
 
     // Now run full type inference on the monomorphized AST.
     let typed_exprs = match inferer.infer(&regioned_for_mono) {
         Ok(e) => e,
         Err(err) => return Err(Box::new(err)),
     };
-    println!("  Type inference complete: {} expressions.", typed_exprs.len());
+    println!(
+        "  Type inference complete: {} expressions.",
+        typed_exprs.len()
+    );
 
     // Phase 7: ICNF Generation (SSA IR with region annotations).
     // Uses the monomorphized AST which has full structure intact.
@@ -120,8 +129,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
     };
-    println!("  ICNF generation complete: {} functions, {} statements.", 
-             icnf_program.functions.len(), icnf_program.statements.len());
+    println!(
+        "  ICNF generation complete: {} functions, {} statements.",
+        icnf_program.functions.len(),
+        icnf_program.statements.len()
+    );
 
     // Phase 8: Optimization (Safe only).
     println!("[Phase 8] Optimizing ICNF ...");
@@ -130,13 +142,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
     };
-    println!("  Optimization complete: {} passes applied.", optimizer.stats().len());
+    println!(
+        "  Optimization complete: {} passes applied.",
+        optimizer.stats().len()
+    );
 
     // Phase 9: Code Generation → x86_64 assembly.
     println!("[Phase 9] Generating x86_64 assembly ...");
     let mut codegen = codegen::CodeGen::new();
     codegen.generate(&optimized_icnf);
-    
+
     // Write assembly to a temporary file, then assemble and link.
     let asm_path = format!("{}.s", output_path.trim_end_matches(".bin"));
     std::fs::write(&asm_path, &codegen.asm.join("\n"))
@@ -151,10 +166,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("  Assembling {} → {}", asm_path, bin_path);
-    
+
     // Try to assemble and link using cc (which handles as + ld automatically).
     let build_result = std::process::Command::new("cc")
-        .arg("-no-pie").arg("-o").arg(&bin_path)
+        .arg("-no-pie")
+        .arg("-o")
+        .arg(&bin_path)
         .arg(&asm_path)
         .output();
 
@@ -162,7 +179,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(output) => {
             if output.status.success() {
                 println!("  Linked successfully: {}", bin_path);
-                
+
                 // Keep assembly file for debugging.
                 // let _ = std::fs::remove_file(&asm_path);
             } else {
@@ -174,22 +191,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             // cc not available — just output the assembly and note that manual linking is needed.
             println!("  Note: 'cc' not found, skipping link step.");
-            println!("  To build manually: as {} -o {}.o && ld {}.o -o {}", 
-                     asm_path, bin_path.trim_end_matches(".bin"), asm_path, output_path);
+            println!(
+                "  To build manually: as {} -o {}.o && ld {}.o -o {}",
+                asm_path,
+                bin_path.trim_end_matches(".bin"),
+                asm_path,
+                output_path
+            );
         }
     }
 
     // Output the typed AST (Phase 5 replaces expressions with type annotation atoms).
     for (i, expr) in typed_exprs.iter().enumerate() {
         let json = serde_json::to_string_pretty(expr)?;
-        if i == 0 { println!("--- Typed AST ---"); } else { println!(); }
+        if i == 0 {
+            println!("--- Typed AST ---");
+        } else {
+            println!();
+        }
         println!("{}", json);
     }
 
     // Output the monomorphized AST (full structure, for debugging / pipeline handoff).
     for (i, expr) in regioned_for_mono.iter().enumerate() {
         let json = serde_json::to_string_pretty(expr)?;
-        if i == 0 { println!("\n--- Monomorphized AST ---"); } else { println!(); }
+        if i == 0 {
+            println!("\n--- Monomorphized AST ---");
+        } else {
+            println!();
+        }
         println!("{}", json);
     }
 
@@ -200,7 +230,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for func in &optimized_icnf.functions {
         let mut sig = format!("  fn {}(", func.name);
         for (i, (param_name, param_type)) in func.params.iter().enumerate() {
-            if i > 0 { sig.push_str(", "); }
+            if i > 0 {
+                sig.push_str(", ");
+            }
             sig.push_str(&format!("{}:{}", param_name, param_type));
         }
         println!("{})", sig);
@@ -226,7 +258,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         for (name, sig) in &regioner.func_signatures {
             print!("  fn {}: params[", name);
             for (i, r) in sig.param_regions.iter().enumerate() {
-                if i > 0 { print!(", "); }
+                if i > 0 {
+                    print!(", ");
+                }
                 print!("{}", r);
             }
             print!("] ret→{}", sig.return_region);
@@ -248,9 +282,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Try to run the generated binary.
     if std::path::Path::new(&bin_path).exists() {
         println!("Running {} ...", bin_path);
-        let run_result = std::process::Command::new(&bin_path)
-            .output();
-        
+        let run_result = std::process::Command::new(&bin_path).output();
+
         match run_result {
             Ok(output) => {
                 print!("{}", String::from_utf8_lossy(&output.stdout));

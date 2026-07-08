@@ -14,9 +14,9 @@ use crate::type_system::Type;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ICNFFuncSig {
     pub name: String,
-    pub params: Vec<(String, Type)>,       // param_name -> type
-    pub return_type: Option<Type>,          // None = Unit
-    pub body: Vec<ICNFNode>,               // converted function body statements
+    pub params: Vec<(String, Type)>, // param_name -> type
+    pub return_type: Option<Type>,   // None = Unit
+    pub body: Vec<ICNFNode>,         // converted function body statements
 }
 
 /// A single statement in the SSA IR. Each has a unique SSA ID and region annotation.
@@ -38,7 +38,9 @@ pub struct ICNFNode {
     pub node: ICNFInner,
 }
 
-fn is_default_region(r: &Region) -> bool { *r == Region::Stack }
+fn is_default_region(r: &Region) -> bool {
+    *r == Region::Stack
+}
 
 /// Internal discriminant for an SSA IR node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -48,7 +50,7 @@ pub enum ICNFInner {
     /// Variable reference: loads the current SSA binding for a name.
     Load(String),
     /// Assignment: binds an SSA ID to a value expression's result.
-    Assign(String, usize),  // variable_name -> ssa_id_of_value
+    Assign(String, usize), // variable_name -> ssa_id_of_value
     /// Binary arithmetic/comparison operation.
     BinOp(BinOpKind, usize, usize),
     /// Unary operation.
@@ -56,17 +58,36 @@ pub enum ICNFInner {
     /// Function call: name(args...) → result_ssa.
     Call(String, Vec<usize>),
     /// If-then-else with phi node at join point. Branch bodies embedded directly (like While).
-    If { cond_ssa: usize, then_body: Vec<ICNFNode>, else_body: Vec<ICNFNode>, result_var: String },
+    If {
+        cond_ssa: usize,
+        then_body: Vec<ICNFNode>,
+        else_body: Vec<ICNFNode>,
+        result_var: String,
+    },
     /// While loop: condition + body statements.
-    While { cond_ssa: usize, body: Vec<ICNFNode> },
+    While {
+        cond_ssa: usize,
+        body: Vec<ICNFNode>,
+    },
     /// For loop over an iterator expression.
-    For { var_name: String, iter_ssa: usize, body: Vec<ICNFNode> },
+    For {
+        var_name: String,
+        iter_ssa: usize,
+        body: Vec<ICNFNode>,
+    },
     /// Lambda/closure value (not yet invoked).
     Closure(String),
     /// Match on ADT with arms producing phi at join.
-    Match { scrutinee_ssa: usize, result_var: String },
+    Match {
+        scrutinee_ssa: usize,
+        result_var: String,
+    },
     /// Try-catch with error handling branch.
-    TryCatch { try_body: Vec<ICNFNode>, catch_var: String, catch_body: Vec<ICNFNode> },
+    TryCatch {
+        try_body: Vec<ICNFNode>,
+        catch_var: String,
+        catch_body: Vec<ICNFNode>,
+    },
     /// Begin block (sequence of statements).
     Begin(Vec<ICNFNode>),
     /// Struct construction.
@@ -74,7 +95,11 @@ pub enum ICNFInner {
     /// Field access on a struct value.
     StructGet(usize, String),
     /// FFI call (always Pin region).
-    FfiCall { name: String, args: Vec<usize>, timeout: u64 },
+    FfiCall {
+        name: String,
+        args: Vec<usize>,
+        timeout: u64,
+    },
     /// Actor spawn.
     Spawn(usize),
     /// Send message to actor.
@@ -100,32 +125,61 @@ pub enum ICNFInner {
     /// Unwrap an alias value.
     Unwrap(usize),
     /// Assert check.
-    Assert { cond_ssa: usize, msg: Option<String> },
+    Assert {
+        cond_ssa: usize,
+        msg: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BinOpKind { Add, Sub, Mul, Div, Rem, Eq, Neq, Lt, Gt, Le, Ge, And, Or }
+pub enum BinOpKind {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    And,
+    Or,
+}
 
 impl std::fmt::Display for BinOpKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinOpKind::Add => write!(f, "+"), BinOpKind::Sub => write!(f, "-"),
-            BinOpKind::Mul => write!(f, "*"), BinOpKind::Div => write!(f, "/"),
-            BinOpKind::Rem => write!(f, "%"), BinOpKind::Eq => write!(f, "=="),
-            BinOpKind::Neq => write!(f, "!="), BinOpKind::Lt => write!(f, "<"),
-            BinOpKind::Gt => write!(f, ">"), BinOpKind::Le => write!(f, "<="),
-            BinOpKind::Ge => write!(f, ">="), BinOpKind::And => write!(f, "and"),
+            BinOpKind::Add => write!(f, "+"),
+            BinOpKind::Sub => write!(f, "-"),
+            BinOpKind::Mul => write!(f, "*"),
+            BinOpKind::Div => write!(f, "/"),
+            BinOpKind::Rem => write!(f, "%"),
+            BinOpKind::Eq => write!(f, "=="),
+            BinOpKind::Neq => write!(f, "!="),
+            BinOpKind::Lt => write!(f, "<"),
+            BinOpKind::Gt => write!(f, ">"),
+            BinOpKind::Le => write!(f, "<="),
+            BinOpKind::Ge => write!(f, ">="),
+            BinOpKind::And => write!(f, "and"),
             BinOpKind::Or => write!(f, "or"),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum UnOpKind { Not, Negate }
+pub enum UnOpKind {
+    Not,
+    Negate,
+}
 
 impl std::fmt::Display for UnOpKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self { UnOpKind::Not => write!(f, "not"), UnOpKind::Negate => write!(f, "-u") }
+        match self {
+            UnOpKind::Not => write!(f, "not"),
+            UnOpKind::Negate => write!(f, "-u"),
+        }
     }
 }
 
@@ -158,7 +212,15 @@ pub struct IcnfConverter {
 
 impl IcnfConverter {
     pub fn new() -> Self {
-        Self { ssa_id_counter: std::cell::Cell::new(0), functions: Vec::new(), global_stmts: Vec::new(), current_scope: IndexMap::new(), emitted_branch_ids: std::collections::HashSet::new(), push_to_globals: true, body_intermediates: Vec::new() }
+        Self {
+            ssa_id_counter: std::cell::Cell::new(0),
+            functions: Vec::new(),
+            global_stmts: Vec::new(),
+            current_scope: IndexMap::new(),
+            emitted_branch_ids: std::collections::HashSet::new(),
+            push_to_globals: true,
+            body_intermediates: Vec::new(),
+        }
     }
 
     /// Set whether expression conversion should push results to globals.
@@ -172,7 +234,8 @@ impl IcnfConverter {
             match &expr.inner {
                 // Specialized Defn (from parser when no_dispatch=false, or from monomorphization).
                 ExprInner::Defn(name, params, body) => {
-                    let param_types: Vec<Type> = params.iter().map(|p| self.resolve_type(p)).collect();
+                    let param_types: Vec<Type> =
+                        params.iter().map(|p| self.resolve_type(p)).collect();
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in params.iter() {
                         let ssa_id = self.next_ssa_id();
@@ -191,26 +254,44 @@ impl IcnfConverter {
                     }
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
-                    let func_sig = ICNFFuncSig { name: name.clone(), params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
+                    let func_sig = ICNFFuncSig {
+                        name: name.clone(),
+                        params: params
+                            .iter()
+                            .zip(param_types)
+                            .map(|(p, t)| (p.name.clone(), t))
+                            .collect(),
+                        return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        body: func_body,
+                    };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
                 // Raw Call form for defn (from no-dispatch parsing).
                 ExprInner::Call(op, args) if is_ident_op(op, "defn") && args.len() >= 3 => {
-                    let name = match &args[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => continue };
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
                     // Parse params: args[1] should be a Call/Apply list of param names.
                     let params = parse_params_from_expr(&args[1]);
-                    
-                    let param_types: Vec<Type> = params.iter().map(|p| self.resolve_type(p)).collect();
+
+                    let param_types: Vec<Type> =
+                        params.iter().map(|p| self.resolve_type(p)).collect();
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in &params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
-                    
+
                     // Body is args[2] (or Begin of args[2..]).
-                    let body_expr = if args.len() == 3 { &args[2] } else { 
-                        &Expr { span: crate::error::Span::default(), inner: ExprInner::Begin(args[2..].to_vec()) }
+                    let body_expr = if args.len() == 3 {
+                        &args[2]
+                    } else {
+                        &Expr {
+                            span: crate::error::Span::default(),
+                            inner: ExprInner::Begin(args[2..].to_vec()),
+                        }
                     };
                     // Save globals, use temp buffer for function body.
                     let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
@@ -225,24 +306,42 @@ impl IcnfConverter {
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
 
-                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
+                    let func_sig = ICNFFuncSig {
+                        name,
+                        params: params
+                            .iter()
+                            .zip(param_types)
+                            .map(|(p, t)| (p.name.clone(), t))
+                            .collect(),
+                        return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        body: func_body,
+                    };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
                 // Apply form for defn.
                 ExprInner::Apply(fname, args) if fname == "defn" && args.len() >= 3 => {
-                    let name = match &args[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => continue };
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
                     let params = parse_params_from_expr(&args[1]);
 
-                    let param_types: Vec<Type> = params.iter().map(|p| self.resolve_type(p)).collect();
+                    let param_types: Vec<Type> =
+                        params.iter().map(|p| self.resolve_type(p)).collect();
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in &params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
 
-                    let body_expr = if args.len() == 3 { &args[2] } else { 
-                        &Expr { span: crate::error::Span::default(), inner: ExprInner::Begin(args[2..].to_vec()) }
+                    let body_expr = if args.len() == 3 {
+                        &args[2]
+                    } else {
+                        &Expr {
+                            span: crate::error::Span::default(),
+                            inner: ExprInner::Begin(args[2..].to_vec()),
+                        }
                     };
                     // Save globals, use temp buffer for function body.
                     let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
@@ -257,13 +356,28 @@ impl IcnfConverter {
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
 
-                    let func_sig = ICNFFuncSig { name, params: params.iter().zip(param_types).map(|(p, t)| (p.name.clone(), t)).collect(), return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)), body: func_body };
+                    let func_sig = ICNFFuncSig {
+                        name,
+                        params: params
+                            .iter()
+                            .zip(param_types)
+                            .map(|(p, t)| (p.name.clone(), t))
+                            .collect(),
+                        return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        body: func_body,
+                    };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
                 ExprInner::Lambda(name, params, _body) => {
                     let ssa_id = self.next_ssa_id();
-                    self.global_stmts.push(ICNFNode { id: ssa_id, region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Closure(name.clone()) });
+                    self.global_stmts.push(ICNFNode {
+                        id: ssa_id,
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Closure(name.clone()),
+                    });
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in params {
                         let ssa_id = self.next_ssa_id();
@@ -281,20 +395,28 @@ impl IcnfConverter {
                     let _body_stmts = self.convert_expr_to_stmts(body)?;
                     self.current_scope = saved_scope;
                 }
-                ExprInner::Deftype(..) | ExprInner::TraitDecl(..) | ExprInner::ImplBlock(..) 
-                | ExprInner::StructDef(..) | ExprInner::StructDefPlus(..)
-                | ExprInner::AliasDecl(..) | ExprInner::Derive(..)
-                | ExprInner::ModuleDecl(..) | ExprInner::UseModule(..) | ExprInner::Export(..) => {}
+                ExprInner::Deftype(..)
+                | ExprInner::TraitDecl(..)
+                | ExprInner::ImplBlock(..)
+                | ExprInner::StructDef(..)
+                | ExprInner::StructDefPlus(..)
+                | ExprInner::AliasDecl(..)
+                | ExprInner::Derive(..)
+                | ExprInner::ModuleDecl(..)
+                | ExprInner::UseModule(..)
+                | ExprInner::Export(..) => {}
                 ExprInner::MacroDef(..) => {}
                 _ => {
                     let stmts = self.convert_expr_to_stmts(expr)?;
-                    for s in stmts { self.global_stmts.push(s); }
+                    for s in stmts {
+                        self.global_stmts.push(s);
+                    }
                 }
             }
         }
 
-        Ok(ICNFProgram { 
-            functions: std::mem::take(&mut self.functions), 
+        Ok(ICNFProgram {
+            functions: std::mem::take(&mut self.functions),
             statements: std::mem::take(&mut self.global_stmts),
             emitted_branch_ids: std::mem::take(&mut self.emitted_branch_ids),
         })
@@ -331,7 +453,11 @@ impl IcnfConverter {
                 self.global_stmts.push(last);
             }
         }
-        if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
+        if !stmts.is_empty() {
+            Ok(stmts.last().unwrap().id)
+        } else {
+            Ok(0)
+        }
     }
 
     /// Convert a single AST expression into one or more ICNF nodes.
@@ -345,10 +471,22 @@ impl IcnfConverter {
                     if self.push_to_globals {
                         // Check if already in global_stmts to avoid duplicates.
                         if self.global_stmts.iter().all(|n| n.id != ssa_id) {
-                            self.global_stmts.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name.clone()) });
+                            self.global_stmts.push(ICNFNode {
+                                id: ssa_id,
+                                region: Region::Stack,
+                                typ: None,
+                                is_branch_body: false,
+                                node: ICNFInner::Load(name.clone()),
+                            });
                         }
                     }
-                    Ok(vec![ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name.clone()) }])
+                    Ok(vec![ICNFNode {
+                        id: ssa_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Load(name.clone()),
+                    }])
                 } else {
                     // Not in scope — treat as a constant (for literals, type metadata, etc.).
                     Ok(vec![self.emit(ICNFInner::Const(Atom::Ident(name.clone())))])
@@ -360,7 +498,10 @@ impl IcnfConverter {
             }
 
             // Print from raw Call form: (print e1 ... en).
-            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "print") && !args.is_empty() => {
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "print")
+                    && !args.is_empty() =>
+            {
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for e in args.iter() {
                     // convert_expr pushes stmts into global_stmts.
@@ -383,22 +524,44 @@ impl IcnfConverter {
             }
 
             // Variable reference (bare identifier as expression — no arguments).
-            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) 
-                && !is_arithmetic_or_cmp_expr(op)
-                && args.is_empty() => {
-                let name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
+                    && !is_arithmetic_or_cmp_expr(op)
+                    && args.is_empty() =>
+            {
+                let name = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return Ok(Vec::new()),
+                };
                 if let Some(&ssa_id) = self.current_scope.get(&name) {
-                    Ok(vec![ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(name) }])
+                    Ok(vec![ICNFNode {
+                        id: ssa_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Load(name),
+                    }])
                 } else {
                     let id = self.next_ssa_id();
-                    Ok(vec![ICNFNode { id, region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Load(id.to_string()) }])
+                    Ok(vec![ICNFNode {
+                        id,
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Load(id.to_string()),
+                    }])
                 }
             }
 
             // Binary operations from Call form (+ a b).
-            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) 
-                && is_arithmetic_or_cmp_expr(op) => {
-                let name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
+                    && is_arithmetic_or_cmp_expr(op) =>
+            {
+                let name = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return Ok(Vec::new()),
+                };
                 self.convert_bin_op(&name, args)
             }
 
@@ -408,7 +571,10 @@ impl IcnfConverter {
             }
 
             // Unary not.
-            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "not") && !args.is_empty() => {
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "not")
+                    && !args.is_empty() =>
+            {
                 let arg_id = self.convert_expr(&args[0])?;
                 Ok(vec![self.emit(ICNFInner::UnOp(UnOpKind::Not, arg_id))])
             }
@@ -436,8 +602,25 @@ impl IcnfConverter {
 
                 let result_var_clone = result_var.clone();
                 Ok(vec![
-                    ICNFNode { id: if_node_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::If { cond_ssa: cond_id, then_body: then_stmts, else_body: else_stmts, result_var } },
-                    ICNFNode { id: phi_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(result_var_clone, cond_id) },
+                    ICNFNode {
+                        id: if_node_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::If {
+                            cond_ssa: cond_id,
+                            then_body: then_stmts,
+                            else_body: else_stmts,
+                            result_var,
+                        },
+                    },
+                    ICNFNode {
+                        id: phi_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assign(result_var_clone, cond_id),
+                    },
                 ])
             }
 
@@ -446,7 +629,13 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let val_id = self.convert_and_push(val)?;
                 let ssa_id = self.next_ssa_id();
-                let assign_node = ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(name.clone(), val_id) };
+                let assign_node = ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assign(name.clone(), val_id),
+                };
                 self.current_scope.insert(name.clone(), ssa_id);
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
@@ -460,7 +649,13 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let val_id = self.convert_and_push(val)?;
                 let ssa_id = self.next_ssa_id();
-                let assign_node = ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(name.clone(), val_id) };
+                let assign_node = ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assign(name.clone(), val_id),
+                };
                 self.current_scope.insert(name.clone(), ssa_id);
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
@@ -480,7 +675,16 @@ impl IcnfConverter {
                         }
                     }
                 }
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::While { cond_ssa: cond_id, body: body_stmts } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::While {
+                        cond_ssa: cond_id,
+                        body: body_stmts,
+                    },
+                }])
             }
 
             // For loop.
@@ -494,12 +698,24 @@ impl IcnfConverter {
                         }
                     }
                 }
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::For { var_name: var_name.clone(), iter_ssa: iter_id, body: body_stmts } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::For {
+                        var_name: var_name.clone(),
+                        iter_ssa: iter_id,
+                        body: body_stmts,
+                    },
+                }])
             }
 
             // Cond → desugar to nested If.
             ExprInner::Cond(clauses) => {
-                if clauses.is_empty() { return Ok(vec![self.emit(ICNFInner::Unit)]); }
+                if clauses.is_empty() {
+                    return Ok(vec![self.emit(ICNFInner::Unit)]);
+                }
                 self.convert_cond_recursive(&clauses, 0)
             }
 
@@ -525,7 +741,17 @@ impl IcnfConverter {
                     }
                 }
                 self.current_scope = saved_scope;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::TryCatch { try_body: try_stmts, catch_var: catch_var.clone(), catch_body: catch_stmts } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::TryCatch {
+                        try_body: try_stmts,
+                        catch_var: catch_var.clone(),
+                        catch_body: catch_stmts,
+                    },
+                }])
             }
 
             // Match expression.
@@ -538,7 +764,16 @@ impl IcnfConverter {
                     // We don't use body_id here, but we need to convert the body.
                     drop(body_stmts);
 
-                    match_nodes.push(ICNFNode { id: self.next_ssa_id(), region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Match { scrutinee_ssa: scrut_id, result_var } });
+                    match_nodes.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Match {
+                            scrutinee_ssa: scrut_id,
+                            result_var,
+                        },
+                    });
                 }
                 Ok(match_nodes)
             }
@@ -546,28 +781,49 @@ impl IcnfConverter {
             // Lambda (nested).
             ExprInner::Lambda(name, params, _body) => {
                 let ssa_id = self.next_ssa_id();
-                Ok(vec![ICNFNode { id: ssa_id, region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Closure(name.clone()) }])
+                Ok(vec![ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Closure(name.clone()),
+                }])
             }
 
             ExprInner::Fn(name, params, _body) => {
                 let ssa_id = self.next_ssa_id();
-                Ok(vec![ICNFNode { id: ssa_id, region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Closure(format!("fn_{}", name)) }])
+                Ok(vec![ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Closure(format!("fn_{}", name)),
+                }])
             }
 
             // Function call (Apply form).
             ExprInner::Apply(name, args) => self.convert_apply_call(name, args),
 
             // Function call (Call form with operator as first element — non-arithmetic).
-            ExprInner::Call(op, args) if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) 
-                && !is_arithmetic_or_cmp_expr(op) => {
-                let func_name = match &op.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => return Ok(Vec::new()) };
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
+                    && !is_arithmetic_or_cmp_expr(op) =>
+            {
+                let func_name = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return Ok(Vec::new()),
+                };
 
                 // Convert all arguments, collecting ALL intermediate nodes (not just the last ID).
                 let mut result = Vec::new();
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for a in args.iter() {
                     let mut stmts = self.convert_expr_collect(a)?;
-                    let id = if !stmts.is_empty() { stmts.last().unwrap().id } else { self.next_ssa_id() };
+                    let id = if !stmts.is_empty() {
+                        stmts.last().unwrap().id
+                    } else {
+                        self.next_ssa_id()
+                    };
                     arg_ids.push(id);
                     result.append(&mut stmts);
                 }
@@ -578,7 +834,9 @@ impl IcnfConverter {
 
             // Begin block.
             ExprInner::Begin(exprs) => {
-                if exprs.is_empty() { return Ok(vec![self.emit(ICNFInner::Unit)]); }
+                if exprs.is_empty() {
+                    return Ok(vec![self.emit(ICNFInner::Unit)]);
+                }
                 let mut all_stmts = Vec::new();
                 for e in exprs.iter() {
                     let stmts = self.convert_expr_to_stmts(e)?;
@@ -600,13 +858,21 @@ impl IcnfConverter {
                     }
                 }
 
-                Ok(vec![self.emit(ICNFInner::MakeStruct(name.clone(), field_ids))])
+                Ok(vec![
+                    self.emit(ICNFInner::MakeStruct(name.clone(), field_ids))
+                ])
             }
 
             // Struct field access.
             ExprInner::StructGet(struct_expr, field_name) => {
                 let struct_id = self.convert_expr(struct_expr)?;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::StructGet(struct_id, field_name.clone()) }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::StructGet(struct_id, field_name.clone()),
+                }])
             }
 
             // FFI call.
@@ -622,17 +888,47 @@ impl IcnfConverter {
                     }
                 }
 
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Pin, typ: None, is_branch_body: false, node: ICNFInner::FfiCall { name: name.clone(), args: arg_ids, timeout: *timeout } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Pin,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall {
+                        name: name.clone(),
+                        args: arg_ids,
+                        timeout: *timeout,
+                    },
+                }])
             }
 
             ExprInner::FfiPin(expr) => {
                 let inner_id = self.convert_expr(expr)?;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Pin, typ: None, is_branch_body: false, node: ICNFInner::FfiCall { name: "ffi_pin".to_string(), args: vec![inner_id], timeout: 0 } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Pin,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall {
+                        name: "ffi_pin".to_string(),
+                        args: vec![inner_id],
+                        timeout: 0,
+                    },
+                }])
             }
 
             ExprInner::FfiUnpin(expr) => {
                 let inner_id = self.convert_expr(expr)?;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::FfiCall { name: "ffi_unpin".to_string(), args: vec![inner_id], timeout: 0 } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall {
+                        name: "ffi_unpin".to_string(),
+                        args: vec![inner_id],
+                        timeout: 0,
+                    },
+                }])
             }
 
             // Spawn actor.
@@ -645,7 +941,13 @@ impl IcnfConverter {
             ExprInner::Send(actor, msg) => {
                 let actor_id = self.convert_expr(actor)?;
                 let msg_id = self.convert_expr(msg)?;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::Send(actor_id, msg_id) }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Send(actor_id, msg_id),
+                }])
             }
 
             // Print.
@@ -659,9 +961,13 @@ impl IcnfConverter {
                 Ok(vec![self.emit(ICNFInner::Print(arg_ids))])
             }
 
-            ExprInner::ReadLine => {
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::ReadLine }])
-            }
+            ExprInner::ReadLine => Ok(vec![ICNFNode {
+                id: self.next_ssa_id(),
+                region: Region::Heap,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::ReadLine,
+            }]),
 
             // Exit.
             ExprInner::Exit(code) => {
@@ -680,7 +986,13 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let init_id = self.convert_expr(init)?;
                 let ssa_id = self.next_ssa_id();
-                let acquire_node = ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(name.clone(), init_id) };
+                let acquire_node = ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assign(name.clone(), init_id),
+                };
                 self.current_scope.insert(name.clone(), ssa_id);
                 // Convert body but don't emit close — resource cleanup is implicit.
                 let _body_stmts = self.convert_expr_to_stmts(body)?;
@@ -694,11 +1006,29 @@ impl IcnfConverter {
                 if let Some(&existing_ssa) = self.current_scope.get(target) {
                     let new_ssa = self.next_ssa_id();
                     Ok(vec![
-                        ICNFNode { id: existing_ssa, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::SetBang(target.clone(), val_id) },
-                        ICNFNode { id: new_ssa, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(target.clone(), val_id) },
+                        ICNFNode {
+                            id: existing_ssa,
+                            region: Region::Stack,
+                            typ: None,
+                            is_branch_body: false,
+                            node: ICNFInner::SetBang(target.clone(), val_id),
+                        },
+                        ICNFNode {
+                            id: new_ssa,
+                            region: Region::Stack,
+                            typ: None,
+                            is_branch_body: false,
+                            node: ICNFInner::Assign(target.clone(), val_id),
+                        },
                     ])
                 } else {
-                    Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::SetBang(target.clone(), val_id) }])
+                    Ok(vec![ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::SetBang(target.clone(), val_id),
+                    }])
                 }
             }
 
@@ -712,13 +1042,28 @@ impl IcnfConverter {
             ExprInner::Assert(cond, msg_opt) => {
                 let cond_id = self.convert_expr(cond)?;
                 let msg: Option<String> = msg_opt.clone();
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assert { cond_ssa: cond_id, msg } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: cond_id,
+                        msg,
+                    },
+                }])
             }
 
             // Error value.
             ExprInner::Error(_msg) => {
                 let ssa_id = self.next_ssa_id();
-                Ok(vec![ICNFNode { id: ssa_id, region: Region::Heap, typ: None, is_branch_body: false, node: ICNFInner::ErrValue(0 /* error payload placeholder */) }])
+                Ok(vec![ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::ErrValue(0 /* error payload placeholder */),
+                }])
             }
 
             // Def (top-level variable binding).
@@ -726,7 +1071,13 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let val_id = self.convert_expr(val)?;
                 let ssa_id = self.next_ssa_id();
-                let assign_node = ICNFNode { id: ssa_id, region: Region::Global, typ: None, is_branch_body: false, node: ICNFInner::Assign(name.clone(), val_id) };
+                let assign_node = ICNFNode {
+                    id: ssa_id,
+                    region: Region::Global,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assign(name.clone(), val_id),
+                };
                 self.current_scope.insert(name.clone(), ssa_id);
                 // Also emit as global statement.
                 self.global_stmts.push(assign_node.clone());
@@ -738,8 +1089,17 @@ impl IcnfConverter {
             // Test-related expressions.
             ExprInner::AssertEqual(a, b) => {
                 let a_id = self.convert_expr(a)?;
-                drop(self.convert_expr(b));  // TODO: compare SSA IDs for assert-equal semantics.
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assert { cond_ssa: a_id, msg: Some("assert-equal failed".to_string()) } }])
+                drop(self.convert_expr(b)); // TODO: compare SSA IDs for assert-equal semantics.
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: a_id,
+                        msg: Some("assert-equal failed".to_string()),
+                    },
+                }])
             }
 
             ExprInner::AssertFail(expr, _msg) => {
@@ -751,19 +1111,39 @@ impl IcnfConverter {
             ExprInner::AssertTrue(expr, msg_opt) => {
                 let expr_id = self.convert_expr(expr)?;
                 let msg: Option<String> = msg_opt.clone();
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assert { cond_ssa: expr_id, msg } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: expr_id,
+                        msg,
+                    },
+                }])
             }
 
             ExprInner::AssertFalse(expr, _msg) => {
                 let expr_id = self.convert_expr(expr)?;
-                Ok(vec![ICNFNode { id: self.next_ssa_id(), region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assert { cond_ssa: expr_id, msg: Some("assert-false failed".to_string()) } }])
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: expr_id,
+                        msg: Some("assert-false failed".to_string()),
+                    },
+                }])
             }
 
-            ExprInner::TestSuite(..) | ExprInner::TestDecl(..) 
-            | ExprInner::TestProperty(..) | ExprInner::Setup(..) | ExprInner::Teardown(..)
-            | ExprInner::RunTests(..) | ExprInner::TestCompile(..) => {
-                Ok(vec![self.emit(ICNFInner::Begin(Vec::new()))])
-            }
+            ExprInner::TestSuite(..)
+            | ExprInner::TestDecl(..)
+            | ExprInner::TestProperty(..)
+            | ExprInner::Setup(..)
+            | ExprInner::Teardown(..)
+            | ExprInner::RunTests(..)
+            | ExprInner::TestCompile(..) => Ok(vec![self.emit(ICNFInner::Begin(Vec::new()))]),
 
             _ => {
                 // Fallback: emit as Begin with empty body.
@@ -773,12 +1153,18 @@ impl IcnfConverter {
     }
 
     /// Recursively convert Cond clauses into nested If nodes (right-to-left).
-    fn convert_cond_recursive(&mut self, clauses: &[(Box<Expr>, Box<Expr>)], idx: usize) -> Result<Vec<ICNFNode>, ZylError> {
-        if idx >= clauses.len() { return Ok(vec![self.emit(ICNFInner::Unit)]); }
+    fn convert_cond_recursive(
+        &mut self,
+        clauses: &[(Box<Expr>, Box<Expr>)],
+        idx: usize,
+    ) -> Result<Vec<ICNFNode>, ZylError> {
+        if idx >= clauses.len() {
+            return Ok(vec![self.emit(ICNFInner::Unit)]);
+        }
 
         let (pred, body) = &clauses[idx];
         let cond_id = self.convert_expr(pred)?;
-        
+
         // Convert body and push to globals so intermediate nodes are visible for operand lookup.
         let mut body_stmts = self.convert_expr_to_stmts(body)?;
         if self.push_to_globals {
@@ -788,25 +1174,52 @@ impl IcnfConverter {
                 }
             }
         }
-        
-        let then_id = if !body_stmts.is_empty() { body_stmts.last().unwrap().id } else { 0 };
+
+        let then_id = if !body_stmts.is_empty() {
+            body_stmts.last().unwrap().id
+        } else {
+            0
+        };
 
         // Else branch: next clause or Unit.
         let else_id = if idx + 1 < clauses.len() {
             let rest = self.convert_cond_recursive(clauses, idx + 1)?;
-            if !rest.is_empty() { rest.last().unwrap().id } else { 0 }
+            if !rest.is_empty() {
+                rest.last().unwrap().id
+            } else {
+                0
+            }
         } else {
-            0  // last clause — no explicit else (returns Unit).
+            0 // last clause — no explicit else (returns Unit).
         };
 
         let result_var = format!("___cond_result_{}", self.ssa_id_counter.get());
         let phi_id = self.next_ssa_id();
 
         let result_var_clone = result_var.clone();
-        let mut nodes = vec![ICNFNode { id: cond_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::If { cond_ssa: cond_id, then_body: body_stmts.clone(), else_body: Vec::new(), result_var } }];
-        for s in body_stmts { nodes.push(s); }
+        let mut nodes = vec![ICNFNode {
+            id: cond_id,
+            region: Region::Stack,
+            typ: None,
+            is_branch_body: false,
+            node: ICNFInner::If {
+                cond_ssa: cond_id,
+                then_body: body_stmts.clone(),
+                else_body: Vec::new(),
+                result_var,
+            },
+        }];
+        for s in body_stmts {
+            nodes.push(s);
+        }
         // Phi merge node.
-        nodes.push(ICNFNode { id: phi_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Assign(result_var_clone, cond_id) });
+        nodes.push(ICNFNode {
+            id: phi_id,
+            region: Region::Stack,
+            typ: None,
+            is_branch_body: false,
+            node: ICNFInner::Assign(result_var_clone, cond_id),
+        });
 
         Ok(nodes)
     }
@@ -821,7 +1234,11 @@ impl IcnfConverter {
                 }
             }
         }
-        if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
+        if !stmts.is_empty() {
+            Ok(stmts.last().unwrap().id)
+        } else {
+            Ok(0)
+        }
     }
 
     /// Convert an expression and push results to globals (top-level only). Returns SSA ID.
@@ -832,7 +1249,11 @@ impl IcnfConverter {
                 self.global_stmts.push(s);
             }
         }
-        if !stmts.is_empty() { Ok(stmts.last().unwrap().id) } else { Ok(0) }
+        if !stmts.is_empty() {
+            Ok(stmts.last().unwrap().id)
+        } else {
+            Ok(0)
+        }
     }
 
     /// Convert a branch body expression: collect statements WITHOUT pushing to globals.
@@ -861,12 +1282,25 @@ impl IcnfConverter {
             ">=" => self.convert_binary_only(">=", BinOpKind::Ge, args),
 
             "and" | "or" => {
-                if args.is_empty() { return Ok(vec![self.emit(ICNFInner::Const(Atom::Bool(false)))]); }
+                if args.is_empty() {
+                    return Ok(vec![self.emit(ICNFInner::Const(Atom::Bool(false)))]);
+                }
                 let mut result = Vec::new();
                 for arg in args.iter() {
                     let arg_id = self.convert_expr(arg)?;
                     let ssa_id = self.next_ssa_id();
-                    result.push(ICNFNode { id: arg_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::If { cond_ssa: arg_id, then_body: Vec::new(), else_body: Vec::new(), result_var: format!("___{}_result", name) } });
+                    result.push(ICNFNode {
+                        id: arg_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::If {
+                            cond_ssa: arg_id,
+                            then_body: Vec::new(),
+                            else_body: Vec::new(),
+                            result_var: format!("___{}_result", name),
+                        },
+                    });
                 }
                 Ok(result)
             }
@@ -893,34 +1327,68 @@ impl IcnfConverter {
     fn convert_sub(&mut self, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
         let mut result = Vec::new();
 
-        if args.is_empty() || (args.len() == 1 && !is_expr_value(args)) { return Ok(result); }
+        if args.is_empty() || (args.len() == 1 && !is_expr_value(args)) {
+            return Ok(result);
+        }
 
         // Unary - (negation): single non-value argument.
         if args.len() == 1 && is_unary_minus_candidate(&args[0]) {
             let arg_id = self.convert_expr_collect_id(&args[0])?;
             let ssa_id = self.next_ssa_id();
-            result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::UnOp(UnOpKind::Negate, arg_id) });
-
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::UnOp(UnOpKind::Negate, arg_id),
+            });
         } else if args.len() == 2 {
             let mut left_stmts = self.convert_expr_collect(&args[0])?;
-            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let left_id = if !left_stmts.is_empty() {
+                left_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut left_stmts);
             let mut right_stmts = self.convert_expr_collect(&args[1])?;
-            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let right_id = if !right_stmts.is_empty() {
+                right_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut right_stmts);
             let ssa_id = self.next_ssa_id();
-            result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(BinOpKind::Sub, left_id, right_id) });
-
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::BinOp(BinOpKind::Sub, left_id, right_id),
+            });
         } else if args.len() > 2 {
             let mut acc_stmts = self.convert_expr_collect(&args[0])?;
-            let mut acc_id = if !acc_stmts.is_empty() { acc_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let mut acc_id = if !acc_stmts.is_empty() {
+                acc_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut acc_stmts);
             for arg in &args[1..] {
                 let mut arg_stmts = self.convert_expr_collect(arg)?;
-                let arg_id = if !arg_stmts.is_empty() { arg_stmts.last().unwrap().id } else { self.next_ssa_id() };
+                let arg_id = if !arg_stmts.is_empty() {
+                    arg_stmts.last().unwrap().id
+                } else {
+                    self.next_ssa_id()
+                };
                 result.append(&mut arg_stmts);
                 let ssa_id = self.next_ssa_id();
-                result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(BinOpKind::Sub, acc_id, arg_id) });
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::BinOp(BinOpKind::Sub, acc_id, arg_id),
+                });
                 acc_id = ssa_id;
             }
         }
@@ -931,13 +1399,19 @@ impl IcnfConverter {
     /// Convert an Apply form function call (e.g., (add x y)).
     fn convert_apply_call(&mut self, name: &str, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
         // Skip type annotation atoms like T_INT, ?0 etc. — these are from Phase 5's output replacement.
-        if is_type_annotation_atom(name) { return Ok(Vec::new()); }
+        if is_type_annotation_atom(name) {
+            return Ok(Vec::new());
+        }
 
         let mut result = Vec::new();
         let mut arg_ids = Vec::with_capacity(args.len());
         for a in args.iter() {
             let mut stmts = self.convert_expr_collect(a)?;
-            let id = if !stmts.is_empty() { stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let id = if !stmts.is_empty() {
+                stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             arg_ids.push(id);
             result.append(&mut stmts);
         }
@@ -947,42 +1421,85 @@ impl IcnfConverter {
     }
 
     /// Helper: convert N-ary fold operations (*, +).
-    fn convert_nary_fold(&mut self, op: BinOpKind, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
+    fn convert_nary_fold(
+        &mut self,
+        op: BinOpKind,
+        args: &[Expr],
+    ) -> Result<Vec<ICNFNode>, ZylError> {
         let mut result = Vec::new();
 
-        if args.is_empty() { return Ok(result); }
+        if args.is_empty() {
+            return Ok(result);
+        }
 
         // Unary case for + (returns operand). For * returns 1.
         if args.len() == 1 && is_unary_fold_candidate(&args[0]) {
-            match op { BinOpKind::Add => {} /* just use the operand */, BinOpKind::Mul => return Ok(vec![self.emit(ICNFInner::Const(Atom::Int(1)))]), _ => {} }
+            match op {
+                BinOpKind::Add => {}
+                /* just use the operand */,
+                BinOpKind::Mul => return Ok(vec![self.emit(ICNFInner::Const(Atom::Int(1)))]),
+                _ => {}
+            }
 
             let arg_id = self.convert_expr_collect_id(&args[0])?;
             // For unary +, identity — emit a load of the same value.
-            result.push(ICNFNode { id: arg_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::Load(format!("___fold_{}", arg_id)) });
-
+            result.push(ICNFNode {
+                id: arg_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::Load(format!("___fold_{}", arg_id)),
+            });
         } else if args.len() == 2 {
             let mut left_stmts = self.convert_expr_collect(&args[0])?;
-            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let left_id = if !left_stmts.is_empty() {
+                left_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut left_stmts);
-            
-            let mut right_stmts = self.convert_expr_collect(&args[1])?;
-            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
-            result.append(&mut right_stmts);
-            
-            let ssa_id = self.next_ssa_id();
-            result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, left_id, right_id) });
 
+            let mut right_stmts = self.convert_expr_collect(&args[1])?;
+            let right_id = if !right_stmts.is_empty() {
+                right_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
+            result.append(&mut right_stmts);
+
+            let ssa_id = self.next_ssa_id();
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::BinOp(op, left_id, right_id),
+            });
         } else if args.len() > 2 {
             let mut acc_stmts = self.convert_expr_collect(&args[0])?;
-            let mut acc_id = if !acc_stmts.is_empty() { acc_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let mut acc_id = if !acc_stmts.is_empty() {
+                acc_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut acc_stmts);
-            
+
             for arg in &args[1..] {
                 let mut arg_stmts = self.convert_expr_collect(arg)?;
-                let arg_id = if !arg_stmts.is_empty() { arg_stmts.last().unwrap().id } else { self.next_ssa_id() };
+                let arg_id = if !arg_stmts.is_empty() {
+                    arg_stmts.last().unwrap().id
+                } else {
+                    self.next_ssa_id()
+                };
                 result.append(&mut arg_stmts);
                 let ssa_id = self.next_ssa_id();
-                result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, acc_id, arg_id) });
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::BinOp(op, acc_id, arg_id),
+                });
                 acc_id = ssa_id;
             }
         }
@@ -991,22 +1508,47 @@ impl IcnfConverter {
     }
 
     /// Helper: convert binary-only operations (/, ==, !=, <, >, <=, >=).
-    fn convert_binary_only(&mut self, _name: &str, op: BinOpKind, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
+    fn convert_binary_only(
+        &mut self,
+        _name: &str,
+        op: BinOpKind,
+        args: &[Expr],
+    ) -> Result<Vec<ICNFNode>, ZylError> {
         let mut result = Vec::new();
 
         if args.len() == 2 {
             let mut left_stmts = self.convert_expr_collect(&args[0])?;
-            let left_id = if !left_stmts.is_empty() { left_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let left_id = if !left_stmts.is_empty() {
+                left_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut left_stmts);
             let mut right_stmts = self.convert_expr_collect(&args[1])?;
-            let right_id = if !right_stmts.is_empty() { right_stmts.last().unwrap().id } else { self.next_ssa_id() };
+            let right_id = if !right_stmts.is_empty() {
+                right_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
             result.append(&mut right_stmts);
             let ssa_id = self.next_ssa_id();
-            result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::BinOp(op, left_id, right_id) });
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::BinOp(op, left_id, right_id),
+            });
         } else if args.len() == 1 && is_unary_fold_candidate(&args[0]) {
             let arg_id = self.convert_expr(&args[0])?;
             let ssa_id = self.next_ssa_id();
-            result.push(ICNFNode { id: ssa_id, region: Region::Stack, typ: None, is_branch_body: false, node: ICNFInner::UnOp(UnOpKind::Negate, arg_id) });
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::UnOp(UnOpKind::Negate, arg_id),
+            });
         }
 
         Ok(result)
@@ -1018,32 +1560,38 @@ impl IcnfConverter {
 
         // Determine region based on the operation type.
         let region = match &inner {
-            ICNFInner::Const(_) => Region::Global,  // constants are global.
-            ICNFInner::Load(_) | ICNFInner::Assign(_, _) => Region::Stack,  // local bindings.
-            ICNFInner::BinOp(..) | ICNFInner::UnOp(..) => Region::Stack,  // arithmetic on stack.
-            ICNFInner::Call(..) => Region::Heap,  // function results may escape.
+            ICNFInner::Const(_) => Region::Global, // constants are global.
+            ICNFInner::Load(_) | ICNFInner::Assign(_, _) => Region::Stack, // local bindings.
+            ICNFInner::BinOp(..) | ICNFInner::UnOp(..) => Region::Stack, // arithmetic on stack.
+            ICNFInner::Call(..) => Region::Heap,   // function results may escape.
             ICNFInner::If { .. } => Region::Stack,
             ICNFInner::While { .. } | ICNFInner::For { .. } => Region::Stack,
             ICNFInner::Closure(_) => Region::Heap,
             ICNFInner::Match { .. } => Region::Heap,
             ICNFInner::TryCatch { .. } => Region::Stack,
             ICNFInner::Begin(..) => Region::Stack,
-            ICNFInner::MakeStruct(_, _) => Region::Heap,  // structs are heap-allocated.
-            ICNFInner::StructGet(_, _) => Region::Stack,  // field access result is stack-bound.
+            ICNFInner::MakeStruct(_, _) => Region::Heap, // structs are heap-allocated.
+            ICNFInner::StructGet(_, _) => Region::Stack, // field access result is stack-bound.
             ICNFInner::FfiCall { .. } => Region::Pin,
             ICNFInner::Spawn(_) | ICNFInner::Send(..) => Region::Heap,
-            ICNFInner::ErrValue(_) | ICNFInner::OkValue(_) => Region::Heap,  // Result values.
+            ICNFInner::ErrValue(_) | ICNFInner::OkValue(_) => Region::Heap, // Result values.
             ICNFInner::Unit => Region::Stack,
             ICNFInner::Print(..) => Region::Stack,
             ICNFInner::ReadLine => Region::Heap,
             ICNFInner::Exit(_) | ICNFInner::Close(_) => Region::Stack,
             ICNFInner::WithResource { .. } => Region::Stack,
             ICNFInner::SetBang(_, _) => Region::Stack,
-            ICNFInner::Unwrap(_) => Region::Heap,  // alias values are heap.
+            ICNFInner::Unwrap(_) => Region::Heap, // alias values are heap.
             ICNFInner::Assert { .. } => Region::Stack,
         };
 
-        ICNFNode { id, region, typ: None, is_branch_body: false, node: inner }
+        ICNFNode {
+            id,
+            region,
+            typ: None,
+            is_branch_body: false,
+            node: inner,
+        }
     }
 
     /// Resolve the type of a parameter (for function signatures).
@@ -1055,10 +1603,10 @@ impl IcnfConverter {
                 "Bool" => Type::Prim(crate::type_system::PrimType::Bool),
                 "String" => Type::Prim(crate::type_system::PrimType::String),
                 "Unit" => Type::Prim(crate::type_system::PrimType::Unit),
-                _ => Type::Nominal(typ_str.clone()),  // user-defined type.
+                _ => Type::Nominal(typ_str.clone()), // user-defined type.
             }
         } else {
-            Type::Var(0)  // untyped parameter → fresh variable (will be inferred).
+            Type::Var(0) // untyped parameter → fresh variable (will be inferred).
         }
     }
 
@@ -1073,30 +1621,41 @@ impl IcnfConverter {
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 fn is_special_form_ident(op: &Expr) -> bool {
-    matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) 
+    matches!(&op.inner, ExprInner::Atom(Atom::Ident(n))
         if matches!(n.as_str(), "if" | "let" | "while" | "for" | "cond" | "try" | "match"))
 }
 
 fn is_arithmetic_or_cmp_expr(op: &Expr) -> bool {
-    matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) 
+    matches!(&op.inner, ExprInner::Atom(Atom::Ident(n))
         if is_arithmetic_or_cmp_name(n))
 }
 
 fn is_arithmetic_or_cmp_name(name: &str) -> bool {
-    matches!(name, "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" 
-        | "and" | "or")
+    matches!(
+        name,
+        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "and" | "or"
+    )
 }
 
 /// Check if an expression looks like a value (not another Call/Apply).
-fn is_expr_value(args: &[Expr]) -> bool { !matches!(&args[0].inner, ExprInner::Call(_, _) | ExprInner::Apply(_, _)) }
+fn is_expr_value(args: &[Expr]) -> bool {
+    !matches!(
+        &args[0].inner,
+        ExprInner::Call(_, _) | ExprInner::Apply(_, _)
+    )
+}
 
 /// Check if this is a unary minus candidate.
-fn is_unary_minus_candidate(expr: &Expr) -> bool { matches!(&expr.inner, ExprInner::Atom(_)) || !is_expr_value_single(expr) }
+fn is_unary_minus_candidate(expr: &Expr) -> bool {
+    matches!(&expr.inner, ExprInner::Atom(_)) || !is_expr_value_single(expr)
+}
 
-fn is_expr_value_single(expr: &Expr) -> bool { !matches!(&expr.inner, ExprInner::Call(_, _) | ExprInner::Apply(_, _)) }
+fn is_expr_value_single(expr: &Expr) -> bool {
+    !matches!(&expr.inner, ExprInner::Call(_, _) | ExprInner::Apply(_, _))
+}
 
 /// Check if an expression can be used as a fold operand.
-fn is_unary_fold_candidate(expr: &Expr) -> bool { 
+fn is_unary_fold_candidate(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(_)) || !is_expr_value_single(expr)
 }
 
@@ -1120,41 +1679,82 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
             // If the operator is a simple identifier and all args are identifiers/keywords,
             // treat this as a raw S-expression list where every element is a param.
             if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) {
-                let all_simple = items.iter().all(|i| matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_))));
+                let all_simple = items.iter().all(|i| {
+                    matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_)))
+                });
                 if all_simple {
                     // Raw list like (x y) — include operator as first param.
                     if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
-                        params.push(Param { span: crate::error::Span::default(), name: n.clone(), typ: None });
+                        params.push(Param {
+                            span: crate::error::Span::default(),
+                            name: n.clone(),
+                            typ: None,
+                        });
                     }
                 }
             }
-            for i in items.iter() { params.push(parse_single_param(i)); }
-            params
-        }
-        ExprInner::Apply(ref name, ref args) if !name.starts_with("make-") && name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) => {
-            let mut params = Vec::new();
-            if name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) {
-                params.push(Param { span: crate::error::Span::default(), name: name.clone(), typ: None });
+            for i in items.iter() {
+                params.push(parse_single_param(i));
             }
-            for pe in args.iter() { params.push(parse_single_param(pe)); }
             params
         }
-        _ => Vec::new() 
+        ExprInner::Apply(ref name, ref args)
+            if !name.starts_with("make-")
+                && name
+                    .chars()
+                    .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) =>
+        {
+            let mut params = Vec::new();
+            if name
+                .chars()
+                .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
+            {
+                params.push(Param {
+                    span: crate::error::Span::default(),
+                    name: name.clone(),
+                    typ: None,
+                });
+            }
+            for pe in args.iter() {
+                params.push(parse_single_param(pe));
+            }
+            params
+        }
+        _ => Vec::new(),
     }
 }
 
 fn parse_single_param(expr: &Expr) -> Param {
     match &expr.inner {
         ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-            let name = match &inner[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___".to_string() };
-            let typ = if inner.len() > 1 { 
-                match &inner[1].inner { ExprInner::Atom(Atom::Ident(s)) => Some(s.clone()), _ => None } 
-            } else { None };
-            Param { span: crate::error::Span::default(), name, typ }
+            let name = match &inner[0].inner {
+                ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                _ => "___".to_string(),
+            };
+            let typ = if inner.len() > 1 {
+                match &inner[1].inner {
+                    ExprInner::Atom(Atom::Ident(s)) => Some(s.clone()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            Param {
+                span: crate::error::Span::default(),
+                name,
+                typ,
+            }
         }
         _ => {
-            let name = match &expr.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___".to_string() };
-            Param { span: crate::error::Span::default(), name, typ: None }
+            let name = match &expr.inner {
+                ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                _ => "___".to_string(),
+            };
+            Param {
+                span: crate::error::Span::default(),
+                name,
+                typ: None,
+            }
         }
     }
 }

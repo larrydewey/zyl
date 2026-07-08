@@ -87,7 +87,9 @@ impl fmt::Display for Type {
             Type::Fun(args, ret) => {
                 write!(f, "TFun(")?;
                 for (i, a) in args.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", a)?;
                 }
                 write!(f, ") {}", ret)
@@ -121,7 +123,9 @@ impl Subst {
                 let new_args: Vec<Type> = args.iter().map(|a| self.apply(a)).collect();
                 Type::Fun(new_args, Box::new(self.apply(ret)))
             }
-            Type::Collection(kind, inner) => Type::Collection(kind.clone(), Box::new(self.apply(inner))),
+            Type::Collection(kind, inner) => {
+                Type::Collection(kind.clone(), Box::new(self.apply(inner)))
+            }
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::ResultType(ok, err) => {
                 Type::ResultType(Box::new(self.apply(ok)), Box::new(self.apply(err)))
@@ -150,7 +154,9 @@ impl Subst {
         match self.apply(t) {
             Type::Var(m) => m == n,
             Type::Cap(_, inner) => self.contains_var(&*inner, n),
-            Type::Fun(args, ret) => args.iter().any(|a| self.contains_var(a, n)) || self.contains_var(&*ret, n),
+            Type::Fun(args, ret) => {
+                args.iter().any(|a| self.contains_var(a, n)) || self.contains_var(&*ret, n)
+            }
             Type::Collection(_, inner) => self.contains_var(&*inner, n),
             Type::Map(k, v) => self.contains_var(&*k, n) || self.contains_var(&*v, n),
             Type::ResultType(t, e) => self.contains_var(&*t, n) || self.contains_var(&*e, n),
@@ -163,7 +169,7 @@ impl Subst {
         let mut new = Self::new();
         for (k, v) in &self.0 {
             let t = other.apply(&v);
-                new.0.insert(*k, t);
+            new.0.insert(*k, t);
         }
         for (k, v) in &other.0 {
             if !new.0.contains_key(k) {
@@ -185,7 +191,9 @@ impl Subst {
 pub struct TypeVarGen(usize);
 
 impl TypeVarGen {
-    pub fn new() -> Self { Self(0) }
+    pub fn new() -> Self {
+        Self(0)
+    }
 
     /// Generate a fresh type variable index.
     pub fn fresh(&mut self) -> usize {
@@ -359,7 +367,11 @@ impl TraitContext {
     /// Register a trait implementation. Returns error if duplicate (coherence rule C1).
     pub fn register_impl(&mut self, impl_info: ImplInfo) -> Result<(), ZylError> {
         let key = (&impl_info.trait_name, &impl_info.impl_type);
-        if self.impls.iter().any(|i| (&i.trait_name, &i.impl_type) == key) {
+        if self
+            .impls
+            .iter()
+            .any(|i| (&i.trait_name, &i.impl_type) == key)
+        {
             return Err(ZylError::E_DUPLICATE_IMPL(
                 crate::error::Span::default(),
                 impl_info.trait_name.clone(),
@@ -372,7 +384,11 @@ impl TraitContext {
 
     /// Look up whether a type satisfies a trait bound. Resolves transitive bounds recursively.
     pub fn resolve_trait(&self, ty: &Type, trait_name: &str) -> Result<(), ZylError> {
-        if self.impls.iter().any(|i| format!("{}", i.impl_type) == format!("{}", ty) && i.trait_name == trait_name) {
+        if self
+            .impls
+            .iter()
+            .any(|i| format!("{}", i.impl_type) == format!("{}", ty) && i.trait_name == trait_name)
+        {
             return Ok(());
         }
 
@@ -429,22 +445,38 @@ impl TraitContext {
 
     /// Get the function type for a trait method.
     pub fn get_trait_method_type(&self, trait_name: &str, method_name: &str) -> Option<Type> {
-        self.traits.get(trait_name).and_then(|t| t.return_types.get(method_name)).cloned()
+        self.traits
+            .get(trait_name)
+            .and_then(|t| t.return_types.get(method_name))
+            .cloned()
     }
 
     /// Get all methods of a trait with their parameter types and return type.
-    pub fn get_trait_methods(&self, trait_name: &str) -> Option<&IndexMap<String, Vec<(String, Type)>>> {
+    pub fn get_trait_methods(
+        &self,
+        trait_name: &str,
+    ) -> Option<&IndexMap<String, Vec<(String, Type)>>> {
         self.traits.get(trait_name).map(|t| &t.methods)
     }
 
     /// Get the return type of a specific method in a trait.
     pub fn get_method_return_type(&self, trait_name: &str, method_name: &str) -> Option<&Type> {
-        self.traits.get(trait_name).and_then(|t| t.return_types.get(method_name))
+        self.traits
+            .get(trait_name)
+            .and_then(|t| t.return_types.get(method_name))
     }
 
     /// Get all methods of an impl block with their types.
-    pub fn get_impl_methods(&self, trait_name: &str, impl_type: &Type) -> Option<&IndexMap<String, Type>> {
-        self.impls.iter().find(|i| i.trait_name == trait_name && format!("{}", i.impl_type) == format!("{}", impl_type))
+    pub fn get_impl_methods(
+        &self,
+        trait_name: &str,
+        impl_type: &Type,
+    ) -> Option<&IndexMap<String, Type>> {
+        self.impls
+            .iter()
+            .find(|i| {
+                i.trait_name == trait_name && format!("{}", i.impl_type) == format!("{}", impl_type)
+            })
             .map(|i| &i.methods)
     }
 
@@ -529,7 +561,9 @@ impl TraitContext {
 }
 
 impl Default for TraitContext {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Type checking result. Contains the inferred type and any warnings.

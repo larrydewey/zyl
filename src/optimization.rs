@@ -31,7 +31,10 @@ impl Optimizer {
         // Pass 2: Dead code elimination — remove unused SSA assignments and empty Begin blocks.
         self.dead_code_elimination(&mut program.statements);
 
-        *self.stats.entry("optimization_complete".to_string()).or_insert(1);
+        *self
+            .stats
+            .entry("optimization_complete".to_string())
+            .or_insert(1);
 
         Ok(program)
     }
@@ -50,7 +53,8 @@ impl Optimizer {
         for _iteration in 0..100 {
             let before_len = stmts.len();
             // Collect BinOp/UnOp node indices.
-            let binop_indices: Vec<usize> = stmts.iter()
+            let binop_indices: Vec<usize> = stmts
+                .iter()
                 .enumerate()
                 .filter(|(_, n)| matches!(&n.node, ICNFInner::BinOp(..) | ICNFInner::UnOp(..)))
                 .map(|(i, _)| i)
@@ -58,8 +62,10 @@ impl Optimizer {
 
             let mut folded_any = false;
             for idx in &binop_indices {
-                if *idx >= stmts.len() { continue; } // node may have been removed/replaced
-                
+                if *idx >= stmts.len() {
+                    continue;
+                } // node may have been removed/replaced
+
                 match &stmts[*idx].node {
                     ICNFInner::BinOp(op, left_id, right_id) => {
                         let left_val = self.resolve_to_atom(*left_id, stmts);
@@ -69,111 +75,147 @@ impl Optimizer {
                             match op {
                                 BinOpKind::Add => {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Int(a.wrapping_add(*b)));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Int(a.wrapping_add(*b)));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Float(a + b));
-                                        folded_any = true; count += 1;
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a as f64 + *b));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a as f64 + *b));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a + *b as f64));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a + *b as f64));
+                                        folded_any = true;
+                                        count += 1;
                                     }
                                 }
                                 BinOpKind::Sub => {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Int(a.wrapping_sub(*b)));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Int(a.wrapping_sub(*b)));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Float(a - b));
-                                        folded_any = true; count += 1;
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a as f64 - *b));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a as f64 - *b));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a - *b as f64));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a - *b as f64));
+                                        folded_any = true;
+                                        count += 1;
                                     }
                                 }
                                 BinOpKind::Mul => {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Int(a.wrapping_mul(*b)));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Int(a.wrapping_mul(*b)));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Float(a * b));
-                                        folded_any = true; count += 1;
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a as f64 * *b));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a as f64 * *b));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a * *b as f64));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a * *b as f64));
+                                        folded_any = true;
+                                        count += 1;
                                     }
                                 }
                                 BinOpKind::Div => {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         if *b != 0 {
                                             stmts[*idx].node = ICNFInner::Const(Atom::Int(a / b));
-                                            folded_any = true; count += 1;
+                                            folded_any = true;
+                                            count += 1;
                                         }
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Float(a / b));
-                                        folded_any = true; count += 1;
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a as f64 / *b));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a as f64 / *b));
+                                        folded_any = true;
+                                        count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(*a / *b as f64));
-                                        folded_any = true; count += 1;
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Float(*a / *b as f64));
+                                        folded_any = true;
+                                        count += 1;
                                     }
                                 }
                                 BinOpKind::Rem => {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         if *b != 0 {
                                             stmts[*idx].node = ICNFInner::Const(Atom::Int(a % b));
-                                            folded_any = true; count += 1;
+                                            folded_any = true;
+                                            count += 1;
                                         }
                                     }
                                 }
-                                BinOpKind::Eq => {
-                                    match (l, r) {
-                                        (Atom::Bool(a), Atom::Bool(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
-                                            folded_any = true; count += 1;
-                                        }
-                                        (Atom::Int(a), Atom::Int(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
-                                            folded_any = true; count += 1;
-                                        }
-                                        (Atom::Float(a), Atom::Float(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool((*a) == (*b)));
-                                            folded_any = true; count += 1;
-                                        }
-                                        _ => {}
+                                BinOpKind::Eq => match (l, r) {
+                                    (Atom::Bool(a), Atom::Bool(b)) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
+                                        folded_any = true;
+                                        count += 1;
                                     }
-                                }
-                                BinOpKind::Neq => {
-                                    match (l, r) {
-                                        (Atom::Bool(a), Atom::Bool(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
-                                            folded_any = true; count += 1;
-                                        }
-                                        (Atom::Int(a), Atom::Int(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
-                                            folded_any = true; count += 1;
-                                        }
-                                        (Atom::Float(a), Atom::Float(b)) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Bool((*a) != (*b)));
-                                            folded_any = true; count += 1;
-                                        }
-                                        _ => {}
+                                    (Atom::Int(a), Atom::Int(b)) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
+                                        folded_any = true;
+                                        count += 1;
                                     }
-                                }
+                                    (Atom::Float(a), Atom::Float(b)) => {
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Bool((*a) == (*b)));
+                                        folded_any = true;
+                                        count += 1;
+                                    }
+                                    _ => {}
+                                },
+                                BinOpKind::Neq => match (l, r) {
+                                    (Atom::Bool(a), Atom::Bool(b)) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
+                                        folded_any = true;
+                                        count += 1;
+                                    }
+                                    (Atom::Int(a), Atom::Int(b)) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
+                                        folded_any = true;
+                                        count += 1;
+                                    }
+                                    (Atom::Float(a), Atom::Float(b)) => {
+                                        stmts[*idx].node =
+                                            ICNFInner::Const(Atom::Bool((*a) != (*b)));
+                                        folded_any = true;
+                                        count += 1;
+                                    }
+                                    _ => {}
+                                },
                                 // Comparison ops on ints/floats — not safe to fold at compile time.
-                                BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge 
-                                | BinOpKind::And | BinOpKind::Or => {}
+                                BinOpKind::Lt
+                                | BinOpKind::Gt
+                                | BinOpKind::Le
+                                | BinOpKind::Ge
+                                | BinOpKind::And
+                                | BinOpKind::Or => {}
                             }
                         }
 
@@ -189,22 +231,23 @@ impl Optimizer {
                                 UnOpKind::Not => {
                                     if let Atom::Bool(b) = val {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(!b));
-                                        folded_any = true; count += 1;
+                                        folded_any = true;
+                                        count += 1;
                                     }
                                 }
-                                UnOpKind::Negate => {
-                                    match val {
-                                        Atom::Int(i) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Int(-i));
-                                            folded_any = true; count += 1;
-                                        }
-                                        Atom::Float(f) => {
-                                            stmts[*idx].node = ICNFInner::Const(Atom::Float(-f));
-                                            folded_any = true; count += 1;
-                                        }
-                                        _ => {}
+                                UnOpKind::Negate => match val {
+                                    Atom::Int(i) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Int(-i));
+                                        folded_any = true;
+                                        count += 1;
                                     }
-                                }
+                                    Atom::Float(f) => {
+                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(-f));
+                                        folded_any = true;
+                                        count += 1;
+                                    }
+                                    _ => {}
+                                },
                             }
                         }
 
@@ -218,9 +261,14 @@ impl Optimizer {
             }
 
             // If nothing folded this pass, we're done (fixed-point).
-            if !folded_any { break; }
+            if !folded_any {
+                break;
+            }
         }
-        *self.stats.entry("constant_folding".to_string()).or_insert(0) += count;
+        *self
+            .stats
+            .entry("constant_folding".to_string())
+            .or_insert(0) += count;
     }
 
     fn resolve_to_atom(&self, id: usize, stmts: &[ICNFNode]) -> Option<Atom> {
@@ -240,15 +288,17 @@ impl Optimizer {
     fn dead_code_elimination(&mut self, stmts: &mut Vec<ICNFNode>) {
         let count = self.dead_code_elimination_pass(stmts);
         if count > 0 {
-            *self.stats.entry("dead_code_elimination".to_string()).or_insert(0) += count;
+            *self
+                .stats
+                .entry("dead_code_elimination".to_string())
+                .or_insert(0) += count;
         }
     }
 
     fn dead_code_elimination_pass(&mut self, stmts: &mut Vec<ICNFNode>) -> usize {
         // Build a map from SSA ID to node for quick lookup.
-        let id_to_node: std::collections::HashMap<usize, ICNFInner> = stmts.iter()
-            .map(|n| (n.id, n.node.clone()))
-            .collect();
+        let id_to_node: std::collections::HashMap<usize, ICNFInner> =
+            stmts.iter().map(|n| (n.id, n.node.clone())).collect();
 
         // Collect all operand references across ALL nodes.
         let mut referenced_ids = std::collections::HashSet::new();
@@ -257,9 +307,11 @@ impl Optimizer {
         }
 
         // Root-live: has side effects OR its result is used by another node's operands.
-        let mut live_set: std::collections::HashSet<usize> = stmts.iter().filter(|n| {
-            Self::has_side_effect(&n.node) || referenced_ids.contains(&n.id)
-        }).map(|n| n.id).collect();
+        let mut live_set: std::collections::HashSet<usize> = stmts
+            .iter()
+            .filter(|n| Self::has_side_effect(&n.node) || referenced_ids.contains(&n.id))
+            .map(|n| n.id)
+            .collect();
         // Walk transitive dependencies of root-live nodes using BFS.
         let mut queue: Vec<usize> = live_set.clone().into_iter().collect();
         while let Some(id) = queue.pop() {
@@ -295,7 +347,9 @@ impl Optimizer {
                 used_ids.insert(*left);
                 used_ids.insert(*right);
             }
-            ICNFInner::UnOp(_, arg) => { used_ids.insert(*arg); }
+            ICNFInner::UnOp(_, arg) => {
+                used_ids.insert(*arg);
+            }
             ICNFInner::Call(_, args) => {
                 for &a in args {
                     used_ids.insert(a);
@@ -306,15 +360,20 @@ impl Optimizer {
                     used_ids.insert(a);
                 }
             }
-             ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
-                  used_ids.insert(*cond_ssa);
-                  for stmt in then_body {
-                      Self::collect_used_ssa(&stmt.node, used_ids);
-                  }
-                  for stmt in else_body {
-                      Self::collect_used_ssa(&stmt.node, used_ids);
-                  }
-              }
+            ICNFInner::If {
+                cond_ssa,
+                then_body,
+                else_body,
+                ..
+            } => {
+                used_ids.insert(*cond_ssa);
+                for stmt in then_body {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
+                for stmt in else_body {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
+            }
 
             ICNFInner::While { cond_ssa, body } => {
                 used_ids.insert(*cond_ssa);
@@ -322,31 +381,55 @@ impl Optimizer {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
             }
-            ICNFInner::For { iter_ssa: cond_ssa, body, .. } => {
+            ICNFInner::For {
+                iter_ssa: cond_ssa,
+                body,
+                ..
+            } => {
                 used_ids.insert(*cond_ssa);
                 for stmt in body {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
             }
-            ICNFInner::Match { scrutinee_ssa, .. } => { used_ids.insert(*scrutinee_ssa); }
-            ICNFInner::StructGet(val_id, _) => { used_ids.insert(*val_id); }
-            ICNFInner::ErrValue(v) => { used_ids.insert(*v); }
-            ICNFInner::OkValue(v) => { used_ids.insert(*v); }
+            ICNFInner::Match { scrutinee_ssa, .. } => {
+                used_ids.insert(*scrutinee_ssa);
+            }
+            ICNFInner::StructGet(val_id, _) => {
+                used_ids.insert(*val_id);
+            }
+            ICNFInner::ErrValue(v) => {
+                used_ids.insert(*v);
+            }
+            ICNFInner::OkValue(v) => {
+                used_ids.insert(*v);
+            }
             ICNFInner::Send(actor_id, msg_id) => {
                 used_ids.insert(*actor_id);
                 used_ids.insert(*msg_id);
             }
-            ICNFInner::Exit(code) => { used_ids.insert(*code); }
-            ICNFInner::Close(code) => { used_ids.insert(*code); }
+            ICNFInner::Exit(code) => {
+                used_ids.insert(*code);
+            }
+            ICNFInner::Close(code) => {
+                used_ids.insert(*code);
+            }
             ICNFInner::Print(args) => {
                 for &a in args {
                     used_ids.insert(a);
                 }
             }
-            ICNFInner::WithResource { init_ssa, .. } => { used_ids.insert(*init_ssa); }
-            ICNFInner::SetBang(_, val_id) => { used_ids.insert(*val_id); }
-            ICNFInner::Unwrap(val_id) => { used_ids.insert(*val_id); }
-            ICNFInner::Assert { cond_ssa, .. } => { used_ids.insert(*cond_ssa); }
+            ICNFInner::WithResource { init_ssa, .. } => {
+                used_ids.insert(*init_ssa);
+            }
+            ICNFInner::SetBang(_, val_id) => {
+                used_ids.insert(*val_id);
+            }
+            ICNFInner::Unwrap(val_id) => {
+                used_ids.insert(*val_id);
+            }
+            ICNFInner::Assert { cond_ssa, .. } => {
+                used_ids.insert(*cond_ssa);
+            }
             _ => {} // Const, Load, Assign, Unit — no operands to track
         }
 
@@ -357,7 +440,12 @@ impl Optimizer {
         }
 
         // Handle If branch bodies.
-        if let ICNFInner::If { then_body, else_body, .. } = inner {
+        if let ICNFInner::If {
+            then_body,
+            else_body,
+            ..
+        } = inner
+        {
             for stmt in then_body {
                 Self::collect_used_ssa(&stmt.node, &mut *used_ids);
             }
@@ -378,8 +466,9 @@ impl Optimizer {
                 | ICNFInner::Close(_)
                 | ICNFInner::ReadLine
                 | ICNFInner::Assert { .. }
-        ) || matches!(inner, ICNFInner::If { .. } 
-            | ICNFInner::While { .. }
-            | ICNFInner::For { .. })  // Control flow structures are always kept.
+        ) || matches!(
+            inner,
+            ICNFInner::If { .. } | ICNFInner::While { .. } | ICNFInner::For { .. }
+        ) // Control flow structures are always kept.
     }
 }
