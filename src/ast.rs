@@ -69,7 +69,7 @@ pub enum ExprInner {
     Error(String),
     Unwrap(Box<Expr>),
     While(Box<Expr>, Box<Expr>),
-    For(String, Box<Expr>, Box<Expr>),
+    For(String, Box<Expr>, Box<Expr>, Box<Expr>, Box<Expr>),
     Cond(Vec<(Box<Expr>, Box<Expr>)>),
     Begin(Vec<Expr>),
     Lambda(String, Vec<Param>, Box<Expr>),
@@ -320,9 +320,13 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write_sexpr(f, b);
             Ok(())
         }
-        ExprInner::For(name, iter, body) => {
+        ExprInner::For(name, iter, cond, step, body) => {
             write!(f, "(for {} ", name)?;
             write_sexpr(f, iter)?;
+            f.write_str(" ")?;
+            write_sexpr(f, cond)?;
+            f.write_str(" ")?;
+            write_sexpr(f, step)?;
             f.write_str(" ")?;
             write_sexpr(f, body);
             Ok(())
@@ -824,22 +828,38 @@ impl PostProcessor {
 
             // while → While (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "while") && args.len() >= 2 => {
+                let body = if args.len() == 2 {
+                    self.post_process_expr(args[1].clone())
+                } else {
+                    Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[1..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    }
+                };
                 expr.inner = ExprInner::While(
                     Box::new(self.post_process_expr(args[0].clone())),
-                    Box::new(self.post_process_expr(args[1].clone())),
+                    Box::new(body),
                 );
             }
 
             // while → While (Apply form).
             ExprInner::Apply(name, args) if name == "while" && args.len() >= 2 => {
+                let body = if args.len() == 2 {
+                    self.post_process_expr(args[1].clone())
+                } else {
+                    Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[1..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    }
+                };
                 expr.inner = ExprInner::While(
                     Box::new(self.post_process_expr(args[0].clone())),
-                    Box::new(self.post_process_expr(args[1].clone())),
+                    Box::new(body),
                 );
             }
 
             // for → For (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "for") && args.len() >= 3 => {
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "for") && args.len() >= 5 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___for_".to_string(),
@@ -848,11 +868,13 @@ impl PostProcessor {
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
                     Box::new(self.post_process_expr(args[2].clone())),
+                    Box::new(self.post_process_expr(args[3].clone())),
+                    Box::new(self.post_process_expr(args[4].clone())),
                 );
             }
 
             // for → For (Apply form).
-            ExprInner::Apply(name, args) if name == "for" && args.len() >= 3 => {
+            ExprInner::Apply(name, args) if name == "for" && args.len() >= 5 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___for_".to_string(),
@@ -861,7 +883,67 @@ impl PostProcessor {
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
                     Box::new(self.post_process_expr(args[2].clone())),
+                    Box::new(self.post_process_expr(args[3].clone())),
+                    Box::new(self.post_process_expr(args[4].clone())),
                 );
+            }
+
+            // let-mut → LetMut (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "let-mut") && args.len() >= 3 => {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => "___letmut_".to_string(),
+                };
+                expr.inner = ExprInner::LetMut(
+                    name,
+                    Box::new(self.post_process_expr(args[1].clone())),
+                    if args.len() == 3 {
+                        Box::new(self.post_process_expr(args[2].clone()))
+                    } else {
+                        Box::new(Expr {
+                            span: Span::default(),
+                            inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                        })
+                    }
+                );
+            }
+
+            // let-mut → LetMut (Apply form).
+            ExprInner::Apply(name, args) if name == "let-mut" && args.len() >= 3 => {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => "___letmut_".to_string(),
+                };
+                expr.inner = ExprInner::LetMut(
+                    name,
+                    Box::new(self.post_process_expr(args[1].clone())),
+                    if args.len() == 3 {
+                        Box::new(self.post_process_expr(args[2].clone()))
+                    } else {
+                        Box::new(Expr {
+                            span: Span::default(),
+                            inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                        })
+                    }
+                );
+            }
+
+            // set! → SetBang (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "set!") && args.len() == 2 => {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::SetBang(name, Box::new(self.post_process_expr(args[1].clone())));
+            }
+
+            // set! → SetBang (Apply form).
+            ExprInner::Apply(name, args) if name == "set!" && args.len() == 2 => {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::SetBang(name, Box::new(self.post_process_expr(args[1].clone())));
             }
 
             // cond → Cond (Call form).
@@ -1059,10 +1141,12 @@ impl PostProcessor {
                     Box::new(self.post_process_expr(*b.clone())),
                 );
             }
-            ExprInner::For(name, iter, body) => {
+            ExprInner::For(name, iter, cond, step, body) => {
                 expr.inner = ExprInner::For(
                     name.clone(),
                     Box::new(self.post_process_expr(*iter.clone())),
+                    Box::new(self.post_process_expr(*cond.clone())),
+                    Box::new(self.post_process_expr(*step.clone())),
                     Box::new(self.post_process_expr(*body.clone())),
                 );
             }

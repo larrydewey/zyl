@@ -426,10 +426,12 @@ impl RegionInferer {
             }
 
             // for — loop variable is Stack (R1).
-            ExprInner::For(name, iter, body) => {
+            ExprInner::For(name, iter, cond, step, body) => {
                 let _ = self.infer_expr(iter)?;
                 self.env.enter_scope();
                 self.env.bind(name.clone(), Region::Stack);
+                let _ = self.infer_expr(cond)?;
+                let _ = self.infer_expr(step)?;
                 let result = self.infer_expr(body)?;
                 if self.env.is_escaped(name) {
                     return Err(ZylError::E_REGION_ESCAPE(expr.span.clone()));
@@ -905,8 +907,10 @@ fn collect_capture_vars(
             collect_capture_vars(inner, env_snapshot.clone(), captures)?;
         }
 
-        ExprInner::For(_name, iter, body) => {
+        ExprInner::For(_name, iter, cond, step, body) => {
             collect_capture_vars(iter, env_snapshot.clone(), captures)?;
+            collect_capture_vars(cond, env_snapshot.clone(), captures)?;
+            collect_capture_vars(step, env_snapshot.clone(), captures)?;
             collect_capture_vars(body, env_snapshot.clone(), captures)?;
         }
 

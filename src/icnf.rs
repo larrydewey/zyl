@@ -64,15 +64,18 @@ pub enum ICNFInner {
         else_body: Vec<ICNFNode>,
         result_var: String,
     },
-    /// While loop: condition + body statements.
+    /// While loop: condition body + loop body. Condition re-evaluated each iteration.
     While {
-        cond_ssa: usize,
+        cond_body: Vec<ICNFNode>,
         body: Vec<ICNFNode>,
+        result_var: String,
     },
-    /// For loop over an iterator expression.
+    /// For loop: for name iterator cond step body.
     For {
         var_name: String,
         iter_ssa: usize,
+        cond_nodes: Vec<ICNFNode>,
+        step_nodes: Vec<ICNFNode>,
         body: Vec<ICNFNode>,
     },
     /// Lambda/closure value (not yet invoked).
@@ -502,25 +505,28 @@ impl IcnfConverter {
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "print")
                     && !args.is_empty() =>
             {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for e in args.iter() {
-                    // convert_expr pushes stmts into global_stmts.
-                    let id = self.convert_expr(e)?;
-                    arg_ids.push(id);
+                    let mut stmts = self.convert_expr_collect(e)?;
+                    arg_ids.push(stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id()));
+                    all_nodes.append(&mut stmts);
                 }
-
-                Ok(vec![self.emit(ICNFInner::Print(arg_ids))])
+                all_nodes.push(self.emit(ICNFInner::Print(arg_ids)));
+                Ok(all_nodes)
             }
 
             // Print from raw Apply form: (print e1 ... en).
             ExprInner::Apply(name, args) if name == "print" && !args.is_empty() => {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for e in args.iter() {
-                    let id = self.convert_expr(e)?;
-                    arg_ids.push(id);
+                    let mut stmts = self.convert_expr_collect(e)?;
+                    arg_ids.push(stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id()));
+                    all_nodes.append(&mut stmts);
                 }
-
-                Ok(vec![self.emit(ICNFInner::Print(arg_ids))])
+                all_nodes.push(self.emit(ICNFInner::Print(arg_ids)));
+                Ok(all_nodes)
             }
 
             // Variable reference (bare identifier as expression — no arguments).
@@ -666,32 +672,57 @@ impl IcnfConverter {
 
             // While loop.
             ExprInner::While(cond, body) => {
-                let cond_id = self.convert_expr_collect_id(cond)?;
-                let mut body_stmts = self.convert_expr_to_stmts(body)?;
-                if self.push_to_globals {
-                    for s in &body_stmts {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
+                // Convert condition to inline body nodes (re-evaluated each iteration).
+                let mut cond_nodes = self.convert_branch_body(cond)?;
+                // Mark condition nodes as branch body for codegen dedup.
+                for stmt in &mut cond_nodes {
+                    stmt.is_branch_body = true;
                 }
+
+                // Convert body without pushing to globals (like cond_body).
+                let mut body_stmts = self.convert_branch_body(body)?;
+                // Mark body nodes as branch body for codegen dedup.
+                for stmt in &mut body_stmts {
+                    stmt.is_branch_body = true;
+                }
+
+                let result_var = format!("___while_result_{}", self.ssa_id_counter.get());
+                let while_node_id = self.next_ssa_id();
+
                 Ok(vec![ICNFNode {
-                    id: self.next_ssa_id(),
+                    id: while_node_id,
                     region: Region::Stack,
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::While {
-                        cond_ssa: cond_id,
+                        cond_body: cond_nodes,
                         body: body_stmts,
+                        result_var,
                     },
                 }])
             }
 
             // For loop.
-            ExprInner::For(var_name, iter_expr, body) => {
+            ExprInner::For(var_name, iter_expr, cond_expr, step_expr, body) => {
                 let iter_id = self.convert_expr_collect_id(iter_expr)?;
+                // Bind loop variable in scope before converting cond/body/step.
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                self.current_scope.insert(var_name.clone(), iter_id);
+                let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
+                let step_nodes = self.convert_expr_to_stmts(step_expr)?;
                 let mut body_stmts = self.convert_expr_to_stmts(body)?;
+                self.current_scope = saved_scope;
                 if self.push_to_globals {
+                    for s in &cond_nodes {
+                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
+                            self.global_stmts.push(s.clone());
+                        }
+                    }
+                    for s in &step_nodes {
+                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
+                            self.global_stmts.push(s.clone());
+                        }
+                    }
                     for s in &body_stmts {
                         if !self.global_stmts.iter().any(|n| n.id == s.id) {
                             self.global_stmts.push(s.clone());
@@ -706,6 +737,8 @@ impl IcnfConverter {
                     node: ICNFInner::For {
                         var_name: var_name.clone(),
                         iter_ssa: iter_id,
+                        cond_nodes,
+                        step_nodes,
                         body: body_stmts,
                     },
                 }])
@@ -952,13 +985,15 @@ impl IcnfConverter {
 
             // Print.
             ExprInner::Print(exprs) => {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut arg_ids = Vec::with_capacity(exprs.len());
                 for e in exprs.iter() {
-                    let id = self.convert_expr(e)?;
-                    arg_ids.push(id);
+                    let mut stmts = self.convert_expr_collect(e)?;
+                    arg_ids.push(stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id()));
+                    all_nodes.append(&mut stmts);
                 }
-
-                Ok(vec![self.emit(ICNFInner::Print(arg_ids))])
+                all_nodes.push(self.emit(ICNFInner::Print(arg_ids)));
+                Ok(all_nodes)
             }
 
             ExprInner::ReadLine => Ok(vec![ICNFNode {
@@ -1002,25 +1037,29 @@ impl IcnfConverter {
 
             // Set! mutation.
             ExprInner::SetBang(target, val) => {
-                let val_id = self.convert_expr(val)?;
+                let val_nodes = self.convert_expr_collect(val)?;
+                let val_id = val_nodes.last().map(|n| n.id).unwrap_or(0);
                 if let Some(&existing_ssa) = self.current_scope.get(target) {
+                    let setbang_id = self.next_ssa_id();
                     let new_ssa = self.next_ssa_id();
-                    Ok(vec![
-                        ICNFNode {
-                            id: existing_ssa,
-                            region: Region::Stack,
-                            typ: None,
-                            is_branch_body: false,
-                            node: ICNFInner::SetBang(target.clone(), val_id),
-                        },
-                        ICNFNode {
-                            id: new_ssa,
-                            region: Region::Stack,
-                            typ: None,
-                            is_branch_body: false,
-                            node: ICNFInner::Assign(target.clone(), val_id),
-                        },
-                    ])
+                    // Update scope to point to new SSA.
+                    self.current_scope.insert(target.clone(), new_ssa);
+                    let mut result = val_nodes;
+                    result.push(ICNFNode {
+                        id: setbang_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::SetBang(target.clone(), val_id),
+                    });
+                    result.push(ICNFNode {
+                        id: new_ssa,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assign(target.clone(), val_id),
+                    });
+                    Ok(result)
                 } else {
                     Ok(vec![ICNFNode {
                         id: self.next_ssa_id(),

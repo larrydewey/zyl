@@ -146,9 +146,17 @@ fn normalize_for_match(expr: &Expr) -> Expr {
                 };
             }
             "while" if args.len() >= 2 => {
+                let body = if args.len() == 2 {
+                    args[1].clone()
+                } else {
+                    Expr {
+                        span: expr.span.clone(),
+                        inner: ExprInner::Begin(args[1..].to_vec()),
+                    }
+                };
                 return Expr {
                     span: expr.span.clone(),
-                    inner: ExprInner::While(Box::new(args[0].clone()), Box::new(args[1].clone())),
+                    inner: ExprInner::While(Box::new(args[0].clone()), Box::new(body)),
                 };
             }
             _ => {}
@@ -345,7 +353,7 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     Box::new(sub_expr(ctx, &args[0])),
                     Box::new(sub_expr(ctx, &args[1])),
                 )
-            } else if matches!(op_name.as_deref(), Some("for")) && args.len() >= 3 {
+            } else if matches!(op_name.as_deref(), Some("for")) && args.len() >= 5 {
                 let arg0 = sub_expr(ctx, &args[0]);
                 let name = match &arg0.inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
@@ -355,6 +363,8 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     name,
                     Box::new(sub_expr(ctx, &args[1])),
                     Box::new(sub_expr(ctx, &args[2])),
+                    Box::new(sub_expr(ctx, &args[3])),
+                    Box::new(sub_expr(ctx, &args[4])),
                 )
             } else {
                 let new_op = Box::new(sub_expr(ctx, op));
@@ -406,7 +416,7 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                 Box::new(sub_expr(ctx, &args[0])),
                 Box::new(sub_expr(ctx, &args[1])),
             ),
-            "for" if args.len() >= 3 => {
+            "for" if args.len() >= 5 => {
                 let arg0 = sub_expr(ctx, &args[0]);
                 let name = match &arg0.inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
@@ -416,6 +426,8 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     name,
                     Box::new(sub_expr(ctx, &args[1])),
                     Box::new(sub_expr(ctx, &args[2])),
+                    Box::new(sub_expr(ctx, &args[3])),
+                    Box::new(sub_expr(ctx, &args[4])),
                 )
             }
             _ => {
@@ -539,9 +551,11 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         Assert(c, _msg) => Assert(Box::new(sub_expr(ctx, c)), None), // msg is Option<String> — no sub needed.
         Unwrap(e) => Unwrap(Box::new(sub_expr(ctx, e))),
         While(c, b) => While(Box::new(sub_expr(ctx, c)), Box::new(sub_expr(ctx, b))),
-        For(name, iter, body) => For(
+        For(name, iter, cond, step, body) => For(
             name.clone(),
             Box::new(sub_expr(ctx, iter)),
+            Box::new(sub_expr(ctx, cond)),
+            Box::new(sub_expr(ctx, step)),
             Box::new(sub_expr(ctx, body)),
         ),
         Cond(clauses) => {
@@ -911,11 +925,13 @@ impl MacroExpander {
                     Box::new(self.expand_expr(*b.clone())?),
                 );
             }
-            ExprInner::For(name, iter, body) => {
+            ExprInner::For(name, iter, cond, step, body) => {
                 let for_name = name.clone();
                 expr.inner = ExprInner::For(
                     for_name,
                     Box::new(self.expand_expr(*iter.clone())?),
+                    Box::new(self.expand_expr(*cond.clone())?),
+                    Box::new(self.expand_expr(*step.clone())?),
                     Box::new(self.expand_expr(*body.clone())?),
                 );
             }
@@ -1095,11 +1111,13 @@ impl MacroExpander {
                         Box::new(self.expand_expr(*c.clone())?),
                         Box::new(self.expand_expr(*b.clone())?),
                     ),
-                    For(name, iter, body) => {
+                    For(name, iter, cond, step, body) => {
                         let fn_ = name.clone();
                         For(
                             fn_,
                             Box::new(self.expand_expr(*iter.clone())?),
+                            Box::new(self.expand_expr(*cond.clone())?),
+                            Box::new(self.expand_expr(*step.clone())?),
                             Box::new(self.expand_expr(*body.clone())?),
                         )
                     }

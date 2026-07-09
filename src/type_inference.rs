@@ -493,7 +493,7 @@ impl TypeInferer {
             }
 
             // Handle raw for.
-            ExprInner::Call(op, args) if is_ident_op(op, "for") && args.len() >= 3 => {
+            ExprInner::Call(op, args) if is_ident_op(op, "for") && args.len() >= 5 => {
                 let fname = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => {
@@ -505,12 +505,15 @@ impl TypeInferer {
                     }
                 };
                 drop(self.infer_expr(&args[1])?);
+                let cond_type = self.infer_expr(&args[2])?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                drop(self.infer_expr(&args[3])?);
                 self.env.bind(fname.clone(), Type::Var(self.fresh_var()))?;
-                drop(self.infer_expr(&args[2])?);
+                drop(self.infer_expr(&args[4])?);
                 Ok(Type::Prim(PrimType::Unit))
             }
 
-            ExprInner::Apply(name, args) if name == "for" && args.len() >= 3 => {
+            ExprInner::Apply(name, args) if name == "for" && args.len() >= 5 => {
                 let fname = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => {
@@ -522,8 +525,11 @@ impl TypeInferer {
                     }
                 };
                 drop(self.infer_expr(&args[1])?);
+                let cond_type = self.infer_expr(&args[2])?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                drop(self.infer_expr(&args[3])?);
                 self.env.bind(fname.clone(), Type::Var(self.fresh_var()))?;
-                drop(self.infer_expr(&args[2])?);
+                drop(self.infer_expr(&args[4])?);
                 Ok(Type::Prim(PrimType::Unit))
             }
 
@@ -767,11 +773,16 @@ impl TypeInferer {
                 drop(self.infer_expr(body)?);
                 Ok(Type::Prim(PrimType::Unit))
             }
-            ExprInner::For(name, iter, body) => {
-                let it = self.infer_expr(iter)?;
-                drop(self.env.bind(name.clone(), Type::Var(self.fresh_var())));
-                drop(self.infer_expr(body)?);
-                Ok(Type::Prim(PrimType::Unit))
+            ExprInner::For(name, iter, cond, step, body) => {
+                let _ = self.infer_expr(iter)?;
+                self.env.enter_scope();
+                drop(self.env.bind(name.clone(), Type::Cap(CapKind::TMut, Box::new(Type::Prim(PrimType::Int)))));
+                let cond_type = self.infer_expr(cond)?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                drop(self.infer_expr(step)?);
+                let body_type = self.infer_expr(body)?;
+                self.env.exit_scope();
+                Ok(body_type)
             }
 
             ExprInner::Cond(clauses) => {
@@ -1058,7 +1069,11 @@ impl TypeInferer {
         if matches!(op_name.as_str(), "+" | "-" | "*" | "/") {
             for arg in args {
                 let t = self.infer_expr(arg)?;
-                match &t {
+                let inner = match &t {
+                    Type::Cap(_, inner) => inner.as_ref(),
+                    _ => &t,
+                };
+                match inner {
                     Type::Prim(PrimType::Int | PrimType::Float) => {}
                     _ => {
                         return Err(ZylError::E_TYPE_MISMATCH(
