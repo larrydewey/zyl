@@ -98,7 +98,7 @@ Expr :=
   ;; Control & Flow
   | (assert Expr String)
   | (while Expr Expr)
-  | (for Name Expr Expr Body)
+  | (for Name Expr Expr Expr Body)
   | (cond Clause*)
   | (begin Expr+)
   | (error String)
@@ -381,7 +381,7 @@ Test execution:
     Strict left-to-right. No termination detection (Halting Problem).
 
 12.6 FOR:
-    (for name iterator body)
+    (for name iterator condition step body)
     Requires Iterator trait. Deterministic iteration.
 
 12.7 COND:
