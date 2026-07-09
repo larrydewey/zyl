@@ -1062,9 +1062,11 @@ impl MonoContext {
                 Box::new(self.subst_expr(body, type_map)),
             ),
 
-            ExprInner::For(name, iter, body) => ExprInner::For(
+            ExprInner::For(name, iter, cond, step, body) => ExprInner::For(
                 name.clone(),
                 Box::new(self.subst_expr(iter, type_map)),
+                Box::new(self.subst_expr(cond, type_map)),
+                Box::new(self.subst_expr(step, type_map)),
                 Box::new(self.subst_expr(body, type_map)),
             ),
 

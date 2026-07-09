@@ -305,6 +305,9 @@ impl Optimizer {
         for node in stmts.iter() {
             Self::collect_used_ssa(&node.node, &mut referenced_ids);
         }
+        for node in stmts.iter() {
+            Self::collect_used_ssa(&node.node, &mut referenced_ids);
+        }
 
         // Root-live: has side effects OR its result is used by another node's operands.
         let mut live_set: std::collections::HashSet<usize> = stmts
@@ -375,18 +378,28 @@ impl Optimizer {
                 }
             }
 
-            ICNFInner::While { cond_ssa, body } => {
-                used_ids.insert(*cond_ssa);
+            ICNFInner::While { cond_body, body, result_var: _ } => {
+                for stmt in cond_body {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
                 for stmt in body {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
             }
             ICNFInner::For {
-                iter_ssa: cond_ssa,
+                iter_ssa,
+                cond_nodes,
+                step_nodes,
                 body,
                 ..
             } => {
-                used_ids.insert(*cond_ssa);
+                used_ids.insert(*iter_ssa);
+                for stmt in cond_nodes {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
+                for stmt in step_nodes {
+                    Self::collect_used_ssa(&stmt.node, used_ids);
+                }
                 for stmt in body {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }

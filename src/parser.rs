@@ -613,9 +613,17 @@ impl Parser {
     }
 
     fn p_while(&self, args: &[Expr]) -> Expr {
+        let body = if args.len() == 2 {
+            args[1].clone()
+        } else {
+            Expr {
+                span: Span::default(),
+                inner: ExprInner::Begin(args[1..].to_vec()),
+            }
+        };
         Expr {
             span: Span::default(),
-            inner: ExprInner::While(Box::new(args[0].clone()), Box::new(args[1].clone())),
+            inner: ExprInner::While(Box::new(args[0].clone()), Box::new(body)),
         }
     }
 
@@ -712,43 +720,21 @@ impl Parser {
         };
         check_reserved_keyword(&name, &args[0].span)?;
 
-        if args.len() >= 3 {
+        if args.len() >= 5 {
             Ok(Expr {
                 span: span.clone(),
-                inner: ExprInner::For(name, Box::new(args[1].clone()), Box::new(args[2].clone())),
+                inner: ExprInner::For(
+                    name,
+                    Box::new(args[1].clone()),
+                    Box::new(args[2].clone()),
+                    Box::new(args[3].clone()),
+                    Box::new(args[4].clone()),
+                ),
             })
-        } else if args.len() == 2 {
-            match &args[1].inner {
-                ExprInner::Call(_, ref inner) => {
-                    if inner.len() >= 2 {
-                        Ok(Expr {
-                            span: span.clone(),
-                            inner: ExprInner::For(
-                                name,
-                                Box::new(inner[0].clone()),
-                                Box::new(inner[1].clone()),
-                            ),
-                        })
-                    } else {
-                        Err(ZylError::E_EXPECTED_EXPRESSION(
-                            args[1].span.clone(),
-                            "iterator and body".into(),
-                        ))
-                    }
-                }
-                _ => Ok(Expr {
-                    span: span.clone(),
-                    inner: ExprInner::For(
-                        name,
-                        Box::new(args[1].clone()),
-                        Box::new(atom_expr(Span::default(), Atom::Int(0))),
-                    ),
-                }),
-            }
         } else {
             Err(ZylError::E_EXPECTED_EXPRESSION(
                 Span::default(),
-                "for needs name + iterator/body".into(),
+                "for needs name iterator condition step body".into(),
             ))
         }
     }

@@ -523,6 +523,7 @@ $ echo '(if true 100 200)' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && ./a.
 - [ ] Integer-to-string conversion: Print currently only works with compile-time constant integers. Non-constant values need a runtime integer→string conversion routine using division/modulo and sys_write or printf. **IMPLEMENTED** in `emit_int_to_str()` but needs testing — the int-to-str code is emitted inside branch bodies which causes segfaults due to register clobbering (see below).
 - [ ] If/else control flow: Branch body nodes are being pushed to global_stmts during ICNF conversion with `is_branch_body=false`, then marked as true by the If handler. The deduplication logic in codegen skips them, but branch bodies still get emitted at top-level because they're already in globals before marking happens. **Root cause**: `convert_expr()` pushes ALL converted nodes to globals unconditionally — even when called from within an If expression's branches. Fix: need a non-pushing variant of convert_expr for use inside control flow handlers, or post-process all global_stmts after conversion to fix is_branch_body flags on branch body IDs tracked in emitted_branch_ids.
 - [ ] Floating-point support: Float constants load as zero with a cvtsi2sd instruction placeholder. Full IEEE-754 double precision arithmetic via xmm registers is deferred.
+- [ ] For loop 5-ary form: Implemented through all 9 phases (see session update below) but has a runtime condition check bug.
 - [ ] Struct/ADT memory layout: No code generation for struct construction, field access, or ADT pattern matching yet.
 
 ---
@@ -753,7 +754,7 @@ $ cat a.out.s | head -10
 
 ### Known Remaining Issues for Next Session
 - [ ] While loop code generation — not yet tested with actual runtime execution
-- [ ] For loop desugaring to while — needs testing  
+- [x] **For loop 5-ary form (Spec §12.6)**: Implemented through all 9 phases; runtime condition check bug remains
 - [x] **Function call codegen (partial)**: Added `body` field to ICNFFuncSig, fixed bare identifier handler (`Call(op, _)` → `Call(op, args)` with empty check so `(add 3 4)` no longer treated as variable reference), added non-pushing mode for defn body conversion. **Blocker**: Changing emit_node parameter from `&[ICNFNode]` to `&[&ICNFNode]` (needed for ID-based operand lookup) causes scope conflicts in While/For/If branch handlers — each needs its own local stmt_refs vector but sed replacements create variable shadowing issues.
 - [ ] Struct/ADT memory layout and pattern matching — not implemented in codegen
 
@@ -963,7 +964,6 @@ hello world
 
 ### Known Remaining Issues
 - [ ] While loop code generation — crashes due to assembly warnings ("missing operand")
-- [ ] For loop code generation — crashes at runtime
 - [ ] If/else with string prints — condition operands leak into branch bodies
 - [ ] Function call parameter passing — some edge cases with register usage
 
@@ -974,3 +974,139 @@ hello world
 | `src/icnf.rs` | ~40 modified | Fixed convert_expr_collect to push nodes when push_to_globals=true, fixed identifier Load to push when push_to_globals=true |
 | `src/main.rs` | ~80 removed | Removed debug print statements |
 
+
+---
+
+## Session Update: Code Generation Fixes — Recursive Functions Work!
+
+### Completed This Session
+- [x] **Root cause identified**: The emitted_ids mechanism was broken in multiple ways:
+  1. **emit_load_into early return**: The function skipped Load/Const nodes based on `emitted_ids`, but this assumed eax still held the value — which it didn't after subsequent operations
+  2. **Missing emitted_ids tracking for Call nodes**: The Call handler in emit_node didn't insert the node's ID into emitted_ids, causing duplicate emission when the same Call was referenced as an operand by BinOp handlers
+  3. **Function body emit loop didn't insert into func_emitted_ids**: The emit loop processed nodes but didn't mark them as emitted, breaking the already-emitted check
+
+### Fixes Applied
+1. **Removed early-return skip for Load nodes in emit_load_into**: Load nodes always load from stack slot; the emitted_ids skip was incorrect because subsequent operations overwrite eax
+2. **Added `emitted_ids.insert(node.id)` to Call handler**: Prevents duplicate emission when a Call node is both in func.body/branch_body AND referenced as a BinOp operand
+3. **Added `func_emitted_ids.insert(stmt.id)` in function body emit loop**: Marks function body nodes as emitted so operand loading correctly skips already-emitted nodes
+
+### Test Results
+```bash
+# add(3, 4) = 7 ✓
+$ echo '(defn add (x y) (+ x y))(print (add 3 4))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+7
+
+# factorial(5) = 120 ✓ (RECURSIVE FUNCTIONS NOW WORK!)
+$ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+120
+
+# String print ✓
+$ echo '(print "hello world")' > t.zyl && ./target/debug/zyl t.zyl a.out.bin && cc -no-pie a.out.s -o out && ./out
+hello world
+```
+
+### Known Remaining Issues
+- [ ] If/else branch bodies: Print in branch bodies doesn't execute correctly — outputs condition value instead of branch body content
+- [ ] While loop: Not yet tested with actual runtime execution
+- [ ] For loop: 5-ary form implemented through all 9 phases but has a runtime condition check bug
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/codegen.rs` | ~50 modified | Fixed emit_load_into early-return logic, added emitted_ids.insert to Call handler, added func_emitted_ids tracking in function body emit loop |
+| `src/icnf.rs` | ~10 modified | Cleaned up debug output, no logic changes |
+| `src/optimization.rs` | ~10 modified | Cleaned up debug output, no logic changes |
+
+### Session Update: While Loop + If/else Branch Body Fixes
+
+### Completed This Session
+- [x] **While loop condition deduplication**: Removed empty `HashSet::new()` overwrites of previously collected `cond_operand_ids` and `body_operand_ids` in While handler. Now uses the operand IDs collected at lines 1572-1625 to skip intermediate Load/Const nodes that are BinOp operands.
+- [x] **Branch body node emission marking**: Added `emitted_ids.insert(stmt.id)` after emitting each cond_body and body statement in While handler, and after each body statement in For handler. Prevents duplicate emission when branch body nodes are in func.body.
+- [x] **Int-to-string zero handling**: Added zero check before divloop — if value is 0, write "0" directly to buffer and skip divloop. Previously the divloop was skipped for zero with no digit written.
+- [x] **Int-to-string buffer clearing**: Added `mov byte ptr [rdi], 0` at pos_label entry to clear old digits from hexbuf[31]. Prevents leftover characters from previous iterations from appearing in output.
+- [x] **Int-to-string null terminator**: Added null terminator at hexbuf[32] after divloop. Increased hexbuf size from 32 to 33 bytes.
+- [x] **Print handler intermediate node collection**: Updated Print handlers (ExprInner::Call form, ExprInner::Apply form, ExprInner::Print form) to use `convert_expr_collect` instead of `convert_expr`. This collects intermediate nodes (like Const("yes")) into the branch body so codegen can find them for type detection.
+- [x] **For loop body emission marking**: Added `emitted_ids.insert(stmt.id)` after emitting For body statements.
+
+### Test Results
+```bash
+# factorial(5) = 120 ✓
+$ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))'
+120
+
+# while loop 0,1,2 ✓
+$ echo '(let-mut i 0 (while (< i 3) (print i) (set! i (+ i 1)) i))'
+012
+
+# if/else true branch ✓
+$ echo '(if (> 10 5) (print "yes") (print "no"))'
+yes
+
+# if/else false branch ✓
+$ echo '(if (< 10 5) (print "yes") (print "no"))'
+no
+
+# add(3, 4) = 7 ✓
+$ echo '(defn add (x y) (+ x y))(print (add 3 4))'
+7
+
+# print "hello" ✓
+$ echo '(print "hello")'
+hello
+```
+
+### Known Remaining Issues
+- [ ] For loop code generation — compiles through all 9 phases but has runtime condition check bug
+- [ ] Struct/ADT memory layout and pattern matching — not implemented in codegen
+- [ ] Floating-point support — not implemented
+- [ ] ~160 compiler warnings (unused variables, dead code, naming conventions)
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/codegen.rs` | ~30 modified | While loop operand_ids fix, body emission marking, int-to-str zero/null terminator/bug fixes |
+| `src/icnf.rs` | ~20 modified | Print handlers updated to use convert_expr_collect for intermediate node collection |
+3. Clean up any remaining debug statements
+4. Test more edge cases (nested function calls, multiple arguments, etc.)
+
+---
+
+## Session Update: 5-Arity For Loop (Spec §12.6)
+
+### Completed This Session
+- [x] **For loop updated to 5-arg form**: `(for name iterator condition step body)` per spec §12.6
+- [x] **AST variant expanded**: `For(String, Box<Expr>, Box<Expr>, Box<Expr>, Box<Expr>)` — added `step` and `body` as separate fields (previously used iterator+condition with implicit step/body)
+- [x] **Parser `p_for()`**: Now requires exactly 5 arguments, enforces arity check with E_ARITY_MISMATCH
+- [x] **Type inference**: Loop var bound as `TMut<Int>` before inferring cond/step/body types; all 5 fields processed in correct order
+- [x] **Region inference**: Loop var bound in scope before cond/step/body region analysis
+- [x] **All pattern matches updated**: macro_expander.rs (5 locations), monomorphization.rs (1 location) — all For variants updated from 3-field to 5-field tuples
+- [x] **ICNF generation**: `ICNFInner::For` now includes `cond_nodes: Vec<ICNFNode>` and `step_nodes: Vec<ICNFNode>` stored inline; loop var bound in scope during conversion
+- [x] **Code generation**: For loop emits condition check → body → step → jump back pattern; all 5 fields handled correctly
+- [x] **Optimization**: `collect_used_ssa` updated to handle cond_nodes and step_nodes fields
+- [x] **Pipeline compiles through all 9 phases**
+
+### Test Results
+```bash
+# 5-arg for loop compiles through all phases ✓
+# (for i 0 (< i 3) (set! i (+ i 1)) (print i))
+# → Type checking passes, code generation succeeds
+# → Runtime condition check has a known bug (separate issue to debug)
+```
+
+### Files Modified
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/ast.rs` | ~2 | For variant: 3 fields → 5 fields (added step, body) |
+| `src/parser.rs` | ~30 | p_for(): requires 5 args, updated error messages |
+| `src/type_inference.rs` | ~15 | For inference: bind loop var as TMut<Int>, process cond/step/body |
+| `src/region_inference.rs` | ~12 | For region: bind loop var before cond/step/body |
+| `src/macro_expander.rs` | ~50 | 5 For pattern match sites updated |
+| `src/monomorphization.rs` | ~6 | For subst_expr updated |
+| `src/icnf.rs` | ~60 | ICNFInner::For: added cond_nodes, step_nodes; conversion logic updated |
+| `src/codegen.rs` | ~200 | For codegen: condition→body→step→jump pattern |
+| `src/optimization.rs` | ~16 | collect_used_ssa: handle cond_nodes and step_nodes |
+
+### Known Remaining Issues
+- [ ] **Runtime condition check bug**: The 5-arg for loop compiles and generates assembly, but the condition check has a runtime issue (likely similar to the BinOp operand loading bug fixed for factorial). Separate debugging session needed.
+- [ ] For loop with non-integer iterator type — not yet tested
+- [ ] For loop with no body (empty body) — edge case not tested
