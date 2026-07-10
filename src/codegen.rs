@@ -1731,8 +1731,8 @@ impl CodeGen {
             }
 
             ICNFInner::For {
-                var_name: _,
-                iter_ssa: _,
+                var_name,
+                iter_ssa,
                 cond_nodes,
                 step_nodes,
                 body,
@@ -1740,6 +1740,83 @@ impl CodeGen {
                 let loop_start = format!(".for_{}", self.label_counter);
                 let loop_end = format!(".fend_{}", self.label_counter);
                 self.label_counter += 1;
+
+                // Initialize loop variable: load iter_ssa value and store to stack slot.
+                if let Some(slot) = local_vars.get(var_name.as_str()) {
+                    let slot_offset = *slot;
+                    // Load iter_ssa value into a register for storing.
+                    let iter_node = lookup.get(iter_ssa);
+                    if let Some(node) = iter_node {
+                        match &node.node {
+                            ICNFInner::Const(Atom::Int(v)) => {
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov eax, {}", v));
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov [rbp-{}], rax",
+                                    slot_offset
+                                ));
+                            }
+                            ICNFInner::Const(Atom::Float(v)) => {
+                                let bits = f64_to_bits(*v);
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov eax, {}",
+                                    bits as u32
+                                ));
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov [rbp-{}], eax",
+                                    slot_offset
+                                ));
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov eax, {}",
+                                    ((bits >> 32) & 0xFFFFFFFF) as i32
+                                ));
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov [rbp-{}], eax",
+                                    slot_offset + 4
+                                ));
+                            }
+                            ICNFInner::Const(Atom::Bool(v)) => {
+                                let val = if *v { 1 } else { 0 };
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov eax, {}", val));
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov [rbp-{}], rax",
+                                    slot_offset
+                                ));
+                            }
+                            _ => {
+                                // For non-const values, emit the node and store result.
+                                self.emit_node(
+                                    node,
+                                    stmts,
+                                    local_vars,
+                                    emitted_ids,
+                                    operand_ids,
+                                    lookup,
+                                    phi_slots,
+                                );
+                                self.asm_push_align();
+                                self.asm.push(format!(
+                                    "    mov [rbp-{}], rax",
+                                    slot_offset
+                                ));
+                            }
+                        }
+                    } else {
+                        // iter_ssa not found in lookup — try to load from stmts.
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    mov [rbp-{}], rax",
+                            slot_offset
+                        ));
+                    }
+                }
 
                 // Collect operand IDs to skip intermediate Load nodes.
                 let mut for_operand_ids: std::collections::HashSet<usize> = HashSet::new();

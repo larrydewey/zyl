@@ -712,23 +712,6 @@ impl IcnfConverter {
                 let step_nodes = self.convert_expr_to_stmts(step_expr)?;
                 let mut body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
-                if self.push_to_globals {
-                    for s in &cond_nodes {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
-                    for s in &step_nodes {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
-                    for s in &body_stmts {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
-                }
                 Ok(vec![ICNFNode {
                     id: self.next_ssa_id(),
                     region: Region::Stack,
