@@ -1106,7 +1106,81 @@ hello
 | `src/codegen.rs` | ~200 | For codegen: condition→body→step→jump pattern |
 | `src/optimization.rs` | ~16 | collect_used_ssa: handle cond_nodes and step_nodes |
 
+### Session Update: For Loop Runtime Fix — COMPLETE
+
+### Completed This Session
+- [x] **For loop runtime condition check bug — FIXED**
+  - **Root cause 1**: For body/cond/step nodes were pushed to `global_stmts` during ICNF conversion. The global emit loop processed them (especially Print nodes) BEFORE the For handler ran, emitting int-to-str code before the loop variable was initialized.
+  - **Root cause 2**: The For handler in codegen.rs didn't initialize the loop variable with `iter_ssa` value before the condition check.
+  - **Fix 1**: Removed `push_to_globals` logic for For body/cond/step nodes in `icnf.rs`. These nodes now only exist as embedded nodes in the For struct, emitted exclusively by the For handler.
+  - **Fix 2**: Added loop variable initialization in `codegen.rs` For handler — emits `mov eax, <value>; mov [rbp-N], rax` for Const initializers before the loop label.
+  - **Fix 3**: Fixed Atom type references (`crate::icnf::Atom` → `Atom` via import at top of codegen.rs).
+
+### Test Results
+```bash
+# for loop 0,1,2 ✓
+$ echo '(for i 0 (< i 3) (set! i (+ i 1)) (print i))'
+012
+
+# factorial(5) = 120 ✓
+$ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))'
+120
+
+# if/else string prints ✓
+$ echo '(if (> 10 5) (print "yes") (print "no"))'
+yes
+
+# while loop 0,1,2 ✓
+$ echo '(let-mut i 0 (while (< i 3) (print i) (set! i (+ i 1)) i))'
+012
+
+# nested function calls: mul(add(2,3), 4) = 20 ✓
+$ echo '(defn add (x y) (+ x y))(defn mul (x y) (* x y))(print (mul (add 2 3) 4))'
+20
+
+# string print ✓
+$ echo '(print "hello")'
+hello
+```
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/icnf.rs` | ~20 removed | Removed push_to_globals for For body/cond/step nodes |
+| `src/codegen.rs` | ~80 added | For handler: loop variable initialization with iter_ssa value; Atom type reference fixes |
+
+---
+
+### Session Update: For Loop Edge Cases — Empty Body + Non-Integer Iterator
+
+### Completed This Session
+- [x] **For loop with empty body**: Fixed by allowing `()` as a valid unit expression in both `parse_list` and `parse_list_no_dispatch`. Returns `ExprInner::Atom(Atom::Ident("Unit".into()))` for empty lists.
+- [x] **Type inference fix for Unit/Int/Float/Bool/String keywords**: Modified bare identifier handler in `type_inference.rs` to recognize "Unit", "Int", "Float", "Bool", "String" as type keywords that produce their respective primitive types, rather than treating them as unbound variable references.
+- [x] **For loop with non-integer iterator (float)**: Compiles through all 9 phases. Float constants are properly represented in ICNF. Known limitation: floating-point codegen (register allocation for floats, float-to-string conversion, float comparison via SSE) is not fully implemented — this is a known Phase 9 limitation documented in PROGRESS.md.
+
+### Test Results
+```bash
+# For loop with empty body — compiles, links, runs without crash ✓
+$ echo '(for i 0 (< i 3) (set! i (+ i 1)) ())'
+(exit: 0)
+
+# For loop with print body — 012 ✓
+$ echo '(for i 0 (< i 3) (set! i (+ i 1)) (print i))'
+012
+
+# For loop with factorial — 120 ✓
+$ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (factorial 5))'
+120
+
+# Float for loop — compiles through all phases, float constants in ICNF ✓
+# (float codegen has known limitations — not fully implemented)
+```
+
+### Files Modified This Session
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/parser.rs` | ~10 added | Allow `()` as Unit expression in both `parse_list` and `parse_list_no_dispatch` |
+| `src/type_inference.rs` | ~12 added | Bare identifier handler recognizes "Unit", "Int", "Float", "Bool", "String" as type keywords |
+
 ### Known Remaining Issues
-- [ ] **Runtime condition check bug**: The 5-arg for loop compiles and generates assembly, but the condition check has a runtime issue (likely similar to the BinOp operand loading bug fixed for factorial). Separate debugging session needed.
-- [ ] For loop with non-integer iterator type — not yet tested
-- [ ] For loop with no body (empty body) — edge case not tested
+- [ ] For loop with non-integer iterator (float) — compiles through all phases, but runtime float codegen (SSE ops, float-to-string, float comparison) is a known limitation not yet implemented

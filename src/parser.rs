@@ -145,7 +145,10 @@ impl Parser {
         self.expect_token_kind(TokenKind::RParen)?;
 
         if elements.is_empty() {
-            return Err(ZylError::E_EMPTY_LIST(open.span.clone()));
+            return Ok(Expr {
+                span: open.span.clone(),
+                inner: ExprInner::Atom(Atom::Ident("Unit".into())),
+            });
         }
 
         // No dispatch — build a raw Call node with all elements as children.
@@ -223,7 +226,10 @@ impl Parser {
         self.expect_token_kind(TokenKind::RParen)?;
 
         if elements.is_empty() {
-            return Err(ZylError::E_EMPTY_LIST(open.span.clone()));
+            return Ok(Expr {
+                span: open.span.clone(),
+                inner: ExprInner::Atom(Atom::Ident("Unit".into())),
+            });
         }
 
         match &elements[0].inner {

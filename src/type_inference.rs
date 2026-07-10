@@ -372,12 +372,19 @@ impl TypeInferer {
             ExprInner::Atom(Atom::Ident(name))
                 if !self.generics_in_scope.borrow().contains(name) =>
             {
-                match self.env.get(name).cloned() {
-                    Some(ty) => Ok(ty),
-                    None => Err(ZylError::E_UNBOUND_VARIABLE(
-                        expr.span.clone(),
-                        name.clone(),
-                    )),
+                match name.as_str() {
+                    "Unit" => Ok(Type::Prim(PrimType::Unit)),
+                    "Int" => Ok(Type::Prim(PrimType::Int)),
+                    "Float" => Ok(Type::Prim(PrimType::Float)),
+                    "Bool" => Ok(Type::Prim(PrimType::Bool)),
+                    "String" => Ok(Type::Prim(PrimType::String)),
+                    _ => match self.env.get(name).cloned() {
+                        Some(ty) => Ok(ty),
+                        None => Err(ZylError::E_UNBOUND_VARIABLE(
+                            expr.span.clone(),
+                            name.clone(),
+                        )),
+                    },
                 }
             }
 
