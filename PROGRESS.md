@@ -266,6 +266,25 @@ Phases 1–9 complete: Parsing → ... → Code Generation succeeded.
   Assembly/linking error: (pre-existing phi node codegen bug, not related to begin fix)
 ```
 
+## Phase 3.8: Phi Node Fix, Begin in Macros, ICNF Special Forms ✅ COMPLETE
+
+### Completed
+- [x] **Phi node join point fix** (`codegen.rs:1258`): Changed `mov eax, rax` to `mov rax, rax` — was generating invalid x86-64 instruction (32-bit dest can't have 64-bit reg src). The issue occurred when loading numeric SSA references via `X86_REGISTERS[0]` which is `"rax"`.
+- [x] **`begin` in macro expander** (`macro_expander.rs:68-180`): Added `begin` normalization in `normalize_for_match()` so macro templates containing `(begin ...)` are properly converted to `ExprInner::Begin(...)` during pattern matching.
+- [x] **`begin` substitution in `sub_expr()`** (`macro_expander.rs:388-391, 455-458`): Added `begin` handling in both `Call` and `Apply` branches so macro substitution correctly transforms `(begin body body)` → `Begin([actual_body, actual_body])`.
+- [x] **Raw `deftype`/`trait`/`impl` skip in ICNF** (`icnf.rs:412-413`): Added handlers to skip raw Call/Apply forms for type-level constructs that aren't converted by the PostProcessor (no-dispatch parsing leaves them as raw Call/Apply).
+
+### Test Results
+```bash
+# twice macro with begin template works
+$ echo '(defmacro twice (body) (begin body body))(twice (print "twice"))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+
+# stdlib_test.zyl compiles through all 9 phases
+$ ./target/debug/zyl stdlib_test.zyl
+Phases 1–9 complete: Parsing → Macro Expansion → ... → Code Generation succeeded.
+```
+
 ## Phase 4: Region Inference + Capture Analysis ✅ COMPLETE (NEW)
 
 ### Design Decision: Two-Pass Approach
