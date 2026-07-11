@@ -162,6 +162,24 @@ fn normalize_for_match(expr: &Expr) -> Expr {
             _ => {}
         }
     }
+    // Raw "begin" → Begin (Call form).
+    if let ExprInner::Call(op, args) = &expr.inner {
+        if call_operator_name(op) == Some("begin".into()) && !args.is_empty() {
+            return Expr {
+                span: expr.span.clone(),
+                inner: ExprInner::Begin(args.clone()),
+            };
+        }
+    }
+    // Raw "begin" → Begin (Apply form).
+    if let ExprInner::Apply(name, args) = &expr.inner {
+        if name == "begin" && !args.is_empty() {
+            return Expr {
+                span: expr.span.clone(),
+                inner: ExprInner::Begin(args.clone()),
+            };
+        }
+    }
     // Already specialized or not a special form — return as-is.
     expr.clone()
 }
@@ -366,6 +384,9 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     Box::new(sub_expr(ctx, &args[3])),
                     Box::new(sub_expr(ctx, &args[4])),
                 )
+            } else if matches!(op_name.as_deref(), Some("begin")) {
+                let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
+                ExprInner::Begin(new_args)
             } else {
                 let new_op = Box::new(sub_expr(ctx, op));
                 let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
@@ -429,6 +450,10 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     Box::new(sub_expr(ctx, &args[3])),
                     Box::new(sub_expr(ctx, &args[4])),
                 )
+            }
+            "begin" => {
+                let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
+                ExprInner::Begin(new_args)
             }
             _ => {
                 let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();

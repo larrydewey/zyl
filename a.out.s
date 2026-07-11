@@ -738,21 +738,6 @@ ___if_result_228.join:
 .align 16
     call printf@plt
 .align 16
-    mov edi, [rbp-104]
-.align 16
-    mov esi, [rbp-128]
-.align 16
-    call _ZYL_begin
-    mov edi, 0
-.align 16
-    call _ZYL_Some
-    mov edi, 0
-.align 16
-    mov esi, eax
-    mov edx, 0
-.align 16
-    call _ZYL_deftype
-.align 16
     lea rdi, [.str_hello] 
 .align 16
     xor eax, eax           # No xmm args to printf
@@ -772,9 +757,9 @@ ___if_result_228.join:
     mov eax, 6
     mov eax, 12
 .align 16
-    mov [rbp-1280], rax
+    mov [rbp-1232], rax
 .align 16
-    mov eax, [rbp-1280]
+    mov eax, [rbp-1232]
     mov ecx, 10
     mov edx, 5
 .align 16
@@ -798,7 +783,7 @@ ___if_result_228.join:
 .align 16
     je  .L18
 .align 16
-___if_result_269.then:
+___if_result_263.then:
 .align 16
     xor eax, eax
 .align 16
@@ -806,36 +791,36 @@ ___if_result_269.then:
 .align 16
     je  .L19
 .align 16
-___if_result_266.then:
+___if_result_260.then:
     mov eax, 1
 .align 16
-    jmp ___if_result_266.join
+    jmp ___if_result_260.join
 .align 16
 .L19:
 .align 16
-___if_result_266.else:
+___if_result_260.else:
     mov eax, 0
 .align 16
-___if_result_266.join:
+___if_result_260.join:
 .align 16
     mov [rbp-16], rax
 .align 16
-    mov [rbp-1328], eax
+    mov [rbp-1280], eax
 .align 16
-    jmp ___if_result_269.join
+    jmp ___if_result_263.join
 .align 16
 .L18:
 .align 16
-___if_result_269.else:
+___if_result_263.else:
     mov eax, 0
 .align 16
-    mov [rbp-1328], eax
+    mov [rbp-1280], eax
 .align 16
-___if_result_269.join:
+___if_result_263.join:
 .align 16
-    mov eax, [rbp-1328]
+    mov eax, [rbp-1280]
 .align 16
-    mov [rbp-1328], rax
+    mov [rbp-1280], rax
     mov eax, 2
     mov eax, 3
     mov eax, 6
@@ -865,50 +850,50 @@ ___if_result_269.join:
 .align 16
     je  .L20
 .align 16
-___if_result_287.then:
+___if_result_281.then:
     mov eax, 1
 .align 16
-    mov [rbp-1440], eax
+    mov [rbp-1392], eax
 .align 16
-    jmp ___if_result_287.join
+    jmp ___if_result_281.join
 .align 16
 .L20:
 .align 16
-___if_result_287.else:
+___if_result_281.else:
     mov eax, 0
 .align 16
-    mov [rbp-1440], eax
+    mov [rbp-1392], eax
 .align 16
-___if_result_287.join:
+___if_result_281.join:
 .align 16
-    mov eax, [rbp-1440]
+    mov eax, [rbp-1392]
 .align 16
-    mov [rbp-1440], rax
+    mov [rbp-1392], rax
     mov eax, 0
 .align 16
     test eax, eax
 .align 16
     je  .L21
 .align 16
-___if_result_292.then:
+___if_result_286.then:
     mov eax, 1
 .align 16
-    mov [rbp-1464], eax
+    mov [rbp-1416], eax
 .align 16
-    jmp ___if_result_292.join
+    jmp ___if_result_286.join
 .align 16
 .L21:
 .align 16
-___if_result_292.else:
+___if_result_286.else:
     mov eax, 0
 .align 16
-    mov [rbp-1464], eax
+    mov [rbp-1416], eax
 .align 16
-___if_result_292.join:
+___if_result_286.join:
 .align 16
-    mov eax, [rbp-1464]
+    mov eax, [rbp-1416]
 .align 16
-    mov [rbp-1464], rax
+    mov [rbp-1416], rax
     mov eax, 1
     mov eax, 0
     mov eax, 0
@@ -924,9 +909,9 @@ ___if_result_292.join:
 .align 16
     lea rax, [.str_only_arm] 
 .align 16
-    mov [rbp-1576], rax
+    mov [rbp-1528], rax
 .align 16
-    mov eax, rax
+    mov rax, rax
 .align 16
     xor edi, edi           # exit code 0
 .align 16

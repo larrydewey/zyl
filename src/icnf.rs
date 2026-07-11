@@ -409,6 +409,10 @@ impl IcnfConverter {
                 | ExprInner::UseModule(..)
                 | ExprInner::Export(..) => {}
                 ExprInner::MacroDef(..) => {}
+
+                // Raw Call/Apply for deftype/trait/impl — skip (type-level constructs from no-dispatch parsing).
+                ExprInner::Call(op, _) if is_ident_op(op, "deftype") || is_ident_op(op, "trait") || is_ident_op(op, "impl") => {}
+                ExprInner::Apply(name, _) if name == "deftype" || name == "trait" || name == "impl" => {}
                 _ => {
                     let stmts = self.convert_expr_to_stmts(expr)?;
                     for s in stmts {
