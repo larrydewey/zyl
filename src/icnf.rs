@@ -412,7 +412,10 @@ impl IcnfConverter {
                 _ => {
                     let stmts = self.convert_expr_to_stmts(expr)?;
                     for s in stmts {
-                        self.global_stmts.push(s);
+                        // Dedup: don't push if a node with this ID already exists.
+                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
+                            self.global_stmts.push(s);
+                        }
                     }
                 }
             }
@@ -468,14 +471,16 @@ impl IcnfConverter {
         match &expr.inner {
             ExprInner::Atom(Atom::Ident(name)) => {
                 // Variable reference: look up in current scope for SSA ID.
+                // Load nodes get a fresh SSA ID (distinct from the variable's binding),
+                // so codegen can distinguish between the definition and its use.
+                // The operand is the variable name (for local_vars lookup in codegen).
                 if let Some(&ssa_id) = self.current_scope.get(name) {
-                    // Create a proper Load node with emit() so it gets pushed to global_stmts.
-                    // The pre-allocated ssa_id from scope setup is reused.
+                    let load_id = self.next_ssa_id();
                     if self.push_to_globals {
                         // Check if already in global_stmts to avoid duplicates.
-                        if self.global_stmts.iter().all(|n| n.id != ssa_id) {
+                        if self.global_stmts.iter().all(|n| n.id != load_id) {
                             self.global_stmts.push(ICNFNode {
-                                id: ssa_id,
+                                id: load_id,
                                 region: Region::Stack,
                                 typ: None,
                                 is_branch_body: false,
@@ -484,7 +489,7 @@ impl IcnfConverter {
                         }
                     }
                     Ok(vec![ICNFNode {
-                        id: ssa_id,
+                        id: load_id,
                         region: Region::Stack,
                         typ: None,
                         is_branch_body: false,
@@ -540,8 +545,10 @@ impl IcnfConverter {
                     _ => return Ok(Vec::new()),
                 };
                 if let Some(&ssa_id) = self.current_scope.get(&name) {
+                    // Load gets a fresh SSA ID (distinct from scope binding).
+                    let load_id = self.next_ssa_id();
                     Ok(vec![ICNFNode {
-                        id: ssa_id,
+                        id: load_id,
                         region: Region::Stack,
                         typ: None,
                         is_branch_body: false,
@@ -632,8 +639,16 @@ impl IcnfConverter {
 
             // Let binding.
             ExprInner::Let(name, val, body) => {
+                // Defer all global pushes to ensure correct ordering:
+                // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                let val_id = self.convert_and_push(val)?;
+                let mut saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = false;
+                // 1. Convert value expression (collecting intermediates, NOT pushing).
+                let val_stmts = self.convert_expr_to_stmts(val)?;
+                let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                // 2. Create Assign node.
                 let ssa_id = self.next_ssa_id();
                 let assign_node = ICNFNode {
                     id: ssa_id,
@@ -642,12 +657,24 @@ impl IcnfConverter {
                     is_branch_body: false,
                     node: ICNFInner::Assign(name.clone(), val_id),
                 };
+                // 3. Update scope BEFORE converting body (so body can find the binding).
                 self.current_scope.insert(name.clone(), ssa_id);
+                // 4. Convert body (collecting intermediates, NOT pushing).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
-                let mut result = vec![assign_node];
-                result.extend(body_stmts);
-                Ok(result)
+                // 5. Restore globals and push all in correct order (with dedup).
+                std::mem::swap(&mut self.global_stmts, &mut saved_globals);
+                let mut all_stmts = val_stmts;
+                all_stmts.push(assign_node);
+                all_stmts.extend(body_stmts);
+                for stmt in &all_stmts {
+                    if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
+                        self.global_stmts.push(stmt.clone());
+                    }
+                }
+                self.push_to_globals = saved_push;
+                // 6. Return all statements for caller (used by convert()'s default arm).
+                Ok(all_stmts)
             }
 
             // Let-mut binding.

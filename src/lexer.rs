@@ -375,11 +375,8 @@ fn is_number_start(chars: &[char], pos: usize) -> bool {
     if chars[pos] != '-' {
         return false;
     }
-    let mut i = pos + 1;
-    while i < chars.len() && chars[i].is_whitespace() {
-        i += 1;
-    }
-    i < chars.len() && (chars[i].is_ascii_digit())
+    let i = pos + 1;
+    i < chars.len() && chars[i].is_ascii_digit()
 }
 
 fn read_numeric(chars: &[char], start: usize) -> (String, usize) {

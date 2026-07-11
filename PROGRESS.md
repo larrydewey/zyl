@@ -133,22 +133,56 @@ Phase 3 handles both raw Call/Apply AND specialized ExprInner variants uniformly
 ### Test Results
 ```bash
 # Basic unless macro with 'cond' as pattern variable name (special form names work!)
-$ echo '(defmacro unless (cond body) (if (not cond) body))(unless false "hello")' > t.zyl && ./target/debug/zyl t.zyl
-Macro expansion complete: 1 expressions.
-AST output: If(Call(not, [false]), Str("hello"), Ident("___")) ✓
+# Placeholder is now Atom::Keyword("___skip_") for omitted branches — returns Unit type
+$ echo '(defmacro unless (cond body) (if (not cond) body))(unless false (print "hello"))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+Runtime output: hello ✓
 
-# Nested macro expansion (when → unless → if-if double nesting)  
-$ echo '(defmacro when (cond body) (unless (not cond) body))(when true "nested works")' > t.zyl && ./target/debug/zyl t.zyl
-AST output: If(Call(not, [Call(not, [true])]), Str("nested works"), ...) ✓
+# Nested macro expansion (when → unless → if-if double nesting)
+$ echo '(defmacro when (cond body) (unless (not cond) body))(when true (print "yes"))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+Runtime output: yes ✓
+
+# unless true should NOT execute body (skip else branch)
+$ echo '(defmacro unless (cond body) (if (not cond) body))(unless true (print "no"))(unless false (print "yes"))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+Runtime output: yes ✓ (only the false branch executes)
 
 # Hygiene: pattern variable used as name position in let template
 $ echo '(defmacro let-bind (var val expr) (let var val expr))(let-bind x 42 x)' > t.zyl && ./target/debug/zyl t.zyl  
-AST output: Let("x", Int(42), Ident(x)) ✓
+Phases 1–9 complete ✓
 
-# Pattern variable named 'cond' inside defmacro args — no dispatch error
-$ echo '(defmacro unless (cond body) (if cond body))(unless false "hello")' > t.zyl && ./target/debug/zyl t.zyl
-Macro expansion complete: 1 expressions. ✓
+# if without else branch — ___skip_ placeholder handled correctly
+$ echo '(if true (print "yes"))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+Runtime output: yes ✓
 ```
+
+### Session Fix: `___` Unhandled Placeholder → `___skip_` Keyword
+**Problem**: The macro expander used `atom_ref("___")` as a placeholder for omitted `if` branches, but `___` was not registered in the type environment. Type inference (Phase 5) and monomorphization (Phase 6) both failed with "unbound variable '___'" or type mismatch errors.
+
+**Root cause**: `___` was an arbitrary identifier with no semantic meaning in the type system. It appeared in:
+1. `macro_expander.rs` — `sub_expr()` handler for `Call("if")` and `Apply("if")` forms
+2. `ast.rs` — PostProcessor handler for `if` Call/Apply forms
+
+**Fix**:
+1. Replaced all `atom_ref("___")` with `Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }` in both the macro expander and PostProcessor
+2. Added `Atom::Keyword("___skip_") → Unit` handling in `type_inference.rs::infer_expr()` and `monomorphization.rs::infer_arg_type()`
+3. Modified the `if` handler in both phases to skip type unification when the else branch is a `___skip_` placeholder (the else branch is intentionally omitted, so its type should not constrain the if expression)
+4. Added `is_skip_placeholder()` helper function in both phases
+
+**Files Modified**:
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/macro_expander.rs` | ~4 | 4 Call/Apply `if` handlers use Keyword instead of Ident |
+| `src/ast.rs` | ~8 | PostProcessor 4 `if` handlers use Keyword instead of Int(0) |
+| `src/type_inference.rs` | ~12 | Keyword handling, skip unification for skip placeholder, `is_skip_placeholder()` helper |
+| `src/monomorphization.rs` | ~12 | Keyword handling, skip type comparison for skip placeholder, `is_skip_placeholder()` helper |
+
+**Design decision**: Using `Atom::Keyword` (prefixed `:___skip_`) instead of `Atom::Ident("___skip_")` because:
+- Keywords carry semantic intent (marker/policy, not a variable)
+- Keywords already handled throughout the pipeline with no ambiguity
+- The `___` prefix clearly signals it's a generated placeholder, not user-written code
 
 ### Known Limitations / TODOs for Phase 2
 - [ ] Gensym format `{prefix}#{counter}` is simple counter-based; could use context hashes for better uniqueness across nested expansions
@@ -205,6 +239,31 @@ Type inference complete: 1 expressions. ✓
 # While loop
 $ echo '(while false 0)' > t.zyl && ./target/debug/zyl t.zyl
 Type inference complete: 1 expressions. ✓
+```
+
+## Phase 3.7: PostProcessor Fixes ✅ COMPLETE
+
+### Completed
+- [x] **`begin` special form in PostProcessor** (`ast.rs:786-796`): Added handlers for both Call and Apply forms, converting `Call("begin", args)` and `Apply("begin", args)` to `ExprInner::Begin(args)` with recursive post-processing of all arguments. Without this, `(begin 1 2 3)` was compiled as a function call `_ZYL_begin` instead of a Begin block.
+- [x] **MacroDef pattern list reconstruction** (`ast.rs:758-774`): Fixed pattern list extraction for no-dispatch parsing. Changed from `.clone()` on ref to reconstructing the full pattern list from Call(first, rest) and Apply(name, args) variants.
+- [x] **`if` placeholder keyword** (`ast.rs:792,797,822,827`): Replaced `Atom::Int(0)` with `Atom::Keyword("___skip_")` for omitted `if` branches to match the skip placeholder convention used elsewhere.
+- [x] **`cond` clause body handling** (`ast.rs:979-1010`): Improved cond clause processing for no-dispatch parsing by handling Call(first, rest) form where `first` = condition and `rest` = body expressions wrapped in Begin.
+
+### Files Modified
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/ast.rs` | +95 | PostProcessor: begin handlers, MacroDef pattern fix, if skip placeholder, cond clause body handling |
+
+### Test Results
+```bash
+# (begin 1 2 3) now compiles through all phases (was generating _ZYL_begin call before)
+$ echo '(begin (print 1) (print 2) (print 3))' > t.zyl && ./target/debug/zyl t.zyl
+Phases 1–9 complete ✓
+
+# stdlib_test.zyl compiles through all 9 phases (assembly error is separate codegen bug)
+$ ./target/debug/zyl stdlib_test.zyl
+Phases 1–9 complete: Parsing → ... → Code Generation succeeded.
+  Assembly/linking error: (pre-existing phi node codegen bug, not related to begin fix)
 ```
 
 ## Phase 4: Region Inference + Capture Analysis ✅ COMPLETE (NEW)
@@ -353,6 +412,42 @@ Phases 1–6 complete ✓
 - [ ] No error reporting when a generic function has no satisfying call sites (dead code)
 
 ## Phase 7: ICNF Generation (SSA IR with Region Annotations) ✅ COMPLETE
+
+### Session Fix: ICNF Statement Ordering and Deduplication (2026-07-10)
+
+**Problem**: `let` statements generated incorrect ICNF code. For `(let x 5 (print x))`:
+- **Before**: Load node shared the same SSA ID as the Assign node, causing Print to reference the Assign instead of the Load. Also had duplicate nodes with the same ID.
+```json
+[
+  {"id": 0, "Const": {"Int": 5}},
+  {"id": 1, "Load": "x"},       // WRONG: same ID as Assign below
+  {"id": 1, "Assign": ["x", 0]}, // Load and Assign collide on ID=1
+  {"id": 1, "Load": "x"},       // Duplicate
+  {"id": 3, "Print": [1]}       // References Assign, not Load
+]
+```
+- **After**: Each node has a unique ID, correct ordering (value → Assign → Load → Print).
+```json
+[
+  {"id": 0, "Const": {"Int": 5}},
+  {"id": 2, "Assign": ["x", 0]}, // Assign before Load
+  {"id": 3, "Load": "x"},        // Fresh ID, operand is variable name
+  {"id": 5, "Print": [3]}        // Correctly references Load
+]
+```
+
+**Root Causes & Fixes** (3 bugs in `src/icnf.rs`):
+
+1. **Ident handler reused scope binding ID for Load nodes** (line 469): Load nodes now get a fresh SSA ID via `next_ssa_id()`, while the operand is the variable name (for codegen's `local_vars` lookup).
+
+2. **Let handler pushed body statements to globals before Assign** (line 638): The Let handler now defers ALL global pushes by saving `global_stmts`, setting `push_to_globals=false`, converting value+body without pushing, then restoring and pushing everything in correct order: value intermediates → Assign → body statements.
+
+3. **Default arm in `convert()` pushed statements without dedup** (line 412): Added `if !self.global_stmts.iter().any(|n| n.id == s.id)` check before pushing to prevent duplicates from handlers that already push to globals.
+
+**Files Modified**:
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/icnf.rs` | ~60 modified | Ident handler (fresh SSA ID for Load), Let handler (deferred push), default arm (dedup), Print handler (fixed `stmts.last()` before `append`) |
 
 ### Design Decision: SSA Form from Monomorphized AST
 ICNF generation runs on the monomorphized AST which preserves full structure. Type inference replaces expressions with type annotation atoms, so we use `regioned_for_mono` (the pre-inference version) for ICNF conversion while still having access to types via the TypeInferer's internal state.

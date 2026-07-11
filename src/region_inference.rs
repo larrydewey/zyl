@@ -409,7 +409,6 @@ impl RegionInferer {
                 let _ = self.infer_expr(cond)?;
                 let then_result = self.infer_expr(then_)?;
                 let else_result = self.infer_expr(else_)?;
-                // Result region is the more permissive of the two branches.
                 let result_region =
                     union_regions(then_result.result_region, else_result.result_region);
                 Ok(RegionResult {

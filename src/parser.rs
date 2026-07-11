@@ -235,16 +235,12 @@ impl Parser {
         match &elements[0].inner {
             ExprInner::Atom(Atom::Ident(name)) => self.dispatch(&open.span, name, &elements[1..]),
             _ => {
-                let (first, rest) = elements
-                    .into_iter()
-                    .next()
-                    .map(|e| (Box::new(e), Vec::new()))
-                    .unwrap_or_else(|| {
-                        (
-                            Box::new(atom_expr(Span::default(), Atom::Int(0))),
-                            Vec::new(),
-                        )
-                    });
+                let first = Box::new(elements[0].clone());
+                let rest: Vec<Expr> = if elements.len() > 1 {
+                    elements.into_iter().skip(1).collect()
+                } else {
+                    Vec::new()
+                };
                 Ok(Expr {
                     span: open.span.clone(),
                     inner: ExprInner::Call(first, rest),

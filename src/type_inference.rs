@@ -368,6 +368,7 @@ impl TypeInferer {
             ExprInner::Atom(Atom::Float(_)) => Ok(Type::Prim(PrimType::Float)),
             ExprInner::Atom(Atom::Bool(_)) => Ok(Type::Prim(PrimType::Bool)),
             ExprInner::Atom(Atom::Str(_)) => Ok(Type::Prim(PrimType::String)),
+            ExprInner::Atom(Atom::Keyword(kw)) if kw.as_str() == "___skip_" => Ok(Type::Prim(PrimType::Unit)),
 
             ExprInner::Atom(Atom::Ident(name))
                 if !self.generics_in_scope.borrow().contains(name) =>
@@ -680,7 +681,10 @@ impl TypeInferer {
                 self.unify(&ct, &Type::Prim(PrimType::Bool))?;
                 let tt = self.infer_expr(then_)?;
                 let et = self.infer_expr(else_)?;
-                self.unify(&tt, &et)?;
+                // If the else branch is a ___skip_ placeholder, skip type unification.
+                if !is_skip_placeholder(else_.as_ref()) {
+                    self.unify(&tt, &et)?;
+                }
                 Ok(tt)
             }
 
@@ -1074,6 +1078,7 @@ impl TypeInferer {
         };
 
         if matches!(op_name.as_str(), "+" | "-" | "*" | "/") {
+            let mut all_int = true;
             for arg in args {
                 let t = self.infer_expr(arg)?;
                 let inner = match &t {
@@ -1081,7 +1086,10 @@ impl TypeInferer {
                     _ => &t,
                 };
                 match inner {
-                    Type::Prim(PrimType::Int | PrimType::Float) => {}
+                    Type::Prim(PrimType::Int) => {}
+                    Type::Prim(PrimType::Float) => {
+                        all_int = false;
+                    }
                     _ => {
                         return Err(ZylError::E_TYPE_MISMATCH(
                             expr.span.clone(),
@@ -1091,7 +1099,11 @@ impl TypeInferer {
                     }
                 }
             }
-            Ok(Type::Var(self.fresh_var())) // Int or Float for now.
+            if all_int {
+                Ok(Type::Prim(PrimType::Int))
+            } else {
+                Ok(Type::Prim(PrimType::Float))
+            }
         } else if matches!(op_name.as_str(), "==" | "!=" | "<" | ">" | "<=" | ">=") {
             for arg in args {
                 drop(self.infer_expr(arg)?);
@@ -1117,6 +1129,21 @@ impl TypeInferer {
                 drop(self.infer_expr(arg)?);
             }
             Ok(Type::Prim(PrimType::Bool))
+        } else if op_name == "print" {
+            for arg in args {
+                drop(self.infer_expr(arg)?);
+            }
+            Ok(Type::Prim(PrimType::Int))
+        } else if op_name == "read-line" {
+            Ok(Type::Prim(PrimType::String))
+        } else if op_name == "exit" {
+            drop(self.infer_expr(&args[0])?);
+            Ok(Type::Prim(PrimType::Unit))
+        } else if op_name == "close" {
+            for arg in args {
+                drop(self.infer_expr(arg)?);
+            }
+            Ok(Type::Prim(PrimType::Unit))
         } else {
             self.handle_apply(&op_name, args)
         }
@@ -1188,8 +1215,13 @@ impl TypeInferer {
             self.generics_in_scope.borrow_mut().insert(name.to_string());
             return Some(Type::Var(self.fresh_var()));
         }
-        None
-    }
+    None
+}
+
+/// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
+fn is_skip_placeholder(expr: &Expr) -> bool {
+    matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
+}
 
     fn unify(&mut self, t1: &Type, t2: &Type) -> std::result::Result<(), ZylError> {
         match (t1, t2) {
@@ -1497,4 +1529,9 @@ fn parse_result_type(s: &str) -> Option<(String, String)> {
         }
     }
     None
+}
+
+/// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
+fn is_skip_placeholder(expr: &Expr) -> bool {
+    matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
 }

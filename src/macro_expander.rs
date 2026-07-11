@@ -317,12 +317,12 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                 let then_ = if args.len() > 1 {
                     sub_expr(ctx, &args[1])
                 } else {
-                    atom_ref("___".into())
+                    Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }
                 };
                 let els = if args.len() > 2 {
                     sub_expr(ctx, &args[2])
                 } else {
-                    atom_ref("___".into())
+                    Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }
                 };
                 ExprInner::If(Box::new(cond), Box::new(then_), Box::new(els))
             } else if matches!(op_name.as_deref(), Some("let")) && args.len() >= 3 {
@@ -380,12 +380,12 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                 let then_ = if args.len() > 1 {
                     sub_expr(ctx, &args[1])
                 } else {
-                    atom_ref("___".into())
+                    Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }
                 };
                 let els = if args.len() > 2 {
                     sub_expr(ctx, &args[2])
                 } else {
-                    atom_ref("___".into())
+                    Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }
                 };
                 ExprInner::If(Box::new(cond), Box::new(then_), Box::new(els))
             }
