@@ -875,6 +875,7 @@ impl MonoContext {
             ExprInner::Atom(Atom::Float(_)) => Type::Prim(PrimType::Float),
             ExprInner::Atom(Atom::Bool(_)) => Type::Prim(PrimType::Bool),
             ExprInner::Atom(Atom::Str(_)) => Type::Prim(PrimType::String),
+            ExprInner::Atom(Atom::Keyword(kw)) if kw.as_str() == "___skip_" => Type::Prim(PrimType::Unit),
 
             ExprInner::Atom(Atom::Ident(name)) => {
                 if let Some(ty) = self.known_types.get(name).cloned() {
@@ -939,11 +940,15 @@ impl MonoContext {
 
             ExprInner::If(_, then_, else_) => {
                 let tt = self.infer_arg_type(then_);
-                let et = self.infer_arg_type(else_);
-                if format!("{}", tt) == format!("{}", et) {
+                if is_skip_placeholder(else_.as_ref()) {
                     tt
                 } else {
-                    Type::Var(0) // Ambiguous.
+                    let et = self.infer_arg_type(else_);
+                    if format!("{}", tt) == format!("{}", et) {
+                        tt
+                    } else {
+                        Type::Var(0) // Ambiguous.
+                    }
                 }
             }
 
@@ -1436,4 +1441,9 @@ fn check_apply_for_generics(args: &[Expr]) -> bool {
         }
     }
     false
+}
+
+/// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
+fn is_skip_placeholder(expr: &Expr) -> bool {
+    matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
 }

@@ -1,0 +1,118 @@
+; === Zyl Standard Library Test Suite ===
+; Tests all base functionality and edge cases
+
+; --- Basic arithmetic ---
+(+ 1 2 3 4 5)
+(- 10 3)
+(* 3 4)
+(/ 20 4)
+
+; --- Comparison operators ---
+(if (> 10 5) 1 0)
+(if (< 5 10) 1 0)
+(if (>= 5 5) 1 0)
+(if (<= 5 5) 1 0)
+(if (== 5 5) 1 0)
+(if (!= 5 3) 1 0)
+
+; --- Logical operators ---
+(if (and true true) 1 0)
+(if (or false true) 1 0)
+(if (not false) 1 0)
+
+; --- Let bindings ---
+(let x 42 x)
+(let a 10 (let b 20 (+ a b)))
+
+; --- Let-mut ---
+(let-mut y 5 y)
+
+; --- If without else (uses Unit) ---
+(if true (print "then-branch"))
+
+; --- Nested if ---
+(if true (if true 1 2) 3)
+
+; --- Function definitions ---
+(defn add (x y) (+ x y))
+(defn sub (x y) (- x y))
+(defn mul (x y) (* x y))
+(defn factorial (n) (if (<= n 1) 1 (* n (factorial (- n 1)))))
+(defn identity (x) x)
+
+; --- Function application ---
+(add 3 4)
+(sub 10 3)
+(mul 2 5)
+
+; --- Recursive function ---
+(factorial 5)
+
+; --- Multiple let bindings ---
+(let a 1 (let b 2 (let c 3 (+ a b c))))
+
+; --- While loop ---
+(while false 0)
+
+; --- For loop ---
+(for i 0 (<= i 5) 1 (+ i 10))
+
+; --- Cond expression ---
+(cond
+  (true 1)
+  (false 2))
+
+; --- Cond with expressions in body ---
+(cond
+  (false 99)
+  (true (begin (print "matched second arm") 42)))
+
+; --- Unless macro ---
+(defmacro unless (cond body) (if (not cond) body))
+(unless true (print "should not print"))
+(unless false (print "unless works"))
+
+; --- When macro (uses unless) ---
+(defmacro when (cond body) (unless (not cond) body))
+(when false (print "should not print"))
+(when true (print "when works"))
+
+; --- Nested macros ---
+(defmacro twice (body) (begin body body))
+(twice (print "twice"))
+
+; --- ADT definition ---
+(deftype Option (Some Int) None)
+
+; --- String operations ---
+(print "hello")
+(print "world")
+
+; --- Mixed arithmetic with types ---
+(let result (+ (* 2 3) (- 10 4)) result)
+
+; --- Chained comparisons via if ---
+(if (> 10 5) (if (> 5 3) 1 0) 0)
+
+; --- Deeply nested expressions ---
+(let a (+ 1 (let b (* 2 3) (+ b 4))) a)
+
+; --- Boolean literals ---
+(if true 1 0)
+(if false 1 0)
+(not true)
+(not false)
+(and true false)
+(or false true)
+
+; --- Zero and negative-like (via sub) ---
+(- 5 5)
+
+; --- Function with no args ---
+(defn hello () (print "hello world"))
+
+; --- Single arm cond (should work) ---
+(cond (true "only arm"))
+
+; --- Empty begin ---
+(begin)
