@@ -1253,9 +1253,9 @@ impl CodeGen {
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false)
                 {
-                    // Numeric SSA reference — already in eax.
+                    // Numeric SSA reference — already in eax/rax.
                     self.asm_push_align();
-                    self.asm.push(format!("    mov eax, {}", X86_REGISTERS[0]));
+                    self.asm.push(format!("    mov rax, {}", X86_REGISTERS[0]));
                 } else {
                     let hash = simple_hash(name);
                     let offset = ((hash % 32) + 1) * 8;
