@@ -1129,6 +1129,131 @@ impl PostProcessor {
                 expr.inner = ExprInner::Match(e, arms);
             }
 
+            // make-StructName → MakeStruct (Call form from no-dispatch parsing).
+            ExprInner::Call(first, ref args)
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if n.starts_with("make-"))
+                    && !args.is_empty() =>
+            {
+                let struct_name = match &first.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n[5..].to_string(),
+                    _ => return expr,
+                };
+                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                expr.inner = ExprInner::MakeStruct(struct_name, new_args);
+            }
+
+            // make-StructName → MakeStruct (Apply form).
+            ExprInner::Apply(name, args) if name.starts_with("make-") && !args.is_empty() => {
+                let struct_name = name[5..].to_string();
+                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                expr.inner = ExprInner::MakeStruct(struct_name, new_args);
+            }
+
+            // struct-get → StructGet (Call form).
+            ExprInner::Call(first, ref args)
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if n == "struct-get")
+                    && args.len() >= 2 =>
+            {
+                let struct_expr = Box::new(self.post_process_expr(args[0].clone()));
+                let field = match &args[1].inner {
+                    ExprInner::Atom(Atom::Ident(f)) | ExprInner::Atom(Atom::Str(f)) => f.clone(),
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::StructGet(struct_expr, field);
+            }
+
+            // struct-get → StructGet (Apply form).
+            ExprInner::Apply(name, args) if name == "struct-get" && args.len() >= 2 => {
+                let struct_expr = Box::new(self.post_process_expr(args[0].clone()));
+                let field = match &args[1].inner {
+                    ExprInner::Atom(Atom::Ident(f)) | ExprInner::Atom(Atom::Str(f)) => f.clone(),
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::StructGet(struct_expr, field);
+            }
+
+            // defstruct → StructDef (Call form from no-dispatch parsing).
+            ExprInner::Call(first, ref args)
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if n == "defstruct")
+                    && args.len() >= 2 =>
+            {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(nm)) => nm.clone(),
+                    _ => return expr,
+                };
+                let fields: Vec<(String, Option<String>)> = args[1..]
+                    .iter()
+                    .map(|f| {
+                        let fname = match &f.inner {
+                            ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
+                            _ => "___".to_string(),
+                        };
+                        (fname, None)
+                    })
+                    .collect();
+                expr.inner = ExprInner::StructDef(StructDef { name, fields });
+            }
+
+            // defstruct+ → StructDefPlus (Call form).
+            ExprInner::Call(first, ref args)
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if n == "defstruct+")
+                    && args.len() >= 2 =>
+            {
+                let name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(nm)) => nm.clone(),
+                    _ => return expr,
+                };
+                let fields: Vec<(String, Option<String>)> = args[1..]
+                    .iter()
+                    .map(|f| {
+                        let fname = match &f.inner {
+                            ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
+                            _ => "___".to_string(),
+                        };
+                        (fname, None)
+                    })
+                    .collect();
+                expr.inner = ExprInner::StructDefPlus(StructDef { name, fields });
+            }
+
+            // defstruct → StructDef (Apply form).
+            ExprInner::Apply(name, args) if name == "defstruct" && args.len() >= 2 => {
+                let sname = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(nm)) => nm.clone(),
+                    _ => return expr,
+                };
+                let fields: Vec<(String, Option<String>)> = args[1..]
+                    .iter()
+                    .map(|f| {
+                        let fname = match &f.inner {
+                            ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
+                            _ => "___".to_string(),
+                        };
+                        (fname, None)
+                    })
+                    .collect();
+                expr.inner = ExprInner::StructDef(StructDef { name: sname, fields });
+            }
+
+            // defstruct+ → StructDefPlus (Apply form).
+            ExprInner::Apply(name, args) if name == "defstruct+" && args.len() >= 2 => {
+                let sname = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(nm)) => nm.clone(),
+                    _ => return expr,
+                };
+                let fields: Vec<(String, Option<String>)> = args[1..]
+                    .iter()
+                    .map(|f| {
+                        let fname = match &f.inner {
+                            ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
+                            _ => "___".to_string(),
+                        };
+                        (fname, None)
+                    })
+                    .collect();
+                expr.inner = ExprInner::StructDefPlus(StructDef { name: sname, fields });
+            }
+
             // Recursively process children of Call/Apply nodes.
             ExprInner::Call(op, args) => {
                 let new_op = Box::new(self.post_process_expr(*op.clone()));

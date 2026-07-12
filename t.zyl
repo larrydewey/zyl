@@ -1,0 +1,1 @@
+(defstruct Point x y)(print (struct-get (make-Point 3 4) "x"))(print (struct-get (make-Point 3 4) "y"))

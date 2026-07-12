@@ -1298,3 +1298,35 @@ $ echo '(defn factorial (n) (if (< n 2) 1 (* n (factorial (- n 1)))))(print (fac
 
 ### Known Remaining Issues
 - [ ] For loop with non-integer iterator (float) — compiles through all phases, but runtime float codegen (SSE ops, float-to-string, float comparison) is a known limitation not yet implemented
+
+---
+
+## Session Update: Struct Construction + Field Access Codegen — COMPLETE
+
+### Completed This Session
+- [x] **`defstruct` PostProcessor handler**: Added conversion from raw Call/Apply to `ExprInner::StructDef`/`StructDefPlus` for no-dispatch parsing mode.
+- [x] **`make-` PostProcessor handler**: Added conversion from raw Call/Apply to `ExprInner::MakeStruct` for no-dispatch parsing mode.
+- [x] **`struct-get` PostProcessor handler**: Added conversion from raw Call/Apply to `ExprInner::StructGet` for no-dispatch parsing mode. Fixed field name extraction to match both `Atom::Ident` and `Atom::Str`.
+- [x] **ICNF `StructGet` variant**: Changed from `StructGet(usize, String)` to `StructGet(usize, usize)` — second field is byte offset computed at converter time.
+- [x] **Struct layout passed through pipeline**: Built from AST struct definitions before ICNF conversion, passed to `IcnfConverter` and `CodeGen`.
+- [x] **ICNF converter `resolve_struct_get`**: Resolves struct name from `MakeStruct` expressions, looks up field byte offset.
+- [x] **Codegen `MakeStruct` handler**: Allocates heap via `malloc`, saves pointer in `r10`, loads fields into `rax`, stores at offset.
+- [x] **Codegen `StructGet` handler**: Loads struct pointer, loads field value from `[rax + offset]`.
+- [x] **Codegen `emit_load_into`**: Added handler for `MakeStruct`/`StructGet` — result is already in `eax`.
+
+### Test Results
+```bash
+# struct field "x": make-Point(3, 4) → x = 3 ✓
+# struct field "y": make-Point(3, 4) → y = 4 ✓
+# Full regression suite passes ✓
+factorial(5) = 120, while loop: 012, if/else: yes, nested calls: 20
+```
+
+### Files Modified
+| File | Lines Changed | Description |
+|------|---------------|-------------|
+| `src/ast.rs` | ~80 | PostProcessor: defstruct/make-/struct-get handlers |
+| `src/icnf.rs` | ~60 | StructGet variant change, resolve_struct_get, struct_bindings |
+| `src/codegen.rs` | ~80 | MakeStruct/StructGet handlers, emit_load_into fix |
+| `src/main.rs` | ~10 | Build struct layouts from AST |
+

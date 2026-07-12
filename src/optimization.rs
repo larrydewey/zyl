@@ -408,6 +408,7 @@ impl Optimizer {
                 used_ids.insert(*scrutinee_ssa);
             }
             ICNFInner::StructGet(val_id, _) => {
+                // First field is the struct value ID, second is the byte offset.
                 used_ids.insert(*val_id);
             }
             ICNFInner::ErrValue(v) => {

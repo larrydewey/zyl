@@ -7,6 +7,10 @@ use std::collections::{HashMap, HashSet};
 /// Generates Linux x86_64 System V ABI assembly from optimized ICNF.
 /// Uses a linear-scan register allocator over SSA values within each function body.
 
+/// Struct field layout: struct name → [(field_name, byte_offset)].
+/// All fields are 8 bytes (64-bit aligned) in the MVP.
+pub type StructLayout = HashMap<String, Vec<(String, usize)>>;
+
 pub struct CodeGen {
     /// Collected assembly output lines.
     pub asm: Vec<String>,
@@ -14,6 +18,8 @@ pub struct CodeGen {
     label_counter: usize,
     /// IDs of nodes already emitted as standalone statements.
     standalone_emitted: std::collections::HashSet<usize>,
+    /// Struct field layouts for offset computation.
+    struct_layouts: StructLayout,
 }
 
 impl CodeGen {
@@ -22,7 +28,26 @@ impl CodeGen {
             asm: Vec::new(),
             label_counter: 0,
             standalone_emitted: std::collections::HashSet::new(),
+            struct_layouts: StructLayout::new(),
         }
+    }
+
+    /// Set struct field layouts for codegen (built from AST struct definitions).
+    pub fn with_struct_layouts(mut self, layouts: StructLayout) -> Self {
+        self.struct_layouts = layouts;
+        self
+    }
+
+    /// Look up the byte offset of a field within a struct.
+    fn struct_field_offset(&self, struct_name: &str, field_name: &str) -> Option<usize> {
+        self.struct_layouts
+            .get(struct_name)
+            .and_then(|fields| {
+                fields
+                    .iter()
+                    .position(|(name, _)| name == field_name)
+                    .map(|pos| pos * 8) // 8 bytes per field (64-bit)
+            })
     }
 
     /// Generate assembly from an optimized ICNF program.
@@ -45,7 +70,7 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(".hexbuf:".to_string());
         self.asm_push_align();
-        self.asm.push("    .space 33".to_string());
+        self.asm.push("    .space 35".to_string());
 
         // Emit text (code) section.
         self.asm_push_align();
@@ -598,7 +623,7 @@ impl CodeGen {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                        .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
                 } else if name.starts_with("___")
                     || name
                         .chars()
@@ -617,7 +642,7 @@ impl CodeGen {
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                        .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
                 }
             }
             Some(ICNFNode {
@@ -705,6 +730,20 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm
                         .push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                }
+            }
+            Some(ICNFNode {
+                node: ICNFInner::MakeStruct(..),
+                ..
+            }) | Some(ICNFNode {
+                node: ICNFInner::StructGet(..),
+                ..
+            }) => {
+                // These nodes compute their result in eax. Just copy eax to target.
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 }
             }
             Some(_) => {
@@ -1092,57 +1131,56 @@ impl CodeGen {
 
         // Handle negative numbers.
         let neg_label = format!(".___neg_{}", self.label_counter);
-        self.label_counter += 1;
+        let skip_pos = format!(".___skip_pos_{}", self.label_counter + 1);
+        self.label_counter += 2;
 
         self.asm_push_align();
         self.asm.push(format!("    test {}, {}", tmp, tmp));
         self.asm_push_align();
         self.asm.push(format!("    jns {}", neg_label));
 
-        // Negative: negate value and write '-' into buffer.
+        // Negative path: write '-' and prepare for digit loop.
+        // This is reached when JNS is NOT taken (negative number).
         let minus_str = ".str_minus";
         // str_minus is now always pre-defined in .rodata section.
 
-        // Load '-' character into AL and store at buffer end.
-        let out_ptr = "rdi";
         self.asm_push_align();
         self.asm
             .push(format!("    mov al, byte ptr [{}]", minus_str)); // load '-' char (0x2D) into AL
         self.asm_push_align();
         self.asm
-            .push(format!("    lea {}, [{}] ", out_ptr, buf_label)); // RDI = buffer start
+            .push(format!("    lea rdi, [{}] ", buf_label)); // RDI = buffer start
         self.asm_push_align();
-        self.asm.push("    add rdi, 31".to_string()); // point to end of buffer
+        self.asm.push("    add rdi, 32".to_string()); // point to hexbuf[32] for minus sign
         self.asm_push_align();
-        self.asm.push("    mov [rdi], al".to_string()); // write '-' at hexbuf[31]
-
+        self.asm.push("    mov [rdi], al".to_string()); // write '-' at hexbuf[32]
         self.asm_push_align();
         self.asm.push(format!("    neg {}", tmp)); // make value positive
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string()); // move pointer back one position (past '-')
-
-        // Common setup: RDI points to where we'll write the next digit.
-        // For negative numbers, it's hexbuf[30]; for positive, hexbuf[31].
-        let pos_label = format!(".___pos_{}", self.label_counter);
-        self.label_counter += 1;
-
+        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31]
         self.asm_push_align();
-        self.asm.push(format!("{}:", neg_label));
+        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate at hexbuf[31]
         self.asm_push_align();
-        self.asm.push(format!("    jmp {}", pos_label));
+        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[30] for digit loop
+        self.asm_push_align();
+        self.asm.push(format!("    jmp {}", skip_pos));
 
         // Positive path: set up RDI to point to end of buffer.
         self.asm_push_align();
-        self.asm.push(format!("{}:", pos_label));
+        self.asm.push(format!("{}:", neg_label));
         self.asm_push_align();
         self.asm
-            .push(format!("    lea {}, [{}] ", out_ptr, buf_label)); // RDI = hexbuf start (for positive numbers)
+            .push(format!("    lea rdi, [{}] ", buf_label)); // RDI = hexbuf start
         self.asm_push_align();
-        self.asm.push("    add rdi, 31".to_string()); // point to end of buffer
+        self.asm.push("    add rdi, 32".to_string()); // point to hexbuf[32]
+        self.asm_push_align();
+        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate at hexbuf[32]
+        self.asm_push_align();
+        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31] for digit loop
 
-        // Clear old digits: zero out hexbuf[31] to prevent leftover characters from previous iterations.
+        // Skip for negative path (already positioned at hexbuf[30]).
         self.asm_push_align();
-        self.asm.push("    mov byte ptr [rdi], 0".to_string());
+        self.asm.push(format!("{}:", skip_pos));
 
         // Handle zero: if value is 0, write "0" and skip divloop.
         let div_loop = format!(".___divloop_{}", self.label_counter);
@@ -1201,13 +1239,13 @@ impl CodeGen {
         self.asm.push(format!("    jmp {}", div_loop));
 
         // Done: result pointer in rdi (points to first character of converted string).
-        // Null-terminate the string at hexbuf[32] (buffer is 33 bytes).
+        // Null-terminate the string at hexbuf[33] (buffer is 35 bytes).
         self.asm_push_align();
         self.asm.push(format!("{}:", div_done));
         self.asm_push_align();
         self.asm.push("    mov rdx, rdi".to_string()); // save string start in rdx
         self.asm_push_align();
-        self.asm.push("    lea rdx, [.hexbuf + 32]".to_string()); // point to end of buffer
+        self.asm.push("    lea rdx, [.hexbuf + 33]".to_string()); // point to end of buffer
         self.asm_push_align();
         self.asm.push("    mov byte ptr [rdx], 0".to_string()); // null-terminate
     }
@@ -1281,11 +1319,11 @@ impl CodeGen {
                 }
             }
 
-             ICNFInner::BinOp(op, left_id, right_id) => {
-                // Use distinct registers for each operand.
-                let dest_reg = "rax"; // result goes here
-                let src1_reg = "rcx"; // left operand
-                let src2_reg = "rdx"; // right operand
+              ICNFInner::BinOp(op, left_id, right_id) => {
+                 // Use distinct registers for each operand.
+                 let dest_reg = "eax"; // result goes here
+                 let src1_reg = "ecx"; // left operand
+                 let src2_reg = "edx"; // right operand
 
                 // Load operands into specific registers via ID-based lookup.
                 // Note: emit_load_into handles already-emitted nodes correctly.
@@ -1396,7 +1434,7 @@ impl CodeGen {
             }
 
             ICNFInner::UnOp(op, arg_id) => {
-                let reg = self.alloc_reg();
+                let reg = self.alloc_reg_32();
                 // Load operand using ID-based lookup.
                 match stmts.iter().find(|n| n.id == *arg_id) {
                     Some(ICNFNode {
@@ -2101,6 +2139,92 @@ impl CodeGen {
                         &std::collections::HashMap::new(),
                     );
                 }
+            }
+
+            ICNFInner::MakeStruct(name, field_ids) => {
+                // Allocate heap memory for the struct: call malloc(n * 8), then store each field.
+                let _ = name;
+                let field_count = field_ids.len();
+                let total_size = field_count * 8;
+
+                // Allocate and save the pointer in r10 (callee-saved, survives function calls).
+                self.asm_push_align();
+                self.asm.push(format!("    mov edi, {}", total_size));
+                self.asm_push_align();
+                self.asm.push("    call malloc@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r10, rax".to_string()); // Save struct base pointer in r10.
+
+                // Load field values into rax, store at offset from r10.
+                for (i, &field_id) in field_ids.iter().enumerate() {
+                    let offset = i * 8;
+                    match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
+                        Some(ICNFNode {
+                            node: ICNFInner::Const(atom),
+                            ..
+                        }) => {
+                            match atom {
+                                Atom::Int(v) => {
+                                    self.asm_push_align();
+                                    self.asm.push(format!("    mov rax, {}", v));
+                                }
+                                Atom::Bool(v) => {
+                                    let val = if *v { 1 } else { 0 };
+                                    self.asm_push_align();
+                                    self.asm.push(format!("    mov rax, {}", val));
+                                }
+                                _ => {
+                                    self.emit_const_into("rax", atom);
+                                }
+                            }
+                        }
+                        Some(ICNFNode {
+                            node: ICNFInner::Load(lvar),
+                            ..
+                        }) => {
+                            if let Some(&slot_idx) = local_vars.get(lvar) {
+                                let slot = (slot_idx + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            } else {
+                                let hash = simple_hash(lvar);
+                                let slot = ((hash % 32) + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            }
+                        }
+                        Some(n) => {
+                            self.emit_load_into(field_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids);
+                            self.asm_push_align();
+                            self.asm.push("    mov rax, rax".to_string());
+                        }
+                        None => {}
+                    }
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov [r10 + {}], rax", offset));
+                }
+
+                // Restore struct pointer to eax as the result.
+                self.asm_push_align();
+                self.asm.push("    mov rax, r10".to_string());
+                emitted_ids.insert(node.id);
+            }
+
+            ICNFInner::StructGet(struct_id, field_offset) => {
+                // Load struct pointer into rax, then load field value from rax + offset.
+                // Result in eax.
+                self.emit_load_into(
+                    *struct_id,
+                    "rax",
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    operand_ids,
+                );
+                self.asm_push_align();
+                self.asm.push(format!("    mov eax, [rax + {}]", field_offset));
+                emitted_ids.insert(node.id);
             }
 
             _ => {

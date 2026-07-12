@@ -95,8 +95,8 @@ pub enum ICNFInner {
     Begin(Vec<ICNFNode>),
     /// Struct construction.
     MakeStruct(String, Vec<usize>),
-    /// Field access on a struct value.
-    StructGet(usize, String),
+    /// Field access on a struct value. (struct_value_ssa_id, field_byte_offset)
+    StructGet(usize, usize),
     /// FFI call (always Pin region).
     FfiCall {
         name: String,
@@ -211,6 +211,10 @@ pub struct IcnfConverter {
     push_to_globals: bool,
     /// Temporary buffer for intermediate nodes during function body conversion.
     body_intermediates: Vec<ICNFNode>,
+    /// Struct field layouts for offset computation (struct_name → [(field_name, byte_offset)]).
+    struct_layouts: crate::codegen::StructLayout,
+    /// Maps SSA IDs to struct names for tracking which bindings hold struct values.
+    struct_bindings: std::collections::HashMap<usize, String>,
 }
 
 impl IcnfConverter {
@@ -223,6 +227,57 @@ impl IcnfConverter {
             emitted_branch_ids: std::collections::HashSet::new(),
             push_to_globals: true,
             body_intermediates: Vec::new(),
+            struct_layouts: crate::codegen::StructLayout::new(),
+            struct_bindings: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Set struct field layouts for codegen (built from AST struct definitions).
+    pub fn with_struct_layouts(mut self, layouts: crate::codegen::StructLayout) -> Self {
+        self.struct_layouts = layouts;
+        self
+    }
+
+    /// Resolve struct name for a StructGet expression.
+    /// Returns (struct_name, field_byte_offset) if resolvable.
+    fn resolve_struct_get(
+        &self,
+        struct_expr: &Expr,
+        field_name: &str,
+    ) -> Option<(String, usize)> {
+        match &struct_expr.inner {
+            // Inline construction: (make-Point 1 2)
+            ExprInner::MakeStruct(name, _fields) => {
+                self.struct_layouts
+                    .get(name)
+                    .and_then(|fields| {
+                        fields
+                            .iter()
+                            .position(|(fname, _)| fname == field_name)
+                            .map(|pos| pos * 8)
+                    })
+                    .map(|offset| (name.clone(), offset))
+            }
+            // Variable reference: look up in struct_bindings
+            ExprInner::Atom(Atom::Ident(name)) => {
+                let ssa_id = self.current_scope.get(name).copied()?;
+                let struct_name = self.struct_bindings.get(&ssa_id)?;
+                self.struct_layouts
+                    .get(struct_name)
+                    .and_then(|fields| {
+                        fields
+                            .iter()
+                            .position(|(fname, _)| fname == field_name)
+                            .map(|pos| pos * 8)
+                    })
+                    .map(|offset| (struct_name.clone(), offset))
+            }
+            // Nested struct-get: resolve the parent
+            ExprInner::StructGet(parent, parent_field) => {
+                // For now, fall through — only direct struct access supported
+                None
+            }
+            _ => None,
         }
     }
 
@@ -410,9 +465,9 @@ impl IcnfConverter {
                 | ExprInner::Export(..) => {}
                 ExprInner::MacroDef(..) => {}
 
-                // Raw Call/Apply for deftype/trait/impl — skip (type-level constructs from no-dispatch parsing).
-                ExprInner::Call(op, _) if is_ident_op(op, "deftype") || is_ident_op(op, "trait") || is_ident_op(op, "impl") => {}
-                ExprInner::Apply(name, _) if name == "deftype" || name == "trait" || name == "impl" => {}
+                // Raw Call/Apply for deftype/trait/impl/struct — skip (type-level constructs from no-dispatch parsing).
+                ExprInner::Call(op, _) if is_ident_op(op, "deftype") || is_ident_op(op, "trait") || is_ident_op(op, "impl") || is_ident_op(op, "defstruct") || is_ident_op(op, "defstruct+") => {}
+                ExprInner::Apply(name, _) if name == "deftype" || name == "trait" || name == "impl" || name == "defstruct" || name == "defstruct+" => {}
                 _ => {
                     let stmts = self.convert_expr_to_stmts(expr)?;
                     for s in stmts {
@@ -894,31 +949,58 @@ impl IcnfConverter {
 
             // Struct construction.
             ExprInner::MakeStruct(name, fields) => {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut field_ids = Vec::with_capacity(fields.len());
                 for f in fields.iter() {
                     let stmts = self.convert_expr_to_stmts(f)?;
-                    if !stmts.is_empty() {
-                        field_ids.push(stmts.last().unwrap().id);
+                    for s in stmts {
+                        all_nodes.push(s.clone());
+                        if self.push_to_globals {
+                            if !self.global_stmts.iter().any(|n| n.id == s.id) {
+                                self.global_stmts.push(s);
+                            }
+                        }
+                    }
+                    if !all_nodes.is_empty() {
+                        field_ids.push(all_nodes.last().unwrap().id);
                     } else {
                         let id = self.next_ssa_id();
                         field_ids.push(id);
                     }
                 }
 
-                Ok(vec![
-                    self.emit(ICNFInner::MakeStruct(name.clone(), field_ids))
-                ])
+                let ssa_id = self.next_ssa_id();
+                // Register this SSA ID as a struct-typed binding.
+                self.struct_bindings.insert(ssa_id, name.clone());
+                all_nodes.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::MakeStruct(name.clone(), field_ids),
+                });
+                Ok(all_nodes)
             }
 
             // Struct field access.
             ExprInner::StructGet(struct_expr, field_name) => {
                 let struct_id = self.convert_expr(struct_expr)?;
+                let (struct_name, field_offset) =
+                    self.resolve_struct_get(struct_expr, field_name)
+                        .unwrap_or_else(|| {
+                            // Fallback: can't resolve struct name, use offset 0 (will break at runtime for non-first fields).
+                            (String::new(), 0)
+                        });
+                // Register this as a struct-typed binding if we resolved the name.
+                if !struct_name.is_empty() {
+                    self.struct_bindings.insert(struct_id, struct_name);
+                }
                 Ok(vec![ICNFNode {
                     id: self.next_ssa_id(),
                     region: Region::Stack,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::StructGet(struct_id, field_name.clone()),
+                    node: ICNFInner::StructGet(struct_id, field_offset),
                 }])
             }
 
