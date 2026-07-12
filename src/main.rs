@@ -124,11 +124,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 7: ICNF Generation (SSA IR with region annotations).
     // Uses the monomorphized AST which has full structure intact.
     println!("[Phase 7] ICNF generation ...");
-    let mut icnf_converter = icnf::IcnfConverter::new();
+    // Build struct layouts from the AST (struct definitions are in the AST).
+    // All fields are 8 bytes (64-bit aligned) in the MVP.
+    let mut struct_layouts: codegen::StructLayout = std::collections::HashMap::new();
+    for expr in &regioned_for_mono {
+        if let ast::ExprInner::StructDef(sd) | ast::ExprInner::StructDefPlus(sd) = &expr.inner {
+            let layout: Vec<(String, usize)> = sd.fields.iter().enumerate().map(|(i, (fname, _typ))| {
+                (fname.clone(), i * 8)
+            }).collect();
+            struct_layouts.insert(sd.name.clone(), layout);
+        }
+    }
+    let mut icnf_converter = icnf::IcnfConverter::new().with_struct_layouts(struct_layouts.clone());
     let icnf_program = match icnf_converter.convert(&regioned_for_mono) {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
     };
+    // Also pass struct layouts to codegen for potential future use.
+    let struct_layouts_for_codegen = struct_layouts.clone();
     println!(
         "  ICNF generation complete: {} functions, {} statements.",
         icnf_program.functions.len(),
@@ -149,7 +162,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Phase 9: Code Generation → x86_64 assembly.
     println!("[Phase 9] Generating x86_64 assembly ...");
-    let mut codegen = codegen::CodeGen::new();
+    let mut codegen = codegen::CodeGen::new().with_struct_layouts(struct_layouts_for_codegen);
     codegen.generate(&optimized_icnf);
 
     // Write assembly to a temporary file, then assemble and link.

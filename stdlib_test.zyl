@@ -116,3 +116,18 @@
 
 ; --- Empty begin ---
 (begin)
+
+; --- While loop that runs ---
+(let-mut counter 0 (while (< counter 2) (set! counter (+ counter 1)) counter))
+
+; --- For loop with print ---
+(for i 0 (< i 2) 1 (set! i (+ i 1)) (print "for-loop-works"))
+
+; --- Nested function calls ---
+(defn square (x) (* x x))
+(print "nested:")
+(print (square (add 1 2)))
+
+; --- Recursive factorial with print ---
+(print "factorial:")
+(print (factorial 6))
