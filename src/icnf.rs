@@ -535,17 +535,19 @@ impl IcnfConverter {
                 // The operand is the variable name (for local_vars lookup in codegen).
                 if let Some(&ssa_id) = self.current_scope.get(name) {
                     let load_id = self.next_ssa_id();
-                    if self.push_to_globals {
-                        // Check if already in global_stmts to avoid duplicates.
-                        if self.global_stmts.iter().all(|n| n.id != load_id) {
-                            self.global_stmts.push(ICNFNode {
-                                id: load_id,
-                                region: Region::Stack,
-                                typ: None,
-                                is_branch_body: false,
-                                node: ICNFInner::Load(name.clone()),
-                            });
-                        }
+                    // Always add Load to global_stmts so codegen can find it.
+                    // The Ident handler always pushes to self.global_stmts regardless
+                    // of push_to_globals. During body conversion (push_to_globals=false),
+                    // self.global_stmts is a temp buffer; the Let handler collects these
+                    // Load nodes from self.global_stmts after the swap.
+                    if self.global_stmts.iter().all(|n| n.id != load_id) {
+                        self.global_stmts.push(ICNFNode {
+                            id: load_id,
+                            region: Region::Stack,
+                            typ: None,
+                            is_branch_body: false,
+                            node: ICNFInner::Load(name.clone()),
+                        });
                     }
                     Ok(vec![ICNFNode {
                         id: load_id,
@@ -716,16 +718,31 @@ impl IcnfConverter {
                     is_branch_body: false,
                     node: ICNFInner::Assign(name.clone(), val_id),
                 };
+                // Propagate struct type from value to binding: if val_id is a struct,
+                // register the binding's SSA ID so resolve_struct_get can find it.
+                if let Some(struct_name) = self.struct_bindings.get(&val_id).cloned() {
+                    self.struct_bindings.insert(ssa_id, struct_name);
+                }
                 // 3. Update scope BEFORE converting body (so body can find the binding).
                 self.current_scope.insert(name.clone(), ssa_id);
                 // 4. Convert body (collecting intermediates, NOT pushing).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
                 // 5. Restore globals and push all in correct order (with dedup).
+                // The Ident handler always pushes Load nodes to self.global_stmts.
+                // During body conversion, self.global_stmts was a temp buffer (replaced
+                // by the Let handler's mem::replace). After swap: self.global_stmts
+                // = old_globals, saved_globals = temp buffer (with Load nodes).
                 std::mem::swap(&mut self.global_stmts, &mut saved_globals);
+                // Collect Load nodes from saved_globals (the temp buffer).
+                let load_stmts: Vec<ICNFNode> = saved_globals
+                    .into_iter()
+                    .filter(|n| matches!(n.node, ICNFInner::Load(_)))
+                    .collect();
                 let mut all_stmts = val_stmts;
                 all_stmts.push(assign_node);
                 all_stmts.extend(body_stmts);
+                all_stmts.extend(load_stmts);
                 for stmt in &all_stmts {
                     if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
                         self.global_stmts.push(stmt.clone());

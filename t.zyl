@@ -1,1 +1,2 @@
-(defstruct Point x y)(print (struct-get (make-Point 3 4) "x"))(print (struct-get (make-Point 3 4) "y"))
+(defstruct Point x y)
+(let p (make-Point 10 20) (begin (print (struct-get p "x")) (print (struct-get p "y"))))
