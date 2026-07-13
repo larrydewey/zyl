@@ -733,13 +733,82 @@ impl CodeGen {
                 }
             }
             Some(ICNFNode {
+                node: ICNFInner::MakeStruct(name, field_ids),
+                ..
+            }) if !emitted_ids.contains(&src_ssa_id) => {
+                // Not yet emitted — emit MakeStruct inline.
+                let total_size = field_ids.len() * 8;
+                self.asm_push_align();
+                self.asm.push(format!("    mov edi, {}", total_size));
+                self.asm_push_align();
+                self.asm.push("    call malloc@plt".to_string());
+                self.asm_push_align();
+                self.asm_push_align();
+                self.asm.push("    mov r10, rax".to_string());
+                for (i, &fid) in field_ids.iter().enumerate() {
+                    let off = i * 8;
+                    match lookup.get(&fid).copied().or_else(|| stmts.iter().find(|n| n.id == fid)) {
+                        Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
+                            match atom {
+                                Atom::Int(v) => {
+                                    self.asm_push_align();
+                                    self.asm.push(format!("    mov rax, {}", v));
+                                }
+                                Atom::Bool(v) => {
+                                    let val = if *v { 1 } else { 0 };
+                                    self.asm_push_align();
+                                    self.asm.push(format!("    mov rax, {}", val));
+                                }
+                                _ => self.emit_const_into("rax", atom),
+                            }
+                        }
+                        Some(ICNFNode { node: ICNFInner::Load(lvar), .. }) => {
+                            if let Some(&si) = local_vars.get(lvar) {
+                                let slot = (si + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            }
+                        }
+                        Some(n) => {
+                            self.emit_load_into(fid, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids);
+                            self.asm_push_align();
+                            self.asm.push("    mov rax, rax".to_string());
+                        }
+                        None => {}
+                    }
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov [r10 + {}], rax", off));
+                }
+                self.asm_push_align();
+                self.asm.push("    mov rax, r10".to_string());
+                emitted_ids.insert(src_ssa_id);
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                }
+            }
+            Some(ICNFNode {
+                node: ICNFInner::StructGet(struct_id, field_offset),
+                ..
+            }) if !emitted_ids.contains(&src_ssa_id) => {
+                // Not yet emitted — emit StructGet inline.
+                self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids);
+                self.asm_push_align();
+                self.asm.push(format!("    mov eax, [rax + {}]", field_offset));
+                emitted_ids.insert(src_ssa_id);
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                }
+            }
+            Some(ICNFNode {
                 node: ICNFInner::MakeStruct(..),
                 ..
             }) | Some(ICNFNode {
                 node: ICNFInner::StructGet(..),
                 ..
             }) => {
-                // These nodes compute their result in eax. Just copy eax to target.
+                // Already emitted — result is in eax. Just copy to target.
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
@@ -1195,9 +1264,17 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("    jne {}", div_loop));
 
-        // Zero case: write '0' at current RDI position.
+        // Zero case: write "0" at current RDI position, null-terminate after it.
         self.asm_push_align();
         self.asm.push("    mov byte ptr [rdi], 48".to_string()); // '0' = ASCII 48
+        self.asm_push_align();
+        self.asm.push("    mov rdx, rdi".to_string()); // save string start
+        self.asm_push_align();
+        self.asm.push("    inc rdi".to_string()); // point after '0'
+        self.asm_push_align();
+        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate
+        self.asm_push_align();
+        self.asm.push("    mov rdi, rdx".to_string()); // restore string start
         self.asm_push_align();
         self.asm.push(format!("    jmp {}", div_done));
 
@@ -1238,16 +1315,13 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("    jmp {}", div_loop));
 
-        // Done: result pointer in rdi (points to first character of converted string).
-        // Null-terminate the string at hexbuf[33] (buffer is 35 bytes).
-        self.asm_push_align();
-        self.asm.push(format!("{}:", div_done));
-        self.asm_push_align();
-        self.asm.push("    mov rdx, rdi".to_string()); // save string start in rdx
-        self.asm_push_align();
-        self.asm.push("    lea rdx, [.hexbuf + 33]".to_string()); // point to end of buffer
-        self.asm_push_align();
-        self.asm.push("    mov byte ptr [rdx], 0".to_string()); // null-terminate
+         // Done: result pointer in rdi (points to first character of converted string).
+         // The buffer was pre-initialized with a null at the end, so the string
+         // is already properly null-terminated. Just save rdi in rdx for printf.
+         self.asm_push_align();
+         self.asm.push(format!("{}:", div_done));
+         self.asm_push_align();
+         self.asm.push("    mov rdx, rdi".to_string()); // save string start in rdx for printf
     }
 
     // ─── Node Emission ──────────────────────────────────────────────
