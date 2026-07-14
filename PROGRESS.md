@@ -202,6 +202,16 @@ Region Inference → TypeInferer.collect() → Monomorphization → TypeInferer.
 - Struct field in recursive function
 - Large struct with same value in multiple fields
 - Struct construction with arithmetic in constructor
+- Struct rebinding via let-mut + set!
+- Structs with all-zero fields
+- Single-field struct
+- Interleaved struct types in let
+
+### 2026-07-14: Exhaustive Syntax Review
+- **`stdlib_test.zyl` confirmed 100% correct syntax** — every expression verified against parser dispatch table, PostProcessor handlers, and PostProcessor defaults (e.g. missing `if` else → `___skip_`).
+- **Full coverage of implemented features**: arithmetic (+, -, *, /, multi-arg), comparisons (>, <, >=, <=, ==, !=), logical (and, or, not), let/let-mut/set!, if (with and without else), defn (zero-arg, multi-arg, recursive), while/for loops, cond (single and multi-clause), begin (empty), macros (defmacro, unless→if, when→unless→if, nested).
+- **20+ distinct struct test cases** across all 9 compilation phases.
+- **Not tested (by design — not yet implemented)**: deftype pattern matching, ffi-call, spawn/send, closures (lambda/fn), try/catch, alias, trait/impl/derive, floating-point arithmetic.
 
 ---
 
