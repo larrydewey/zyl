@@ -1318,6 +1318,8 @@ impl CodeGen {
         self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate at hexbuf[32]
         self.asm_push_align();
         self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31] for digit loop
+        self.asm_push_align();
+        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // clear hexbuf[31] to prevent old digits persisting
 
         // Skip for negative path (already positioned at hexbuf[30]).
         self.asm_push_align();
