@@ -215,7 +215,13 @@ Region Inference → TypeInferer.collect() → Monomorphization → TypeInferer.
   3. LetMut ICNF ordering: Load nodes were added to `global_stmts` before the Assign that defines the variable, causing hash-based fallback offsets. Fixed by deferring global pushes (matching Let handler pattern) in `icnf.rs:778-815`.
   4. Main function stack allocation: Added `sub rsp, 256` for main function stack frame in `codegen.rs:97-99`.
   5. Function parameter slot index mismatch: params stored at `(i+2)*8` but loaded from `(i+1)*8`. Fixed in `codegen.rs:284` to use `(i+1)*8` for storage.
-- [ ] **For loop runtime**: For loop with print body works, but edge cases may have issues
+- [x] **For loop runtime**: Fixed — multiple bugs corrected:
+  1. Loop variable not assigned stack slot in first pass: Added slot assignment for For loop variables in main function's first pass (`codegen.rs:207-222`).
+  2. Init offset used raw slot index instead of byte offset: Fixed `mov [rbp-X], eax` to use `(slot + 1) * 8` formula.
+  3. Step result not stored back to loop variable: Added step result storage after step expression emission.
+  4. For body/step nodes emitted twice (once by For handler, once by main emit loop): Added `emitted_ids` pre-population in pre-scan to skip embedded nodes.
+  5. Condition/step Load nodes using hash-based fallback: Pass outer `local_vars` (containing loop variable slot) to condition emission.
+  6. Hexbuf stale digits: Added `mov byte ptr [rdi], 0` after `dec rdi` in positive path to clear hexbuf[31] between iterations.
 
 ### Medium Priority
 - [ ] **Floating-point support**: Float constants load but full IEEE-754 arithmetic not implemented
