@@ -238,6 +238,16 @@ impl IcnfConverter {
         self
     }
 
+    /// Resolve the SSA ID of a struct expression.
+    /// For Ident: returns scope binding. For MakeStruct: returns the expression's ID (caller sets). For StructGet: recursively resolves.
+    fn resolve_struct_get_id(&self, struct_expr: &Expr) -> Option<usize> {
+        match &struct_expr.inner {
+            ExprInner::Atom(Atom::Ident(name)) => self.current_scope.get(name).copied(),
+            ExprInner::StructGet(parent, _) => self.resolve_struct_get_id(parent),
+            _ => None,
+        }
+    }
+
     /// Resolve struct name for a StructGet expression.
     /// Returns (struct_name, field_byte_offset) if resolvable.
     fn resolve_struct_get(
@@ -272,10 +282,18 @@ impl IcnfConverter {
                     })
                     .map(|offset| (struct_name.clone(), offset))
             }
-            // Nested struct-get: resolve the parent
+            // Nested struct-get: look up parent struct type from struct_bindings.
             ExprInner::StructGet(parent, parent_field) => {
-                // For now, fall through — only direct struct access supported
-                None
+                let parent_id = self.resolve_struct_get_id(parent)?;
+                let struct_name = self.struct_bindings.get(&parent_id)?.clone();
+                self.struct_layouts
+                    .get(&struct_name)
+                    .and_then(|fields| {
+                        fields
+                            .iter()
+                            .position(|(fname, _)| fname == field_name)
+                            .map(|pos| (struct_name, pos * 8))
+                    })
             }
             _ => None,
         }
@@ -706,10 +724,13 @@ impl IcnfConverter {
                 let mut saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = false;
-                // 1. Convert value expression (collecting intermediates, NOT pushing).
+                // 1. Restore outer scope before converting value (value may reference
+                //    outer bindings — e.g., `make-Pair p p` needs `p` in scope).
+                self.current_scope = saved_scope.clone();
+                // 2. Convert value expression (collecting intermediates, NOT pushing).
                 let val_stmts = self.convert_expr_to_stmts(val)?;
                 let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
-                // 2. Create Assign node.
+                // 3. Create Assign node.
                 let ssa_id = self.next_ssa_id();
                 let assign_node = ICNFNode {
                     id: ssa_id,
@@ -723,9 +744,9 @@ impl IcnfConverter {
                 if let Some(struct_name) = self.struct_bindings.get(&val_id).cloned() {
                     self.struct_bindings.insert(ssa_id, struct_name);
                 }
-                // 3. Update scope BEFORE converting body (so body can find the binding).
+                // 4. Update scope BEFORE converting body (so body can find the binding).
                 self.current_scope.insert(name.clone(), ssa_id);
-                // 4. Convert body (collecting intermediates, NOT pushing).
+                // 5. Convert body (collecting intermediates, NOT pushing).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
                 // 5. Restore globals and push all in correct order (with dedup).
@@ -755,8 +776,18 @@ impl IcnfConverter {
 
             // Let-mut binding.
             ExprInner::LetMut(name, val, body) => {
+                // Defer all global pushes to ensure correct ordering:
+                // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                let val_id = self.convert_and_push(val)?;
+                let mut saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = false;
+                // Restore outer scope before converting value.
+                self.current_scope = saved_scope.clone();
+                // Convert value expression (collecting intermediates, NOT pushing to globals).
+                let val_stmts = self.convert_expr_to_stmts(val)?;
+                let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                // Create Assign node.
                 let ssa_id = self.next_ssa_id();
                 let assign_node = ICNFNode {
                     id: ssa_id,
@@ -765,12 +796,29 @@ impl IcnfConverter {
                     is_branch_body: false,
                     node: ICNFInner::Assign(name.clone(), val_id),
                 };
+                // Update scope BEFORE converting body.
                 self.current_scope.insert(name.clone(), ssa_id);
+                // Convert body (collecting intermediates, NOT pushing to globals).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
-                let mut result = vec![assign_node];
-                result.extend(body_stmts);
-                Ok(result)
+                // Restore globals and push all in correct order (with dedup).
+                std::mem::swap(&mut self.global_stmts, &mut saved_globals);
+                // Collect Load nodes from saved_globals (the temp buffer).
+                let load_stmts: Vec<ICNFNode> = saved_globals
+                    .into_iter()
+                    .filter(|n| matches!(n.node, ICNFInner::Load(_)))
+                    .collect();
+                let mut all_stmts = val_stmts;
+                all_stmts.push(assign_node);
+                all_stmts.extend(body_stmts);
+                all_stmts.extend(load_stmts);
+                for stmt in &all_stmts {
+                    if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
+                        self.global_stmts.push(stmt.clone());
+                    }
+                }
+                self.push_to_globals = saved_push;
+                Ok(all_stmts)
             }
 
             // While loop.
@@ -1001,24 +1049,39 @@ impl IcnfConverter {
 
             // Struct field access.
             ExprInner::StructGet(struct_expr, field_name) => {
-                let struct_id = self.convert_expr(struct_expr)?;
+                // Collect ALL nodes from the struct expression (including nested StructGet).
+                let mut stmts = self.convert_expr_collect(struct_expr)?;
+                let struct_id = stmts.last().map(|n| n.id).unwrap_or(0);
                 let (struct_name, field_offset) =
                     self.resolve_struct_get(struct_expr, field_name)
                         .unwrap_or_else(|| {
-                            // Fallback: can't resolve struct name, use offset 0 (will break at runtime for non-first fields).
-                            (String::new(), 0)
+                            // Fallback: can't resolve struct name — try to get it from
+                            // struct_bindings via the struct expression's SSA ID.
+                            if let Some(name) = self.struct_bindings.get(&struct_id).cloned() {
+                                self.struct_layouts
+                                    .get(&name)
+                                    .and_then(|fields| {
+                                        fields
+                                            .iter()
+                                            .position(|(fname, _)| fname == field_name)
+                                            .map(|pos| (name, pos * 8))
+                                    })
+                                    .unwrap_or_else(|| (String::new(), 0))
+                            } else {
+                                (String::new(), 0)
+                            }
                         });
-                // Register this as a struct-typed binding if we resolved the name.
                 if !struct_name.is_empty() {
                     self.struct_bindings.insert(struct_id, struct_name);
                 }
-                Ok(vec![ICNFNode {
+                stmts.push(ICNFNode {
                     id: self.next_ssa_id(),
                     region: Region::Stack,
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::StructGet(struct_id, field_offset),
-                }])
+                });
+                Ok(stmts)
             }
 
             // FFI call.
@@ -1132,6 +1195,8 @@ impl IcnfConverter {
             // With-resource binding.
             ExprInner::WithResource(name, init, body) => {
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Restore scope before converting init so outer bindings are visible.
+                self.current_scope = saved_scope.clone();
                 let init_id = self.convert_expr(init)?;
                 let ssa_id = self.next_ssa_id();
                 let acquire_node = ICNFNode {

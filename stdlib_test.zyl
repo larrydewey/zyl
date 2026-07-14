@@ -131,3 +131,186 @@
 ; --- Recursive factorial with print ---
 (print "factorial:")
 (print (factorial 6))
+
+; ============================================================
+; STRUCT DEFINITION, CONSTRUCTION, AND FIELD ACCESS (EXHAUSTIVE)
+; ============================================================
+
+; --- Basic struct definition ---
+(defstruct Point (x) (y))
+
+; --- Basic struct construction and field access ---
+(let p (make-Point 10 20)
+  (print (struct-get p "x"))
+  (print (struct-get p "y")))
+
+; --- Struct field access in arithmetic ---
+(let p (make-Point 5 7)
+  (print (+ (struct-get p "x") (struct-get p "y"))))
+
+; --- Multiple field access from same struct ---
+(let p (make-Point 100 200)
+  (let px (struct-get p "x")
+    (let py (struct-get p "y")
+      (print px)
+      (print py))))
+
+; --- Struct with 3 fields ---
+(defstruct Vec3 (x) (y) (z))
+(let v (make-Vec3 1 2 3)
+  (print (struct-get v "x"))
+  (print (struct-get v "y"))
+  (print (struct-get v "z")))
+
+; --- Struct with field types specified ---
+(defstruct Person (name String) (age Int))
+(let alice (make-Person "Alice" 30)
+  (print (struct-get alice "name"))
+  (print (struct-get alice "age")))
+
+; --- Nested struct-get: struct field values used to construct another struct ---
+(defstruct Pair (left) (right))
+(let p (make-Point 42 99)
+  (let pair (make-Pair (struct-get p "x") (struct-get p "y"))
+    (print (struct-get pair "left"))
+    (print (struct-get pair "right"))))
+
+; --- Deeply nested struct-get ---
+(defstruct Outer (inner))
+(let inner-p (make-Point 7 11)
+  (let outer (make-Outer inner-p)
+    (let inner-retrieved (struct-get outer "inner")
+      (print (struct-get inner-retrieved "x"))
+      (print (struct-get inner-retrieved "y")))))
+
+; --- Struct construction from function results ---
+(defn get-x (p) (struct-get p "x"))
+(defn get-y (p) (struct-get p "y"))
+(let p (make-Point 13 17)
+  (let pair (make-Pair (get-x p) (get-y p))
+    (print (struct-get pair "left"))
+    (print (struct-get pair "right"))))
+
+; --- Struct in function that returns a struct ---
+(defn make-point (x y) (make-Point x y))
+(let p (make-point 256 512)
+  (print (struct-get p "x"))
+  (print (struct-get p "y")))
+
+; --- Struct field used in if condition ---
+(let p (make-Point 10 20)
+  (if (> (struct-get p "x") 5)
+    (print "x is big")
+    (print "x is small")))
+
+; --- Struct in if then branch ---
+(let p (make-Point 3 4)
+  (if true
+    (print (struct-get p "x"))
+    (print (struct-get p "y"))))
+
+; --- Struct in while loop ---
+(let-mut counter 0
+  (let s (make-Point 0 100)
+    (while (< counter 3)
+      (print (struct-get s "y"))
+      (set! counter (+ counter 1)))))
+
+; --- defstruct+ variant ---
+(defstruct+ Color (r) (g) (b))
+(let c (make-Color 255 128 64)
+  (print (struct-get c "r"))
+  (print (struct-get c "g"))
+  (print (struct-get c "b")))
+
+; --- Struct with boolean fields ---
+(defstruct Flag (a) (b) (c))
+(let f (make-Flag true false true)
+  (print (struct-get f "a"))
+  (print (struct-get f "b"))
+  (print (struct-get f "c")))
+
+; --- Multiple structs of same type ---
+(let p1 (make-Point 1 2)
+  (let p2 (make-Point 3 4)
+    (print (+ (struct-get p1 "x") (struct-get p2 "x")))))
+
+; --- Struct with 4 fields ---
+(defstruct Quad (a) (b) (c) (d))
+(let q (make-Quad 10 20 30 40)
+  (print (struct-get q "a"))
+  (print (struct-get q "d")))
+
+; --- Struct field in recursive function ---
+(defn sum-fields (p)
+  (let x (struct-get p "x")
+    (let y (struct-get p "y")
+      (+ x y))))
+(print (sum-fields (make-Point 6 8)))
+
+; --- Struct passed through nested function calls ---
+(defn double (x) (* x 2))
+(defn struct-double-x (p)
+  (double (struct-get p "x")))
+(print (struct-double-x (make-Point 5 5)))
+
+; --- Nested struct-get with 3 levels ---
+(defstruct Level1 (val))
+(defstruct Level2 (data))
+(defstruct Level3 (content))
+(let l3 (make-Level3 999)
+  (let l2 (make-Level2 l3)
+    (let l1 (make-Level1 l2)
+      (print (struct-get (struct-get (struct-get l1 "val") "data") "content")))))
+
+; --- Struct construction with same value in multiple fields ---
+(let s (make-Point 42 42)
+  (print (struct-get s "x"))
+  (print (struct-get s "y")))
+
+; --- Struct field accessed via let-mut variable ---
+(let-mut ref (make-Point 111 222)
+  (print (struct-get ref "x"))
+  (set! ref (make-Point 333 444))
+  (print (struct-get ref "y")))
+
+; --- Make struct with arithmetic in constructor ---
+(let p (make-Point (+ 1 2) (* 3 4))
+  (print (struct-get p "x"))
+  (print (struct-get p "y")))
+
+; --- Struct with single field ---
+(defstruct Single (value))
+(let s (make-Single 777)
+  (print (struct-get s "value")))
+
+; --- Two struct types interleaved in let ---
+(let p (make-Point 1 2)
+  (let c (make-Color 10 20 30)
+    (print (+ (struct-get p "x") (struct-get c "r")))))
+
+; --- Struct field used as condition in nested if ---
+(let p (make-Point 10 20)
+  (if (== (struct-get p "x") 10)
+    (if (== (struct-get p "y") 20)
+      (print "struct match")
+      (print "y mismatch"))
+    (print "x mismatch")))
+
+; --- Struct in cond expression ---
+(let p (make-Point 5 10)
+  (cond
+    ((== (struct-get p "x") 5) (print "x is 5"))
+    ((== (struct-get p "x") 6) (print "x is 6"))))
+
+; --- Make struct from let value ---
+(let x 50
+  (let y 60
+    (let p (make-Point x y)
+      (print (struct-get p "x"))
+      (print (struct-get p "y")))))
+
+; --- Struct with all Int fields of same value ---
+(let p (make-Point 0 0)
+  (print (struct-get p "x"))
+  (print (struct-get p "y")))

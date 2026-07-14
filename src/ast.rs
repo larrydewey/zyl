@@ -835,10 +835,18 @@ impl PostProcessor {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___let_".to_string(),
                 };
+                let body = if args.len() == 3 {
+                    self.post_process_expr(args[2].clone())
+                } else {
+                    Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    }
+                };
                 expr.inner = ExprInner::Let(
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    Box::new(self.post_process_expr(args[2].clone())),
+                    Box::new(body),
                 );
             }
 
@@ -848,10 +856,18 @@ impl PostProcessor {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___let_".to_string(),
                 };
+                let body = if args.len() == 3 {
+                    self.post_process_expr(args[2].clone())
+                } else {
+                    Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    }
+                };
                 expr.inner = ExprInner::Let(
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    Box::new(self.post_process_expr(args[2].clone())),
+                    Box::new(body),
                 );
             }
 
@@ -1130,12 +1146,20 @@ impl PostProcessor {
             }
 
             // make-StructName → MakeStruct (Call form from no-dispatch parsing).
+            // Only convert if struct name starts with uppercase (PascalCase heuristic).
             ExprInner::Call(first, ref args)
                 if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if n.starts_with("make-"))
                     && !args.is_empty() =>
             {
                 let struct_name = match &first.inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n[5..].to_string(),
+                    ExprInner::Atom(Atom::Ident(n)) => {
+                        let s = &n[5..];
+                        if s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                            s.to_string()
+                        } else {
+                            return expr;
+                        }
+                    }
                     _ => return expr,
                 };
                 let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
@@ -1143,10 +1167,14 @@ impl PostProcessor {
             }
 
             // make-StructName → MakeStruct (Apply form).
+            // Only convert if struct name starts with uppercase.
             ExprInner::Apply(name, args) if name.starts_with("make-") && !args.is_empty() => {
-                let struct_name = name[5..].to_string();
-                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
-                expr.inner = ExprInner::MakeStruct(struct_name, new_args);
+                let s = &name[5..];
+                if s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    let struct_name = s.to_string();
+                    let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                    expr.inner = ExprInner::MakeStruct(struct_name, new_args);
+                }
             }
 
             // struct-get → StructGet (Call form).
@@ -1185,6 +1213,13 @@ impl PostProcessor {
                     .iter()
                     .map(|f| {
                         let fname = match &f.inner {
+                            ExprInner::Call(op, _) => {
+                                if let ExprInner::Atom(Atom::Ident(fn_)) = &op.inner {
+                                    fn_.clone()
+                                } else {
+                                    "___".to_string()
+                                }
+                            }
                             ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
                             _ => "___".to_string(),
                         };
@@ -1207,6 +1242,13 @@ impl PostProcessor {
                     .iter()
                     .map(|f| {
                         let fname = match &f.inner {
+                            ExprInner::Call(op, _) => {
+                                if let ExprInner::Atom(Atom::Ident(fn_)) = &op.inner {
+                                    fn_.clone()
+                                } else {
+                                    "___".to_string()
+                                }
+                            }
                             ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
                             _ => "___".to_string(),
                         };
@@ -1226,6 +1268,13 @@ impl PostProcessor {
                     .iter()
                     .map(|f| {
                         let fname = match &f.inner {
+                            ExprInner::Call(op, _) => {
+                                if let ExprInner::Atom(Atom::Ident(fn_)) = &op.inner {
+                                    fn_.clone()
+                                } else {
+                                    "___".to_string()
+                                }
+                            }
                             ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
                             _ => "___".to_string(),
                         };
@@ -1245,6 +1294,13 @@ impl PostProcessor {
                     .iter()
                     .map(|f| {
                         let fname = match &f.inner {
+                            ExprInner::Call(op, _) => {
+                                if let ExprInner::Atom(Atom::Ident(fn_)) = &op.inner {
+                                    fn_.clone()
+                                } else {
+                                    "___".to_string()
+                                }
+                            }
                             ExprInner::Atom(Atom::Ident(fn_)) => fn_.clone(),
                             _ => "___".to_string(),
                         };

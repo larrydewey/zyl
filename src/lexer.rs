@@ -314,7 +314,7 @@ fn is_ident_start(c: char) -> bool {
 }
 
 fn is_ident_continue(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '/' | '=')
+    c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '/' | '=' | '+')
 }
 
 fn read_ident(chars: &[char], start: usize) -> (String, usize) {
