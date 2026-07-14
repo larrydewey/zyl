@@ -1,1 +1,16 @@
+# Cargo build artifacts
 /target
+
+# Compiler output
+*.bin
+*.s
+
+# REPL / temporary test files
+a.out
+a.out.bin
+a.out.s
+out
+henp
+t.zyl
+t.bin
+t.s.s
