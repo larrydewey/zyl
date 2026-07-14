@@ -6,7 +6,9 @@
 
 ## Current State
 
-**Phase 1 complete (Parsing → AST).** `src/` contains lexer, parser, AST definitions, error model, entry points, and REPL stub. Builds and runs successfully with test programs. The spec is locked at v4.1 — all implementation must conform to it. See **PROGRESS.md** for detailed status of each phase.
+**All 9 phases complete (Parsing → Code Generation + Linking).** `src/` contains lexer, parser, AST definitions, error model, macro expander, region inference, type inference, monomorphization, ICNF generation, optimization, and x86_64 code generation. Builds and runs successfully. See **PROGRESS.md** for detailed status.
+
+**Struct system fully implemented and tested:** `defstruct`/`defstruct+`, `make-StructName`, `struct-get` — all 9 phases with runtime code generation. See `stdlib_test.zyl` for exhaustive struct test suite.
 
 ## Authoritative Sources (read in order)
 
@@ -70,6 +72,39 @@ cargo run --bin zyl  # Run compiler binary
 cargo run --bin zyl-repl  # Run REPL
 cargo test           # Tests (once src/ exists with #[cfg(test)] modules)
 cargo check          # Fast compile check during development
+```
+
+## Struct Regression Tests
+
+Before any changes to struct-related code (ast.rs, codegen.rs, icnf.rs, type_inference.rs, parser.rs, region_inference.rs), verify these struct examples pass:
+
+```bash
+# Basic struct definition and construction
+echo '(defstruct Point (x) (y))(let p (make-Point 10 20)(print (struct-get p "x"))(print (struct-get p "y")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 10 then 20
+
+# Struct field in arithmetic
+echo '(defstruct Point (x) (y))(let p (make-Point 5 7)(print (+ (struct-get p "x") (struct-get p "y"))))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 12
+
+# Nested struct-get (field values used to construct another struct)
+echo '(defstruct Point (x) (y))(defstruct Pair (left) (right))(let p (make-Point 42 99)(let pair (make-Pair (struct-get p "x") (struct-get p "y")))(print (struct-get pair "left")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 42
+
+# Struct with field types
+echo '(defstruct Person (name String) (age Int))(let alice (make-Person "Alice" 30)(print (struct-get alice "age")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 30
+
+# Struct passed to function and returned
+echo '(defstruct Point (x) (y))(defn make-point (x y) (make-Point x y))(defn get-x (p) (struct-get p "x"))(let p (make-point 256 512)(print (get-x p)))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 256
+
+# defstruct+ variant
+echo '(defstruct+ Color (r) (g) (b))(let c (make-Color 255 128 64)(print (struct-get c "r")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 255
+
+# Run full struct test suite
+./target/debug/zyl stdlib_test.zyl stdlib_test.s 2>&1 | tail -3
 ```
 
 ## Architecture Notes for Implementation

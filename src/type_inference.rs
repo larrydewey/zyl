@@ -745,14 +745,25 @@ impl TypeInferer {
                 Ok(Type::Prim(PrimType::Unit))
             }
 
-            // Raw struct-get.
+            // Raw struct-get (Call form).
             ExprInner::Call(op, args) if is_ident_op(op, "struct-get") && args.len() >= 2 => {
-                drop(self.infer_expr(&args[0])?);
-                Ok(Type::Var(self.fresh_var()))
+                let struct_type = self.infer_expr(&args[0])?;
+                let field_name = match &args[1].inner {
+                    ExprInner::Atom(Atom::Ident(f)) | ExprInner::Atom(Atom::Str(f)) => f.clone(),
+                    ExprInner::Atom(Atom::Keyword(f)) => f.clone(),
+                    _ => String::new(),
+                };
+                self.lookup_struct_field_type(&struct_type, &args[0], &field_name)
             }
+            // Raw struct-get (Apply form).
             ExprInner::Apply(name, args) if name == "struct-get" && args.len() >= 2 => {
-                drop(self.infer_expr(&args[0])?);
-                Ok(Type::Var(self.fresh_var()))
+                let struct_type = self.infer_expr(&args[0])?;
+                let field_name = match &args[1].inner {
+                    ExprInner::Atom(Atom::Ident(f)) | ExprInner::Atom(Atom::Str(f)) => f.clone(),
+                    ExprInner::Atom(Atom::Keyword(f)) => f.clone(),
+                    _ => String::new(),
+                };
+                self.lookup_struct_field_type(&struct_type, &args[0], &field_name)
             }
 
             // Raw make-struct.
@@ -860,8 +871,25 @@ impl TypeInferer {
             }
             ExprInner::Error(_) => Ok(Type::Prim(PrimType::Unit)),
 
-            ExprInner::StructGet(_se, _fn) => {
-                drop(self.infer_expr(_se)?);
+            ExprInner::StructGet(se, field_name) => {
+                let struct_type = self.infer_expr(se)?;
+                // Extract struct name from Nominal type, or from MakeStruct expression.
+                let struct_name = match &struct_type {
+                    Type::Nominal(n) => Some(n.clone()),
+                    _ => {
+                        // Try to get struct name from the expression itself (MakeStruct).
+                        self.try_get_struct_name_from_expr(se)
+                    }
+                };
+                if let Some(name) = struct_name {
+                    if let Some(fields) = self.struct_defs.get(&name) {
+                        for (fname, ftype) in fields {
+                            if fname == field_name {
+                                return Ok(ftype.clone().unwrap_or(Type::Var(self.fresh_var())));
+                            }
+                        }
+                    }
+                }
                 Ok(Type::Var(self.fresh_var()))
             }
             ExprInner::MakeStruct(name, fields) => {
@@ -1078,7 +1106,7 @@ impl TypeInferer {
         };
 
         if matches!(op_name.as_str(), "+" | "-" | "*" | "/") {
-            let mut all_int = true;
+            let mut has_float = false;
             for arg in args {
                 let t = self.infer_expr(arg)?;
                 let inner = match &t {
@@ -1088,7 +1116,11 @@ impl TypeInferer {
                 match inner {
                     Type::Prim(PrimType::Int) => {}
                     Type::Prim(PrimType::Float) => {
-                        all_int = false;
+                        has_float = true;
+                    }
+                    Type::Var(_) => {
+                        // Allow type vars (e.g., from struct field access) and unify with Int.
+                        self.unify(&t, &Type::Prim(PrimType::Int))?;
                     }
                     _ => {
                         return Err(ZylError::E_TYPE_MISMATCH(
@@ -1099,10 +1131,10 @@ impl TypeInferer {
                     }
                 }
             }
-            if all_int {
-                Ok(Type::Prim(PrimType::Int))
-            } else {
+            if has_float {
                 Ok(Type::Prim(PrimType::Float))
+            } else {
+                Ok(Type::Prim(PrimType::Int))
             }
         } else if matches!(op_name.as_str(), "==" | "!=" | "<" | ">" | "<=" | ">=") {
             for arg in args {
@@ -1353,6 +1385,46 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     /// Expose struct definitions for field-level monomorphization.
     pub fn get_struct_defs(&self) -> &IndexMap<String, Vec<(String, Option<Type>)>> {
         &self.struct_defs
+    }
+
+    /// Try to extract a struct name from a MakeStruct expression.
+    fn try_get_struct_name_from_expr(&self, expr: &Expr) -> Option<String> {
+        match &expr.inner {
+            ExprInner::MakeStruct(name, _) => Some(name.clone()),
+            ExprInner::Atom(Atom::Ident(name)) => {
+                self.env.get(name).and_then(|t| {
+                    if let Type::Nominal(n) = t {
+                        Some(n.clone())
+                    } else {
+                        None
+                    }
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// Look up the type of a struct field given the struct type and field name.
+    fn lookup_struct_field_type(
+        &self,
+        struct_type: &Type,
+        struct_expr: &Expr,
+        field_name: &str,
+    ) -> Result<Type, ZylError> {
+        let struct_name = match struct_type {
+            Type::Nominal(n) => Some(n.clone()),
+            _ => self.try_get_struct_name_from_expr(struct_expr),
+        };
+        if let Some(name) = struct_name {
+            if let Some(fields) = self.struct_defs.get(&name) {
+                for (fname, ftype) in fields {
+                    if fname == field_name {
+                        return Ok(ftype.clone().unwrap_or(Type::Var(self.fresh_var())));
+                    }
+                }
+            }
+        }
+        Ok(Type::Var(self.fresh_var()))
     }
 }
 

@@ -545,7 +545,15 @@ impl Parser {
             };
             check_reserved_keyword(&name, &args[0].span)?;
             let val = args[1].clone();
-            let body = args[2].clone();
+            let body = if args.len() == 3 {
+                args[2].clone()
+            } else {
+                // Multiple body expressions → wrap in Begin
+                Expr {
+                    span: span.clone(),
+                    inner: ExprInner::Begin(args[2..].to_vec()),
+                }
+            };
             let inner = if mutable {
                 ExprInner::LetMut(name, Box::new(val), Box::new(body))
             } else {
@@ -1586,11 +1594,16 @@ impl Parser {
     }
 
     fn p_builtin(&self, span: &Span, name: &str, args: &[Expr]) -> Result<Expr, ZylError> {
+        // Only convert make-* to MakeStruct if the struct name starts with uppercase
+        // (heuristic: user-defined functions use lowercase, struct names use PascalCase).
         if name.starts_with("make-") && !args.is_empty() {
-            return Ok(Expr {
-                span: span.clone(),
-                inner: ExprInner::MakeStruct(name[5..].to_string(), args.to_vec()),
-            });
+            let struct_name = &name[5..];
+            if struct_name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                return Ok(Expr {
+                    span: span.clone(),
+                    inner: ExprInner::MakeStruct(struct_name.to_string(), args.to_vec()),
+                });
+            }
         }
 
         // Validate known built-ins.
