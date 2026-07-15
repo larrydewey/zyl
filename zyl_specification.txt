@@ -382,11 +382,25 @@ Test execution:
 
  12.6 FOR:
     (for (init-bindings) condition body)
-    init-bindings: list of (name [value]) pairs.
-    If value present: new binding with initial value.
-    If value absent: use existing variable (while-like).
-    Body is a begin-block; last expression becomes loop result.
-    User is responsible for updating loop variables within body.
+    
+    init-bindings: list of (name [value]) pairs, written as S-expressions:
+    - (name) — use existing variable (while-like)
+    - (name value) — new binding with initial value
+    - (name1 value1 name2 value2 ...) — multiple variables
+    - () — empty, pure while loop
+    
+    Examples:
+    (for () (counter < 5) (begin (print counter) (set! counter (+ counter 1))))
+    (for (i 0) (< i 5) (begin (print i) (set! i (+ i 1))))
+    (for (i 0 j 10) (< i 5) (begin (print i j) (set! i (+ i 1)) (set! j (+ j 1))))
+    
+    Condition: Boolean expression. Evaluated each iteration; loop exits when false.
+    Body: begin-block containing loop actions. User must update loop variables via set!.
+    Semantics:
+    1. Evaluate init-bindings: create bindings or use existing variables.
+    2. Evaluate condition. If false, exit loop.
+    3. Execute body.
+    4. Goto step 2.
 
 12.7 COND:
     (cond (condition-1 body-1) ... (else body))
