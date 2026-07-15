@@ -952,17 +952,11 @@ impl IcnfConverter {
                     let (name, val_opt) = binding;
                     if let Some(val_expr) = val_opt {
                         // Create new binding with initial value
-                        let id = self.next_ssa_id();
-                        self.current_scope.insert(name.clone(), id);
                         let val_stmts = self.convert_expr_to_stmts(val_expr)?;
-                        let init_ssa_id = self.next_ssa_id();
-                        self.global_stmts.push(ICNFNode {
-                            id: init_ssa_id,
-                            region: Region::Stack,
-                            typ: None,
-                            is_branch_body: false,
-                            node: ICNFInner::Load(name.clone()),
-                        });
+                        // Use the last id from val_stmts as the init value id
+                        let init_ssa_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                        // Bind name to init_ssa_id in scope
+                        self.current_scope.insert(name.clone(), init_ssa_id);
                         init_ssa.push((name.clone(), Some(init_ssa_id)));
                         self.global_stmts.extend(val_stmts);
                     } else {
@@ -974,20 +968,22 @@ impl IcnfConverter {
                         }
                     }
                 }
+                eprintln!("DEBUG ICNF For: after first loop, init_ssa count={}, scope has {}", init_ssa.len(), self.current_scope.len());
                 // Bind all loop vars in scope before converting cond/body.
-                let saved_scope = std::mem::take(&mut self.current_scope);
+                // Don't clear scope here - variables from first loop are already bound.
                 for binding in bindings {
                     let (name, _) = binding;
                     if self.current_scope.get(name).is_none() {
                         // Variable not bound yet (from else branch above), create a dummy binding.
+                        eprintln!("DEBUG ICNF For: adding dummy binding for {}", name);
                         let id = self.next_ssa_id();
                         self.current_scope.insert(name.clone(), id);
                         init_ssa.push((name.clone(), Some(id)));
                     }
                 }
+                eprintln!("DEBUG ICNF For: final init_ssa count={}", init_ssa.len());
                 let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
                 let mut body_stmts = self.convert_expr_to_stmts(body)?;
-                self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: self.next_ssa_id(),
                     region: Region::Stack,
