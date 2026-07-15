@@ -1067,13 +1067,16 @@ impl MonoContext {
                 Box::new(self.subst_expr(body, type_map)),
             ),
 
-            ExprInner::For(name, iter, cond, step, body) => ExprInner::For(
-                name.clone(),
-                Box::new(self.subst_expr(iter, type_map)),
-                Box::new(self.subst_expr(cond, type_map)),
-                Box::new(self.subst_expr(step, type_map)),
-                Box::new(self.subst_expr(body, type_map)),
-            ),
+            ExprInner::For(bindings, cond, body) => {
+                let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
+                    .iter()
+                    .map(|(name, val)| {
+                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr(&**v, type_map)));
+                        (name.clone(), new_val)
+                    })
+                    .collect();
+                ExprInner::For(new_bindings, Box::new(self.subst_expr(&**cond, type_map)), Box::new(self.subst_expr(&**body, type_map)))
+            },
 
             ExprInner::Cond(clauses) => {
                 let new_clauses: Vec<(Box<Expr>, Box<Expr>)> = clauses

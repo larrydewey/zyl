@@ -69,13 +69,14 @@ pub enum ExprInner {
     Error(String),
     Unwrap(Box<Expr>),
     While(Box<Expr>, Box<Expr>),
-    For(String, Box<Expr>, Box<Expr>, Box<Expr>, Box<Expr>),
+    For(Vec<(String, Option<Box<Expr>>)>, Box<Expr>, Box<Expr>),
     Cond(Vec<(Box<Expr>, Box<Expr>)>),
     Begin(Vec<Expr>),
     Lambda(String, Vec<Param>, Box<Expr>),
     Fn(String, Vec<Param>, Box<Expr>),
     StructGet(Box<Expr>, String),
     MakeStruct(String, Vec<Expr>),
+    MakeVariant(String, String, Vec<Expr>),
     SetBang(String, Box<Expr>),
     ModuleDecl(String),
     UseModule(Vec<String>, Option<Vec<String>>, bool),
@@ -320,13 +321,20 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write_sexpr(f, b);
             Ok(())
         }
-        ExprInner::For(name, iter, cond, step, body) => {
-            write!(f, "(for {} ", name)?;
-            write_sexpr(f, iter)?;
-            f.write_str(" ")?;
+        ExprInner::For(bindings, cond, body) => {
+            write!(f, "(for (")?;
+            for (i, (name, val)) in bindings.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+                write!(f, "{}", name)?;
+                if let Some(v) = val {
+                    write!(f, " ")?;
+                    write_sexpr(f, v)?;
+                }
+            }
+            write!(f, ") ")?;
             write_sexpr(f, cond)?;
-            f.write_str(" ")?;
-            write_sexpr(f, step)?;
             f.write_str(" ")?;
             write_sexpr(f, body);
             Ok(())
@@ -377,6 +385,18 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             for arg in args {
                 f.write_str(" ")?;
                 write_sexpr(f, arg)?;
+            }
+            f.write_str(")")
+        }
+        ExprInner::MakeVariant(type_name, variant_name, args) => {
+            write!(f, "({}", variant_name)?;
+            for arg in args {
+                f.write_str(" ")?;
+                write_sexpr(f, arg)?;
+            }
+            f.write_str(") /* {} */")?;
+            if !type_name.is_empty() {
+                write!(f, " :{}", type_name)?;
             }
             f.write_str(")")
         }
@@ -903,33 +923,83 @@ impl PostProcessor {
                 );
             }
 
-            // for → For (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "for") && args.len() >= 5 => {
-                let name = match &args[0].inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___for_".to_string(),
+            // for → For (Call form): (for (init-bindings) cond body)
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "for") && args.len() >= 3 => {
+                // Parse init-bindings: args[0] should be a list of (name [value]) pairs
+                // With no_dispatch, (i 0) becomes Call(Ident("i"), [0]), so we need to handle both.
+                let bindings: Vec<(String, Option<Box<Expr>>)> = match &args[0].inner {
+                    ExprInner::Begin(items) => items.iter().map(|item| {
+                        match &item.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => (n.clone(), None),
+                            ExprInner::Begin(sub) => {
+                                if sub.len() >= 2 {
+                                    if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                        let name = n.clone();
+                                        let val = Some(Box::new(self.post_process_expr(sub[1].clone())));
+                                        (name, val)
+                                    } else {
+                                        (String::new(), None)
+                                    }
+                                } else {
+                                    (String::new(), None)
+                                }
+                            }
+                            _ => (String::new(), None),
+                        }
+                    }).collect::<Vec<_>>(),
+                    ExprInner::Call(inner_op, inner_args) if matches!(&inner_op.inner, ExprInner::Atom(Atom::Ident(_))) => {
+                        // Single binding pair: (name) or (name value)
+                        if let ExprInner::Atom(Atom::Ident(n)) = &inner_op.inner {
+                            if inner_args.is_empty() {
+                                // Just a variable name
+                                vec![(n.clone(), None)]
+                            } else if inner_args.len() == 1 {
+                                // Variable with initial value
+                                vec![(n.clone(), Some(Box::new(self.post_process_expr(inner_args[0].clone()))) )]
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    _ => Vec::new(),
                 };
                 expr.inner = ExprInner::For(
-                    name,
+                    bindings,
                     Box::new(self.post_process_expr(args[1].clone())),
                     Box::new(self.post_process_expr(args[2].clone())),
-                    Box::new(self.post_process_expr(args[3].clone())),
-                    Box::new(self.post_process_expr(args[4].clone())),
                 );
             }
 
-            // for → For (Apply form).
-            ExprInner::Apply(name, args) if name == "for" && args.len() >= 5 => {
-                let name = match &args[0].inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___for_".to_string(),
+            // for → For (Apply form): (for (init-bindings) cond body)
+            ExprInner::Apply(name, args) if name == "for" && args.len() >= 3 => {
+                let bindings: Vec<(String, Option<Box<Expr>>)> = match &args[0].inner {
+                    ExprInner::Begin(items) => items.iter().map(|item| {
+                        match &item.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => (n.clone(), None),
+                            ExprInner::Begin(sub) => {
+                                if sub.len() >= 2 {
+                                    if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                        let name = n.clone();
+                                        let val = Some(Box::new(self.post_process_expr(sub[1].clone())));
+                                        (name, val)
+                                    } else {
+                                        (String::new(), None)
+                                    }
+                                } else {
+                                    (String::new(), None)
+                                }
+                            }
+                            _ => (String::new(), None),
+                        }
+                    }).collect::<Vec<_>>(),
+                    _ => Vec::new(),
                 };
                 expr.inner = ExprInner::For(
-                    name,
+                    bindings,
                     Box::new(self.post_process_expr(args[1].clone())),
                     Box::new(self.post_process_expr(args[2].clone())),
-                    Box::new(self.post_process_expr(args[3].clone())),
-                    Box::new(self.post_process_expr(args[4].clone())),
                 );
             }
 
@@ -1090,58 +1160,82 @@ impl PostProcessor {
             // match → Match (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "match") && !args.is_empty() => {
                 let e = Box::new(self.post_process_expr(args[0].clone()));
-                let arms: Vec<MatchArm> = args
-                    .iter()
-                    .skip(1)
-                    .map(|a| match &self.post_process_expr(a.clone()).inner {
+                let mut arms = Vec::new();
+                let mut i = 1;
+                while i < args.len() {
+                    let processed = self.post_process_expr(args[i].clone());
+                    let (variant, patterns) = match &processed.inner {
                         ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-                            let variant = match &inner[0].inner {
+                            let v = match &inner[0].inner {
                                 ExprInner::Atom(Atom::Ident(v))
                                 | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
                                 _ => "___".to_string(),
                             };
-                            MatchArm {
-                                variant,
-                                patterns: inner[1..inner.len() - 1].to_vec(),
-                                body: Box::new(inner.last().unwrap().clone()),
-                            }
+                            let pats = match inner.len() {
+                                1 => Vec::new(),
+                                2 => vec![inner[1].clone()],
+                                _ => inner[1..inner.len() - 1].to_vec(),
+                            };
+                            (v, pats)
                         }
-                        _ => MatchArm {
-                            variant: "___".to_string(),
-                            patterns: Vec::new(),
-                            body: self.post_process_expr(a.clone()).into(),
-                        },
-                    })
-                    .collect();
+                        ExprInner::MakeVariant(_, vname, ref fargs) => {
+                            (vname.clone(), fargs.clone())
+                        }
+                        ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                            (v.clone(), Vec::new())
+                        }
+                        _ => ("___".to_string(), Vec::new()),
+                    };
+                    i += 1;
+                    let body = if i < args.len() {
+                        self.post_process_expr(args[i].clone())
+                    } else {
+                        return expr;
+                    };
+                    i += 1;
+                    arms.push(MatchArm { variant, patterns, body: Box::new(body) });
+                }
                 expr.inner = ExprInner::Match(e, arms);
             }
 
             // match → Match (Apply form).
             ExprInner::Apply(name, args) if name == "match" && !args.is_empty() => {
                 let e = Box::new(self.post_process_expr(args[0].clone()));
-                let arms: Vec<MatchArm> = args
-                    .iter()
-                    .skip(1)
-                    .map(|a| match &self.post_process_expr(a.clone()).inner {
+                let mut arms = Vec::new();
+                let mut i = 1;
+                while i < args.len() {
+                    let processed = self.post_process_expr(args[i].clone());
+                    let (variant, patterns) = match &processed.inner {
                         ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-                            let variant = match &inner[0].inner {
+                            let v = match &inner[0].inner {
                                 ExprInner::Atom(Atom::Ident(v))
                                 | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
                                 _ => "___".to_string(),
                             };
-                            MatchArm {
-                                variant,
-                                patterns: inner[1..inner.len() - 1].to_vec(),
-                                body: Box::new(inner.last().unwrap().clone()),
-                            }
+                            let pats = match inner.len() {
+                                1 => Vec::new(),
+                                2 => vec![inner[1].clone()],
+                                _ => inner[1..inner.len() - 1].to_vec(),
+                            };
+                            (v, pats)
                         }
-                        _ => MatchArm {
-                            variant: "___".to_string(),
-                            patterns: Vec::new(),
-                            body: self.post_process_expr(a.clone()).into(),
-                        },
-                    })
-                    .collect();
+                        ExprInner::MakeVariant(_, vname, ref fargs) => {
+                            (vname.clone(), fargs.clone())
+                        }
+                        ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                            (v.clone(), Vec::new())
+                        }
+                        _ => ("___".to_string(), Vec::new()),
+                    };
+                    i += 1;
+                    let body = if i < args.len() {
+                        self.post_process_expr(args[i].clone())
+                    } else {
+                        return expr;
+                    };
+                    i += 1;
+                    arms.push(MatchArm { variant, patterns, body: Box::new(body) });
+                }
                 expr.inner = ExprInner::Match(e, arms);
             }
 
@@ -1310,6 +1404,30 @@ impl PostProcessor {
                 expr.inner = ExprInner::StructDefPlus(StructDef { name: sname, fields });
             }
 
+            // Recognize variant constructor calls: (Some x y ...) or unit variants like None.
+            // Heuristic: operator starts with uppercase letter AND is not a known builtin/op.
+            ExprInner::Call(first, ref args)
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n))
+                    && !is_known_builtin_or_op(first) =>
+            {
+                let variant_name = match &first.inner {
+                    ExprInner::Atom(Atom::Ident(v)) => v.clone(),
+                    _ => return expr,
+                };
+                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                expr.inner = ExprInner::MakeVariant(String::new(), variant_name, new_args);
+            }
+
+            // Recognize bare identifier variant constructors (unit variants like None).
+            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !is_known_builtin_or_apply(n) => {
+                expr.inner = ExprInner::MakeVariant(String::new(), n.clone(), Vec::new());
+            }
+
+            ExprInner::Apply(name, ref args) if is_uppercase_ident(&name) && !is_known_builtin_or_apply(&name) => {
+                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                expr.inner = ExprInner::MakeVariant(String::new(), name.clone(), new_args);
+            }
+
             // Recursively process children of Call/Apply nodes.
             ExprInner::Call(op, args) => {
                 let new_op = Box::new(self.post_process_expr(*op.clone()));
@@ -1344,6 +1462,10 @@ impl PostProcessor {
                     Box::new(self.post_process_expr(*body.clone())),
                 );
             }
+            ExprInner::MakeVariant(type_name, variant_name, args) => {
+                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                expr.inner = ExprInner::MakeVariant(type_name.clone(), variant_name.clone(), new_args);
+            }
             ExprInner::TryCatch(e, name, h) => {
                 expr.inner = ExprInner::TryCatch(
                     Box::new(self.post_process_expr(*e.clone())),
@@ -1371,12 +1493,17 @@ impl PostProcessor {
                     Box::new(self.post_process_expr(*b.clone())),
                 );
             }
-            ExprInner::For(name, iter, cond, step, body) => {
+            ExprInner::For(bindings, cond, body) => {
+                let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
+                    .iter()
+                    .map(|(name, val)| {
+                        let new_val = val.as_ref().map(|v| Box::new(self.post_process_expr(*v.clone())));
+                        (name.clone(), new_val)
+                    })
+                    .collect();
                 expr.inner = ExprInner::For(
-                    name.clone(),
-                    Box::new(self.post_process_expr(*iter.clone())),
+                    new_bindings,
                     Box::new(self.post_process_expr(*cond.clone())),
-                    Box::new(self.post_process_expr(*step.clone())),
                     Box::new(self.post_process_expr(*body.clone())),
                 );
             }
@@ -1415,4 +1542,29 @@ fn atom(span: Span, a: Atom) -> Expr {
         span,
         inner: ExprInner::Atom(a),
     }
+}
+
+/// Check if a name starts with an uppercase letter (PascalCase heuristic for variants/types).
+fn is_uppercase_ident(name: &str) -> bool {
+    name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+}
+
+/// Check if name is a known builtin or operator that should NOT become a MakeVariant.
+fn is_known_builtin_or_op(op: &Expr) -> bool {
+    if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
+        is_known_builtin_or_apply(n)
+    } else {
+        false
+    }
+}
+
+fn is_known_builtin_or_apply(name: &str) -> bool {
+    matches!(
+        name,
+        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "not"
+            | "and" | "or" | "print" | "read-line" | "exit" | "close" | "unwrap"
+            | "str" | "int" | "float" | "is-some" | "is-none" | "is-ok" | "is-err"
+            // Builtin trait/primitive names that shouldn't become MakeVariant.
+            | "Int" | "Float" | "Bool" | "String" | "Unit" | "Vec" | "Option" | "Result"
+    )
 }

@@ -386,18 +386,8 @@ impl Optimizer {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
             }
-            ICNFInner::For {
-                iter_ssa,
-                cond_nodes,
-                step_nodes,
-                body,
-                ..
-            } => {
-                used_ids.insert(*iter_ssa);
+            ICNFInner::For { cond_nodes, body, .. } => {
                 for stmt in cond_nodes {
-                    Self::collect_used_ssa(&stmt.node, used_ids);
-                }
-                for stmt in step_nodes {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
                 for stmt in body {

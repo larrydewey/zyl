@@ -371,18 +371,34 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     Box::new(sub_expr(ctx, &args[0])),
                     Box::new(sub_expr(ctx, &args[1])),
                 )
-            } else if matches!(op_name.as_deref(), Some("for")) && args.len() >= 5 {
-                let arg0 = sub_expr(ctx, &args[0]);
-                let name = match &arg0.inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___for_".to_string(),
+            } else if matches!(op_name.as_deref(), Some("for")) && args.len() >= 3 {
+                // Parse init bindings
+                let bindings = match &args[0].inner {
+                    ExprInner::Begin(items) => items.iter().map(|item| {
+                        match &item.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => (n.clone(), None),
+                            ExprInner::Begin(sub) => {
+                                if sub.len() >= 2 {
+                                    if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                        let name = n.clone();
+                                        let val = Some(Box::new(sub_expr(ctx, &sub[1])));
+                                        (name, val)
+                                    } else {
+                                        (String::new(), None)
+                                    }
+                                } else {
+                                    (String::new(), None)
+                                }
+                            }
+                            _ => (String::new(), None),
+                        }
+                    }).collect::<Vec<_>>(),
+                    _ => Vec::new(),
                 };
                 ExprInner::For(
-                    name,
+                    bindings,
                     Box::new(sub_expr(ctx, &args[1])),
                     Box::new(sub_expr(ctx, &args[2])),
-                    Box::new(sub_expr(ctx, &args[3])),
-                    Box::new(sub_expr(ctx, &args[4])),
                 )
             } else if matches!(op_name.as_deref(), Some("begin")) {
                 let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
@@ -437,18 +453,33 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                 Box::new(sub_expr(ctx, &args[0])),
                 Box::new(sub_expr(ctx, &args[1])),
             ),
-            "for" if args.len() >= 5 => {
-                let arg0 = sub_expr(ctx, &args[0]);
-                let name = match &arg0.inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___for_".to_string(),
+            "for" if args.len() >= 3 => {
+                let bindings = match &args[0].inner {
+                    ExprInner::Begin(items) => items.iter().map(|item| {
+                        match &item.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => (n.clone(), None),
+                            ExprInner::Begin(sub) => {
+                                if sub.len() >= 2 {
+                                    if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                        let name = n.clone();
+                                        let val = Some(Box::new(sub_expr(ctx, &sub[1])));
+                                        (name, val)
+                                    } else {
+                                        (String::new(), None)
+                                    }
+                                } else {
+                                    (String::new(), None)
+                                }
+                            }
+                            _ => (String::new(), None),
+                        }
+                    }).collect::<Vec<_>>(),
+                    _ => Vec::new(),
                 };
                 ExprInner::For(
-                    name,
+                    bindings,
                     Box::new(sub_expr(ctx, &args[1])),
                     Box::new(sub_expr(ctx, &args[2])),
-                    Box::new(sub_expr(ctx, &args[3])),
-                    Box::new(sub_expr(ctx, &args[4])),
                 )
             }
             "begin" => {
@@ -565,6 +596,10 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
                 .collect();
             Match(Box::new(sub_expr(ctx, e)), new_arms)
         }
+        MakeVariant(type_name, variant_name, args) => {
+            let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
+            MakeVariant(type_name.clone(), variant_name.clone(), new_args)
+        }
         Spawn(e) => Spawn(Box::new(sub_expr(ctx, e))),
         Send(a, m) => Send(Box::new(sub_expr(ctx, a)), Box::new(sub_expr(ctx, m))),
         FfiCall(name, args, timeout) => {
@@ -576,13 +611,16 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         Assert(c, _msg) => Assert(Box::new(sub_expr(ctx, c)), None), // msg is Option<String> — no sub needed.
         Unwrap(e) => Unwrap(Box::new(sub_expr(ctx, e))),
         While(c, b) => While(Box::new(sub_expr(ctx, c)), Box::new(sub_expr(ctx, b))),
-        For(name, iter, cond, step, body) => For(
-            name.clone(),
-            Box::new(sub_expr(ctx, iter)),
-            Box::new(sub_expr(ctx, cond)),
-            Box::new(sub_expr(ctx, step)),
-            Box::new(sub_expr(ctx, body)),
-        ),
+        For(bindings, cond, body) => {
+            let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
+                .iter()
+                .map(|(name, val)| {
+                    let new_val = val.as_ref().map(|v| Box::new(sub_expr(ctx, &**v)));
+                    (name.clone(), new_val)
+                })
+                .collect();
+            For(new_bindings, Box::new(sub_expr(ctx, &**cond)), Box::new(sub_expr(ctx, &**body)))
+        },
         Cond(clauses) => {
             let new_clauses: Vec<_> = clauses
                 .iter()
@@ -950,13 +988,18 @@ impl MacroExpander {
                     Box::new(self.expand_expr(*b.clone())?),
                 );
             }
-            ExprInner::For(name, iter, cond, step, body) => {
-                let for_name = name.clone();
+            ExprInner::For(bindings, cond, body) => {
+                let mut new_bindings: Vec<(String, Option<Box<Expr>>)> = Vec::new();
+                for (name, val) in bindings {
+                    let new_val = match val {
+                        Some(v) => Some(Box::new(self.expand_expr(*v.clone())?)),
+                        None => None,
+                    };
+                    new_bindings.push((name.clone(), new_val));
+                }
                 expr.inner = ExprInner::For(
-                    for_name,
-                    Box::new(self.expand_expr(*iter.clone())?),
+                    new_bindings,
                     Box::new(self.expand_expr(*cond.clone())?),
-                    Box::new(self.expand_expr(*step.clone())?),
                     Box::new(self.expand_expr(*body.clone())?),
                 );
             }
@@ -1136,13 +1179,18 @@ impl MacroExpander {
                         Box::new(self.expand_expr(*c.clone())?),
                         Box::new(self.expand_expr(*b.clone())?),
                     ),
-                    For(name, iter, cond, step, body) => {
-                        let fn_ = name.clone();
+                    For(bindings, cond, body) => {
+                        let mut new_bindings: Vec<(String, Option<Box<Expr>>)> = Vec::new();
+                        for (name, val) in bindings {
+                            let new_val = match val {
+                                Some(v) => Some(Box::new(self.expand_expr(*v.clone())?)),
+                                None => None,
+                            };
+                            new_bindings.push((name.clone(), new_val));
+                        }
                         For(
-                            fn_,
-                            Box::new(self.expand_expr(*iter.clone())?),
+                            new_bindings,
                             Box::new(self.expand_expr(*cond.clone())?),
-                            Box::new(self.expand_expr(*step.clone())?),
                             Box::new(self.expand_expr(*body.clone())?),
                         )
                     }

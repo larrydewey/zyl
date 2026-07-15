@@ -424,16 +424,28 @@ impl RegionInferer {
                 Ok(result)
             }
 
-            // for — loop variable is Stack (R1).
-            ExprInner::For(name, iter, cond, step, body) => {
-                let _ = self.infer_expr(iter)?;
+            // for — loop variables are Stack (R1).
+            ExprInner::For(bindings, cond, body) => {
+                eprintln!("DEBUG For: bindings={:?} cond={:?} body={:?}", 
+                    bindings.iter().map(|(n, v)| (n.clone(), v.is_some())).collect::<Vec<_>>(),
+                    std::mem::discriminant(&cond.inner),
+                    std::mem::discriminant(&body.inner));
+                // Infer init binding values if present.
+                for (_, val_opt) in bindings {
+                    if let Some(ref val) = val_opt {
+                        drop(self.infer_expr(val)?);
+                    }
+                }
                 self.env.enter_scope();
-                self.env.bind(name.clone(), Region::Stack);
+                for (name, _) in bindings {
+                    self.env.bind(name.clone(), Region::Stack);
+                }
                 let _ = self.infer_expr(cond)?;
-                let _ = self.infer_expr(step)?;
                 let result = self.infer_expr(body)?;
-                if self.env.is_escaped(name) {
-                    return Err(ZylError::E_REGION_ESCAPE(expr.span.clone()));
+                for (name, _) in bindings.iter() {
+                    if self.env.is_escaped(name) {
+                        return Err(ZylError::E_REGION_ESCAPE(expr.span.clone()));
+                    }
                 }
                 self.env.exit_scope();
                 Ok(result)
@@ -774,6 +786,17 @@ impl RegionInferer {
                 result_region: Region::Global,
                 captures: None,
             }),
+
+            ExprInner::MakeVariant(_, _, args) => {
+                // Variant construction is heap-allocated (like MakeStruct).
+                for arg in args {
+                    drop(self.infer_expr(arg)?);
+                }
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
+            }
         }
     }
 }
@@ -906,10 +929,13 @@ fn collect_capture_vars(
             collect_capture_vars(inner, env_snapshot.clone(), captures)?;
         }
 
-        ExprInner::For(_name, iter, cond, step, body) => {
-            collect_capture_vars(iter, env_snapshot.clone(), captures)?;
+        ExprInner::For(ref bindings, cond, body) => {
+            for (_, val_opt) in bindings.iter() {
+                if let Some(ref val) = val_opt {
+                    collect_capture_vars(val, env_snapshot.clone(), captures)?;
+                }
+            }
             collect_capture_vars(cond, env_snapshot.clone(), captures)?;
-            collect_capture_vars(step, env_snapshot.clone(), captures)?;
             collect_capture_vars(body, env_snapshot.clone(), captures)?;
         }
 

@@ -250,6 +250,7 @@ impl Parser {
     }
 
     fn dispatch(&self, span: &Span, op: &str, args: &[Expr]) -> Result<Expr, ZylError> {
+        eprintln!("DEBUG dispatch: op_len={}, op_bytes={:?}", op.len(), op.as_bytes());
         // Use sequential if-else to avoid type mismatch in match arms.
         macro_rules! check_arity {
             ($name:expr, $min:expr, $max:expr, $args:expr) => {{
@@ -269,6 +270,7 @@ impl Parser {
         }
 
         // When no_dispatch is set (inside defmacro args), return raw Call/Apply instead of dispatching.
+        eprintln!("DEBUG: no_dispatch={}, op_len={}", self.no_dispatch, op.len());
         if self.no_dispatch {
             let first = Box::new(Expr {
                 span: Span::default(),
@@ -281,6 +283,7 @@ impl Parser {
         }
 
         if op == "def" {
+            eprintln!("DEBUG: def branch");
             return self.p_def(span, args);
         } else if op == "defn" || op == "defun" {
             return self.p_defn(span, args);
@@ -297,7 +300,8 @@ impl Parser {
         } else if op == "while" {
             return Ok(self.p_while(args));
         } else if op == "for" {
-            return self.p_for(span, args);
+            eprintln!("DEBUG: for branch - PANICING");
+            std::process::exit(42);
         } else if op == "cond" {
             return Ok(Expr {
                 span: span.clone(),
@@ -684,33 +688,49 @@ impl Parser {
             ));
         }
         let mut arms = Vec::new();
-        for arg in &args[1..] {
-            match &arg.inner {
+        let mut i = 1;
+        while i < args.len() {
+            let pattern_arg = &args[i];
+            let (variant, patterns) = match &pattern_arg.inner {
                 ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-                    let variant = match &inner[0].inner {
+                    let v = match &inner[0].inner {
                         ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
                             v.clone()
                         }
                         _ => {
                             return Err(ZylError::E_EXPECTED_EXPRESSION(
-                                arg.span.clone(),
+                                pattern_arg.span.clone(),
                                 "variant".into(),
                             ))
                         }
                     };
-                    arms.push(MatchArm {
-                        variant,
-                        patterns: inner[1..inner.len() - 1].to_vec(),
-                        body: Box::new(inner.last().unwrap().clone()),
-                    });
+                    let pats = match inner.len() {
+                        1 => Vec::new(),
+                        2 => vec![inner[1].clone()],
+                        _ => inner[1..inner.len() - 1].to_vec(),
+                    };
+                    (v, pats)
+                }
+                ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                    (v.clone(), Vec::new())
                 }
                 _ => {
                     return Err(ZylError::E_EXPECTED_EXPRESSION(
-                        arg.span.clone(),
+                        pattern_arg.span.clone(),
                         "match arm".into(),
                     ))
                 }
+            };
+            i += 1;
+            if i >= args.len() {
+                return Err(ZylError::E_EXPECTED_EXPRESSION(
+                    pattern_arg.span.clone(),
+                    "match body".into(),
+                ));
             }
+            let body = args[i].clone();
+            i += 1;
+            arms.push(MatchArm { variant, patterns, body: Box::new(body) });
         }
         Ok(Expr {
             span: Span::default(),
@@ -719,32 +739,59 @@ impl Parser {
     }
 
     fn p_for(&self, span: &Span, args: &[Expr]) -> Result<Expr, ZylError> {
-        let name = match &args[0].inner {
-            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-            _ => {
-                return Err(ZylError::E_EXPECTED_EXPRESSION(
-                    args[0].span.clone(),
-                    "identifier".into(),
-                ))
+        eprintln!("DEBUG p_for: args.len()={}", args.len());
+        // Parse init bindings: list of (name [value]) pairs
+        let bindings = match &args[0].inner {
+            ExprInner::Begin(items) => {
+                eprintln!("DEBUG p_for: Begin with {} items", items.len());
+                items.iter().map(|item| {
+                    match &item.inner {
+                        ExprInner::Atom(Atom::Ident(n)) => {
+                            eprintln!("DEBUG p_for: Ident {}", n);
+                            (n.clone(), None)
+                        }
+                        ExprInner::Begin(sub) => {
+                            eprintln!("DEBUG p_for: sub Begin with {} items", sub.len());
+                            if sub.len() >= 2 {
+                                if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                    let name = n.clone();
+                                    let val = Some(Box::new(sub[1].clone()));
+                                    eprintln!("DEBUG p_for: binding {} {:?}", name, val.is_some());
+                                    (name, val)
+                                } else {
+                                    (String::new(), None)
+                                }
+                            } else {
+                                (String::new(), None)
+                            }
+                        }
+                        _ => {
+                            eprintln!("DEBUG p_for: other");
+                            (String::new(), None)
+                        }
+                    }
+                }).collect::<Vec<_>>()
+            }
+            other => {
+                eprintln!("DEBUG p_for: not Begin, other discriminant");
+                Vec::new()
             }
         };
-        check_reserved_keyword(&name, &args[0].span)?;
+        eprintln!("DEBUG p_for: final bindings count={}", bindings.len());
 
-        if args.len() >= 5 {
+        if args.len() >= 3 {
             Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::For(
-                    name,
+                    bindings,
                     Box::new(args[1].clone()),
                     Box::new(args[2].clone()),
-                    Box::new(args[3].clone()),
-                    Box::new(args[4].clone()),
                 ),
             })
         } else {
             Err(ZylError::E_EXPECTED_EXPRESSION(
                 Span::default(),
-                "for needs name iterator condition step body".into(),
+                "for needs (init-bindings) condition body".into(),
             ))
         }
     }

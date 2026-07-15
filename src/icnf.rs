@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ast::*;
-use crate::error::ZylError;
+use crate::error::{Span, ZylError};
 use crate::region_inference::Region;
 use crate::type_system::Type;
 
@@ -70,22 +70,29 @@ pub enum ICNFInner {
         body: Vec<ICNFNode>,
         result_var: String,
     },
-    /// For loop: for name iterator cond step body.
+    /// For loop: for init_bindings condition body. Body is a begin that ends with update.
     For {
-        var_name: String,
-        iter_ssa: usize,
+        init_bindings: Vec<(String, Option<usize>)>,
         cond_nodes: Vec<ICNFNode>,
-        step_nodes: Vec<ICNFNode>,
         body: Vec<ICNFNode>,
     },
     /// Lambda/closure value (not yet invoked).
     Closure(String),
-    /// Match on ADT with arms producing phi at join.
+    /// Tagged union variant construction: (type_name, variant_name, discriminant, field_ids...).
+    MakeVariant {
+        type_name: String,
+        variant_name: String,
+        discriminant: usize,
+        field_ids: Vec<usize>,
+    },
+    /// Match on ADT: compute discriminant of scrutinee, select arm by discriminant.
+    /// Arms are embedded with their bodies, discriminant compare, and phi at join.
     Match {
         scrutinee_ssa: usize,
+        type_name: String,
+        arms: Vec<MatchArmICNF>,
         result_var: String,
     },
-    /// Try-catch with error handling branch.
     TryCatch {
         try_body: Vec<ICNFNode>,
         catch_var: String,
@@ -132,6 +139,14 @@ pub enum ICNFInner {
         cond_ssa: usize,
         msg: Option<String>,
     },
+}
+
+/// A single match arm: variant name, field bindings, and body statements.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MatchArmICNF {
+    pub variant_name: String,
+    pub field_names: Vec<String>,
+    pub body: Vec<ICNFNode>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -215,6 +230,8 @@ pub struct IcnfConverter {
     struct_layouts: crate::codegen::StructLayout,
     /// Maps SSA IDs to struct names for tracking which bindings hold struct values.
     struct_bindings: std::collections::HashMap<usize, String>,
+    /// ADT definitions: type_name → list of (variant_name, field_type_names).
+    adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
 }
 
 impl IcnfConverter {
@@ -229,6 +246,7 @@ impl IcnfConverter {
             body_intermediates: Vec::new(),
             struct_layouts: crate::codegen::StructLayout::new(),
             struct_bindings: std::collections::HashMap::new(),
+            adt_defs: IndexMap::new(),
         }
     }
 
@@ -471,8 +489,19 @@ impl IcnfConverter {
                     let _body_stmts = self.convert_expr_to_stmts(body)?;
                     self.current_scope = saved_scope;
                 }
-                ExprInner::Deftype(..)
-                | ExprInner::TraitDecl(..)
+                ExprInner::Deftype(name, variants, _) => {
+                    // Store ADT definition for MakeVariant + Match handling.
+                    let variant_info: Vec<(String, Vec<String>)> = variants
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            let field_types: Vec<String> = v.fields.iter().cloned().collect();
+                            (v.name.clone(), field_types)
+                        })
+                        .collect();
+                    self.adt_defs.insert(name.clone(), variant_info);
+                }
+                ExprInner::TraitDecl(..)
                 | ExprInner::ImplBlock(..)
                 | ExprInner::StructDef(..)
                 | ExprInner::StructDefPlus(..)
@@ -483,9 +512,71 @@ impl IcnfConverter {
                 | ExprInner::Export(..) => {}
                 ExprInner::MacroDef(..) => {}
 
-                // Raw Call/Apply for deftype/trait/impl/struct — skip (type-level constructs from no-dispatch parsing).
-                ExprInner::Call(op, _) if is_ident_op(op, "deftype") || is_ident_op(op, "trait") || is_ident_op(op, "impl") || is_ident_op(op, "defstruct") || is_ident_op(op, "defstruct+") => {}
-                ExprInner::Apply(name, _) if name == "deftype" || name == "trait" || name == "impl" || name == "defstruct" || name == "defstruct+" => {}
+                // Raw Call form for deftype: (deftype Name Variant1 Variant2 ...)
+                ExprInner::Call(op, args) if is_ident_op(op, "deftype") && args.len() >= 2 => {
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
+                    let variant_info: Vec<(String, Vec<String>)> = args[1..]
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(_, arg)| {
+                            match &arg.inner {
+                                ExprInner::MakeVariant(_, vname, fargs) => {
+                                    let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                            Some(f.clone())
+                                        } else {
+                                            None
+                                        }
+                                    }).collect();
+                                    Some((vname.clone(), fields))
+                                }
+                                ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                                    Some((v.clone(), Vec::new()))
+                                }
+                                _ => None,
+                            }
+                        })
+                        .collect();
+                    self.adt_defs.insert(name, variant_info);
+                }
+
+                // Raw Apply form for deftype: (deftype Name Variant1 Variant2 ...)
+                ExprInner::Apply(name, args) if name == "deftype" && args.len() >= 2 => {
+                    let tname = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
+                    let variant_info: Vec<(String, Vec<String>)> = args[1..]
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(_, arg)| {
+                            match &arg.inner {
+                                ExprInner::MakeVariant(_, vname, fargs) => {
+                                    let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                            Some(f.clone())
+                                        } else {
+                                            None
+                                        }
+                                    }).collect();
+                                    Some((vname.clone(), fields))
+                                }
+                                ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                                    Some((v.clone(), Vec::new()))
+                                }
+                                _ => None,
+                            }
+                        })
+                        .collect();
+                    self.adt_defs.insert(tname, variant_info);
+                }
+
+                // Raw Call/Apply for trait/impl/struct — skip (type-level constructs from no-dispatch parsing).
+                ExprInner::Call(op, _) if is_ident_op(op, "trait") || is_ident_op(op, "impl") || is_ident_op(op, "defstruct") || is_ident_op(op, "defstruct+") => {}
+                ExprInner::Apply(name, _) if name == "trait" || name == "impl" || name == "defstruct" || name == "defstruct+" => {}
                 _ => {
                     let stmts = self.convert_expr_to_stmts(expr)?;
                     for s in stmts {
@@ -854,13 +945,46 @@ impl IcnfConverter {
             }
 
             // For loop.
-            ExprInner::For(var_name, iter_expr, cond_expr, step_expr, body) => {
-                let iter_id = self.convert_expr_collect_id(iter_expr)?;
-                // Bind loop variable in scope before converting cond/body/step.
+            ExprInner::For(ref bindings, cond_expr, body) => {
+                // Process init bindings: for each (name [value]), either use existing var or create new one.
+                let mut init_ssa: Vec<(String, Option<usize>)> = Vec::new();
+                for binding in bindings {
+                    let (name, val_opt) = binding;
+                    if let Some(val_expr) = val_opt {
+                        // Create new binding with initial value
+                        let saved_scope = std::mem::take(&mut self.current_scope);
+                        let id = self.next_ssa_id();
+                        self.current_scope.insert(name.clone(), id);
+                        let val_stmts = self.convert_expr_to_stmts(val_expr)?;
+                        let init_ssa_id = self.next_ssa_id();
+                        self.global_stmts.push(ICNFNode {
+                            id: init_ssa_id,
+                            region: Region::Stack,
+                            typ: None,
+                            is_branch_body: false,
+                            node: ICNFInner::Load(name.clone()),
+                        });
+                        init_ssa.push((name.clone(), Some(init_ssa_id)));
+                        self.global_stmts.extend(val_stmts);
+                        self.current_scope = saved_scope;
+                    } else {
+                        // Use existing variable
+                        if let Some(&id) = self.current_scope.get(name) {
+                            init_ssa.push((name.clone(), Some(id)));
+                        } else {
+                            return Err(ZylError::E_UNBOUND_VARIABLE(Span::default(), name.clone()));
+                        }
+                    }
+                }
+                // Bind all loop vars in scope before converting cond/body.
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                self.current_scope.insert(var_name.clone(), iter_id);
+                for binding in bindings {
+                    let (name, _) = binding;
+                    if let Some(&id) = self.current_scope.get(name) {
+                        // already bound
+                    }
+                }
                 let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
-                let step_nodes = self.convert_expr_to_stmts(step_expr)?;
                 let mut body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
@@ -869,10 +993,8 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::For {
-                        var_name: var_name.clone(),
-                        iter_ssa: iter_id,
+                        init_bindings: init_ssa,
                         cond_nodes,
-                        step_nodes,
                         body: body_stmts,
                     },
                 }])
@@ -919,30 +1041,6 @@ impl IcnfConverter {
                         catch_body: catch_stmts,
                     },
                 }])
-            }
-
-            // Match expression.
-            ExprInner::Match(scrutinee, arms) => {
-                let scrut_id = self.convert_expr(scrutinee)?;
-                let mut match_nodes = Vec::new();
-                for arm in arms {
-                    let result_var = format!("___match_{}_result", arm.variant);
-                    let body_stmts = self.convert_expr_to_stmts(&arm.body)?;
-                    // We don't use body_id here, but we need to convert the body.
-                    drop(body_stmts);
-
-                    match_nodes.push(ICNFNode {
-                        id: self.next_ssa_id(),
-                        region: Region::Heap,
-                        typ: None,
-                        is_branch_body: false,
-                        node: ICNFInner::Match {
-                            scrutinee_ssa: scrut_id,
-                            result_var,
-                        },
-                    });
-                }
-                Ok(match_nodes)
             }
 
             // Lambda (nested).
@@ -1082,6 +1180,127 @@ impl IcnfConverter {
                     node: ICNFInner::StructGet(struct_id, field_offset),
                 });
                 Ok(stmts)
+            }
+
+            // Tagged union variant construction: MakeVariant(type_name, variant_name, args).
+            ExprInner::MakeVariant(ref type_name, ref variant_name, args) => {
+                // Compute discriminant for this variant from the ADT definition.
+                // If type_name is empty, resolve it from the variant name.
+                let (resolved_type, discriminant) = if !type_name.is_empty() {
+                    (type_name.clone(), self.adt_defs.get(type_name).and_then(|variants| {
+                        variants.iter().position(|(vname, _)| vname == variant_name)
+                    }).unwrap_or(0))
+                } else {
+                    // Look up variant in all ADTs to find the type name.
+                    let (resolved_type, idx) = self.adt_defs.iter().find_map(|(tname, variants)| {
+                        variants.iter().position(|(vname, _)| vname == variant_name)
+                            .map(|i| (tname.clone(), i))
+                    }).unwrap_or_else(|| (String::new(), 0));
+                    (resolved_type, idx)
+                };
+                let discriminant = discriminant;
+
+                // Convert all field expressions and collect their SSA IDs.
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
+                let mut field_ids = Vec::with_capacity(args.len());
+                for arg in args.iter() {
+                    let stmts = self.convert_expr_to_stmts(arg)?;
+                    for s in &stmts {
+                        all_nodes.push(s.clone());
+                        if self.push_to_globals {
+                            if !self.global_stmts.iter().any(|n| n.id == s.id) {
+                                self.global_stmts.push(s.clone());
+                            }
+                        }
+                    }
+                    if !stmts.is_empty() {
+                        field_ids.push(stmts.last().unwrap().id);
+                    } else {
+                        let id = self.next_ssa_id();
+                        field_ids.push(id);
+                    }
+                }
+
+                // Allocate memory for the tagged union: discriminant + field pointers.
+                let total_size = (field_ids.len() + 1) * 8; // discriminant + fields.
+                let ssa_id = self.next_ssa_id();
+                let mut result = all_nodes;
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::MakeVariant {
+                        type_name: resolved_type.clone(),
+                        variant_name: variant_name.clone(),
+                        discriminant,
+                        field_ids: field_ids.clone(),
+                    },
+                });
+                self.struct_bindings.insert(ssa_id, format!("{}-{}", resolved_type, variant_name));
+                Ok(result)
+            }
+
+            // Match on ADT: discriminant compare + branch selection.
+            ExprInner::Match(scrutinee, arms) => {
+                // Resolve the type name from scrutinee expression (or use first arm's type).
+                let type_name = self.resolve_match_type(scrutinee, &arms);
+
+                let scrut_id = self.convert_expr(scrutinee)?;
+
+                // Convert each arm body and collect statements.
+                let mut all_stmts: Vec<ICNFNode> = Vec::new();
+                let mut icnf_arms: Vec<MatchArmICNF> = Vec::new();
+
+                for arm in arms {
+                    // Bind pattern variables (field names) in scope for the arm body.
+                    let saved_scope = std::mem::take(&mut self.current_scope);
+
+                    // Extract pattern variable names from arm.patterns and bind them.
+                    let mut field_names: Vec<String> = Vec::new();
+                    for p in &arm.patterns {
+                        if let ExprInner::Atom(Atom::Ident(name)) = &p.inner {
+                            let ssa_id = self.next_ssa_id();
+                            self.current_scope.insert(name.clone(), ssa_id);
+                            field_names.push(name.clone());
+                        }
+                    }
+
+                    // Convert the arm body.
+                    let body_stmts = self.convert_expr_to_stmts(&arm.body)?;
+                    self.current_scope = saved_scope;
+
+                    // Add arm body statements to all_stmts (they'll be embedded).
+                    for s in &body_stmts {
+                        if !all_stmts.iter().any(|n| n.id == s.id) {
+                            all_stmts.push(s.clone());
+                        }
+                    }
+
+                    icnf_arms.push(MatchArmICNF {
+                        variant_name: arm.variant.clone(),
+                        field_names,
+                        body: body_stmts,
+                    });
+                }
+
+                let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
+
+                let ssa_id = self.next_ssa_id();
+                all_stmts.insert(0, ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Match {
+                        scrutinee_ssa: scrut_id,
+                        type_name: type_name.clone(),
+                        arms: icnf_arms,
+                        result_var,
+                    },
+                });
+
+                Ok(all_stmts)
             }
 
             // FFI call.
@@ -1788,7 +2007,9 @@ impl IcnfConverter {
             ICNFInner::TryCatch { .. } => Region::Stack,
             ICNFInner::Begin(..) => Region::Stack,
             ICNFInner::MakeStruct(_, _) => Region::Heap, // structs are heap-allocated.
+            ICNFInner::MakeVariant { .. } => Region::Heap, // tagged unions are heap-allocated.
             ICNFInner::StructGet(_, _) => Region::Stack, // field access result is stack-bound.
+            ICNFInner::Match { .. } => Region::Heap, // match result may escape.
             ICNFInner::FfiCall { .. } => Region::Pin,
             ICNFInner::Spawn(_) | ICNFInner::Send(..) => Region::Heap,
             ICNFInner::ErrValue(_) | ICNFInner::OkValue(_) => Region::Heap, // Result values.
@@ -1832,6 +2053,33 @@ impl IcnfConverter {
         let id = self.ssa_id_counter.get();
         self.ssa_id_counter.set(id + 1);
         id
+    }
+
+    /// Resolve the type name for a match expression.
+    /// Tries to infer from the scrutinee expression by looking for struct/ADT bindings.
+    fn resolve_match_type(&self, scrutinee: &Expr, arms: &[MatchArm]) -> String {
+        // Try to find type from the first arm's variant lookup.
+        if let Some(first_arm) = arms.first() {
+            // Look up the type that has this variant.
+            for (type_name, variants) in &self.adt_defs {
+                if variants.iter().any(|(v, _)| v == &first_arm.variant) {
+                    return type_name.clone();
+                }
+            }
+        }
+        // Fallback: try to get type name from the scrutinee's binding.
+        if let ExprInner::Atom(Atom::Ident(name)) = &scrutinee.inner {
+            if let Some(&ssa_id) = self.current_scope.get(name) {
+                if let Some(binding_name) = self.struct_bindings.get(&ssa_id) {
+                    // Extract ADT type from "TypeName-VariantName" format.
+                    if let Some(pos) = binding_name.find('-') {
+                        return binding_name[..pos].to_string();
+                    }
+                }
+            }
+        }
+        // Ultimate fallback — use empty string (codegen will handle generically).
+        String::new()
     }
 }
 
