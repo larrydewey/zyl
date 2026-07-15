@@ -952,7 +952,6 @@ impl IcnfConverter {
                     let (name, val_opt) = binding;
                     if let Some(val_expr) = val_opt {
                         // Create new binding with initial value
-                        let saved_scope = std::mem::take(&mut self.current_scope);
                         let id = self.next_ssa_id();
                         self.current_scope.insert(name.clone(), id);
                         let val_stmts = self.convert_expr_to_stmts(val_expr)?;
@@ -966,7 +965,6 @@ impl IcnfConverter {
                         });
                         init_ssa.push((name.clone(), Some(init_ssa_id)));
                         self.global_stmts.extend(val_stmts);
-                        self.current_scope = saved_scope;
                     } else {
                         // Use existing variable
                         if let Some(&id) = self.current_scope.get(name) {
@@ -980,8 +978,11 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 for binding in bindings {
                     let (name, _) = binding;
-                    if let Some(&id) = self.current_scope.get(name) {
-                        // already bound
+                    if self.current_scope.get(name).is_none() {
+                        // Variable not bound yet (from else branch above), create a dummy binding.
+                        let id = self.next_ssa_id();
+                        self.current_scope.insert(name.clone(), id);
+                        init_ssa.push((name.clone(), Some(id)));
                     }
                 }
                 let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
