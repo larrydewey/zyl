@@ -98,7 +98,7 @@ Expr :=
   ;; Control & Flow
   | (assert Expr String)
   | (while Expr Expr)
-  | (for Name Expr Expr Expr Body)
+   | (for (Name [Expr]*) Expr Expr)
   | (cond Clause*)
   | (begin Expr+)
   | (error String)
@@ -380,9 +380,13 @@ Test execution:
     (while condition body)
     Strict left-to-right. No termination detection (Halting Problem).
 
-12.6 FOR:
-    (for name iterator condition step body)
-    Requires Iterator trait. Deterministic iteration.
+ 12.6 FOR:
+    (for (init-bindings) condition body)
+    init-bindings: list of (name [value]) pairs.
+    If value present: new binding with initial value.
+    If value absent: use existing variable (while-like).
+    Body is a begin-block; last expression becomes loop result.
+    User is responsible for updating loop variables within body.
 
 12.7 COND:
     (cond (condition-1 body-1) ... (else body))

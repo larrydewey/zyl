@@ -162,7 +162,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Phase 9: Code Generation → x86_64 assembly.
     println!("[Phase 9] Generating x86_64 assembly ...");
-    let mut codegen = codegen::CodeGen::new().with_struct_layouts(struct_layouts_for_codegen);
+    // Build ADT definitions from AST for codegen.
+    let mut adt_defs: std::collections::HashMap<String, Vec<(String, usize)>> = std::collections::HashMap::new();
+    for expr in &regioned_for_mono {
+        if let ast::ExprInner::Deftype(name, variants, _) = &expr.inner {
+            let variant_info: Vec<(String, usize)> = variants
+                .iter()
+                .map(|v| (v.name.clone(), v.fields.len()))
+                .collect();
+            adt_defs.insert(name.clone(), variant_info);
+        }
+    }
+    let mut codegen = codegen::CodeGen::new()
+        .with_struct_layouts(struct_layouts_for_codegen)
+        .with_adt_defs(adt_defs);
     codegen.generate(&optimized_icnf);
 
     // Write assembly to a temporary file, then assemble and link.

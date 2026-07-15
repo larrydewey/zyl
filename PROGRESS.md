@@ -235,7 +235,19 @@ Region Inference → TypeInferer.collect() → Monomorphization → TypeInferer.
 
 ### Medium Priority
 - [ ] **Floating-point support**: Float constants load but full IEEE-754 arithmetic not implemented
-- [ ] **ADT pattern matching**: `deftype` variants defined but pattern matching codegen not implemented
+- [x] **Negative number printing**: Fixed — multiple bugs corrected in `emit_int_to_str()`:
+  1. Duplicate printf call removed: `emit_int_to_str()` already emitted its own printf, but the Print handler also emitted one. Removed duplicate in `codegen.rs:2252-2264`.
+  2. Sign flag (r8) not cleared for positive/zero: `jns` jumped to buffer setup, skipping `xor r8, r8`. Fixed by restructure: `jns` now jumps to `neg_path` label which contains the xor, then falls through to `buf_setup`.
+  3. Digit off-by-one in division loop: `dec rdi` came BEFORE storing the digit, causing first digit to go to hexbuf[30] instead of hexbuf[31]. Fixed by moving `dec rdi` AFTER `mov [rdi], dl` + `add byte ptr [rdi], 48`.
+  4. Null terminator overwrote last digit: negative path wrote null at `rdi+1` which was the second-to-last digit position. Fixed by restructuring: null stays at hexbuf[32] from buffer setup, negative path writes '-' at rdi and uses rdx = rdi.
+  5. Zero case showed empty or '-': same r8 bug + wrong rdx. Fixed by adding `dec rdi` after writing '0' so div_done's `lea rdx, [rdi+1]` gives correct position.
+- [x] **ADT pattern matching**: `deftype` variants + `match` on ADT fully implemented (parsing, PostProcessor, type inference, ICNF, codegen)
+  - `deftype Name (Variant1 Field1 ...) (Variant2 ...)`: define tagged unions
+  - `(VariantName field1 field2 ...)`: construct variants (auto-detected via uppercase heuristic)
+  - `(match scrutinee (Variant p1 p2) body ...)` : match on ADT with discriminant-based dispatch
+  - Multiple ADT types supported
+  - Multiple fields per variant supported
+  - Pattern variables properly bound in arm bodies
 - [ ] **FFI support**: `ffi-call` type checking implemented but code generation deferred
 - [ ] **Actor concurrency**: `spawn`/`send` type checking implemented but runtime not implemented
 

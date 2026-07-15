@@ -55,7 +55,7 @@
 (while false 0)
 
 ; --- For loop ---
-(for i 0 (<= i 5) 1 (+ i 10))
+(for (i 0) (<= i 5) (+ i 10))
 
 ; --- Cond expression ---
 (cond
@@ -121,7 +121,7 @@
 (let-mut counter 0 (while (< counter 2) (set! counter (+ counter 1)) counter))
 
 ; --- For loop with print ---
-(for i 0 (< i 2) 1 (set! i (+ i 1)) (print "for-loop-works"))
+(for (i 0) (< i 2) (begin (set! i (+ i 1)) (print "for-loop-works")))
 
 ; --- Nested function calls ---
 (defn square (x) (* x x))

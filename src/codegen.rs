@@ -25,6 +25,8 @@ pub struct CodeGen {
     standalone_emitted: std::collections::HashSet<usize>,
     /// Struct field layouts for offset computation.
     struct_layouts: StructLayout,
+    /// ADT definitions: type_name → list of (variant_name, field_count).
+    adt_defs: std::collections::HashMap<String, Vec<(String, usize)>>,
 }
 
 impl CodeGen {
@@ -34,12 +36,19 @@ impl CodeGen {
             label_counter: 0,
             standalone_emitted: std::collections::HashSet::new(),
             struct_layouts: StructLayout::new(),
+            adt_defs: std::collections::HashMap::new(),
         }
     }
 
     /// Set struct field layouts for codegen (built from AST struct definitions).
     pub fn with_struct_layouts(mut self, layouts: StructLayout) -> Self {
         self.struct_layouts = layouts;
+        self
+    }
+
+    /// Set ADT definitions for codegen (built from AST deftype).
+    pub fn with_adt_defs(mut self, defs: std::collections::HashMap<String, Vec<(String, usize)>>) -> Self {
+        self.adt_defs = defs;
         self
     }
 
@@ -156,10 +165,8 @@ impl CodeGen {
                     ICNFInner::If { cond_ssa, .. } => {
                         main_operand_ids.insert(*cond_ssa);
                     }
-                    ICNFInner::For { iter_ssa, cond_nodes, step_nodes, body, .. } => {
-                        main_operand_ids.insert(*iter_ssa);
+                    ICNFInner::For { cond_nodes, body, .. } => {
                         collect_body_operand_ids(cond_nodes, &mut main_operand_ids);
-                        collect_body_operand_ids(step_nodes, &mut main_operand_ids);
                         collect_body_operand_ids(body, &mut main_operand_ids);
                     }
                     ICNFInner::StructGet(struct_id, _) => {
@@ -213,17 +220,15 @@ impl CodeGen {
             let mut for_loop_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut for_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
             for stmt in &program.statements {
-                if let ICNFInner::For { var_name, iter_ssa, cond_nodes, step_nodes, body, .. } = &stmt.node {
-                    if !local_vars.contains_key(var_name) {
-                        local_vars.insert(var_name.clone(), next_slot);
-                        next_slot += 1;
+                if let ICNFInner::For { init_bindings, cond_nodes, body, .. } = &stmt.node {
+                    for (name, _) in init_bindings {
+                        if !local_vars.contains_key(name) {
+                            local_vars.insert(name.clone(), next_slot);
+                            next_slot += 1;
+                        }
+                        for_loop_vars.insert(name.clone());
                     }
-                    for_loop_vars.insert(var_name.clone());
-                    emitted_ids.insert(*iter_ssa);
                     for n in cond_nodes {
-                        emitted_ids.insert(n.id);
-                    }
-                    for n in step_nodes {
                         emitted_ids.insert(n.id);
                     }
                     for n in body {
@@ -385,15 +390,15 @@ impl CodeGen {
                         collect_body_operand_ids(cond_body, &mut operand_ids);
                         collect_body_operand_ids(body, &mut operand_ids);
                     }
-                    ICNFInner::For { var_name, iter_ssa, cond_nodes, step_nodes, body, .. } => {
-                        operand_ids.insert(*iter_ssa);
-                        if !local_vars.contains_key(var_name) {
-                            local_vars.insert(var_name.clone(), next_slot);
-                            next_slot += 1;
+                    ICNFInner::For { init_bindings, cond_nodes, body, .. } => {
+                        for (name, _) in init_bindings {
+                            if !local_vars.contains_key(name) {
+                                local_vars.insert(name.clone(), next_slot);
+                                next_slot += 1;
+                            }
                         }
                         collect_body_operand_ids(cond_nodes, &mut operand_ids);
                         collect_body_operand_ids(body, &mut operand_ids);
-                        collect_body_operand_ids(step_nodes, &mut operand_ids);
                     }
                     ICNFInner::Begin(stmts) => {
                         for s in stmts {
@@ -1270,45 +1275,31 @@ impl CodeGen {
             reg_to_32(int_reg_64)
         ));
 
-        // Handle negative numbers.
-        let neg_label = format!(".___neg_{}", self.label_counter);
-        let skip_pos = format!(".___skip_pos_{}", self.label_counter + 1);
-        self.label_counter += 2;
+        // Handle negative numbers: check sign, negate if negative, clear/set r8 flag.
+        let neg_path = format!(".___neg_{}", self.label_counter);
+        let buf_setup = format!(".___bufsetup_{}", self.label_counter);
+        self.label_counter += 1;
 
         self.asm_push_align();
         self.asm.push(format!("    test {}, {}", tmp, tmp));
         self.asm_push_align();
-        self.asm.push(format!("    jns {}", neg_label));
+        self.asm.push(format!("    jns {}", neg_path));
 
-        // Negative path: write '-' and prepare for digit loop.
-        // This is reached when JNS is NOT taken (negative number).
-        let minus_str = ".str_minus";
-        // str_minus is now always pre-defined in .rodata section.
-
-        self.asm_push_align();
-        self.asm
-            .push(format!("    mov al, byte ptr [{}]", minus_str)); // load '-' char (0x2D) into AL
-        self.asm_push_align();
-        self.asm
-            .push(format!("    lea rdi, [{}] ", buf_label)); // RDI = buffer start
-        self.asm_push_align();
-        self.asm.push("    add rdi, 32".to_string()); // point to hexbuf[32] for minus sign
-        self.asm_push_align();
-        self.asm.push("    mov [rdi], al".to_string()); // write '-' at hexbuf[32]
+        // Negative path: negate value, set sign flag in r8, then jump to buffer setup.
         self.asm_push_align();
         self.asm.push(format!("    neg {}", tmp)); // make value positive
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31]
+        self.asm.push("    mov r8, 1".to_string()); // sign flag: 1 = negative
         self.asm_push_align();
-        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate at hexbuf[31]
-        self.asm_push_align();
-        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[30] for digit loop
-        self.asm_push_align();
-        self.asm.push(format!("    jmp {}", skip_pos));
+        self.asm.push(format!("    jmp {}", buf_setup));
 
-        // Positive path: set up RDI to point to end of buffer.
+        // Positive/zero path: clear sign flag in r8.
         self.asm_push_align();
-        self.asm.push(format!("{}:", neg_label));
+        self.asm.push(format!("{}:", neg_path));
+        self.asm_push_align();
+        self.asm.push("    xor r8, r8".to_string()); // clear sign flag: 0 = positive
+        self.asm_push_align();
+        self.asm.push(format!("{}:", buf_setup));
         self.asm_push_align();
         self.asm
             .push(format!("    lea rdi, [{}] ", buf_label)); // RDI = hexbuf start
@@ -1317,13 +1308,7 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate at hexbuf[32]
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31] for digit loop
-        self.asm_push_align();
-        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // clear hexbuf[31] to prevent old digits persisting
-
-        // Skip for negative path (already positioned at hexbuf[30]).
-        self.asm_push_align();
-        self.asm.push(format!("{}:", skip_pos));
+        self.asm.push("    dec rdi".to_string()); // move pointer back to hexbuf[31] (last digit position)
 
         // Handle zero: if value is 0, write "0" and skip divloop.
         let div_loop = format!(".___divloop_{}", self.label_counter);
@@ -1338,17 +1323,12 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("    jne {}", div_loop));
 
-        // Zero case: write "0" at current RDI position, null-terminate after it.
+        // Zero case: write "0" at current RDI position (hexbuf[31]), then move RDI back
+        // so div_done's lea rdx, [rdi+1] gives the correct string start.
         self.asm_push_align();
         self.asm.push("    mov byte ptr [rdi], 48".to_string()); // '0' = ASCII 48
         self.asm_push_align();
-        self.asm.push("    mov rdx, rdi".to_string()); // save string start
-        self.asm_push_align();
-        self.asm.push("    inc rdi".to_string()); // point after '0'
-        self.asm_push_align();
-        self.asm.push("    mov byte ptr [rdi], 0".to_string()); // null-terminate
-        self.asm_push_align();
-        self.asm.push("    mov rdi, rdx".to_string()); // restore string start
+        self.asm.push("    dec rdi".to_string()); // rdi = position before the digit
         self.asm_push_align();
         self.asm.push(format!("    jmp {}", div_done));
 
@@ -1375,27 +1355,60 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("    mov {}, eax", tmp)); // update working register with new quotient
 
-        // Store digit at buffer position pointed by rdi (working backwards).
+        // Store digit at current RDI position, then move pointer left for next digit.
         let digit = "dl"; // remainder is in dl after div
         self.asm_push_align();
-        self.asm.push("    dec rdi".to_string()); // move pointer back one position
+        self.asm.push(format!("    mov [rdi], {}", digit)); // store digit at current position
         self.asm_push_align();
-        self.asm.push(format!("    mov [rdi], {}", digit)); // store digit
+        self.asm.push("    add byte ptr [rdi], 48".to_string()); // convert to ASCII
 
-        // Add '0' to the digit (convert from numeric to ASCII).
         self.asm_push_align();
-        self.asm.push("    add byte ptr [rdi], 48".to_string());
+        self.asm.push("    dec rdi".to_string()); // move pointer left for next digit
 
         self.asm_push_align();
         self.asm.push(format!("    jmp {}", div_loop));
 
-         // Done: result pointer in rdi (points to first character of converted string).
-         // The buffer was pre-initialized with a null at the end, so the string
-         // is already properly null-terminated. Just save rdi in rdx for printf.
-         self.asm_push_align();
-         self.asm.push(format!("{}:", div_done));
-         self.asm_push_align();
-         self.asm.push("    mov rdx, rdi".to_string()); // save string start in rdx for printf
+          // Done: rdi points to position before first digit. First digit = rdi+1.
+          // Null is already at hexbuf[32] from buffer setup.
+          // Handle negative numbers: write '-' before the digits.
+          self.asm_push_align();
+          self.asm.push(format!("{}:", div_done));
+          self.asm_push_align();
+          let neg_done_label = format!(".___neg_done_{}", self.label_counter);
+          self.label_counter += 1;
+          // r8 holds the sign flag (1=negative, 0=positive).
+          self.asm_push_align();
+          self.asm.push(format!("    test r8, r8"));
+          self.asm_push_align();
+          self.asm.push(format!("    jz {}", neg_done_label));
+          // Negative: save first digit position (rdi+1), write '-' at rdi, use rdx = rdi.
+          self.asm_push_align();
+          self.asm.push("    mov r9, rdi".to_string()); // r9 = position before first digit
+          self.asm_push_align();
+          let minus_str = ".str_minus";
+          self.asm.push(format!("    mov al, byte ptr [{}]", minus_str));
+          self.asm_push_align();
+          self.asm.push("    mov [rdi], al".to_string()); // write '-' at position before first digit
+          self.asm_push_align();
+          self.asm.push("    mov rdx, rdi".to_string()); // rdx = string start (at '-')
+          self.asm_push_align();
+          self.asm.push(format!("    jmp .___print_str_{}", self.label_counter));
+          self.asm_push_align();
+          self.asm.push(format!("{}:", neg_done_label));
+          // Positive: first digit = rdi+1. rdx = first digit.
+          self.asm_push_align();
+          self.asm.push("    lea rdx, [rdi+1]".to_string()); // rdx = first digit position
+          self.asm_push_align();
+          self.asm.push(format!(".___print_str_{}:", self.label_counter));
+          self.label_counter += 1;
+          self.asm_push_align();
+          self.asm.push("    mov rsi, rdx".to_string()); // rsi = string start for printf
+          self.asm_push_align();
+          self.asm.push("    lea rdi, [.fmt_str]".to_string()); // fmt = "%s\n"
+          self.asm_push_align();
+          self.asm.push("    xor eax, eax".to_string()); // no xmm args
+          self.asm_push_align();
+          self.asm.push("    call printf@plt".to_string());
     }
 
     // ─── Node Emission ──────────────────────────────────────────────
@@ -1917,127 +1930,62 @@ impl CodeGen {
             }
 
             ICNFInner::For {
-                var_name,
-                iter_ssa,
+                init_bindings,
                 cond_nodes,
-                step_nodes,
                 body,
             } => {
                 let loop_start = format!(".for_{}", self.label_counter);
                 let loop_end = format!(".fend_{}", self.label_counter);
                 self.label_counter += 1;
 
-                // Initialize loop variable: load iter_ssa value and store to stack slot.
-                if let Some(slot) = local_vars.get(var_name.as_str()) {
-                    let slot_offset = *slot;
-                    // Load iter_ssa value into a register for storing.
-                    let iter_node = lookup.get(iter_ssa);
-                    if let Some(node) = iter_node {
-                        match &node.node {
-                            ICNFInner::Const(Atom::Int(v)) => {
-                                self.asm_push_align();
-                                self.asm.push(format!("    mov eax, {}", v));
-                                self.asm_push_align();
-                                let init_offset = (slot_offset + 1) * 8;
-                                self.asm.push(format!(
-                                    "    mov [rbp-{}], eax",
-                                    init_offset
-                                ));
-                            }
-                            ICNFInner::Const(Atom::Float(v)) => {
-                                let bits = f64_to_bits(*v);
-                                let init_offset = (slot_offset + 1) * 8;
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov eax, {}",
-                                    bits as u32
-                                ));
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov [rbp-{}], eax",
-                                    init_offset
-                                ));
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov eax, {}",
-                                    ((bits >> 32) & 0xFFFFFFFF) as i32
-                                ));
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov [rbp-{}], eax",
-                                    init_offset + 4
-                                ));
-                            }
-                            ICNFInner::Const(Atom::Bool(v)) => {
-                                let val = if *v { 1 } else { 0 };
-                                let init_offset = (slot_offset + 1) * 8;
-                                self.asm_push_align();
-                                self.asm.push(format!("    mov eax, {}", val));
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov [rbp-{}], eax",
-                                    init_offset
-                                ));
-                            }
-                            _ => {
-                                // For non-const values, emit the node and store result.
-                                self.emit_node(
-                                    node,
-                                    stmts,
-                                    local_vars,
-                                    emitted_ids,
-                                    operand_ids,
-                                    lookup,
-                                    phi_slots,
-                                );
-                                let init_offset = (slot_offset + 1) * 8;
-                                self.asm_push_align();
-                                self.asm.push(format!(
-                                    "    mov [rbp-{}], eax",
-                                    init_offset
-                                ));
-                            }
-                        }
-                    } else {
-                        // iter_ssa not found in lookup — look it up in stmts.
-                        let iter_stmt = stmts.iter().find(|n| n.id == *iter_ssa);
-                        if let Some(node) = iter_stmt {
-                            match &node.node {
-                                ICNFInner::Const(Atom::Int(v)) => {
-                                    self.asm_push_align();
-                                    self.asm.push(format!("    mov eax, {}", v));
-                                }
-                                ICNFInner::Const(Atom::Bool(v)) => {
-                                    self.asm_push_align();
-                                    self.asm.push(format!("    mov eax, {}", if *v { 1 } else { 0 }));
-                                }
-                                _ => {
-                                    self.emit_node(
-                                        node,
-                                        stmts,
-                                        local_vars,
-                                        emitted_ids,
-                                        operand_ids,
-                                        lookup,
-                                        phi_slots,
-                                    );
+                // Initialize loop variables from init_bindings.
+                for (name, val_id_opt) in init_bindings {
+                    if let Some(slot) = local_vars.get(name.as_str()) {
+                        let slot_offset = *slot;
+                        if let Some(val_id) = val_id_opt {
+                            // Load value and store to slot
+                            let val_node = lookup.get(val_id);
+                            if let Some(node) = val_node {
+                                match &node.node {
+                                    ICNFInner::Const(Atom::Int(v)) => {
+                                        self.asm_push_align();
+                                        self.asm.push(format!("    mov eax, {}", v));
+                                        self.asm_push_align();
+                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                    }
+                                    ICNFInner::Const(Atom::Bool(v)) => {
+                                        let val = if *v { 1 } else { 0 };
+                                        self.asm_push_align();
+                                        self.asm.push(format!("    mov eax, {}", val));
+                                        self.asm_push_align();
+                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                    }
+                                    _ => {
+                                        // Emit the value node
+                                        let mut init_local_vars = local_vars.clone();
+                                        self.emit_node(
+                                            node,
+                                            stmts,
+                                            &mut init_local_vars,
+                                            emitted_ids,
+                                            operand_ids,
+                                            lookup,
+                                            phi_slots,
+                                        );
+                                        self.asm_push_align();
+                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                    }
                                 }
                             }
                         }
-                        let init_offset = (slot_offset + 1) * 8;
-                        self.asm_push_align();
-                        self.asm.push(format!(
-                            "    mov [rbp-{}], eax",
-                            init_offset
-                        ));
+                        // If no val_id, variable already has a value from outer scope — do nothing.
                     }
                 }
 
-                // Collect operand IDs to skip intermediate Load nodes.
+                // Collect operand IDs.
                 let mut for_operand_ids: std::collections::HashSet<usize> = HashSet::new();
                 let all_nodes: Vec<&ICNFNode> = cond_nodes.iter()
                     .chain(body.iter())
-                    .chain(step_nodes.iter())
                     .collect();
                 for stmt in &all_nodes {
                     match &stmt.node {
@@ -2076,20 +2024,16 @@ impl CodeGen {
                 for n in body {
                     for_lookup.insert(n.id, n);
                 }
-                for n in step_nodes {
+                for n in cond_nodes {
                     for_lookup.insert(n.id, n);
                 }
 
-                // Save the loop variable slot from the outer local_vars before shadowing.
-                let loop_var_slot = local_vars.get(var_name.as_str()).copied();
-
                 // Check condition — if false, exit loop.
-                // Use the outer local_vars which contains the loop variable slot.
                 for cond_stmt in cond_nodes {
                     self.emit_node(
                         cond_stmt,
                         stmts,
-                        &local_vars,
+                        local_vars,
                         emitted_ids,
                         &for_operand_ids,
                         &for_lookup,
@@ -2103,9 +2047,11 @@ impl CodeGen {
 
                 // Emit body.
                 let mut body_local_vars: HashMap<String, usize> = HashMap::new();
-                // Include the loop variable slot in body local_vars.
-                if let Some(slot) = loop_var_slot {
-                    body_local_vars.insert(var_name.clone(), slot);
+                // Include loop variable slots in body local_vars.
+                for (name, _) in init_bindings {
+                    if let Some(&slot) = local_vars.get(name.as_str()) {
+                        body_local_vars.insert(name.clone(), slot);
+                    }
                 }
                 for stmt in body {
                     if let ICNFInner::Assign(name, _) = &stmt.node {
@@ -2121,31 +2067,6 @@ impl CodeGen {
                         &std::collections::HashMap::new(),
                     );
                     emitted_ids.insert(stmt.id);
-                }
-
-                // Execute step expression and store result back to loop variable.
-                for stmt in step_nodes {
-                    self.emit_node(
-                        stmt,
-                        stmts,
-                        &body_local_vars,
-                        emitted_ids,
-                        &for_operand_ids,
-                        &for_lookup,
-                        &std::collections::HashMap::new(),
-                    );
-                    emitted_ids.insert(stmt.id);
-                }
-                // Store step result back to loop variable slot.
-                if let Some(slot) = loop_var_slot {
-                    let step_offset = (slot + 1) * 8;
-                    self.asm_push_align();
-                    self.asm.push(format!("    mov [rbp-{}], eax", step_offset));
-                } else {
-                    let hash = simple_hash(var_name);
-                    let step_offset = ((hash % 32) + 1) * 8;
-                    self.asm_push_align();
-                    self.asm.push(format!("    mov [rbp-{}], eax", step_offset));
                 }
 
                 self.asm_push_align();
@@ -2223,19 +2144,6 @@ impl CodeGen {
                         // First, emit the integer-to-string conversion.
                         self.emit_int_to_str(int_reg);
 
-                        // After int-to-str: rdx points to the converted string.
-                        // printf needs: rdi=format(.fmt_str in rodata), rsi=string, xor eax=0.
-
-                        self.asm_push_align();
-                        self.asm.push("    mov rsi, rdx".to_string());
-                        self.asm_push_align();
-                        self.asm.push("    lea rdi, [.fmt_str]".to_string());
-
-                        self.asm_push_align();
-                        self.asm
-                            .push("    xor eax, eax           # No xmm args to printf".to_string());
-                        self.asm_push_align();
-                        self.asm.push("    call printf@plt".to_string());
                     }
                 }
             }
@@ -2434,6 +2342,220 @@ impl CodeGen {
                 emitted_ids.insert(node.id);
             }
 
+            ICNFInner::MakeVariant { type_name, variant_name, discriminant, field_ids } => {
+                // Tagged union construction: malloc(sizeof(discriminant + fields)), store discriminant, then fields.
+                let field_count = field_ids.len();
+                let total_size = (field_count + 1) * 8; // discriminant + fields.
+
+                // Save field values to stack before malloc.
+                self.asm_push_align();
+                self.asm.push("    push rbp".to_string());
+                self.asm_push_align();
+                for &field_id in field_ids.iter().rev() {
+                    match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
+                        Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
+                            self.emit_const_into("rax", atom);
+                            self.asm_push_align();
+                            self.asm.push("    push rax".to_string());
+                        }
+                        Some(ICNFNode { node: ICNFInner::Load(lvar), .. }) => {
+                            if let Some(&slot_idx) = local_vars.get(lvar) {
+                                let slot = (slot_idx + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            } else {
+                                self.asm_push_align();
+                                self.asm.push("    mov rax, 0".to_string());
+                            }
+                            self.asm_push_align();
+                            self.asm.push("    push rax".to_string());
+                        }
+                        Some(n) => {
+                            self.emit_load_into(field_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids);
+                            self.asm_push_align();
+                            self.asm.push("    push rax".to_string());
+                        }
+                        None => {
+                            self.asm_push_align();
+                            self.asm.push("    push rax".to_string());
+                        }
+                    }
+                }
+
+                // Allocate memory.
+                self.asm_push_align();
+                self.asm.push(format!("    mov edi, {}", total_size));
+                self.asm_push_align();
+                self.asm.push("    call malloc@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r10, rax".to_string());
+
+                // Store discriminant at offset 0.
+                self.asm_push_align();
+                self.asm.push(format!("    mov eax, {}", discriminant));
+                self.asm_push_align();
+                self.asm.push("    mov [r10], eax".to_string());
+
+                // Store fields (popped in correct order).
+                for i in 0..field_count {
+                    self.asm_push_align();
+                    self.asm.push("    pop rax".to_string());
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov [r10 + {}], rax", (i + 1) * 8));
+                }
+
+                // Result: struct pointer in rax.
+                self.asm_push_align();
+                self.asm.push("    mov rax, r10".to_string());
+                emitted_ids.insert(node.id);
+            }
+
+            ICNFInner::Match { scrutinee_ssa, type_name, arms, result_var } => {
+                // Load scrutinee into rax (struct pointer).
+                // Read discriminant from [rax + 0].
+                // Compare with each arm's variant discriminant, jump to matching arm.
+                // Each arm body runs with field values loaded from the struct.
+                // Phi join: load result from phi slot.
+
+                let match_id = self.label_counter;
+                self.label_counter += 1;
+                let join_label = if type_name.is_empty() {
+                    format!(".___match_join_{}", match_id)
+                } else {
+                    format!(".___match_join_{}_{}", type_name, match_id)
+                };
+
+                // Load scrutinee pointer.
+                self.emit_load_into(*scrutinee_ssa, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids);
+
+                // Save scrutinee pointer in callee-saved r12 before discriminant load.
+                self.asm_push_align();
+                self.asm.push("    mov r12, rax".to_string());
+
+                // Load discriminant: [rax + 0].
+                self.asm_push_align();
+                self.asm.push("    mov eax, [rax]".to_string());
+
+                // Build arm labels and discriminant values.
+                let arm_labels: Vec<String> = (0..arms.len())
+                    .map(|i| {
+                        if type_name.is_empty() {
+                            format!(".___match_arm_{}_{}", match_id, i)
+                        } else {
+                            format!(".___match_arm_{}_{}_{}", type_name, match_id, i)
+                        }
+                    })
+                    .collect();
+                let default_label = if type_name.is_empty() {
+                    format!(".___match_default_{}", match_id)
+                } else {
+                    format!(".___match_default_{}_{}", type_name, match_id)
+                };
+
+                // For each arm, compare discriminant and jump if match.
+                for (i, arm) in arms.iter().enumerate() {
+                    self.asm_push_align();
+                    self.asm.push(format!("    cmp eax, {}", i)); // Compare with discriminant i.
+                    self.asm_push_align();
+                    self.asm.push(format!("    je {}", arm_labels[i]));
+                }
+
+                // No match — fall through to default (undefined behavior).
+                self.asm_push_align();
+                self.asm.push(format!("    jmp {}", default_label));
+
+                // Emit each arm body.
+                for (i, arm) in arms.iter().enumerate() {
+                    let arm_label = &arm_labels[i];
+                    self.asm_push_align();
+                    self.asm.push(format!("{}:", arm_label));
+
+                    // Load field values from the scrutinee struct (now in r12).
+                    // Fields are at [r12 + 8], [r12 + 16], etc.
+                    // Clone local_vars for this arm scope since we need to add pattern bindings.
+                    let mut arm_local_vars = local_vars.clone();
+                    for (j, field_name) in arm.field_names.iter().enumerate() {
+                        let field_offset = (j + 1) * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov ecx, [r12 + {}]", field_offset)); // Load field into temp reg.
+                        self.asm_push_align();
+
+                        // Store to a stack slot for the pattern variable.
+                        // Use the original field_name (matches ICNF Load operand).
+                        if !arm_local_vars.contains_key(field_name) {
+                            // Allocate a new slot.
+                            let max_slot: usize = arm_local_vars.values().cloned().max().unwrap_or(0);
+                            let slot = max_slot + 1;
+                            let offset = (slot + 1) * 8;
+                            self.asm.push(format!("    mov [rbp-{}], ecx", offset));
+                            arm_local_vars.insert(field_name.clone(), slot);
+                        } else {
+                            // Update existing slot.
+                            if let Some(&slot_idx) = arm_local_vars.get(field_name) {
+                                let offset = (slot_idx + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov [rbp-{}], ecx", offset));
+                            }
+                        }
+                    }
+
+                    // Emit the arm body statements.
+                    let mut arm_operand_ids: HashSet<usize> = HashSet::new();
+                    collect_body_operand_ids(&arm.body, &mut arm_operand_ids);
+
+                    let arm_stmts: Vec<ICNFNode> = stmts.to_vec();
+                    let mut arm_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                    for n in &arm_stmts {
+                        arm_lookup.insert(n.id, n);
+                    }
+                    for n in &arm.body {
+                        arm_lookup.insert(n.id, n);
+                    }
+
+                    for stmt in &arm.body {
+                        if let ICNFInner::Assign(name, _) = &stmt.node {
+                            *arm_local_vars.entry(name.clone()).or_insert(0) += 1;
+                        }
+                        self.emit_node(
+                            stmt,
+                            &arm_stmts,
+                            &mut arm_local_vars,
+                            emitted_ids,
+                            &arm_operand_ids,
+                            &arm_lookup,
+                            &std::collections::HashMap::new(),
+                        );
+                        emitted_ids.insert(stmt.id);
+                    }
+
+                    // Store arm body result to phi slot.
+                    if let Some(ref slot) = phi_slots.get(result_var) {
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                    }
+
+                    // Jump to join.
+                    self.asm_push_align();
+                    self.asm.push(format!("    jmp {}", join_label));
+                }
+
+                // Default (no match) — undefined behavior.
+                self.asm_push_align();
+                self.asm.push(format!("{}:", default_label));
+                self.asm_push_align();
+                self.asm.push("    mov eax, -1".to_string()); // Error sentinel.
+                self.asm_push_align();
+                self.asm.push(format!("    jmp {}", join_label));
+
+                // Join point.
+                self.asm_push_align();
+                self.asm.push(format!("{}:", join_label));
+                if let Some(ref slot) = phi_slots.get(result_var) {
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                }
+            }
+
             _ => {
                 // Unsupported/unimplemented nodes — emit a nop placeholder.
                 self.asm_push_align();
@@ -2589,31 +2711,8 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
                 }
                 collect_body_operand_ids(body, out);
             }
-            ICNFInner::For { iter_ssa, cond_nodes, step_nodes, body, .. } => {
-                out.insert(*iter_ssa);
+            ICNFInner::For { init_bindings: _, cond_nodes, body } => {
                 for n in cond_nodes {
-                    match &n.node {
-                        ICNFInner::BinOp(_, l, r) => {
-                            out.insert(*l);
-                            out.insert(*r);
-                        }
-                        ICNFInner::UnOp(_, id) => {
-                            out.insert(*id);
-                        }
-                        ICNFInner::Call(_, args) => {
-                            for &a in args {
-                                out.insert(a);
-                            }
-                        }
-                        ICNFInner::Print(args) => {
-                            for &a in args {
-                                out.insert(a);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                for n in step_nodes {
                     match &n.node {
                         ICNFInner::BinOp(_, l, r) => {
                             out.insert(*l);
