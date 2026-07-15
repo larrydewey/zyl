@@ -215,6 +215,44 @@ Region Inference → TypeInferer.collect() → Monomorphization → TypeInferer.
 
 ---
 
+## For Loop Redesign (2026-07-15)
+
+### Previous Syntax
+```
+(for name init condition step body)
+```
+Example: `(for i 0 (< i 5) 1 (set! i (+ i 1)) (print i))`
+
+### New Syntax
+```
+(for (init-bindings) condition body)
+```
+Where `init-bindings` is a list of `(name [value])` pairs:
+- `(i)` — use existing variable (while-like)
+- `(i 0)` — new binding with initial value
+- `(i 0 j 10)` — multiple variables
+- `()` — empty, pure while loop
+
+The body is a `begin`-block where the user is responsible for updating loop variables:
+```lisp
+(for (i 0) (< i 5) (begin
+  (print i)
+  (set! i (+ i 1))
+))
+```
+
+### Changes
+- **AST**: `For(String, Box<Expr>, Box<Expr>, Box<Expr>)` → `For(Vec<(String, Option<Box<Expr>>)>, Box<Expr>, Box<Expr>)`
+- **Parser**: 4-arg `for` → 3-arg (init-bindings, condition, body)
+- **PostProcessor**: Handle `Call` form `(i 0)` in no-dispatch mode
+- **ICNF**: `For { var_name, iter_ssa, cond_nodes, step_nodes, body }` → `For { init_bindings, cond_nodes, body }`
+- **ICNF Gen**: Bind init variables to scope before converting condition/body
+- **Codegen**: Removed step expression handling; body's `SetBang` handles updates
+- **All phases**: macro_expander, type_inference, region_inference, monomorphization, optimization updated
+
+### Files Changed
+- `src/ast.rs`, `src/parser.rs`, `src/macro_expander.rs`, `src/icnf.rs`, `src/codegen.rs`, `src/monomorphization.rs`, `src/type_inference.rs`, `src/region_inference.rs`, `src/optimization.rs`, `stdlib_test.zyl`, `zyl_specification.txt`
+
 ## Known Remaining Issues
 
 ### High Priority
@@ -225,13 +263,7 @@ Region Inference → TypeInferer.collect() → Monomorphization → TypeInferer.
   3. LetMut ICNF ordering: Load nodes were added to `global_stmts` before the Assign that defines the variable, causing hash-based fallback offsets. Fixed by deferring global pushes (matching Let handler pattern) in `icnf.rs:778-815`.
   4. Main function stack allocation: Added `sub rsp, 256` for main function stack frame in `codegen.rs:97-99`.
   5. Function parameter slot index mismatch: params stored at `(i+2)*8` but loaded from `(i+1)*8`. Fixed in `codegen.rs:284` to use `(i+1)*8` for storage.
-- [x] **For loop runtime**: Fixed — multiple bugs corrected:
-  1. Loop variable not assigned stack slot in first pass: Added slot assignment for For loop variables in main function's first pass (`codegen.rs:207-222`).
-  2. Init offset used raw slot index instead of byte offset: Fixed `mov [rbp-X], eax` to use `(slot + 1) * 8` formula.
-  3. Step result not stored back to loop variable: Added step result storage after step expression emission.
-  4. For body/step nodes emitted twice (once by For handler, once by main emit loop): Added `emitted_ids` pre-population in pre-scan to skip embedded nodes.
-  5. Condition/step Load nodes using hash-based fallback: Pass outer `local_vars` (containing loop variable slot) to condition emission.
-  6. Hexbuf stale digits: Added `mov byte ptr [rdi], 0` after `dec rdi` in positive path to clear hexbuf[31] between iterations.
+- [x] **For loop**: Completely redesigned with new syntax `(for (init-bindings) cond body)` (see below). Old 5-arg syntax `(for name init cond step body)` removed.
 
 ### Medium Priority
 - [ ] **Floating-point support**: Float constants load but full IEEE-754 arithmetic not implemented
