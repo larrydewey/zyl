@@ -1626,14 +1626,17 @@ impl CodeGen {
                 }
             }
             ICNFInner::SetBang(target, val_id) => {
+                eprintln!("DEBUG SetBang: target={}, val_id={}", target, val_id);
                 // Load val_id into eax first, then store to target variable's slot.
                 self.emit_load_into(*val_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids);
                 if let Some(&slot_idx) = local_vars.get(target) {
                     let offset = (slot_idx + 1) * 8;
+                    eprintln!("DEBUG SetBang: slot_idx={}", slot_idx);
                     self.asm_push_align();
                     self.asm
                         .push(format!("    mov [rbp-{}], eax", offset));
                 } else {
+                    eprintln!("DEBUG SetBang: target not found in local_vars");
                     let hash = simple_hash(target);
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
