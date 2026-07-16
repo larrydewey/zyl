@@ -263,7 +263,13 @@ The body is a `begin`-block where the user is responsible for updating loop vari
   3. LetMut ICNF ordering: Load nodes were added to `global_stmts` before the Assign that defines the variable, causing hash-based fallback offsets. Fixed by deferring global pushes (matching Let handler pattern) in `icnf.rs:778-815`.
   4. Main function stack allocation: Added `sub rsp, 256` for main function stack frame in `codegen.rs:97-99`.
   5. Function parameter slot index mismatch: params stored at `(i+2)*8` but loaded from `(i+1)*8`. Fixed in `codegen.rs:284` to use `(i+1)*8` for storage.
-- [x] **For loop**: Completely redesigned with new syntax `(for (init-bindings) cond body)` (see below). Old 5-arg syntax `(for name init cond step body)` removed.
+ - [x] **For loop**: Completely redesigned with new syntax `(for (init-bindings) cond body)` (see below). Old 5-arg syntax `(for name init cond step body)` removed.
+   - Fixed init value lookup: use stmts.iter().find() for main, lookup.get() for functions
+   - Fixed body_local_vars: clone from local_vars to include outer variables
+   - Fixed For node result loading: add special case in emit_load_into
+   - Fixed condition register: use r11 instead of r10 to preserve eax
+   - Skip Assign nodes in For body to avoid redundant stores
+   - Syntax: `(for (i 0) (< i 3) (begin (print i) (set! i (+ i 1))))`
 
 ### Medium Priority
 - [ ] **Floating-point support**: Float constants load but full IEEE-754 arithmetic not implemented
