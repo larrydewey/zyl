@@ -75,6 +75,7 @@ pub enum ICNFInner {
         init_bindings: Vec<(String, Option<usize>)>,
         cond_nodes: Vec<ICNFNode>,
         body: Vec<ICNFNode>,
+        result_var: String,
     },
     /// Lambda/closure value (not yet invoked).
     Closure(String),
@@ -894,13 +895,17 @@ impl IcnfConverter {
                 self.current_scope = saved_scope;
                 // Restore globals and push all in correct order (with dedup).
                 std::mem::swap(&mut self.global_stmts, &mut saved_globals);
-                // Collect Load nodes from saved_globals (the temp buffer).
-                let load_stmts: Vec<ICNFNode> = saved_globals
-                    .into_iter()
+                // After swap: self.global_stmts = original function temp buffer,
+                // saved_globals = init values from For handler (extended by For during LetMut body processing).
+                // Collect Load nodes from self.global_stmts (the temp buffer).
+                let load_stmts: Vec<ICNFNode> = self.global_stmts
+                    .drain(..)
                     .filter(|n| matches!(n.node, ICNFInner::Load(_)))
                     .collect();
                 let mut all_stmts = val_stmts;
                 all_stmts.push(assign_node);
+                // Include init values from For loop (in saved_globals after swap).
+                all_stmts.extend(saved_globals);
                 all_stmts.extend(body_stmts);
                 all_stmts.extend(load_stmts);
                 for stmt in &all_stmts {
@@ -968,24 +973,24 @@ impl IcnfConverter {
                         }
                     }
                 }
-                eprintln!("DEBUG ICNF For: after first loop, init_ssa count={}, scope has {}", init_ssa.len(), self.current_scope.len());
                 // Bind all loop vars in scope before converting cond/body.
                 // Don't clear scope here - variables from first loop are already bound.
                 for binding in bindings {
                     let (name, _) = binding;
                     if self.current_scope.get(name).is_none() {
                         // Variable not bound yet (from else branch above), create a dummy binding.
-                        eprintln!("DEBUG ICNF For: adding dummy binding for {}", name);
                         let id = self.next_ssa_id();
                         self.current_scope.insert(name.clone(), id);
                         init_ssa.push((name.clone(), Some(id)));
                     }
                 }
-                eprintln!("DEBUG ICNF For: final init_ssa count={}", init_ssa.len());
                 let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
                 let mut body_stmts = self.convert_expr_to_stmts(body)?;
+                // Create a result variable to hold the For loop's result.
+                let result_var = format!("___for_result_{}", self.ssa_id_counter.get());
+                let for_node_id = self.next_ssa_id();
                 Ok(vec![ICNFNode {
-                    id: self.next_ssa_id(),
+                    id: for_node_id,
                     region: Region::Stack,
                     typ: None,
                     is_branch_body: false,
@@ -993,6 +998,7 @@ impl IcnfConverter {
                         init_bindings: init_ssa,
                         cond_nodes,
                         body: body_stmts,
+                        result_var,
                     },
                 }])
             }

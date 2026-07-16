@@ -55,7 +55,7 @@
 (while false 0)
 
 ; --- For loop ---
-(for (i 0) (<= i 5) (+ i 10))
+(for (i 1) (<= i 3) (begin (print i) (set! i (+ i 1))))
 
 ; --- Cond expression ---
 (cond
