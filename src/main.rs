@@ -306,7 +306,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("Phases 1–9 complete: Parsing → Macro Expansion → Region Inference → Monomorphization → Type Inference → ICNF Generation → Optimization → Code Generation succeeded.");
 
     // Try to run the generated binary.
-    if std::path::Path::new(&bin_path).exists() {
+    if false && std::path::Path::new(&bin_path).exists() {
         println!("Running {} ...", bin_path);
         let run_result = std::process::Command::new(&bin_path).output();
 

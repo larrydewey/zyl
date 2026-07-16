@@ -220,7 +220,7 @@ impl CodeGen {
             let mut for_loop_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut for_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
             for stmt in &program.statements {
-                if let ICNFInner::For { init_bindings, cond_nodes, body, .. } = &stmt.node {
+                if let ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, .. } = &stmt.node {
                     for (name, _) in init_bindings {
                         if !local_vars.contains_key(name) {
                             local_vars.insert(name.clone(), next_slot);
@@ -390,7 +390,7 @@ impl CodeGen {
                         collect_body_operand_ids(cond_body, &mut operand_ids);
                         collect_body_operand_ids(body, &mut operand_ids);
                     }
-                    ICNFInner::For { init_bindings, cond_nodes, body, .. } => {
+                    ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, .. } => {
                         for (name, _) in init_bindings {
                             if !local_vars.contains_key(name) {
                                 local_vars.insert(name.clone(), next_slot);
@@ -886,6 +886,17 @@ impl CodeGen {
                 ..
             }) => {
                 // Already emitted — result is in eax. Just copy to target.
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                }
+            }
+            Some(ICNFNode {
+                node: ICNFInner::For { .. },
+                ..
+            }) => {
+                // For loop result is in eax after the loop completes.
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
@@ -1936,6 +1947,7 @@ impl CodeGen {
                 init_bindings,
                 cond_nodes,
                 body,
+                result_var: _,
             } => {
                 let loop_start = format!(".for_{}", self.label_counter);
                 let loop_end = format!(".fend_{}", self.label_counter);
@@ -1946,8 +1958,8 @@ impl CodeGen {
                     if let Some(slot) = local_vars.get(name.as_str()) {
                         let slot_offset = *slot;
                         if let Some(val_id) = val_id_opt {
-                            // Load value and store to slot
-                            let val_node = lookup.get(val_id);
+                            // Load value and store to slot. Look in stmts first (for main), then lookup.
+                            let val_node = stmts.iter().find(|n| n.id == *val_id).or_else(|| lookup.get(val_id).copied());
                             if let Some(node) = val_node {
                                 match &node.node {
                                     ICNFInner::Const(Atom::Int(v)) => {
@@ -2044,21 +2056,17 @@ impl CodeGen {
                     );
                     emitted_ids.insert(cond_stmt.id);
                 }
-                self.asm.push("    mov r10, rax".into());
-                self.asm.push("    test r10, r10".into());
+                self.asm.push("    mov r11, rax".into());
+                self.asm.push("    test r11, r11".into());
                 self.asm.push(format!("    je {}", loop_end));
 
                 // Emit body.
-                let mut body_local_vars: HashMap<String, usize> = HashMap::new();
-                // Include loop variable slots in body local_vars.
-                for (name, _) in init_bindings {
-                    if let Some(&slot) = local_vars.get(name.as_str()) {
-                        body_local_vars.insert(name.clone(), slot);
-                    }
-                }
+                let mut body_local_vars: HashMap<String, usize> = local_vars.clone();
                 for stmt in body {
-                    if let ICNFInner::Assign(name, _) = &stmt.node {
-                        *body_local_vars.entry(name.clone()).or_insert(0) += 1;
+                    // Skip Assign nodes that are created by SetBang for SSA tracking.
+                    // They would emit redundant stores to stack slots.
+                    if matches!(&stmt.node, ICNFInner::Assign(_, _)) {
+                        continue;
                     }
                     self.emit_node(
                         stmt,
@@ -2714,7 +2722,7 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
                 }
                 collect_body_operand_ids(body, out);
             }
-            ICNFInner::For { init_bindings: _, cond_nodes, body } => {
+            ICNFInner::For { init_bindings: _, cond_nodes, body, result_var: _ } => {
                 for n in cond_nodes {
                     match &n.node {
                         ICNFInner::BinOp(_, l, r) => {

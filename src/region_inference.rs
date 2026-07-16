@@ -426,10 +426,6 @@ impl RegionInferer {
 
             // for — loop variables are Stack (R1).
             ExprInner::For(bindings, cond, body) => {
-                eprintln!("DEBUG For: bindings={:?} cond={:?} body={:?}", 
-                    bindings.iter().map(|(n, v)| (n.clone(), v.is_some())).collect::<Vec<_>>(),
-                    std::mem::discriminant(&cond.inner),
-                    std::mem::discriminant(&body.inner));
                 // Infer init binding values if present.
                 for (_, val_opt) in bindings {
                     if let Some(ref val) = val_opt {
