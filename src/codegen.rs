@@ -11,11 +11,6 @@ use std::collections::{HashMap, HashSet};
 /// All fields are 8 bytes (64-bit aligned) in the MVP.
 pub type StructLayout = HashMap<String, Vec<(String, usize)>>;
 
-/// Sanitize an identifier for use as an assembly label: replace hyphens with underscores.
-fn sanitize_name(name: &str) -> String {
-    name.replace('-', "_")
-}
-
 pub struct CodeGen {
     /// Collected assembly output lines.
     pub asm: Vec<String>,
@@ -302,7 +297,7 @@ impl CodeGen {
 
         // Emit functions for user-defined defn.
         for func in &program.functions {
-            let fn_name = format!("_ZYL_{}", sanitize_name(&func.name));
+            let fn_name = format!("_ZYL_{}", func.name);
             self.asm_push_align();
             self.asm_push_align();
             self.asm.push(format!("{}:", fn_name));
@@ -1054,7 +1049,7 @@ impl CodeGen {
         }
 
         if name != "printf" && name != "exit" {
-            let fn_name = format!("_ZYL_{}", sanitize_name(name));
+            let fn_name = format!("_ZYL_{}", name);
             self.asm_push_align();
             self.asm.push(format!("    call {}", fn_name));
             // Always keep result in eax (ABI convention) — callers may need it there.
@@ -2183,7 +2178,7 @@ impl CodeGen {
                     return; // Skip — handled specially elsewhere.
                 }
 
-                let fn_name = format!("_ZYL_{}", sanitize_name(name));
+                let fn_name = format!("_ZYL_{}", name);
                 self.asm_push_align();
                 self.asm.push(format!("    call {}", fn_name));
 

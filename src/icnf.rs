@@ -6,6 +6,11 @@ use crate::error::{Span, ZylError};
 use crate::region_inference::Region;
 use crate::type_system::Type;
 
+/// Sanitize an identifier for use as an assembly label: replace hyphens with underscores.
+fn sanitize_name(name: &str) -> String {
+    name.replace('-', "_")
+}
+
 // ─── ICNF Data Structures (spec §18) ──────────────────────────────────────
 
 /// SSA-based intermediate representation with region annotations.
@@ -350,7 +355,7 @@ impl IcnfConverter {
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
                     let func_sig = ICNFFuncSig {
-                        name: name.clone(),
+                        name: sanitize_name(name),
                         params: params
                             .iter()
                             .zip(param_types)
@@ -402,7 +407,7 @@ impl IcnfConverter {
                     self.push_to_globals = saved_push;
 
                     let func_sig = ICNFFuncSig {
-                        name,
+                        name: sanitize_name(&name),
                         params: params
                             .iter()
                             .zip(param_types)
@@ -452,7 +457,7 @@ impl IcnfConverter {
                     self.push_to_globals = saved_push;
 
                     let func_sig = ICNFFuncSig {
-                        name,
+                        name: sanitize_name(&name),
                         params: params
                             .iter()
                             .zip(param_types)
@@ -471,7 +476,7 @@ impl IcnfConverter {
                         region: Region::Heap,
                         typ: None,
                         is_branch_body: false,
-                        node: ICNFInner::Closure(name.clone()),
+                        node: ICNFInner::Closure(sanitize_name(name)),
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in params {
@@ -1054,7 +1059,7 @@ impl IcnfConverter {
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::Closure(name.clone()),
+                    node: ICNFInner::Closure(sanitize_name(name)),
                 }])
             }
 
@@ -1065,7 +1070,7 @@ impl IcnfConverter {
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::Closure(format!("fn_{}", name)),
+                    node: ICNFInner::Closure(format!("fn_{}", sanitize_name(name))),
                 }])
             }
 
@@ -1078,7 +1083,7 @@ impl IcnfConverter {
                     && !is_arithmetic_or_cmp_expr(op) =>
             {
                 let func_name = match &op.inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    ExprInner::Atom(Atom::Ident(n)) => sanitize_name(n),
                     _ => return Ok(Vec::new()),
                 };
 
@@ -1325,7 +1330,7 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::FfiCall {
-                        name: name.clone(),
+                        name: sanitize_name(name),
                         args: arg_ids,
                         timeout: *timeout,
                     },
@@ -1744,7 +1749,7 @@ impl IcnfConverter {
                 Ok(result)
             }
 
-            _ => {
+                _ => {
                 // Unknown binary op — treat as function call.
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for a in args.iter() {
@@ -1757,7 +1762,7 @@ impl IcnfConverter {
                     }
                 }
 
-                Ok(vec![self.emit(ICNFInner::Call(name.to_string(), arg_ids))])
+                Ok(vec![self.emit(ICNFInner::Call(sanitize_name(name), arg_ids))])
             }
         }
     }
@@ -1855,7 +1860,7 @@ impl IcnfConverter {
             result.append(&mut stmts);
         }
 
-        result.push(self.emit(ICNFInner::Call(name.to_string(), arg_ids)));
+        result.push(self.emit(ICNFInner::Call(sanitize_name(name), arg_ids)));
         Ok(result)
     }
 
