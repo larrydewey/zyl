@@ -1,30 +1,30 @@
 # Zyl — Agent Instructions
 
-## Project Vision
+## Project Identity
 
 **Zyl** is a deterministic Lisp systems language with region-based memory, Hindley-Milner type inference with capability types, actor concurrency, SSA IR (ICNF), FFI safety via pinning/timeout enforcement, hygienic macros, and full determinism. S-expression syntax targeting x86_64 native code. Ultimate goal: self-hosting.
 
-## Current State
+## Authoritative Sources (in order)
 
-**All 9 phases complete (Parsing → Code Generation + Linking).** `src/` contains lexer, parser, AST definitions, error model, macro expander, region inference, type inference, monomorphization, ICNF generation, optimization, and x86_64 code generation. Builds and runs successfully. See **PROGRESS.md** for detailed status.
-
-**Struct system fully implemented and tested:** `defstruct`/`defstruct+`, `make-StructName`, `struct-get` — all 9 phases with runtime code generation. See `stdlib_test.zyl` for exhaustive struct test suite.
-
-## Authoritative Sources (read in order)
-
-1. **`zyl_specification.txt`** — Complete language spec, compilation pipeline, error model
-2. **`Cargo.toml`** — Dependencies and binary targets
-3. **`PROGRESS.md`** — Phase-by-phase implementation status; read every session to know where we left off
-4. This file
+1. **`zyl_specification.txt`** — Canonical language specification (v4.1, final locked version)
+2. **`spec/`/** — Structured reference copy of specification, organized by semantic domain
+3. **`Cargo.toml`** — Dependencies and binary targets
+4. **`PROGRESS.md`** — Current implementation state and next priorities
+5. **`docs/`/** — Architecture decisions, implementation history, design rationale
+6. **Source code** — Authority for implemented behavior (overrides specification on implementation details)
 
 ## Session Protocol
 
-- Always start by reading `PROGRESS.md` to understand current state and what's next.
-- When a phase or task is completed, update its section in `PROGRESS.md`: mark items done, add test results, note any new files created/modified, and record known limitations.
+- Read `PROGRESS.md` at session start to understand current state.
+- Consult `zyl_specification.txt` or `spec/` for language semantics.
+- Consult `docs/` for architectural decisions and implementation history.
+- Consult source code when specification and implementation conflict.
+- Update `PROGRESS.md` when phases or tasks are completed.
+- Record new files created, modifications made, and known limitations.
 
-## Compilation Pipeline (from spec §22)
+## Compilation Pipeline (Strict Phase Order)
 
-Strict phase order — each phase must be implemented before the next:
+No phase may depend on a later phase. Determinism is required at every step.
 
 1. Parsing → AST
 2. Macro Expansion (innermost-first, gensym hygiene)
@@ -35,81 +35,72 @@ Strict phase order — each phase must be implemented before the next:
 7. Optimization (safe only)
 8. Code Generation → x86_64
 9. Linking
-10. Contract Injection (optional overlay, §23)
+10. Contract Injection (optional overlay)
 11. Hash Finalization
 
-**Rule:** No phase may depend on a later phase. Determinism is required at every step (§27).
+## Non-Negotiable Constraints
 
-## Key Implementation Constraints
+### Determinism
+- Same source + same inputs → identical binaries and observable outputs
+- All data structures use ordered iteration (indexmap, hashbrown sorted keys)
+- No randomness, no timestamps, no scheduling-dependent behavior
 
-- **Strict left-to-right evaluation** — never reorder side effects (§§5, 11, 26)
-- **Region rules are compile-time enforced** — Stack/Heap/Pin/Circular/Global with escape analysis (§9)
-- **Capability types govern aliasing** — TMut exclusive vs TCap shared (§4.3, §10)
-- **FFI requires Pin region + timeout parameter on every ffi-call** (§16)
-- **Structs are immutable by default** — mutation via rebinding only (let-mut), direct field mutation forbidden (§10, §21.6)
-- **Match exhaustiveness is a compile error** (§8.3)
-- **Contracts never alter core semantics** — they're an optional overlay (§§8, 23)
+### Evaluation Order
+- Strict left-to-right evaluation. Never reorder side effects.
+- Function application: evaluate function, then arguments sequentially.
 
-## Dependencies (Cargo.toml)
+### Region System
+- Regions are compile-time enforced: Stack, Heap, Global, Circular, Pin
+- Escape analysis with region promotion (Stack → Heap)
+- No value may escape its assigned region
 
-| Crate | Purpose |
-|-------|---------|
-| `serde` + `serde_json` | Serialization for AST/ICNF exchange and test output |
-| `sha2` | Deterministic hash finalization (§11), binary fingerprinting |
-| `thiserror` | Error types matching spec error model (E_*) |
-| `indexmap` | Ordered maps — deterministic iteration required by spec |
-| `smallvec` | Small optimization for AST nodes, environments |
-| `hashbrown` | Map collection implementation with sorted-key determinism (§4.2) |
-| `crossbeam-channel` | Actor mailbox communication (no shared mutable state) |
+### Capability Types
+- TCap: shared immutable access (any number of references)
+- TMut: exclusive mutable ownership (exactly one reference)
+- TMut/TCap aliasing invariant enforced at compile time
 
-Dev: `criterion` for benchmarks.
+### FFI Safety
+- FFI calls require Pin region + timeout parameter
+- FFI_Pinnable types: Int, Float, Bool, String, Vec<T>, composed types
 
-## Developer Commands
+### Struct Immutability
+- Struct fields are immutable by default
+- Mutation via `let-mut` rebinding only
+- Direct field mutation (`set! (struct-get p "x") 5`) is forbidden
+
+### Match Exhaustiveness
+- Exhaustiveness is a compile-time error if not satisfied
+
+### Contracts
+- Contracts never alter core semantics (type inference, ownership, regions, concurrency)
+- Contracts are an optional overlay
+
+## Architecture Decisions (Do Not Reverse)
+
+- **No-dispatch parsing:** All S-expressions → raw Call/Apply → PostProcessor
+- **Innermost-first macro expansion** with gensym hygiene
+- **ICNF as custom SSA IR** (not LLVM) for region annotation flow
+- **Region-based memory** (not GC) for deterministic reclamation
+- **Capability types** (TCap/TMut) for compile-time aliasing control
+- **Structs immutable by default** (rebinding only)
+- **Safe-only optimizations** (constant folding, DCE — no reordering)
+
+## Development Commands
 
 ```bash
 cargo build          # Build both binaries (zyl, zyl-repl)
 cargo run --bin zyl  # Run compiler binary
 cargo run --bin zyl-repl  # Run REPL
-cargo test           # Tests (once src/ exists with #[cfg(test)] modules)
-cargo check          # Fast compile check during development
+cargo check          # Fast compile check
 ```
 
-## Struct Regression Tests
+## Regression Tests
 
-Before any changes to struct-related code (ast.rs, codegen.rs, icnf.rs, type_inference.rs, parser.rs, region_inference.rs), verify these struct examples pass:
+Before modifying struct-related code (`ast.rs`, `codegen.rs`, `icnf.rs`, `type_inference.rs`, `parser.rs`, `region_inference.rs`), run struct regression tests documented in `docs/regression-tests.md`.
 
-```bash
-# Basic struct definition and construction
-echo '(defstruct Point (x) (y))(let p (make-Point 10 20)(print (struct-get p "x"))(print (struct-get p "y")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 10 then 20
+## Architecture Notes
 
-# Struct field in arithmetic
-echo '(defstruct Point (x) (y))(let p (make-Point 5 7)(print (+ (struct-get p "x") (struct-get p "y"))))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 12
-
-# Nested struct-get (field values used to construct another struct)
-echo '(defstruct Point (x) (y))(defstruct Pair (left) (right))(let p (make-Point 42 99)(let pair (make-Pair (struct-get p "x") (struct-get p "y")))(print (struct-get pair "left")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 42
-
-# Struct with field types
-echo '(defstruct Person (name String) (age Int))(let alice (make-Person "Alice" 30)(print (struct-get alice "age")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 30
-
-# Struct passed to function and returned
-echo '(defstruct Point (x) (y))(defn make-point (x y) (make-Point x y))(defn get-x (p) (struct-get p "x"))(let p (make-point 256 512)(print (get-x p)))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 256
-
-# defstruct+ variant
-echo '(defstruct+ Color (r) (g) (b))(let c (make-Color 255 128 64)(print (struct-get c "r")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 255
-
-# Run full struct test suite
-./target/debug/zyl stdlib_test.zyl stdlib_test.s 2>&1 | tail -3
-```
-
-## Architecture Notes for Implementation
-
-- Entry points: `src/main.rs` (compiler), `src/repl.rs` (interactive mode)
-- The compiler is a single binary — no workspace, no crates yet
-- Spec v5.0 features (package management, workspaces, feature flags) are **not** implemented; do not build them
+- Entry points: `src/main.rs` (compiler), `src/repl.rs` (REPL)
+- Single binary — no workspace, no crates
+- Spec v5.0 features (package management, workspaces, feature flags) are NOT implemented; do not build them
 - All error codes from spec §28 must be defined and used consistently
