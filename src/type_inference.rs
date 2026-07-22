@@ -521,7 +521,14 @@ impl TypeInferer {
                 Ok(then_)
             }
 
-            ExprInner::Call(op, args) if is_ident_op(op, "let") && args.len() >= 3 => {
+            ExprInner::Call(op, args) if is_ident_op(op, "let") => {
+                if args.len() < 2 {
+                    return Err(ZylError::E_TYPE_MISMATCH(
+                        expr.span.clone(),
+                        format!("let requires 2+ args, got {}", args.len()),
+                        format!("{:?}", expr.inner),
+                    ));
+                }
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => {
@@ -532,18 +539,22 @@ impl TypeInferer {
                         ))
                     }
                 };
-                // This won't work with `continue` in a closure — need different approach.
+                let body = if args.len() == 2 {
+                    Box::new(args[1].clone())
+                } else {
+                    Box::new(args[2].clone())
+                };
                 self.infer_expr(&Expr {
                     span: expr.span.clone(),
                     inner: ExprInner::Let(
                         name,
                         Box::new(args[1].clone()),
-                        Box::new(args[2].clone()),
+                        body,
                     ),
                 })
             }
 
-            ExprInner::Apply(name, args) if name == "let" && args.len() >= 3 => {
+            ExprInner::Apply(name, args) if name == "let" && args.len() >= 2 => {
                 let lname = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => {
@@ -554,12 +565,17 @@ impl TypeInferer {
                         ))
                     }
                 };
+                let body = if args.len() == 2 {
+                    Box::new(args[1].clone())
+                } else {
+                    Box::new(args[2].clone())
+                };
                 self.infer_expr(&Expr {
                     span: expr.span.clone(),
                     inner: ExprInner::Let(
                         lname,
                         Box::new(args[1].clone()),
-                        Box::new(args[2].clone()),
+                        body,
                     ),
                 })
             }
