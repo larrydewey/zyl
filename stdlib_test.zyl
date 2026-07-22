@@ -7,6 +7,88 @@
 (* 3 4)
 (/ 20 4)
 
+; --- Multi-operand arithmetic ---
+
+;;
+;; ADDITION
+;;
+
+;; Two parameters
+;; Expect 3.0 to be printed
+(print "add 2 => " (+ 1.0 2.0))
+
+;; Three parameters
+;; Expect 6.0 to be printed
+(print "add 3=> " (+ 1.0 2.0 3.0))
+
+;; Four parameters
+;; Expect 10.0 to be printed
+(print "add 4 => " (+ 1.0 2.0 3.0 4.0))
+
+;; Five parameters
+;; Expect 15.0 to be printed
+(print "add 5 => " (+ 1.0 2.0 3.0 4.0 5.0))
+
+;;
+;; SUBTRACTION
+;;
+
+;; Two parameters
+;; Expect -1.0 to be printed
+(print "sub 2 => " (- 1.0 2.0))
+
+;; Three parameters
+;; Expect -4.0 to be printed
+(print "sub 3 => " (- 1.0 2.0 3.0))
+
+;; Four parameters
+;; Expect -8.0 to be printed
+(print "sub 4 => " (- 1.0 2.0 3.0 4.0))
+
+;; Five parameters
+;; Expect -13.0 to be printed
+(print "sub 5 => " (- 1.0 2.0 3.0 4.0 5.0))
+
+;;
+;; MULTIPLICATION
+;;
+
+;; Two parameters
+;; Expect 2.0 to be printed
+(print "mul 2 => " (* 1.0 2.0))
+
+;; Three parameters
+;; Expect 6.0 to be printed
+(print "mul 3 => " (* 1.0 2.0 3.0))
+
+;; Four parameters
+;; Expect 24.0 to be printed
+(print "mul 4 => " (* 1.0 2.0 3.0 4.0))
+
+;; Five parameters
+;; Expect 120.0 to be printed
+(print "mul 5 => " (* 1.0 2.0 3.0 4.0 5.0))
+
+;;
+;; DIVISION
+;;
+
+;; Two parameters
+;; Expect 0.5 to be printed
+(print "(/ 1.0 2.0) => " (/ 1.0 2.0))
+
+;; Three parameters
+;; Expect 1.666666 to be printed
+(print "(/ 1.0 2.0 3.0) => " (/ 1.0 2.0 3.0))
+
+;; Four parameters
+;; Expect 0.041666 to be printed
+(print "(/ 1.0 2.0 3.0 4.0) => " (/ 1.0 2.0 3.0 4.0))
+
+;; Five parameters
+;; Expect 0.00833 to be printed
+(print "(/ 1.0 2.0 3.0 4.0 5.0) => " (/ 1.0 2.0 3.0 4.0 5.0))
+
 ; --- Comparison operators ---
 (if (> 10 5) 1 0)
 (if (< 5 10) 1 0)
