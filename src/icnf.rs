@@ -238,6 +238,10 @@ pub struct IcnfConverter {
     struct_bindings: std::collections::HashMap<usize, String>,
     /// ADT definitions: type_name → list of (variant_name, field_type_names).
     adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
+    /// Resolved function parameter types from type inference.
+    resolved_func_params: IndexMap<String, Vec<(String, Type)>>,
+    /// Resolved function return types from type inference.
+    resolved_func_returns: IndexMap<String, Type>,
 }
 
 impl IcnfConverter {
@@ -253,12 +257,26 @@ impl IcnfConverter {
             struct_layouts: crate::codegen::StructLayout::new(),
             struct_bindings: std::collections::HashMap::new(),
             adt_defs: IndexMap::new(),
+            resolved_func_params: IndexMap::new(),
+            resolved_func_returns: IndexMap::new(),
         }
     }
 
     /// Set struct field layouts for codegen (built from AST struct definitions).
     pub fn with_struct_layouts(mut self, layouts: crate::codegen::StructLayout) -> Self {
         self.struct_layouts = layouts;
+        self
+    }
+
+    /// Set resolved function parameter types.
+    pub fn with_resolved_func_params(mut self, params: IndexMap<String, Vec<(String, Type)>>) -> Self {
+        self.resolved_func_params = params;
+        self
+    }
+
+    /// Set resolved function return types.
+    pub fn with_resolved_func_returns(mut self, returns: IndexMap<String, Type>) -> Self {
+        self.resolved_func_returns = returns;
         self
     }
 
@@ -770,7 +788,11 @@ impl IcnfConverter {
 
             // If-then-else.
             ExprInner::If(cond, then_, else_) => {
+                // Always push condition to globals so it's visible for operand lookup,
+                // even when nested in branch bodies (push_to_globals=false).
+                let saved = std::mem::replace(&mut self.push_to_globals, true);
                 let cond_id = self.convert_expr_collect_id(cond)?;
+                self.push_to_globals = saved;
 
                 // Convert branch bodies - push to globals so intermediate nodes are visible for operand lookup.
                 let mut then_stmts = self.convert_branch_body(then_)?;
@@ -787,30 +809,19 @@ impl IcnfConverter {
                 let result_var = format!("___if_result_{}", self.ssa_id_counter.get());
                 // Use fresh IDs - don't reuse cond_id which may collide with existing nodes.
                 let if_node_id = self.next_ssa_id();
-                let phi_id = self.next_ssa_id();
 
-                let result_var_clone = result_var.clone();
-                Ok(vec![
-                    ICNFNode {
-                        id: if_node_id,
-                        region: Region::Stack,
-                        typ: None,
-                        is_branch_body: false,
-                        node: ICNFInner::If {
-                            cond_ssa: cond_id,
-                            then_body: then_stmts,
-                            else_body: else_stmts,
-                            result_var,
-                        },
+                Ok(vec![ICNFNode {
+                    id: if_node_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::If {
+                        cond_ssa: cond_id,
+                        then_body: then_stmts,
+                        else_body: else_stmts,
+                        result_var,
                     },
-                    ICNFNode {
-                        id: phi_id,
-                        region: Region::Stack,
-                        typ: None,
-                        is_branch_body: false,
-                        node: ICNFInner::Assign(result_var_clone, cond_id),
-                    },
-                ])
+                }])
             }
 
             // Let binding.

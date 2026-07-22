@@ -5,6 +5,7 @@ use crate::ast::*;
 use crate::error::ZylError;
 use crate::icnf::*;
 use crate::region_inference::Region;
+use crate::type_system::{PrimType, Type};
 
 // ─── Optimization Passes (spec §22 — Phase 8: Safe only) ──────────────────
 
@@ -17,6 +18,17 @@ impl Optimizer {
     pub fn new() -> Self {
         Self {
             stats: IndexMap::new(),
+        }
+    }
+
+    fn const_type(atom: &Atom) -> Type {
+        match atom {
+            Atom::Int(_) | Atom::Ident(_) => Type::Prim(PrimType::Int),
+            Atom::Float(_) => Type::Prim(PrimType::Float),
+            Atom::Bool(_) => Type::Prim(PrimType::Bool),
+            Atom::Str(_) => Type::Prim(PrimType::String),
+            Atom::Keyword(_) => Type::Prim(PrimType::Int),
+            Atom::Symbol(_) => Type::Prim(PrimType::Int),
         }
     }
 
@@ -77,20 +89,25 @@ impl Optimizer {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         stmts[*idx].node =
                                             ICNFInner::Const(Atom::Int(a.wrapping_add(*b)));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(a + b));
+                                        let new_const = Atom::Float(a + b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a as f64 + *b));
+                                        let new_const = Atom::Float(*a as f64 + *b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a + *b as f64));
+                                        let new_const = Atom::Float(*a + *b as f64);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -99,20 +116,25 @@ impl Optimizer {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         stmts[*idx].node =
                                             ICNFInner::Const(Atom::Int(a.wrapping_sub(*b)));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(a - b));
+                                        let new_const = Atom::Float(a - b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a as f64 - *b));
+                                        let new_const = Atom::Float(*a as f64 - *b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a - *b as f64));
+                                        let new_const = Atom::Float(*a - *b as f64);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -121,20 +143,25 @@ impl Optimizer {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         stmts[*idx].node =
                                             ICNFInner::Const(Atom::Int(a.wrapping_mul(*b)));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(a * b));
+                                        let new_const = Atom::Float(a * b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a as f64 * *b));
+                                        let new_const = Atom::Float(*a as f64 * *b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a * *b as f64));
+                                        let new_const = Atom::Float(*a * *b as f64);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -143,21 +170,26 @@ impl Optimizer {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         if *b != 0 {
                                             stmts[*idx].node = ICNFInner::Const(Atom::Int(a / b));
+                                            stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                             folded_any = true;
                                             count += 1;
                                         }
                                     } else if let (Atom::Float(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(a / b));
+                                        let new_const = Atom::Float(a / b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Int(a), Atom::Float(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a as f64 / *b));
+                                        let new_const = Atom::Float(*a as f64 / *b);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     } else if let (Atom::Float(a), Atom::Int(b)) = (l, r) {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Float(*a / *b as f64));
+                                        let new_const = Atom::Float(*a / *b as f64);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -166,6 +198,7 @@ impl Optimizer {
                                     if let (Atom::Int(a), Atom::Int(b)) = (l, r) {
                                         if *b != 0 {
                                             stmts[*idx].node = ICNFInner::Const(Atom::Int(a % b));
+                                            stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                             folded_any = true;
                                             count += 1;
                                         }
@@ -174,17 +207,13 @@ impl Optimizer {
                                 BinOpKind::Eq => match (l, r) {
                                     (Atom::Bool(a), Atom::Bool(b)) => {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Bool));
                                         folded_any = true;
                                         count += 1;
                                     }
                                     (Atom::Int(a), Atom::Int(b)) => {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a == *b));
-                                        folded_any = true;
-                                        count += 1;
-                                    }
-                                    (Atom::Float(a), Atom::Float(b)) => {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Bool((*a) == (*b)));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Bool));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -193,23 +222,22 @@ impl Optimizer {
                                 BinOpKind::Neq => match (l, r) {
                                     (Atom::Bool(a), Atom::Bool(b)) => {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Bool));
                                         folded_any = true;
                                         count += 1;
                                     }
                                     (Atom::Int(a), Atom::Int(b)) => {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(*a != *b));
-                                        folded_any = true;
-                                        count += 1;
-                                    }
-                                    (Atom::Float(a), Atom::Float(b)) => {
-                                        stmts[*idx].node =
-                                            ICNFInner::Const(Atom::Bool((*a) != (*b)));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Bool));
                                         folded_any = true;
                                         count += 1;
                                     }
                                     _ => {}
                                 },
-                                // Comparison ops on ints/floats — not safe to fold at compile time.
+                                // Comparison ops (Eq/Neq on floats, Lt/Gt/Le/Ge) and And/Or —
+                                // not safe to fold at compile time: the type annotation on the
+                                // folded node would be Bool, losing the operand type info that
+                                // emit_condition_inline needs to emit ucomisd vs cmp.
                                 BinOpKind::Lt
                                 | BinOpKind::Gt
                                 | BinOpKind::Le
@@ -231,6 +259,7 @@ impl Optimizer {
                                 UnOpKind::Not => {
                                     if let Atom::Bool(b) = val {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Bool(!b));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Bool));
                                         folded_any = true;
                                         count += 1;
                                     }
@@ -238,11 +267,14 @@ impl Optimizer {
                                 UnOpKind::Negate => match val {
                                     Atom::Int(i) => {
                                         stmts[*idx].node = ICNFInner::Const(Atom::Int(-i));
+                                        stmts[*idx].typ = Some(Type::Prim(PrimType::Int));
                                         folded_any = true;
                                         count += 1;
                                     }
                                     Atom::Float(f) => {
-                                        stmts[*idx].node = ICNFInner::Const(Atom::Float(-f));
+                                        let new_const = Atom::Float(-f);
+                                        stmts[*idx].node = ICNFInner::Const(new_const.clone());
+                                        stmts[*idx].typ = Some(Self::const_type(&new_const));
                                         folded_any = true;
                                         count += 1;
                                     }

@@ -2,7 +2,7 @@
 
 ## Current State
 
-All 9 core compilation phases are complete. The compiler builds and runs successfully. The struct system has exhaustive test coverage.
+All 9 core compilation phases are complete. The compiler builds and runs successfully. The struct system has exhaustive test coverage. Nested conditionals work correctly for int, float, and bool.
 
 **Full details:** `docs/implementation-status.md`
 
@@ -21,8 +21,10 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 | 7. ICNF Generation | ✅ Complete | SSA IR, region annotations, embedded control flow |
 | 8. Optimization | ✅ Complete | Constant folding, dead code elimination |
 | 9. Code Generation | ✅ Complete | x86_64, System V AMD64 ABI, struct support |
+| Float Support | ✅ Complete | Constants, unary negation, two-operand BinOp, comparisons, print, SSE code generation, nested conditionals |
 | Struct System | ✅ Complete | defstruct, defstruct+, make-, struct-get, all phases |
 | ADT System | ✅ Complete | deftype, match, exhaustive checking |
+| Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
 
 ---
 
@@ -30,9 +32,11 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 ### High Priority
 - [x] Function names with hyphens: fully sanitized in ICNF layer (all 9 call sites), verified end-to-end with `stdlib_test.zyl`
+- [x] Nested conditionals: fixed phi slot collision, register clobbering, and float condition detection
+- [x] Struct function calls: fixed MakeStruct rbp marker stack corruption and operand tracking
 
 ### Medium Priority
-- [ ] Floating-point support: constants load but full IEEE-754 arithmetic not implemented
+- [ ] Floating-point division multi-operand chains: `(/ 1.0 2.0 3.0)` may produce corrupted results (integer register fallback)
 - [ ] FFI code generation: type checking implemented, code generation deferred
 - [ ] Actor concurrency runtime: type checking implemented, runtime deferred
 
@@ -47,9 +51,8 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 1. FFI code generation (`ffi-call` → x86_64)
 2. Actor concurrency runtime
-3. Floating-point arithmetic
-4. Closure runtime support
-5. Reduce compiler warnings
+3. Closure runtime support
+4. Reduce compiler warnings
 
 ---
 
