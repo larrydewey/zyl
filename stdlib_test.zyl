@@ -78,7 +78,7 @@
 (print "(/ 1.0 2.0) => " (/ 1.0 2.0))
 
 ;; Three parameters
-;; Expect 1.666666 to be printed
+;; Expect 0.166667 to be printed
 (print "(/ 1.0 2.0 3.0) => " (/ 1.0 2.0 3.0))
 
 ;; Four parameters
@@ -86,7 +86,7 @@
 (print "(/ 1.0 2.0 3.0 4.0) => " (/ 1.0 2.0 3.0 4.0))
 
 ;; Five parameters
-;; Expect 0.00833 to be printed
+;; Expect 0.008333 to be printed
 (print "(/ 1.0 2.0 3.0 4.0 5.0) => " (/ 1.0 2.0 3.0 4.0 5.0))
 
 ; --- Comparison operators ---

@@ -1727,7 +1727,7 @@ impl IcnfConverter {
             "+" => self.convert_nary_fold(BinOpKind::Add, args),
             "-" => self.convert_sub(args),
             "*" => self.convert_nary_fold(BinOpKind::Mul, args),
-            "/" => self.convert_binary_only("/", BinOpKind::Div, args),
+            "/" => self.convert_div(args),
             "%" => self.convert_binary_only("%", BinOpKind::Rem, args),
             "==" => self.convert_binary_only("==", BinOpKind::Eq, args),
             "!=" => self.convert_binary_only("!=", BinOpKind::Neq, args),
@@ -1843,6 +1843,77 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::BinOp(BinOpKind::Sub, acc_id, arg_id),
+                });
+                acc_id = ssa_id;
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Convert division: handles multi-operand left-associative chaining ((a / b) / c).
+    fn convert_div(&mut self, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
+        let mut result = Vec::new();
+
+        if args.is_empty() {
+            return Ok(result);
+        }
+
+        if args.len() == 1 {
+            let arg_id = self.convert_expr_collect_id(&args[0])?;
+            result.push(ICNFNode {
+                id: arg_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::Load(format!("___fold_div_{}", arg_id)),
+            });
+        } else if args.len() == 2 {
+            let mut left_stmts = self.convert_expr_collect(&args[0])?;
+            let left_id = if !left_stmts.is_empty() {
+                left_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
+            result.append(&mut left_stmts);
+            let mut right_stmts = self.convert_expr_collect(&args[1])?;
+            let right_id = if !right_stmts.is_empty() {
+                right_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
+            result.append(&mut right_stmts);
+            let ssa_id = self.next_ssa_id();
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::BinOp(BinOpKind::Div, left_id, right_id),
+            });
+        } else {
+            let mut acc_stmts = self.convert_expr_collect(&args[0])?;
+            let mut acc_id = if !acc_stmts.is_empty() {
+                acc_stmts.last().unwrap().id
+            } else {
+                self.next_ssa_id()
+            };
+            result.append(&mut acc_stmts);
+            for arg in &args[1..] {
+                let mut arg_stmts = self.convert_expr_collect(arg)?;
+                let arg_id = if !arg_stmts.is_empty() {
+                    arg_stmts.last().unwrap().id
+                } else {
+                    self.next_ssa_id()
+                };
+                result.append(&mut arg_stmts);
+                let ssa_id = self.next_ssa_id();
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::BinOp(BinOpKind::Div, acc_id, arg_id),
                 });
                 acc_id = ssa_id;
             }
