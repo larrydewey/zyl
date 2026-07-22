@@ -1,0 +1,17 @@
+(defstruct Pair (left) (right))
+
+; 2-arg let: (let name value) — value is both binding and body
+(let p (make-Pair 1 2)
+  (print (struct-get p "left"))
+  (print (struct-get p "right")))
+
+; 3-arg let (existing behavior): (let name value body)
+(let q (make-Pair 3 4)
+  (print (struct-get q "left"))
+  (print (print "ok")))
+
+; nested 2-arg lets
+(let inner (make-Pair 5 6)
+  (let outer (struct-get inner "left")
+    (print (+ outer 10)))
+  (print "nested done"))

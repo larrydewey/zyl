@@ -850,12 +850,14 @@ impl PostProcessor {
             }
 
             // let → Let (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "let") && args.len() >= 3 => {
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "let") && args.len() >= 2 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___let_".to_string(),
                 };
-                let body = if args.len() == 3 {
+                let body = if args.len() == 2 {
+                    self.post_process_expr(args[1].clone())
+                } else if args.len() == 3 {
                     self.post_process_expr(args[2].clone())
                 } else {
                     Expr {
@@ -871,12 +873,14 @@ impl PostProcessor {
             }
 
             // let → Let (Apply form).
-            ExprInner::Apply(name, args) if name == "let" && args.len() >= 3 => {
+            ExprInner::Apply(name, args) if name == "let" && args.len() >= 2 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___let_".to_string(),
                 };
-                let body = if args.len() == 3 {
+                let body = if args.len() == 2 {
+                    self.post_process_expr(args[1].clone())
+                } else if args.len() == 3 {
                     self.post_process_expr(args[2].clone())
                 } else {
                     Expr {
@@ -1004,42 +1008,48 @@ impl PostProcessor {
             }
 
             // let-mut → LetMut (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "let-mut") && args.len() >= 3 => {
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "let-mut") && args.len() >= 2 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___letmut_".to_string(),
                 };
+                let body = if args.len() == 2 {
+                    Box::new(self.post_process_expr(args[1].clone()))
+                } else if args.len() == 3 {
+                    Box::new(self.post_process_expr(args[2].clone()))
+                } else {
+                    Box::new(Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    })
+                };
                 expr.inner = ExprInner::LetMut(
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    if args.len() == 3 {
-                        Box::new(self.post_process_expr(args[2].clone()))
-                    } else {
-                        Box::new(Expr {
-                            span: Span::default(),
-                            inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
-                        })
-                    }
+                    body,
                 );
             }
 
             // let-mut → LetMut (Apply form).
-            ExprInner::Apply(name, args) if name == "let-mut" && args.len() >= 3 => {
+            ExprInner::Apply(name, args) if name == "let-mut" && args.len() >= 2 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___letmut_".to_string(),
                 };
+                let body = if args.len() == 2 {
+                    Box::new(self.post_process_expr(args[1].clone()))
+                } else if args.len() == 3 {
+                    Box::new(self.post_process_expr(args[2].clone()))
+                } else {
+                    Box::new(Expr {
+                        span: Span::default(),
+                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                    })
+                };
                 expr.inner = ExprInner::LetMut(
                     name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    if args.len() == 3 {
-                        Box::new(self.post_process_expr(args[2].clone()))
-                    } else {
-                        Box::new(Expr {
-                            span: Span::default(),
-                            inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
-                        })
-                    }
+                    body,
                 );
             }
 

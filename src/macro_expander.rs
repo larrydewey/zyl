@@ -94,14 +94,19 @@ fn normalize_for_match(expr: &Expr) -> Expr {
     }
     // Raw "let" → Let(name, val, body).
     if let ExprInner::Call(op, args) = &expr.inner {
-        if call_operator_name(op) == Some("let".into()) && args.len() >= 3 {
+        if call_operator_name(op) == Some("let".into()) && args.len() >= 2 {
             let name = match &args[0].inner {
                 ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                 _ => "___let_".to_string(),
             };
+            let body = if args.len() == 2 {
+                Box::new(args[1].clone())
+            } else {
+                Box::new(args[2].clone())
+            };
             return Expr {
                 span: expr.span.clone(),
-                inner: ExprInner::Let(name, Box::new(args[1].clone()), Box::new(args[2].clone())),
+                inner: ExprInner::Let(name, Box::new(args[1].clone()), body),
             };
         }
     }
@@ -131,17 +136,22 @@ fn normalize_for_match(expr: &Expr) -> Expr {
                     inner: ExprInner::If(cond, then_, els),
                 };
             }
-            "let" if args.len() >= 3 => {
+            "let" if args.len() >= 2 => {
                 let name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => "___let_".to_string(),
+                };
+                let body = if args.len() == 2 {
+                    Box::new(args[1].clone())
+                } else {
+                    Box::new(args[2].clone())
                 };
                 return Expr {
                     span: expr.span.clone(),
                     inner: ExprInner::Let(
                         name,
                         Box::new(args[1].clone()),
-                        Box::new(args[2].clone()),
+                        body,
                     ),
                 };
             }
@@ -343,7 +353,7 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     Expr { span: Span::default(), inner: ExprInner::Atom(Atom::Keyword("___skip_".into())) }
                 };
                 ExprInner::If(Box::new(cond), Box::new(then_), Box::new(els))
-            } else if matches!(op_name.as_deref(), Some("let")) && args.len() >= 3 {
+            } else if matches!(op_name.as_deref(), Some("let")) && args.len() >= 2 {
                 // Substitute bindings into all args first (name position may contain pattern vars).
                 let arg0 = sub_expr(ctx, &args[0]);
                 let new_val = sub_expr(ctx, &args[1]);
@@ -361,10 +371,15 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     bindings: &inner_bindings,
                     gensyms: RefCell::new(ctx.gensyms.borrow().clone()),
                 };
+                let body = if args.len() == 2 {
+                    sub_expr(&inner_ctx, &args[1])
+                } else {
+                    sub_expr(&inner_ctx, &args[2])
+                };
                 ExprInner::Let(
                     name,
                     Box::new(new_val),
-                    Box::new(sub_expr(&inner_ctx, &args[2])),
+                    Box::new(body),
                 )
             } else if matches!(op_name.as_deref(), Some("while")) && args.len() >= 2 {
                 ExprInner::While(
@@ -426,7 +441,7 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                 };
                 ExprInner::If(Box::new(cond), Box::new(then_), Box::new(els))
             }
-            "let" if args.len() >= 3 => {
+            "let" if args.len() >= 2 => {
                 let arg0 = sub_expr(ctx, &args[0]);
                 let new_val = sub_expr(ctx, &args[1]);
                 let name = match &arg0.inner {
@@ -443,10 +458,15 @@ fn sub_expr(ctx: &SubstContext, expr: &Expr) -> Expr {
                     bindings: &inner_bindings,
                     gensyms: RefCell::new(ctx.gensyms.borrow().clone()),
                 };
+                let body = if args.len() == 2 {
+                    sub_expr(&inner_ctx, &args[1])
+                } else {
+                    sub_expr(&inner_ctx, &args[2])
+                };
                 ExprInner::Let(
                     name,
                     Box::new(new_val),
-                    Box::new(sub_expr(&inner_ctx, &args[2])),
+                    Box::new(body),
                 )
             }
             "while" if args.len() >= 2 => ExprInner::While(
