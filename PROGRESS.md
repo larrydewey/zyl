@@ -36,7 +36,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Struct function calls: fixed MakeStruct rbp marker stack corruption and operand tracking
 
 ### Medium Priority
-- [ ] Floating-point division multi-operand chains: `(/ 1.0 2.0 3.0)` may produce corrupted results (integer register fallback)
+- [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
 - [ ] FFI code generation: type checking implemented, code generation deferred
 - [ ] Actor concurrency runtime: type checking implemented, runtime deferred
 
