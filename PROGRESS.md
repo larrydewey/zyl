@@ -34,6 +34,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Function names with hyphens: fully sanitized in ICNF layer (all 9 call sites), verified end-to-end with `stdlib_test.zyl`
 - [x] Nested conditionals: fixed phi slot collision, register clobbering, and float condition detection
 - [x] Struct function calls: fixed MakeStruct rbp marker stack corruption and operand tracking
+- [x] 2-arg let/let-mut: PostProcessor and macro_expander now accept `args.len() >= 2` (value as body), fixing inner let expressions in struct contexts that had only 2 args instead of 3
 
 ### Medium Priority
 - [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
