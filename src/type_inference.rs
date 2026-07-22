@@ -11,6 +11,10 @@ pub struct TypeInferer {
     known_types: IndexMap<String, Type>,
     known_functions: IndexMap<String, Vec<(String, Type)>>,
     function_returns: IndexMap<String, Type>,
+    /// Stores body expressions for functions with untyped params, used to re-infer return types.
+    function_bodies: IndexMap<String, Expr>,
+    /// Tracks functions currently being inferred to avoid infinite recursion.
+    inferring_functions: RefCell<std::collections::HashSet<String>>,
     struct_defs: IndexMap<String, Vec<(String, Option<Type>)>>,
     generics_in_scope: RefCell<std::collections::HashSet<String>>,
     var_gen_counter: Cell<usize>,
@@ -32,6 +36,8 @@ impl TypeInferer {
             known_types: known,
             known_functions: IndexMap::new(),
             function_returns: IndexMap::new(),
+            function_bodies: IndexMap::new(),
+            inferring_functions: RefCell::new(std::collections::HashSet::new()),
             struct_defs: IndexMap::new(),
             generics_in_scope: RefCell::new(std::collections::HashSet::new()),
             var_gen_counter: Cell::new(0),
@@ -118,11 +124,46 @@ impl TypeInferer {
                         _ => continue,
                     };
                     let params: Vec<Param> = parse_params_from_expr(&args[1]);
-                    // Bind parameters to environment first.
-                    for p in &params {
-                        drop(self.env.bind(p.name.clone(), Type::Var(self.fresh_var())));
+                    // Create param type vars once, used for both env bindings and known_functions.
+                    let param_types: Vec<Type> = params
+                        .iter()
+                        .map(|p| {
+                            if let Some(ref typ_str) = p.typ {
+                                self.parse_type_str(&p.typ)
+                            } else {
+                                Type::Var(self.fresh_var())
+                            }
+                        })
+                        .collect();
+                    // Bind parameters to environment.
+                    for (p, pt) in params.iter().zip(param_types.iter()) {
+                        drop(self.env.bind(p.name.clone(), pt.clone()));
                     }
-                    if let Ok(ret_ty) = self.infer_expr(&args[2]) {
+                    // If any param is untyped, store a fresh type var for return type.
+                    // The actual return type will be resolved at call sites during infer().
+                    let has_untyped_params = params.iter().any(|p| p.typ.is_none());
+                    if has_untyped_params {
+                        let fresh = Type::Var(self.fresh_var());
+                        let body_expr = if args.len() == 3 {
+                            args[2].clone()
+                        } else {
+                            Expr {
+                                span: crate::error::Span::default(),
+                                inner: ExprInner::Begin(args[2..].to_vec()),
+                            }
+                        };
+                        let name_clone = name.clone();
+                        self.known_functions.insert(
+                            name_clone,
+                            params
+                                .iter()
+                                .zip(param_types.iter())
+                                .map(|(p, t)| (p.name.clone(), t.clone()))
+                                .collect(),
+                        );
+                        self.function_returns.insert(name.clone(), fresh.clone());
+                        self.function_bodies.insert(name, body_expr);
+                    } else if let Ok(ret_ty) = self.infer_expr(&args[2]) {
                         self.known_functions.insert(
                             name.clone(),
                             params
@@ -150,7 +191,45 @@ impl TypeInferer {
                         _ => continue,
                     };
                     let params: Vec<Param> = parse_params_from_expr(&args[1]);
-                    if let Ok(ret_ty) = self.infer_expr(&args[2]) {
+                    // Create param type vars once, used for both env bindings and known_functions.
+                    let param_types: Vec<Type> = params
+                        .iter()
+                        .map(|p| {
+                            if let Some(ref typ_str) = p.typ {
+                                self.parse_type_str(&p.typ)
+                            } else {
+                                Type::Var(self.fresh_var())
+                            }
+                        })
+                        .collect();
+                    // Bind parameters to environment.
+                    for (p, pt) in params.iter().zip(param_types.iter()) {
+                        drop(self.env.bind(p.name.clone(), pt.clone()));
+                    }
+                    // If any param is untyped, store a fresh type var for return type.
+                    let has_untyped_params = params.iter().any(|p| p.typ.is_none());
+                    if has_untyped_params {
+                        let fresh = Type::Var(self.fresh_var());
+                        let body_expr = if args.len() == 3 {
+                            args[2].clone()
+                        } else {
+                            Expr {
+                                span: crate::error::Span::default(),
+                                inner: ExprInner::Begin(args[2..].to_vec()),
+                            }
+                        };
+                        let name_clone = name.clone();
+                        self.known_functions.insert(
+                            name_clone,
+                            params
+                                .iter()
+                                .zip(param_types.iter())
+                                .map(|(p, t)| (p.name.clone(), t.clone()))
+                                .collect(),
+                        );
+                        self.function_returns.insert(name.clone(), fresh.clone());
+                        self.function_bodies.insert(name, body_expr);
+                    } else if let Ok(ret_ty) = self.infer_expr(&args[2]) {
                         self.known_functions.insert(
                             name.clone(),
                             params
@@ -380,7 +459,7 @@ impl TypeInferer {
                     "Bool" => Ok(Type::Prim(PrimType::Bool)),
                     "String" => Ok(Type::Prim(PrimType::String)),
                     _ => match self.env.get(name).cloned() {
-                        Some(ty) => Ok(ty),
+                        Some(ty) => Ok(self.subst.apply(&ty)),
                         None => Err(ZylError::E_UNBOUND_VARIABLE(
                             expr.span.clone(),
                             name.clone(),
@@ -1091,7 +1170,7 @@ impl TypeInferer {
 
     fn handle_apply(&mut self, name: &str, args: &[Expr]) -> std::result::Result<Type, ZylError> {
         if let Some(ret_type) = self.function_returns.get(name).cloned() {
-            let expected_params: Vec<(String, Type)> =
+            let mut expected_params: Vec<(String, Type)> =
                 self.known_functions.get(name).cloned().unwrap_or_default();
             if args.len() != expected_params.len() {
                 return Err(ZylError::E_ARITY_MISMATCH(
@@ -1100,11 +1179,42 @@ impl TypeInferer {
                     args.len(),
                 ));
             }
+            let arg_types: Vec<Type> = args.iter().map(|arg| self.infer_expr(arg)).collect::<std::result::Result<Vec<_>, _>>()?;
             for (i, arg) in args.iter().enumerate() {
-                let at = self.infer_expr(arg)?;
-                self.unify(&at, &expected_params[i].1)?;
+                let at = &arg_types[i];
+                self.unify(at, &expected_params[i].1)?;
             }
-            Ok(ret_type)
+            // If params were untyped, infer return type from body now that params are resolved.
+            // Skip if already inferring this function (recursive call).
+            if self.function_bodies.contains_key(name) && !self.inferring_functions.borrow().contains(name) {
+                let old_env = self.env.clone();
+                let param_types: Vec<Type> = expected_params.iter().map(|(_, t)| t.clone()).collect();
+                let param_names: Vec<String> = expected_params.iter().map(|(n, _)| n.clone()).collect();
+                for (n, t) in param_names.iter().zip(param_types.iter()) {
+                    drop(self.env.bind(n.clone(), t.clone()));
+                }
+                let body = self.function_bodies.get(name).cloned();
+                // Mark this function as being inferred to avoid infinite recursion.
+                self.inferring_functions.borrow_mut().insert(name.to_string());
+                let inferred_ret = if let Some(b) = body { 
+                    self.infer_expr(&b)
+                } else { 
+                    Ok(Type::Var(self.fresh_var())) 
+                };
+                self.inferring_functions.borrow_mut().remove(name);
+                self.env = old_env;
+                if let Ok(ret_ty) = inferred_ret {
+                    self.function_returns.insert(name.to_string(), ret_ty.clone());
+                    return Ok(ret_ty);
+                }
+            }
+            // If the stored return type is a type variable, unify it with a fresh var
+            // so it can be resolved later by substitution.
+            if matches!(&ret_type, Type::Var(_)) {
+                Ok(Type::Var(self.fresh_var()))
+            } else {
+                Ok(ret_type)
+            }
         } else if let Some(ty) = self.env.get(name).cloned() {
             match ty {
                 Type::Fun(expected_params, return_type) => {
@@ -1155,6 +1265,7 @@ impl TypeInferer {
 
         if matches!(op_name.as_str(), "+" | "-" | "*" | "/") {
             let mut has_float = false;
+            let mut all_vars = true;
             for arg in args {
                 let t = self.infer_expr(arg)?;
                 let inner = match &t {
@@ -1162,13 +1273,15 @@ impl TypeInferer {
                     _ => &t,
                 };
                 match inner {
-                    Type::Prim(PrimType::Int) => {}
+                    Type::Prim(PrimType::Int) => {
+                        all_vars = false;
+                    }
                     Type::Prim(PrimType::Float) => {
                         has_float = true;
+                        all_vars = false;
                     }
                     Type::Var(_) => {
-                        // Allow type vars (e.g., from struct field access) and unify with Int.
-                        self.unify(&t, &Type::Prim(PrimType::Int))?;
+                        // Type variable — don't unify yet. Let call-site unification handle it.
                     }
                     _ => {
                         return Err(ZylError::E_TYPE_MISMATCH(
@@ -1181,6 +1294,9 @@ impl TypeInferer {
             }
             if has_float {
                 Ok(Type::Prim(PrimType::Float))
+            } else if all_vars {
+                // All args are type vars — return a fresh var to be resolved by call-site.
+                Ok(Type::Var(self.fresh_var()))
             } else {
                 Ok(Type::Prim(PrimType::Int))
             }
@@ -1415,9 +1531,31 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
         &self.known_functions
     }
 
+    /// Expose known function signatures with type variables resolved via substitution.
+    pub fn get_resolved_known_functions(&self) -> IndexMap<String, Vec<(String, Type)>> {
+        self.known_functions
+            .iter()
+            .map(|(name, params)| {
+                let resolved: Vec<(String, Type)> = params
+                    .iter()
+                    .map(|(pname, ptyp)| (pname.clone(), self.subst.apply(ptyp)))
+                    .collect();
+                (name.clone(), resolved)
+            })
+            .collect()
+    }
+
     /// Expose function return types for monomorphization.
     pub fn get_function_returns(&self) -> &IndexMap<String, Type> {
         &self.function_returns
+    }
+
+    /// Expose function return types with type variables resolved via substitution.
+    pub fn get_resolved_function_returns(&self) -> IndexMap<String, Type> {
+        self.function_returns
+            .iter()
+            .map(|(name, ret)| (name.clone(), self.subst.apply(ret)))
+            .collect()
     }
 
     /// Expose trait context for bound verification in monomorphization.

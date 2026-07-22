@@ -135,7 +135,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             struct_layouts.insert(sd.name.clone(), layout);
         }
     }
-    let mut icnf_converter = icnf::IcnfConverter::new().with_struct_layouts(struct_layouts.clone());
+    let resolved_params = inferer.get_resolved_known_functions();
+    let resolved_returns = inferer.get_resolved_function_returns();
+    let mut icnf_converter = icnf::IcnfConverter::new()
+        .with_struct_layouts(struct_layouts.clone())
+        .with_resolved_func_params(resolved_params)
+        .with_resolved_func_returns(resolved_returns);
     let icnf_program = match icnf_converter.convert(&regioned_for_mono) {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
