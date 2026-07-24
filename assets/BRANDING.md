@@ -26,6 +26,7 @@
 - Use the mascot overlapping the logo without proper spacing.
 
 ## Mascot: Parry the Owl
+<img src="" alt="Parry the Owl" width="100px"></img>
 - Simple cartoon owl with Lisp `()` accents.
 - Use for fun illustrations, error pages, stickers, or social posts.
 - Keep consistent teal/blue palette.

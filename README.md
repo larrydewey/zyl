@@ -1,11 +1,10 @@
-# Zyl
+<div align="center">
+  <img src="assets/logo.png" alt="Zyl Logo" width="150px"></img>
+  <p><strong>Deterministic Power. Expressive Safety.</strong></p>
+</div>
 
-![Zyl Logo](assets/logo.jpg)
-**Deterministic Power. Expressive Safety.**
 
 A deterministic Lisp systems language with region-based memory, capability types, actor concurrency, SSA IR, and native x86_64 code generation.
-
-![Parry the Owl](assets/parry.svg)
 
 ## Installation
 
