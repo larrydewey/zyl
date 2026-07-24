@@ -26,7 +26,7 @@ echo '(defstruct Point (x) (y))(let p (make-Point 5 7)(print (+ (struct-get p "x
 
 ### Test 3: Nested struct-get (field values used to construct another struct)
 ```bash
-echo '(defstruct Point (x) (y))(defstruct Pair (left) (right))(let p (make-Point 42 99)(let pair (make-Pair (struct-get p "x") (struct-get p "y")))(print (struct-get pair "left")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+echo '(defstruct Point (x) (y))(defstruct Pair (left) (right))(let p (make-Point 42 99)(let pair (make-Pair (struct-get p "x") (struct-get p "y")) (print (struct-get pair "left"))))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
 # Expected: 42
 ```
 
@@ -57,7 +57,9 @@ echo '(defstruct+ Color (r) (g) (b))(let c (make-Color 255 128 64)(print (struct
 
 ## Full Test Suite (`stdlib_test.zyl`)
 
-The file `stdlib_test.zyl` contains 316 lines of tests covering:
+**This file MUST be run every session before making changes. Update it when new functionality is added to ensure behavior remains consistent between sessions.**
+
+The file `stdlib_test.zyl` contains 398 lines of tests covering:
 
 ### Basic Operations
 - Arithmetic: `+`, `-`, `*`, `/` with multiple arguments
