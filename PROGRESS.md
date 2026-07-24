@@ -38,7 +38,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 ### Medium Priority
 - [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
-- [ ] FFI code generation: type checking implemented, code generation deferred
+- [x] FFI code generation: fixed ICNF arg collection (intermediate Const nodes were lost), fixed entry point to call user main
 - [ ] Actor concurrency runtime: type checking implemented, runtime deferred
 
 ### Low Priority
