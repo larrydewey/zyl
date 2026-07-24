@@ -1324,28 +1324,19 @@ impl IcnfConverter {
 
             // FFI call.
             ExprInner::FfiCall(name, args, timeout) => {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut arg_ids = Vec::with_capacity(args.len());
                 for a in args.iter() {
-                    let stmts = self.convert_expr_to_stmts(a)?;
-                    if !stmts.is_empty() {
-                        arg_ids.push(stmts.last().unwrap().id);
-                    } else {
-                        let id = self.next_ssa_id();
-                        arg_ids.push(id);
-                    }
+                    let mut stmts = self.convert_expr_to_stmts(a)?;
+                    arg_ids.push(stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id()));
+                    all_nodes.append(&mut stmts);
                 }
-
-                Ok(vec![ICNFNode {
-                    id: self.next_ssa_id(),
-                    region: Region::Pin,
-                    typ: None,
-                    is_branch_body: false,
-                    node: ICNFInner::FfiCall {
-                        name: sanitize_name(name),
-                        args: arg_ids,
-                        timeout: *timeout,
-                    },
-                }])
+                all_nodes.push(self.emit(ICNFInner::FfiCall {
+                    name: sanitize_name(name),
+                    args: arg_ids,
+                    timeout: *timeout,
+                }));
+                Ok(all_nodes)
             }
 
             ExprInner::FfiPin(expr) => {
