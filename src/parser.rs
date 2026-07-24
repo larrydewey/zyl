@@ -268,6 +268,23 @@ impl Parser {
             }};
         }
 
+        // FFI forms must always be dispatched, even in no_dispatch mode.
+        if op == "ffi-call" {
+            return self.p_ffi_call(span, args);
+        } else if op == "ffi-pin" {
+            check_arity!("ffi-pin", 1, 1, args);
+            return Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FfiPin(Box::new(args[0].clone())),
+            });
+        } else if op == "ffi-unpin" {
+            check_arity!("ffi-unpin", 1, 1, args);
+            return Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FfiUnpin(Box::new(args[0].clone())),
+            });
+        }
+
         // When no_dispatch is set (inside defmacro args), return raw Call/Apply instead of dispatching.
         if self.no_dispatch {
             let first = Box::new(Expr {

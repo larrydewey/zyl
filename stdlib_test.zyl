@@ -2,10 +2,10 @@
 ; Tests all base functionality and edge cases
 
 ; --- Basic arithmetic ---
-(+ 1 2 3 4 5)
-(- 10 3)
-(* 3 4)
-(/ 20 4)
+(print "Basic Addition => " (+ 1 2 3 4 5))
+(print "Basic Subtraction => " (- 10 3))
+(print "Basic Multiplication => " (* 3 4))
+(print "Basic Division => " (/ 20 4))
 
 ; --- Multi-operand arithmetic ---
 

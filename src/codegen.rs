@@ -399,6 +399,12 @@ impl CodeGen {
             }
         }
 
+        // If there's a user-defined main function, call it.
+        if program.functions.iter().any(|f| f.name == "main") {
+            self.asm_push_align();
+            self.asm.push("    call _ZYL_main".to_string());
+        }
+
         // Call exit(0).
         self.asm_push_align();
         self.asm
@@ -3763,6 +3769,55 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    mov eax, [rbp-{}]", slot));
                 }
+            }
+
+            ICNFInner::FfiCall { name, args, timeout: _ } => {
+                // FFI call — pass arguments in registers per System V ABI, call external C function.
+                let abi_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                let abi_xmm_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
+                let mut xmm_arg_count: usize = 0;
+
+                // Save xmm0-xmm7 on stack before arg setup (printf clobbers them).
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 128".to_string());
+
+                for (i, &arg_id) in args.iter().enumerate() {
+                    if i < 6 {
+                        let node = lookup
+                            .get(&arg_id)
+                            .copied()
+                            .or_else(|| stmts.iter().find(|n| n.id == arg_id));
+                        let is_float = match node {
+                            Some(ICNFNode { typ: Some(t), .. }) => matches!(t, Type::Prim(PrimType::Float)),
+                            _ => false,
+                        };
+                        if is_float {
+                            self.emit_float_load_into(
+                                arg_id, &abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
+                            );
+                            xmm_arg_count += 1;
+                        } else {
+                            let reg = abi_regs[i];
+                            self.emit_load_into(
+                                arg_id, reg, stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                            );
+                        }
+                    }
+                }
+
+                // Restore xmm0-xmm7 after arg setup.
+                self.asm_push_align();
+                self.asm.push("    add rsp, 128".to_string());
+
+                // Set al = number of XMM registers used for variadic calling convention.
+                self.asm_push_align();
+                self.asm.push(format!("    mov al, {}", xmm_arg_count));
+
+                // Call the external C function (with plt stub for dynamic linking).
+                self.asm_push_align();
+                self.asm.push(format!("    call {}@plt", name));
+
+                emitted_ids.insert(node.id);
             }
 
             _ => {
