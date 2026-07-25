@@ -396,3 +396,7 @@
 (let p (make-Point 0 0)
   (print (struct-get p "x"))
   (print (struct-get p "y")))
+
+; --- I/O: read-line regression tests ---
+(let input (read-line)
+  (print "got: " input))

@@ -129,6 +129,24 @@ The file `stdlib_test.zyl` contains 398 lines of tests covering:
 
 ---
 
+## I/O Regression Tests
+
+**Trigger before modifying:** `src/codegen.rs`, `src/icnf.rs`, `src/parser.rs`
+
+### Test 1: read-line basic input
+```bash
+echo '(let input (read-line)(print "got: " input))' > t.zyl && ./target/debug/zyl t.zyl t.bin && echo 'hello world' | ./t.bin
+# Expected: got: hello world
+```
+
+### Test 2: read-line EOF
+```bash
+echo '(let input (read-line)(print "got: " input))' > t.zyl && ./target/debug/zyl t.zyl t.bin && echo -n '' | ./t.bin
+# Expected: got: (empty line)
+```
+
+---
+
 ## Quick Smoke Test
 
 For a fast check that the compiler still works:
