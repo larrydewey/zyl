@@ -35,6 +35,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Nested conditionals: fixed phi slot collision, register clobbering, and float condition detection
 - [x] Struct function calls: fixed MakeStruct rbp marker stack corruption and operand tracking
 - [x] 2-arg let/let-mut: PostProcessor and macro_expander now accept `args.len() >= 2` (value as body), fixing inner let expressions in struct contexts that had only 2 args instead of 3
+- [x] read-line I/O: fixed parser→PostProcessor→ICNF→codegen pipeline — Call(Ident("read-line"), []) → ReadLine conversion in PostProcessor, sys_read syscall in codegen (rsi for buffer), 64-bit pointer storage in Assign handler, Print handler string detection for Load nodes referencing ReadLine results
 
 ### Medium Priority
 - [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
