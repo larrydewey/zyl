@@ -992,8 +992,25 @@ impl TypeInferer {
                 Ok(first.unwrap_or(Type::Prim(PrimType::Unit)))
             }
 
-            ExprInner::Spawn(_closure) => Ok(Type::Nominal("ActorHandle".to_string())),
-            ExprInner::Send(_, _msg) => Ok(Type::Prim(PrimType::Unit)),
+            ExprInner::Spawn(closure) => {
+                let ct = self.infer_expr(closure)?;
+                // Verify closure type is valid (closure is always Send-capable since it captures only Send types).
+                // The region inference already ensures captures go to Heap (R3).
+                let _ = ct;
+                Ok(Type::Nominal("ActorHandle".to_string()))
+            }
+            ExprInner::Send(_actor, msg) => {
+                let mt = self.infer_expr(msg)?;
+                // Message must be Send-capable (TCap, TAtomic, or primitive).
+                if !self.trait_ctx.is_send(&mt) {
+                    return Err(ZylError::E_INVALID_CAPABILITY(
+                        msg.span.clone(),
+                        format!("message type '{}' is not Send-capable", mt),
+                        "send".to_string(),
+                    ));
+                }
+                Ok(Type::Prim(PrimType::Unit))
+            }
             ExprInner::FfiCall(_, args, _) => {
                 for arg in args {
                     drop(self.infer_expr(arg)?);

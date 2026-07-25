@@ -268,7 +268,7 @@ impl Parser {
             }};
         }
 
-        // FFI forms must always be dispatched, even in no_dispatch mode.
+        // FFI & concurrency forms must always be dispatched, even in no_dispatch mode.
         if op == "ffi-call" {
             return self.p_ffi_call(span, args);
         } else if op == "ffi-pin" {
@@ -282,6 +282,18 @@ impl Parser {
             return Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::FfiUnpin(Box::new(args[0].clone())),
+            });
+        } else if op == "spawn" {
+            check_arity!("spawn", 1, 1, args);
+            return Ok(Expr {
+                span: Span::default(),
+                inner: ExprInner::Spawn(Box::new(args[0].clone())),
+            });
+        } else if op == "send" {
+            check_arity!("send", 2, 2, args);
+            return Ok(Expr {
+                span: Span::default(),
+                inner: ExprInner::Send(Box::new(args[0].clone()), Box::new(args[1].clone())),
             });
         }
 
@@ -353,34 +365,6 @@ impl Parser {
             return Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Unwrap(Box::new(args[0].clone())),
-            });
-        }
-        // Concurrency & FFI.
-        else if op == "spawn" {
-            check_arity!("spawn", 1, 1, args);
-            return Ok(Expr {
-                span: Span::default(),
-                inner: ExprInner::Spawn(Box::new(args[0].clone())),
-            });
-        } else if op == "send" {
-            check_arity!("send", 2, 2, args);
-            return Ok(Expr {
-                span: Span::default(),
-                inner: ExprInner::Send(Box::new(args[0].clone()), Box::new(args[1].clone())),
-            });
-        } else if op == "ffi-call" {
-            return self.p_ffi_call(span, args);
-        } else if op == "ffi-pin" {
-            check_arity!("ffi-pin", 1, 1, args);
-            return Ok(Expr {
-                span: Span::default(),
-                inner: ExprInner::FfiPin(Box::new(args[0].clone())),
-            });
-        } else if op == "ffi-unpin" {
-            check_arity!("ffi-unpin", 1, 1, args);
-            return Ok(Expr {
-                span: Span::default(),
-                inner: ExprInner::FfiUnpin(Box::new(args[0].clone())),
             });
         }
         // Mutation & sequencing.
