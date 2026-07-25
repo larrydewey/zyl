@@ -86,6 +86,10 @@ impl CodeGen {
         self.asm.push(".hexbuf:".to_string());
         self.asm_push_align();
         self.asm.push("    .space 35".to_string());
+        self.asm_push_align();
+        self.asm.push(".stdin_buf:".to_string());
+        self.asm_push_align();
+        self.asm.push("    .space 4096".to_string());
 
         // Emit text (code) section.
         self.asm_push_align();
@@ -968,6 +972,56 @@ impl CodeGen {
                 // Always load from stack slot — never skip based on emitted_ids.
                 // The emitted value might have been overwritten by subsequent operations.
                 let is_float = matches!(typ.as_ref(), Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                let has_slot = local_vars.contains_key(name);
+                if !has_slot {
+                    // Variable not in local_vars — check if it's a ReadLine result.
+                    // Emit the ReadLine statement and load from rax.
+                    if let Some(read_line_node) = stmts.iter().find(|n| matches!(&n.node, ICNFInner::ReadLine)) {
+                        let rid = read_line_node.id;
+                        if !emitted_ids.contains(&rid) {
+                            self.asm_push_align();
+                            self.asm.push("    lea rsi, [.stdin_buf]  # buffer pointer (rsi for syscall)".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    mov rax, 0             # sys_read".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    mov rdi, 0             # stdin fd".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    mov rdx, 4096          # buffer size".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    syscall".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    test rax, rax".to_string());
+                            let rl_err = self.new_label();
+                            let rl_done = self.new_label();
+                            self.asm.push(format!("    js {}", rl_err));
+                            self.asm_push_align();
+                            self.asm.push(format!("    je {}", rl_err));
+                            self.asm_push_align();
+                            self.asm.push("    dec rax                # bytes_read - 1".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    cmp byte ptr [rsi + rax], 10".to_string());
+                            self.asm_push_align();
+                            self.asm.push(format!("    jne {}", rl_done));
+                            self.asm_push_align();
+                            self.asm.push("    mov byte ptr [rsi + rax], 0  # strip newline".to_string());
+                            self.asm_push_align();
+                            self.asm.push(format!("    jmp {}", rl_done));
+                            self.asm_push_align();
+                            self.asm.push(format!("{}:", rl_err));
+                            self.asm_push_align();
+                            self.asm.push("    xor rax, rax           # null pointer on error/EOF".to_string());
+                            self.asm_push_align();
+                            self.asm.push(format!("    jmp {}", rl_done));
+                            self.asm_push_align();
+                            self.asm.push(format!("{}:", rl_done));
+                            self.asm_push_align();
+                            self.asm.push("    mov rax, rsi           # return buffer pointer".to_string());
+                            self.asm_push_align();
+                            self.asm.push(format!("    mov [rbp-{}], rax", ((local_vars.get(name).copied().unwrap_or(0) + 1) * 8)).to_string());
+                            emitted_ids.insert(rid);
+                        }
+                    }
+                }
                 if is_float {
                     if let Some(&slot_idx) = local_vars.get(name) {
                         let offset = (slot_idx + 1) * 8;
@@ -2418,12 +2472,23 @@ impl CodeGen {
                     .or_else(|| stmts.iter().find(|n| n.id == *value_id))
                     .and_then(|n| n.typ.as_ref())
                     .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                // Check if value is from ReadLine (String/pointer type).
+                let val_is_string = stmts.iter().any(|n| {
+                    if let ICNFInner::ReadLine = &n.node {
+                        *value_id == n.id
+                    } else {
+                        false
+                    }
+                });
                 if let Some(&slot_idx) = local_vars.get(var_name) {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
                     if val_is_float {
                         self.asm
                             .push(format!("    movsd [rbp-{}], xmm0", offset));
+                    } else if val_is_string {
+                        self.asm
+                            .push(format!("    mov [rbp-{}], rax", offset));
                     } else {
                         self.asm
                             .push(format!("    mov [rbp-{}], eax", offset));
@@ -3227,6 +3292,27 @@ impl CodeGen {
                             node: ICNFInner::Const(Atom::Str(_)),
                             ..
                         }) => true,
+                        Some(ICNFNode {
+                            node: ICNFInner::Load(var_name),
+                            ..
+                        }) => {
+                            // Check if this Load's variable name matches an Assign whose value_id
+                            // points to a ReadLine result.
+                            let rl_result_id = stmts.iter()
+                                .find(|n| matches!(&n.node, ICNFInner::ReadLine))
+                                .map(|n| n.id);
+                            if let Some(rid) = rl_result_id {
+                                stmts.iter().any(|n| {
+                                    if let ICNFInner::Assign(assign_name, value_id) = &n.node {
+                                        *value_id == rid && assign_name == var_name
+                                    } else {
+                                        false
+                                    }
+                                })
+                            } else {
+                                false
+                            }
+                        }
                         _ => false,
                     };
                     // Check if node's type is explicitly set.
@@ -3247,21 +3333,34 @@ impl CodeGen {
                         } else { false }
                     } else { is_float };
 
-                    if is_string {
-                        match find_node(arg_id) {
-                            Some(ICNFNode {
-                                node: ICNFInner::Const(Atom::Str(s)),
-                                ..
-                            }) => {
-                                let str_label = self.emit_string_literal(s);
-                                self.asm_push_align();
-                                self.asm.push(format!("    lea rsi, [{}] ", str_label));
-                            }
-                            _ => {
-                                self.asm_push_align();
-                                self.asm.push("    mov rsi, rax".to_string());
-                            }
-                        }
+                     if is_string {
+                         match find_node(arg_id) {
+                             Some(ICNFNode {
+                                 node: ICNFInner::Const(Atom::Str(s)),
+                                 ..
+                             }) => {
+                                 let str_label = self.emit_string_literal(s);
+                                 self.asm_push_align();
+                                 self.asm.push(format!("    lea rsi, [{}] ", str_label));
+                             }
+                             Some(ICNFNode {
+                                 node: ICNFInner::Load(var_name),
+                                 ..
+                             }) => {
+                                 if let Some(&slot_idx) = local_vars.get(var_name) {
+                                     let offset = (slot_idx + 1) * 8;
+                                     self.asm_push_align();
+                                     self.asm.push(format!("    mov rsi, [rbp-{}]", offset));
+                                 } else {
+                                     self.asm_push_align();
+                                     self.asm.push("    mov rsi, rax".to_string());
+                                 }
+                             }
+                             _ => {
+                                 self.asm_push_align();
+                                 self.asm.push("    mov rsi, rax".to_string());
+                             }
+                         }
 
                         self.asm_push_align();
                         self.asm.push("    lea rdi, [.fmt_str]".to_string());
@@ -3327,6 +3426,59 @@ impl CodeGen {
 
                     }
                 }
+            }
+
+            ICNFInner::ReadLine => {
+                // Read a line from stdin using the read syscall.
+                // sys_read: rax=0, rdi=fd, rsi=buf, rdx=count
+                // Result: bytes read in rax, or -1 on error.
+                self.asm_push_align();
+                self.asm.push("    lea rsi, [.stdin_buf]  # buffer pointer (rsi for syscall)".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 0             # sys_read".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rdi, 0             # stdin fd".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rdx, 4096          # buffer size".to_string());
+                self.asm_push_align();
+                self.asm.push("    syscall".to_string());
+
+                // Check for error (rax < 0) or EOF (rax == 0).
+                self.asm_push_align();
+                self.asm.push("    test rax, rax".to_string());
+                self.asm_push_align();
+                let err_label = self.new_label();
+                let done_label = self.new_label();
+                self.asm.push(format!("    js {}", err_label));
+                self.asm_push_align();
+                self.asm.push(format!("    je {}", err_label));
+
+                // Strip trailing newline (if present).
+                // rax = bytes_read, rsi = buffer pointer.
+                self.asm_push_align();
+                self.asm.push("    dec rax                # bytes_read - 1".to_string());
+                self.asm_push_align();
+                self.asm.push("    cmp byte ptr [rsi + rax], 10".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jne {}", done_label));
+                self.asm_push_align();
+                self.asm.push("    mov byte ptr [rsi + rax], 0  # strip newline".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp {}", done_label));
+
+                // Error/EOF: return 0 (null pointer).
+                self.asm_push_align();
+                self.asm.push(format!("{}:", err_label));
+                self.asm_push_align();
+                self.asm.push("    xor rax, rax           # null pointer on error/EOF".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp {}", done_label));
+
+                // Success: rax = buffer pointer (return value as String).
+                self.asm_push_align();
+                self.asm.push(format!("{}:", done_label));
+                self.asm_push_align();
+                self.asm.push("    mov rax, rsi           # return buffer pointer as String".to_string());
             }
 
             ICNFInner::Call(name, args) => {
@@ -4093,6 +4245,7 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
                     out.insert(a);
                 }
             }
+            ICNFInner::ReadLine => {}
             ICNFInner::If {
                 cond_ssa,
                 then_body,

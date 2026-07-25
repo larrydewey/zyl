@@ -803,6 +803,11 @@ impl PostProcessor {
                 expr.inner = ExprInner::MacroDef(name, patterns, template);
             }
 
+            // read-line → ReadLine (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "read-line") && args.is_empty() => {
+                expr.inner = ExprInner::ReadLine;
+            }
+
             // begin → Begin (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "begin") && !args.is_empty() => {
                 expr.inner = ExprInner::Begin(

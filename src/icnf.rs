@@ -868,7 +868,7 @@ impl IcnfConverter {
                     .into_iter()
                     .filter(|n| matches!(n.node, ICNFInner::Load(_)))
                     .collect();
-                let mut all_stmts = val_stmts;
+                let mut all_stmts = val_stmts.clone();
                 all_stmts.push(assign_node);
                 all_stmts.extend(body_stmts);
                 all_stmts.extend(load_stmts);
