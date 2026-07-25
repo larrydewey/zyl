@@ -8,6 +8,7 @@ mod monomorphization;
 mod optimization;
 mod parser;
 mod region_inference;
+mod runtime;
 mod type_inference;
 mod type_system;
 
@@ -198,12 +199,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("  Assembling {} → {}", asm_path, bin_path);
 
+    // Get the path to the actor runtime C file.
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let runtime_c = format!("{}/{}", manifest_dir, runtime::RUNTIME_C);
+
     // Try to assemble and link using cc (which handles as + ld automatically).
+    // Include the actor runtime C file for spawn/send support.
     let build_result = std::process::Command::new("cc")
         .arg("-no-pie")
+        .arg("-lpthread")
         .arg("-o")
         .arg(&bin_path)
         .arg(&asm_path)
+        .arg(&runtime_c)
         .output();
 
     match build_result {
