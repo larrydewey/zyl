@@ -25,6 +25,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 | Struct System | ✅ Complete | defstruct, defstruct+, make-, struct-get, all phases |
 | ADT System | ✅ Complete | deftype, match, exhaustive checking |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
+| Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread
 
 ---
 
@@ -40,7 +41,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 ### Medium Priority
 - [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
 - [x] FFI code generation: fixed ICNF arg collection (intermediate Const nodes were lost), fixed entry point to call user main
-- [ ] Actor concurrency runtime: type checking implemented, runtime deferred
+- [x] Actor concurrency runtime: C runtime with pthread-based actors, codegen for Spawn/Send, Send-capability enforcement in type inference
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
@@ -51,10 +52,10 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 ## Next Priorities
 
-1. FFI code generation (`ffi-call` → x86_64)
-2. Actor concurrency runtime
-3. Closure runtime support
-4. Reduce compiler warnings
+1. Actor message passing (full closure execution in actor threads)
+2. Closure runtime support (captured variables, environment passing)
+3. Reduce compiler warnings (~160)
+4. Self-hosting (not yet targeting Zyl source code generation)
 
 ---
 

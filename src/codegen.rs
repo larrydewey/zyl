@@ -19,6 +19,8 @@ pub struct CodeGen {
     label_counter: usize,
     /// XMM register counter for SSE floating-point register allocation.
     xmm_counter: usize,
+    /// Counter for unique spawn wrapper function names.
+    spawn_counter: usize,
     /// IDs of nodes already emitted as standalone statements.
     standalone_emitted: std::collections::HashSet<usize>,
     /// Struct field layouts for offset computation.
@@ -33,6 +35,7 @@ impl CodeGen {
             asm: Vec::new(),
             label_counter: 0,
             xmm_counter: 0,
+            spawn_counter: 0,
             standalone_emitted: std::collections::HashSet::new(),
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::HashMap::new(),
@@ -3968,6 +3971,119 @@ impl CodeGen {
                 // Call the external C function (with plt stub for dynamic linking).
                 self.asm_push_align();
                 self.asm.push(format!("    call {}@plt", name));
+
+                emitted_ids.insert(node.id);
+            }
+
+            ICNFInner::Spawn(closure_id) => {
+                // Look up the closure node to get the function name.
+                let closure_node = lookup
+                    .get(&closure_id)
+                    .copied()
+                    .or_else(|| stmts.iter().find(|n| n.id == *closure_id));
+
+                if let Some(ICNFNode { node: ICNFInner::Closure(name), .. }) = closure_node {
+                    // Ensure the closure expression has been emitted.
+                    self.emit_node(
+                        closure_node.unwrap(),
+                        stmts,
+                        local_vars,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                    emitted_ids.insert(*closure_id);
+
+                    if name.is_empty() {
+                        // Anonymous lambda — generate a unique wrapper function.
+                        let wrapper_name = format!("_ZYL_actor_{}", self.spawn_counter);
+                        self.spawn_counter += 1;
+
+                        // Emit the wrapper function (takes no args, calls nothing — actor entry point).
+                        self.asm_push_align();
+                        self.asm.push(format!("{}:", wrapper_name));
+                        self.asm_push_align();
+                        self.asm.push("    ret".to_string());
+
+                        // Load the wrapper address into rdi.
+                        self.asm_push_align();
+                        self.asm.push(format!("    lea rdi, [rip+{}]", wrapper_name));
+                    } else {
+                        // Named closure — load the function address.
+                        self.asm_push_align();
+                        self.asm.push(format!("    lea rdi, [rip+_ZYL_{}]", name));
+                    }
+
+                    // rsi = NULL (no captured state for now).
+                    self.asm_push_align();
+                    self.asm.push("    mov rsi, 0".to_string());
+
+                    // Call zyl_actor_spawn(entry, state) -> returns actor_id in rax.
+                    self.asm_push_align();
+                    self.asm.push("    call zyl_actor_spawn@plt".to_string());
+                } else {
+                    // Unknown closure — emit a stub.
+                    self.asm_push_align();
+                    self.asm.push("    xor rax, rax".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    call zyl_actor_spawn@plt".to_string());
+                }
+                emitted_ids.insert(node.id);
+            }
+
+            ICNFInner::Send(actor_id, msg_id) => {
+                // Ensure actor_id node is emitted (so its value is in eax).
+                let actor_node = lookup
+                    .get(&actor_id)
+                    .copied()
+                    .or_else(|| stmts.iter().find(|n| n.id == *actor_id));
+                if let Some(actor_n) = actor_node {
+                    self.emit_node(
+                        actor_n,
+                        stmts,
+                        local_vars,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                    emitted_ids.insert(*actor_id);
+                }
+
+                // Load actor_id (in eax) into rdi.
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rax".to_string());
+
+                // Ensure msg_id is emitted.
+                let msg_node = lookup
+                    .get(&msg_id)
+                    .copied()
+                    .or_else(|| stmts.iter().find(|n| n.id == *msg_id));
+                if let Some(msg_n) = msg_node {
+                    self.emit_node(
+                        msg_n,
+                        stmts,
+                        local_vars,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                    emitted_ids.insert(*msg_id);
+                }
+
+                // Load msg (in rax — pointer) into rsi.
+                self.asm_push_align();
+                self.asm.push("    mov rsi, rax".to_string());
+
+                // Call zyl_actor_send(actor_id, msg).
+                self.asm_push_align();
+                self.asm.push("    call zyl_actor_send@plt".to_string());
+
+                // Return Unit (eax = 0).
+                self.asm_push_align();
+                self.asm.push("    xor eax, eax".to_string());
 
                 emitted_ids.insert(node.id);
             }
