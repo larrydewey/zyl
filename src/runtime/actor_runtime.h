@@ -33,6 +33,7 @@ typedef struct {
 void zyl_actor_init(void);
 uint32_t zyl_actor_spawn(void (*entry)(void*), void* state);
 void zyl_actor_send(uint32_t actor_id, void* msg);
+void zyl_actor_wait_all(void);
 void* zyl_actor_thread_entry(void* arg);
 
 #endif
