@@ -268,7 +268,7 @@ impl Parser {
             }};
         }
 
-        // FFI & concurrency forms must always be dispatched, even in no_dispatch mode.
+        // FFI, concurrency, fn/lambda must always be dispatched, even in no_dispatch mode.
         if op == "ffi-call" {
             return self.p_ffi_call(span, args);
         } else if op == "ffi-pin" {
@@ -283,6 +283,8 @@ impl Parser {
                 span: span.clone(),
                 inner: ExprInner::FfiUnpin(Box::new(args[0].clone())),
             });
+        } else if op == "fn" || op == "lambda" {
+            return self.p_lambda(span, op, args);
         } else if op == "spawn" {
             check_arity!("spawn", 1, 1, args);
             return Ok(Expr {
@@ -337,8 +339,6 @@ impl Parser {
                 span: span.clone(),
                 inner: ExprInner::Begin(args.to_vec()),
             });
-        } else if op == "fn" || op == "lambda" {
-            return self.p_lambda(span, op, args);
         } else if op == "defmacro" {
             return self.p_defmacro(span, args);
         }
@@ -1693,16 +1693,13 @@ impl Parser {
                 }
                 ExprInner::Apply(ref name, ref args)
                     if !name.starts_with("make-")
-                        && name
-                            .chars()
-                            .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) =>
+                        && name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) =>
                 {
                     // Apply from generic calls — treat all components as params.
                     let mut params = Vec::new();
                     // Add the operator (name) as a param if it looks like an identifier.
-                    if name
-                        .chars()
-                        .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
+                    if !args.is_empty()
+                        && name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
                     {
                         params.push(Param {
                             span: Span::default(),
@@ -1714,6 +1711,9 @@ impl Parser {
                         params.push(self.parse_param(pe));
                     }
                     params
+                }
+                ExprInner::Atom(Atom::Ident(name)) if name == "Unit" || name.is_empty() => {
+                    Vec::new()
                 }
                 _ => Vec::new(),
             },
