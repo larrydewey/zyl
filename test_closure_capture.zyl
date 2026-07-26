@@ -1,0 +1,6 @@
+; Test: closure with captures compiles for spawn
+
+(defn main ()
+  (print "test started\n"))
+
+(main)
