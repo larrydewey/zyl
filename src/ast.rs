@@ -1785,8 +1785,19 @@ impl PostProcessor {
     fn parse_params_list_inner(arg: Option<&Expr>) -> Vec<Param> {
         match arg {
             Some(e) => match &e.inner {
-                ExprInner::Call(_, ref pexprs) => {
-                    pexprs.iter().map(|pe| Self::parse_param(pe)).collect()
+                ExprInner::Call(op, ref pexprs) => {
+                    let mut params = Vec::new();
+                    if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
+                        params.push(Param {
+                            span: Span::default(),
+                            name: n.clone(),
+                            typ: None,
+                        });
+                    }
+                    for pe in pexprs {
+                        params.push(Self::parse_param(pe));
+                    }
+                    params
                 }
                 ExprInner::Apply(ref name, ref args)
                     if !name.starts_with("make-")
