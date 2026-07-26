@@ -82,26 +82,15 @@ void* zyl_actor_thread_entry(void* arg) {
         actor->entry(actor->state);
     }
 
-    /* Actor entry done — loop processing mailbox until actor dies. */
-    while (actor->alive) {
-        ZylMessage* msg = NULL;
-
-        /* Spin-lock free: poll mailbox (deterministic, no mutex). */
-        if (actor->mailbox_head) {
-            msg = actor->mailbox_head;
-            actor->mailbox_head = msg->next;
-            if (!actor->mailbox_head) {
-                actor->mailbox_tail = NULL;
-            }
-            actor->mailbox_count--;
-        }
-
-        if (msg) {
-            free(msg->data);
-            free(msg);
-        }
-    }
-
     actor->running = 0;
     return NULL;
+}
+
+void zyl_actor_wait_all(void) {
+    for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
+        ZylActor* actor = &g_system.actors[i];
+        if (actor->running || actor->thread) {
+            pthread_join(actor->thread, NULL);
+        }
+    }
 }

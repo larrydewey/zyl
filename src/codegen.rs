@@ -29,6 +29,10 @@ pub struct CodeGen {
     adt_defs: std::collections::HashMap<String, Vec<(String, usize)>>,
     /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
     closure_bodies: std::collections::HashMap<usize, Vec<ICNFNode>>,
+    /// Closure metadata: closure_id → (name, captures).
+    closures: std::collections::HashMap<usize, (String, Vec<CaptureField>)>,
+    /// Buffered wrapper functions for anonymous spawn closures.
+    spawn_wrappers: Vec<String>,
 }
 
 impl CodeGen {
@@ -42,6 +46,8 @@ impl CodeGen {
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::HashMap::new(),
             closure_bodies: std::collections::HashMap::new(),
+            closures: std::collections::HashMap::new(),
+            spawn_wrappers: Vec::new(),
         }
     }
 
@@ -61,6 +67,20 @@ impl CodeGen {
     pub fn with_closure_bodies(mut self, bodies: std::collections::HashMap<usize, Vec<ICNFNode>>) -> Self {
         self.closure_bodies = bodies;
         self
+    }
+
+    /// Set closure metadata for codegen (from ICNF closure conversion).
+    pub fn with_closures(mut self, closures: std::collections::HashMap<usize, (String, Vec<CaptureField>)>) -> Self {
+        self.closures = closures;
+        self
+    }
+
+    /// Emit buffered spawn wrapper functions (standalone functions with their own prologue/epilogue).
+    fn emit_spawn_wrappers(&mut self) {
+        for wrapper in &self.spawn_wrappers {
+            self.asm.push(wrapper.clone());
+        }
+        self.spawn_wrappers.clear();
     }
 
     /// Look up the byte offset of a field within a struct.
@@ -644,6 +664,12 @@ impl CodeGen {
                 );
             }
 
+            // End of user-defined function body — emit wait_all for main.
+            if func.name == "main" {
+                self.asm_push_align();
+                self.asm.push("    call zyl_actor_wait_all@plt".to_string());
+            }
+
             // Return result: if body ends with a value in eax, keep it; otherwise return 0.
             self.asm_push_align();
             self.asm.push("    add rsp, 256".to_string());
@@ -652,6 +678,9 @@ impl CodeGen {
             self.asm_push_align();
             self.asm.push("    ret".to_string());
         }
+
+        // Emit buffered spawn wrapper functions (standalone with proper prologue/epilogue).
+        self.emit_spawn_wrappers();
 
         // Emit string literals used in the program.
         for func in &program.functions {
@@ -4022,25 +4051,10 @@ impl CodeGen {
             }
 
             ICNFInner::Spawn(closure_id) => {
-                // Look up the closure node to get name and captures.
-                let closure_node = lookup
-                    .get(&closure_id)
-                    .copied()
-                    .or_else(|| stmts.iter().find(|n| n.id == *closure_id));
-
-                if let Some(ICNFNode { node: ICNFInner::Closure { name, captures }, .. }) = closure_node {
-                    // Ensure the closure expression has been emitted.
-                    self.emit_node(
-                        closure_node.unwrap(),
-                        stmts,
-                        local_vars,
-                        emitted_ids,
-                        operand_ids,
-                        lookup,
-                        phi_slots,
-                    );
-                    emitted_ids.insert(*closure_id);
-
+                // Look up closure metadata (name + captures) from the closures map.
+                if let Some((name, captures)) = self.closures.get(&closure_id) {
+                    let name = name.clone();
+                    let captures = captures.clone();
                     // Allocate and populate environment struct for captures.
                     let env_size = captures.len() * 8;
                     let mut env_ptr_in_rsi = false;
@@ -4085,15 +4099,22 @@ impl CodeGen {
                         env_ptr_in_rsi = true;
                     }
 
-                    if name.is_empty() || name == "fn_" {
+                     if name.is_empty() || name == "fn_" {
                         // Anonymous lambda — generate a unique wrapper function.
                         let wrapper_name = format!("_ZYL_actor_{}", self.spawn_counter);
                         self.spawn_counter += 1;
 
-                        // Emit the wrapper function.
+                        // Buffer the wrapper as a standalone function (not inline).
+                        let wrapper_stack = 256 + captures.len() * 8;
+                        let start_len = self.asm.len();
                         self.asm_push_align();
                         self.asm.push(format!("{}:", wrapper_name));
                         self.asm_push_align();
+                        self.asm.push("    push rbp".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    mov rbp, rsp".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!("    sub rsp, {}", wrapper_stack));
 
                         // Load captured values from env struct (rsi) into stack slots.
                         for (i, cap) in captures.iter().enumerate() {
@@ -4120,10 +4141,20 @@ impl CodeGen {
                                     phi_slots,
                                 );
                             }
-                        } else {
-                            self.asm_push_align();
-                            self.asm.push("    ret".to_string());
                         }
+
+                        // Epilogue: restore stack + return.
+                        self.asm_push_align();
+                        self.asm.push("    mov rsp, rbp".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    pop rbp".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    ret".to_string());
+
+                        // Extract buffered wrapper lines and store for later emission.
+                        let wrapper_lines: Vec<String> = self.asm[start_len..].to_vec();
+                        self.asm.truncate(start_len);
+                        self.spawn_wrappers.extend(wrapper_lines);
 
                         // Load the wrapper address into rdi.
                         self.asm_push_align();

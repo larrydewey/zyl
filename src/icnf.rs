@@ -378,6 +378,9 @@ pub struct ICNFProgram {
     /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
     #[serde(default)]
     pub closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
+    /// Closure metadata: closure_id → (name, captures).
+    #[serde(default)]
+    pub closures: IndexMap<usize, (String, Vec<CaptureField>)>,
     /// IDs of nodes that are part of control flow branch bodies (for deduplication in codegen).
     #[serde(default)]
     pub emitted_branch_ids: std::collections::HashSet<usize>,
@@ -408,6 +411,8 @@ pub struct IcnfConverter {
     resolved_func_returns: IndexMap<String, Type>,
     /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
     closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
+    /// Closure metadata: closure_id → (name, captures).
+    closures: IndexMap<usize, (String, Vec<CaptureField>)>,
 }
 
 impl IcnfConverter {
@@ -426,6 +431,7 @@ impl IcnfConverter {
             resolved_func_params: IndexMap::new(),
             resolved_func_returns: IndexMap::new(),
             closure_bodies: IndexMap::new(),
+            closures: IndexMap::new(),
         }
     }
 
@@ -671,6 +677,7 @@ impl IcnfConverter {
                     let captures = captures_vec;
 
                     let ssa_id = self.next_ssa_id();
+                    self.closures.insert(ssa_id, (sanitize_name(name), captures.clone()));
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
@@ -710,6 +717,7 @@ impl IcnfConverter {
                     let captures = captures_vec;
 
                     let ssa_id = self.next_ssa_id();
+                    self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), captures.clone()));
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
@@ -835,6 +843,7 @@ impl IcnfConverter {
             functions: std::mem::take(&mut self.functions),
             statements: std::mem::take(&mut self.global_stmts),
             closure_bodies: std::mem::take(&mut self.closure_bodies),
+            closures: std::mem::take(&mut self.closures),
             emitted_branch_ids: std::mem::take(&mut self.emitted_branch_ids),
         })
     }
@@ -1308,6 +1317,7 @@ impl IcnfConverter {
                 if !body_stmts.is_empty() {
                     self.closure_bodies.insert(ssa_id, body_stmts);
                 }
+                self.closures.insert(ssa_id, (sanitize_name(name), captures.clone()));
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -1347,6 +1357,7 @@ impl IcnfConverter {
                 if !body_stmts.is_empty() {
                     self.closure_bodies.insert(ssa_id, body_stmts);
                 }
+                self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), captures.clone()));
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -1401,6 +1412,7 @@ impl IcnfConverter {
                 if !body_stmts.is_empty() {
                     self.closure_bodies.insert(ssa_id, body_stmts);
                 }
+                self.closures.insert(ssa_id, ("fn_".to_string(), captures.clone()));
                 self.current_scope = saved_scope;
                 let node = ICNFNode {
                     id: ssa_id,
