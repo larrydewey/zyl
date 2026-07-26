@@ -1658,7 +1658,7 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                 let all_simple = items.iter().all(|i| {
                     matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_)))
                 });
-                if all_simple {
+                if all_simple && !items.is_empty() {
                     // Raw list like (x y) — include operator as first param.
                     if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
                         params.push(Param {
@@ -1682,9 +1682,10 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                     .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) =>
         {
             let mut params = Vec::new();
-            if name
-                .chars()
-                .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
+            if !args.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
             {
                 params.push(Param {
                     span: Span::default(),

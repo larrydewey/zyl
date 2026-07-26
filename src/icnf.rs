@@ -11,6 +11,155 @@ fn sanitize_name(name: &str) -> String {
     name.replace('-', "_")
 }
 
+/// Collect all variable names referenced in an expression (for closure capture analysis).
+fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) {
+    match &expr.inner {
+        ExprInner::Atom(Atom::Ident(name)) => {
+            vars.insert(name.clone());
+        }
+        ExprInner::Call(op, args) => {
+            collect_expr_vars(op, vars);
+            for arg in args {
+                collect_expr_vars(arg, vars);
+            }
+        }
+        ExprInner::Apply(name, args) => {
+            if !matches!(name.as_str(), "defn" | "let" | "for") {
+                for arg in args {
+                    collect_expr_vars(arg, vars);
+                }
+            }
+        }
+        ExprInner::Def(_, val) | ExprInner::LetMut(_, val, _) => {
+            collect_expr_vars(val, vars);
+        }
+        ExprInner::Let(name, val, body) => {
+            collect_expr_vars(val, vars);
+            // name is bound in body, don't collect it from body
+            let mut body_vars = std::collections::HashSet::new();
+            collect_expr_vars(body, &mut body_vars);
+            body_vars.remove(name);
+            vars.extend(body_vars);
+        }
+        ExprInner::If(c, t, e) => {
+            collect_expr_vars(c, vars);
+            collect_expr_vars(t, vars);
+            collect_expr_vars(e, vars);
+        }
+        ExprInner::While(c, b) => {
+            collect_expr_vars(c, vars);
+            collect_expr_vars(b, vars);
+        }
+        ExprInner::For(bindings, cond, body) => {
+            for (_, val_opt) in bindings.iter() {
+                if let Some(val) = val_opt {
+                    collect_expr_vars(val, vars);
+                }
+            }
+            collect_expr_vars(cond, vars);
+            let mut body_vars = std::collections::HashSet::new();
+            collect_expr_vars(body, &mut body_vars);
+            for (name, _) in bindings {
+                body_vars.remove(name);
+            }
+            vars.extend(body_vars);
+        }
+        ExprInner::TryCatch(e, catch_var, h) => {
+            collect_expr_vars(e, vars);
+            let mut h_vars = std::collections::HashSet::new();
+            collect_expr_vars(h, &mut h_vars);
+            h_vars.remove(catch_var);
+            vars.extend(h_vars);
+        }
+        ExprInner::Match(e, arms) => {
+            collect_expr_vars(e, vars);
+            for arm in arms {
+                let mut arm_vars = std::collections::HashSet::new();
+                collect_expr_vars(&arm.body, &mut arm_vars);
+                // Remove pattern bindings from captures
+                // Simplified: just collect from body
+                vars.extend(arm_vars);
+            }
+        }
+        ExprInner::Cond(clauses) => {
+            for (pred, body) in clauses {
+                collect_expr_vars(pred, vars);
+                collect_expr_vars(body, vars);
+            }
+        }
+        ExprInner::Begin(exprs) | ExprInner::Print(exprs) => {
+            for e in exprs {
+                collect_expr_vars(e, vars);
+            }
+        }
+        ExprInner::Lambda(_, inner_params, body) | ExprInner::Fn(_, inner_params, body) => {
+            // Nested lambda: collect captures from outer scope
+            let mut body_vars = std::collections::HashSet::new();
+            collect_expr_vars(body, &mut body_vars);
+            for p in inner_params {
+                body_vars.remove(&p.name);
+            }
+            vars.extend(body_vars);
+        }
+        ExprInner::StructGet(target, _) => {
+            collect_expr_vars(target, vars);
+        }
+        ExprInner::MakeStruct(_, fields) => {
+            for f in fields {
+                collect_expr_vars(f, vars);
+            }
+        }
+        ExprInner::Send(actor, msg) => {
+            collect_expr_vars(actor, vars);
+            collect_expr_vars(msg, vars);
+        }
+        ExprInner::FfiCall(_, args, _) => {
+            for a in args {
+                collect_expr_vars(a, vars);
+            }
+        }
+        ExprInner::SetBang(_, val) => {
+            collect_expr_vars(val, vars);
+        }
+        ExprInner::Assert(e, _) | ExprInner::Exit(e) | ExprInner::Close(e) | ExprInner::FfiPin(e) | ExprInner::FfiUnpin(e) => {
+            collect_expr_vars(e, vars);
+        }
+        ExprInner::Unwrap(inner) => {
+            collect_expr_vars(inner, vars);
+        }
+        // Constants, errors, and other non-variable constructs don't introduce captures.
+        ExprInner::Atom(_)
+        | ExprInner::Defn(_, _, _)
+        | ExprInner::Spawn(_)
+        | ExprInner::ModuleDecl(_)
+        | ExprInner::UseModule(_, _, _)
+        | ExprInner::Export(_)
+        | ExprInner::ReadLine
+        | ExprInner::Error(_)
+        | ExprInner::MakeVariant(_, _, _)
+        | ExprInner::Deftype(_, _, _)
+        | ExprInner::TraitDecl(_, _, _)
+        | ExprInner::ImplBlock(_, _, _)
+        | ExprInner::StructDef(_)
+        | ExprInner::StructDefPlus(_)
+        | ExprInner::AliasDecl(_, _)
+        | ExprInner::Derive(_, _)
+        | ExprInner::TestSuite(_, _, _)
+        | ExprInner::TestDecl(_, _, _)
+        | ExprInner::TestProperty(_, _, _)
+        | ExprInner::RunTests(_)
+        | ExprInner::TestCompile(_, _)
+        | ExprInner::MacroDef(_, _, _)
+        | ExprInner::Setup(_)
+        | ExprInner::Teardown(_)
+        | ExprInner::AssertEqual(_, _)
+        | ExprInner::AssertFail(_, _)
+        | ExprInner::AssertTrue(_, _)
+        | ExprInner::AssertFalse(_, _)
+        | ExprInner::WithResource(_, _, _) => {}
+    }
+}
+
 // ─── ICNF Data Structures (spec §18) ──────────────────────────────────────
 
 /// SSA-based intermediate representation with region annotations.
@@ -45,6 +194,15 @@ pub struct ICNFNode {
 
 fn is_default_region(r: &Region) -> bool {
     *r == Region::Stack
+}
+
+/// Information about a captured variable in a closure.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureField {
+    /// Variable name.
+    pub name: String,
+    /// SSA ID of the captured value (resolved in the closure's enclosing scope).
+    pub ssa_id: usize,
 }
 
 /// Internal discriminant for an SSA IR node.
@@ -82,8 +240,11 @@ pub enum ICNFInner {
         body: Vec<ICNFNode>,
         result_var: String,
     },
-    /// Lambda/closure value (not yet invoked).
-    Closure(String),
+    /// Lambda/closure value (not yet invoked). Contains closure name + captured variable info.
+    Closure {
+        name: String,
+        captures: Vec<CaptureField>,
+    },
     /// Tagged union variant construction: (type_name, variant_name, discriminant, field_ids...).
     MakeVariant {
         type_name: String,
@@ -214,6 +375,9 @@ pub struct ICNFProgram {
     pub functions: Vec<ICNFFuncSig>,
     /// Global/top-level statements.
     pub statements: Vec<ICNFNode>,
+    /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
+    #[serde(default)]
+    pub closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
     /// IDs of nodes that are part of control flow branch bodies (for deduplication in codegen).
     #[serde(default)]
     pub emitted_branch_ids: std::collections::HashSet<usize>,
@@ -242,6 +406,8 @@ pub struct IcnfConverter {
     resolved_func_params: IndexMap<String, Vec<(String, Type)>>,
     /// Resolved function return types from type inference.
     resolved_func_returns: IndexMap<String, Type>,
+    /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
+    closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
 }
 
 impl IcnfConverter {
@@ -259,6 +425,7 @@ impl IcnfConverter {
             adt_defs: IndexMap::new(),
             resolved_func_params: IndexMap::new(),
             resolved_func_returns: IndexMap::new(),
+            closure_bodies: IndexMap::new(),
         }
     }
 
@@ -488,29 +655,80 @@ impl IcnfConverter {
                     self.current_scope = saved_scope;
                 }
                 ExprInner::Lambda(name, params, _body) => {
+                    // Collect captures from outer scope (before entering lambda param scope).
+                    let mut captured_names = std::collections::HashSet::new();
+                    collect_expr_vars(_body, &mut captured_names);
+                    for p in params {
+                        captured_names.remove(&p.name);
+                    }
+                    let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                        self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                            name: vname.clone(),
+                            ssa_id,
+                        })
+                    }).collect();
+                    captures_vec.sort_by_key(|c| c.name.clone());
+                    let captures = captures_vec;
+
                     let ssa_id = self.next_ssa_id();
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
                         typ: None,
                         is_branch_body: false,
-                        node: ICNFInner::Closure(sanitize_name(name)),
+                        node: ICNFInner::Closure {
+                            name: sanitize_name(name),
+                            captures,
+                        },
+                    });
+                    let saved_scope = std::mem::take(&mut self.current_scope);
+                    let body_params = params.clone();
+                    for param in params {
+                        let ssa_id = self.next_ssa_id();
+                        self.current_scope.insert(param.name.clone(), ssa_id);
+                    }
+                    let body_stmts = self.convert_expr_to_stmts(_body)?;
+                    if !body_stmts.is_empty() {
+                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    }
+                    self.current_scope = saved_scope;
+                }
+                ExprInner::Fn(name, params, body) => {
+                    // Module-level Fn: same as Lambda but with fn_ prefix name for potential closure reference.
+                    let mut captured_names = std::collections::HashSet::new();
+                    collect_expr_vars(body, &mut captured_names);
+                    for p in params {
+                        captured_names.remove(&p.name);
+                    }
+                    let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                        self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                            name: vname.clone(),
+                            ssa_id,
+                        })
+                    }).collect();
+                    captures_vec.sort_by_key(|c| c.name.clone());
+                    let captures = captures_vec;
+
+                    let ssa_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: ssa_id,
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Closure {
+                            name: format!("fn_{}", sanitize_name(name)),
+                            captures,
+                        },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
-                    let _body_stmts = self.convert_expr_to_stmts(_body)?;
-                    self.current_scope = saved_scope;
-                }
-                ExprInner::Fn(name, params, body) => {
-                    let saved_scope = std::mem::take(&mut self.current_scope);
-                    for param in params {
-                        let ssa_id = self.next_ssa_id();
-                        self.current_scope.insert(param.name.clone(), ssa_id);
+                    let body_stmts = self.convert_expr_to_stmts(body)?;
+                    if !body_stmts.is_empty() {
+                        self.closure_bodies.insert(ssa_id, body_stmts);
                     }
-                    let _body_stmts = self.convert_expr_to_stmts(body)?;
                     self.current_scope = saved_scope;
                 }
                 ExprInner::Deftype(name, variants, _) => {
@@ -616,6 +834,7 @@ impl IcnfConverter {
         Ok(ICNFProgram {
             functions: std::mem::take(&mut self.functions),
             statements: std::mem::take(&mut self.global_stmts),
+            closure_bodies: std::mem::take(&mut self.closure_bodies),
             emitted_branch_ids: std::mem::take(&mut self.emitted_branch_ids),
         })
     }
@@ -1064,29 +1283,141 @@ impl IcnfConverter {
 
             // Lambda (nested).
             ExprInner::Lambda(name, params, _body) => {
+                // Collect captures from outer scope.
+                let mut captured_names = std::collections::HashSet::new();
+                collect_expr_vars(_body, &mut captured_names);
+                for p in params {
+                    captured_names.remove(&p.name);
+                }
+                let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                    self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                        name: vname.clone(),
+                        ssa_id,
+                    })
+                }).collect();
+                captures_vec.sort_by_key(|c| c.name.clone());
+                let captures = captures_vec;
+
                 let ssa_id = self.next_ssa_id();
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                for param in params {
+                    let ssa_id = self.next_ssa_id();
+                    self.current_scope.insert(param.name.clone(), ssa_id);
+                }
+                let body_stmts = self.convert_expr_to_stmts(_body)?;
+                if !body_stmts.is_empty() {
+                    self.closure_bodies.insert(ssa_id, body_stmts);
+                }
+                self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::Closure(sanitize_name(name)),
+                    node: ICNFInner::Closure {
+                        name: sanitize_name(name),
+                        captures,
+                    },
                 }])
             }
 
             ExprInner::Fn(name, params, _body) => {
+                // Fn (named closure in expression context) also captures.
+                let mut captured_names = std::collections::HashSet::new();
+                collect_expr_vars(_body, &mut captured_names);
+                for p in params {
+                    captured_names.remove(&p.name);
+                }
+                let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                    self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                        name: vname.clone(),
+                        ssa_id,
+                    })
+                }).collect();
+                captures_vec.sort_by_key(|c| c.name.clone());
+                let captures = captures_vec;
+
                 let ssa_id = self.next_ssa_id();
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                for param in params {
+                    let ssa_id = self.next_ssa_id();
+                    self.current_scope.insert(param.name.clone(), ssa_id);
+                }
+                let body_stmts = self.convert_expr_to_stmts(_body)?;
+                if !body_stmts.is_empty() {
+                    self.closure_bodies.insert(ssa_id, body_stmts);
+                }
+                self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::Closure(format!("fn_{}", sanitize_name(name))),
+                    node: ICNFInner::Closure {
+                        name: format!("fn_{}", sanitize_name(name)),
+                        captures,
+                    },
                 }])
             }
 
             // Function call (Apply form).
             ExprInner::Apply(name, args) => self.convert_apply_call(name, args),
+
+            // fn/closure literal in Call form: (fn params body) or (lambda params body).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "fn") =>
+            {
+                // (fn params body) → Closure node with captures.
+                let params = parse_params_from_expr(args.get(0).unwrap_or(&Expr {
+                    span: crate::error::Span::default(),
+                    inner: ExprInner::Atom(crate::ast::Atom::Ident("Unit".into())),
+                }));
+                let body_expr = args.get(1).cloned().unwrap_or(Expr {
+                    span: crate::error::Span::default(),
+                    inner: ExprInner::Atom(crate::ast::Atom::Ident("Unit".into())),
+                });
+                // Collect captures from body.
+                let mut captured_names = std::collections::HashSet::new();
+                collect_expr_vars(&body_expr, &mut captured_names);
+                for p in &params {
+                    captured_names.remove(&p.name);
+                }
+                let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                    self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                        name: vname.clone(),
+                        ssa_id,
+                    })
+                }).collect();
+                captures_vec.sort_by_key(|c| c.name.clone());
+                let captures = captures_vec;
+
+                let ssa_id = self.next_ssa_id();
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                for param in &params {
+                    let pssa = self.next_ssa_id();
+                    self.current_scope.insert(param.name.clone(), pssa);
+                }
+                let body_stmts = self.convert_expr_to_stmts(&body_expr)?;
+                if !body_stmts.is_empty() {
+                    self.closure_bodies.insert(ssa_id, body_stmts);
+                }
+                self.current_scope = saved_scope;
+                let node = ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Closure {
+                        name: "fn_".to_string(),
+                        captures,
+                    },
+                };
+                // Always push Closure node to globals — it's an essential operand for Spawn.
+                if !self.global_stmts.iter().any(|n| n.id == ssa_id) {
+                    self.global_stmts.push(node.clone());
+                }
+                Ok(vec![node])
+            }
 
             // Function call (Call form with operator as first element — non-arithmetic).
             ExprInner::Call(op, args)
@@ -1371,8 +1702,19 @@ impl IcnfConverter {
 
             // Spawn actor.
             ExprInner::Spawn(closure) => {
+                // convert_expr(closure) creates the Closure node and pushes it to global_stmts.
+                // But since the Let handler only collects Load nodes from its temp buffer,
+                // we need to also include the Closure node in the returned stmts.
                 let closure_id = self.convert_expr(closure)?;
-                Ok(vec![self.emit(ICNFInner::Spawn(closure_id))])
+                // Find the Closure node in global_stmts and return it along with Spawn.
+                let closure_node = self.global_stmts.iter().find(|n| n.id == closure_id).cloned();
+                let spawn_node = self.emit(ICNFInner::Spawn(closure_id));
+                let mut result = Vec::new();
+                if let Some(cn) = closure_node {
+                    result.push(cn);
+                }
+                result.push(spawn_node);
+                Ok(result)
             }
 
             // Send to actor.
@@ -2083,7 +2425,7 @@ impl IcnfConverter {
             ICNFInner::Call(..) => Region::Heap,   // function results may escape.
             ICNFInner::If { .. } => Region::Stack,
             ICNFInner::While { .. } | ICNFInner::For { .. } => Region::Stack,
-            ICNFInner::Closure(_) => Region::Heap,
+            ICNFInner::Closure { .. } => Region::Heap,
             ICNFInner::Match { .. } => Region::Heap,
             ICNFInner::TryCatch { .. } => Region::Stack,
             ICNFInner::Begin(..) => Region::Stack,

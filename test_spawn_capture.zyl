@@ -1,0 +1,9 @@
+; Test: spawn with direct lambda capture
+
+(defn main ()
+  (print "spawn test starting\n")
+  ; Create a closure directly with lambda and spawn it
+  (let (name "world")
+    (spawn (fn () (begin (print "hello ") (print name))))))
+
+(main)
