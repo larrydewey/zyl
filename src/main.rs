@@ -182,12 +182,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut codegen = codegen::CodeGen::new()
         .with_struct_layouts(struct_layouts_for_codegen)
         .with_adt_defs(adt_defs)
-        .with_closure_bodies(optimized_icnf.closure_bodies.iter().map(|(k, v)| (*k, v.clone())).collect());
+        .with_closure_bodies(optimized_icnf.closure_bodies.iter().map(|(k, v)| (*k, v.clone())).collect())
+        .with_closures(optimized_icnf.closures.iter().map(|(k, v)| (*k, v.clone())).collect());
     codegen.generate(&optimized_icnf);
 
     // Write assembly to a temporary file, then assemble and link.
     let asm_path = format!("{}.s", output_path.trim_end_matches(".bin"));
-    std::fs::write(&asm_path, &codegen.asm.join("\n"))
+    let asm_content = if codegen.asm.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", codegen.asm.join("\n"))
+    };
+    std::fs::write(&asm_path, &asm_content)
         .map_err(|e| format!("Failed to write assembly '{}': {}", asm_path, e))?;
     println!("  Assembly written to: {}", asm_path);
 

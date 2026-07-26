@@ -25,8 +25,10 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 | Struct System | ✅ Complete | defstruct, defstruct+, make-, struct-get, all phases |
 | ADT System | ✅ Complete | deftype, match, exhaustive checking |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
-| Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread
-| Closure fn/lambda in nested expressions | ✅ Fixed | Parser dispatch of `fn`/`lambda` moved before `no_dispatch` guard so closures inside `spawn`/`begin`/`let` produce `ExprInner::Fn`/`Lambda` not raw `Call("fn", ...)` |
+ | Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread, `zyl_actor_wait_all()` at end of main
+ | Closure fn/lambda in nested expressions | ✅ Fixed | Parser dispatch of `fn`/`lambda` moved before `no_dispatch` guard so closures inside `spawn`/`begin`/`let` produce `ExprInner::Fn`/`Lambda` not raw `Call("fn", ...)` |
+ | Spawn wrapper function emission | ✅ Fixed | Anonymous spawn closures emitted as standalone functions via `spawn_wrappers` buffer in CodeGen (proper prologue/epilogue, correct `ret`)
+ | Spawn closure metadata tracking | ✅ Fixed | `closures: HashMap<usize, (String, Vec<CaptureField>)>` added to ICNFProgram, IcnfConverter, CodeGen
 
 ---
 
@@ -43,6 +45,9 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
 - [x] FFI code generation: fixed ICNF arg collection (intermediate Const nodes were lost), fixed entry point to call user main
 - [x] Actor concurrency runtime: C runtime with pthread-based actors, codegen for Spawn/Send, Send-capability enforcement in type inference
+- [x] Actor spawn race condition: added `zyl_actor_wait_all()` at end of main
+- [x] Spawn wrapper inlining bug: anonymous wrappers now standalone functions
+- [x] Closure metadata tracking in ICNF → CodeGen pipeline
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
@@ -54,9 +59,9 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 ## Next Priorities
 
 1. Actor message passing (full closure execution in actor threads)
-2. Closure runtime support (captured variables, environment passing)
-3. Reduce compiler warnings (~160)
-4. Self-hosting (not yet targeting Zyl source code generation)
+2. Closure capture runtime support (environment struct passing to wrapper functions)
+3. Fix assembly newline warning (end-of-file missing final newline)
+4. Reduce compiler warnings (~185)
 
 ---
 
