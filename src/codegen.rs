@@ -27,6 +27,8 @@ pub struct CodeGen {
     struct_layouts: StructLayout,
     /// ADT definitions: type_name → list of (variant_name, field_count).
     adt_defs: std::collections::HashMap<String, Vec<(String, usize)>>,
+    /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
+    closure_bodies: std::collections::HashMap<usize, Vec<ICNFNode>>,
 }
 
 impl CodeGen {
@@ -39,6 +41,7 @@ impl CodeGen {
             standalone_emitted: std::collections::HashSet::new(),
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::HashMap::new(),
+            closure_bodies: std::collections::HashMap::new(),
         }
     }
 
@@ -51,6 +54,12 @@ impl CodeGen {
     /// Set ADT definitions for codegen (built from AST deftype).
     pub fn with_adt_defs(mut self, defs: std::collections::HashMap<String, Vec<(String, usize)>>) -> Self {
         self.adt_defs = defs;
+        self
+    }
+
+    /// Set closure body stmts for codegen (from ICNF closure conversion).
+    pub fn with_closure_bodies(mut self, bodies: std::collections::HashMap<usize, Vec<ICNFNode>>) -> Self {
+        self.closure_bodies = bodies;
         self
     }
 
@@ -689,6 +698,27 @@ impl CodeGen {
                 }
             }
         }
+        // Also check closure body nodes.
+        for (_closure_id, body_stmts) in &program.closure_bodies {
+            for stmt in body_stmts {
+                Self::collect_from_node(stmt, out);
+                if let ICNFInner::If {
+                    then_body,
+                    else_body,
+                    ..
+                } = &stmt.node
+                {
+                    for node in then_body.iter().chain(else_body.iter()) {
+                        Self::collect_from_node(node, out);
+                    }
+                }
+                if let ICNFInner::While { cond_body, body, .. } = &stmt.node {
+                    for node in cond_body.iter().chain(body.iter()) {
+                        Self::collect_from_node(node, out);
+                    }
+                }
+            }
+        }
     }
 
     /// Collect all unique float literals from an ICNF program (recursively), with unique labels.
@@ -758,6 +788,22 @@ impl CodeGen {
                     ..
                 } = &stmt.node
                 {
+                    for node in then_body.iter().chain(else_body.iter()) {
+                        collect_floats_from_node(node, &mut seen, out);
+                    }
+                }
+                if let ICNFInner::While { cond_body, body, .. } = &stmt.node {
+                    for node in cond_body.iter().chain(body.iter()) {
+                        collect_floats_from_node(node, &mut seen, out);
+                    }
+                }
+            }
+        }
+        // Also check closure body nodes.
+        for (_closure_id, body_stmts) in &program.closure_bodies {
+            for stmt in body_stmts {
+                collect_floats_from_node(stmt, &mut seen, out);
+                if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
                     for node in then_body.iter().chain(else_body.iter()) {
                         collect_floats_from_node(node, &mut seen, out);
                     }
@@ -3550,7 +3596,7 @@ impl CodeGen {
                 self.asm.push("    call exit@plt".to_string());
             }
 
-            ICNFInner::Unit | ICNFInner::Closure(_) => {
+            ICNFInner::Unit | ICNFInner::Closure { .. } => {
                 // No-op in assembly.
             }
 
@@ -3976,13 +4022,13 @@ impl CodeGen {
             }
 
             ICNFInner::Spawn(closure_id) => {
-                // Look up the closure node to get the function name.
+                // Look up the closure node to get name and captures.
                 let closure_node = lookup
                     .get(&closure_id)
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == *closure_id));
 
-                if let Some(ICNFNode { node: ICNFInner::Closure(name), .. }) = closure_node {
+                if let Some(ICNFNode { node: ICNFInner::Closure { name, captures }, .. }) = closure_node {
                     // Ensure the closure expression has been emitted.
                     self.emit_node(
                         closure_node.unwrap(),
@@ -3995,16 +4041,89 @@ impl CodeGen {
                     );
                     emitted_ids.insert(*closure_id);
 
-                    if name.is_empty() {
+                    // Allocate and populate environment struct for captures.
+                    let env_size = captures.len() * 8;
+                    let mut env_ptr_in_rsi = false;
+
+                    if env_size > 0 {
+                        // malloc(env_size) -> rax = env pointer
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov edi, {}", env_size));
+                        self.asm_push_align();
+                        self.asm.push("    call malloc@plt".to_string());
+
+                        // Copy captured values into env struct.
+                        for (i, cap) in captures.iter().enumerate() {
+                            let offset = i * 8;
+                            // Save env ptr in r10
+                            self.asm_push_align();
+                            self.asm.push("    mov r10, rax".to_string());
+                            // Load captured value from [rbp - slot_offset] into rax
+                            if let Some(&slot) = local_vars.get(&cap.name) {
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp - {}]", slot));
+                            } else {
+                                // Variable not in local_vars — it may be in a register from a previous emit.
+                                // Try to find it in operand_ids to re-emit.
+                                if operand_ids.contains(&cap.ssa_id) {
+                                    // Re-emit the node to get value into rax
+                                    let cap_node = lookup.get(&cap.ssa_id).copied()
+                                        .or_else(|| stmts.iter().find(|n| n.id == cap.ssa_id));
+                                    if let Some(cn) = cap_node {
+                                        self.emit_node(cn, stmts, local_vars, emitted_ids, operand_ids, lookup, phi_slots);
+                                    }
+                                }
+                            }
+                            // Store into [r10 + offset]
+                            self.asm_push_align();
+                            self.asm.push(format!("    mov [r10 + {}], rax", offset));
+                        }
+                        // Result: env ptr is in r10
+                        // Move to rsi for spawn call
+                        self.asm_push_align();
+                        self.asm.push("    mov rsi, r10".to_string());
+                        env_ptr_in_rsi = true;
+                    }
+
+                    if name.is_empty() || name == "fn_" {
                         // Anonymous lambda — generate a unique wrapper function.
                         let wrapper_name = format!("_ZYL_actor_{}", self.spawn_counter);
                         self.spawn_counter += 1;
 
-                        // Emit the wrapper function (takes no args, calls nothing — actor entry point).
+                        // Emit the wrapper function.
                         self.asm_push_align();
                         self.asm.push(format!("{}:", wrapper_name));
                         self.asm_push_align();
-                        self.asm.push("    ret".to_string());
+
+                        // Load captured values from env struct (rsi) into stack slots.
+                        for (i, cap) in captures.iter().enumerate() {
+                            let offset = i * 8;
+                            self.asm_push_align();
+                            self.asm.push(format!("    mov rax, [rsi + {}]", offset));
+                            if let Some(&slot) = local_vars.get(&cap.name) {
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov [rbp - {}], rax", slot));
+                            }
+                        }
+
+                        // Emit the closure body statements from closure_bodies.
+                        let body_clone = self.closure_bodies.get(&closure_id).cloned();
+                        if let Some(ref body_stmts) = body_clone {
+                            for stmt in body_stmts {
+                                self.emit_node(
+                                    stmt,
+                                    body_stmts,
+                                    local_vars,
+                                    emitted_ids,
+                                    operand_ids,
+                                    lookup,
+                                    phi_slots,
+                                );
+                            }
+                        } else {
+                            self.asm_push_align();
+                            self.asm.push("    ret".to_string());
+                        }
 
                         // Load the wrapper address into rdi.
                         self.asm_push_align();
@@ -4015,9 +4134,11 @@ impl CodeGen {
                         self.asm.push(format!("    lea rdi, [rip+_ZYL_{}]", name));
                     }
 
-                    // rsi = NULL (no captured state for now).
-                    self.asm_push_align();
-                    self.asm.push("    mov rsi, 0".to_string());
+                    // rsi already has env ptr if captures > 0, else set to 0.
+                    if !env_ptr_in_rsi {
+                        self.asm_push_align();
+                        self.asm.push("    xor rsi, rsi".to_string());
+                    }
 
                     // Call zyl_actor_spawn(entry, state) -> returns actor_id in rax.
                     self.asm_push_align();

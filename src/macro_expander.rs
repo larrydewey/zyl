@@ -1099,6 +1099,13 @@ impl MacroExpander {
                     .collect::<Result<Vec<_>, _>>()?;
                 expr.inner = ExprInner::Begin(new);
             } // Print → Begin for expansion.
+            ExprInner::Begin(exprs) => {
+                let new: Vec<Expr> = exprs
+                    .into_iter()
+                    .map(|e| self.expand_expr(e.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                expr.inner = ExprInner::Begin(new);
+            }
             ExprInner::Exit(e) => {
                 expr.inner = ExprInner::Exit(Box::new(self.expand_expr(*e.clone())?));
             }

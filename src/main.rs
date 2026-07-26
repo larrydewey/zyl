@@ -181,7 +181,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut codegen = codegen::CodeGen::new()
         .with_struct_layouts(struct_layouts_for_codegen)
-        .with_adt_defs(adt_defs);
+        .with_adt_defs(adt_defs)
+        .with_closure_bodies(optimized_icnf.closure_bodies.iter().map(|(k, v)| (*k, v.clone())).collect());
     codegen.generate(&optimized_icnf);
 
     // Write assembly to a temporary file, then assemble and link.
@@ -275,6 +276,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             sig.push_str(&format!("{}:{}", param_name, param_type));
         }
         println!("{})", sig);
+        // Debug: print function body node count and types
+        println!("    body: {} stmts", func.body.len());
+        for (i, stmt) in func.body.iter().enumerate() {
+            let typ_str = serde_json::to_string(&stmt.node).unwrap_or_else(|_| "unknown".to_string());
+            let short = if typ_str.len() > 50 { &typ_str[..50] } else { &typ_str };
+            println!("    [{}] {} (id={})", i, short, stmt.id);
+        }
+        // Debug: print closure_bodies
+        println!("    closure_bodies: {} entries", optimized_icnf.closure_bodies.len());
+        for (cid, body) in &optimized_icnf.closure_bodies {
+            println!("      closure id={} body: {} stmts", cid, body.len());
+        }
     }
 
     // Output ICNF statements as JSON.
