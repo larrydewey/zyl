@@ -26,6 +26,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 | ADT System | ✅ Complete | deftype, match, exhaustive checking |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
 | Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread
+| Closure fn/lambda in nested expressions | ✅ Fixed | Parser dispatch of `fn`/`lambda` moved before `no_dispatch` guard so closures inside `spawn`/`begin`/`let` produce `ExprInner::Fn`/`Lambda` not raw `Call("fn", ...)` |
 
 ---
 
@@ -65,3 +66,4 @@ Detailed phase-by-phase implementation history, debugging notes, and fix documen
 - `docs/implementation-status.md` — current phase details
 - `specifications/` — historical specification versions (v1.0 through v4.1)
 - Git commit history
+
