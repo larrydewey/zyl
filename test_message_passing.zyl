@@ -1,0 +1,12 @@
+(defn greet (name)
+  (begin
+    (print "hello ")
+    (print name)
+    (print "\n")))
+
+(defn main ()
+  (print "message passing test starting\n")
+  (let (msg "world")
+    (send-closure (spawn (fn () (begin (print "actor started\n")))) greet msg)))
+
+(main)

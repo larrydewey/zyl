@@ -443,6 +443,12 @@ impl Optimizer {
                 used_ids.insert(*actor_id);
                 used_ids.insert(*msg_id);
             }
+            ICNFInner::SendClosure(actor_id, _, cap_ids) => {
+                used_ids.insert(*actor_id);
+                for &id in cap_ids {
+                    used_ids.insert(id);
+                }
+            }
             ICNFInner::Exit(code) => {
                 used_ids.insert(*code);
             }
@@ -498,6 +504,7 @@ impl Optimizer {
                 | ICNFInner::FfiCall { .. }
                 | ICNFInner::Spawn(_)
                 | ICNFInner::Send(..)
+                | ICNFInner::SendClosure(..)
                 | ICNFInner::Exit(_)
                 | ICNFInner::Close(_)
                 | ICNFInner::ReadLine

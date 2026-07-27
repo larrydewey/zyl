@@ -113,6 +113,10 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
             collect_expr_vars(actor, vars);
             collect_expr_vars(msg, vars);
         }
+        ExprInner::SendClosure(actor, closure, _) => {
+            collect_expr_vars(actor, vars);
+            collect_expr_vars(closure, vars);
+        }
         ExprInner::FfiCall(_, args, _) => {
             for a in args {
                 collect_expr_vars(a, vars);
@@ -197,6 +201,7 @@ fn is_default_region(r: &Region) -> bool {
 }
 
 /// Information about a captured variable in a closure.
+/// Capture field: variable name + SSA ID of captured value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CaptureField {
     /// Variable name.
@@ -281,6 +286,8 @@ pub enum ICNFInner {
     Spawn(usize),
     /// Send message to actor.
     Send(usize, usize),
+    /// Send closure to actor: (actor_id, closure_name, captured_value_ids...).
+    SendClosure(usize, String, Vec<usize>),
     /// Error value (Result::Err).
     ErrValue(usize),
     /// Ok wrapper (Result::Ok).
@@ -1893,6 +1900,54 @@ impl IcnfConverter {
                 }])
             }
 
+            // Send closure to actor.
+            ExprInner::SendClosure(actor, closure_expr, caps) => {
+                let actor_id = self.convert_expr(actor)?;
+                // Generate unique closure ID for tracking.
+                let closure_key = self.next_ssa_id();
+                // Resolve capture variable SSA IDs.
+                let mut capture_ids = Vec::new();
+                for cap in caps.iter() {
+                    let ssa_id = if let Some(&id) = self.current_scope.get(&cap.name) {
+                        id
+                    } else {
+                        // Variable not in current scope — try to find it in global_stmts.
+                        let cap_node = self.global_stmts.iter().find(|n| {
+                            if let ICNFInner::Assign(name, _) = &n.node {
+                                name == &cap.name
+                            } else {
+                                false
+                            }
+                        });
+                        cap_node.and_then(|n| {
+                            if let ICNFInner::Assign(_, id) = &n.node {
+                                Some(*id)
+                            } else {
+                                None
+                            }
+                        }).unwrap_or(0)
+                    };
+                    capture_ids.push(ssa_id);
+                }
+                // Store closure metadata in closures for codegen.
+                let closure_name = format!("_ZYL_closure_{}", closure_key);
+                let icnf_caps: Vec<CaptureField> = caps.iter().map(|c| CaptureField {
+                    name: c.name.clone(),
+                    ssa_id: 0,
+                }).collect();
+                self.closures.insert(
+                    closure_key,
+                    (closure_name.clone(), icnf_caps),
+                );
+                Ok(vec![ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::SendClosure(actor_id, closure_name, capture_ids),
+                }])
+            }
+
             // Print.
             ExprInner::Print(exprs) => {
                 let mut all_nodes: Vec<ICNFNode> = Vec::new();
@@ -2597,7 +2652,7 @@ impl IcnfConverter {
             ICNFInner::StructGet(_, _) => Region::Stack, // field access result is stack-bound.
             ICNFInner::Match { .. } => Region::Heap, // match result may escape.
             ICNFInner::FfiCall { .. } => Region::Pin,
-            ICNFInner::Spawn(_) | ICNFInner::Send(..) => Region::Heap,
+            ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => Region::Heap,
             ICNFInner::ErrValue(_) | ICNFInner::OkValue(_) => Region::Heap, // Result values.
             ICNFInner::Unit => Region::Stack,
             ICNFInner::Print(..) => Region::Stack,

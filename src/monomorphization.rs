@@ -1425,6 +1425,7 @@ fn is_builtin_op(name: &str) -> bool {
             | "assert-false"
             | "spawn"
             | "send"
+            | "send-closure"
             | "ffi-call"
             | "ffi-pin"
             | "ffi-unpin"
