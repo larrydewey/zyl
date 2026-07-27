@@ -25,7 +25,8 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 | Struct System | ✅ Complete | defstruct, defstruct+, make-, struct-get, all phases |
 | ADT System | ✅ Complete | deftype, match, exhaustive checking |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
- | Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread, `zyl_actor_wait_all()` at end of main
+ | Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread, `zyl_actor_wait_all()` at end of main |
+ | Actor Message Passing | ✅ Complete | `send-closure` form: closures with captured variables sent to actors via mailbox; C runtime dispatches closure messages in mailbox processing loop; assembly ends with final newline |
  | Closure fn/lambda in nested expressions | ✅ Fixed | Parser dispatch of `fn`/`lambda` moved before `no_dispatch` guard so closures inside `spawn`/`begin`/`let` produce `ExprInner::Fn`/`Lambda` not raw `Call("fn", ...)` |
  | Spawn wrapper function emission | ✅ Fixed | Anonymous spawn closures emitted as standalone functions via `spawn_wrappers` buffer in CodeGen (proper prologue/epilogue, correct `ret`)
  | Spawn closure metadata tracking | ✅ Fixed | `closures: HashMap<usize, (String, Vec<CaptureField>)>` added to ICNFProgram, IcnfConverter, CodeGen
@@ -49,6 +50,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Spawn wrapper inlining bug: anonymous wrappers now standalone functions
 - [x] Closure metadata tracking in ICNF → CodeGen pipeline
 - [x] Closure capture in spawned threads: captured vars added to ICNF Fn handler scope for Load emission; wrapper reads env struct from `rdi` (not `rsi`); env ptr saved outside capture loop to prevent overwrite
+- [x] Actor message passing: `send-closure` syntax with captured variable support; C runtime mailbox loop with closure dispatch; assembly newline handling
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
@@ -59,9 +61,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 ## Next Priorities
 
-1. Actor message passing (full closure execution in actor threads)
-2. Fix assembly newline warning (end-of-file missing final newline)
-3. Reduce compiler warnings (~185)
+1. Reduce compiler warnings (~185)
 
 ---
 

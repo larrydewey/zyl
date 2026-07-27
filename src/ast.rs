@@ -62,6 +62,7 @@ pub enum ExprInner {
     Match(Box<Expr>, Vec<MatchArm>),
     Spawn(Box<Expr>),
     Send(Box<Expr>, Box<Expr>),
+    SendClosure(Box<Expr>, Box<Expr>, Vec<CaptureInfo>),
     FfiCall(String, Vec<Expr>, u64),
     FfiPin(Box<Expr>),
     FfiUnpin(Box<Expr>),
@@ -106,6 +107,13 @@ pub enum ExprInner {
     TestCompile(Box<Expr>, Option<bool>),
     Apply(String, Vec<Expr>),
     MacroDef(String, Vec<Expr>, Box<Expr>),
+}
+
+/// Capture info for send-closure: tracks captured variable names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureInfo {
+    pub name: String,
+    pub ssa_id: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -280,6 +288,17 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write_sexpr(f, a)?;
             f.write_str(" ")?;
             write_sexpr(f, m);
+            Ok(())
+        }
+        ExprInner::SendClosure(a, c, caps) => {
+            f.write_str("(send-closure ")?;
+            write_sexpr(f, a)?;
+            f.write_str(" ")?;
+            write_sexpr(f, c)?;
+            for cap in caps {
+                f.write_str(" ")?;
+                f.write_str(&cap.name)?;
+            }
             Ok(())
         }
         ExprInner::FfiCall(name, args, timeout) => {
@@ -923,6 +942,42 @@ impl PostProcessor {
                     Box::new(self.post_process_expr(args[0].clone())),
                     Box::new(self.post_process_expr(args[1].clone())),
                 );
+            }
+
+            // send-closure → SendClosure (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "send-closure") && args.len() >= 3 => {
+                let actor = self.post_process_expr(args[0].clone());
+                let closure = self.post_process_expr(args[1].clone());
+                let caps: Vec<CaptureInfo> = args[2..]
+                    .iter()
+                    .map(|e| {
+                        let processed = self.post_process_expr(e.clone());
+                        if let ExprInner::Atom(Atom::Ident(n)) = &processed.inner {
+                            CaptureInfo { name: n.clone(), ssa_id: 0 }
+                        } else {
+                            CaptureInfo { name: "___unnamed".to_string(), ssa_id: 0 }
+                        }
+                    })
+                    .collect();
+                expr.inner = ExprInner::SendClosure(Box::new(actor), Box::new(closure), caps);
+            }
+
+            // send-closure → SendClosure (Apply form).
+            ExprInner::Apply(name, args) if name == "send-closure" && args.len() >= 3 => {
+                let actor = self.post_process_expr(args[0].clone());
+                let closure = self.post_process_expr(args[1].clone());
+                let caps: Vec<CaptureInfo> = args[2..]
+                    .iter()
+                    .map(|e| {
+                        let processed = self.post_process_expr(e.clone());
+                        if let ExprInner::Atom(Atom::Ident(n)) = &processed.inner {
+                            CaptureInfo { name: n.clone(), ssa_id: 0 }
+                        } else {
+                            CaptureInfo { name: "___unnamed".to_string(), ssa_id: 0 }
+                        }
+                    })
+                    .collect();
+                expr.inner = ExprInner::SendClosure(Box::new(actor), Box::new(closure), caps);
             }
 
             // let-mut → LetMut (Call form).

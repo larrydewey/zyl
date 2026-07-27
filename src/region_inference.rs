@@ -547,7 +547,17 @@ impl RegionInferer {
             // send — message must be Send-capable (R3).
             ExprInner::Send(actor, msg) => {
                 let _ = self.infer_expr(actor)?;
-                let msg_result = self.infer_expr(msg)?;
+                let _msg_result = self.infer_expr(msg)?;
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
+            }
+
+            // send-closure — closure and captures go to Heap (R3).
+            ExprInner::SendClosure(actor, closure, _) => {
+                let _ = self.infer_expr(actor)?;
+                let _ = self.infer_expr(closure)?;
                 Ok(RegionResult {
                     result_region: Region::Heap,
                     captures: None,
@@ -943,6 +953,11 @@ fn collect_capture_vars(
         ExprInner::Send(actor, msg) => {
             collect_capture_vars(actor, env_snapshot.clone(), captures)?;
             collect_capture_vars(msg, env_snapshot.clone(), captures)?;
+        }
+
+        ExprInner::SendClosure(actor, closure, _) => {
+            collect_capture_vars(actor, env_snapshot.clone(), captures)?;
+            collect_capture_vars(closure, env_snapshot.clone(), captures)?;
         }
 
         ExprInner::Match(e, arms) => {
