@@ -293,6 +293,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("    closure_bodies: {} entries", optimized_icnf.closure_bodies.len());
         for (cid, body) in &optimized_icnf.closure_bodies {
             println!("      closure id={} body: {} stmts", cid, body.len());
+            for (i, stmt) in body.iter().enumerate() {
+                println!("        [{}] {:?}", i, stmt.node);
+            }
+        }
+        // Debug: print closures (captures)
+        println!("    closures: {} entries", optimized_icnf.closures.len());
+        for (cid, (fname, caps)) in &optimized_icnf.closures {
+            println!("      closure id={} name={} caps={:?}", cid, fname, caps);
         }
     }
 

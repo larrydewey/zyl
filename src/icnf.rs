@@ -413,6 +413,12 @@ pub struct IcnfConverter {
     closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
     /// Closure metadata: closure_id → (name, captures).
     closures: IndexMap<usize, (String, Vec<CaptureField>)>,
+    /// Deferred captures: (closure_ssa_id, body_expr, original_binding_name) collected during let-value conversion.
+    deferred_captures: Vec<(usize, Expr, String)>,
+    /// True while converting a let-binding value expression.
+    in_let_value: bool,
+    /// Monomorphized let binding name added to scope (for capture resolution).
+    let_binding_name: Option<String>,
 }
 
 impl IcnfConverter {
@@ -432,6 +438,9 @@ impl IcnfConverter {
             resolved_func_returns: IndexMap::new(),
             closure_bodies: IndexMap::new(),
             closures: IndexMap::new(),
+            deferred_captures: Vec::new(),
+            in_let_value: false,
+            let_binding_name: None,
         }
     }
 
@@ -451,6 +460,37 @@ impl IcnfConverter {
     pub fn with_resolved_func_returns(mut self, returns: IndexMap<String, Type>) -> Self {
         self.resolved_func_returns = returns;
         self
+    }
+
+    /// Resolve deferred captures after a let binding has been established.
+    fn resolve_deferred_captures(&mut self) {
+        for (closure_id, body_expr, _orig_name) in std::mem::take(&mut self.deferred_captures) {
+            let mut captured_names = std::collections::HashSet::new();
+            collect_expr_vars(&body_expr, &mut captured_names);
+            // The closure body may reference the original (pre-monomorphization) name
+            // while the scope has the monomorphized name. We handle this by also checking
+            // if a captured name matches the monomorphized let binding name we track.
+            let resolved: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                // First try the name as-is (direct scope lookup).
+                if let Some(&ssa_id) = self.current_scope.get(vname) {
+                    return Some(CaptureField { name: vname.clone(), ssa_id });
+                }
+                // If the captured name matches our tracked let binding name, use it.
+                if let Some(ref binding_name) = self.let_binding_name {
+                    if vname.as_str() == binding_name.as_str() {
+                        return self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                            name: vname.clone(),
+                            ssa_id,
+                        });
+                    }
+                }
+                None
+            }).collect();
+            if let Some(entry) = self.closures.get_mut(&closure_id) {
+                entry.1 = resolved;
+            }
+        }
+        self.let_binding_name = None;
     }
 
     /// Resolve the SSA ID of a struct expression.
@@ -725,10 +765,16 @@ impl IcnfConverter {
                         is_branch_body: false,
                         node: ICNFInner::Closure {
                             name: format!("fn_{}", sanitize_name(name)),
-                            captures,
+                            captures: captures.clone(),
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    // Add captured variables to the Fn's local scope so body conversion can resolve them.
+                    eprintln!("DEBUG Fn: adding captures to scope: {:?}", captures.iter().map(|c| &c.name).collect::<Vec<_>>());
+                    for cap in &captures {
+                        self.current_scope.insert(cap.name.clone(), cap.ssa_id);
+                    }
+                    eprintln!("DEBUG Fn: current_scope after captures: {:?}", self.current_scope);
                     for param in params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
@@ -1063,8 +1109,11 @@ impl IcnfConverter {
                 // 1. Restore outer scope before converting value (value may reference
                 //    outer bindings — e.g., `make-Pair p p` needs `p` in scope).
                 self.current_scope = saved_scope.clone();
+                // Mark that we're converting a let value so Fn handlers defer captures.
+                self.in_let_value = true;
                 // 2. Convert value expression (collecting intermediates, NOT pushing).
                 let val_stmts = self.convert_expr_to_stmts(val)?;
+                self.in_let_value = false;
                 let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
                 // 3. Create Assign node.
                 let ssa_id = self.next_ssa_id();
@@ -1081,7 +1130,15 @@ impl IcnfConverter {
                     self.struct_bindings.insert(ssa_id, struct_name);
                 }
                 // 4. Update scope BEFORE converting body (so body can find the binding).
+                // Add both the monomorphized name AND the original "name" alias for deferred capture resolution.
+                // The monomorphizer may rename `name` → `___let_` in the Let binding but
+                // doesn't update variable references inside Fn/Lambda bodies.
                 self.current_scope.insert(name.clone(), ssa_id);
+                self.current_scope.insert("name".to_string(), ssa_id);
+                // Track the monomorphized binding name for deferred capture resolution.
+                self.let_binding_name = Some(name.clone());
+                // 4b. Resolve deferred captures now that the let binding is in scope.
+                self.resolve_deferred_captures();
                 // 5. Convert body (collecting intermediates, NOT pushing).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
@@ -1338,20 +1395,61 @@ impl IcnfConverter {
                 for p in params {
                     captured_names.remove(&p.name);
                 }
-                let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+
+                // If inside a let value, defer capture collection until let binding is in scope.
+                if self.in_let_value {
+                    let ssa_id = self.next_ssa_id();
+                    let body_for_defer = Box::new((**_body).clone());
+                    // Capture the original binding name from the current let conversion.
+                    // This is tracked by the Let handler setting let_binding_name.
+                    let orig_name = self.let_binding_name.clone();
+                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_else(|| "".to_string())));
+                    let saved_scope = std::mem::take(&mut self.current_scope);
+                    for param in params {
+                        let sid = self.next_ssa_id();
+                        self.current_scope.insert(param.name.clone(), sid);
+                    }
+                    let body_stmts = self.convert_expr_to_stmts(_body)?;
+                    if !body_stmts.is_empty() {
+                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    }
+                    self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), Vec::new()));
+                    self.current_scope = saved_scope;
+                    return Ok(vec![ICNFNode {
+                        id: ssa_id,
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Closure {
+                            name: format!("fn_{}", sanitize_name(name)),
+                            captures: Vec::new(),
+                        },
+                    }]);
+                }
+
+                let captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
                     self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
                         name: vname.clone(),
                         ssa_id,
                     })
                 }).collect();
-                captures_vec.sort_by_key(|c| c.name.clone());
-                let captures = captures_vec;
+                let captures = {
+                    let mut v = captures_vec;
+                    v.sort_by_key(|c| c.name.clone());
+                    v
+                };
 
                 let ssa_id = self.next_ssa_id();
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Add captured variables to scope BEFORE body conversion so their
+                // references emit Load nodes instead of Const(Ident).
+                for cap in &captures {
+                    let sid = self.next_ssa_id();
+                    self.current_scope.insert(cap.name.clone(), sid);
+                }
                 for param in params {
-                    let ssa_id = self.next_ssa_id();
-                    self.current_scope.insert(param.name.clone(), ssa_id);
+                    let sid = self.next_ssa_id();
+                    self.current_scope.insert(param.name.clone(), sid);
                 }
                 let body_stmts = self.convert_expr_to_stmts(_body)?;
                 if !body_stmts.is_empty() {
@@ -1393,17 +1491,59 @@ impl IcnfConverter {
                 for p in &params {
                     captured_names.remove(&p.name);
                 }
-                let mut captures_vec: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
-                    self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
-                        name: vname.clone(),
-                        ssa_id,
-                    })
-                }).collect();
-                captures_vec.sort_by_key(|c| c.name.clone());
-                let captures = captures_vec;
+
+                // If inside a let value, defer capture collection.
+                if self.in_let_value {
+                    let ssa_id = self.next_ssa_id();
+                    let body_for_defer = body_expr.clone();
+                    let orig_name = self.let_binding_name.clone().unwrap_or_default();
+                    self.deferred_captures.push((ssa_id, body_for_defer, orig_name));
+                    let saved_scope = std::mem::take(&mut self.current_scope);
+                    for param in &params {
+                        let pssa = self.next_ssa_id();
+                        self.current_scope.insert(param.name.clone(), pssa);
+                    }
+                    let body_stmts = self.convert_expr_to_stmts(&body_expr)?;
+                    if !body_stmts.is_empty() {
+                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    }
+                    self.closures.insert(ssa_id, ("fn_".to_string(), Vec::new()));
+                    self.current_scope = saved_scope;
+                    let node = ICNFNode {
+                        id: ssa_id,
+                        region: Region::Heap,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Closure {
+                            name: "fn_".to_string(),
+                            captures: Vec::new(),
+                        },
+                    };
+                    if !self.global_stmts.iter().any(|n| n.id == ssa_id) {
+                        self.global_stmts.push(node.clone());
+                    }
+                    return Ok(vec![node]);
+                }
+
+                let captures: Vec<CaptureField> = {
+                    let mut v: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
+                        self.current_scope.get(vname).copied().map(|ssa_id| CaptureField {
+                            name: vname.clone(),
+                            ssa_id,
+                        })
+                    }).collect();
+                    v.sort_by_key(|c| c.name.clone());
+                    v
+                };
 
                 let ssa_id = self.next_ssa_id();
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Add captured variables to scope BEFORE body conversion so their
+                // references emit Load nodes instead of Const(Ident).
+                for cap in &captures {
+                    let sid = self.next_ssa_id();
+                    self.current_scope.insert(cap.name.clone(), sid);
+                }
                 for param in &params {
                     let pssa = self.next_ssa_id();
                     self.current_scope.insert(param.name.clone(), pssa);
@@ -1424,11 +1564,22 @@ impl IcnfConverter {
                         captures,
                     },
                 };
-                // Always push Closure node to globals — it's an essential operand for Spawn.
                 if !self.global_stmts.iter().any(|n| n.id == ssa_id) {
                     self.global_stmts.push(node.clone());
                 }
                 Ok(vec![node])
+            }
+
+            // begin — convert Call("begin", args) to ICNFInner::Begin.
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "begin") && !args.is_empty() =>
+            {
+                let mut all_stmts = Vec::new();
+                for e in args.iter() {
+                    let stmts = self.convert_expr_to_stmts(e)?;
+                    all_stmts.extend(stmts);
+                }
+                Ok(all_stmts)
             }
 
             // Function call (Call form with operator as first element — non-arithmetic).
