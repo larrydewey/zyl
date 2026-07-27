@@ -3375,21 +3375,37 @@ impl CodeGen {
                             ..
                         }) => {
                             // Check if this Load's variable name matches an Assign whose value_id
-                            // points to a ReadLine result.
-                            let rl_result_id = stmts.iter()
-                                .find(|n| matches!(&n.node, ICNFInner::ReadLine))
-                                .map(|n| n.id);
-                            if let Some(rid) = rl_result_id {
-                                stmts.iter().any(|n| {
-                                    if let ICNFInner::Assign(assign_name, value_id) = &n.node {
-                                        *value_id == rid && assign_name == var_name
-                                    } else {
-                                        false
+                            // points to a ReadLine result or a string constant.
+                            // Build a var→Assign value_id map from lookup (all nodes by ID).
+                            let mut var_assigns: std::collections::HashMap<String, usize> =
+                                std::collections::HashMap::new();
+                            for &n in lookup.values() {
+                                if let ICNFInner::Assign(aname, avid) = &n.node {
+                                    if !var_assigns.contains_key(aname) {
+                                        var_assigns.insert(aname.clone(), *avid);
                                     }
-                                })
-                            } else {
-                                false
+                                }
                             }
+                            let mut result = false;
+                            if let Some(&value_id) = var_assigns.get(var_name) {
+                                // Check if value_id is a ReadLine result
+                                let rl_result_id = stmts.iter()
+                                    .find(|n| matches!(&n.node, ICNFInner::ReadLine))
+                                    .map(|n| n.id);
+                                if let Some(rid) = rl_result_id {
+                                    result = value_id == rid;
+                                }
+                                // Check if value_id resolves to a string const
+                                if !result {
+                                    if let Some(vn) = find_node(value_id) {
+                                        result = matches!(vn.node, ICNFInner::Const(Atom::Str(_)));
+                                    }
+                                }
+                            } else {
+                                // No Assign found for this variable — not a string.
+                                result = false;
+                            }
+                            result
                         }
                         _ => false,
                     };
@@ -3412,7 +3428,7 @@ impl CodeGen {
                     } else { is_float };
 
                      if is_string {
-                         match find_node(arg_id) {
+                     match find_node(arg_id) {
                              Some(ICNFNode {
                                  node: ICNFInner::Const(Atom::Str(s)),
                                  ..
@@ -4067,15 +4083,15 @@ impl CodeGen {
                         self.asm.push("    call malloc@plt".to_string());
 
                         // Copy captured values into env struct.
+                        // Save env ptr in r10 once (before the loop) so it isn't overwritten.
+                        self.asm_push_align();
+                        self.asm.push("    mov r10, rax".to_string());
                         for (i, cap) in captures.iter().enumerate() {
                             let offset = i * 8;
-                            // Save env ptr in r10
-                            self.asm_push_align();
-                            self.asm.push("    mov r10, rax".to_string());
                             // Load captured value from [rbp - slot_offset] into rax
                             if let Some(&slot) = local_vars.get(&cap.name) {
                                 self.asm_push_align();
-                                self.asm.push(format!("    mov rax, [rbp - {}]", slot));
+                                self.asm.push(format!("    mov rax, [rbp - {}]", (slot + 1) * 8));
                             } else {
                                 // Variable not in local_vars — it may be in a register from a previous emit.
                                 // Try to find it in operand_ids to re-emit.
@@ -4116,15 +4132,21 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push(format!("    sub rsp, {}", wrapper_stack));
 
-                        // Load captured values from env struct (rsi) into stack slots.
+                         // Load captured values from env struct (rsi) into stack slots.
+                        // Build a wrapper-local variable map so captured vars use consistent
+                        // offsets between the capture-loading code and the body's Load nodes.
+                        // The Load handler uses (slot + 1) * 8, so we store using the same.
+                        let mut wrapper_local_vars: std::collections::HashMap<String, usize> =
+                            std::collections::HashMap::new();
                         for (i, cap) in captures.iter().enumerate() {
                             let offset = i * 8;
+                            let wslot = i; // slot index; actual offset = (wslot+1)*8
+                            wrapper_local_vars.insert(cap.name.clone(), wslot);
+                            // The thread entry passes state in rdi (first arg), not rsi.
                             self.asm_push_align();
-                            self.asm.push(format!("    mov rax, [rsi + {}]", offset));
-                            if let Some(&slot) = local_vars.get(&cap.name) {
-                                self.asm_push_align();
-                                self.asm.push(format!("    mov [rbp - {}], rax", slot));
-                            }
+                            self.asm.push(format!("    mov rax, [rdi + {}]", offset));
+                            self.asm_push_align();
+                            self.asm.push(format!("    mov [rbp - {}], rax", (wslot + 1) * 8));
                         }
 
                         // Emit the closure body statements from closure_bodies.
@@ -4134,7 +4156,7 @@ impl CodeGen {
                                 self.emit_node(
                                     stmt,
                                     body_stmts,
-                                    local_vars,
+                                    &wrapper_local_vars,
                                     emitted_ids,
                                     operand_ids,
                                     lookup,
@@ -4165,8 +4187,8 @@ impl CodeGen {
                         self.asm.push(format!("    lea rdi, [rip+_ZYL_{}]", name));
                     }
 
-                    // rsi already has env ptr if captures > 0, else set to 0.
-                    if !env_ptr_in_rsi {
+                        // rsi already has env ptr if captures > 0, else set to 0.
+                        if !env_ptr_in_rsi {
                         self.asm_push_align();
                         self.asm.push("    xor rsi, rsi".to_string());
                     }
