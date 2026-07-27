@@ -48,6 +48,7 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 - [x] Actor spawn race condition: added `zyl_actor_wait_all()` at end of main
 - [x] Spawn wrapper inlining bug: anonymous wrappers now standalone functions
 - [x] Closure metadata tracking in ICNF → CodeGen pipeline
+- [x] Closure capture in spawned threads: captured vars added to ICNF Fn handler scope for Load emission; wrapper reads env struct from `rdi` (not `rsi`); env ptr saved outside capture loop to prevent overwrite
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
@@ -59,9 +60,8 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 ## Next Priorities
 
 1. Actor message passing (full closure execution in actor threads)
-2. Closure capture runtime support (environment struct passing to wrapper functions)
-3. Fix assembly newline warning (end-of-file missing final newline)
-4. Reduce compiler warnings (~185)
+2. Fix assembly newline warning (end-of-file missing final newline)
+3. Reduce compiler warnings (~185)
 
 ---
 

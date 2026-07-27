@@ -1075,46 +1075,85 @@ impl PostProcessor {
 
             // let → Let (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "let") && args.len() >= 2 => {
-                let name = match &args[0].inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___let_".to_string(),
+                // Handle both (let name value body) and (let (name value) body) forms.
+                let (name, val, body_args) = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => {
+                        let n = n.clone();
+                        let v = if args.len() >= 2 { args[1].clone() } else { atom(Span::default(), Atom::Int(0)) };
+                        (n, v, &args[2..])
+                    }
+                    // (let (name value) body ...) - binding tuple
+                    ExprInner::Call(first, ref fields) if !fields.is_empty() => {
+                        let n = match &first.inner {
+                            ExprInner::Atom(Atom::Ident(s)) => s.clone(),
+                            _ => "___let_".to_string(),
+                        };
+                        let v = fields.first().cloned().unwrap_or_else(|| atom(Span::default(), Atom::Int(0)));
+                        (n, v, &args[1..])
+                    }
+                    ExprInner::Apply(first, ref fields) if !fields.is_empty() => {
+                        // Apply("name", [value]) — first is the name string directly.
+                        let n = first.clone();
+                        let v = fields.first().cloned().unwrap_or_else(|| atom(Span::default(), Atom::Int(0)));
+                        (n, v, &args[1..])
+                    }
+                    _ => ("___let_".to_string(), atom(Span::default(), Atom::Int(0)), &args[1..]),
                 };
-                let body = if args.len() == 2 {
-                    self.post_process_expr(args[1].clone())
-                } else if args.len() == 3 {
-                    self.post_process_expr(args[2].clone())
+                let body = if body_args.is_empty() {
+                    atom(Span::default(), Atom::Keyword("___skip_".into()))
+                } else if body_args.len() == 1 {
+                    self.post_process_expr(body_args[0].clone())
                 } else {
                     Expr {
                         span: Span::default(),
-                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                        inner: ExprInner::Begin(body_args.iter().map(|e| self.post_process_expr(e.clone())).collect()),
                     }
                 };
                 expr.inner = ExprInner::Let(
-                    name,
-                    Box::new(self.post_process_expr(args[1].clone())),
+                    name.clone(),
+                    Box::new(self.post_process_expr(val)),
                     Box::new(body),
                 );
             }
 
             // let → Let (Apply form).
             ExprInner::Apply(name, args) if name == "let" && args.len() >= 2 => {
-                let name = match &args[0].inner {
-                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                    _ => "___let_".to_string(),
+                // Handle both (let name value body) and (let (name value) body) forms.
+                let (name, val, body_args) = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => {
+                        let n = n.clone();
+                        let v = if args.len() >= 2 { args[1].clone() } else { atom(Span::default(), Atom::Int(0)) };
+                        (n, v, &args[2..])
+                    }
+                    ExprInner::Call(first, ref fields) if !fields.is_empty() => {
+                        let n = match &first.inner {
+                            ExprInner::Atom(Atom::Ident(s)) => s.clone(),
+                            _ => "___let_".to_string(),
+                        };
+                        let v = fields.first().cloned().unwrap_or_else(|| atom(Span::default(), Atom::Int(0)));
+                        (n, v, &args[1..])
+                    }
+                    ExprInner::Apply(first, ref fields) if !fields.is_empty() => {
+                        // Apply("name", [value]) — first is the name string directly.
+                        let n = first.clone();
+                        let v = fields.first().cloned().unwrap_or_else(|| atom(Span::default(), Atom::Int(0)));
+                        (n, v, &args[1..])
+                    }
+                    _ => ("___let_".to_string(), atom(Span::default(), Atom::Int(0)), &args[1..]),
                 };
-                let body = if args.len() == 2 {
-                    self.post_process_expr(args[1].clone())
-                } else if args.len() == 3 {
-                    self.post_process_expr(args[2].clone())
+                let body = if body_args.is_empty() {
+                    atom(Span::default(), Atom::Keyword("___skip_".into()))
+                } else if body_args.len() == 1 {
+                    self.post_process_expr(body_args[0].clone())
                 } else {
                     Expr {
                         span: Span::default(),
-                        inner: ExprInner::Begin(args[2..].iter().map(|e| self.post_process_expr(e.clone())).collect()),
+                        inner: ExprInner::Begin(body_args.iter().map(|e| self.post_process_expr(e.clone())).collect()),
                     }
                 };
                 expr.inner = ExprInner::Let(
                     name,
-                    Box::new(self.post_process_expr(args[1].clone())),
+                    Box::new(self.post_process_expr(val)),
                     Box::new(body),
                 );
             }

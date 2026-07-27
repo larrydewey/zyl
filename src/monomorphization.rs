@@ -990,6 +990,15 @@ impl MonoContext {
     }
 
     fn subst_expr(&self, expr: &Expr, type_map: &IndexMap<String, Type>) -> Expr {
+        self.subst_expr_with_var_map(expr, type_map, &std::collections::HashMap::new())
+    }
+
+    fn subst_expr_with_var_map(
+        &self,
+        expr: &Expr,
+        type_map: &IndexMap<String, Type>,
+        var_renames: &std::collections::HashMap<String, String>,
+    ) -> Expr {
         let new_inner = match &expr.inner {
             ExprInner::Defn(name, params, body) => {
                 // Substitute in parameters and body.
@@ -1011,71 +1020,86 @@ impl MonoContext {
                 ExprInner::Defn(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr(body, type_map)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, var_renames)),
                 )
             }
 
             ExprInner::Call(op, args) => {
-                let new_op = self.subst_expr(op, type_map);
+                let new_op = self.subst_expr_with_var_map(op, type_map, var_renames);
                 let new_args: Vec<Expr> =
-                    args.iter().map(|a| self.subst_expr(a, type_map)).collect();
+                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames)).collect();
                 ExprInner::Call(Box::new(new_op), new_args)
             }
 
             ExprInner::Apply(fname, args) => {
                 let new_args: Vec<Expr> =
-                    args.iter().map(|a| self.subst_expr(a, type_map)).collect();
+                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames)).collect();
                 ExprInner::Apply(fname.clone(), new_args)
             }
 
-            ExprInner::Let(name, val, body) => ExprInner::Let(
-                name.clone(),
-                Box::new(self.subst_expr(val, type_map)),
-                Box::new(self.subst_expr(body, type_map)),
-            ),
+            ExprInner::Let(name, val, body) => {
+                let mut child_renames = var_renames.clone();
+                child_renames.insert(name.clone(), name.clone());
+                let renamed_val = Box::new(self.subst_expr_with_var_map(val, type_map, &child_renames));
+                let renamed_body = Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames));
+                ExprInner::Let(name.clone(), renamed_val, renamed_body)
+            }
 
             ExprInner::If(cond, then_, else_) => ExprInner::If(
-                Box::new(self.subst_expr(cond, type_map)),
-                Box::new(self.subst_expr(then_, type_map)),
-                Box::new(self.subst_expr(else_, type_map)),
+                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)),
+                Box::new(self.subst_expr_with_var_map(then_, type_map, var_renames)),
+                Box::new(self.subst_expr_with_var_map(else_, type_map, var_renames)),
             ),
 
             ExprInner::Lambda(name, params, body) => {
+                // Create a shadowed scope for lambda params.
+                let mut child_renames = var_renames.clone();
+                for p in params {
+                    // Lambda params shadow outer variables.
+                    child_renames.remove(&p.name);
+                }
                 let new_params: Vec<Param> = params.iter().map(|p| p.clone()).collect();
                 ExprInner::Lambda(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr(body, type_map)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)),
                 )
             }
 
             ExprInner::Fn(name, params, body) => {
+                // Same as Lambda - create shadowed scope.
+                let mut child_renames = var_renames.clone();
+                for p in params {
+                    child_renames.remove(&p.name);
+                }
                 let new_params: Vec<Param> = params.iter().map(|p| p.clone()).collect();
                 ExprInner::Fn(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr(body, type_map)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)),
                 )
             }
 
             ExprInner::Begin(exprs) => {
-                ExprInner::Begin(exprs.iter().map(|e| self.subst_expr(e, type_map)).collect())
+                ExprInner::Begin(exprs.iter().map(|e| self.subst_expr_with_var_map(e, type_map, var_renames)).collect())
             }
 
             ExprInner::While(cond, body) => ExprInner::While(
-                Box::new(self.subst_expr(cond, type_map)),
-                Box::new(self.subst_expr(body, type_map)),
+                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)),
+                Box::new(self.subst_expr_with_var_map(body, type_map, var_renames)),
             ),
 
             ExprInner::For(bindings, cond, body) => {
+                let mut child_renames = var_renames.clone();
                 let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
                     .iter()
                     .map(|(name, val)| {
-                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr(&**v, type_map)));
+                        child_renames.insert(name.clone(), name.clone());
+                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr_with_var_map(&**v, type_map, var_renames)));
                         (name.clone(), new_val)
                     })
                     .collect();
-                ExprInner::For(new_bindings, Box::new(self.subst_expr(&**cond, type_map)), Box::new(self.subst_expr(&**body, type_map)))
+                ExprInner::For(new_bindings, Box::new(self.subst_expr_with_var_map(&**cond, type_map, var_renames)), Box::new(self.subst_expr_with_var_map(&**body, type_map, &child_renames)))
             },
 
             ExprInner::Cond(clauses) => {
@@ -1083,8 +1107,8 @@ impl MonoContext {
                     .iter()
                     .map(|(c, b)| {
                         (
-                            Box::new(self.subst_expr(c, type_map)),
-                            Box::new(self.subst_expr(b, type_map)),
+                            Box::new(self.subst_expr_with_var_map(c, type_map, var_renames)),
+                            Box::new(self.subst_expr_with_var_map(b, type_map, var_renames)),
                         )
                     })
                     .collect();
@@ -1092,7 +1116,7 @@ impl MonoContext {
             }
 
             ExprInner::Match(subject, arms) => {
-                let new_subject = self.subst_expr(subject, type_map);
+                let new_subject = self.subst_expr_with_var_map(subject, type_map, var_renames);
                 let new_arms: Vec<MatchArm> = arms
                     .iter()
                     .map(|arm| MatchArm {
@@ -1100,15 +1124,28 @@ impl MonoContext {
                         patterns: arm
                             .patterns
                             .iter()
-                            .map(|p| self.subst_expr(p, type_map))
+                            .map(|p| self.subst_expr_with_var_map(p, type_map, var_renames))
                             .collect(),
-                        body: Box::new(self.subst_expr(&arm.body, type_map)),
+                        body: Box::new(self.subst_expr_with_var_map(&arm.body, type_map, var_renames)),
                     })
                     .collect();
                 ExprInner::Match(Box::new(new_subject), new_arms)
             }
 
             // For atoms and other simple nodes, substitute in any nested expressions.
+            // Handle variable renaming for captured variables.
+            ExprInner::Atom(atom) => {
+                let new_atom = if let crate::ast::Atom::Ident(name) = atom {
+                    if let Some(new_name) = var_renames.get(name.as_str()) {
+                        crate::ast::Atom::Ident(new_name.clone())
+                    } else {
+                        atom.clone()
+                    }
+                } else {
+                    atom.clone()
+                };
+                crate::ast::ExprInner::Atom(new_atom)
+            }
             _ => expr.inner.clone(),
         };
 
