@@ -622,6 +622,7 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         }
         Spawn(e) => Spawn(Box::new(sub_expr(ctx, e))),
         Send(a, m) => Send(Box::new(sub_expr(ctx, a)), Box::new(sub_expr(ctx, m))),
+        SendClosure(a, c, caps) => SendClosure(Box::new(sub_expr(ctx, a)), Box::new(sub_expr(ctx, c)), caps.clone()),
         FfiCall(name, args, timeout) => {
             let new_args: Vec<Expr> = args.iter().map(|a| sub_expr(ctx, a)).collect();
             FfiCall(name.clone(), new_args, *timeout)
@@ -969,6 +970,20 @@ impl MacroExpander {
                 expr.inner = ExprInner::Send(
                     Box::new(self.expand_expr(*a.clone())?),
                     Box::new(self.expand_expr(*m.clone())?),
+                );
+            }
+            ExprInner::SendClosure(a, c, caps) => {
+                let new_caps: Vec<CaptureInfo> = caps
+                    .iter()
+                    .map(|cap| CaptureInfo {
+                        name: cap.name.clone(),
+                        ssa_id: cap.ssa_id,
+                    })
+                    .collect();
+                expr.inner = ExprInner::SendClosure(
+                    Box::new(self.expand_expr(*a.clone())?),
+                    Box::new(self.expand_expr(*c.clone())?),
+                    new_caps,
                 );
             }
             ExprInner::FfiCall(name, args, timeout) => {

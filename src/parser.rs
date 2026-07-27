@@ -40,6 +40,7 @@ const RESERVED_KEYWORDS: &[&str] = &[
     "ffi-unpin",
     "spawn",
     "send",
+    "send-closure",
     // Assertions & errors
     "assert",
     "error",

@@ -4262,6 +4262,88 @@ impl CodeGen {
                 emitted_ids.insert(node.id);
             }
 
+            ICNFInner::SendClosure(actor_id, closure_name, capture_ids) => {
+                // Emit actor_id node → value in eax.
+                let actor_node = lookup
+                    .get(&actor_id)
+                    .copied()
+                    .or_else(|| stmts.iter().find(|n| n.id == *actor_id));
+                if let Some(actor_n) = actor_node {
+                    self.emit_node(
+                        actor_n,
+                        stmts,
+                        local_vars,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                    emitted_ids.insert(*actor_id);
+                }
+
+                // Load actor_id (in eax) into rdi.
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rax".to_string());
+
+                // Load closure function pointer into rsi.
+                self.asm_push_align();
+                self.asm.push(format!("    lea rsi, [rip+{}]@PLT", closure_name));
+
+                // Allocate capture state struct on heap.
+                let state_size = capture_ids.len() * 8;
+                if state_size > 0 {
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov edi, {}", state_size));
+                    self.asm_push_align();
+                    self.asm.push("    call malloc@plt".to_string());
+                    // Save state ptr in r10.
+                    self.asm_push_align();
+                    self.asm.push("    mov r10, rax".to_string());
+
+                    // Copy each captured value into the state struct.
+                    for (i, cap_id) in capture_ids.iter().enumerate() {
+                        let offset = i * 8;
+                        // Emit the capture node to get its value.
+                        let cap_node = lookup
+                            .get(&cap_id)
+                            .copied()
+                            .or_else(|| stmts.iter().find(|n| n.id == *cap_id));
+                        if let Some(cn) = cap_node {
+                            self.emit_node(
+                                cn,
+                                stmts,
+                                local_vars,
+                                emitted_ids,
+                                operand_ids,
+                                lookup,
+                                phi_slots,
+                            );
+                            emitted_ids.insert(*cap_id);
+                        }
+                        // Store into [r10 + offset].
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov [r10 + {}], rax", offset));
+                    }
+                    // State ptr is now in r10.
+                    self.asm_push_align();
+                    self.asm.push("    mov rdx, r10".to_string());
+                } else {
+                    // No captures — pass NULL as state.
+                    self.asm_push_align();
+                    self.asm.push("    xor rdx, rdx".to_string());
+                }
+
+                // Call zyl_actor_send_closure(actor_id, fn_ptr, state_ptr).
+                self.asm_push_align();
+                self.asm.push("    call zyl_actor_send_closure@plt".to_string());
+
+                // Return Unit (eax = 0).
+                self.asm_push_align();
+                self.asm.push("    xor eax, eax".to_string());
+
+                emitted_ids.insert(node.id);
+            }
+
             _ => {
                 // Unsupported/unimplemented nodes — emit a nop placeholder.
                 self.asm_push_align();

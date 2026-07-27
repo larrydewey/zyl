@@ -1011,6 +1011,11 @@ impl TypeInferer {
                 }
                 Ok(Type::Prim(PrimType::Unit))
             }
+            ExprInner::SendClosure(_actor, closure, _) => {
+                let _ct = self.infer_expr(closure)?;
+                // Closure type inference — closures are always Send-capable.
+                Ok(Type::Prim(PrimType::Unit))
+            }
             ExprInner::FfiCall(_, args, _) => {
                 for arg in args {
                     drop(self.infer_expr(arg)?);
