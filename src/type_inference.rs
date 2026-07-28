@@ -56,7 +56,7 @@ impl TypeInferer {
         // collect_definitions is called by monomorphization before this.
 
         for expr in exprs {
-            let ty = self.infer_expr(&expr)?;
+            let ty = self.infer_expr(expr)?;
             result.push(Expr {
                 span: expr.span.clone(),
                 inner: ExprInner::Atom(match &ty {
@@ -94,7 +94,7 @@ impl TypeInferer {
         for expr in exprs {
             match &expr.inner {
                 ExprInner::Defn(name, params, body) => {
-                    let param_types: Vec<Type> =
+                    let _param_types: Vec<Type> =
                         params.iter().map(|p| self.parse_type_str(&p.typ)).collect();
                     if let Ok(ret_ty) = self.infer_expr(body) {
                         self.known_functions.insert(
@@ -128,7 +128,7 @@ impl TypeInferer {
                     let param_types: Vec<Type> = params
                         .iter()
                         .map(|p| {
-                            if let Some(ref typ_str) = p.typ {
+                            if let Some(ref _typ_str) = p.typ {
                                 self.parse_type_str(&p.typ)
                             } else {
                                 Type::Var(self.fresh_var())
@@ -192,10 +192,10 @@ impl TypeInferer {
                     };
                     let params: Vec<Param> = parse_params_from_expr(&args[1]);
                     // Create param type vars once, used for both env bindings and known_functions.
-                    let param_types: Vec<Type> = params
+                    let param_types:Vec<Type> = params
                         .iter()
                         .map(|p| {
-                            if let Some(ref typ_str) = p.typ {
+                            if let Some(ref _typ_str) = p.typ {
                                 self.parse_type_str(&p.typ)
                             } else {
                                 Type::Var(self.fresh_var())
@@ -404,7 +404,7 @@ impl TypeInferer {
 
                 // Raw alias.
                 ExprInner::Call(op, args) if is_ident_op(op, "alias") && args.len() >= 2 => {
-                    let aname = match &args[0].inner {
+                    let _aname = match &args[0].inner {
                         ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                         _ => continue,
                     };
@@ -730,7 +730,7 @@ impl TypeInferer {
                                     .map(|p| self.infer_expr(p))
                                     .collect::<Vec<_>>(),
                             );
-                            let abt = self.infer_expr(&*inner.last().unwrap())?;
+                            let abt = self.infer_expr(inner.last().unwrap())?;
                             if let Some(ref t) = first {
                                 drop(self.unify(t, &abt));
                             } else {
@@ -758,7 +758,7 @@ impl TypeInferer {
                                     .map(|p| self.infer_expr(p))
                                     .collect::<Vec<_>>(),
                             );
-                            let abt = self.infer_expr(&*inner.last().unwrap())?;
+                            let abt = self.infer_expr(inner.last().unwrap())?;
                             if let Some(ref t) = first {
                                 drop(self.unify(t, &abt));
                             } else {
@@ -916,7 +916,7 @@ impl TypeInferer {
                 let cond_type = self.infer_expr(cond)?;
                 self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
                 let body_type = self.infer_expr(body)?;
-                self.env.exit_scope();
+                let _ = self.env.exit_scope();
                 Ok(body_type)
             }
 
@@ -951,7 +951,7 @@ impl TypeInferer {
                     .map(|arm| arm.variant.clone())
                     .collect();
 
-                for (type_name, ty) in &self.known_types {
+                for (_type_name, _ty) in &self.known_types {
                     // Check if any arm variant belongs to this ADT type.
                     let has_variant = arms.iter().any(|arm| {
                         // We need to know the ADT's variants — check struct_defs or known ADTs.
@@ -1065,7 +1065,7 @@ impl TypeInferer {
             }
 
             ExprInner::SetBang(target, val) => {
-                let vt = self.infer_expr(val)?;
+                let _vt = self.infer_expr(val)?;
                 if let Some(ty) = self.env.get(target).cloned() {
                     match ty {
                         Type::Cap(CapKind::TMut, _) => {}
@@ -1090,9 +1090,9 @@ impl TypeInferer {
                 drop(self.infer_expr(init)?);
                 self.infer_expr(body)
             }
-            ExprInner::Deftype(name, variants, bound) => {
+            ExprInner::Deftype(_name, _variants, bound) => {
                 if let Some(b) = bound {
-                    drop(b);
+                    let _ = b;
                 }
                 Ok(Type::Prim(PrimType::Unit))
             }
@@ -1208,7 +1208,7 @@ impl TypeInferer {
 
     fn handle_apply(&mut self, name: &str, args: &[Expr]) -> std::result::Result<Type, ZylError> {
         if let Some(ret_type) = self.function_returns.get(name).cloned() {
-            let mut expected_params: Vec<(String, Type)> =
+            let expected_params: Vec<(String, Type)> =
                 self.known_functions.get(name).cloned().unwrap_or_default();
             if args.len() != expected_params.len() {
                 return Err(ZylError::E_ARITY_MISMATCH(
@@ -1218,7 +1218,7 @@ impl TypeInferer {
                 ));
             }
             let arg_types: Vec<Type> = args.iter().map(|arg| self.infer_expr(arg)).collect::<std::result::Result<Vec<_>, _>>()?;
-            for (i, arg) in args.iter().enumerate() {
+            for (i, _arg) in args.iter().enumerate() {
                 let at = &arg_types[i];
                 self.unify(at, &expected_params[i].1)?;
             }
@@ -1287,7 +1287,7 @@ impl TypeInferer {
     fn handle_call(
         &mut self,
         expr: &Expr,
-        op: &Box<Expr>,
+        op: &Expr,
         args: &[Expr],
     ) -> std::result::Result<Type, ZylError> {
         let op_name = match &op.inner {
@@ -1453,6 +1453,7 @@ impl TypeInferer {
 }
 
 /// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
+#[allow(dead_code)]
 fn is_skip_placeholder(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
 }
@@ -1549,15 +1550,15 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     fn type_contains_var(&self, ty: &Type, n: usize) -> bool {
         match self.subst.apply(ty) {
             Type::Var(m) => m == n,
-            Type::Cap(_, inner) => self.type_contains_var(&*inner, n),
+            Type::Cap(_, inner) => self.type_contains_var(&inner, n),
             Type::Fun(args, ret) => {
                 args.iter().any(|a| self.type_contains_var(a, n))
-                    || self.type_contains_var(&*ret, n)
+                    || self.type_contains_var(&ret, n)
             }
-            Type::Collection(_, inner) => self.type_contains_var(&*inner, n),
-            Type::Map(k, v) => self.type_contains_var(&*k, n) || self.type_contains_var(&*v, n),
+            Type::Collection(_, inner) => self.type_contains_var(&inner, n),
+            Type::Map(k, v) => self.type_contains_var(&k, n) || self.type_contains_var(&v, n),
             Type::ResultType(t, e) => {
-                self.type_contains_var(&*t, n) || self.type_contains_var(&*e, n)
+                self.type_contains_var(&t, n) || self.type_contains_var(&e, n)
             }
             _ => false,
         }
@@ -1772,13 +1773,13 @@ fn parse_collection_type(s: &str) -> Option<String> {
 fn parse_fun_type(s: &str) -> Option<(String, String)> {
     if let Some(rest) = s.strip_prefix("TFun(") {
         let mut depth = 1;
-        for (j, c) in rest.chars().enumerate() {
+        for (j, c) in rest.char_indices() {
             match c {
                 '(' => depth += 1,
                 ')' => {
                     depth -= 1;
                     if depth == 0 {
-                        return Some((rest[..j].to_string(), rest[j + 1..].trim().to_string()));
+                        return Some((rest[..j].to_string(), rest[j + c.len_utf8()..].trim().to_string()));
                     }
                 }
                 _ => {}
@@ -1791,14 +1792,14 @@ fn parse_fun_type(s: &str) -> Option<(String, String)> {
 fn parse_map_type(s: &str) -> Option<(String, String)> {
     if let Some(rest) = s.strip_prefix("Map<") {
         let mut depth = 1;
-        for (j, c) in rest.chars().enumerate() {
+        for (j, c) in rest.char_indices() {
             match c {
                 '<' => depth += 1,
                 '>' => depth -= 1,
                 ',' if depth == 1 => {
                     return Some((
                         rest[..j].to_string(),
-                        rest[j + 1..].strip_suffix('>')?.to_string(),
+                        rest[j + c.len_utf8()..].strip_suffix('>')?.to_string(),
                     ));
                 }
                 _ => {}
@@ -1808,17 +1809,18 @@ fn parse_map_type(s: &str) -> Option<(String, String)> {
     None
 }
 
+#[allow(dead_code)]
 fn parse_result_type(s: &str) -> Option<(String, String)> {
     if let Some(rest) = s.strip_prefix("Result<") {
         let mut depth = 1;
-        for (j, c) in rest.chars().enumerate() {
+        for (j, c) in rest.char_indices() {
             match c {
                 '<' => depth += 1,
                 '>' => depth -= 1,
                 ',' if depth == 1 => {
                     return Some((
                         rest[..j].to_string(),
-                        rest[j + 1..].strip_suffix('>')?.to_string(),
+                        rest[j + c.len_utf8()..].strip_suffix('>')?.to_string(),
                     ));
                 }
                 _ => {}

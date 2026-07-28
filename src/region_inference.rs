@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::cell::Cell;
+
 
 use crate::ast::*;
 use crate::error::{Span, ZylError};
@@ -39,6 +39,7 @@ pub struct CaptureInfo {
     /// Variable names captured by this closure.
     pub variables: Vec<String>,
     /// Inferred regions for each captured variable.
+    #[allow(dead_code)]
     pub regions: IndexMap<String, Region>,
 }
 
@@ -120,7 +121,7 @@ impl RegionEnv {
         if !old.is_empty() && !self.parents.is_empty() {
             // Merge non-escaped locals into parent (they're still alive).
             for (name, region_info) in old {
-                if let Some((parent_region, _)) = self.get(&name) {
+                if let Some((_parent_region, _)) = self.get(&name) {
                     // Already exists — keep the outer binding.
                 } else {
                     self.parents.last_mut().unwrap().insert(name, region_info);
@@ -135,6 +136,7 @@ impl RegionEnv {
     }
 
     /// Get all bound variables across all scopes.
+    #[allow(dead_code)]
     pub fn bindings(&self) -> Vec<String> {
         let mut names = self.current.keys().cloned().collect::<Vec<_>>();
         for parent in &self.parents {
@@ -164,6 +166,7 @@ pub struct RegionResult {
     /// Inferred region of the expression's result value.
     pub result_region: Region,
     /// Captured variables (for closures).
+    #[allow(dead_code)]
     pub captures: Option<CaptureInfo>,
 }
 
@@ -172,6 +175,7 @@ pub struct RegionResult {
 pub struct RegionInferer {
     env: RegionEnv,
     /// Known types from Phase 3 for capability-aware region assignment.
+    #[allow(dead_code)]
     type_map: IndexMap<String, Type>,
     /// Struct definitions with field regions (Phase 4 output).
     pub struct_regions: IndexMap<String, Vec<(String, Region)>>,
@@ -196,12 +200,13 @@ impl RegionInferer {
     }
 
     /// Load types from Phase 3 for capability-aware region inference.
+    #[allow(dead_code)]
     pub fn load_types(&mut self, exprs: &[Expr]) {
         // Extract type annotations from the typed AST output.
         for expr in exprs {
             if let ExprInner::Atom(Atom::Ident(t)) = &expr.inner {
                 // Type annotation atoms like "T_INT", "?0", etc. are metadata, not expressions to infer.
-                drop((t));
+                let _ = t;
             }
         }
     }
@@ -213,7 +218,7 @@ impl RegionInferer {
 
         let mut result = Vec::with_capacity(exprs.len());
         for expr in exprs {
-            self.infer_expr(&expr)?;
+            self.infer_expr(expr)?;
             // Pass through expressions unchanged — region metadata is stored internally
             // in struct_regions and func_signatures fields. This preserves AST structure
             // for downstream phases (type inference, etc.).
@@ -321,7 +326,7 @@ impl RegionInferer {
                 // def — immutable binding → Global if value is a literal constant.
                 ExprInner::Def(_, val) => {
                     let region = infer_literal_region(val);
-                    drop(region); // just collecting; actual binding in infer_expr.
+                    let _ = region; // just collecting; actual binding in infer_expr.
                 }
 
                 // struct/struct+ — fields default to Stack, promoted on escape.
@@ -351,7 +356,7 @@ impl RegionInferer {
         match &expr.inner {
             // Atom literals — primitives are Stack (small values).
             ExprInner::Atom(atom) => Ok(RegionResult {
-                result_region: infer_literal_region_expr(&atom),
+                result_region: infer_literal_region_expr(atom),
                 captures: None,
             }),
 
@@ -380,7 +385,7 @@ impl RegionInferer {
             // let — binding is Stack by default (R1).
             ExprInner::Let(name, val, body) => {
                 self.env.enter_scope();
-                let val_result = self.infer_expr(val)?;
+                let _val_result = self.infer_expr(val)?;
                 self.env.bind(name.clone(), Region::Stack);
                 let result = self.infer_expr(body)?;
                 // Check if the bound variable was escaped.
@@ -394,7 +399,7 @@ impl RegionInferer {
             // let-mut — same as let but with TMut capability check (R1).
             ExprInner::LetMut(name, val, body) => {
                 self.env.enter_scope();
-                let val_result = self.infer_expr(val)?;
+                let _val_result = self.infer_expr(val)?;
                 self.env.bind(name.clone(), Region::Stack);
                 let result = self.infer_expr(body)?;
                 if self.env.is_escaped(name) {
@@ -492,7 +497,7 @@ impl RegionInferer {
                     }
                 }
 
-                let result = self.infer_expr(body)?;
+                let _result = self.infer_expr(body)?;
                 self.env.exit_scope();
 
                 Ok(RegionResult {
@@ -581,7 +586,7 @@ impl RegionInferer {
 
             // ffi-unpin — unpinning returns the underlying value's region.
             ExprInner::FfiUnpin(e) => {
-                let result = self.infer_expr(e)?;
+                let _result = self.infer_expr(e)?;
                 Ok(RegionResult {
                     result_region: Region::Heap,
                     captures: None,
@@ -1022,7 +1027,8 @@ fn collect_capture_vars(
 }
 
 /// Helper: annotate an expression with its inferred region as a metadata Atom.
-fn annotate_with_region(expr: &Expr, region: Region) -> ExprInner {
+#[allow(dead_code)]
+fn annotate_with_region(_expr: &Expr, region: Region) -> ExprInner {
     let meta = format!("REGION={}", region);
     // Wrap the original expression's inner in a Call-like structure with region metadata.
     // We use a special marker atom to carry the region info without changing the AST shape.
