@@ -234,7 +234,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err(format!("Code generation failed: {}", stderr).into());
             }
         }
-        Err(e) => {
+        Err(_e) => {
             // cc not available — just output the assembly and note that manual linking is needed.
             println!("  Note: 'cc' not found, skipping link step.");
             println!(
@@ -270,7 +270,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Output ICNF as JSON (SSA IR with region annotations, post-optimization).
-    let icnf_json = serde_json::to_string_pretty(&optimized_icnf)?;
+    let _icnf_json = serde_json::to_string_pretty(&optimized_icnf)?;
     println!("\n--- ICNF Program ---");
     println!("Functions: {}", optimized_icnf.functions.len());
     for func in &optimized_icnf.functions {
@@ -357,7 +357,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     eprint!("{}", String::from_utf8_lossy(&output.stderr));
                 }
             }
-            Err(e) => {
+        Err(e) => {
                 println!("  Note: Could not run binary: {}", e);
             }
         }

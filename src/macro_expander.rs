@@ -47,6 +47,7 @@ type GensymRef = RefCell<GensymRegistry>;
 
 // ─── Pattern matching helpers ──────────────────────────────────────────
 
+#[allow(dead_code)]
 fn is_special_form_name(name: &str) -> bool {
     matches!(
         name,
@@ -636,11 +637,11 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
             let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
                 .iter()
                 .map(|(name, val)| {
-                    let new_val = val.as_ref().map(|v| Box::new(sub_expr(ctx, &**v)));
+                    let new_val = val.as_ref().map(|v| Box::new(sub_expr(ctx, v)));
                     (name.clone(), new_val)
                 })
                 .collect();
-            For(new_bindings, Box::new(sub_expr(ctx, &**cond)), Box::new(sub_expr(ctx, &**body)))
+            For(new_bindings, Box::new(sub_expr(ctx, cond)), Box::new(sub_expr(ctx, body)))
         },
         Cond(clauses) => {
             let new_clauses: Vec<_> = clauses
@@ -656,7 +657,7 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         }
         SetBang(name, val) => SetBang(name.clone(), Box::new(sub_expr(ctx, val))),
         UseModule(parts, syms, unsafe_) => {
-            let new_syms = syms.as_ref().map(|s| s.iter().cloned().collect());
+            let new_syms = syms.as_ref().map(|s| s.to_vec());
             UseModule(parts.clone(), new_syms, *unsafe_)
         }
         Print(exprs) => Print(exprs.iter().map(|e| sub_expr(ctx, e)).collect()),
@@ -668,15 +669,15 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
             Box::new(sub_expr(ctx, body)),
         ),
         Deftype(name, variants, bound) => {
-            let new_variants: Vec<_> = variants.iter().cloned().collect();
+            let new_variants: Vec<_> = variants.to_vec();
             Deftype(name.clone(), new_variants, bound.clone())
         }
         TraitDecl(name, methods, where_clause) => {
-            let new_methods: Vec<_> = methods.iter().cloned().collect();
+            let new_methods: Vec<_> = methods.to_vec();
             TraitDecl(name.clone(), new_methods, where_clause.clone())
         }
         ImplBlock(trait_name, type_name, bodies) => {
-            let new_bodies: Vec<_> = bodies.iter().cloned().collect();
+            let new_bodies: Vec<_> = bodies.to_vec();
             ImplBlock(trait_name.clone(), type_name.clone(), new_bodies)
         }
         StructDef(sd) | StructDefPlus(sd) => {
@@ -689,7 +690,7 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         AliasDecl(name, target) => AliasDecl(name.clone(), Box::new(sub_expr(ctx, target))),
         Derive(type_name, traits) => Derive(type_name.clone(), traits.clone()),
         TestSuite(name, tests, keywords) => {
-            let new_tests: Vec<_> = tests.iter().cloned().collect();
+            let new_tests: Vec<_> = tests.to_vec();
             TestSuite(name.clone(), new_tests, keywords.clone())
         }
         TestDecl(name, body, keywords) => TestDecl(
@@ -879,7 +880,7 @@ impl MacroExpander {
                 if self.macros.contains_key(&mac.name) {
                     eprintln!(
                         "Warning: macro '{}' redefined at {:?}",
-                        mac.name, &expr.span
+                        mac.name, expr.span
                     );
                 }
                 self.macros.insert(mac.name.clone(), mac);
@@ -935,7 +936,7 @@ impl MacroExpander {
                     Box::new(self.expand_expr(*body.clone())?),
                 );
             }
-            ExprInner::TryCatch(e, name, h) => {
+            ExprInner::TryCatch(e, _name, h) => {
                 let catch_name = match &expr.inner {
                     ExprInner::TryCatch(_, n, _) => n.clone(),
                     _ => unreachable!(),
@@ -1074,14 +1075,6 @@ impl MacroExpander {
                 );
             }
 
-            // TryCatch also needs child expansion (sub_expr may produce these from raw "try").
-            ExprInner::TryCatch(e, name, h) => {
-                expr.inner = ExprInner::TryCatch(
-                    Box::new(self.expand_expr(*e.clone())?),
-                    name.clone(),
-                    Box::new(self.expand_expr(*h.clone())?),
-                );
-            }
             ExprInner::Lambda(_, params, body) | ExprInner::Fn(_, params, body) => {
                 let new_body = Box::new(self.expand_expr(*body.clone())?);
                 if matches!(&expr.inner, ExprInner::Lambda(..)) {
@@ -1113,13 +1106,6 @@ impl MacroExpander {
                     .map(|e| self.expand_expr(e.clone()))
                     .collect::<Result<Vec<_>, _>>()?;
                 expr.inner = ExprInner::Print(new);
-            }
-            ExprInner::Begin(exprs) => {
-                let new: Vec<Expr> = exprs
-                    .into_iter()
-                    .map(|e| self.expand_expr(e.clone()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                expr.inner = ExprInner::Begin(new);
             }
             ExprInner::Exit(e) => {
                 expr.inner = ExprInner::Exit(Box::new(self.expand_expr(*e.clone())?));
@@ -1158,7 +1144,7 @@ impl MacroExpander {
                             Box::new(self.expand_expr(*body.clone())?),
                         )
                     }
-                    TryCatch(e, name, h) => {
+                    TryCatch(e, _name, h) => {
                         let cn = match &expr.inner {
                             TryCatch(_, n, _) => n.clone(),
                             _ => unreachable!(),
@@ -1296,7 +1282,6 @@ impl MacroExpander {
                     | Fn(_, _, _)
                     | ModuleDecl(_)
                     | UseModule(..)
-                    | Cond(_)
                     | Deftype(_, _, _)
                     | TraitDecl(_, _, _)
                     | ImplBlock(_, _, _)
@@ -1346,7 +1331,7 @@ impl MacroExpander {
         self.try_expand(expr)
     }
 
-    fn try_expand(&mut self, mut expr: Expr) -> Result<Expr, ZylError> {
+    fn try_expand(&mut self, expr: Expr) -> Result<Expr, ZylError> {
         let (name, args) = match &expr.inner {
             ExprInner::Call(op, args) => {
                 if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {

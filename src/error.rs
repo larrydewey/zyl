@@ -37,6 +37,7 @@ impl std::fmt::Display for Span {
 
 /// All error codes from spec §28.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types, dead_code)]
 pub enum ZylError {
     // --- Lexer errors (E_LEX_*) ---
     #[error("lexer: unterminated string at {}", .0)]
@@ -165,4 +166,5 @@ pub enum ZylError {
 }
 
 /// A result carrying a ZylError.
+#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, ZylError>;

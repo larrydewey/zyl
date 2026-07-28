@@ -4,6 +4,10 @@ use crate::ast::*;
 use crate::error::{Location, Span, ZylError};
 use crate::lexer::{Token, TokenKind};
 
+type CondClause = (Box<Expr>, Box<Expr>);
+type TestSuiteItems = (String, Vec<TestOrSuite>, IndexMap<String, Atom>);
+type TestDeclItems = (String, Box<Expr>, IndexMap<String, Atom>);
+
 /// Reserved keywords that MUST NOT be used as identifiers in definition forms.
 /// §1.3.1 — prevents shadowing core language constructs and breaking dispatch.
 const RESERVED_KEYWORDS: &[&str] = &[
@@ -99,6 +103,7 @@ impl Parser {
     /// Parse expressions without dispatching special forms — returns raw Call/Apply nodes.
     /// Used inside defmacro argument lists so pattern variables named after special forms
     /// (e.g., `(cond body)`) don't trigger p_cond/p_if etc during initial parsing.
+    #[allow(dead_code)]
     pub fn parse_exprs_no_dispatch(
         &mut self,
         stop: impl FnMut(&TokenKind) -> bool,
@@ -111,6 +116,7 @@ impl Parser {
         Ok(exprs)
     }
 
+    #[allow(dead_code)]
     fn parse_expr_no_dispatch(&mut self) -> Result<Expr, ZylError> {
         let token = self.next_token()?;
         match &token.kind {
@@ -141,6 +147,7 @@ impl Parser {
         })
     }
 
+    #[allow(dead_code)]
     fn parse_list_no_dispatch(&mut self, open: &Token) -> Result<Expr, ZylError> {
         let elements = self.parse_exprs_no_dispatch(|k| matches!(k, TokenKind::RParen))?;
         self.expect_token_kind(TokenKind::RParen)?;
@@ -167,6 +174,7 @@ impl Parser {
     }
 
     /// Parse expressions with normal special form dispatch.
+    #[allow(dead_code)]
     pub fn parse_exprs_dispatch(
         &mut self,
         stop: impl FnMut(&TokenKind) -> bool,
@@ -254,6 +262,7 @@ impl Parser {
         // Use sequential if-else to avoid type mismatch in match arms.
         macro_rules! check_arity {
             ($name:expr, $min:expr, $max:expr, $args:expr) => {{
+                #[allow(unused_comparisons)]
                 if !($args.len() >= $min && $args.len() <= $max) {
                     return Err(ZylError::E_EXPECTED_EXPRESSION(
                         Span::default(),
@@ -313,35 +322,35 @@ impl Parser {
         }
 
         if op == "def" {
-            return self.p_def(span, args);
+            self.p_def(span, args)
         } else if op == "defn" || op == "defun" {
-            return self.p_defn(span, args);
+            self.p_defn(span, args)
         } else if op == "let" {
-            return self.p_let(span, false, args);
+            self.p_let(span, false, args)
         } else if op == "let-mut" {
-            return self.p_let(span, true, args);
+            self.p_let(span, true, args)
         } else if op == "if" {
-            return Ok(self.p_if(args));
+            Ok(self.p_if(args))
         } else if op == "try" {
-            return self.p_try(args);
+            self.p_try(args)
         } else if op == "match" {
-            return self.p_match(args);
+            self.p_match(args)
         } else if op == "while" {
-            return Ok(self.p_while(args));
+            Ok(self.p_while(args))
         } else if op == "for" {
             std::process::exit(42);
         } else if op == "cond" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Cond(self.p_cond(args)?),
-            });
+            })
         } else if op == "begin" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Begin(args.to_vec()),
-            });
+            })
         } else if op == "defmacro" {
-            return self.p_defmacro(span, args);
+            self.p_defmacro(span, args)
         }
         // Assertions & errors.
         else if op == "assert" {
@@ -351,148 +360,148 @@ impl Parser {
             } else {
                 None
             };
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Assert(Box::new(args[0].clone()), msg),
-            });
+            })
         } else if op == "error" {
             check_arity!("error", 1, 1, args);
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Error(args[0].try_string()?),
-            });
+            })
         } else if op == "unwrap" {
             check_arity!("unwrap", 1, 1, args);
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Unwrap(Box::new(args[0].clone())),
-            });
+            })
         }
         // Mutation & sequencing.
         else if op == "set!" {
             check_arity!("set!", 2, 2, args);
             let name = args[0].try_ident()?;
             check_reserved_keyword(&name, &args[0].span)?;
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::SetBang(name, Box::new(args[1].clone())),
-            });
+            })
         } else if op == "struct-get" {
-            return self.p_struct_get(span, args);
+            self.p_struct_get(span, args)
         }
         // I/O.
         else if op == "print" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Print(args.to_vec()),
-            });
+            })
         } else if op == "read-line" {
             check_arity!("read-line", 0, 0, args);
-            return Ok(Expr {
+            Ok(Expr {
                 span: Span::default(),
                 inner: ExprInner::ReadLine,
-            });
+            })
         } else if op == "exit" {
             check_arity!("exit", 1, 1, args);
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Exit(Box::new(args[0].clone())),
-            });
+            })
         } else if op == "close" {
-            return self.p_close(span, args);
+            self.p_close(span, args)
         }
         // Resource management.
         else if op == "with-resource" {
-            return self.p_with_resource(span, args);
+            self.p_with_resource(span, args)
         }
         // Type system.
         else if op == "deftype" {
-            return self.p_deftype(span, args);
+            self.p_deftype(span, args)
         } else if op == "trait" {
-            return self.p_trait_decl(span, args);
+            self.p_trait_decl(span, args)
         } else if op == "impl" {
-            return self.p_impl_block(args);
+            self.p_impl_block(args)
         }
         // Structs & aliases.
         else if op == "defstruct" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::StructDef(self.p_struct_def(args)?),
-            });
+            })
         } else if op == "defstruct+" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::StructDefPlus(self.p_struct_def(args)?),
-            });
+            })
         } else if op == "alias" {
-            return self.p_alias(span, args);
+            self.p_alias(span, args)
         } else if op == "derive" {
-            return self.p_derive(args);
+            self.p_derive(args)
         }
         // Testing framework.
         else if op == "test-suite" {
             check_arity!("test-suite", 1, 256, args);
             let (name, tests, keywords) = self.p_test_suite(args)?;
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::TestSuite(name, tests, keywords),
-            });
+            })
         } else if op == "test" {
             check_arity!("test", 2, 256, args);
             let (name, body, keywords) = self.p_test_decl(args)?;
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::TestDecl(name, body, keywords),
-            });
+            })
         } else if op == "assert-equal" {
-            return self.p_assert_equal(span, args);
+            self.p_assert_equal(span, args)
         } else if op == "assert-fail" {
-            return self.p_assert_fail(span, args);
+            self.p_assert_fail(span, args)
         } else if op == "assert-true" {
-            return self.p_assert_true(span, args);
+            self.p_assert_true(span, args)
         } else if op == "assert-false" {
-            return self.p_assert_false(span, args);
+            self.p_assert_false(span, args)
         } else if op == "test-property" {
-            return self.p_test_property(args);
+            self.p_test_property(args)
         } else if op == "setup" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Setup(args.to_vec()),
-            });
+            })
         } else if op == "teardown" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Teardown(args.to_vec()),
-            });
+            })
         } else if op == "run-tests" {
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::RunTests(self.p_run_tests(args)?),
-            });
+            })
         } else if op == "test-compile" {
-            return self.p_test_compile(span, args);
+            self.p_test_compile(span, args)
         }
         // Module system.
         else if op == "module" {
             check_arity!("module", 1, 1, args);
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::ModuleDecl(args[0].try_string()?),
-            });
+            })
         } else if op == "use" {
-            return self.p_use(span, args);
+            self.p_use(span, args)
         } else if op == "export" {
             check_arity!("export", 1, 1, args);
             let ident = args[0].try_ident()?;
             check_reserved_keyword(&ident, &args[0].span)?;
-            return Ok(Expr {
+            Ok(Expr {
                 span: span.clone(),
                 inner: ExprInner::Export(ident),
-            });
+            })
         }
         // Built-in operations.
         else {
-            return self.p_builtin(span, op, args);
+            self.p_builtin(span, op, args)
         }
     }
 
@@ -658,7 +667,7 @@ impl Parser {
             ));
         }
 
-        let catch_name = match &catch_clause.get(0).map(|e| &e.inner) {
+        let catch_name = match &catch_clause.first().map(|e| &e.inner) {
             Some(ExprInner::Atom(Atom::Ident(n))) => n.clone(),
             _ => {
                 return Err(ZylError::E_EXPECTED_EXPRESSION(
@@ -736,6 +745,7 @@ impl Parser {
         })
     }
 
+    #[allow(dead_code)]
     fn p_for(&self, span: &Span, args: &[Expr]) -> Result<Expr, ZylError> {
         // Parse init bindings: list of (name [value]) pairs
         let bindings = match &args[0].inner {
@@ -745,18 +755,17 @@ impl Parser {
                         ExprInner::Atom(Atom::Ident(n)) => {
                             (n.clone(), None)
                         }
-                        ExprInner::Begin(sub) => {
-                            if sub.len() >= 2 {
-                                if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
-                                    let name = n.clone();
-                                    let val = Some(Box::new(sub[1].clone()));
-                                    (name, val)
-                                } else {
-                                    (String::new(), None)
-                                }
+                        ExprInner::Begin(sub) if sub.len() >= 2 => {
+                            if let ExprInner::Atom(Atom::Ident(n)) = &sub[0].inner {
+                                let name = n.clone();
+                                let val = Some(Box::new(sub[1].clone()));
+                                (name, val)
                             } else {
                                 (String::new(), None)
                             }
+                        }
+                        ExprInner::Begin(_) => {
+                            (String::new(), None)
                         }
                         _ => {
                             (String::new(), None)
@@ -764,7 +773,7 @@ impl Parser {
                     }
                 }).collect::<Vec<_>>()
             }
-            other => {
+            _other => {
                 Vec::new()
             }
         };
@@ -786,7 +795,7 @@ impl Parser {
         }
     }
 
-    fn p_cond(&self, args: &[Expr]) -> Result<Vec<(Box<Expr>, Box<Expr>)>, ZylError> {
+    fn p_cond(&self, args: &[Expr]) -> Result<Vec<CondClause>, ZylError> {
         let mut clauses = Vec::new();
         for arg in args {
             match &arg.inner {
@@ -820,7 +829,7 @@ impl Parser {
     }
 
     fn p_lambda(&self, span: &Span, op: &str, args: &[Expr]) -> Result<Expr, ZylError> {
-        let params = self.parse_params_list(args.get(0));
+        let params = self.parse_params_list(args.first());
         let inner = if op == "fn" {
             ExprInner::Fn("".into(), params, Box::new(args[1].clone()))
         } else {
@@ -1158,19 +1167,16 @@ impl Parser {
                     };
                     let mut mparams = Vec::new();
                     if inner.len() >= 2 {
-                        match &inner[1].inner {
-                            ExprInner::Call(_, ref pexprs) => {
-                                for pe in pexprs {
-                                    if let ExprInner::Atom(Atom::Ident(n)) = &pe.inner {
-                                        mparams.push(Param {
-                                            span: Span::default(),
-                                            name: n.clone(),
-                                            typ: None,
-                                        });
-                                    }
+                        if let ExprInner::Call(_, ref pexprs) = &inner[1].inner {
+                            for pe in pexprs {
+                                if let ExprInner::Atom(Atom::Ident(n)) = &pe.inner {
+                                    mparams.push(Param {
+                                        span: Span::default(),
+                                        name: n.clone(),
+                                        typ: None,
+                                    });
                                 }
                             }
-                            _ => {}
                         }
                     }
                     let ret = inner
@@ -1380,7 +1386,7 @@ impl Parser {
     fn p_test_suite(
         &self,
         args: &[Expr],
-    ) -> Result<(String, Vec<TestOrSuite>, IndexMap<String, Atom>), ZylError> {
+    ) -> Result<TestSuiteItems, ZylError> {
         let name = match &args[0].inner {
             ExprInner::Atom(Atom::Str(n)) => n.clone(),
             _ => {
@@ -1422,7 +1428,7 @@ impl Parser {
     fn p_test_decl(
         &self,
         args: &[Expr],
-    ) -> Result<(String, Box<Expr>, IndexMap<String, Atom>), ZylError> {
+    ) -> Result<TestDeclItems, ZylError> {
         let name = match &args[0].inner {
             ExprInner::Atom(Atom::Str(n)) => n.clone(),
             _ => {
@@ -1434,7 +1440,7 @@ impl Parser {
         };
 
         // args[1] is the body. Remaining are keyword arguments — but they're already parsed as expressions, not raw tokens.
-        let mut keywords = IndexMap::new();
+        let keywords = IndexMap::new();
         Ok((name, Box::new(args[1].clone()), keywords))
     }
 
@@ -1538,12 +1544,9 @@ impl Parser {
     }
 
     fn p_run_tests(&self, args: &[Expr]) -> Result<IndexMap<String, Atom>, ZylError> {
-        let mut keywords = IndexMap::new();
+        let keywords = IndexMap::new();
         for arg in args {
-            match &arg.inner {
-                ExprInner::Atom(Atom::Keyword(kw)) => { /* need value — limitation of pre-parsed args */
-                }
-                _ => {}
+            if let ExprInner::Atom(Atom::Keyword(_kw)) = &arg.inner { /* need value — limitation of pre-parsed args */
             }
         }
         Ok(keywords)
@@ -1584,7 +1587,7 @@ impl Parser {
         })
     }
 
-    fn p_use(&self, span: &Span, args: &[Expr]) -> Result<Expr, ZylError> {
+    fn p_use(&self, _span: &Span, args: &[Expr]) -> Result<Expr, ZylError> {
         if args.is_empty() {
             return Err(ZylError::E_EXPECTED_EXPRESSION(
                 Span::default(),
@@ -1666,13 +1669,11 @@ impl Parser {
             }
             "len" | "vec" | "tuple" => {}
             "map" if !name.starts_with("make-") && !args.is_empty() => {}
-            "identity" | "compose" => {
-                if args.len() != 1 {
-                    return Err(ZylError::E_EXPECTED_EXPRESSION(
-                        span.clone(),
-                        format!("{} expects 1 argument", name),
-                    ));
-                }
+            "identity" | "compose" if args.len() != 1 => {
+                return Err(ZylError::E_EXPECTED_EXPRESSION(
+                    span.clone(),
+                    format!("{} expects 1 argument", name),
+                ));
             }
             _ => {}
         }

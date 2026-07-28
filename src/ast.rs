@@ -173,6 +173,7 @@ pub struct StructDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
 pub enum Generator {
     GenInt,
     GenBool,
@@ -218,33 +219,33 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         }
         ExprInner::Def(name, val) => {
             write!(f, "(def {} ", name)?;
-            write_sexpr(f, val);
+            let _ = write_sexpr(f, val);
             Ok(())
         }
         ExprInner::Defn(name, params, body) => {
             write!(f, "(defn {} (", name)?;
-            for i in 0..params.len() {
+            for (i, p) in params.iter().enumerate() {
                 if i > 0 {
                     f.write_str(" ")?;
                 }
-                write!(f, "{}", &params[i])?;
+                write!(f, "{}", p)?;
             }
             f.write_str(" )")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::Let(name, val, body) => {
             write!(f, "(let ({} ", name)?;
             write_sexpr(f, val)?;
             f.write_str(" ) ")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::LetMut(name, val, body) => {
             write!(f, "(let-mut ({} ", name)?;
             write_sexpr(f, val)?;
             f.write_str(" ) ")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::If(c, t, e) => {
@@ -253,14 +254,14 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             f.write_str(" ")?;
             write_sexpr(f, t)?;
             f.write_str(" ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::TryCatch(e, name, h) => {
             f.write_str("(try ")?;
             write_sexpr(f, e)?;
             write!(f, ") (catch {} ", name)?;
-            write_sexpr(f, h);
+            let _ = write_sexpr(f, h);
             Ok(())
         }
         ExprInner::Match(e, arms) => {
@@ -280,14 +281,14 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         }
         ExprInner::Spawn(e) => {
             f.write_str("(spawn ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::Send(a, m) => {
             f.write_str("(send ")?;
             write_sexpr(f, a)?;
             f.write_str(" ")?;
-            write_sexpr(f, m);
+            let _ = write_sexpr(f, m);
             Ok(())
         }
         ExprInner::SendClosure(a, c, caps) => {
@@ -311,12 +312,12 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         }
         ExprInner::FfiPin(e) => {
             f.write_str("(ffi-pin ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::FfiUnpin(e) => {
             f.write_str("(ffi-unpin ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::Assert(c, msg) => {
@@ -330,14 +331,14 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         ExprInner::Error(msg) => write!(f, "(error \"{}\")", escape_str(msg)),
         ExprInner::Unwrap(e) => {
             f.write_str("(unwrap ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::While(c, b) => {
             f.write_str("(while ")?;
             write_sexpr(f, c)?;
             f.write_str(" ")?;
-            write_sexpr(f, b);
+            let _ = write_sexpr(f, b);
             Ok(())
         }
         ExprInner::For(bindings, cond, body) => {
@@ -355,7 +356,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write!(f, ") ")?;
             write_sexpr(f, cond)?;
             f.write_str(" ")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::Cond(clauses) => {
@@ -384,14 +385,14 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
                 "fn"
             };
             write!(f, "({} (", tag)?;
-            for i in 0..params.len() {
+            for (i, p) in params.iter().enumerate() {
                 if i > 0 {
                     f.write_str(" ")?;
                 }
-                write!(f, "{}", &params[i])?;
+                write!(f, "{}", p)?;
             }
             f.write_str(" )")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::StructGet(s, field) => {
@@ -421,7 +422,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         }
         ExprInner::SetBang(name, val) => {
             write!(f, "(set! {} ", name)?;
-            write_sexpr(f, val);
+            let _ = write_sexpr(f, val);
             Ok(())
         }
         ExprInner::ModuleDecl(n) => write!(f, "(module {})", n),
@@ -447,7 +448,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             }
             f.write_str(")")
         }
-        ExprInner::Export(n) => write!(f, "(export {})", escape_ident(&n)),
+        ExprInner::Export(n) => write!(f, "(export {})", escape_ident(n)),
         ExprInner::Print(exprs) => {
             f.write_str("(print")?;
             for e in exprs {
@@ -459,19 +460,19 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         ExprInner::ReadLine => f.write_str("(read-line)"),
         ExprInner::Exit(e) => {
             f.write_str("(exit ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::Close(e) => {
             f.write_str("(close ")?;
-            write_sexpr(f, e);
+            let _ = write_sexpr(f, e);
             Ok(())
         }
         ExprInner::WithResource(name, init, body) => {
             write!(f, "(with-resource ({} ", name)?;
             write_sexpr(f, init)?;
             f.write_str(" ) ")?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::Deftype(name, variants, bound) => {
@@ -494,11 +495,11 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write!(f, "(trait {} ", name)?;
             for m in methods {
                 write!(f, "({} (", escape_ident(&m.name))?;
-                for i in 0..m.params.len() {
+                for (i, p) in m.params.iter().enumerate() {
                     if i > 0 {
                         f.write_str(" ")?;
                     }
-                    write!(f, "{}", &m.params[i])?;
+                    write!(f, "{}", p)?;
                 }
                 write!(f, ") {})", m.return_type)?;
             }
@@ -516,7 +517,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             write!(
                 f,
                 "(impl {} {} ",
-                escape_ident(&trait_name),
+                escape_ident(trait_name),
                 escape_ident(type_name)
             )?;
             for body in bodies {
@@ -526,11 +527,11 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
                     ref body,
                 } = &body.defn;
                 write!(f, "(defn {} (", escape_ident(name))?;
-                for i in 0..params.len() {
+                for (i, p) in params.iter().enumerate() {
                     if i > 0 {
                         f.write_str(" ")?;
                     }
-                    write!(f, "{}", &params[i])?;
+                    write!(f, "{}", p)?;
                 }
                 f.write_str(" )")?;
                 write_sexpr(f, body.as_ref())?;
@@ -557,11 +558,11 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         }
         ExprInner::AliasDecl(name, target) => {
             write!(f, "(alias {} ", escape_ident(name))?;
-            write_sexpr(f, target);
+            let _ = write_sexpr(f, target);
             Ok(())
         }
         ExprInner::Derive(type_name, traits) => {
-            write!(f, "(derive {} [", escape_ident(&type_name))?;
+            write!(f, "(derive {} [", escape_ident(type_name))?;
             for (i, t) in traits.iter().enumerate() {
                 if i > 0 {
                     f.write_str(" ")?;
@@ -651,7 +652,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
                 Generator::GenFloat => "gen-float",
             };
             write!(f, "(test-property \"{}\" {} ", name, g)?;
-            write_sexpr(f, body);
+            let _ = write_sexpr(f, body);
             Ok(())
         }
         ExprInner::Setup(exprs) | ExprInner::Teardown(exprs) => {
@@ -662,7 +663,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             };
             write!(f, "({}", tag)?;
             for e in exprs {
-                write!(f, " ");
+                let _ = write!(f, " ");
                 write_sexpr(f, e)?;
             }
             f.write_str(")")
@@ -670,7 +671,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         ExprInner::RunTests(keywords) => {
             f.write_str("(run-tests")?;
             for (k, v) in keywords {
-                write!(f, " :{} ", k);
+                let _ = write!(f, " :{} ", k);
                 write_atom(f, v)?;
             }
             f.write_str(")")
@@ -685,13 +686,13 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         ExprInner::Apply(name, args) => {
             write!(f, "({}", name)?;
             for arg in args {
-                write!(f, " ");
+                let _ = write!(f, " ");
                 write_sexpr(f, arg)?;
             }
             f.write_str(")")
         }
         ExprInner::MacroDef(name, patterns, template) => {
-            write!(f, "(defmacro {} ", escape_ident(&name))?;
+            write!(f, "(defmacro {} ", escape_ident(name))?;
             f.write_str("(")?;
             for pat in patterns {
                 write_sexpr(f, pat)?;
@@ -699,7 +700,7 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             }
             f.write_str(")")?;
             f.write_str(" ")?;
-            write_sexpr(f, template);
+            let _ = write_sexpr(f, template);
             Ok(())
         }
     }
@@ -732,7 +733,7 @@ fn write_sexpr_test_suite(
                 write!(f, "(test \"{}\"", t.name)?;
                 if !t.keywords.is_empty() {
                     for (k, v) in &t.keywords {
-                        write!(f, " :{} ", k);
+                        let _ = write!(f, " :{} ", k);
                         write_atom(f, v)?;
                     }
                 }
@@ -745,7 +746,7 @@ fn write_sexpr_test_suite(
     }
     if !suite.keywords.is_empty() {
         for (k, v) in &suite.keywords {
-            write!(f, " :{} ", k);
+            let _ = write!(f, " :{} ", k);
             write_atom(f, v)?;
         }
     }
@@ -872,7 +873,7 @@ impl PostProcessor {
 
             // fn → Fn (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "fn") && args.len() >= 2 => {
-                let params = Self::parse_params_list_inner(args.get(0));
+                let params = Self::parse_params_list_inner(args.first());
                 let body = if args.len() == 2 {
                     Box::new(self.post_process_expr(args[1].clone()))
                 } else {
@@ -886,7 +887,7 @@ impl PostProcessor {
 
             // lambda → Lambda (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "lambda") && args.len() >= 2 => {
-                let params = Self::parse_params_list_inner(args.get(0));
+                let params = Self::parse_params_list_inner(args.first());
                 let body = if args.len() == 2 {
                     Box::new(self.post_process_expr(args[1].clone()))
                 } else {
@@ -1751,7 +1752,7 @@ impl PostProcessor {
                 expr.inner = ExprInner::MakeVariant(String::new(), n.clone(), Vec::new());
             }
 
-            ExprInner::Apply(name, ref args) if is_uppercase_ident(&name) && !is_known_builtin_or_apply(&name) => {
+            ExprInner::Apply(name, ref args) if is_uppercase_ident(name) && !is_known_builtin_or_apply(name) => {
                 let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
                 expr.inner = ExprInner::MakeVariant(String::new(), name.clone(), new_args);
             }

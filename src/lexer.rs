@@ -19,6 +19,7 @@ pub enum TokenKind {
     LBracket, // [
     RBracket, // ]
 
+    #[allow(clippy::upper_case_acronyms)]
     EOF,
 }
 
