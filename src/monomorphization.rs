@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::ast::*;
 use crate::error::{Span, ZylError};
@@ -43,12 +43,14 @@ pub struct MonoContext {
     trait_ctx: TraitContext,
 
     /// Cache of monomorphized functions by canonical name.
+    #[allow(dead_code)]
     mono_cache: HashMap<String, MonoInstance>,
 
     /// All known nominal types (for ADT monomorphization).
     known_types: IndexMap<String, Type>,
 
     /// Struct definitions for field-level monomorphization.
+    #[allow(dead_code)]
     struct_defs: IndexMap<String, Vec<(String, Option<Type>)>>,
 
     /// Span used for generated expressions.
@@ -57,7 +59,7 @@ pub struct MonoContext {
 
 impl MonoContext {
     pub fn new(inferer: &TypeInferer) -> Self {
-        let mut ctx = Self {
+        let ctx = Self {
             generic_functions: IndexMap::new(),
             known_functions: inferer.get_known_functions().clone(),
             function_returns: inferer.get_function_returns().clone(),
@@ -73,6 +75,7 @@ impl MonoContext {
     }
 
     /// Register a generic function definition.
+    #[allow(dead_code)]
     pub fn register_generic(&mut self, name: String, params: Vec<GenericParam>) {
         if !params.is_empty() {
             self.generic_functions.insert(name, params);
@@ -99,7 +102,7 @@ impl MonoContext {
                     };
 
                     // Extract params from the params list (Call form: first element is param name, rest are more params).
-                    let mut all_params: Vec<Expr> = match &args[1].inner {
+                    let all_params: Vec<Expr> = match &args[1].inner {
                         ExprInner::Call(ref op_expr, ref pexprs) => {
                             let mut ps: Vec<Expr> = vec![*op_expr.clone()]; // First param = operator itself
                             for p in pexprs {
@@ -112,7 +115,7 @@ impl MonoContext {
                     };
 
                     let params: Vec<Param> =
-                        all_params.iter().map(|pe| parse_single_param(pe)).collect();
+                        all_params.iter().map(parse_single_param).collect();
                     let generics = Self::extract_generics(&params);
                     if !generics.is_empty() {
                         self.generic_functions.insert(n, generics);
@@ -127,7 +130,7 @@ impl MonoContext {
                     };
 
                     // Extract params from the params list.
-                    let mut all_params: Vec<Expr> = match &args[1].inner {
+                    let all_params: Vec<Expr> = match &args[1].inner {
                         ExprInner::Call(ref op_expr, ref pexprs) => {
                             let mut ps: Vec<Expr> = vec![*op_expr.clone()]; // First param = operator itself
                             for p in pexprs {
@@ -140,7 +143,7 @@ impl MonoContext {
                     };
 
                     let params: Vec<Param> =
-                        all_params.iter().map(|pe| parse_single_param(pe)).collect();
+                        all_params.iter().map(parse_single_param).collect();
                     let generics = Self::extract_generics(&params);
                     if !generics.is_empty() {
                         self.generic_functions.insert(n, generics);
@@ -291,7 +294,7 @@ impl MonoContext {
                     if let Some(ref name) = n {
                         if self.generic_functions.contains_key(name) {
                             let generics = &self.generic_functions[name];
-                            let mut all_params: Vec<Expr> = match &args[1].inner {
+                            let all_params: Vec<Expr> = match &args[1].inner {
                                 ExprInner::Call(ref op_expr, ref pexprs) => {
                                     let mut ps: Vec<Expr> = vec![*op_expr.clone()];
                                     for p in pexprs {
@@ -303,7 +306,7 @@ impl MonoContext {
                                 _ => Vec::new(),
                             };
                             let params: Vec<Param> =
-                                all_params.iter().map(|pe| parse_single_param(pe)).collect();
+                                all_params.iter().map(parse_single_param).collect();
 
                             for mono in
                                 self.generate_instantiations(name, generics, params, &args[2])?
@@ -343,7 +346,7 @@ impl MonoContext {
                     if let Some(ref name) = n {
                         if self.generic_functions.contains_key(name) {
                             let generics = &self.generic_functions[name];
-                            let mut all_params: Vec<Expr> = match &args[1].inner {
+                            let all_params: Vec<Expr> = match &args[1].inner {
                                 ExprInner::Call(ref op_expr, ref pexprs) => {
                                     let mut ps: Vec<Expr> = vec![*op_expr.clone()];
                                     for p in pexprs {
@@ -355,7 +358,7 @@ impl MonoContext {
                                 _ => Vec::new(),
                             };
                             let params: Vec<Param> =
-                                all_params.iter().map(|pe| parse_single_param(pe)).collect();
+                                all_params.iter().map(parse_single_param).collect();
 
                             for mono in
                                 self.generate_instantiations(name, generics, params, &args[2])?
@@ -393,18 +396,18 @@ impl MonoContext {
                         && self
                             .known_types
                             .get(name)
-                            .map_or(false, |t| matches!(t, Type::Var(_)))
+                            .is_some_and(|t| matches!(t, Type::Var(_)))
                     {
                         let instantiations = self.collect_adt_instantiations(name, variants);
                         for (concrete_name, mono_variants) in instantiations {
                             result.push(Expr {
-                                span: self.span.clone(),
-                                inner: ExprInner::Deftype(
-                                    concrete_name,
-                                    mono_variants,
-                                    bound.as_ref().map(|b| b.clone()),
-                                ),
-                            });
+                                    span: self.span.clone(),
+                                    inner: ExprInner::Deftype(
+                                        concrete_name,
+                                        mono_variants,
+                                        bound.clone(),
+                                    ),
+                                });
                         }
 
                         if !result.is_empty()
@@ -429,7 +432,7 @@ impl MonoContext {
                         if self
                             .known_types
                             .get(name)
-                            .map_or(false, |t| matches!(t, Type::Var(_)))
+                            .is_some_and(|t| matches!(t, Type::Var(_)))
                             && args.len() > 1
                         {
                             result.push(expr.clone());
@@ -476,12 +479,6 @@ impl MonoContext {
                         )
                     {
                         result.push(self.substitute_in_expr(expr));
-                    } else if self.known_functions.contains_key(fname)
-                        || self.function_returns.contains_key(fname)
-                    {
-                        result.push(self.substitute_in_expr(expr));
-                    } else {
-                        result.push(self.substitute_in_expr(expr));
                     }
                 }
 
@@ -511,28 +508,6 @@ impl MonoContext {
                                     result.push(expr.clone());
                                 }
                             }
-                        } else if is_builtin_op(name)
-                            || matches!(
-                                name.as_str(),
-                                "+" | "-"
-                                    | "*"
-                                    | "/"
-                                    | "=="
-                                    | "!="
-                                    | "<"
-                                    | ">"
-                                    | "<="
-                                    | ">="
-                                    | "not"
-                                    | "and"
-                                    | "or"
-                            )
-                        {
-                            result.push(self.substitute_in_expr(expr));
-                        } else if self.known_functions.contains_key(name)
-                            || self.function_returns.contains_key(name)
-                        {
-                            result.push(self.substitute_in_expr(expr));
                         } else {
                             result.push(self.substitute_in_expr(expr));
                         }
@@ -631,7 +606,7 @@ impl MonoContext {
         let mut seen = std::collections::HashSet::new();
         let unique_names: Vec<String> = type_names
             .iter()
-            .filter(|n| seen.insert(n.clone()))
+            .filter(|n| seen.insert(n.as_str()))
             .cloned()
             .collect();
 
@@ -657,7 +632,7 @@ impl MonoContext {
         // Collect all unique type instantiations from call sites.
         let mut instantiation_sets: Vec<IndexMap<String, Type>> = Vec::new();
 
-        for (i, param_info) in known.iter().enumerate() {
+            for param_info in known.iter() {
             let (param_name, expected_type) = param_info;
 
             if !is_uppercase_ident(param_name) {
@@ -672,7 +647,7 @@ impl MonoContext {
                             continue;
                         }
 
-                        let (_, expected_arg_type) = &known[j];
+                        let (_, _expected_arg_type) = &known[j];
                         // We need to find actual argument types — but we don't have call site info here.
                         // Instead, derive from the known_types and function_returns.
                     }
@@ -684,8 +659,8 @@ impl MonoContext {
                     for ty in satisfying_types {
                         let mut inst: IndexMap<String, Type> = instantiation_sets
                             .iter()
+                            .find(|&m| m.contains_key(param_name))
                             .cloned()
-                            .find(|m| m.contains_key(param_name))
                             .unwrap_or_default();
 
                         if !inst.contains_key(param_name) || *inst.get(param_name).unwrap() != ty {
@@ -744,7 +719,7 @@ impl MonoContext {
             let unique_names: std::collections::HashSet<String> = sorted_types
                 .iter()
                 .map(|(_, ty)| format!("{}", ty))
-                .filter(|n| {
+                .filter(|_n| {
                     // Deduplicate by type name (not param name).
                     true
                 })
@@ -819,11 +794,9 @@ impl MonoContext {
                     result.push(Type::Prim(PrimType::Bool));
                 }
             }
-            "Clone" | "Hash" => {
-                if !result.iter().any(|t| matches!(t, Type::Prim(_))) {
-                    for prim in [PrimType::Int, PrimType::Float, PrimType::Bool] {
-                        result.push(Type::Prim(prim));
-                    }
+            "Clone" | "Hash" if !result.iter().any(|t| matches!(t, Type::Prim(_))) => {
+                for prim in [PrimType::Int, PrimType::Float, PrimType::Bool] {
+                    result.push(Type::Prim(prim));
                 }
             }
             _ => {}
@@ -839,14 +812,10 @@ impl MonoContext {
     /// Check if a concrete type satisfies a trait bound.
     fn check_trait_bound(&self, ty: &Type, trait_name: &str) -> Result<bool, ZylError> {
         // Primitives satisfy Eq, Ord, Debug by default (per spec).
-        match ty {
-            Type::Prim(_) => {
-                if matches!(trait_name, "Eq" | "Ord" | "Debug") {
-                    return Ok(true);
-                }
+        if let Type::Prim(_) = ty {
+            if matches!(trait_name, "Eq" | "Ord" | "Debug") {
+                return Ok(true);
             }
-
-            _ => {}
         }
 
         // Check registered impls.
@@ -905,7 +874,7 @@ impl MonoContext {
                         .unwrap_or(Type::Var(0))
                 } else if let Some(params) = self.known_functions.get(fname).cloned() {
                     // Try to match against known function params.
-                    for (i, (_, expected_ty)) in params.iter().enumerate() {
+                    for (i, (_, _expected_ty)) in params.iter().enumerate() {
                         if i < args.len() {
                             return self.infer_arg_type(&args[i]);
                         }
@@ -1058,7 +1027,7 @@ impl MonoContext {
                     // Lambda params shadow outer variables.
                     child_renames.remove(&p.name);
                 }
-                let new_params: Vec<Param> = params.iter().map(|p| p.clone()).collect();
+                let new_params: Vec<Param> = params.to_vec();
                 ExprInner::Lambda(
                     name.clone(),
                     new_params,
@@ -1072,7 +1041,7 @@ impl MonoContext {
                 for p in params {
                     child_renames.remove(&p.name);
                 }
-                let new_params: Vec<Param> = params.iter().map(|p| p.clone()).collect();
+                let new_params: Vec<Param> = params.to_vec();
                 ExprInner::Fn(
                     name.clone(),
                     new_params,
@@ -1095,11 +1064,11 @@ impl MonoContext {
                     .iter()
                     .map(|(name, val)| {
                         child_renames.insert(name.clone(), name.clone());
-                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr_with_var_map(&**v, type_map, var_renames)));
+                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr_with_var_map(v, type_map, var_renames)));
                         (name.clone(), new_val)
                     })
                     .collect();
-                ExprInner::For(new_bindings, Box::new(self.subst_expr_with_var_map(&**cond, type_map, var_renames)), Box::new(self.subst_expr_with_var_map(&**body, type_map, &child_renames)))
+                ExprInner::For(new_bindings, Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)), Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)))
             },
 
             ExprInner::Cond(clauses) => {
@@ -1182,7 +1151,7 @@ impl MonoContext {
                     inner: ExprInner::Deftype(
                         name.clone(),
                         new_variants,
-                        bound.as_ref().map(|b| b.clone()),
+                        bound.clone(),
                     ),
                 }
             }
@@ -1287,7 +1256,7 @@ impl MonoContext {
 
 fn is_uppercase_ident<T: AsRef<str>>(s: T) -> bool {
     let s = s.as_ref();
-    s.len() >= 1
+    !s.is_empty()
         && s.chars()
             .next()
             .map(|c| c.is_ascii_uppercase())

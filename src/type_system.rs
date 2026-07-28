@@ -29,6 +29,7 @@ pub enum Type {
     Map(Box<Type>, Box<Type>),
 
     /// Result type: Result<T, E>
+    #[allow(clippy::enum_variant_names)]
     ResultType(Box<Type>, Box<Type>),
 }
 
@@ -54,6 +55,7 @@ impl fmt::Display for PrimType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
 pub enum CapKind {
     TCap,
     TMut,
@@ -109,7 +111,7 @@ pub struct Subst(pub IndexMap<usize, Type>);
 
 impl Subst {
     pub fn new() -> Self {
-        let mut m = IndexMap::new();
+        let m = IndexMap::new();
         // Keys are inserted in numeric order by design, so no sorting needed.
         Self(m)
     }
@@ -153,27 +155,28 @@ impl Subst {
     fn contains_var(&self, t: &Type, n: usize) -> bool {
         match self.apply(t) {
             Type::Var(m) => m == n,
-            Type::Cap(_, inner) => self.contains_var(&*inner, n),
+            Type::Cap(_, inner) => self.contains_var(&inner, n),
             Type::Fun(args, ret) => {
-                args.iter().any(|a| self.contains_var(a, n)) || self.contains_var(&*ret, n)
+                args.iter().any(|a| self.contains_var(a, n)) || self.contains_var(&ret, n)
             }
-            Type::Collection(_, inner) => self.contains_var(&*inner, n),
-            Type::Map(k, v) => self.contains_var(&*k, n) || self.contains_var(&*v, n),
-            Type::ResultType(t, e) => self.contains_var(&*t, n) || self.contains_var(&*e, n),
+            Type::Collection(_, inner) => self.contains_var(&inner, n),
+            Type::Map(k, v) => self.contains_var(&k, n) || self.contains_var(&v, n),
+            Type::ResultType(t, e) => self.contains_var(&t, n) || self.contains_var(&e, n),
             _ => false,
         }
     }
 
     /// Compose two substitutions: apply `other` after `self`.
+    #[allow(dead_code)]
     pub fn compose(&self, other: &Self) -> Self {
         let mut new = Self::new();
         for (k, v) in &self.0 {
-            let t = other.apply(&v);
+            let t = other.apply(v);
             new.0.insert(*k, t);
         }
         for (k, v) in &other.0 {
             if !new.0.contains_key(k) {
-                let t = other.apply(&v);
+                let t = other.apply(v);
                 new.0.insert(*k, t);
             }
         }
@@ -188,14 +191,17 @@ impl Subst {
 
 /// Fresh type variable generator (counter-based).
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct TypeVarGen(usize);
 
 impl TypeVarGen {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self(0)
     }
 
     /// Generate a fresh type variable index.
+    #[allow(dead_code)]
     pub fn fresh(&mut self) -> usize {
         let n = self.0;
         self.0 += 1;
@@ -221,6 +227,7 @@ impl TypeEnv {
     }
 
     /// Create a type environment pre-loaded with known types.
+    #[allow(dead_code)]
     pub fn from_types(types: &IndexMap<String, Type>) -> Self {
         let mut env = Self::new();
         for (name, t) in types {
@@ -283,11 +290,13 @@ impl TypeEnv {
     }
 
     /// Check if a variable exists in the environment.
+    #[allow(dead_code)]
     pub fn contains(&self, name: &str) -> bool {
         self.current.contains_key(name) || self.parents.iter().any(|p| p.contains_key(name))
     }
 
     /// Get all bound variables (current scope only).
+    #[allow(dead_code)]
     pub fn bindings(&self) -> Vec<String> {
         let mut names = self.current.keys().cloned().collect::<Vec<_>>();
         for parent in &self.parents {
@@ -304,6 +313,7 @@ impl TypeEnv {
     }
 
     /// Clone current scope into a new environment for trait resolution.
+    #[allow(dead_code)]
     pub fn snapshot(&self) -> Self {
         Self {
             current: self.current.clone(),
@@ -330,6 +340,7 @@ pub struct ImplInfo {
     /// The type implementing the trait.
     pub impl_type: Type,
     /// Method implementations (name -> function type).
+    #[allow(dead_code)]
     pub methods: IndexMap<String, Type>, // method name -> TFun signature
 }
 
@@ -383,6 +394,7 @@ impl TraitContext {
     }
 
     /// Look up whether a type satisfies a trait bound. Resolves transitive bounds recursively.
+    #[allow(dead_code)]
     pub fn resolve_trait(&self, ty: &Type, trait_name: &str) -> Result<(), ZylError> {
         if self
             .impls
@@ -392,9 +404,9 @@ impl TraitContext {
             return Ok(());
         }
 
-        if let Type::Nominal(name) = ty {
+        if let Type::Nominal(_name) = ty {
             if let Some(trait_info) = self.traits.get(trait_name) {
-                drop(trait_info); // just checking existence is enough for Phase 3 MVP
+                let _ = trait_info; // just checking existence is enough for Phase 3 MVP
             }
         }
 
@@ -405,6 +417,7 @@ impl TraitContext {
     }
 
     /// Resolve all transitive trait bounds: if T : A and A requires B, then check T : B.
+    #[allow(dead_code)]
     pub fn resolve_transitive(&self, ty: &Type) -> Result<Vec<String>, ZylError> {
         let mut satisfied = Vec::new();
         for impl_info in &self.impls {
@@ -416,6 +429,7 @@ impl TraitContext {
     }
 
     /// Check if a type can derive a given trait (all fields must support it).
+    #[allow(dead_code)]
     pub fn check_derivable(&self, ty: &Type, trait_name: &str) -> bool {
         match ty {
             Type::Prim(_) => true,
@@ -431,6 +445,7 @@ impl TraitContext {
     }
 
     /// Get all traits implemented by a type.
+    #[allow(dead_code)]
     pub fn get_implemented_traits(&self, ty: &Type) -> Vec<String> {
         let mut result = Vec::new();
         for impl_info in &self.impls {
@@ -444,6 +459,7 @@ impl TraitContext {
     }
 
     /// Get the function type for a trait method.
+    #[allow(dead_code)]
     pub fn get_trait_method_type(&self, trait_name: &str, method_name: &str) -> Option<Type> {
         self.traits
             .get(trait_name)
@@ -452,6 +468,7 @@ impl TraitContext {
     }
 
     /// Get all methods of a trait with their parameter types and return type.
+    #[allow(dead_code)]
     pub fn get_trait_methods(
         &self,
         trait_name: &str,
@@ -460,6 +477,7 @@ impl TraitContext {
     }
 
     /// Get the return type of a specific method in a trait.
+    #[allow(dead_code)]
     pub fn get_method_return_type(&self, trait_name: &str, method_name: &str) -> Option<&Type> {
         self.traits
             .get(trait_name)
@@ -467,6 +485,7 @@ impl TraitContext {
     }
 
     /// Get all methods of an impl block with their types.
+    #[allow(dead_code)]
     pub fn get_impl_methods(
         &self,
         trait_name: &str,
@@ -481,6 +500,7 @@ impl TraitContext {
     }
 
     /// Check if a type implements all traits in a list.
+    #[allow(dead_code)]
     pub fn resolve_all_traits(&self, ty: &Type, trait_names: &[String]) -> Result<(), ZylError> {
         for name in trait_names {
             self.resolve_trait(ty, name)?;
@@ -489,6 +509,7 @@ impl TraitContext {
     }
 
     /// Get all traits that a type must satisfy (including transitive).
+    #[allow(dead_code)]
     pub fn get_all_required_traits(&self, ty: &Type) -> Vec<String> {
         let mut result = Vec::new();
         for impl_info in &self.impls {
@@ -502,6 +523,7 @@ impl TraitContext {
     }
 
     /// Check if a type is Send-capable (TCap or TAtomic, not TMut).
+    #[allow(dead_code)]
     pub fn is_send(&self, ty: &Type) -> bool {
         match ty {
             Type::Cap(CapKind::TCap, _) | Type::Cap(CapKind::TAtomic, _) => true,
@@ -511,27 +533,32 @@ impl TraitContext {
     }
 
     /// Check if a type is Copy (can be duplicated without moving).
+    #[allow(dead_code)]
     pub fn is_copy(&self, ty: &Type) -> bool {
         matches!(ty, Type::Prim(_))
     }
 
     /// Check if a type is an integer primitive.
+    #[allow(dead_code)]
     pub fn is_integer(&self, ty: &Type) -> bool {
         matches!(ty, Type::Prim(PrimType::Int))
     }
 
     /// Check if a type is a floating-point primitive.
+    #[allow(dead_code)]
     pub fn is_float(&self, ty: &Type) -> bool {
         matches!(ty, Type::Prim(PrimType::Float))
     }
 
     /// Check if two types are structurally equal (after applying substitution).
+    #[allow(dead_code)]
     pub fn structural_eq(&self, a: &Type, b: &Type) -> bool {
         // For Phase 3 MVP, simple equality check. Full unification handles this during inference.
         a == b
     }
 
     /// Check that TMut values are not shared across boundaries (capability leak check).
+    #[allow(dead_code)]
     pub fn check_capability_safety(&self, ty: &Type) -> Result<(), ZylError> {
         match ty {
             Type::Cap(CapKind::TMut, _) => Ok(()), // Phase 3 checks that TMut is used correctly within scope.
@@ -540,21 +567,25 @@ impl TraitContext {
     }
 
     /// Check if a type can be compared with Eq trait.
+    #[allow(dead_code)]
     pub fn has_eq(&self, ty: &Type) -> bool {
         self.check_derivable(ty, "Eq") || matches!(ty, Type::Prim(_))
     }
 
     /// Check if a type can be ordered with Ord trait.
+    #[allow(dead_code)]
     pub fn has_ord(&self, ty: &Type) -> bool {
         self.check_derivable(ty, "Ord") || matches!(ty, Type::Prim(PrimType::Int | PrimType::Float))
     }
 
     /// Check if a type can be hashed with Hash trait.
+    #[allow(dead_code)]
     pub fn has_hash(&self, ty: &Type) -> bool {
         self.check_derivable(ty, "Hash") || matches!(ty, Type::Prim(_))
     }
 
     /// Get the display name for debugging (not used in production output).
+    #[allow(dead_code)]
     pub fn type_name_for_debug(&self, ty: &Type) -> String {
         format!("{}", ty)
     }
@@ -568,11 +599,13 @@ impl Default for TraitContext {
 
 /// Type checking result. Contains the inferred type and any warnings.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TypeResult {
     pub inferred_type: Type,
 }
 
 impl TypeResult {
+    #[allow(dead_code)]
     pub fn new(ty: Type) -> Self {
         Self { inferred_type: ty }
     }

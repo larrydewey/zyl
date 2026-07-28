@@ -1,10 +1,7 @@
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-
 use crate::ast::*;
 use crate::error::ZylError;
 use crate::icnf::*;
-use crate::region_inference::Region;
 use crate::type_system::{PrimType, Type};
 
 // ─── Optimization Passes (spec §22 — Phase 8: Safe only) ──────────────────
@@ -43,7 +40,7 @@ impl Optimizer {
         // Pass 2: Dead code elimination — remove unused SSA assignments and empty Begin blocks.
         self.dead_code_elimination(&mut program.statements);
 
-        *self
+        let _ = *self
             .stats
             .entry("optimization_complete".to_string())
             .or_insert(1);
@@ -58,12 +55,12 @@ impl Optimizer {
 
     // ─── Pass 1: Constant Folding ──────────────────────────────────────
 
-    fn fold_constants_in_stmts(&mut self, stmts: &mut Vec<ICNFNode>) {
+    fn fold_constants_in_stmts(&mut self, stmts: &mut [ICNFNode]) {
         let mut count = 0usize;
 
         // Limit iterations to prevent infinite loops.
         for _iteration in 0..100 {
-            let before_len = stmts.len();
+            let _before_len = stmts.len();
             // Collect BinOp/UnOp node indices.
             let binop_indices: Vec<usize> = stmts
                 .iter()

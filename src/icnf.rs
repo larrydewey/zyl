@@ -395,6 +395,7 @@ pub struct ICNFProgram {
 
 // ─── ICNF Converter ──────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub struct IcnfConverter {
     ssa_id_counter: std::cell::Cell<usize>,
     functions: Vec<ICNFFuncSig>,
@@ -428,6 +429,7 @@ pub struct IcnfConverter {
     let_binding_name: Option<String>,
 }
 
+#[allow(dead_code)]
 impl IcnfConverter {
     pub fn new() -> Self {
         Self {
@@ -545,7 +547,7 @@ impl IcnfConverter {
                     .map(|offset| (struct_name.clone(), offset))
             }
             // Nested struct-get: look up parent struct type from struct_bindings.
-            ExprInner::StructGet(parent, parent_field) => {
+            ExprInner::StructGet(parent, _parent_field) => {
                 let parent_id = self.resolve_struct_get_id(parent)?;
                 let struct_name = self.struct_bindings.get(&parent_id)?.clone();
                 self.struct_layouts
@@ -580,7 +582,7 @@ impl IcnfConverter {
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
                     // Save current globals, use a temp buffer for function body.
-                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body)?;
@@ -632,7 +634,7 @@ impl IcnfConverter {
                         }
                     };
                     // Save globals, use temp buffer for function body.
-                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body_expr)?;
@@ -682,7 +684,7 @@ impl IcnfConverter {
                         }
                     };
                     // Save globals, use temp buffer for function body.
-                    let saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body_expr)?;
@@ -736,7 +738,7 @@ impl IcnfConverter {
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
-                    let body_params = params.clone();
+                    let _body_params = params.clone();
                     for param in params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
@@ -796,9 +798,8 @@ impl IcnfConverter {
                     // Store ADT definition for MakeVariant + Match handling.
                     let variant_info: Vec<(String, Vec<String>)> = variants
                         .iter()
-                        .enumerate()
-                        .map(|(i, v)| {
-                            let field_types: Vec<String> = v.fields.iter().cloned().collect();
+                        .map(|v| {
+                            let field_types: Vec<String> = v.fields.to_vec();
                             (v.name.clone(), field_types)
                         })
                         .collect();
@@ -823,8 +824,7 @@ impl IcnfConverter {
                     };
                     let variant_info: Vec<(String, Vec<String>)> = args[1..]
                         .iter()
-                        .enumerate()
-                        .filter_map(|(_, arg)| {
+                        .filter_map(|arg| {
                             match &arg.inner {
                                 ExprInner::MakeVariant(_, vname, fargs) => {
                                     let fields: Vec<String> = fargs.iter().filter_map(|fa| {
@@ -854,8 +854,7 @@ impl IcnfConverter {
                     };
                     let variant_info: Vec<(String, Vec<String>)> = args[1..]
                         .iter()
-                        .enumerate()
-                        .filter_map(|(_, arg)| {
+                        .filter_map(|arg| {
                             match &arg.inner {
                                 ExprInner::MakeVariant(_, vname, fargs) => {
                                     let fields: Vec<String> = fargs.iter().filter_map(|fa| {
@@ -909,7 +908,7 @@ impl IcnfConverter {
     /// Convert a single AST expression into one or more ICNF nodes.
     /// When push_to_globals is true, pushes all nodes to global_stmts.
     fn convert_expr_collect(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
-        let mut stmts = self.convert_expr_to_stmts(expr)?;
+        let stmts = self.convert_expr_to_stmts(expr)?;
         // Push collected nodes to global_stmts when in pushing mode.
         if self.push_to_globals && !stmts.is_empty() {
             for stmt in &stmts {
@@ -947,7 +946,7 @@ impl IcnfConverter {
                 // Load nodes get a fresh SSA ID (distinct from the variable's binding),
                 // so codegen can distinguish between the definition and its use.
                 // The operand is the variable name (for local_vars lookup in codegen).
-                if let Some(&ssa_id) = self.current_scope.get(name) {
+                if let Some(&_ssa_id) = self.current_scope.get(name) {
                     let load_id = self.next_ssa_id();
                     // Always add Load to global_stmts so codegen can find it.
                     // The Ident handler always pushes to self.global_stmts regardless
@@ -1019,7 +1018,7 @@ impl IcnfConverter {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => return Ok(Vec::new()),
                 };
-                if let Some(&ssa_id) = self.current_scope.get(&name) {
+                if let Some(&_ssa_id) = self.current_scope.get(&name) {
                     // Load gets a fresh SSA ID (distinct from scope binding).
                     let load_id = self.next_ssa_id();
                     Ok(vec![ICNFNode {
@@ -1110,7 +1109,7 @@ impl IcnfConverter {
                 // Defer all global pushes to ensure correct ordering:
                 // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                let mut saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                let mut saved_globals = std::mem::take(&mut self.global_stmts);
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = false;
                 // 1. Restore outer scope before converting value (value may reference
@@ -1179,7 +1178,7 @@ impl IcnfConverter {
                 // Defer all global pushes to ensure correct ordering:
                 // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                let mut saved_globals = std::mem::replace(&mut self.global_stmts, Vec::new());
+                let mut saved_globals = std::mem::take(&mut self.global_stmts);
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = false;
                 // Restore outer scope before converting value.
@@ -1293,7 +1292,7 @@ impl IcnfConverter {
                     }
                 }
                 let cond_nodes = self.convert_expr_to_stmts(cond_expr)?;
-                let mut body_stmts = self.convert_expr_to_stmts(body)?;
+                let body_stmts = self.convert_expr_to_stmts(body)?;
                 // Create a result variable to hold the For loop's result.
                 let result_var = format!("___for_result_{}", self.ssa_id_counter.get());
                 let for_node_id = self.next_ssa_id();
@@ -1316,12 +1315,12 @@ impl IcnfConverter {
                 if clauses.is_empty() {
                     return Ok(vec![self.emit(ICNFInner::Unit)]);
                 }
-                self.convert_cond_recursive(&clauses, 0)
+                self.convert_cond_recursive(clauses, 0)
             }
 
             // Try-catch.
             ExprInner::TryCatch(try_expr, catch_var, catch_body) => {
-                let mut try_stmts = self.convert_expr_to_stmts(try_expr)?;
+                let try_stmts = self.convert_expr_to_stmts(try_expr)?;
                 if self.push_to_globals {
                     for s in &try_stmts {
                         if !self.global_stmts.iter().any(|n| n.id == s.id) {
@@ -1332,7 +1331,7 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let err_id = self.next_ssa_id();
                 self.current_scope.insert(catch_var.clone(), err_id);
-                let mut catch_stmts = self.convert_expr_to_stmts(catch_body)?;
+                let catch_stmts = self.convert_expr_to_stmts(catch_body)?;
                 if self.push_to_globals {
                     for s in &catch_stmts {
                         if !self.global_stmts.iter().any(|n| n.id == s.id) {
@@ -1410,7 +1409,7 @@ impl IcnfConverter {
                     // Capture the original binding name from the current let conversion.
                     // This is tracked by the Let handler setting let_binding_name.
                     let orig_name = self.let_binding_name.clone();
-                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_else(|| "".to_string())));
+                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default()));
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     for param in params {
                         let sid = self.next_ssa_id();
@@ -1484,7 +1483,7 @@ impl IcnfConverter {
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "fn") =>
             {
                 // (fn params body) → Closure node with captures.
-                let params = parse_params_from_expr(args.get(0).unwrap_or(&Expr {
+                let params = parse_params_from_expr(args.first().unwrap_or(&Expr {
                     span: crate::error::Span::default(),
                     inner: ExprInner::Atom(crate::ast::Atom::Ident("Unit".into())),
                 }));
@@ -1638,10 +1637,9 @@ impl IcnfConverter {
                     let stmts = self.convert_expr_to_stmts(f)?;
                     for s in stmts {
                         all_nodes.push(s.clone());
-                        if self.push_to_globals {
-                            if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                                self.global_stmts.push(s);
-                            }
+                        if self.push_to_globals
+                            && !self.global_stmts.iter().any(|n| n.id == s.id) {
+                            self.global_stmts.push(s);
                         }
                     }
                     if !all_nodes.is_empty() {
@@ -1718,8 +1716,7 @@ impl IcnfConverter {
                     }).unwrap_or_else(|| (String::new(), 0));
                     (resolved_type, idx)
                 };
-                let discriminant = discriminant;
-
+                
                 // Convert all field expressions and collect their SSA IDs.
                 let mut all_nodes: Vec<ICNFNode> = Vec::new();
                 let mut field_ids = Vec::with_capacity(args.len());
@@ -1727,10 +1724,9 @@ impl IcnfConverter {
                     let stmts = self.convert_expr_to_stmts(arg)?;
                     for s in &stmts {
                         all_nodes.push(s.clone());
-                        if self.push_to_globals {
-                            if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                                self.global_stmts.push(s.clone());
-                            }
+                        if self.push_to_globals
+                            && !self.global_stmts.iter().any(|n| n.id == s.id) {
+                            self.global_stmts.push(s.clone());
                         }
                     }
                     if !stmts.is_empty() {
@@ -1742,7 +1738,7 @@ impl IcnfConverter {
                 }
 
                 // Allocate memory for the tagged union: discriminant + field pointers.
-                let total_size = (field_ids.len() + 1) * 8; // discriminant + fields.
+                let _total_size = (field_ids.len() + 1) * 8; // discriminant + fields.
                 let ssa_id = self.next_ssa_id();
                 let mut result = all_nodes;
                 result.push(ICNFNode {
@@ -1764,7 +1760,7 @@ impl IcnfConverter {
             // Match on ADT: discriminant compare + branch selection.
             ExprInner::Match(scrutinee, arms) => {
                 // Resolve the type name from scrutinee expression (or use first arm's type).
-                let type_name = self.resolve_match_type(scrutinee, &arms);
+                let type_name = self.resolve_match_type(scrutinee, arms);
 
                 let scrut_id = self.convert_expr(scrutinee)?;
 
@@ -1901,7 +1897,7 @@ impl IcnfConverter {
             }
 
             // Send closure to actor.
-            ExprInner::SendClosure(actor, closure_expr, caps) => {
+            ExprInner::SendClosure(actor, _closure_expr, caps) => {
                 let actor_id = self.convert_expr(actor)?;
                 // Generate unique closure ID for tracking.
                 let closure_key = self.next_ssa_id();
@@ -2006,7 +2002,7 @@ impl IcnfConverter {
             ExprInner::SetBang(target, val) => {
                 let val_nodes = self.convert_expr_collect(val)?;
                 let val_id = val_nodes.last().map(|n| n.id).unwrap_or(0);
-                if let Some(&existing_ssa) = self.current_scope.get(target) {
+                if let Some(&_existing_ssa) = self.current_scope.get(target) {
                     let setbang_id = self.next_ssa_id();
                     let new_ssa = self.next_ssa_id();
                     // Update scope to point to new SSA.
@@ -2172,7 +2168,7 @@ impl IcnfConverter {
         let cond_id = self.convert_expr(pred)?;
 
         // Convert body and push to globals so intermediate nodes are visible for operand lookup.
-        let mut body_stmts = self.convert_expr_to_stmts(body)?;
+        let body_stmts = self.convert_expr_to_stmts(body)?;
         if self.push_to_globals {
             for s in &body_stmts {
                 if !self.global_stmts.iter().any(|n| n.id == s.id) {
@@ -2181,14 +2177,14 @@ impl IcnfConverter {
             }
         }
 
-        let then_id = if !body_stmts.is_empty() {
+        let _then_id = if !body_stmts.is_empty() {
             body_stmts.last().unwrap().id
         } else {
             0
         };
 
         // Else branch: next clause or Unit.
-        let else_id = if idx + 1 < clauses.len() {
+        let _else_id = if idx + 1 < clauses.len() {
             let rest = self.convert_cond_recursive(clauses, idx + 1)?;
             if !rest.is_empty() {
                 rest.last().unwrap().id
@@ -2292,11 +2288,11 @@ impl IcnfConverter {
                     return Ok(vec![self.emit(ICNFInner::Const(Atom::Bool(false)))]);
                 }
                 let mut result = Vec::new();
-                for arg in args.iter() {
-                    let arg_id = self.convert_expr(arg)?;
-                    let ssa_id = self.next_ssa_id();
-                    result.push(ICNFNode {
-                        id: arg_id,
+                 for arg in args.iter() {
+                     let arg_id = self.convert_expr(arg)?;
+                     let _ssa_id = self.next_ssa_id();
+                     result.push(ICNFNode {
+                         id: arg_id,
                         region: Region::Stack,
                         typ: None,
                         is_branch_body: false,
@@ -2650,7 +2646,6 @@ impl IcnfConverter {
             ICNFInner::MakeStruct(_, _) => Region::Heap, // structs are heap-allocated.
             ICNFInner::MakeVariant { .. } => Region::Heap, // tagged unions are heap-allocated.
             ICNFInner::StructGet(_, _) => Region::Stack, // field access result is stack-bound.
-            ICNFInner::Match { .. } => Region::Heap, // match result may escape.
             ICNFInner::FfiCall { .. } => Region::Pin,
             ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => Region::Heap,
             ICNFInner::ErrValue(_) | ICNFInner::OkValue(_) => Region::Heap, // Result values.
@@ -2726,6 +2721,7 @@ impl IcnfConverter {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 fn is_special_form_ident(op: &Expr) -> bool {
     matches!(&op.inner, ExprInner::Atom(Atom::Ident(n))
         if matches!(n.as_str(), "if" | "let" | "while" | "for" | "cond" | "try" | "match"))
@@ -2767,7 +2763,7 @@ fn is_unary_fold_candidate(expr: &Expr) -> bool {
 
 /// Check if a name looks like a type annotation atom from Phase 5.
 fn is_type_annotation_atom(name: &str) -> bool {
-    name.starts_with("T_") || (name.len() > 0 && matches!(name.chars().next(), Some('?')))
+    name.starts_with("T_") || (!name.is_empty() && matches!(name.chars().next(), Some('?')))
 }
 
 // ─── Helpers for parsing defn/def parameters from raw Call/Apply forms ──

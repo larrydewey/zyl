@@ -1,13 +1,11 @@
 use crate::ast::Atom;
 use crate::icnf::*;
-use crate::region_inference::Region;
 use crate::type_system::{PrimType, Type};
 use std::collections::{HashMap, HashSet};
 
 // ─── x86_64 Code Generation (spec §22 — Phase 9) ──────────────────────
 /// Generates Linux x86_64 System V ABI assembly from optimized ICNF.
 /// Uses a linear-scan register allocator over SSA values within each function body.
-
 /// Struct field layout: struct name → [(field_name, byte_offset)].
 /// All fields are 8 bytes (64-bit aligned) in the MVP.
 pub type StructLayout = HashMap<String, Vec<(String, usize)>>;
@@ -35,6 +33,7 @@ pub struct CodeGen {
     spawn_wrappers: Vec<String>,
 }
 
+#[allow(dead_code)]
 impl CodeGen {
     pub fn new() -> Self {
         Self {
@@ -154,12 +153,11 @@ impl CodeGen {
             let mut branch_body_ids: std::collections::HashSet<usize> =
                 std::collections::HashSet::new();
             for stmt in &program.statements {
-                match &stmt.node {
-                    ICNFInner::If {
+                if let ICNFInner::If {
                         then_body,
                         else_body,
                         ..
-                    } => {
+                    } = &stmt.node {
                         for n in then_body.iter().chain(else_body.iter()) {
                             branch_body_ids.insert(n.id);
                             // Also collect operand IDs referenced by Print/Call nodes.
@@ -174,8 +172,6 @@ impl CodeGen {
                             }
                         }
                     }
-                    _ => {}
-                }
             }
 
             // Collect operand IDs for the main body to skip intermediate Load nodes.
@@ -314,9 +310,9 @@ impl CodeGen {
             // Also mark For-loop body/step/cond nodes as already emitted so they don't get emitted by the parent loop.
             let mut next_slot: usize = 0;
             let mut for_loop_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut for_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let _for_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
             for stmt in &program.statements {
-                if let ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, .. } = &stmt.node {
+                if let ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, } = &stmt.node {
                     for (name, _) in init_bindings {
                         if !local_vars.contains_key(name) {
                             local_vars.insert(name.clone(), next_slot);
@@ -333,7 +329,7 @@ impl CodeGen {
                 }
             }
 
-            for (i, stmt) in program.statements.iter().enumerate() {
+            for stmt in program.statements.iter() {
                 // Skip nodes that are part of branch bodies - they're handled by their parent If/While/etc.
                 if stmt.is_branch_body {
                     continue;
@@ -572,7 +568,7 @@ impl CodeGen {
                         collect_body_operand_ids(cond_body, &mut operand_ids);
                         collect_body_operand_ids(body, &mut operand_ids);
                     }
-                    ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, .. } => {
+                    ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, } => {
                         for (name, _) in init_bindings {
                             if !local_vars.contains_key(name) {
                                 local_vars.insert(name.clone(), next_slot);
@@ -619,7 +615,7 @@ impl CodeGen {
             for stmt in &func.body {
                 if let ICNFInner::If { result_var, .. } = &stmt.node {
                     if let Some(&slot) = local_vars.get(result_var) {
-                        phi_slots.insert(result_var.clone(), (((slot + 1) * 8).to_string()));
+                        phi_slots.insert(result_var.clone(), ((slot + 1) * 8).to_string());
                     }
                 }
             }
@@ -758,9 +754,9 @@ impl CodeGen {
             match &node.node {
                 ICNFInner::Const(Atom::Float(v)) => {
                     let bits = v.to_bits();
-                    if !seen.contains_key(&bits) {
+                    if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(bits) {
                         let label = format!(".flt_{}", bits);
-                        seen.insert(bits, label.clone());
+                        e.insert(label.clone());
                         out.push((*v, label));
                     }
                 }
@@ -846,7 +842,7 @@ impl CodeGen {
         }
 
         // Sort for determinism
-        out.sort_by(|a, b| a.0.to_bits().cmp(&b.0.to_bits()));
+        out.sort_by_key(|a| a.0.to_bits());
     }
 
     fn collect_from_node(node: &ICNFNode, out: &mut HashSet<String>) {
@@ -1017,6 +1013,8 @@ impl CodeGen {
     /// Emit instruction to load value from SSA ID into the specified target_reg.
     /// If the node is a computed value (BinOp/Call/UnOp) that hasn't been emitted yet,
     /// emits it first to ensure the computation happens.
+    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::only_used_in_recursion)]
     fn emit_load_into(
         &mut self,
         src_ssa_id: usize,
@@ -1149,10 +1147,10 @@ impl CodeGen {
                             };
                             let left_is_float = find_node(*left_id)
                                 .and_then(|n| n.typ.as_ref())
-                                .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                                .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                             let right_is_float = find_node(*right_id)
                                 .and_then(|n| n.typ.as_ref())
-                                .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                                .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                             left_is_float || right_is_float
                         }
                     };
@@ -1298,7 +1296,7 @@ impl CodeGen {
                                 self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                             }
                         }
-                        Some(n) => {
+                        Some(_n) => {
                             self.emit_load_into(fid, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                             self.asm_push_align();
                             self.asm.push("    mov rax, rax".to_string());
@@ -1404,24 +1402,6 @@ impl CodeGen {
                     }
                 }
             }
-            Some(ICNFNode {
-                node: ICNFInner::Assign(var_name, _),
-                ..
-            }) => {
-                // Assign node: load from the variable's stack slot.
-                if let Some(&slot_idx) = local_vars.get(var_name) {
-                    let offset = (slot_idx + 1) * 8;
-                    self.asm_push_align();
-                    self.asm
-                        .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
-                } else {
-                    let hash = simple_hash(var_name);
-                    let offset = ((hash % 32) + 1) * 8;
-                    self.asm_push_align();
-                    self.asm
-                        .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
-                }
-            }
             Some(_) => {
                 let hash = simple_hash(&format!("{}", src_ssa_id));
                 let offset = ((hash % 32) + 1) * 8;
@@ -1439,6 +1419,7 @@ impl CodeGen {
 
     /// Emit a BinOp directly: load operands, compute, store result in target_reg.
     /// Marks the node's ID in emitted_ids so it won't be re-emitted.
+    #[expect(clippy::too_many_arguments)]
     fn emit_binop_direct(
         &mut self,
         op: &BinOpKind,
@@ -1657,6 +1638,7 @@ impl CodeGen {
 
     /// Emit a Call directly: load args into ABI regs, call, result in target_reg.
     /// Marks the node's ID in emitted_ids so it won't be re-emitted.
+    #[expect(clippy::too_many_arguments)]
     fn emit_call_direct(
         &mut self,
         name: &str,
@@ -1679,7 +1661,7 @@ impl CodeGen {
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == arg_id))
                     .and_then(|n| n.typ.as_ref())
-                    .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                 if arg_is_float {
                     // Float args go in XMM registers.
                     let xmm_reg = abi_xmm[i];
@@ -1737,6 +1719,7 @@ impl CodeGen {
 
     /// Emit a UnOp directly: load arg, apply op, result in target_reg.
     /// Marks the node's ID in emitted_ids so it won't be re-emitted.
+    #[expect(clippy::too_many_arguments)]
     fn emit_unop_direct(
         &mut self,
         op: &UnOpKind,
@@ -1899,7 +1882,7 @@ impl CodeGen {
 
         if is_float {
             match cond_node {
-                ICNFInner::BinOp(op, left_id, right_id) => {
+                ICNFInner::BinOp(_op, left_id, right_id) => {
                     let left_node = lookup.get(left_id).copied();
                     let right_node = lookup.get(right_id).copied();
 
@@ -1914,7 +1897,7 @@ impl CodeGen {
                                 self.asm_push_align();
                                 self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                                 self.asm_push_align();
-                                self.asm.push(format!("    movq xmm1, rax"));
+                                self.asm.push("    movq xmm1, rax".to_string());
                             } else {
                                 self.asm_push_align();
                                 self.asm.push("    xorps xmm1, xmm1".to_string());
@@ -1945,7 +1928,7 @@ impl CodeGen {
                                 self.asm_push_align();
                                 self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                                 self.asm_push_align();
-                                self.asm.push(format!("    movq xmm2, rax"));
+                                self.asm.push("    movq xmm2, rax".to_string());
                             } else {
                                 self.asm_push_align();
                                 self.asm.push("    xorps xmm2, xmm2".to_string());
@@ -1976,7 +1959,7 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                         self.asm_push_align();
-                        self.asm.push(format!("    movq xmm0, rax"));
+                        self.asm.push("    movq xmm0, rax".to_string());
                         self.asm_push_align();
                         self.asm.push("    mov eax, 1".to_string());
                     }
@@ -2101,6 +2084,7 @@ impl CodeGen {
     }
 
     /// Emit an If expression inline (used by emit_load_into when an If is encountered as an operand).
+    #[expect(clippy::too_many_arguments)]
     fn emit_if_inline(
         &mut self,
         cond_ssa: &usize,
@@ -2117,8 +2101,8 @@ impl CodeGen {
 
         let cond_label = self.new_label();
         let then_start = format!("{}.then", result_var);
-        let else_start = format!("{}.else", &result_var);
-        let join_point = format!("{}.join", &result_var);
+        let else_start = format!("{}.else", result_var);
+        let join_point = format!("{}.join", result_var);
 
         // Emit condition.
         let cond_node = lookup.get(cond_ssa).copied().or_else(|| stmts.iter().find(|n| n.id == *cond_ssa));
@@ -2182,7 +2166,7 @@ impl CodeGen {
                 *then_local_vars.entry(name.clone()).or_insert(0) += 1;
             }
             self.emit_node(
-                stmt, &then_stmts, &mut then_local_vars, emitted_ids,
+                stmt, &then_stmts, &then_local_vars, emitted_ids,
                 &then_operand_ids, &then_lookup, &std::collections::HashMap::new(),
             );
         }
@@ -2234,7 +2218,7 @@ impl CodeGen {
                 *else_local_vars.entry(name.clone()).or_insert(0) += 1;
             }
             self.emit_node(
-                stmt, &else_stmts, &mut else_local_vars, emitted_ids,
+                stmt, &else_stmts, &else_local_vars, emitted_ids,
                 &else_operand_ids, &else_lookup, &std::collections::HashMap::new(),
             );
         }
@@ -2338,7 +2322,7 @@ impl CodeGen {
         self.label_counter += 1;
         let div_done = format!(".___divdone_{}", self.label_counter);
         self.label_counter += 1;
-        let zero_label = format!(".___zero_{}", self.label_counter);
+        let _zero_label = format!(".___zero_{}", self.label_counter);
         self.label_counter += 1;
 
         self.asm_push_align();
@@ -2401,7 +2385,7 @@ impl CodeGen {
           self.label_counter += 1;
           // r8 holds the sign flag (1=negative, 0=positive).
           self.asm_push_align();
-          self.asm.push(format!("    test r8, r8"));
+          self.asm.push("    test r8, r8".to_string());
           self.asm_push_align();
           self.asm.push(format!("    jz {}", neg_done_label));
           // Negative: save first digit position (rdi+1), write '-' at rdi, use rdx = rdi.
@@ -2437,6 +2421,7 @@ impl CodeGen {
     // ─── Node Emission ──────────────────────────────────────────────
 
     /// Emit a single ICNF node as x86_64 instructions.
+    #[expect(clippy::too_many_arguments)]
     fn emit_node(
         &mut self,
         node: &ICNFNode,
@@ -2549,7 +2534,7 @@ impl CodeGen {
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == *value_id))
                     .and_then(|n| n.typ.as_ref())
-                    .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                 // Check if value is from ReadLine (String/pointer type).
                 let val_is_string = stmts.iter().any(|n| {
                     if let ICNFInner::ReadLine = &n.node {
@@ -2597,10 +2582,10 @@ impl CodeGen {
                                 };
                                 let left_is_float = find_node(*left_id)
                                     .and_then(|n| n.typ.as_ref())
-                                    .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                                 let right_is_float = find_node(*right_id)
                                     .and_then(|n| n.typ.as_ref())
-                                    .map_or(false, |t| matches!(t, Type::Prim(PrimType::Float)));
+                                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
                                 left_is_float || right_is_float
                             }
                         };
@@ -2840,7 +2825,7 @@ impl CodeGen {
                     self.asm.push(format!("    subsd {}, {}", xmm_result, xmm_arg));
 
                     let hash = simple_hash(&format!("{}", node.id));
-                    let slot_idx = ((hash % 32) + 1);
+                    let slot_idx = (hash % 32) + 1;
                     self.asm_push_align();
                     self.asm.push(format!("    movsd [rbp-{}], {}", slot_idx * 8, xmm_result));
                 } else {
@@ -2850,7 +2835,7 @@ impl CodeGen {
                             node: ICNFInner::Const(atom),
                             ..
                         }) => {
-                            self.emit_const_into(&reg, atom);
+                            self.emit_const_into(reg, atom);
                         }
                         _ => {
                             let hash = simple_hash(&format!("{}", arg_id));
@@ -2863,11 +2848,11 @@ impl CodeGen {
                     match op {
                         UnOpKind::Not => {
                             self.asm_push_align();
-                            self.asm.push(format!("    xor {}, 1", reg_to_32(&reg)));
+                            self.asm.push(format!("    xor {}, 1", reg_to_32(reg)));
                         }
                         UnOpKind::Negate => {
                             self.asm_push_align();
-                            self.asm.push(format!("    neg {}", reg_to_32(&reg)));
+                            self.asm.push(format!("    neg {}", reg_to_32(reg)));
                         }
                     }
                 }
@@ -2957,8 +2942,8 @@ impl CodeGen {
 
                 // Then branch — fall through (emit inline like While does).
                 let then_start = format!("{}.then", result_var);
-                let else_start = format!("{}.else", &result_var);
-                let join_point = format!("{}.join", &result_var);
+                let else_start = format!("{}.else", result_var);
+                let join_point = format!("{}.join", result_var);
 
                 self.asm_push_align();
                 self.asm.push(format!("{}:", then_start));
@@ -2980,9 +2965,9 @@ impl CodeGen {
                         *then_local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
                     self.emit_node(
-                        &stmt,
+                        stmt,
                         &then_stmts,
-                        &mut then_local_vars,
+                        &then_local_vars,
                         emitted_ids,
                         &then_operand_ids,
                         &then_lookup,
@@ -3028,9 +3013,9 @@ impl CodeGen {
                         *else_local_vars.entry(name.clone()).or_insert(0) += 1;
                     }
                     self.emit_node(
-                        &stmt,
+                        stmt,
                         &else_stmts,
-                        &mut else_local_vars,
+                        &else_local_vars,
                         emitted_ids,
                         &else_operand_ids,
                         &else_lookup,
@@ -3129,7 +3114,7 @@ impl CodeGen {
                 }
 
                 // Build lookups for condition and body — inherit parent local_vars.
-                let mut local_vars = local_vars.clone();
+                let local_vars = local_vars.clone();
                 let mut while_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
                 for n in stmts {
                     while_lookup.insert(n.id, n);
@@ -3157,7 +3142,7 @@ impl CodeGen {
                     self.emit_node(
                         stmt,
                         stmts,
-                        &mut cond_local_vars,
+                        &cond_local_vars,
                         emitted_ids,
                         &cond_operand_ids,
                         &while_lookup,
@@ -3185,7 +3170,7 @@ impl CodeGen {
                     self.emit_node(
                         stmt,
                         stmts,
-                        &mut body_local_vars,
+                        &body_local_vars,
                         emitted_ids,
                         &while_operand_ids,
                         &while_lookup,
@@ -3241,11 +3226,11 @@ impl CodeGen {
                                     }
                                     _ => {
                                         // Emit the value node
-                                        let mut init_local_vars = local_vars.clone();
+                                        let init_local_vars = local_vars.clone();
                                         self.emit_node(
                                             node,
                                             stmts,
-                                            &mut init_local_vars,
+                                            &init_local_vars,
                                             emitted_ids,
                                             operand_ids,
                                             lookup,
@@ -3325,7 +3310,7 @@ impl CodeGen {
                 self.asm.push(format!("    je {}", loop_end));
 
                 // Emit body.
-                let mut body_local_vars: HashMap<String, usize> = local_vars.clone();
+                let body_local_vars: HashMap<String, usize> = local_vars.clone();
                 for stmt in body {
                     // Skip Assign nodes that are created by SetBang for SSA tracking.
                     // They would emit redundant stores to stack slots.
@@ -3412,18 +3397,12 @@ impl CodeGen {
                     // Check if node's type is explicitly set.
                     // If it's an Assign with no type, look up the value_id.
                     let node_type = node.and_then(|n| n.typ.as_ref());
-                    let is_float = match node_type {
-                        Some(t) if matches!(t, Type::Prim(PrimType::Float)) => true,
-                        _ => false,
-                    };
+                    let is_float = matches!(node_type, Some(Type::Prim(PrimType::Float)));
                     // If no type yet and this is an Assign, resolve from value_id.
                     let is_float = if !is_float {
                         if let Some(ICNFNode { node: ICNFInner::Assign(_, value_id), .. }) = node {
                             let value_node = find_node(*value_id);
-                            match value_node.and_then(|n| n.typ.as_ref()) {
-                                Some(t) if matches!(t, Type::Prim(PrimType::Float)) => true,
-                                _ => false,
-                            }
+                            matches!(value_node.and_then(|n| n.typ.as_ref()), Some(Type::Prim(PrimType::Float)))
                         } else { false }
                     } else { is_float };
 
@@ -3595,7 +3574,7 @@ impl CodeGen {
                         if is_float {
                             // Float arg: load directly into XMM register.
                             self.emit_float_load_into(
-                                arg_id, &abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
+                                arg_id, abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
                             );
                             xmm_arg_count += 1;
                         } else {
@@ -3746,7 +3725,7 @@ impl CodeGen {
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());
                         }
-                        Some(n) => {
+                        Some(_n) => {
                             self.emit_load_into(field_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());
@@ -3799,7 +3778,7 @@ impl CodeGen {
                 emitted_ids.insert(node.id);
             }
 
-            ICNFInner::MakeVariant { type_name, variant_name, discriminant, field_ids } => {
+            ICNFInner::MakeVariant { type_name: _, variant_name: _, discriminant, field_ids } => {
                 // Tagged union construction: malloc(sizeof(discriminant + fields)), store discriminant, then fields.
                 let field_count = field_ids.len();
                 let total_size = (field_count + 1) * 8; // discriminant + fields.
@@ -3827,7 +3806,7 @@ impl CodeGen {
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());
                         }
-                        Some(n) => {
+                        Some(_n) => {
                             self.emit_load_into(field_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());
@@ -3914,7 +3893,7 @@ impl CodeGen {
                 };
 
                 // For each arm, compare discriminant and jump if match.
-                for (i, arm) in arms.iter().enumerate() {
+                for (i, _arm) in arms.iter().enumerate() {
                     self.asm_push_align();
                     self.asm.push(format!("    cmp eax, {}", i)); // Compare with discriminant i.
                     self.asm_push_align();
@@ -3980,7 +3959,7 @@ impl CodeGen {
                         self.emit_node(
                             stmt,
                             &arm_stmts,
-                            &mut arm_local_vars,
+                            &arm_local_vars,
                             emitted_ids,
                             &arm_operand_ids,
                             &arm_lookup,
@@ -4039,7 +4018,7 @@ impl CodeGen {
                         };
                         if is_float {
                             self.emit_float_load_into(
-                                arg_id, &abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
+                                arg_id, abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
                             );
                             xmm_arg_count += 1;
                         } else {
@@ -4068,7 +4047,7 @@ impl CodeGen {
 
             ICNFInner::Spawn(closure_id) => {
                 // Look up closure metadata (name + captures) from the closures map.
-                if let Some((name, captures)) = self.closures.get(&closure_id) {
+                if let Some((name, captures)) = self.closures.get(closure_id) {
                     let name = name.clone();
                     let captures = captures.clone();
                     // Allocate and populate environment struct for captures.
@@ -4150,7 +4129,7 @@ impl CodeGen {
                         }
 
                         // Emit the closure body statements from closure_bodies.
-                        let body_clone = self.closure_bodies.get(&closure_id).cloned();
+                        let body_clone = self.closure_bodies.get(closure_id).cloned();
                         if let Some(ref body_stmts) = body_clone {
                             for stmt in body_stmts {
                                 self.emit_node(
@@ -4209,7 +4188,7 @@ impl CodeGen {
             ICNFInner::Send(actor_id, msg_id) => {
                 // Ensure actor_id node is emitted (so its value is in eax).
                 let actor_node = lookup
-                    .get(&actor_id)
+                    .get(actor_id)
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == *actor_id));
                 if let Some(actor_n) = actor_node {
@@ -4231,7 +4210,7 @@ impl CodeGen {
 
                 // Ensure msg_id is emitted.
                 let msg_node = lookup
-                    .get(&msg_id)
+                    .get(msg_id)
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == *msg_id));
                 if let Some(msg_n) = msg_node {
@@ -4265,7 +4244,7 @@ impl CodeGen {
             ICNFInner::SendClosure(actor_id, closure_name, capture_ids) => {
                 // Emit actor_id node → value in eax.
                 let actor_node = lookup
-                    .get(&actor_id)
+                    .get(actor_id)
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == *actor_id));
                 if let Some(actor_n) = actor_node {
@@ -4305,7 +4284,7 @@ impl CodeGen {
                         let offset = i * 8;
                         // Emit the capture node to get its value.
                         let cap_node = lookup
-                            .get(&cap_id)
+                            .get(cap_id)
                             .copied()
                             .or_else(|| stmts.iter().find(|n| n.id == *cap_id));
                         if let Some(cn) = cap_node {
@@ -4353,6 +4332,8 @@ impl CodeGen {
     }
 
     /// Emit a float constant or load into an XMM register.
+    #[expect(clippy::too_many_arguments)]
+    #[expect(clippy::only_used_in_recursion)]
     fn emit_float_load_into(
         &mut self,
         id: usize,
@@ -4585,8 +4566,9 @@ impl CodeGen {
 
 /// Find the phi slot offset for an If result variable in local_vars.
 /// Returns the stack offset string (e.g., "24") if found, None otherwise.
+#[allow(dead_code)]
 fn find_phi_slot(
-    stmts: &[ICNFNode],
+    _stmts: &[ICNFNode],
     result_var: &str,
     local_vars: &HashMap<String, usize>,
 ) -> Option<String> {
@@ -4717,11 +4699,13 @@ fn simple_hash(name: &str) -> u64 {
 }
 
 /// Convert f64 to its IEEE-754 bit representation.
+#[allow(dead_code)]
 fn f64_to_bits(v: f64) -> u64 {
     v.to_bits()
 }
 
 /// x86_64 general-purpose registers (caller-saved per System V ABI, 64-bit names).
+#[allow(dead_code)]
 const X86_REGISTERS: &[&str] = &["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9"];
 
 /// Convert a register name to its 32-bit counterpart.
