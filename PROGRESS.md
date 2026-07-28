@@ -2,7 +2,7 @@
 
 ## Current State
 
-All 9 core compilation phases are complete. The compiler builds and runs successfully. The struct system has exhaustive test coverage. Nested conditionals work correctly for int, float, and bool.
+All 9 core compilation phases are implemented and tested. The compiler builds and runs successfully. The struct system, ADT system, float support, actor concurrency, closure support, FFI, try/catch, and I/O all have full pipeline coverage across all phases.
 
 **Full details:** `docs/implementation-status.md`
 
@@ -12,56 +12,68 @@ All 9 core compilation phases are complete. The compiler builds and runs success
 
 | Phase | Status | Details |
 |-------|--------|---------|
-| 1. Parsing (Lexer + Parser → AST) | ✅ Complete | Full error model, no-dispatch parsing, reserved keywords |
-| 2. Post-Processing | ✅ Complete | Call/Apply → specialized ExprInner |
-| 3. Macro Expansion | ✅ Complete | Gensym hygiene, innermost-first, variadic patterns |
-| 4. Region Inference | ✅ Complete | Two-pass algorithm, R1–R8 rules, escape analysis |
-| 5. Type Inference | ✅ Complete | HM inference, trait resolution, derive validation |
-| 6. Monomorphization | ✅ Complete | Canonical naming, trait bound verification |
-| 7. ICNF Generation | ✅ Complete | SSA IR, region annotations, embedded control flow |
-| 8. Optimization | ✅ Complete | Constant folding, dead code elimination |
-| 9. Code Generation | ✅ Complete | x86_64, System V AMD64 ABI, struct support |
-| Float Support | ✅ Complete | Constants, unary negation, two-operand BinOp, comparisons, print, SSE code generation, nested conditionals |
-| Struct System | ✅ Complete | defstruct, defstruct+, make-, struct-get, all phases |
-| ADT System | ✅ Complete | deftype, match, exhaustive checking |
-| Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with correct phi slot handling |
- | Actor Concurrency | ✅ Complete | C runtime (pthread-based), codegen for Spawn/Send, Send-capability enforcement, linked via cc -lpthread, `zyl_actor_wait_all()` at end of main |
- | Actor Message Passing | ✅ Complete | `send-closure` form: closures with captured variables sent to actors via mailbox; C runtime dispatches closure messages in mailbox processing loop; assembly ends with final newline |
- | Closure fn/lambda in nested expressions | ✅ Fixed | Parser dispatch of `fn`/`lambda` moved before `no_dispatch` guard so closures inside `spawn`/`begin`/`let` produce `ExprInner::Fn`/`Lambda` not raw `Call("fn", ...)` |
- | Spawn wrapper function emission | ✅ Fixed | Anonymous spawn closures emitted as standalone functions via `spawn_wrappers` buffer in CodeGen (proper prologue/epilogue, correct `ret`)
- | Spawn closure metadata tracking | ✅ Fixed | `closures: HashMap<usize, (String, Vec<CaptureField>)>` added to ICNFProgram, IcnfConverter, CodeGen
+| 1. Parsing (Lexer + Parser → AST) | ✅ Complete | Full error model, no-dispatch parsing, 47 reserved keywords, ~1820 lines |
+| 2. Post-Processing | ✅ Complete | Call/Apply → specialized ExprInner in ast.rs |
+| 3. Macro Expansion | ✅ Complete | Gensym hygiene, innermost-first, variadic patterns, ~1427 lines |
+| 4. Region Inference | ✅ Complete | Two-pass algorithm, R1–R8 rules, escape analysis, capture analysis, ~1132 lines |
+| 5. Type Inference | ✅ Complete | HM inference, trait resolution, derive validation, capability types, ~1836 lines |
+| 6. Monomorphization | ✅ Complete | Canonical naming, trait bound verification, ~1459 lines |
+| 7. ICNF Generation | ✅ Complete | SSA IR, region annotations, embedded control flow, ~2862 lines |
+| 8. Optimization | ✅ Complete | Constant folding (fixed-point), dead code elimination (BFS), ~514 lines |
+| 9. Code Generation | ✅ Complete | x86_64, System V AMD64 ABI, SSE floats, struct/ADT/actor/FFI/closure support, ~4738 lines |
+| Linking | ✅ Complete | cc with actor_runtime.c, -lpthread |
+
+### Language Features
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Float (Float64) | ✅ Complete | Constants, unary negation, all BinOp/UnOp, comparisons, print, SSE codegen, nested conditionals |
+| Struct System | ✅ Complete | defstruct, defstruct+, make-*, struct-get, all phases, exhaustive test coverage |
+| ADT System | ✅ Complete | deftype, match, exhaustive checking, discriminant-based dispatch |
+| For Loop | ✅ Complete | 3-arg syntax: `(for (init-bindings) condition body)` |
+| Try/Catch | ✅ Complete | Error handling with catch variable binding, handler body |
+| Closure (fn/lambda) | ✅ Complete | Capture analysis (TCap/TMut), env struct allocation, wrapper functions |
+| Actor Concurrency | ✅ Complete | C runtime (pthread-based), Spawn/Send/SendClosure, mailbox, wait_all |
+| FFI (ffi-call/ffi-pin/ffi-unpin) | ✅ Complete | Timeout enforcement, Pin region, type checking |
+| Read-Line I/O | ✅ Complete | sys_read syscall, 64-bit pointer storage, string output |
+| Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with phi slot handling |
+| Macros | ✅ Complete | unless, when, nested macros, gensym hygiene |
+| read-line | ✅ Complete | I/O via PostProcessor → ICNF → codegen → sys_read syscall |
+
+### Recent Fixes (Applied)
+
+- [x] Function names with hyphens: fully sanitized in ICNF layer (all call sites), verified end-to-end
+- [x] Nested conditionals: fixed phi slot collision, register clobbering, float condition detection
+- [x] Struct function calls: fixed MakeStruct rbp marker stack corruption
+- [x] 2-arg let/let-mut: PostProcessor and macro_expander accept `args.len() >= 2`
+- [x] Float division multi-operand chains: left-associative chaining
+- [x] FFI code generation: fixed ICNF arg collection, entry point calls user main
+- [x] Actor runtime: C runtime with pthread-based actors, Spawn/Send, wait_all
+- [x] Actor spawn race: added `zyl_actor_wait_all()` at end of main
+- [x] Spawn wrapper: anonymous wrappers emitted as standalone functions
+- [x] Closure capture: env struct from rdi, metadata tracking in ICNF→CodeGen
+- [x] send-closure: captured variable support, C runtime closure dispatch
 
 ---
 
-## Known Issues
-
-### High Priority
-- [x] Function names with hyphens: fully sanitized in ICNF layer (all 9 call sites), verified end-to-end with `stdlib_test.zyl`
-- [x] Nested conditionals: fixed phi slot collision, register clobbering, and float condition detection
-- [x] Struct function calls: fixed MakeStruct rbp marker stack corruption and operand tracking
-- [x] 2-arg let/let-mut: PostProcessor and macro_expander now accept `args.len() >= 2` (value as body), fixing inner let expressions in struct contexts that had only 2 args instead of 3
-- [x] read-line I/O: fixed parser→PostProcessor→ICNF→codegen pipeline — Call(Ident("read-line"), []) → ReadLine conversion in PostProcessor, sys_read syscall in codegen (rsi for buffer), 64-bit pointer storage in Assign handler, Print handler string detection for Load nodes referencing ReadLine results
-
-### Medium Priority
-- [x] Floating-point division multi-operand chains: fixed `convert_div` with left-associative chaining `((a / b) / c) / d`
-- [x] FFI code generation: fixed ICNF arg collection (intermediate Const nodes were lost), fixed entry point to call user main
-- [x] Actor concurrency runtime: C runtime with pthread-based actors, codegen for Spawn/Send, Send-capability enforcement in type inference
-- [x] Actor spawn race condition: added `zyl_actor_wait_all()` at end of main
-- [x] Spawn wrapper inlining bug: anonymous wrappers now standalone functions
-- [x] Closure metadata tracking in ICNF → CodeGen pipeline
-- [x] Closure capture in spawned threads: captured vars added to ICNF Fn handler scope for Load emission; wrapper reads env struct from `rdi` (not `rsi`); env ptr saved outside capture loop to prevent overwrite
-- [x] Actor message passing: `send-closure` syntax with captured variable support; C runtime mailbox loop with closure dispatch; assembly newline handling
+## Remaining Work
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
 - [ ] Self-hosting (not yet targeting Zyl source code generation)
-- [ ] Package management (spec v5.0 features not implemented per instructions)
+- [ ] Contract injection (Phase 10 — optional overlay per spec §23)
+- [ ] Hash finalization (Phase 11 — SHA-256 binary fingerprinting)
+- [ ] Full REPL (currently a minimal stub, ~4 lines)
 
 ---
 
 ## Next Priorities
 
-1. Reduce compiler warnings (~185)
+1. Reduce compiler warnings (~160)
+2. Contract injection (optional overlay)
+3. Hash finalization (deterministic binary fingerprinting)
+4. Full REPL implementation
+5. Self-hosting (Zyl → Zyl code generation)
 
 ---
 
@@ -71,4 +83,3 @@ Detailed phase-by-phase implementation history, debugging notes, and fix documen
 - `docs/implementation-status.md` — current phase details
 - `specifications/` — historical specification versions (v1.0 through v4.1)
 - Git commit history
-

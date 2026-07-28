@@ -38,45 +38,53 @@ zyl-repl
 - **Hindley-Milner type inference** — full HM with trait resolution and derive validation
 - **Deterministic compilation** — same source + same inputs → identical binaries
 - **SSA IR (ICNF)** — custom intermediate representation with region annotations
-- **Actor concurrency** — type-checked actor model (runtime deferred)
+- **Actor concurrency** — pthread-based actor runtime with spawn/send/send-closure, mailbox, wait_all
 - **Hygienic macros** — innermost-first expansion with gensym hygiene
 - **FFI with pinning** — FFI calls require Pin region + timeout parameters
-- **Struct/ADT system** — immutable structs by default, exhaustive pattern matching
+- **Struct/ADT system** — immutable structs by default, exhaustive pattern matching, deftype/match
 - **Safe-only optimizations** — constant folding and dead code elimination
-- **Self-hosting** — targeting Zyl source code generation
+- **Float64 support** — full IEEE-754 arithmetic, SSE code generation, comparisons, print
+- **Closures** — fn/lambda syntax with capture analysis and env struct allocation
+- **Try/catch** — error handling with catch variable binding
+- **I/O** — read-line via sys_read syscall
 
 ## Compilation Pipeline
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1. Parsing | ✅ | Lexer + Parser → AST |
-| 2. Macro Expansion | ✅ | Gensym hygiene, innermost-first |
-| 3. Type Inference | ✅ | HM inference, trait resolution |
+| 1. Parsing | ✅ | Lexer + Parser → AST (no-dispatch) |
+| 2. Post-Processing | ✅ | Raw Call/Apply → specialized ExprInner |
+| 3. Macro Expansion | ✅ | Gensym hygiene, innermost-first |
 | 4. Region Inference | ✅ | Two-pass algorithm, escape analysis |
-| 5. Monomorphization | ✅ | Canonical naming, trait bounds |
-| 6. ICNF Generation | ✅ | SSA IR with region annotations |
-| 7. Optimization | ✅ | Constant folding, DCE |
-| 8. Code Generation | ✅ | x86_64, System V AMD64 ABI |
-| 9. Linking | ✅ | Native binary output |
+| 5. Type Inference | ✅ | HM inference, trait resolution |
+| 6. Monomorphization | ✅ | Canonical naming, trait bounds |
+| 7. ICNF Generation | ✅ | SSA IR with region annotations |
+| 8. Optimization | ✅ | Constant folding, DCE |
+| 9. Code Generation | ✅ | x86_64, System V AMD64 ABI |
+| 10. Linking | ✅ | cc + actor_runtime.c + pthread |
 
 ## Project Structure
 
 ```
 src/
-├── main.rs            # Compiler entry point
+├── main.rs            # Compiler entry point, pipeline orchestration
 ├── repl.rs            # REPL entry point
-├── ast.rs             # Abstract syntax tree
-├── lexer.rs           # Lexer
-├── parser.rs          # Parser
-├── macro_expander.rs  # Macro expansion
+├── ast.rs             # AST definitions + PostProcessor
+├── lexer.rs           # Tokenizer
+├── parser.rs          # Recursive descent parser
+├── macro_expander.rs  # Macro expansion with gensym hygiene
 ├── type_system.rs     # Type definitions
-├── type_inference.rs  # HM type inference
-├── region_inference.rs# Region inference & capture analysis
-├── monomorphization.rs# Monomorphization
+├── type_inference.rs  # HM type inference + trait resolution
+├── region_inference.rs# Region inference + capture analysis
+├── monomorphization.rs# Generic type instantiation
 ├── icnf.rs            # SSA IR (ICNF)
 ├── optimization.rs    # IR optimizations
 ├── codegen.rs         # x86_64 code generation
-└── error.rs           # Error model
+├── error.rs           # Error model
+├── runtime.rs         # Actor runtime path re-export
+└── runtime/
+    ├── actor_runtime.c  # pthread-based actor runtime
+    └── actor_runtime.h  # Actor runtime header
 ```
 
 ## Requirements
