@@ -59,10 +59,11 @@ echo '(defstruct+ Color (r) (g) (b))(let c (make-Color 255 128 64)(print (struct
 
 **This file MUST be run every session before making changes. Update it when new functionality is added to ensure behavior remains consistent between sessions.**
 
-The file `stdlib_test.zyl` contains 398 lines of tests covering:
+The file `stdlib_test.zyl` contains 402 lines of tests covering:
 
 ### Basic Operations
 - Arithmetic: `+`, `-`, `*`, `/` with multiple arguments
+- Float arithmetic: `+`, `-`, `*`, `/` with Float64, multi-operand chains
 - Comparison: `>`, `<`, `>=`, `<=`, `==`, `!=`
 - Logical: `and`, `or`, `not`
 - Let bindings (nested)
@@ -70,9 +71,9 @@ The file `stdlib_test.zyl` contains 398 lines of tests covering:
 
 ### Control Flow
 - If (with and without else branch)
-- Nested if
+- Nested if (int, float, bool)
 - While loop
-- For loop (new 3-arg syntax)
+- For loop (3-arg syntax: `(for (init-bindings) condition body)`)
 - Cond (single and multi-clause)
 - Begin (empty)
 
@@ -81,6 +82,7 @@ The file `stdlib_test.zyl` contains 398 lines of tests covering:
 - Recursive functions (factorial)
 - Nested function calls
 - Function returning struct
+- Struct returned from function
 
 ### Macros
 - `unless` macro (if → not)
@@ -112,20 +114,57 @@ The file `stdlib_test.zyl` contains 398 lines of tests covering:
 - Structs with all-zero fields
 - Single-field struct
 
+### Float Support
+- Float constants and literals
+- Float addition, subtraction, multiplication, division
+- Multi-operand float arithmetic chains
+- Float comparison in conditionals
+
+### I/O
+- `read-line` basic input
+- `read-line` EOF handling
+
 ---
 
-## Not Tested (By Design — Not Yet Implemented)
+## Closure Regression Tests
 
-- `deftype` pattern matching with complex guards
-- `ffi-call` code generation
-- `spawn`/`send` runtime
-- Closures (lambda/fn syntax)
-- `try`/`catch` error handling
-- `alias` type system
-- `trait`/`impl`/`derive` runtime behavior
-- Floating-point arithmetic
-- Property-based testing framework
-- Contract injection
+**Trigger before modifying:** `src/parser.rs`, `src/codegen.rs`, `src/icnf.rs`, `src/macro_expander.rs`
+
+### Test 1: Basic closure
+```bash
+echo '(let f (fn (x) (+ x 1))(print (f 10)))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
+# Expected: 11
+```
+
+### Test 2: Closure with capture
+```bash
+./target/debug/zyl test_closure_capture.zyl t.bin && ./t.bin
+# Tests closure capture in various contexts
+```
+
+### Test 3: Spawn with closure capture
+```bash
+./target/debug/zyl test_spawn_capture.zyl t.bin && ./t.bin
+# Tests closure capture in spawned threads
+```
+
+---
+
+## Actor Concurrency Regression Tests
+
+**Trigger before modifying:** `src/parser.rs`, `src/codegen.rs`, `src/icnf.rs`, `src/runtime/actor_runtime.c`
+
+### Test 1: Spawn and send
+```bash
+./target/debug/zyl test_spawn_capture.zyl t.bin && ./t.bin
+# Tests actor spawn with closure capture
+```
+
+### Test 2: Message passing
+```bash
+./target/debug/zyl test_message_passing.zyl t.bin && ./t.bin
+# Tests send-closure with captured state passing
+```
 
 ---
 
@@ -155,3 +194,18 @@ For a fast check that the compiler still works:
 echo '(let x 42 x)' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
 # Expected: 42
 ```
+
+---
+
+## Not Yet Tested
+
+The following spec features are implemented but lack dedicated regression tests in `stdlib_test.zyl`:
+
+- `deftype` pattern matching with complex guards (basic match tested)
+- `ffi-call` end-to-end (parser/ICNF/type-checking implemented, no external C function tested)
+- `try`/`catch` error handling (implemented in all phases, no dedicated test)
+- `alias` type system (defined in spec, limited usage in tests)
+- `trait`/`impl`/`derive` runtime behavior (type-checking implemented)
+- Property-based testing framework (spec §20.5, not implemented)
+- Contract injection (spec §23, not implemented)
+- Hash finalization (spec §27, not implemented)
