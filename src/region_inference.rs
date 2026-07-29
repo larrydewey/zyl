@@ -709,6 +709,32 @@ impl RegionInferer {
             // close — resource cleanup, no region change.
             ExprInner::Close(e) => self.infer_expr(e),
 
+            // file-open — returns Int handle, args on Stack.
+            ExprInner::FileOpen(path, mode) => {
+                drop(self.infer_expr(path)?);
+                drop(self.infer_expr(mode)?);
+                Ok(RegionResult {
+                    result_region: Region::Stack,
+                    captures: None,
+                })
+            }
+
+            // file-read — returns String on Heap.
+            ExprInner::FileRead(handle, count) => {
+                drop(self.infer_expr(handle)?);
+                drop(self.infer_expr(count)?);
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
+            }
+
+            // file-write — returns Int, data may be on Heap.
+            ExprInner::FileWrite(_handle, data) => self.infer_expr(data),
+
+            // file-close — resource cleanup, no region change.
+            ExprInner::FileClose(e) => self.infer_expr(e),
+
             // defmacro — macro definitions are Global (compile-time only).
             ExprInner::MacroDef(_, _, _) => Ok(RegionResult {
                 result_region: Region::Global,

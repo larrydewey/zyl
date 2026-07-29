@@ -36,6 +36,7 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 | Actor Concurrency | ✅ Complete | C runtime (pthread-based), Spawn/Send/SendClosure, mailbox, wait_all |
 | FFI (ffi-call/ffi-pin/ffi-unpin) | ✅ Complete | Timeout enforcement, Pin region, type checking |
 | Read-Line I/O | ✅ Complete | sys_read syscall, 64-bit pointer storage, string output |
+| File I/O | ✅ Complete | file-open/file-read/file-write/file-close, sys_open/read/write/close, inline strlen, null-terminated buffers |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with phi slot handling |
 | Macros | ✅ Complete | unless, when, nested macros, gensym hygiene |
 | read-line | ✅ Complete | I/O via PostProcessor → ICNF → codegen → sys_read syscall |
@@ -53,6 +54,7 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Spawn wrapper: anonymous wrappers emitted as standalone functions
 - [x] Closure capture: env struct from rdi, metadata tracking in ICNF→CodeGen
 - [x] send-closure: captured variable support, C runtime closure dispatch
+- [x] File I/O: file-open/read/write/close, syscalls with correct flags (577=O_WRONLY|O_CREAT|O_TRUNC), handle loading via emit_load_into, operand_ids collection for file ops, null-terminated read buffers
 
 ---
 
