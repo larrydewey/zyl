@@ -122,6 +122,12 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    .space 4096".to_string());
 
+        // Global buffer for file reads.
+        self.asm_push_align();
+        self.asm.push(".file_read_buf:".to_string());
+        self.asm_push_align();
+        self.asm.push("    .space 4096".to_string());
+
         // Emit text (code) section.
         self.asm_push_align();
         self.asm.push(".text".to_string());
@@ -209,6 +215,21 @@ impl CodeGen {
                         for &fid in field_ids {
                             main_operand_ids.insert(fid);
                         }
+                    }
+                    ICNFInner::FileOpen { path, mode } => {
+                        main_operand_ids.insert(*path);
+                        main_operand_ids.insert(*mode);
+                    }
+                    ICNFInner::FileRead { handle, count } => {
+                        main_operand_ids.insert(*handle);
+                        main_operand_ids.insert(*count);
+                    }
+                    ICNFInner::FileWrite { handle, data } => {
+                        main_operand_ids.insert(*handle);
+                        main_operand_ids.insert(*data);
+                    }
+                    ICNFInner::FileClose(handle) => {
+                        main_operand_ids.insert(*handle);
                     }
                     _ => {}
                 }
@@ -2535,13 +2556,10 @@ impl CodeGen {
                     .or_else(|| stmts.iter().find(|n| n.id == *value_id))
                     .and_then(|n| n.typ.as_ref())
                     .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                // Check if value is from ReadLine (String/pointer type).
+                // Check if value is from ReadLine or FileRead (String/pointer type).
                 let val_is_string = stmts.iter().any(|n| {
-                    if let ICNFInner::ReadLine = &n.node {
-                        *value_id == n.id
-                    } else {
-                        false
-                    }
+                    matches!(n.node, ICNFInner::ReadLine | ICNFInner::FileRead { .. })
+                        && *value_id == n.id
                 });
                 if let Some(&slot_idx) = local_vars.get(var_name) {
                     let offset = (slot_idx + 1) * 8;
@@ -3373,11 +3391,11 @@ impl CodeGen {
                             }
                             let mut result = false;
                             if let Some(&value_id) = var_assigns.get(var_name) {
-                                // Check if value_id is a ReadLine result
-                                let rl_result_id = stmts.iter()
-                                    .find(|n| matches!(&n.node, ICNFInner::ReadLine))
+                                // Check if value_id is a ReadLine or FileRead result
+                                let io_result_id = stmts.iter()
+                                    .find(|n| matches!(&n.node, ICNFInner::ReadLine | ICNFInner::FileRead { .. }))
                                     .map(|n| n.id);
-                                if let Some(rid) = rl_result_id {
+                                if let Some(rid) = io_result_id {
                                     result = value_id == rid;
                                 }
                                 // Check if value_id resolves to a string const
@@ -3552,6 +3570,206 @@ impl CodeGen {
                 self.asm.push(format!("{}:", done_label));
                 self.asm_push_align();
                 self.asm.push("    mov rax, rsi           # return buffer pointer as String".to_string());
+            }
+
+            ICNFInner::FileOpen { path, mode } => {
+                // open(path_ptr, flags) -> fd or -1
+                // SYS_OPEN = 2
+                // Determine flags based on mode string at compile time.
+                let mode_is_write = match lookup.get(mode).copied().or_else(|| stmts.iter().find(|n| n.id == *mode)) {
+                    Some(ICNFNode { node: ICNFInner::Const(Atom::Str(m)), .. }) => {
+                        m.contains('w') || m.contains('a') || m.contains('+')
+                    }
+                    _ => true, // default to write mode
+                };
+
+                let path_node = lookup.get(path).copied().or_else(|| stmts.iter().find(|n| n.id == *path));
+                let path_label = match path_node {
+                    Some(ICNFNode {
+                        node: ICNFInner::Const(Atom::Str(s)),
+                        ..
+                    }) => self.emit_string_literal(s),
+                    _ => {
+                        // Fallback: load path via emit_load_into
+                        self.emit_load_into(
+                            *path, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                        );
+                        self.asm_push_align();
+                        self.asm.push("    mov rdi, rax         # path pointer".to_string());
+                        self.asm_push_align();
+                        if mode_is_write {
+                            self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                            self.asm.push("    mov rdx, 420       # 0o644".to_string());
+                        } else {
+                            self.asm.push("    mov rsi, 0         # O_RDONLY".to_string());
+                        }
+                        self.asm_push_align();
+                        self.asm.push("    mov rax, 2         # SYS_OPEN".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    syscall".to_string());
+                        return;
+                    }
+                };
+
+                self.asm_push_align();
+                self.asm.push(format!("    lea rdi, [{}]      # path pointer", path_label));
+                self.asm_push_align();
+                if mode_is_write {
+                    self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                    self.asm.push("    mov rdx, 420       # 0o644".to_string());
+                } else {
+                    self.asm.push("    mov rsi, 0         # O_RDONLY".to_string());
+                }
+                self.asm_push_align();
+                self.asm.push("    mov rax, 2         # SYS_OPEN".to_string());
+                self.asm_push_align();
+                self.asm.push("    syscall".to_string());
+                // rax = fd or -1
+            }
+
+            ICNFInner::FileRead { handle, count } => {
+                // read(fd, buf, count) -> bytes_read
+                // SYS_READ = 0
+                // Load handle (fd) into rax first
+                self.emit_load_into(
+                    *handle, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+
+                let count_node = lookup.get(count).copied().or_else(|| stmts.iter().find(|n| n.id == *count));
+                let count_is_int_const = matches!(count_node, Some(ICNFNode { node: ICNFInner::Const(Atom::Int(_)), .. }));
+
+                if count_is_int_const {
+                    if let Some(ICNFNode { node: ICNFInner::Const(Atom::Int(c)), .. }) = count_node {
+                        self.asm_push_align();
+                        self.asm.push("    mov rdi, rax         # fd (from file-open result in rax)".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    lea rsi, [.file_read_buf]  # buffer pointer".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov rdx, {}        # count: {} bytes", c, c));
+                        self.asm_push_align();
+                        self.asm.push("    mov rax, 0         # SYS_READ".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    syscall".to_string());
+                        self.asm_push_align();
+                        // null-terminate the buffer so it can be printed as a C string
+                        self.asm.push("    push rsi           # save buffer pointer".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    lea rsi, [.file_read_buf]  # buffer address".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    add rsi, rax         # rsi = buffer + bytes_read".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    mov byte ptr [rsi], 0  # null-terminate".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    pop rsi              # restore buffer pointer".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    mov rax, rsi         # return buffer pointer (not bytes_read)".to_string());
+                        return;
+                    }
+                }
+
+                // General case: load handle and count from registers
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rax         # fd (from prior computation)".to_string());
+                self.asm_push_align();
+                self.asm.push("    lea rsi, [.file_read_buf]  # buffer pointer".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rdx, rcx         # count (from rcx)".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 0         # SYS_READ".to_string());
+                self.asm_push_align();
+                self.asm.push("    syscall".to_string());
+                self.asm_push_align();
+                // null-terminate the buffer so it can be printed as a C string
+                self.asm.push("    push rsi           # save buffer pointer".to_string());
+                self.asm_push_align();
+                self.asm.push("    lea rsi, [.file_read_buf]  # buffer address".to_string());
+                self.asm_push_align();
+                self.asm.push("    add rsi, rax         # rsi = buffer + bytes_read".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov byte ptr [rsi], 0  # null-terminate".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop rsi              # restore buffer pointer".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, rsi         # return buffer pointer (not bytes_read)".to_string());
+                // rax = buffer pointer, rsi = buffer pointer with data
+            }
+
+            ICNFInner::FileWrite { handle, data } => {
+                // write(fd, buf, count) -> bytes_written or -1
+                // SYS_WRITE = 1
+                // fd is in rax (from prior computation)
+                // data pointer should end up in rsi
+                // we use r12 to preserve fd across the strlen loop
+                let data_node = lookup.get(data).copied().or_else(|| stmts.iter().find(|n| n.id == *data));
+                let data_label = match data_node {
+                    Some(ICNFNode {
+                        node: ICNFInner::Const(Atom::Str(s)),
+                        ..
+                    }) => Some(self.emit_string_literal(s)),
+                    _ => None,
+                };
+
+                // Load handle (fd) from local variable or prior computation
+                self.emit_load_into(
+                    *handle, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+
+                let strlen_done = self.new_label();
+                self.asm_push_align();
+                self.asm.push("    push r12           # preserve fd".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r12, rax         # save fd to r12".to_string());
+                self.asm_push_align();
+                if let Some(ref label) = data_label {
+                    self.asm.push(format!("    lea rsi, [{}]      # data pointer (rodata)", label));
+                } else {
+                    self.asm.push("    mov rsi, rdx       # data pointer (from rdx)".to_string());
+                }
+                self.asm_push_align();
+                self.asm.push("    mov rax, 0           # strlen result counter".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rcx, rsi         # rcx = string pointer".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("strlen_loop_{}:", self.label_counter));
+                self.asm_push_align();
+                self.asm.push("    cmp byte ptr [rcx], 0".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    je {}", strlen_done));
+                self.asm_push_align();
+                self.asm.push("    inc rcx".to_string());
+                self.asm_push_align();
+                self.asm.push("    inc rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp strlen_loop_{}", self.label_counter));
+                self.label_counter += 1;
+                self.asm_push_align();
+                self.asm.push(format!("{}:", strlen_done));
+                self.asm_push_align();
+                // rax = string length
+                self.asm.push("    mov rdx, rax         # count = string length".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rdi, r12         # fd (restored from r12)".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 1           # SYS_WRITE".to_string());
+                self.asm_push_align();
+                self.asm.push("    syscall".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop r12            # restore r12".to_string());
+                // rax = bytes_written or -1
+            }
+
+            ICNFInner::FileClose(handle_id) => {
+                // close(fd) -> 0 on success, -1 on error
+                // SYS_CLOSE = 3
+                self.emit_load_into(
+                    *handle_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rax         # fd (handle from prior computation)".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 3           # SYS_CLOSE".to_string());
+                self.asm_push_align();
+                self.asm.push("    syscall".to_string());
             }
 
             ICNFInner::Call(name, args) => {
@@ -4598,6 +4816,21 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
                 for &a in args {
                     out.insert(a);
                 }
+            }
+            ICNFInner::FileOpen { path, mode } => {
+                out.insert(*path);
+                out.insert(*mode);
+            }
+            ICNFInner::FileRead { handle, count } => {
+                out.insert(*handle);
+                out.insert(*count);
+            }
+            ICNFInner::FileWrite { handle, data } => {
+                out.insert(*handle);
+                out.insert(*data);
+            }
+            ICNFInner::FileClose(handle) => {
+                out.insert(*handle);
             }
             ICNFInner::ReadLine => {}
             ICNFInner::If {

@@ -452,6 +452,17 @@ impl Optimizer {
             ICNFInner::Close(code) => {
                 used_ids.insert(*code);
             }
+            ICNFInner::FileRead { handle, count } => {
+                used_ids.insert(*handle);
+                used_ids.insert(*count);
+            }
+            ICNFInner::FileWrite { handle, data } => {
+                used_ids.insert(*handle);
+                used_ids.insert(*data);
+            }
+            ICNFInner::FileClose(handle) => {
+                used_ids.insert(*handle);
+            }
             ICNFInner::Print(args) => {
                 for &a in args {
                     used_ids.insert(a);
@@ -505,6 +516,10 @@ impl Optimizer {
                 | ICNFInner::Exit(_)
                 | ICNFInner::Close(_)
                 | ICNFInner::ReadLine
+                | ICNFInner::FileOpen { .. }
+                | ICNFInner::FileRead { .. }
+                | ICNFInner::FileWrite { .. }
+                | ICNFInner::FileClose(_)
                 | ICNFInner::Assert { .. }
         ) || matches!(
             inner,

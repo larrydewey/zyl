@@ -139,6 +139,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         | ExprInner::UseModule(_, _, _)
         | ExprInner::Export(_)
         | ExprInner::ReadLine
+        | ExprInner::FileOpen(_, _)
         | ExprInner::Error(_)
         | ExprInner::MakeVariant(_, _, _)
         | ExprInner::Deftype(_, _, _)
@@ -160,7 +161,10 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         | ExprInner::AssertFail(_, _)
         | ExprInner::AssertTrue(_, _)
         | ExprInner::AssertFalse(_, _)
-        | ExprInner::WithResource(_, _, _) => {}
+        | ExprInner::WithResource(_, _, _)
+        | ExprInner::FileRead(_, _)
+        | ExprInner::FileWrite(_, _)
+        | ExprInner::FileClose(_) => {}
     }
 }
 
@@ -302,6 +306,14 @@ pub enum ICNFInner {
     Exit(usize),
     /// Close a resource handle.
     Close(usize),
+    /// Open a file: returns file descriptor (Int).
+    FileOpen { path: usize, mode: usize },
+    /// Read from file: returns String (bytes read into buffer).
+    FileRead { handle: usize, count: usize },
+    /// Write to file: returns Int (bytes written).
+    FileWrite { handle: usize, data: usize },
+    /// Close a file handle.
+    FileClose(usize),
     /// With-resource: acquire and release pattern.
     WithResource { var_name: String, init_ssa: usize },
     /// Set! mutation (for mutable bindings).
@@ -1977,6 +1989,55 @@ impl IcnfConverter {
                 Ok(vec![self.emit(ICNFInner::Close(handle_id))])
             }
 
+            // file-open.
+            ExprInner::FileOpen(path, mode) => {
+                let mut path_stmts = self.convert_expr_to_stmts(path)?;
+                let path_id = path_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut mode_stmts = self.convert_expr_to_stmts(mode)?;
+                let mode_id = mode_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut all: Vec<ICNFNode> = Vec::new();
+                all.append(&mut path_stmts);
+                all.append(&mut mode_stmts);
+                all.push(self.emit(ICNFInner::FileOpen { path: path_id, mode: mode_id }));
+                Ok(all)
+            }
+
+            // file-read.
+            ExprInner::FileRead(handle, count) => {
+                let mut handle_stmts = self.convert_expr_to_stmts(handle)?;
+                let handle_id = handle_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut count_stmts = self.convert_expr_to_stmts(count)?;
+                let count_id = count_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut all: Vec<ICNFNode> = Vec::new();
+                all.append(&mut handle_stmts);
+                all.append(&mut count_stmts);
+                all.push(self.emit(ICNFInner::FileRead { handle: handle_id, count: count_id }));
+                Ok(all)
+            }
+
+            // file-write.
+            ExprInner::FileWrite(handle, data) => {
+                let mut handle_stmts = self.convert_expr_to_stmts(handle)?;
+                let handle_id = handle_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut data_stmts = self.convert_expr_to_stmts(data)?;
+                let data_id = data_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut all: Vec<ICNFNode> = Vec::new();
+                all.append(&mut handle_stmts);
+                all.append(&mut data_stmts);
+                all.push(self.emit(ICNFInner::FileWrite { handle: handle_id, data: data_id }));
+                Ok(all)
+            }
+
+            // file-close.
+            ExprInner::FileClose(handle) => {
+                let mut handle_stmts = self.convert_expr_to_stmts(handle)?;
+                let handle_id = handle_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut all: Vec<ICNFNode> = Vec::new();
+                all.append(&mut handle_stmts);
+                all.push(self.emit(ICNFInner::FileClose(handle_id)));
+                Ok(all)
+            }
+
             // With-resource binding.
             ExprInner::WithResource(name, init, body) => {
                 let saved_scope = std::mem::take(&mut self.current_scope);
@@ -2652,7 +2713,9 @@ impl IcnfConverter {
             ICNFInner::Unit => Region::Stack,
             ICNFInner::Print(..) => Region::Stack,
             ICNFInner::ReadLine => Region::Heap,
-            ICNFInner::Exit(_) | ICNFInner::Close(_) => Region::Stack,
+            ICNFInner::Exit(_) | ICNFInner::Close(_) | ICNFInner::FileOpen { .. } | ICNFInner::FileClose(_) => Region::Stack,
+            ICNFInner::FileRead { .. } => Region::Heap,
+            ICNFInner::FileWrite { .. } => Region::Stack,
             ICNFInner::WithResource { .. } => Region::Stack,
             ICNFInner::SetBang(_, _) => Region::Stack,
             ICNFInner::Unwrap(_) => Region::Heap, // alias values are heap.
