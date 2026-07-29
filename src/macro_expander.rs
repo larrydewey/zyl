@@ -788,6 +788,7 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         ModuleDecl(_) => expr.inner.clone(),
         Export(_) => expr.inner.clone(),
         ReadLine => ExprInner::ReadLine,
+        FileOpen(..) | FileRead(..) | FileWrite(..) | FileClose(..) => expr.inner.clone(),
         Atom(_) | Error(_) | Apply(_, _) => expr.inner.clone(),
     }
 }
@@ -1112,6 +1113,27 @@ impl MacroExpander {
             }
             ExprInner::Close(e) => {
                 expr.inner = ExprInner::Close(Box::new(self.expand_expr(*e.clone())?));
+            }
+            ExprInner::FileOpen(path, mode) => {
+                expr.inner = ExprInner::FileOpen(
+                    Box::new(self.expand_expr(*path.clone())?),
+                    Box::new(self.expand_expr(*mode.clone())?),
+                );
+            }
+            ExprInner::FileRead(handle, count) => {
+                expr.inner = ExprInner::FileRead(
+                    Box::new(self.expand_expr(*handle.clone())?),
+                    Box::new(self.expand_expr(*count.clone())?),
+                );
+            }
+            ExprInner::FileWrite(handle, data) => {
+                expr.inner = ExprInner::FileWrite(
+                    Box::new(self.expand_expr(*handle.clone())?),
+                    Box::new(self.expand_expr(*data.clone())?),
+                );
+            }
+            ExprInner::FileClose(e) => {
+                expr.inner = ExprInner::FileClose(Box::new(self.expand_expr(*e.clone())?));
             }
             ExprInner::WithResource(name, init, body) => {
                 let rname = name.clone();

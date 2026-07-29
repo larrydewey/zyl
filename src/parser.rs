@@ -409,6 +409,30 @@ impl Parser {
             })
         } else if op == "close" {
             self.p_close(span, args)
+        } else if op == "file-open" {
+            check_arity!("file-open", 2, 2, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FileOpen(Box::new(args[0].clone()), Box::new(args[1].clone())),
+            })
+        } else if op == "file-read" {
+            check_arity!("file-read", 2, 2, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FileRead(Box::new(args[0].clone()), Box::new(args[1].clone())),
+            })
+        } else if op == "file-write" {
+            check_arity!("file-write", 2, 2, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FileWrite(Box::new(args[0].clone()), Box::new(args[1].clone())),
+            })
+        } else if op == "file-close" {
+            check_arity!("file-close", 1, 1, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::FileClose(Box::new(args[0].clone())),
+            })
         }
         // Resource management.
         else if op == "with-resource" {

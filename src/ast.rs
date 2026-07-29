@@ -86,6 +86,10 @@ pub enum ExprInner {
     ReadLine,
     Exit(Box<Expr>),
     Close(Box<Expr>),
+    FileOpen(Box<Expr>, Box<Expr>),
+    FileRead(Box<Expr>, Box<Expr>),
+    FileWrite(Box<Expr>, Box<Expr>),
+    FileClose(Box<Expr>),
     WithResource(String, Box<Expr>, Box<Expr>),
     Deftype(String, Vec<ADTVariant>, Option<String>),
     TraitDecl(String, Vec<TraitMethod>, Option<(String, String)>),
@@ -467,6 +471,32 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             f.write_str("(close ")?;
             let _ = write_sexpr(f, e);
             Ok(())
+        }
+        ExprInner::FileOpen(path, mode) => {
+            f.write_str("(file-open ")?;
+            let _ = write_sexpr(f, path);
+            f.write_str(" ")?;
+            let _ = write_sexpr(f, mode);
+            f.write_str(")")
+        }
+        ExprInner::FileRead(handle, count) => {
+            f.write_str("(file-read ")?;
+            let _ = write_sexpr(f, handle);
+            f.write_str(" ")?;
+            let _ = write_sexpr(f, count);
+            f.write_str(")")
+        }
+        ExprInner::FileWrite(handle, data) => {
+            f.write_str("(file-write ")?;
+            let _ = write_sexpr(f, handle);
+            f.write_str(" ")?;
+            let _ = write_sexpr(f, data);
+            f.write_str(")")
+        }
+        ExprInner::FileClose(handle) => {
+            f.write_str("(file-close ")?;
+            let _ = write_sexpr(f, handle);
+            f.write_str(")")
         }
         ExprInner::WithResource(name, init, body) => {
             write!(f, "(with-resource ({} ", name)?;
@@ -1069,6 +1099,64 @@ impl PostProcessor {
             // close → Close (Apply form).
             ExprInner::Apply(name, args) if name == "close" && args.len() == 1 => {
                 expr.inner = ExprInner::Close(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // file-open → FileOpen (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "file-open") && args.len() == 2 => {
+                expr.inner = ExprInner::FileOpen(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-open → FileOpen (Apply form).
+            ExprInner::Apply(name, args) if name == "file-open" && args.len() == 2 => {
+                expr.inner = ExprInner::FileOpen(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-read → FileRead (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "file-read") && args.len() == 2 => {
+                expr.inner = ExprInner::FileRead(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-read → FileRead (Apply form).
+            ExprInner::Apply(name, args) if name == "file-read" && args.len() == 2 => {
+                expr.inner = ExprInner::FileRead(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-write → FileWrite (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "file-write") && args.len() == 2 => {
+                expr.inner = ExprInner::FileWrite(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-write → FileWrite (Apply form).
+            ExprInner::Apply(name, args) if name == "file-write" && args.len() == 2 => {
+                expr.inner = ExprInner::FileWrite(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // file-close → FileClose (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "file-close") && args.len() == 1 => {
+                expr.inner = ExprInner::FileClose(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // file-close → FileClose (Apply form).
+            ExprInner::Apply(name, args) if name == "file-close" && args.len() == 1 => {
+                expr.inner = ExprInner::FileClose(Box::new(self.post_process_expr(args[0].clone())));
             }
 
             // with-resource → WithResource (Call form).
@@ -1998,6 +2086,7 @@ fn is_known_builtin_or_apply(name: &str) -> bool {
         name,
         "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "not"
             | "and" | "or" | "print" | "read-line" | "exit" | "close" | "unwrap"
+            | "file-open" | "file-read" | "file-write" | "file-close"
             | "str" | "int" | "float" | "is-some" | "is-none" | "is-ok" | "is-err"
             // Builtin trait/primitive names that shouldn't become MakeVariant.
             | "Int" | "Float" | "Bool" | "String" | "Unit" | "Vec" | "Option" | "Result"

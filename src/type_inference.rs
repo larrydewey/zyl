@@ -1201,6 +1201,25 @@ impl TypeInferer {
                 drop(self.infer_expr(resource)?);
                 Ok(Type::Prim(PrimType::Unit))
             }
+            ExprInner::FileOpen(path, mode) => {
+                drop(self.infer_expr(path)?);
+                drop(self.infer_expr(mode)?);
+                Ok(Type::Prim(PrimType::Int))
+            }
+            ExprInner::FileRead(handle, count) => {
+                drop(self.infer_expr(handle)?);
+                drop(self.infer_expr(count)?);
+                Ok(Type::Prim(PrimType::String))
+            }
+            ExprInner::FileWrite(handle, data) => {
+                drop(self.infer_expr(handle)?);
+                drop(self.infer_expr(data)?);
+                Ok(Type::Prim(PrimType::Int))
+            }
+            ExprInner::FileClose(handle) => {
+                drop(self.infer_expr(handle)?);
+                Ok(Type::Prim(PrimType::Unit))
+            }
 
             _ => Ok(Type::Var(self.fresh_var())),
         }
@@ -1377,6 +1396,21 @@ impl TypeInferer {
             for arg in args {
                 drop(self.infer_expr(arg)?);
             }
+            Ok(Type::Prim(PrimType::Unit))
+        } else if op_name == "file-open" {
+            drop(self.infer_expr(&args[0])?);
+            drop(self.infer_expr(&args[1])?);
+            Ok(Type::Prim(PrimType::Int))
+        } else if op_name == "file-read" {
+            drop(self.infer_expr(&args[0])?);
+            drop(self.infer_expr(&args[1])?);
+            Ok(Type::Prim(PrimType::String))
+        } else if op_name == "file-write" {
+            drop(self.infer_expr(&args[0])?);
+            drop(self.infer_expr(&args[1])?);
+            Ok(Type::Prim(PrimType::Int))
+        } else if op_name == "file-close" {
+            drop(self.infer_expr(&args[0])?);
             Ok(Type::Prim(PrimType::Unit))
         } else {
             self.handle_apply(&op_name, args)
