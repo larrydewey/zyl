@@ -1,4 +1,4 @@
-use crate::ast::{Expr, ExprInner};
+use crate::ast::{Atom, Expr, ExprInner};
 use crate::error::ZylError;
 use indexmap::IndexMap;
 use std::fs;
@@ -45,12 +45,37 @@ impl ModuleResolver {
         main_file: &Path,
     ) -> Result<Vec<Expr>, ZylModuleError> {
         // Extract use statements and body expressions from already-parsed root_exprs.
+        // The parser runs with no_dispatch=true, so use statements appear as raw
+        // Call(Ident("use"), [Ident("module/name")]) rather than UseModule.
         let mut use_stmts: Vec<(String, Option<Vec<String>>, bool)> = Vec::new();
         let mut body_exprs: Vec<Expr> = Vec::new();
         for expr in root_exprs {
             match &expr.inner {
                 ExprInner::UseModule(parts, syms, unsafe_) => {
                     use_stmts.push((parts.join("/"), syms.clone(), *unsafe_));
+                }
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "use") => {
+                    if !args.is_empty() {
+                        let module_name = match &args[0].inner {
+                            ExprInner::Atom(Atom::Ident(m)) => m.clone(),
+                            _ => continue,
+                        };
+                        let mut syms: Option<Vec<String>> = None;
+                        let mut unsafe_ = false;
+                        for arg in &args[1..] {
+                            if let ExprInner::Atom(Atom::Keyword(kw)) = &arg.inner {
+                                if kw == "unsafe" {
+                                    unsafe_ = true;
+                                    continue;
+                                }
+                            }
+                            if let ExprInner::Atom(Atom::Ident(s)) = &arg.inner {
+                                syms.get_or_insert_with(Vec::new);
+                                syms.as_mut().unwrap().push(s.clone());
+                            }
+                        }
+                        use_stmts.push((module_name, syms, unsafe_));
+                    }
                 }
                 ExprInner::ModuleDecl(_) | ExprInner::Export(_) => {
                     // Skip module declarations and exports — handled by resolver.
@@ -186,11 +211,6 @@ impl ModuleResolver {
         let mut processor = PostProcessor::new();
         let exprs = processor.process(exprs);
 
-        // Debug: print first few expr inner types
-        for (i, e) in exprs.iter().enumerate().take(5) {
-            eprintln!("  [resolver/parse] expr[{}] = {:?}", i, e.inner);
-        }
-
         let mut use_stmts: Vec<(String, Option<Vec<String>>, bool)> = Vec::new();
         let mut export_stmts: Vec<String> = Vec::new();
         let mut other_exprs: Vec<Expr> = Vec::new();
@@ -270,6 +290,12 @@ pub enum ZylModuleError {
 
     #[error("lexer: {0}")]
     Lexer(#[from] ZylError),
+}
+
+impl ModuleResolver {
+    fn is_ident_op(op: &Expr, name: &str) -> bool {
+        matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == name)
+    }
 }
 
 /// Convert module resolution errors to ZylError.
