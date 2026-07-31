@@ -163,6 +163,16 @@ pub enum ZylError {
     // --- Reserved keyword errors (Phase 1.5) ---
     #[error("parser: reserved keyword '{}' cannot be used as identifier at {}", .1, .0)]
     E_RESERVED_KEYWORD(Span, String),
+
+    // --- Module system errors ---
+    #[error("module: module '{}' not found at '{}'", .0, .1)]
+    E_MODULE_NOT_FOUND(String, String),
+
+    #[error("module: symbol '{}' not exported by '{}'", .0, .1)]
+    E_SYMBOL_NOT_EXPORTED(String, String),
+
+    #[error("module: circular dependency: {}", .0)]
+    E_CIRCULAR_MODULE(String),
 }
 
 /// A result carrying a ZylError.

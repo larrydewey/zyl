@@ -1,23 +1,126 @@
-; === Zyl Standard Library — Core (assembled from modules) ===
+; === Zyl Standard Library — Core ===
 ; Module: core
-; Composes: core (basics) + option + result + list
-; Provides: all standard library functions via single import
+; Provides: all standard library types and functions (inlined)
 
 ; ===========================================================================
-; COMPOSING MODULES
+; OPTION ADT
 ; ===========================================================================
 
-; Import option ADT (OptionInt, OptionBool + helpers)
-(use core/option)
+(deftype OptionInt (SomeInt Int) None)
+(deftype OptionBool (SomeBool Bool) None)
 
-; Import result ADT (ResultInt + helpers)
-(use core/result)
+(defn option-int-unwrap (opt default)
+  (match opt
+    (SomeInt v) v
+    (None) default))
 
-; Import list ADT (List + utilities)
-(use core/list)
+(defn option-int-is-some (opt)
+  (match opt
+    (SomeInt _) true
+    (None) false))
+
+(defn option-int-is-none (opt)
+  (match opt
+    (SomeInt _) false
+    (None) true))
+
+(defn option-bool-unwrap (opt default)
+  (match opt
+    (SomeBool v) v
+    (None) default))
+
+(defn option-bool-is-some (opt)
+  (match opt
+    (SomeBool _) true
+    (None) false))
+
+(defn option-bool-is-none (opt)
+  (match opt
+    (SomeBool _) false
+    (None) true))
 
 ; ===========================================================================
-; COMBINATORS (inlined here)
+; RESULT ADT
+; ===========================================================================
+
+(deftype ResultInt (OkInt Int) (ErrInt String))
+
+(defn result-int-unwrap (res default)
+  (match res
+    (OkInt v) v
+    (ErrInt _) default))
+
+(defn result-int-is-ok (res)
+  (match res
+    (OkInt _) true
+    (ErrInt _) false))
+
+(defn result-int-is-err (res)
+  (match res
+    (OkInt _) false
+    (ErrInt _) true))
+
+; ===========================================================================
+; LIST ADT
+; ===========================================================================
+
+(deftype List (Cons Int (List)) None)
+
+(defn is-nil (xs)
+  (match xs
+    (Cons _ _) false
+    (None) true))
+
+(defn list-car (xs)
+  (match xs
+    (Cons v _) (SomeInt v)
+    (None) None))
+
+(defn list-cdr (xs)
+  (match xs
+    (Cons _ rest) rest
+    (None) None))
+
+(defn list-head (xs)
+  (match xs
+    (Cons v _) (SomeInt v)
+    (None) None))
+
+(defn list-tail (xs)
+  (match xs
+    (Cons _ rest) rest
+    (None) None))
+
+(defn list-length (xs)
+  (match xs
+    (None) 0
+    (Cons _ rest) (+ 1 (list-length rest))))
+
+(defn list-append (xs ys)
+  (match xs
+    (None) ys
+    (Cons h t) (Cons h (list-append t ys))))
+
+(defn list-reverse (xs)
+  (list-reverse-acc xs None))
+
+(defn list-reverse-acc (xs acc)
+  (match xs
+    (None) acc
+    (Cons h t) (list-reverse-acc t (Cons h acc))))
+
+(defn list-sum (xs)
+  (match xs
+    (None) 0
+    (Cons h t) (+ h (list-sum t))))
+
+(defn list-product (xs)
+  (match xs
+    (None) 1
+    (Cons h t) (* h (list-product t))))
+
+; ===========================================================================
+; COMBINATORS
 ; ===========================================================================
 
 (defn identity (x) x)
