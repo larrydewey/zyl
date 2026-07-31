@@ -59,6 +59,8 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Closure capture: env struct from rdi, metadata tracking in ICNF→CodeGen
 - [x] send-closure: captured variable support, C runtime closure dispatch
 - [x] File I/O: file-open/read/write/close, syscalls with correct flags (577=O_WRONLY|O_CREAT|O_TRUNC), handle loading via emit_load_into, operand_ids collection for file ops, null-terminated read buffers
+- [x] Module system: ModuleResolver wired into pipeline, use statement resolution, stdlib path lookup, symbol filtering, circular dependency detection, E_MODULE_NOT_FOUND/E_SYMBOL_NOT_EXPORTED/E_CIRCULAR_MODULE error codes
+- [x] Stdlib: core.zyl (inlined Option/Result/List ADTs + helpers), list.zyl, option.zyl, result.zyl
 
 ---
 
