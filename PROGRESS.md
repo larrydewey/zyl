@@ -43,6 +43,10 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Recent Fixes (Applied)
 
+- [x] Multi-operand call + BinOp register clobbering: fixed emit_binop_direct save/restore (push rax for left operand, pop rcx after right operand load), fixed emit_call_direct argument save/restore (push rax/r64 before loading next arg, pop all before call)
+- [x] BinOp in main emit loop: added skip for BinOp/UnOp when they're operands to Print/Call (emitted on-demand via emit_load_into instead of during main loop)
+- [x] BinOp operation code: fixed Add/Sub/Mul/Div/And/Or to use correct registers (mov eax, ecx / add eax, edx pattern)
+- [x] Push/pop register naming: changed to 64-bit register names (rdi/rax/etc.) for assembler compatibility
 - [x] Function names with hyphens: fully sanitized in ICNF layer (all call sites), verified end-to-end
 - [x] Nested conditionals: fixed phi slot collision, register clobbering, float condition detection
 - [x] Struct function calls: fixed MakeStruct rbp marker stack corruption

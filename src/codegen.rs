@@ -367,7 +367,8 @@ impl CodeGen {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
                         | ICNFInner::Call(_, _) => continue,
-                        ICNFInner::BinOp(_, _, _) | ICNFInner::UnOp(_, _) => continue,
+                        ICNFInner::BinOp(_, _, _) => continue,
+                        ICNFInner::UnOp(_, _) => continue,
                         _ => {}
                     }
                 }
@@ -669,6 +670,18 @@ impl CodeGen {
                 // Skip condition BinOps — they're emitted inline by the If handler.
                 if condition_ids.contains(&stmt.id) {
                     continue;
+                }
+                // Skip nodes that are operands to a parent node (Print/Call/BinOp/etc.).
+                // These are emitted on-demand via emit_load_into when a parent handler
+                // requests the result, preventing clobbering by subsequent statements.
+                if operand_ids.contains(&stmt.id) {
+                    match &stmt.node {
+                        ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
+                        | ICNFInner::Call(_, _) => continue,
+                        ICNFInner::BinOp(_, _, _) => continue,
+                        ICNFInner::UnOp(_, _) => continue,
+                        _ => {}
+                    }
                 }
                 self.emit_node(
                     stmt,
@@ -1563,10 +1576,11 @@ impl CodeGen {
             return;
         }
 
-        let dest = "eax";
-        let src1 = "ecx";
+        let src1 = "eax";
         let src2 = "edx";
 
+        // Load left operand into eax, save to stack.
+        // Right operand loading may clobber eax via nested calls/BinOps.
         self.emit_load_into(
             left_id,
             src1,
@@ -1577,6 +1591,8 @@ impl CodeGen {
             &std::collections::HashSet::new(),
             &std::collections::HashMap::new(),
         );
+        self.asm_push_align();
+        self.asm.push("    push rax".to_string());
         self.emit_load_into(
             right_id,
             src2,
@@ -1587,27 +1603,31 @@ impl CodeGen {
             &std::collections::HashSet::new(),
             &std::collections::HashMap::new(),
         );
+        self.asm_push_align();
+        self.asm.push("    pop rcx".to_string());
 
         match op {
             BinOpKind::Add => {
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, {}", dest, src1));
+                self.asm.push("    mov eax, ecx".to_string());
                 self.asm_push_align();
-                self.asm.push(format!("    add {}, {}", dest, src2));
+                self.asm.push(format!("    add eax, {}", src2));
             }
             BinOpKind::Sub => {
                 self.asm_push_align();
-                self.asm.push(format!("    sub {}, {}", dest, src2));
+                self.asm.push("    mov eax, ecx".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    sub eax, {}", src2));
             }
             BinOpKind::Mul => {
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, {}", dest, src1));
+                self.asm.push("    mov eax, ecx".to_string());
                 self.asm_push_align();
-                self.asm.push(format!("    imul {}, {}", dest, src2));
+                self.asm.push(format!("    imul eax, {}", src2));
             }
             BinOpKind::Div | BinOpKind::Rem => {
                 self.asm_push_align();
-                self.asm.push(format!("    mov eax, {}", src1));
+                self.asm.push("    mov eax, ecx".to_string());
                 self.asm_push_align();
                 self.asm.push("    cdq".to_string());
                 if op == &BinOpKind::Div {
@@ -1630,7 +1650,7 @@ impl CodeGen {
             | BinOpKind::Ge => {
                 let d = reg_to_32(target_reg);
                 self.asm_push_align();
-                self.asm.push(format!("    cmp {}, {}", src1, src2));
+                self.asm.push("    cmp ecx, edx".to_string());
                 let (set_instr, _) = match op {
                     BinOpKind::Eq => ("sete", ""),
                     BinOpKind::Neq => ("setne", ""),
@@ -1647,11 +1667,15 @@ impl CodeGen {
             }
             BinOpKind::And => {
                 self.asm_push_align();
-                self.asm.push(format!("    and {}, {}", dest, src1));
+                self.asm.push("    mov eax, edx".to_string());
+                self.asm_push_align();
+                self.asm.push("    and eax, ecx".to_string());
             }
             BinOpKind::Or => {
                 self.asm_push_align();
-                self.asm.push(format!("    or {}, {}", dest, src1));
+                self.asm.push("    mov eax, edx".to_string());
+                self.asm_push_align();
+                self.asm.push("    or eax, ecx".to_string());
             }
         }
         emitted_ids.insert(node_id);
@@ -1673,37 +1697,98 @@ impl CodeGen {
         is_float: bool,
     ) {
         let abi_regs = ["edi", "esi", "edx", "ecx", "r8d", "r9d"];
+        let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
         let abi_xmm = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
-        for (i, &arg_id) in args.iter().enumerate() {
-            if i < 6 {
-                // Check if this argument is a float type.
-                let arg_is_float = lookup
+        // Collect argument types first.
+        let arg_info: Vec<(bool, bool)> = args
+            .iter()
+            .take(6)
+            .map(|&arg_id| {
+                let is_float = lookup
                     .get(&arg_id)
                     .copied()
                     .or_else(|| stmts.iter().find(|n| n.id == arg_id))
                     .and_then(|n| n.typ.as_ref())
                     .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                if arg_is_float {
-                    // Float args go in XMM registers.
-                    let xmm_reg = abi_xmm[i];
-                    self.emit_float_load_into(
-                        arg_id, xmm_reg, stmts, local_vars, lookup, emitted_ids,
-                        &std::collections::HashSet::new(),
-                    );
-                } else {
-                    // Non-float args go in GPRs.
-                    let reg = abi_regs[i];
-                    self.emit_load_into(
-                        arg_id,
-                        reg,
-                        stmts,
-                        local_vars,
-                        lookup,
-                        emitted_ids,
-                        &std::collections::HashSet::new(),
-                        &std::collections::HashMap::new(),
-                    );
-                }
+                let is_io = matches!(
+                    lookup.get(&arg_id).copied().or_else(|| stmts.iter().find(|n| n.id == arg_id)),
+                    Some(ICNFNode {
+                        node: ICNFInner::ReadLine | ICNFInner::FileRead { .. },
+                        ..
+                    })
+                );
+                (is_float, is_io)
+            })
+            .collect();
+        let num_args = args.len().min(6);
+        // Load each argument, save its result to the stack to prevent clobbering
+        // by subsequent argument loading.
+        for (i, &arg_id) in args.iter().enumerate().take(num_args) {
+            let (arg_is_float, is_io) = arg_info[i];
+            if arg_is_float {
+                let xmm_reg = abi_xmm[i];
+                self.emit_float_load_into(
+                    arg_id, &xmm_reg, stmts, local_vars, lookup, emitted_ids,
+                    &std::collections::HashSet::new(),
+                );
+                // Save XMM result to stack (push rax to keep rsp 8-byte aligned)
+                self.asm_push_align();
+                self.asm.push("    push rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 16".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    movsd [rsp], {}", xmm_reg));
+            } else if is_io {
+                self.emit_load_into(
+                    arg_id,
+                    "rax",
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    &std::collections::HashSet::new(),
+                    &std::collections::HashMap::new(),
+                );
+                self.asm_push_align();
+                self.asm.push("    push rax".to_string());
+            } else {
+                let reg = abi_regs[i];
+                self.emit_load_into(
+                    arg_id,
+                    reg,
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    &std::collections::HashSet::new(),
+                    &std::collections::HashMap::new(),
+                );
+                // Save GPR result to stack (push the 64-bit register)
+                self.asm_push_align();
+                let reg_64 = abi_regs_64[i];
+                self.asm.push(format!("    push {}", reg_64));
+            }
+        }
+        // Restore all saved argument values into their ABI registers.
+        // Pop in reverse order so arg 0 ends up in the correct ABI reg.
+        for i in (0..num_args).rev() {
+            let (arg_is_float, is_io) = arg_info[i];
+            if arg_is_float {
+                self.asm_push_align();
+                self.asm.push("    add rsp, 16".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop rax".to_string());
+                let xmm_reg = abi_xmm[i];
+                self.asm_push_align();
+                self.asm.push(format!("    movsd {}, [rsp]", xmm_reg));
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 8".to_string());
+            } else if is_io {
+                self.asm_push_align();
+                self.asm.push(format!("    pop {}", abi_regs_64[i]));
+            } else {
+                self.asm_push_align();
+                self.asm.push(format!("    pop {}", abi_regs_64[i]));
             }
         }
 
@@ -2712,119 +2797,106 @@ impl CodeGen {
                                  self.asm_push_align();
                              }
                          }
-                     } else {
-                      let dest_reg = "eax";
-                      let src1_reg = "ecx";
-                      let src2_reg = "edx";
+                      } else {
+                        // Load left operand into eax, save to stack.
+                        // Right operand loading may clobber eax via nested calls/BinOps.
+                        self.emit_load_into(
+                            *left_id,
+                            "eax",
+                            stmts,
+                            local_vars,
+                            lookup,
+                            emitted_ids,
+                            operand_ids,
+                            phi_slots,
+                        );
+                        self.asm_push_align();
+                        self.asm.push("    push rax".to_string());
+                        self.emit_load_into(
+                            *right_id,
+                            "edx",
+                            stmts,
+                            local_vars,
+                            lookup,
+                            emitted_ids,
+                            operand_ids,
+                            phi_slots,
+                        );
+                        self.asm_push_align();
+                        self.asm.push("    pop rcx".to_string());
+                        emitted_ids.insert(node.id);
 
-                       self.emit_load_into(
-                           *left_id,
-                           src1_reg,
-                           stmts,
-                           local_vars,
-                           lookup,
-                           emitted_ids,
-                           operand_ids,
-                           phi_slots,
-                       );
-                       self.emit_load_into(
-                           *right_id,
-                           src2_reg,
-                           stmts,
-                           local_vars,
-                           lookup,
-                           emitted_ids,
-                           operand_ids,
-                           phi_slots,
-                       );
-                       emitted_ids.insert(node.id);
-
-                      match op {
-                          BinOpKind::Add => {
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    mov {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src1_reg)
-                              ));
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    add {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src2_reg)
-                              ));
-                          }
-                          BinOpKind::Sub => {
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    mov {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src1_reg)
-                              ));
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    sub {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src2_reg)
-                              ));
-                          }
-                          BinOpKind::Mul => {
-                              let d = reg_to_32(dest_reg);
-                              let s1 = reg_to_32(src1_reg);
-                              self.asm_push_align();
-                              self.asm.push(format!("    mov {}, {}", d, s1));
-                              self.asm_push_align();
-                              self.asm
-                                  .push(format!("    imul {}, {}", d, reg_to_32(src2_reg)));
-                          }
-                          BinOpKind::Div | BinOpKind::Rem => {
-                              let d = reg_to_32(dest_reg);
-                              self.asm_push_align();
-                              self.asm
-                                  .push(format!("    mov eax, {}", reg_to_32(src1_reg)));
-                              self.asm_push_align();
-                              self.asm.push("    cdq".to_string());
-                              if op == &BinOpKind::Div {
-                                  self.asm_push_align();
-                                  self.asm
-                                      .push(format!("    idiv {}", reg_to_32(src2_reg)));
-                                  self.asm_push_align();
-                                  self.asm
-                                      .push(format!("    mov {}, eax", d));
-                              } else {
-                                  let dd = reg_to_32(dest_reg);
-                                  self.asm_push_align();
-                                  self.asm.push(format!("    mov {}, edx", dd));
-                              }
-                          }
-                          BinOpKind::Eq
-                          | BinOpKind::Neq
-                          | BinOpKind::Lt
-                          | BinOpKind::Gt
-                          | BinOpKind::Le
-                          | BinOpKind::Ge => {
-                              let d = reg_to_32(dest_reg);
-                              self.emit_cmp_and_set(op, src1_reg, src2_reg, d);
-                          }
-                          BinOpKind::And => {
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    and {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src1_reg)
-                              ));
-                          }
-                          BinOpKind::Or => {
-                              self.asm_push_align();
-                              self.asm.push(format!(
-                                  "    or {}, {}",
-                                  reg_to_32(dest_reg),
-                                  reg_to_32(src1_reg)
-                              ));
-                          }
-                      }
-                  }
-              }
+                       match op {
+                           BinOpKind::Add => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, ecx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    add eax, edx".to_string());
+                           }
+                           BinOpKind::Sub => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, ecx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    sub eax, edx".to_string());
+                           }
+                           BinOpKind::Mul => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, ecx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    imul eax, edx".to_string());
+                           }
+                           BinOpKind::Div | BinOpKind::Rem => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, ecx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    cdq".to_string());
+                               if op == &BinOpKind::Div {
+                                   self.asm_push_align();
+                                   self.asm.push("    idiv edx".to_string());
+                                   self.asm_push_align();
+                                   self.asm.push("    mov eax, eax".to_string());
+                               } else {
+                                   self.asm_push_align();
+                                   self.asm.push("    mov eax, edx".to_string());
+                               }
+                           }
+                           BinOpKind::Eq
+                           | BinOpKind::Neq
+                           | BinOpKind::Lt
+                           | BinOpKind::Gt
+                           | BinOpKind::Le
+                           | BinOpKind::Ge => {
+                               self.asm_push_align();
+                               self.asm.push("    cmp ecx, edx".to_string());
+                               let (set_instr, _) = match op {
+                                   BinOpKind::Eq => ("sete", ""),
+                                   BinOpKind::Neq => ("setne", ""),
+                                   BinOpKind::Lt => ("setl", ""),
+                                   BinOpKind::Gt => ("setg", ""),
+                                   BinOpKind::Le => ("setle", ""),
+                                   BinOpKind::Ge => ("setge", ""),
+                                   _ => unreachable!(),
+                               };
+                               self.asm_push_align();
+                               self.asm.push(format!("    {} al", set_instr));
+                               self.asm_push_align();
+                               self.asm.push("    movzx eax, al".to_string());
+                           }
+                           BinOpKind::And => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, edx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    and eax, ecx".to_string());
+                           }
+                           BinOpKind::Or => {
+                               self.asm_push_align();
+                               self.asm.push("    mov eax, edx".to_string());
+                               self.asm_push_align();
+                               self.asm.push("    or eax, ecx".to_string());
+                           }
+                       }
+                   }
+               }
 
             ICNFInner::UnOp(op, arg_id) => {
                 let is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
@@ -3772,61 +3844,12 @@ impl CodeGen {
                 self.asm.push("    syscall".to_string());
             }
 
-            ICNFInner::Call(name, args) => {
-                // Function call — pass arguments in registers per System V ABI.
-                // Integers/pointers in GPRs, floats in XMM registers.
-                let abi_regs = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
-                let abi_xmm_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
-                let mut xmm_arg_count: usize = 0;
-
-                for (i, &arg_id) in args.iter().enumerate() {
-                    if i < 6 {
-                        let node = lookup
-                            .get(&arg_id)
-                            .copied()
-                            .or_else(|| stmts.iter().find(|n| n.id == arg_id));
-                        let is_float = match node {
-                            Some(ICNFNode { typ: Some(t), .. }) => matches!(t, Type::Prim(PrimType::Float)),
-                            _ => false,
-                        };
-                        if is_float {
-                            // Float arg: load directly into XMM register.
-                            self.emit_float_load_into(
-                                arg_id, abi_xmm_regs[i], stmts, local_vars, lookup, emitted_ids, operand_ids,
-                            );
-                            xmm_arg_count += 1;
-                        } else {
-                            // Non-float arg: load into GPR.
-                            let reg = abi_regs[i];
-                            self.emit_load_into(
-                                arg_id,
-                                reg,
-                                stmts,
-                                local_vars,
-                                lookup,
-                                emitted_ids,
-                                operand_ids,
-                                phi_slots,
-                            );
-                        }
-                    }
-                }
-
-                // Set number of XMM registers used for variadic calling convention.
-                self.asm_push_align();
-                self.asm.push(format!("    mov eax, {}", xmm_arg_count));
-
-                // User-defined functions use _ZYL_ prefix; skip libc calls.
-                if name == "printf" || name == "exit" {
-                    return; // Skip — handled specially elsewhere.
-                }
-
-                let fn_name = format!("_ZYL_{}", name);
-                self.asm_push_align();
-                self.asm.push(format!("    call {}", fn_name));
-
-                // Mark this node as emitted to prevent duplicate emission.
-                emitted_ids.insert(node.id);
+            ICNFInner::Call(_, _) => {
+                // Skip standalone Call statements in the main emit loop.
+                // Calls are emitted on-demand via emit_load_into when a parent
+                // handler (Print/BinOp/Assign/etc.) requests the result.
+                // Emitting here causes results to be clobbered by subsequent calls
+                // before they can be used.
             }
 
             ICNFInner::Exit(_code_id) => {
