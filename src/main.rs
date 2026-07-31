@@ -4,6 +4,7 @@ mod error;
 mod icnf;
 mod lexer;
 mod macro_expander;
+mod module_resolver;
 mod monomorphization;
 mod optimization;
 mod parser;
@@ -67,6 +68,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Post-processing AST...");
     let mut processor = ast::PostProcessor::new();
     let exprs = processor.process(exprs);
+
+    // Module resolution — resolve use statements, inline stdlib dependencies.
+    println!("[Module Resolution] Resolving imports ...");
+    let module_name = std::path::Path::new(source_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "main".into());
+    let mut resolver = module_resolver::ModuleResolver::new();
+    let exprs = resolver.resolve(&exprs, &src, &module_name, std::path::Path::new(source_path))
+        .map_err(module_resolver::module_error_to_zyl)?;
+    println!("  Module resolution complete: {} expressions.", exprs.len());
 
     // Phase 3: Macro Expansion — register defmacros then expand innermost-first.
     println!("[Phase 3] Macro expansion ...");

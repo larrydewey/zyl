@@ -1,5 +1,5 @@
 use crate::ast::{Expr, ExprInner};
-use crate::error::{Span, ZylError};
+use crate::error::ZylError;
 use indexmap::IndexMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,76 +35,44 @@ impl ModuleResolver {
 
     /// Resolve module declarations in the top-level AST.
     /// The root AST is already parsed + post-processed.
-    /// Dependencies are parsed fresh (they don't need PostProcessor since
-    /// tokenize → parse_exprs produces the same AST structure).
+    /// Extracts use statements from root_exprs, resolves dependencies,
+    /// and returns combined AST (deps + root body exprs).
     pub fn resolve(
         &mut self,
         root_exprs: &[Expr],
-        source: &str,
-        module_name: &str,
+        _source: &str,
+        _module_name: &str,
         main_file: &Path,
     ) -> Result<Vec<Expr>, ZylModuleError> {
-        let mut dep_stack = vec![module_name.into()];
-        self.resolve_module(root_exprs, source, module_name, main_file, &mut dep_stack)
-    }
-
-    fn resolve_module(
-        &mut self,
-        root_exprs: &[Expr],
-        source: &str,
-        module_name: &str,
-        file_path: &Path,
-        dep_stack: &mut Vec<String>,
-    ) -> Result<Vec<Expr>, ZylModuleError> {
-        // Already resolved?
-        if self.resolved.contains_key(module_name) {
-            // Return empty — definitions already inlined.
-            return Ok(Vec::new());
+        // Extract use statements and body expressions from already-parsed root_exprs.
+        let mut use_stmts: Vec<(String, Option<Vec<String>>, bool)> = Vec::new();
+        let mut body_exprs: Vec<Expr> = Vec::new();
+        for expr in root_exprs {
+            match &expr.inner {
+                ExprInner::UseModule(parts, syms, unsafe_) => {
+                    use_stmts.push((parts.join("/"), syms.clone(), *unsafe_));
+                }
+                ExprInner::ModuleDecl(_) | ExprInner::Export(_) => {
+                    // Skip module declarations and exports — handled by resolver.
+                }
+                _ => {
+                    body_exprs.push(expr.clone());
+                }
+            }
         }
 
-        // Check circular dependency — if module_name already appears in the stack before the last element.
-        let parents = &dep_stack[..dep_stack.len().saturating_sub(1)];
-        if parents.iter().any(|s| s == module_name) {
-            let mut cycle = parents.to_vec();
-            cycle.push(module_name.into());
-            return Err(ZylModuleError::Circular(cycle.join(" -> ")));
-        }
-
-        // Parse the source to extract module/use/export statements.
-        let (use_stmts, export_stmts, other_exprs) = self.parse_module_contents(source)?;
-
-        // Resolve all use dependencies first.
+        // Resolve all use dependencies.
         let mut dep_exprs = Vec::new();
-        eprintln!("  [resolver] module '{}' has {} use_stmts, {} other_exprs", module_name, use_stmts.len(), other_exprs.len());
         for use_stmt in &use_stmts {
             let (dep_name, symbols, _unsafe_) = use_stmt;
 
-            // Find the dependency file.
-            let dep_path = self.find_dependency(dep_name, file_path)?;
+            let dep_path = self.find_dependency(dep_name, main_file)?;
             let dep_source = fs::read_to_string(&dep_path)
                 .map_err(|_| ZylModuleError::NotFound(dep_name.clone(), dep_path.display().to_string()))?;
 
-            // Parse dependency.
-            let (dep_use_stmts, _dep_exports, dep_body_exprs) = self.parse_module_contents(&dep_source)?;
+            let mut dep_stack = vec![_module_name.into(), dep_name.clone()];
+            let resolved_dep = self.resolve_module_from_source(&dep_source, dep_name, &dep_path, &mut dep_stack)?;
 
-            eprintln!("  [resolver] dep '{}' has {} body exprs, {} use stmts", dep_name, dep_body_exprs.len(), dep_use_stmts.len());
-            dep_stack.push(dep_name.clone());
-
-            // Recursively resolve the dependency.
-            let resolved_dep = self.resolve_module(
-                &dep_body_exprs,
-                &dep_source,
-                dep_name,
-                &dep_path,
-                dep_stack,
-            )?;
-
-            dep_stack.pop();
-
-            // Mark as resolved.
-            self.resolved.insert(dep_name.clone(), true);
-
-            // Filter by symbols if specific symbols were requested.
             let filtered = if let Some(syms) = symbols {
                 if syms.contains(&"*".into()) {
                     resolved_dep
@@ -121,21 +89,84 @@ impl ModuleResolver {
                     filtered
                 }
             } else {
-                // No specific symbols → include all.
                 resolved_dep
             };
 
             dep_exprs.extend(filtered);
         }
 
-        // Mark root module as resolved.
+        // Combine dependency exprs + root body exprs.
+        let mut result = dep_exprs;
+        result.extend(body_exprs);
+        Ok(result)
+    }
+
+    fn resolve_module_from_source(
+        &mut self,
+        source: &str,
+        module_name: &str,
+        file_path: &Path,
+        dep_stack: &mut Vec<String>,
+    ) -> Result<Vec<Expr>, ZylModuleError> {
+        // Already resolved?
+        if self.resolved.contains_key(module_name) {
+            return Ok(Vec::new());
+        }
+
+        // Check circular dependency.
+        let parents = &dep_stack[..dep_stack.len().saturating_sub(1)];
+        if parents.iter().any(|s| s == module_name) {
+            let mut cycle = parents.to_vec();
+            cycle.push(module_name.into());
+            return Err(ZylModuleError::Circular(cycle.join(" -> ")));
+        }
+
+        // Parse source to extract use statements, exports, and body expressions.
+        let (use_stmts, _export_stmts, body_exprs) = self.parse_module_contents(source)?;
+
+        // Resolve all use dependencies first.
+        let mut dep_exprs = Vec::new();
+        for use_stmt in &use_stmts {
+            let (dep_name, symbols, _unsafe_) = use_stmt;
+
+            let dep_path = self.find_dependency(dep_name, file_path)?;
+            let dep_source = fs::read_to_string(&dep_path)
+                .map_err(|_| ZylModuleError::NotFound(dep_name.clone(), dep_path.display().to_string()))?;
+
+            dep_stack.push(dep_name.clone());
+
+            let resolved_dep = self.resolve_module_from_source(&dep_source, dep_name, &dep_path, dep_stack)?;
+
+            dep_stack.pop();
+
+            self.resolved.insert(dep_name.clone(), true);
+
+            let filtered = if let Some(syms) = symbols {
+                if syms.contains(&"*".into()) {
+                    resolved_dep
+                } else {
+                    let syms_set: std::collections::HashSet<&str> = syms.iter().map(|s| s.as_str()).collect();
+                    let filtered: Vec<Expr> = resolved_dep
+                        .into_iter()
+                        .filter(|e| self.matches_symbol(e, &syms_set))
+                        .collect();
+                    if filtered.is_empty() && !syms.is_empty() {
+                        let first_sym = &syms[0];
+                        return Err(ZylModuleError::NotFoundSymbol(first_sym.clone(), dep_name.clone()));
+                    }
+                    filtered
+                }
+            } else {
+                resolved_dep
+            };
+
+            dep_exprs.extend(filtered);
+        }
+
         self.resolved.insert(module_name.into(), true);
 
-        // Combine: dependency exprs + other exprs.
         let mut result = dep_exprs;
-        let other_len = other_exprs.len();
-        result.extend(other_exprs);
-        eprintln!("  [resolver] module '{}' returning {} exprs (deps={}, other={})", module_name, result.len(), result.len() - other_len, other_len);
+        result.extend(body_exprs);
         Ok(result)
     }
 
@@ -244,9 +275,9 @@ pub enum ZylModuleError {
 /// Convert module resolution errors to ZylError.
 pub fn module_error_to_zyl(err: ZylModuleError) -> ZylError {
     match err {
-        ZylModuleError::NotFound(_, name) => ZylError::E_MODULE_NOT_FOUND(Span::default(), name),
+        ZylModuleError::NotFound(name, _path) => ZylError::E_MODULE_NOT_FOUND(name, _path),
         ZylModuleError::NotFoundSymbol(sym, module) => {
-            ZylError::E_SYMBOL_NOT_EXPORTED(Span::default(), sym, module)
+            ZylError::E_SYMBOL_NOT_EXPORTED(sym, module)
         }
         ZylModuleError::Circular(cycle) => ZylError::E_CIRCULAR_MODULE(cycle),
         ZylModuleError::Lexer(e) => e,
