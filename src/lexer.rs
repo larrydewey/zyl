@@ -311,11 +311,11 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, ZylError> {
 // ─── Lexer helpers ──────────────────────────────────────────────────────
 
 fn is_ident_start(c: char) -> bool {
-    c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!' | '+' | '/' | '=' | '<' | '>' | '*')
+    c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!' | '+' | '/' | '=' | '<' | '>' | '*' | '%')
 }
 
 fn is_ident_continue(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '/' | '=' | '+')
+    c.is_alphanumeric() || matches!(c, '_' | '-' | '?' | '!' | '/' | '=' | '+' | '%')
 }
 
 fn read_ident(chars: &[char], start: usize) -> (String, usize) {
