@@ -1,0 +1,87 @@
+; === Zyl Standard Library — Core (assembled from modules) ===
+; Module: core
+; Composes: core (basics) + option + result + list
+; Provides: all standard library functions via single import
+
+; ===========================================================================
+; COMPOSING MODULES
+; ===========================================================================
+
+; Import option ADT (OptionInt, OptionBool + helpers)
+(use core/option)
+
+; Import result ADT (ResultInt + helpers)
+(use core/result)
+
+; Import list ADT (List + utilities)
+(use core/list)
+
+; ===========================================================================
+; COMBINATORS (inlined here)
+; ===========================================================================
+
+(defn identity (x) x)
+
+(defn const (a _b) a)
+
+; ===========================================================================
+; ARITHMETIC HELPERS
+; ===========================================================================
+
+(defn abs (x)
+  (if (< x 0) (- 0 x) x))
+
+(defn max (a b)
+  (if (> a b) a b))
+
+(defn min (a b)
+  (if (< a b) a b))
+
+(defn clamp (x lo hi)
+  (if (< x lo) lo (if (> x hi) hi x)))
+
+(defn signum (x)
+  (if (== x 0) 0 (if (> x 0) 1 -1)))
+
+(defn square (x) (* x x))
+
+(defn cube (x) (* x x x))
+
+; ===========================================================================
+; BOOL HELPERS
+; ===========================================================================
+
+(defn xor (a b)
+  (if a (if b false true) (if b true false)))
+
+(defn nand (a b)
+  (not (and a b)))
+
+(defn nor (a b)
+  (not (or a b)))
+
+; ===========================================================================
+; TYPE PREDICATES
+; ===========================================================================
+
+(defn is-bool (x)
+  (if (== x true) true (if (== x false) true false)))
+
+(defn is-zero (x)
+  (== x 0))
+
+(defn is-even (n)
+  (== 0 (% n 2)))
+
+(defn is-odd (n)
+  (!= 0 (% n 2)))
+
+; ===========================================================================
+; BOOLEAN HELPERS
+; ===========================================================================
+
+(defn when (pred body)
+  (if pred body (begin)))
+
+(defn unless (pred body)
+  (if (not pred) body (begin)))
