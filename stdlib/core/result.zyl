@@ -1,0 +1,24 @@
+; === Zyl Standard Library — Result ADT ===
+; Module: result
+; Provides: ResultInt definitions and helpers
+
+; ===========================================================================
+; RESULT INT
+; ===========================================================================
+
+(deftype ResultInt (OkInt Int) (ErrInt String))
+
+(defn result-int-unwrap (res default)
+  (match res
+    (OkInt v) v
+    (ErrInt _) default))
+
+(defn result-int-is-ok (res)
+  (match res
+    (OkInt _) true
+    (ErrInt _) false))
+
+(defn result-int-is-err (res)
+  (match res
+    (OkInt _) false
+    (ErrInt _) true))
