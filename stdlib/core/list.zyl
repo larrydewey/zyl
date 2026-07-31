@@ -1,0 +1,71 @@
+; === Zyl Standard Library — List ADT ===
+; Module: list
+; Provides: List ADT and list utilities
+
+; ===========================================================================
+; LIST ADT
+; ===========================================================================
+
+(deftype List (Cons Int (List)) None)
+
+; ===========================================================================
+; LIST OPERATIONS
+; ===========================================================================
+
+(defn is-nil (xs)
+  (match xs
+    (Cons _ _) false
+    (None) true))
+
+(defn list-car (xs)
+  (match xs
+    (Cons v _) (SomeInt v)
+    (None) None))
+
+(defn list-cdr (xs)
+  (match xs
+    (Cons _ rest) rest
+    (None) None))
+
+(defn list-head (xs)
+  (match xs
+    (Cons v _) (SomeInt v)
+    (None) None))
+
+(defn list-tail (xs)
+  (match xs
+    (Cons _ rest) rest
+    (None) None))
+
+; Length
+(defn list-length (xs)
+  (match xs
+    (None) 0
+    (Cons _ rest) (+ 1 (list-length rest))))
+
+; Append
+(defn list-append (xs ys)
+  (match xs
+    (None) ys
+    (Cons h t) (Cons h (list-append t ys))))
+
+; Reverse
+(defn list-reverse (xs)
+  (list-reverse-acc xs None))
+
+(defn list-reverse-acc (xs acc)
+  (match xs
+    (None) acc
+    (Cons h t) (list-reverse-acc t (Cons h acc))))
+
+; Sum of list
+(defn list-sum (xs)
+  (match xs
+    (None) 0
+    (Cons h t) (+ h (list-sum t))))
+
+; Product of list
+(defn list-product (xs)
+  (match xs
+    (None) 1
+    (Cons h t) (* h (list-product t))))

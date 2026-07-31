@@ -1,0 +1,12 @@
+(defn add3 (a b c) (+ a b c))
+
+(defn add4 (a b c d) (+ a b c d))
+
+(defn add5 (a b c d e) (+ a b c d e))
+
+(defn main ()
+  (print (add3 1 2 3))
+  (print (add4 1 2 3 4))
+  (print (add5 1 2 3 4 5))
+  (print (+ (add3 1 2 3) (add4 10 20 30 40)))
+  (print (add3 (add4 1 2 3 4) (add5 1 2 3 4 5) 0)))
