@@ -142,7 +142,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         | ExprInner::FileOpen(_, _)
         | ExprInner::Error(_)
         | ExprInner::MakeVariant(_, _, _)
-        | ExprInner::Deftype(_, _, _)
+        | ExprInner::Deftype(..)
         | ExprInner::TraitDecl(_, _, _)
         | ExprInner::ImplBlock(_, _, _)
         | ExprInner::StructDef(_)
@@ -806,7 +806,7 @@ impl IcnfConverter {
                     }
                     self.current_scope = saved_scope;
                 }
-                ExprInner::Deftype(name, variants, _) => {
+                ExprInner::Deftype(name, variants, _, _) => {
                     // Store ADT definition for MakeVariant + Match handling.
                     let variant_info: Vec<(String, Vec<String>)> = variants
                         .iter()

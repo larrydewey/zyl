@@ -259,6 +259,8 @@ impl Parser {
     }
 
     fn dispatch(&self, span: &Span, op: &str, args: &[Expr]) -> Result<Expr, ZylError> {
+        if op == "deftype" {
+        }
         // Use sequential if-else to avoid type mismatch in match arms.
         macro_rules! check_arity {
             ($name:expr, $min:expr, $max:expr, $args:expr) => {{
@@ -310,6 +312,8 @@ impl Parser {
         }
 
         // When no_dispatch is set (inside defmacro args), return raw Call/Apply instead of dispatching.
+        if op == "deftype" {
+        }
         if self.no_dispatch {
             let first = Box::new(Expr {
                 span: Span::default(),
@@ -1045,6 +1049,7 @@ impl Parser {
 
         let mut variants = Vec::new();
         let mut bound: Option<String> = None;
+        let mut type_params: Vec<String> = Vec::new();
         for arg in &args[1..] {
             match &arg.inner {
                 ExprInner::Call(_, ref inner) | ExprInner::Apply(_, ref inner)
@@ -1072,10 +1077,10 @@ impl Parser {
                                 }
                             });
                         } else {
-                            self.parse_variant(inner, arg, &mut variants)?;
+                            let _ = self.parse_variant(inner, arg, &mut variants, &mut type_params);
                         }
                     } else {
-                        self.parse_variant(inner, arg, &mut variants)?;
+                        let _ = self.parse_variant(inner, arg, &mut variants, &mut type_params);
                     }
                 }
                 ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
@@ -1096,7 +1101,7 @@ impl Parser {
 
         Ok(Expr {
             span: span.clone(),
-            inner: ExprInner::Deftype(type_name, variants, bound),
+            inner: ExprInner::Deftype(type_name, variants, type_params, bound),
         })
     }
 
@@ -1105,6 +1110,7 @@ impl Parser {
         inner: &[Expr],
         arg: &Expr,
         out: &mut Vec<ADTVariant>,
+        type_params: &mut Vec<String>,
     ) -> Result<(), ZylError> {
         let vname = match &inner[0].inner {
             ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
@@ -1123,6 +1129,13 @@ impl Parser {
                 _ => None,
             })
             .collect();
+        for f in &fields {
+            if f.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                && !type_params.contains(f)
+            {
+                type_params.push(f.clone());
+            }
+        }
         out.push(ADTVariant {
             name: vname,
             fields,

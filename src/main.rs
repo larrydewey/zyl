@@ -205,7 +205,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Build ADT definitions from AST for codegen.
     let mut adt_defs: std::collections::HashMap<String, Vec<(String, usize)>> = std::collections::HashMap::new();
     for expr in &regioned_for_mono {
-        if let ast::ExprInner::Deftype(name, variants, _) = &expr.inner {
+        if let ast::ExprInner::Deftype(name, variants, _, _) = &expr.inner {
             let variant_info: Vec<(String, usize)> = variants
                 .iter()
                 .map(|v| (v.name.clone(), v.fields.len()))

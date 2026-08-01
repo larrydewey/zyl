@@ -668,9 +668,9 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
             Box::new(sub_expr(ctx, init)),
             Box::new(sub_expr(ctx, body)),
         ),
-        Deftype(name, variants, bound) => {
+        Deftype(name, variants, _, bound) => {
             let new_variants: Vec<_> = variants.to_vec();
-            Deftype(name.clone(), new_variants, bound.clone())
+            Deftype(name.clone(), new_variants, Vec::new(), bound.clone())
         }
         TraitDecl(name, methods, where_clause) => {
             let new_methods: Vec<_> = methods.to_vec();
@@ -1304,7 +1304,7 @@ impl MacroExpander {
                     | Fn(_, _, _)
                     | ModuleDecl(_)
                     | UseModule(..)
-                    | Deftype(_, _, _)
+                    | Deftype(..)
                     | TraitDecl(_, _, _)
                     | ImplBlock(_, _, _)
                     | StructDef(_)

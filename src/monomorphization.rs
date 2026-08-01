@@ -53,6 +53,12 @@ pub struct MonoContext {
     #[allow(dead_code)]
     struct_defs: IndexMap<String, Vec<(String, Option<Type>)>>,
 
+    /// ADT definitions (variant names + field type names).
+    adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
+
+    /// ADT instantiation info from type inference.
+    adt_instantiations: IndexMap<String, Vec<String>>,
+
     /// Span used for generated expressions.
     span: Span,
 }
@@ -67,6 +73,8 @@ impl MonoContext {
             mono_cache: HashMap::new(),
             known_types: inferer.get_known_types().clone(),
             struct_defs: inferer.get_struct_defs().clone(),
+            adt_defs: inferer.get_adt_defs().clone(),
+            adt_instantiations: inferer.get_adt_instantiations().clone(),
             span: Span::default(),
         };
 
@@ -151,7 +159,7 @@ impl MonoContext {
                 }
 
                 // Deftype with generic variants.
-                ExprInner::Deftype(name, variants, _) => {
+                ExprInner::Deftype(name, variants, _, _) => {
                     let has_generic = variants
                         .iter()
                         .any(|v| v.fields.iter().any(is_uppercase_ident));
@@ -388,7 +396,7 @@ impl MonoContext {
                     }
                 }
 
-                ExprInner::Deftype(name, variants, bound) => {
+                ExprInner::Deftype(name, variants, _, bound) => {
                     let has_generic = variants
                         .iter()
                         .any(|v| v.fields.iter().any(is_uppercase_ident));
@@ -405,13 +413,14 @@ impl MonoContext {
                                     inner: ExprInner::Deftype(
                                         concrete_name,
                                         mono_variants,
+                                        Vec::new(),
                                         bound.clone(),
                                     ),
                                 });
                         }
 
                         if !result.is_empty()
-                            && matches!(result.last().unwrap().inner, ExprInner::Deftype(_, _, _))
+                            && matches!(result.last().unwrap().inner, ExprInner::Deftype(..))
                         {
                             result.push(expr.clone());
                         } else {
@@ -1115,6 +1124,17 @@ impl MonoContext {
                 };
                 crate::ast::ExprInner::Atom(new_atom)
             }
+            ExprInner::MakeVariant(adt_name, variant_name, args) => {
+                if let Some(concrete_adt) = self.resolve_make_variant_adt(adt_name, variant_name, args) {
+                    let new_args: Vec<Expr> = args
+                        .iter()
+                        .map(|a| self.subst_expr_with_var_map(a, type_map, var_renames))
+                        .collect();
+                    ExprInner::MakeVariant(concrete_adt, variant_name.clone(), new_args)
+                } else {
+                    expr.inner.clone()
+                }
+            }
             _ => expr.inner.clone(),
         };
 
@@ -1132,7 +1152,7 @@ impl MonoContext {
     /// Substitute in ADT expressions.
     fn substitute_in_adt(&self, expr: &Expr) -> Expr {
         match &expr.inner {
-            ExprInner::Deftype(name, variants, bound) => {
+            ExprInner::Deftype(name, variants, _, bound) => {
                 let new_variants = variants
                     .iter()
                     .map(|v| ADTVariant {
@@ -1151,6 +1171,7 @@ impl MonoContext {
                     inner: ExprInner::Deftype(
                         name.clone(),
                         new_variants,
+                        Vec::new(),
                         bound.clone(),
                     ),
                 }
@@ -1160,64 +1181,113 @@ impl MonoContext {
         }
     }
 
+    /// Resolve a MakeVariant to its concrete ADT instantiation name.
+    fn resolve_make_variant_adt(
+        &self,
+        adt_name: &str,
+        variant_name: &str,
+        args: &[Expr],
+    ) -> Option<String> {
+        if !self.known_types.contains_key(adt_name) {
+            return None;
+        }
+        let variant_field_types: Vec<(String, Vec<String>)> = self
+            .adt_defs
+            .get(adt_name)
+            .cloned()
+            .unwrap_or_default();
+        let concrete_types: Vec<String> = self
+            .adt_instantiations
+            .get(adt_name)
+            .cloned()
+            .unwrap_or_default();
+        let mut seen_types = std::collections::HashSet::new();
+        let unique_types: Vec<String> = concrete_types
+            .into_iter()
+            .filter(|t| seen_types.insert(t.clone()))
+            .collect();
+        let variant_info = variant_field_types
+            .iter()
+            .find(|(vname, _)| vname == variant_name)
+            .map(|(_, fields)| fields.clone());
+        for concrete_ty in &unique_types {
+            if let Some(ref fields) = variant_info {
+                let is_match = args.iter().zip(fields.iter()).all(|(arg, field_type)| {
+                    is_generic_param(field_type) && arg_type_matches(&arg.inner, concrete_ty)
+                });
+                if is_match {
+                    return Some(format!("{}_{}", adt_name, concrete_ty));
+                }
+            }
+        }
+        if !unique_types.is_empty() {
+            return Some(format!("{}_{}", adt_name, unique_types[0]));
+        }
+        None
+    }
+
     /// Collect ADT instantiations for a generic type.
     fn collect_adt_instantiations(
         &self,
         name: &str,
         variants: &[ADTVariant],
     ) -> Vec<(String, Vec<ADTVariant>)> {
-        // Find all concrete types used in the known_types that could instantiate this ADT.
         let mut instantiations: IndexMap<String, Vec<ADTVariant>> = IndexMap::new();
 
-        for variant in variants {
-            for field_type in &variant.fields {
-                if is_uppercase_ident(field_type) && self.known_types.contains_key(field_type) {
-                    // This field type IS a concrete known type (not just a generic param).
-                    let ty = &self.known_types[field_type];
+        // Get the variant field types from ADT definition.
+        let variant_field_types: Vec<(String, Vec<String>)> = self
+            .adt_defs
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
 
-                    match ty {
-                        Type::Var(_) => {
-                            // Generic — will be instantiated later.
-                            continue;
-                        }
-                        _ => {
-                            let inst_name = format!("{}_{}", name, ty);
+        // Get concrete type instantiations from type inference.
+        let concrete_types: Vec<String> = self
+            .adt_instantiations
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
 
-                            instantiations.entry(inst_name.clone()).or_insert_with(|| {
-                                variant
-                                    .fields
+        // Deduplicate concrete types (preserve order).
+        let mut seen_types = std::collections::HashSet::new();
+        let unique_types: Vec<String> = concrete_types
+            .into_iter()
+            .filter(|t| seen_types.insert(t.clone()))
+            .collect();
+
+        // If we have concrete instantiations, create one per type.
+        if !unique_types.is_empty() {
+            for concrete_ty in &unique_types {
+                let inst_name = format!("{}_{}", name, concrete_ty);
+                let mono_variants: Vec<ADTVariant> = variants
+                    .iter()
+                    .map(|v| {
+                        // Find the matching variant in variant_field_types.
+                        let fields: Vec<String> = variant_field_types
+                            .iter()
+                            .find(|(vname, _)| vname == &v.name)
+                            .map(|(_, fields)| {
+                                fields
                                     .iter()
-                                    .map(|f| ADTVariant {
-                                        name: f.clone(),
-                                        fields: vec![], // Simplified.
+                                    .map(|f| {
+                                        if is_generic_param(f) {
+                                            concrete_ty.clone()
+                                        } else {
+                                            f.clone()
+                                        }
                                     })
                                     .collect()
-                            });
-                        }
-                    }
-                } else if !is_uppercase_ident(field_type)
-                    && self.known_types.contains_key(field_type)
-                {
-                    let ty = &self.known_types[field_type];
+                            })
+                            .unwrap_or_default();
 
-                    match ty {
-                        Type::Var(_) => continue,
-                        _ => {
-                            let inst_name = format!("{}_{}", name, ty);
-
-                            instantiations.entry(inst_name.clone()).or_insert_with(|| {
-                                variant
-                                    .fields
-                                    .iter()
-                                    .map(|f| ADTVariant {
-                                        name: f.clone(),
-                                        fields: vec![],
-                                    })
-                                    .collect()
-                            });
+                        ADTVariant {
+                            name: v.name.clone(),
+                            fields,
                         }
-                    }
-                }
+                    })
+                    .collect();
+
+                instantiations.insert(inst_name, mono_variants);
             }
         }
 
@@ -1226,22 +1296,28 @@ impl MonoContext {
             let inst_name = format!("{}_Int", name);
             let mono_variants: Vec<ADTVariant> = variants
                 .iter()
-                .map(|v| ADTVariant {
-                    name: v.name.clone(),
-                    fields: v
-                        .fields
+                .map(|v| {
+                    let fields: Vec<String> = variant_field_types
                         .iter()
-                        .filter_map(|f| {
-                            if is_uppercase_ident(f) && self.known_types.contains_key(f) {
-                                Some(format!("{}", self.known_types[f]))
-                            } else if !is_uppercase_ident(f) {
-                                // Keep non-generic field names.
-                                None
-                            } else {
-                                Some("Int".to_string())
-                            }
+                        .find(|(vname, _)| vname == &v.name)
+                        .map(|(_, fields)| {
+                            fields
+                                .iter()
+                                .map(|f| {
+                                    if is_generic_param(f) {
+                                        "Int".to_string()
+                                    } else {
+                                        f.clone()
+                                    }
+                                })
+                                .collect()
                         })
-                        .collect(),
+                        .unwrap_or_default();
+
+                    ADTVariant {
+                        name: v.name.clone(),
+                        fields,
+                    }
                 })
                 .collect();
 
@@ -1262,6 +1338,16 @@ fn is_uppercase_ident<T: AsRef<str>>(s: T) -> bool {
             .map(|c| c.is_ascii_uppercase())
             .unwrap_or(false)
         && !matches!(s, "TCap" | "TMut" | "TBox" | "TPin" | "TAtomic" | "TFun")
+}
+
+fn arg_type_matches(inner: &ExprInner, concrete_ty: &str) -> bool {
+    match (inner, concrete_ty) {
+        (ExprInner::Atom(Atom::Int(_)), "Int") => true,
+        (ExprInner::Atom(Atom::Float(_)), "Float") => true,
+        (ExprInner::Atom(Atom::Bool(_)), "Bool") => true,
+        (ExprInner::Atom(Atom::Str(_)), "String") => true,
+        (_, _) => false,
+    }
 }
 
 fn is_ident_op(op: &Expr, name: &str) -> bool {

@@ -340,7 +340,7 @@ impl RegionInferer {
                 }
 
                 // deftype — variants default to Heap.
-                ExprInner::Deftype(name, _, _) => {
+                ExprInner::Deftype(name, _, _, _) => {
                     let field_regions: Vec<(String, Region)> =
                         vec![(format!("{}_instance", name), Region::Heap)];
                     self.struct_regions.insert(name.clone(), field_regions);
