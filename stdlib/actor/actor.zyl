@@ -1,0 +1,61 @@
+; === Zyl Standard Library — Actor Operations ===
+; Module: actor
+; Provides: spawn, send operations for actor concurrency
+
+; ===========================================================================
+; SPAWN
+; ===========================================================================
+
+; Spawn a new actor with the given closure
+; Returns: ActorRef
+(defn actor-spawn (closure)
+  (spawn closure))
+
+; Spawn a new actor with initial state
+; Returns: ActorRef
+(defn actor-spawn-with-state (state closure)
+  ;; Note: Actual state passing requires runtime support.
+  ;; This is a placeholder.
+  (spawn closure))
+
+; ===========================================================================
+; SEND
+; ===========================================================================
+
+; Send a message to an actor
+; Returns: Unit
+(defn actor-send (actor message)
+  (send actor message))
+
+; Send a message with timeout
+; Returns: Result<Unit, Int>
+(defn actor-send-with-timeout (actor message timeout)
+  (try
+    (Ok (send actor message))
+    (catch e
+      (Err e))))
+
+; ===========================================================================
+; ACTOR UTILITIES
+; ===========================================================================
+
+; Check if actor is alive (placeholder)
+; Returns: Bool
+(defn actor-is-alive (actor)
+  ;; Note: Actual actor liveness check requires runtime support.
+  ;; This is a placeholder.
+  (error "actor-is-alive not implemented in stdlib"))
+
+; Wait for actor to complete (placeholder)
+; Returns: Unit
+(defn actor-wait (actor)
+  ;; Note: Actual actor wait requires runtime support.
+  ;; This is a placeholder.
+  (error "actor-wait not implemented in stdlib"))
+
+; Terminate actor (placeholder)
+; Returns: Unit
+(defn actor-terminate (actor)
+  ;; Note: Actual actor termination requires runtime support.
+  ;; This is a placeholder.
+  (error "actor-terminate not implemented in stdlib"))

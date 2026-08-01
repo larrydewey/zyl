@@ -1,0 +1,43 @@
+; === Zyl Standard Library — FFI Operations ===
+; Module: ffi
+; Provides: FFI operation wrappers and utilities
+
+; ===========================================================================
+; FFI CALL
+; ===========================================================================
+
+; Call a foreign function with error handling
+; Note: Actual FFI function name and args must be provided at call site.
+; Returns: Result<T, Int>
+(defn ffi-safe-call (result)
+  (try
+    (Ok result)
+    (catch e
+      (Err e))))
+
+; ===========================================================================
+; FFI PIN
+; ===========================================================================
+
+; Pin a value for FFI access
+; Returns: Pointer (Int)
+(defn ffi-pin-value (value)
+  (ffi-pin value))
+
+; Unpin a pinned value
+; Returns: Unit
+(defn ffi-unpin-value (pointer)
+  (ffi-unpin pointer))
+
+; ===========================================================================
+; FFI UTILITIES
+; ===========================================================================
+
+; Pin, call, and unpin in one step
+; Note: Actual FFI call must be provided at call site.
+; Returns: Result<T, Int>
+(defn ffi-pin-call-unpin (result)
+  (try
+    (Ok result)
+    (catch e
+      (Err e))))

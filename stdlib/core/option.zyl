@@ -1,12 +1,20 @@
 ; === Zyl Standard Library — Option ADT ===
 ; Module: option
-; Provides: Generic Option<T> definition and helpers
+; Provides: Generic Option<T> ADT and helpers
+;
+; Note: This file is also included in core.zyl for simplicity.
+;       It exists separately for documentation and potential future
+;       modularization.
 
 ; ===========================================================================
-; GENERIC OPTION
+; OPTION ADT — Generic: Option<T>
 ; ===========================================================================
 
 (deftype Option (Some T) None)
+
+; ===========================================================================
+; OPTION OPERATIONS
+; ===========================================================================
 
 (defn option-unwrap (opt default)
   (match opt
@@ -22,3 +30,60 @@
   (match opt
     (Some _) false
     (None) true))
+
+(defn option-map (opt f)
+  (match opt
+    (Some v) (Some (f v))
+    (None) None))
+
+(defn option-and (opt other)
+  (match opt
+    (Some _) other
+    (None) None))
+
+(defn option-or (opt other)
+  (match opt
+    (Some _) opt
+    (None) other))
+
+(defn option-expect (opt msg)
+  (match opt
+    (Some v) v
+    (None) (error msg)))
+
+(defn option-unwrap-or (opt default)
+  (match opt
+    (Some v) v
+    (None) default))
+
+; ===========================================================================
+; OPTION CONSTRUCTORS
+; ===========================================================================
+
+(defn option-none () None)
+
+(defn option-some (x) (Some x))
+
+; ===========================================================================
+; OPTION UTILITIES
+; ===========================================================================
+
+(defn option-flatmap (opt f)
+  (match opt
+    (Some v) (f v)
+    (None) None))
+
+(defn option-inspect (opt f)
+  (match opt
+    (Some v) (f v) opt
+    (None) opt))
+
+(defn option-to-result (opt err)
+  (match opt
+    (Some v) (Ok v)
+    (None) (Err err)))
+
+(defn option-from-result (res default)
+  (match res
+    (Ok v) (Some v)
+    (Err _) (Some default)))
