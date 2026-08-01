@@ -68,7 +68,8 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Low Priority
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
-- [ ] Self-hosting (not yet targeting Zyl source code generation)
+- [x] Zyl source code emitter (ICNF → Zyl S-expression) — `--emit-zyl` flag
+- [ ] Self-hosting (compiler written in Zyl)
 - [ ] Contract injection (Phase 10 — optional overlay per spec §23)
 - [ ] Hash finalization (Phase 11 — SHA-256 binary fingerprinting)
 - [ ] Full REPL (currently a minimal stub, ~4 lines)
@@ -77,11 +78,12 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ## Next Priorities
 
-1. Reduce compiler warnings (~160)
+1. Reduce compiler warnings (~1 warning remaining)
 2. Contract injection (optional overlay)
 3. Hash finalization (deterministic binary fingerprinting)
 4. Full REPL implementation
 5. Self-hosting (Zyl → Zyl code generation)
+6. Improve Zyl source emitter: variable naming, branch inlining, match/while/for round-trip
 
 ---
 
