@@ -1,40 +1,24 @@
 ; === Zyl Standard Library — Option ADT ===
 ; Module: option
-; Provides: OptionInt, OptionBool definitions and helpers
+; Provides: Generic Option<T> definition and helpers
 
 ; ===========================================================================
-; OPTION INT
+; GENERIC OPTION
 ; ===========================================================================
 
-(deftype OptionInt (SomeInt Int) None)
+(deftype Option (Some T) None)
 
-(defn option-int-unwrap (opt default)
+(defn option-unwrap (opt default)
   (match opt
-    (SomeInt v) v
+    (Some v) v
     (None) default))
 
-(defn option-int-is-some (opt)
+(defn option-is-some (opt)
   (match opt
-    (SomeInt _) true
+    (Some _) true
     (None) false))
 
-(defn option-int-is-none (opt)
+(defn option-is-none (opt)
   (match opt
-    (SomeInt _) false
+    (Some _) false
     (None) true))
-
-; ===========================================================================
-; OPTION BOOL
-; ===========================================================================
-
-(deftype OptionBool (SomeBool Bool) None)
-
-(defn option-bool-unwrap (opt default)
-  (match opt
-    (SomeBool v) v
-    (None) default))
-
-(defn option-bool-is-some (opt)
-  (match opt
-    (SomeBool _) true
-    (None) false))

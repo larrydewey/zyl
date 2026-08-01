@@ -265,7 +265,7 @@ impl ModuleResolver {
             ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
                 syms.contains(sd.name.as_str())
             }
-            ExprInner::Deftype(name, _, _) => {
+            ExprInner::Deftype(name, _, _, _) => {
                 syms.contains(name.as_str())
             }
             ExprInner::AliasDecl(name, _) => {
