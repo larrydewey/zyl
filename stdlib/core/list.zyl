@@ -1,12 +1,16 @@
 ; === Zyl Standard Library — List ADT ===
 ; Module: list
-; Provides: List ADT and list utilities
+; Provides: Generic List<T> ADT and list utilities
+;
+; Note: This file is also included in core.zyl for simplicity.
+;       It exists separately for documentation and potential future
+;       modularization.
 
 ; ===========================================================================
-; LIST ADT
+; LIST ADT — Generic: List<T>
 ; ===========================================================================
 
-(deftype List (Cons Int (List)) None)
+(deftype List (Cons T (List T)) None)
 
 ; ===========================================================================
 ; LIST OPERATIONS
@@ -23,16 +27,6 @@
     (None) None))
 
 (defn list-cdr (xs)
-  (match xs
-    (Cons _ rest) rest
-    (None) None))
-
-(defn list-head (xs)
-  (match xs
-    (Cons v _) (Some v)
-    (None) None))
-
-(defn list-tail (xs)
   (match xs
     (Cons _ rest) rest
     (None) None))
@@ -58,14 +52,8 @@
     (None) acc
     (Cons h t) (list-reverse-acc t (Cons h acc))))
 
-; Sum of list
+; Sum of list (Int only — monomorphized by use site)
 (defn list-sum (xs)
   (match xs
     (None) 0
     (Cons h t) (+ h (list-sum t))))
-
-; Product of list
-(defn list-product (xs)
-  (match xs
-    (None) 1
-    (Cons h t) (* h (list-product t))))

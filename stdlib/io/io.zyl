@@ -1,0 +1,96 @@
+; === Zyl Standard Library — I/O ===
+; Module: io
+; Provides: File I/O operations (placeholders for FFI bindings)
+
+; ===========================================================================
+; FILE OPERATIONS
+; ===========================================================================
+
+; Open a file for reading
+; Returns: File handle (Int)
+; Note: Placeholder — actual implementation requires FFI bindings
+(defn io-file-open-read (path)
+  0)
+
+; Open a file for writing
+; Returns: File handle (Int)
+; Note: Placeholder — actual implementation requires FFI bindings
+(defn io-file-open-write (path)
+  0)
+
+; Close a file
+; Returns: Unit
+(defn io-file-close (handle)
+  (file-close handle))
+
+; Read data from file
+; Returns: String
+(defn io-file-read (handle count)
+  (file-read handle count))
+
+; Write data to file
+; Returns: Int (bytes written)
+(defn io-file-write (handle data)
+  (file-write handle data))
+
+; ===========================================================================
+; STDIN/STDOUT HELPERS
+; ===========================================================================
+
+; Read a line from stdin
+; Returns: String
+(defn io-read-line ()
+  (read-line))
+
+; Print to stdout
+; Returns: Unit
+(defn io-print (x)
+  (print x))
+
+; Print multiple values
+; Returns: Unit
+(defn io-print-many (x rest)
+  (begin
+    (print x)
+    (io-print-list rest)))
+
+(defn io-print-list (xs)
+  (match xs
+    (None) (print "")
+    (Cons h t)
+      (begin
+        (print h)
+        (io-print-list t))))
+
+; Print newline
+; Returns: Unit
+(defn io-newline ()
+  (print ""))
+
+; ===========================================================================
+; ERROR HANDLING FOR I/O
+; ===========================================================================
+
+; Try to read from file, return Result
+; Returns: Result<String, Int>
+(defn io-safe-read (handle count)
+  (try
+    (Ok (file-read handle count))
+    (catch e
+      (Err e))))
+
+; Try to write to file, return Result
+; Returns: Result<Int, Int>
+(defn io-safe-write (handle data)
+  (try
+    (Ok (file-write handle data))
+    (catch e
+      (Err e))))
+
+; Try to close file, return Result
+; Returns: Result<Unit, Int>
+(defn io-safe-close (handle)
+  (try
+    (Ok (file-close handle))
+    (catch e
+      (Err e))))

@@ -1,24 +1,101 @@
 ; === Zyl Standard Library — Result ADT ===
 ; Module: result
-; Provides: ResultInt definitions and helpers
+; Provides: Generic Result<T, E> ADT and helpers
+;
+; Note: This file is also included in core.zyl for simplicity.
+;       It exists separately for documentation and potential future
+;       modularization.
 
 ; ===========================================================================
-; RESULT INT
+; RESULT ADT — Generic: Result<T, E>
 ; ===========================================================================
 
-(deftype ResultInt (OkInt Int) (ErrInt String))
+(deftype Result (Ok T) (Err E))
 
-(defn result-int-unwrap (res default)
-  (match res
-    (OkInt v) v
-    (ErrInt _) default))
+; ===========================================================================
+; RESULT OPERATIONS
+; ===========================================================================
 
-(defn result-int-is-ok (res)
+(defn result-unwrap (res default)
   (match res
-    (OkInt _) true
-    (ErrInt _) false))
+    (Ok v) v
+    (Err _) default))
 
-(defn result-int-is-err (res)
+(defn result-is-ok (res)
   (match res
-    (OkInt _) false
-    (ErrInt _) true))
+    (Ok _) true
+    (Err _) false))
+
+(defn result-is-err (res)
+  (match res
+    (Ok _) false
+    (Err _) true))
+
+(defn result-map (res f)
+  (match res
+    (Ok v) (Ok (f v))
+    (Err e) (Err e)))
+
+(defn result-and (res other)
+  (match res
+    (Ok _) other
+    (Err _) res))
+
+(defn result-or (res other)
+  (match res
+    (Ok _) res
+    (Err _) other))
+
+(defn result-expect (res msg)
+  (match res
+    (Ok v) v
+    (Err _) (error msg)))
+
+(defn result-unwrap-or (res default)
+  (match res
+    (Ok v) v
+    (Err _) default))
+
+; ===========================================================================
+; RESULT CONSTRUCTORS
+; ===========================================================================
+
+(defn result-ok (v) (Ok v))
+
+(defn result-err (e) (Err e))
+
+; ===========================================================================
+; RESULT UTILITIES
+; ===========================================================================
+
+(defn result-flatmap (res f)
+  (match res
+    (Ok v) (f v)
+    (Err e) (Err e)))
+
+(defn result-inspect (res f)
+  (match res
+    (Ok v) (f v) res
+    (Err e) (f e) res))
+
+(defn result-to-option (res)
+  (match res
+    (Ok v) (Some v)
+    (Err _) None))
+
+(defn result-from-option (opt err)
+  (match opt
+    (Some v) (Ok v)
+    (None) (Err err)))
+
+; ===========================================================================
+; RESULT COMBINATORS
+; ===========================================================================
+
+(defn result-and-then (res f)
+  (result-flatmap res f))
+
+(defn result-or-else (res f)
+  (match res
+    (Ok v) (Ok v)
+    (Err e) (f e)))

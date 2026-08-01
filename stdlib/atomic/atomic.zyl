@@ -1,0 +1,75 @@
+; === Zyl Standard Library — Atomic Operations ===
+; Module: atomic
+; Provides: Atomic<T> operations (load, store, add)
+
+; ===========================================================================
+; ATOMIC LOAD
+; ===========================================================================
+
+; Load value from atomic location
+; Returns: T
+(defn atomic-load (addr)
+  (ffi-call "zyl_atomic_load" (vec addr) 1000))
+
+; ===========================================================================
+; ATOMIC STORE
+; ===========================================================================
+
+; Store value to atomic location
+; Returns: Unit
+(defn atomic-store (addr value)
+  (ffi-call "zyl_atomic_store" (vec addr value) 1000))
+
+; ===========================================================================
+; ATOMIC ADD
+; ===========================================================================
+
+; Atomically add value to atomic location
+; Returns: New value
+(defn atomic-add (addr value)
+  (ffi-call "zyl_atomic_add" (vec addr value) 1000))
+
+; ===========================================================================
+; ATOMIC SUB
+; ===========================================================================
+
+; Atomically subtract value from atomic location
+; Returns: New value
+(defn atomic-sub (addr value)
+  (ffi-call "zyl_atomic_sub" (vec addr value) 1000))
+
+; ===========================================================================
+; ATOMIC MAX
+; ===========================================================================
+
+; Atomically set atomic location to max of current and value
+; Returns: New value
+(defn atomic-max (addr value)
+  (ffi-call "zyl_atomic_max" (vec addr value) 1000))
+
+; ===========================================================================
+; ATOMIC MIN
+; ===========================================================================
+
+; Atomically set atomic location to min of current and value
+; Returns: New value
+(defn atomic-min (addr value)
+  (ffi-call "zyl_atomic_min" (vec addr value) 1000))
+
+; ===========================================================================
+; ATOMIC CAS
+; ===========================================================================
+
+; Compare and swap
+; Returns: Bool (true if swap occurred)
+(defn atomic-cas (addr expected new_value)
+  (ffi-call "zyl_atomic_cas" (vec addr expected new_value) 1000))
+
+; ===========================================================================
+; ATOMIC FETCH ADD
+; ===========================================================================
+
+; Atomically add value and return old value
+; Returns: Old value
+(defn atomic-fetch-add (addr value)
+  (ffi-call "zyl_atomic_fetch_add" (vec addr value) 1000))
