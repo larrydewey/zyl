@@ -66,10 +66,32 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ## Remaining Work
 
+### Self-Hosting (Priority)
+
+The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
+
+1. **Compiler IR in Zyl** — Define AST/ICNF types in Zyl (flat, ID-based, no recursive types)
+2. **Compiler core logic** — Lexer, parser, AST manipulation, type system in Zyl
+3. **ICNF + codegen in Zyl** — SSA IR generation, x86_64 codegen in Zyl
+4. **Boot build** — Use Rust compiler to compile Zyl compiler → Zyl binary
+5. **Self-compile + determinism check** — Zyl compiler compiles its own source, verify identical binary
+
+- [x] Phase 1: Compiler IR in Zyl (provisional — see below)
+- [ ] Phase 2: Compiler core logic (lexer, parser, AST ops)
+- [ ] Phase 3: ICNF + codegen in Zyl
+- [ ] Phase 4: Boot build
+- [ ] Phase 5: Determinism verification
+
+**Note on Phase 1:** Zyl's deftype does not support recursive types (no `deftype Expr (Call Atom (List Expr))`). The compiler's AST is inherently recursive (Expr contains Expr). Two approaches:
+
+- **Approach A (flat):** Use ICNF-style flat representation — all AST nodes stored in a list, referenced by ID. No recursive types needed. This matches how the Rust compiler's ICNF works. The Zyl compiler would operate on ID lists instead of tree structures.
+- **Approach B (Rust bridge):** Keep AST types in Rust, write only the pipeline logic in Zyl. Less pure but more practical.
+
+Approach A is the goal. Approach B is a fallback if Approach A proves too limiting.
+
 ### Low Priority
-- [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
+- [ ] ~160 compiler warnings (mostly unused variables, dead code, naming) — down to 1
 - [x] Zyl source code emitter (ICNF → Zyl S-expression) — `--emit-zyl` flag
-- [ ] Self-hosting (compiler written in Zyl)
 - [ ] Contract injection (Phase 10 — optional overlay per spec §23)
 - [ ] Hash finalization (Phase 11 — SHA-256 binary fingerprinting)
 - [ ] Full REPL (currently a minimal stub, ~4 lines)
@@ -78,12 +100,11 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ## Next Priorities
 
-1. Reduce compiler warnings (~1 warning remaining)
-2. Contract injection (optional overlay)
-3. Hash finalization (deterministic binary fingerprinting)
-4. Full REPL implementation
-5. Self-hosting (Zyl → Zyl code generation)
-6. Improve Zyl source emitter: variable naming, branch inlining, match/while/for round-trip
+1. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
+2. Self-hosting Phase 2: Lexer + parser in Zyl
+3. Contract injection (optional overlay)
+4. Hash finalization (deterministic binary fingerprinting)
+5. Full REPL implementation
 
 ---
 

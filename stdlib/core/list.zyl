@@ -19,7 +19,7 @@
 
 (defn list-car (xs)
   (match xs
-    (Cons v _) (SomeInt v)
+    (Cons v _) (Some v)
     (None) None))
 
 (defn list-cdr (xs)
@@ -29,7 +29,7 @@
 
 (defn list-head (xs)
   (match xs
-    (Cons v _) (SomeInt v)
+    (Cons v _) (Some v)
     (None) None))
 
 (defn list-tail (xs)

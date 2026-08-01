@@ -91,7 +91,7 @@ pub enum ExprInner {
     FileWrite(Box<Expr>, Box<Expr>),
     FileClose(Box<Expr>),
     WithResource(String, Box<Expr>, Box<Expr>),
-    Deftype(String, Vec<ADTVariant>, Option<String>),
+    Deftype(String, Vec<ADTVariant>, Vec<String>, Option<String>),
     TraitDecl(String, Vec<TraitMethod>, Option<(String, String)>),
     ImplBlock(String, String, Vec<ImplBody>),
     StructDef(StructDef),
@@ -505,8 +505,12 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             let _ = write_sexpr(f, body);
             Ok(())
         }
-        ExprInner::Deftype(name, variants, bound) => {
+        ExprInner::Deftype(name, variants, type_params, bound) => {
             write!(f, "(deftype {} ", name)?;
+            for tp in type_params {
+                f.write_str(" :param ")?;
+                write!(f, "{}", escape_ident(tp))?;
+            }
             for v in variants {
                 write!(f, "({}", escape_ident(&v.name))?;
                 for fld in &v.fields {
@@ -801,18 +805,101 @@ fn escape_str(s: &str) -> String {
 
 /// Convert raw "if"/"let"/etc. Call/Apply nodes into their specialized ExprInner variants
 /// for clean AST output and downstream phase compatibility.
-pub struct PostProcessor;
+pub struct PostProcessor {
+    /// ADT type params: ADT name → list of type param names.
+    adt_type_params: IndexMap<String, Vec<String>>,
+    /// ADT variant names: ADT name → list of variant names.
+    /// Used to set type_name when creating MakeVariant.
+    adt_variants: IndexMap<String, Vec<String>>,
+}
 
 impl PostProcessor {
     pub fn new() -> Self {
-        Self
+        Self {
+            adt_type_params: IndexMap::new(),
+            adt_variants: IndexMap::new(),
+        }
     }
 
     pub fn process(&mut self, exprs: Vec<Expr>) -> Vec<Expr> {
+        // First pass: collect ADT info (type params, variant names).
+        for e in &exprs {
+            match &e.inner {
+                ExprInner::Deftype(name, variants, _, _) => {
+                    self.adt_type_params.insert(name.clone(), Vec::new());
+                    let vn: Vec<String> = variants.iter().map(|v| v.name.clone()).collect();
+                    self.adt_variants.insert(name.clone(), vn);
+                }
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "deftype") && args.len() >= 2 => {
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
+                    let mut type_params: Vec<String> = Vec::new();
+                    let mut variant_names: Vec<String> = Vec::new();
+                    for arg in &args[1..] {
+                        match &arg.inner {
+                            ExprInner::Call(first, inner_args) => {
+                                if let ExprInner::Atom(Atom::Ident(vname)) = &first.inner {
+                                    variant_names.push(vname.clone());
+                                    for item in inner_args.iter() {
+                                        if let ExprInner::Atom(Atom::Ident(n)) = &item.inner {
+                                            if n.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                                                type_params.push(n.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ExprInner::Apply(_, inner_args) => {
+                                if !inner_args.is_empty() {
+                                    if let ExprInner::Atom(Atom::Ident(vname)) = &inner_args[0].inner {
+                                        variant_names.push(vname.clone());
+                                        for item in inner_args.iter().skip(1) {
+                                            if let ExprInner::Atom(Atom::Ident(n)) = &item.inner {
+                                                if n.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                                                    type_params.push(n.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ExprInner::Atom(Atom::Ident(v)) => {
+                                variant_names.push(v.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !type_params.is_empty() {
+                        self.adt_type_params.insert(name.clone(), type_params);
+                    }
+                    if !variant_names.is_empty() {
+                        self.adt_variants.insert(name, variant_names);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Second pass: process expressions.
         exprs
             .into_iter()
             .map(|e| self.post_process_expr(e))
             .collect()
+    }
+
+    fn is_type_param(&self, name: &str) -> bool {
+        self.adt_type_params.values().any(|params| params.contains(&name.to_string()))
+    }
+
+    /// Look up which ADT a variant name belongs to.
+    fn find_adt_for_variant(&self, variant_name: &str) -> Option<String> {
+        for (adt_name, variants) in &self.adt_variants {
+            if variants.contains(&variant_name.to_string()) {
+                return Some(adt_name.clone());
+            }
+        }
+        None
     }
 
     fn post_process_expr(&self, mut expr: Expr) -> Expr {
@@ -899,6 +986,53 @@ impl PostProcessor {
                     })
                 };
                 expr.inner = ExprInner::Defn(name, params, body);
+            }
+
+            // deftype → Deftype (Call form with raw variant Call/Apply children).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "deftype") && args.len() >= 2 => {
+                let type_name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let mut variants: Vec<ADTVariant> = Vec::new();
+                let mut has_bound = false;
+                for arg in &args[1..] {
+                    match &arg.inner {
+                        ExprInner::Call(first, inner_args) => {
+                            if let ExprInner::Atom(Atom::Keyword(kw)) = &first.inner {
+                                if kw == "bound" && inner_args.len() >= 2 {
+                                    has_bound = true;
+                                }
+                            } else if let ExprInner::Atom(Atom::Ident(vname)) = &first.inner {
+                                let fields: Vec<String> = inner_args
+                                    .iter()
+                                    .filter_map(|e| match &e.inner {
+                                        ExprInner::Atom(Atom::Ident(f)) => Some(f.clone()),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                variants.push(ADTVariant { name: vname.clone(), fields });
+                            }
+                        }
+                        ExprInner::Apply(name, inner_args) => {
+                            let fields: Vec<String> = inner_args
+                                .iter()
+                                .filter_map(|e| match &e.inner {
+                                    ExprInner::Atom(Atom::Ident(f)) => Some(f.clone()),
+                                    _ => None,
+                                })
+                                .collect();
+                            variants.push(ADTVariant { name: name.clone(), fields });
+                        }
+                        ExprInner::Atom(Atom::Ident(v)) => {
+                            variants.push(ADTVariant { name: v.clone(), fields: Vec::new() });
+                        }
+                        _ => {}
+                    }
+                }
+                if !has_bound {
+                    expr.inner = ExprInner::Deftype(type_name, variants, Vec::new(), None);
+                }
             }
 
             // fn → Fn (Call form).
@@ -1831,18 +1965,30 @@ impl PostProcessor {
                     ExprInner::Atom(Atom::Ident(v)) => v.clone(),
                     _ => return expr,
                 };
-                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
-                expr.inner = ExprInner::MakeVariant(String::new(), variant_name, new_args);
+                let adt_name = self.find_adt_for_variant(&variant_name).unwrap_or_default();
+                let new_args: Vec<Expr> = args
+                    .iter()
+                    .map(|a| self.post_process_expr(a.clone()))
+                    .filter(|a| !matches!(&a.inner, ExprInner::Atom(Atom::Ident(n)) if self.is_type_param(n)))
+                    .collect();
+                expr.inner = ExprInner::MakeVariant(adt_name, variant_name, new_args);
             }
 
             // Recognize bare identifier variant constructors (unit variants like None).
-            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !is_known_builtin_or_apply(n) => {
-                expr.inner = ExprInner::MakeVariant(String::new(), n.clone(), Vec::new());
+            // Skip type parameters — they are not variant constructors.
+            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !is_known_builtin_or_apply(n) && !self.is_type_param(n) => {
+                let adt_name = self.find_adt_for_variant(n).unwrap_or_default();
+                expr.inner = ExprInner::MakeVariant(adt_name, n.clone(), Vec::new());
             }
 
             ExprInner::Apply(name, ref args) if is_uppercase_ident(name) && !is_known_builtin_or_apply(name) => {
+                // Skip if this name is a type parameter of any known ADT.
+                if self.is_type_param(name) {
+                    return expr;
+                }
+                let adt_name = self.find_adt_for_variant(name).unwrap_or_default();
                 let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
-                expr.inner = ExprInner::MakeVariant(String::new(), name.clone(), new_args);
+                expr.inner = ExprInner::MakeVariant(adt_name, name.clone(), new_args);
             }
 
             // Recursively process children of Call/Apply nodes.

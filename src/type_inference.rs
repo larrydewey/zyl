@@ -19,6 +19,11 @@ pub struct TypeInferer {
     generics_in_scope: RefCell<std::collections::HashSet<String>>,
     var_gen_counter: Cell<usize>,
     subst: Subst,
+    /// ADT definitions for variant field type lookups.
+    adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
+    /// Tracks which concrete types instantiate each generic ADT.
+    /// Maps ADT name → list of concrete types used.
+    adt_instantiations: IndexMap<String, Vec<String>>,
 }
 
 impl TypeInferer {
@@ -42,6 +47,8 @@ impl TypeInferer {
             generics_in_scope: RefCell::new(std::collections::HashSet::new()),
             var_gen_counter: Cell::new(0),
             subst: Subst::new(),
+            adt_defs: IndexMap::new(),
+            adt_instantiations: IndexMap::new(),
         }
     }
 
@@ -52,9 +59,9 @@ impl TypeInferer {
     }
 
     pub fn infer(&mut self, exprs: &[Expr]) -> std::result::Result<Vec<Expr>, ZylError> {
+        // Register ADT definitions, function signatures, etc. from the AST.
+        self.collect_definitions(exprs);
         let mut result = Vec::with_capacity(exprs.len());
-        // collect_definitions is called by monomorphization before this.
-
         for expr in exprs {
             let ty = self.infer_expr(expr)?;
             result.push(Expr {
@@ -251,7 +258,12 @@ impl TypeInferer {
                     }
                 }
 
-                ExprInner::Deftype(name, variants, _) => {
+                ExprInner::Deftype(name, variants, _, _) => {
+                    let variant_info: Vec<(String, Vec<String>)> = variants
+                        .iter()
+                        .map(|v| (v.name.clone(), v.fields.clone()))
+                        .collect();
+                    self.adt_defs.insert(name.clone(), variant_info);
                     let has_generic = variants
                         .iter()
                         .any(|v| v.fields.iter().any(|f| is_generic_param(f)));
@@ -350,8 +362,71 @@ impl TypeInferer {
                         ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                         _ => continue,
                     };
-                    // For Phase 3 MVP, just register as a nominal type.
-                    self.known_types.insert(name.clone(), Type::Nominal(name));
+                    let mut variant_info: Vec<(String, Vec<String>)> = Vec::new();
+                    let mut has_generic = false;
+                    for arg in &args[1..] {
+                        match &arg.inner {
+                            ExprInner::MakeVariant(_, variant_name, field_args) => {
+                                let fields: Vec<String> = field_args
+                                    .iter()
+                                    .filter_map(|e| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &e.inner {
+                                            if f.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                                                has_generic = true;
+                                            }
+                                            return Some(f.clone());
+                                        }
+                                        None
+                                    })
+                                    .collect();
+                                variant_info.push((variant_name.clone(), fields));
+                            }
+                            ExprInner::Call(first, inner_args) => {
+                                if let ExprInner::Atom(Atom::Ident(vname)) = &first.inner {
+                                    let fields: Vec<String> = inner_args
+                                        .iter()
+                                        .filter_map(|e| {
+                                            if let ExprInner::Atom(Atom::Ident(f)) = &e.inner {
+                                                if f.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                                                    has_generic = true;
+                                                }
+                                                return Some(f.clone());
+                                            }
+                                            None
+                                        })
+                                        .collect();
+                                    variant_info.push((vname.clone(), fields));
+                                }
+                            }
+                            ExprInner::Apply(name, inner_args) => {
+                                let fields: Vec<String> = inner_args
+                                    .iter()
+                                    .filter_map(|e| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &e.inner {
+                                            if f.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                                                has_generic = true;
+                                            }
+                                            return Some(f.clone());
+                                        }
+                                        None
+                                    })
+                                    .collect();
+                                variant_info.push((name.clone(), fields));
+                            }
+                            ExprInner::Atom(Atom::Ident(v)) => {
+                                variant_info.push((v.clone(), Vec::new()));
+                            }
+                            _ => {}
+                        }
+                    }
+                    if !variant_info.is_empty() {
+                        self.adt_defs.insert(name.clone(), variant_info);
+                    }
+                    if has_generic {
+                        self.known_types.insert(name.clone(), Type::Var(self.fresh_var()));
+                    } else {
+                        self.known_types.insert(name.clone(), Type::Nominal(name));
+                    }
                 }
 
                 ExprInner::Apply(name, args) if name == "deftype" && args.len() >= 2 => {
@@ -1090,7 +1165,7 @@ impl TypeInferer {
                 drop(self.infer_expr(init)?);
                 self.infer_expr(body)
             }
-            ExprInner::Deftype(_name, _variants, bound) => {
+            ExprInner::Deftype(_name, _variants, _, bound) => {
                 if let Some(b) = bound {
                     let _ = b;
                 }
@@ -1219,6 +1294,43 @@ impl TypeInferer {
             ExprInner::FileClose(handle) => {
                 drop(self.infer_expr(handle)?);
                 Ok(Type::Prim(PrimType::Unit))
+            }
+
+            ExprInner::MakeVariant(ref adt_name, ref variant_name, ref args) => {
+                // Look up variant field types from ADT definition.
+                let field_types: Vec<String> = self
+                    .adt_defs
+                    .get(adt_name)
+                    .and_then(|variants| {
+                        variants.iter().find(|(vname, _)| vname == variant_name).map(|(_, fields)| fields.clone())
+                    })
+                    .unwrap_or_default();
+
+                // Infer types of args and unify with field types.
+                let mut arg_types: Vec<String> = Vec::with_capacity(args.len());
+                for (i, arg) in args.iter().enumerate() {
+                    let inferred_type = self.infer_expr(arg)?;
+                    let type_str = format!("{}", inferred_type);
+                    arg_types.push(type_str.clone());
+
+                    if i < field_types.len() {
+                        let expected_type = &field_types[i];
+                        if is_generic_param(expected_type) {
+                            // Record ADT instantiation: this generic type param was used with this concrete type.
+                            let concrete_type = type_str.clone();
+                            self.adt_instantiations
+                                .entry(adt_name.clone())
+                                .or_default()
+                                .push(concrete_type.clone());
+                        } else {
+                            let expected_ty = self.resolve_type_name(expected_type).unwrap_or_else(|| Type::Var(self.fresh_var()));
+                            drop(self.unify(&inferred_type, &expected_ty));
+                        }
+                    }
+                }
+
+                // Return the ADT type.
+                Ok(Type::Nominal(adt_name.clone()))
             }
 
             _ => Ok(Type::Var(self.fresh_var())),
@@ -1644,6 +1756,16 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     /// Expose struct definitions for field-level monomorphization.
     pub fn get_struct_defs(&self) -> &IndexMap<String, Vec<(String, Option<Type>)>> {
         &self.struct_defs
+    }
+
+    /// Expose ADT definitions (variant names + field type names) for monomorphization.
+    pub fn get_adt_defs(&self) -> &IndexMap<String, Vec<(String, Vec<String>)>> {
+        &self.adt_defs
+    }
+
+    /// Expose ADT instantiation info: which concrete types each generic ADT was used with.
+    pub fn get_adt_instantiations(&self) -> &IndexMap<String, Vec<String>> {
+        &self.adt_instantiations
     }
 
     /// Try to extract a struct name from a MakeStruct expression.
