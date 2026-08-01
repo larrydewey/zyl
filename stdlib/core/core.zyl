@@ -1,70 +1,55 @@
 ; === Zyl Standard Library — Core ===
 ; Module: core
-; Provides: all standard library types and functions (inlined)
+; Provides: generic Option<T>, generic Result<T, E>, combinators,
+;           arithmetic, bool, type-predicates
 
 ; ===========================================================================
-; OPTION ADT
+; OPTION ADT — Generic: Option<T>
 ; ===========================================================================
 
-(deftype OptionInt (SomeInt Int) None)
-(deftype OptionBool (SomeBool Bool) None)
+(deftype Option (Some T) None)
 
-(defn option-int-unwrap (opt default)
+(defn option-unwrap (opt default)
   (match opt
-    (SomeInt v) v
+    (Some v) v
     (None) default))
 
-(defn option-int-is-some (opt)
+(defn option-is-some (opt)
   (match opt
-    (SomeInt _) true
+    (Some _) true
     (None) false))
 
-(defn option-int-is-none (opt)
+(defn option-is-none (opt)
   (match opt
-    (SomeInt _) false
-    (None) true))
-
-(defn option-bool-unwrap (opt default)
-  (match opt
-    (SomeBool v) v
-    (None) default))
-
-(defn option-bool-is-some (opt)
-  (match opt
-    (SomeBool _) true
-    (None) false))
-
-(defn option-bool-is-none (opt)
-  (match opt
-    (SomeBool _) false
+    (Some _) false
     (None) true))
 
 ; ===========================================================================
-; RESULT ADT
+; RESULT ADT — Generic: Result<T, E>
 ; ===========================================================================
 
-(deftype ResultInt (OkInt Int) (ErrInt String))
+(deftype Result (Ok T) (Err E))
 
-(defn result-int-unwrap (res default)
+(defn result-unwrap (res default)
   (match res
-    (OkInt v) v
-    (ErrInt _) default))
+    (Ok v) v
+    (Err _) default))
 
-(defn result-int-is-ok (res)
+(defn result-is-ok (res)
   (match res
-    (OkInt _) true
-    (ErrInt _) false))
+    (Ok _) true
+    (Err _) false))
 
-(defn result-int-is-err (res)
+(defn result-is-err (res)
   (match res
-    (OkInt _) false
-    (ErrInt _) true))
+    (Ok _) false
+    (Err _) true))
 
 ; ===========================================================================
-; LIST ADT
+; LIST ADT — Generic: List<T>
 ; ===========================================================================
 
-(deftype List (Cons Int (List)) None)
+(deftype List (Cons T (List T)) None)
 
 (defn is-nil (xs)
   (match xs
@@ -73,7 +58,7 @@
 
 (defn list-car (xs)
   (match xs
-    (Cons v _) (SomeInt v)
+    (Cons v _) (Some v)
     (None) None))
 
 (defn list-cdr (xs)
@@ -81,26 +66,19 @@
     (Cons _ rest) rest
     (None) None))
 
-(defn list-head (xs)
-  (match xs
-    (Cons v _) (SomeInt v)
-    (None) None))
-
-(defn list-tail (xs)
-  (match xs
-    (Cons _ rest) rest
-    (None) None))
-
+; Length
 (defn list-length (xs)
   (match xs
     (None) 0
     (Cons _ rest) (+ 1 (list-length rest))))
 
+; Append
 (defn list-append (xs ys)
   (match xs
     (None) ys
     (Cons h t) (Cons h (list-append t ys))))
 
+; Reverse
 (defn list-reverse (xs)
   (list-reverse-acc xs None))
 
@@ -109,15 +87,11 @@
     (None) acc
     (Cons h t) (list-reverse-acc t (Cons h acc))))
 
+; Sum of list (Int only — monomorphized by use site)
 (defn list-sum (xs)
   (match xs
     (None) 0
     (Cons h t) (+ h (list-sum t))))
-
-(defn list-product (xs)
-  (match xs
-    (None) 1
-    (Cons h t) (* h (list-product t))))
 
 ; ===========================================================================
 ; COMBINATORS
@@ -126,6 +100,13 @@
 (defn identity (x) x)
 
 (defn const (a _b) a)
+
+(defn flip (f a b) (f b a))
+
+(defn compose (f g)
+  (fn (x) (f (g x))))
+
+(defn apply (f x) (f x))
 
 ; ===========================================================================
 ; ARITHMETIC HELPERS
@@ -163,6 +144,9 @@
 (defn nor (a b)
   (not (or a b)))
 
+(defn implies (a b)
+  (if a b true))
+
 ; ===========================================================================
 ; TYPE PREDICATES
 ; ===========================================================================
@@ -188,3 +172,19 @@
 
 (defn unless (pred body)
   (if (not pred) body (begin)))
+
+; ===========================================================================
+; I/O HELPERS
+; ===========================================================================
+
+(defn print-int (n)
+  (print n))
+
+(defn print-float (f)
+  (print f))
+
+(defn print-string (s)
+  (print s))
+
+(defn print-bool (b)
+  (print b))

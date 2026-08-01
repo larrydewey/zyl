@@ -1,0 +1,97 @@
+; === Zyl Standard Library — Testing Framework ===
+; Module: testing
+; Provides: Test helpers and utilities
+
+; ===========================================================================
+; TEST HELPERS
+; ===========================================================================
+
+; Run a single test
+; Returns: Unit
+(defn test-run (test-name test-body)
+  (test test-name test-body))
+
+; Run a test suite
+; Returns: Unit
+(defn test-suite-run (suite-name tests)
+  (test-suite suite-name tests))
+
+; ===========================================================================
+; ASSERTION HELPERS
+; ===========================================================================
+
+; Assert equal values
+; Returns: Unit
+(defn assert-equal-values (expected actual)
+  (assert-equal expected actual))
+
+; Assert true value
+; Returns: Unit
+(defn assert-true-value (value)
+  (assert-true value))
+
+; Assert false value
+; Returns: Unit
+(defn assert-false-value (value)
+  (assert-false value))
+
+; Assert fail expression
+; Returns: Unit
+(defn assert-fail-expr (expr)
+  (assert-fail expr))
+
+; ===========================================================================
+; TEST UTILITIES
+; ===========================================================================
+
+; Count tests in suite (placeholder)
+; Returns: Int
+(defn test-count (suite)
+  ;; Note: Actual test counting requires runtime support.
+  ;; This is a placeholder.
+  (error "test-count not implemented"))
+
+; Run tests with filter
+; Returns: Unit
+(defn run-tests-filtered (filter)
+  ;; Note: Actual filter requires runtime support.
+  ;; This is a placeholder.
+  (error "run-tests-filtered not implemented"))
+
+; Run tests in parallel
+; Returns: Unit
+(defn run-tests-parallel ()
+  ;; Note: Actual parallel execution requires runtime support.
+  ;; This is a placeholder.
+  (error "run-tests-parallel not implemented"))
+
+; Run tests with timeout
+; Returns: Unit
+(defn run-tests-with-timeout (timeout)
+  ;; Note: Actual timeout requires runtime support.
+  ;; This is a placeholder.
+  (error "run-tests-with-timeout not implemented"))
+
+; ===========================================================================
+; PROPERTY TESTING HELPERS
+; ===========================================================================
+
+; Generate int property test
+; Returns: Unit
+(defn property-int (name gen-fn property-fn)
+  (test-property name gen-int property-fn))
+
+; Generate bool property test
+; Returns: Unit
+(defn property-bool (name gen-fn property-fn)
+  (test-property name gen-bool property-fn))
+
+; Generate string property test
+; Returns: Unit
+(defn property-string (name gen-fn property-fn)
+  (test-property name gen-string property-fn))
+
+; Generate float property test
+; Returns: Unit
+(defn property-float (name gen-fn property-fn)
+  (test-property name gen-float property-fn))
