@@ -12,6 +12,7 @@ mod region_inference;
 mod runtime;
 mod type_inference;
 mod type_system;
+mod zyl_source_gen;
 
 use std::env;
 use std::fs;
@@ -20,10 +21,13 @@ use std::process;
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
+    let emit_zyl = args.iter().any(|a| a == "--emit-zyl");
+    let emit_zyl_path = args.iter().position(|a| a == "--emit-zyl").and_then(|i| args.get(i + 1));
+
     if args.len() < 2 || args[1] == "--help" || args[1] == "-h" {
         println!("Zyl compiler v0.1.0");
         println!();
-        println!("Usage: zyl <source.zyl> [output.bin]");
+        println!("Usage: zyl <source.zyl> [output.bin] [--emit-zyl [output.zyl]]");
         println!();
         println!("Phases (spec §22):");
         println!("  1. Parsing — Tokenize and parse to AST");
@@ -40,12 +44,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!(" 12. Hash Finalization");
         println!();
         println!("Options:");
-        println!("  --help, -h    Show this help message");
+        println!("  --help, -h        Show this help message");
+        println!("  --emit-zyl [path] Generate Zyl source code (self-hosting)");
         process::exit(0);
     }
 
     let source_path = &args[1];
-    let output_path = args.get(2).map(|s| s.as_str()).unwrap_or("a.out");
+
+    // Parse output path: first non-flag argument after source is the output.
+    let output_path = args.iter()
+        .skip(2)
+        .find(|a| !a.starts_with("--"))
+        .map(|s| s.as_str())
+        .unwrap_or("a.out");
 
     // Phase 1: Parsing — Tokenize + Parse to AST.
     println!("[Phase 1] Parsing {} ...", source_path);
@@ -177,6 +188,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "  Optimization complete: {} passes applied.",
         optimizer.stats().len()
     );
+
+    // --emit-zyl: Generate Zyl source code from optimized ICNF (self-hosting).
+    if emit_zyl {
+        println!("[Self-hosting] Generating Zyl source code ...");
+        let zyl_path = emit_zyl_path.cloned().unwrap_or_else(|| "output.zyl".to_string());
+        let mut gen = zyl_source_gen::ZylSourceGen::new();
+        gen.generate(&optimized_icnf);
+        std::fs::write(&zyl_path, gen.to_string())
+            .map_err(|e| format!("Failed to write Zyl source '{}': {}", zyl_path, e))?;
+        println!("  Zyl source written to: {}", zyl_path);
+    }
 
     // Phase 9: Code Generation → x86_64 assembly.
     println!("[Phase 9] Generating x86_64 assembly ...");
