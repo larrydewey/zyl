@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 static ZylActorSystem g_system;
 
@@ -122,9 +123,13 @@ void* zyl_actor_thread_entry(void* arg) {
         actor->entry(actor->state);
     }
 
-    /* Process mailbox: dispatch messages until empty. */
-    while (actor->alive && actor->mailbox_head) {
+    /* Process mailbox until the actor is stopped by wait_all. */
+    while (actor->alive) {
         ZylMessage* m = actor->mailbox_head;
+        if (!m) {
+            usleep(1000);
+            continue;
+        }
         actor->mailbox_head = m->next;
         actor->mailbox_count--;
 
@@ -147,9 +152,26 @@ void* zyl_actor_thread_entry(void* arg) {
 }
 
 void zyl_actor_wait_all(void) {
+    /* Wait until all pending messages have been consumed, so messages sent
+       before wait_all are guaranteed to be processed (avoids the race where
+       a send lands after the consumer already drained an empty mailbox). */
+    int pending;
+    do {
+        pending = 0;
+        for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
+            ZylActor* actor = &g_system.actors[i];
+            if ((actor->running || actor->thread) && actor->mailbox_count > 0) {
+                pending = 1;
+                break;
+            }
+        }
+        if (pending) usleep(1000);
+    } while (pending);
+
     for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
         ZylActor* actor = &g_system.actors[i];
         if (actor->running || actor->thread) {
+            actor->alive = 0;
             pthread_join(actor->thread, NULL);
         }
     }

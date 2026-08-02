@@ -163,7 +163,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let resolved_returns = inferer.get_resolved_function_returns();
     let mut icnf_converter = icnf::IcnfConverter::new()
         .with_struct_layouts(struct_layouts.clone())
-        .with_resolved_func_params(resolved_params)
+        .with_resolved_func_params(resolved_params.clone())
         .with_resolved_func_returns(resolved_returns.clone());
     let icnf_program = match icnf_converter.convert(&regioned_for_mono) {
         Ok(p) => p,
@@ -217,6 +217,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_struct_layouts(struct_layouts_for_codegen)
         .with_adt_defs(adt_defs)
         .with_func_returns(resolved_returns.iter().map(|(k, v)| (k.replace('-', "_"), v.clone())).collect())
+        .with_func_params(resolved_params.iter().map(|(k, v)| (k.replace('-', "_"), v.clone())).collect())
         .with_closure_bodies(optimized_icnf.closure_bodies.iter().map(|(k, v)| (*k, v.clone())).collect())
         .with_closures(optimized_icnf.closures.iter().map(|(k, v)| (*k, v.clone())).collect());
     codegen.generate(&optimized_icnf);

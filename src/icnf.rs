@@ -290,8 +290,8 @@ pub enum ICNFInner {
     Spawn(usize),
     /// Send message to actor.
     Send(usize, usize),
-    /// Send closure to actor: (actor_id, closure_name, captured_value_ids...).
-    SendClosure(usize, String, Vec<usize>),
+    /// Send closure to actor: (actor_id, closure_wrapper_name, handler_name, captured_value_ids...).
+    SendClosure(usize, String, String, Vec<usize>),
     /// Error value (Result::Err).
     ErrValue(usize),
     /// Ok wrapper (Result::Ok).
@@ -1912,10 +1912,22 @@ impl IcnfConverter {
             }
 
             // Send closure to actor.
-            ExprInner::SendClosure(actor, _closure_expr, caps) => {
-                let actor_id = self.convert_expr(actor)?;
+            ExprInner::SendClosure(actor, closure_expr, caps) => {
+                let mut all_nodes: Vec<ICNFNode> = Vec::new();
+                // Convert the actor expression and keep ALL intermediate stmts
+                // (e.g. the Spawn + Closure nodes for (spawn (fn ...))) so codegen
+                // can emit them. convert_expr() would discard the intermediates.
+                let mut actor_stmts = self.convert_expr_to_stmts(actor)?;
+                let actor_id = actor_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                all_nodes.append(&mut actor_stmts);
                 // Generate unique closure ID for tracking.
                 let closure_key = self.next_ssa_id();
+                // Extract the handler function name from the closure expression
+                // (send-closure (spawn ...) greet msg → handler is "greet").
+                let handler_name = match &closure_expr.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => sanitize_name(n),
+                    _ => String::new(),
+                };
                 // Resolve capture variable SSA IDs.
                 let mut capture_ids = Vec::new();
                 for cap in caps.iter() {
@@ -1942,21 +1954,22 @@ impl IcnfConverter {
                 }
                 // Store closure metadata in closures for codegen.
                 let closure_name = format!("_ZYL_closure_{}", closure_key);
-                let icnf_caps: Vec<CaptureField> = caps.iter().map(|c| CaptureField {
+                let icnf_caps: Vec<CaptureField> = caps.iter().zip(capture_ids.iter()).map(|(c, sid)| CaptureField {
                     name: c.name.clone(),
-                    ssa_id: 0,
+                    ssa_id: *sid,
                 }).collect();
                 self.closures.insert(
                     closure_key,
                     (closure_name.clone(), icnf_caps),
                 );
-                Ok(vec![ICNFNode {
+                all_nodes.push(ICNFNode {
                     id: self.next_ssa_id(),
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
-                    node: ICNFInner::SendClosure(actor_id, closure_name, capture_ids),
-                }])
+                    node: ICNFInner::SendClosure(actor_id, closure_name, handler_name, capture_ids),
+                });
+                Ok(all_nodes)
             }
 
             // Print.

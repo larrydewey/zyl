@@ -250,7 +250,7 @@ impl ZylSourceGen {
                     let m = self.ensure_name(*msg_id);
                     buf.push(format!("(let {} (send {} {}))", name, t, m));
                 }
-                ICNFInner::SendClosure(target_id, closure_name, captured_ids) => {
+                ICNFInner::SendClosure(target_id, closure_name, _handler, captured_ids) => {
                     let t = self.ensure_name(*target_id);
                     let cap_names: Vec<String> = captured_ids
                         .iter()
