@@ -43,7 +43,7 @@ Testing is a core language built-in. Tests define behavior and drive implementat
 ### v4.0 (Previous)
 - Explicit closures, macros, testing as core.
 
-### v4.1 (Current — Final Locked Version)
+### v4.1 (Previous)
 - alias, defstruct, defstruct+, derive, with-resource
 - Immutable structs (rebinding only)
 - Result-based error handling (no exceptions)
@@ -51,6 +51,11 @@ Testing is a core language built-in. Tests define behavior and drive implementat
 - Gensym-based macro hygiene
 - Deterministic iteration for Map
 - Compile-time exhaustive match
+
+### v4.2 (Current)
+- Multi-parameter generics formalized (§6)
+- Type param scope, same-type constraint, generic ADT derivation
+- `E_CANNOT_INFER` for generic params with no call-site evidence
 
 ### v5.0 (Planned)
 - Package management (zyl.toml, registries, signing)

@@ -6,7 +6,7 @@
 
 ## Authoritative Sources (in order)
 
-1. **`zyl_specification.txt`** — Canonical language specification (v4.1, final locked version)
+1. **`zyl_specification.txt`** — Canonical language specification (v4.2)
 2. **`spec/`/** — Structured reference copy of specification, organized by semantic domain
 3. **`Cargo.toml`** — Dependencies and binary targets
 4. **`PROGRESS.md`** — Current implementation state and next priorities

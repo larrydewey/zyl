@@ -98,7 +98,7 @@ See `stdlib_test.zyl` and source files in the root for example Zyl programs.
 
 ## Specification
 
-The canonical language specification is `zyl_specification.txt` (v4.1). Structured reference copies are in `spec/`. Historical specification versions are in `specifications/`.
+The canonical language specification is `zyl_specification.txt` (v4.2). Structured reference copies are in `spec/`. Historical specification versions are in `specifications/`.
 
 ## Resources
 
