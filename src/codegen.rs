@@ -31,6 +31,8 @@ pub struct CodeGen {
     closures: std::collections::HashMap<usize, (String, Vec<CaptureField>)>,
     /// Buffered wrapper functions for anonymous spawn closures.
     spawn_wrappers: Vec<String>,
+    /// Function name → return type (from type inference), for print type detection.
+    func_returns: std::collections::HashMap<String, Type>,
 }
 
 #[allow(dead_code)]
@@ -47,7 +49,14 @@ impl CodeGen {
             closure_bodies: std::collections::HashMap::new(),
             closures: std::collections::HashMap::new(),
             spawn_wrappers: Vec::new(),
+            func_returns: std::collections::HashMap::new(),
         }
+    }
+
+    /// Set function return types for codegen (from type inference).
+    pub fn with_func_returns(mut self, returns: std::collections::HashMap<String, Type>) -> Self {
+        self.func_returns = returns;
+        self
     }
 
     /// Set struct field layouts for codegen (built from AST struct definitions).
@@ -178,6 +187,16 @@ impl CodeGen {
                             }
                         }
                     }
+                // Match arm bodies are embedded control flow: their nodes live both
+                // in program.statements and in arm.body. Mark them so the main emit
+                // loop skips them (the Match handler emits them exactly once).
+                if let ICNFInner::Match { arms, .. } = &stmt.node {
+                    for arm in arms {
+                        for n in &arm.body {
+                            branch_body_ids.insert(n.id);
+                        }
+                    }
+                }
             }
 
             // Collect operand IDs for the main body to skip intermediate Load nodes.
@@ -296,6 +315,11 @@ impl CodeGen {
                         }
                         register_nested_ifs_recursive(then_body, local_vars, assign_slots, assign_count);
                         register_nested_ifs_recursive(else_body, local_vars, assign_slots, assign_count);
+                    }
+                    if let ICNFInner::Match { arms, .. } = &stmt.node {
+                        for arm in arms {
+                            register_nested_ifs_recursive(&arm.body, local_vars, assign_slots, assign_count);
+                        }
                     }
                 }
             }
@@ -420,6 +444,9 @@ impl CodeGen {
                 // Skip nodes whose IDs appear inside embedded branch body vectors.
                 if branch_body_ids.contains(&stmt.id) {
                     continue;
+                }
+                if matches!(stmt.node, ICNFInner::If { .. }) {
+                    // If statements are handled via emit_node directly.
                 }
                 // Skip BinOp statements that are If conditions — the If handler
                 // emits them inline before its branch logic.
@@ -633,18 +660,74 @@ impl CodeGen {
                 }
             }
 
-            // After first pass: capture phi slots for all If result variables.
-            for stmt in &func.body {
-                if let ICNFInner::If { result_var, .. } = &stmt.node {
-                    if let Some(&slot) = local_vars.get(result_var) {
-                        phi_slots.insert(result_var.clone(), ((slot + 1) * 8).to_string());
+            // After first pass: register nested If result_vars (in If branches and
+            // Match arm bodies) so phi slots get dedicated, non-colliding stack slots.
+            fn register_nested_func_ifs(
+                stmts: &[ICNFNode],
+                local_vars: &mut HashMap<String, usize>,
+                next_slot: &mut usize,
+            ) {
+                for stmt in stmts {
+                    if let ICNFInner::If { result_var, then_body, else_body, .. } = &stmt.node {
+                        if !local_vars.contains_key(result_var) {
+                            local_vars.insert(result_var.clone(), *next_slot);
+                            *next_slot += 1;
+                        }
+                        register_nested_func_ifs(then_body, local_vars, next_slot);
+                        register_nested_func_ifs(else_body, local_vars, next_slot);
+                    }
+                    if let ICNFInner::Match { arms, .. } = &stmt.node {
+                        for arm in arms {
+                            register_nested_func_ifs(&arm.body, local_vars, next_slot);
+                        }
                     }
                 }
             }
+            register_nested_func_ifs(&func.body, &mut local_vars, &mut next_slot);
+
+            // After first pass: capture phi slots for all If result variables.
+            fn collect_func_phi_slots(
+                stmts: &[ICNFNode],
+                local_vars: &HashMap<String, usize>,
+                phi_slots: &mut std::collections::HashMap<String, String>,
+            ) {
+                for stmt in stmts {
+                    if let ICNFInner::If { result_var, then_body, else_body, .. } = &stmt.node {
+                        if let Some(&slot) = local_vars.get(result_var) {
+                            phi_slots.insert(result_var.clone(), ((slot + 1) * 8).to_string());
+                        }
+                        collect_func_phi_slots(then_body, local_vars, phi_slots);
+                        collect_func_phi_slots(else_body, local_vars, phi_slots);
+                    }
+                    if let ICNFInner::Match { arms, .. } = &stmt.node {
+                        for arm in arms {
+                            collect_func_phi_slots(&arm.body, local_vars, phi_slots);
+                        }
+                    }
+                }
+            }
+            collect_func_phi_slots(&func.body, &mut local_vars, &mut phi_slots);
 
             // Second pass: emit code.
             // Collect condition IDs to skip them in the emit loop (they'll be emitted inline by If handler).
             let mut condition_ids: std::collections::HashSet<usize> = HashSet::new();
+            // Collect IDs of nodes embedded in If/While/Match branch bodies so the
+            // flat emit loop skips them (their parent handler emits them exactly once).
+            let mut func_branch_body_ids: std::collections::HashSet<usize> = HashSet::new();
+            for stmt in &func.body {
+                if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
+                    for n in then_body.iter().chain(else_body.iter()) {
+                        func_branch_body_ids.insert(n.id);
+                    }
+                }
+                if let ICNFInner::Match { arms, .. } = &stmt.node {
+                    for arm in arms {
+                        for n in &arm.body {
+                            func_branch_body_ids.insert(n.id);
+                        }
+                    }
+                }
+            }
             for stmt in &func.body {
                 if let ICNFInner::If { cond_ssa, then_body, else_body, .. } = &stmt.node {
                     condition_ids.insert(*cond_ssa);
@@ -669,6 +752,10 @@ impl CodeGen {
             for stmt in &func.body {
                 // Skip condition BinOps — they're emitted inline by the If handler.
                 if condition_ids.contains(&stmt.id) {
+                    continue;
+                }
+                // Skip nodes embedded in If/Match branch bodies — emitted by parent handler.
+                if func_branch_body_ids.contains(&stmt.id) {
                     continue;
                 }
                 // Skip nodes that are operands to a parent node (Print/Call/BinOp/etc.).
@@ -1368,6 +1455,21 @@ impl CodeGen {
                 ..
             }) => {
                 // Already emitted — result is in eax. Just copy to target.
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                }
+            }
+            n @ Some(ICNFNode {
+                node: ICNFInner::MakeVariant { .. },
+                ..
+            }) => {
+                // Re-emit the variant construction inline: emits a fresh heap
+                // allocation and leaves the struct pointer in rax, then copies to
+                // the target register. Safe because field SSA ids point to pure
+                // Load/Const nodes (side-effecting calls are hoisted by ICNF).
+                self.emit_node(n.unwrap(), stmts, local_vars, emitted_ids, operand_ids, lookup, phi_slots);
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
@@ -2635,6 +2737,23 @@ impl CodeGen {
                     }
                 }
                 // Store current register (result of value computation) to stack slot.
+                // Standalone Call/FfiCall statements are no-ops in the emit loop, so
+                // a Call-valued Assign must emit the call on-demand to get its result.
+                let needs_on_demand = matches!(value_node, Some(ICNFNode { node: ICNFInner::Call(..), .. }))
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::FfiCall { .. }, .. }))
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::StructGet(..), .. }));
+                if needs_on_demand && !emitted_ids.contains(&resolved_value_id) {
+                    self.emit_load_into(
+                        resolved_value_id,
+                        "rax",
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        operand_ids,
+                        phi_slots,
+                    );
+                }
                 let val_is_float = lookup
                     .get(value_id)
                     .copied()
@@ -2652,7 +2771,8 @@ impl CodeGen {
                     if val_is_float {
                         self.asm
                             .push(format!("    movsd [rbp-{}], xmm0", offset));
-                    } else if val_is_string {
+                    } else if val_is_string || needs_on_demand {
+                        // Pointer-valued results (calls returning structs/strings/ADT boxes).
                         self.asm
                             .push(format!("    mov [rbp-{}], rax", offset));
                     } else {
@@ -3476,12 +3596,24 @@ impl CodeGen {
                                         result = matches!(vn.node, ICNFInner::Const(Atom::Str(_)));
                                     }
                                 }
+                                // Check if value_id resolves to a string-returning call
+                                if !result {
+                                    if let Some(vn) = find_node(value_id) {
+                                        if let ICNFInner::Call(fname, _) = &vn.node {
+                                            result = self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String)));
+                                        }
+                                    }
+                                }
                             } else {
                                 // No Assign found for this variable — not a string.
                                 result = false;
                             }
                             result
                         }
+                        Some(ICNFNode {
+                            node: ICNFInner::Call(fname, _),
+                            ..
+                        }) => self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String))),
                         _ => false,
                     };
                     // Check if node's type is explicitly set.
@@ -3518,6 +3650,14 @@ impl CodeGen {
                                      self.asm_push_align();
                                      self.asm.push("    mov rsi, rax".to_string());
                                  }
+                             }
+                             Some(ICNFNode {
+                                 node: ICNFInner::Call(..),
+                                 ..
+                             }) => {
+                                 self.emit_load_into(arg_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
+                                 self.asm_push_align();
+                                 self.asm.push("    mov rsi, rax".to_string());
                              }
                              _ => {
                                  self.asm_push_align();
@@ -4204,7 +4344,7 @@ impl CodeGen {
                             emitted_ids,
                             &arm_operand_ids,
                             &arm_lookup,
-                            &std::collections::HashMap::new(),
+                            phi_slots,
                         );
                         emitted_ids.insert(stmt.id);
                     }
