@@ -17,7 +17,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 - AST nodes (complete Expr enum covering all language constructs per spec §2)
 - Lexer (`src/lexer.rs`, ~457 lines) — token types: IDENTIFIER, INTEGER, FLOAT, STRING, BOOLEAN, SYMBOL, KEYWORD, brackets
 - Comment stripping and location tracking
-- Recursive descent parser (`src/parser.rs`, ~1823 lines) with ~40 special form handlers
+- Recursive descent parser (`src/parser.rs`, ~1860 lines) with ~40 special form handlers
 - No-dispatch parsing (all S-expressions → raw Call/Apply → PostProcessor)
 - Reserved keyword enforcement (E_RESERVED_KEYWORD) — 47 reserved keywords
 
@@ -28,7 +28,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 | `src/error.rs` | 170 | Full error model with Location/Span tracking |
 | `src/ast.rs` | 2005 | AST definitions + pretty printing + PostProcessor |
 | `src/lexer.rs` | 457 | Tokenizer with comment stripping, location tracking |
-| `src/parser.rs` | 1823 | Recursive descent parser, no-dispatch mode |
+| `src/parser.rs` | 1860 | Recursive descent parser, no-dispatch mode |
 | `src/repl.rs` | 4 | REPL stub |
 
 ---
@@ -48,7 +48,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented and tested.
 
 **Completed features:**
-- Complete macro system (`src/macro_expander.rs`, ~1427 lines)
+- Complete macro system (`src/macro_expander.rs`, ~1449 lines)
 - GensymRegistry for hygiene
 - Pattern matching engine
 - Template substitution with gensym hygiene
@@ -64,7 +64,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented.
 
 **Completed features:**
-- Complete region system (`src/region_inference.rs`, ~1132 lines)
+- Complete region system (`src/region_inference.rs`, ~1158 lines)
 - Region enum: Stack | Heap | Global | Circular | Pin
 - CaptureInfo for closure capture tracking
 - RegionEnv with scoped environment
@@ -83,7 +83,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 - Complete type system (`src/type_system.rs`, ~612 lines)
 - Type enum with primitives (Int, Float, Bool, String, Unit), capabilities (TCap/TMut), functions, generics, collections
 - Subst (substitution map), TypeVarGen, TypeEnv, TraitContext
-- HM-style inference engine (`src/type_inference.rs`, ~1836 lines)
+- HM-style inference engine (`src/type_inference.rs`, ~2156 lines)
 - Two-pass: collect_definitions → infer_expr
 - Handles all special forms (including raw Call/Apply from no-dispatch)
 - Built-in operator typing
@@ -101,7 +101,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented.
 
 **Completed features:**
-- Complete monomorphization engine (`src/monomorphization.rs`, ~1459 lines)
+- Complete monomorphization engine (`src/monomorphization.rs`, ~1549 lines)
 - Generic function detection via uppercase parameter convention
 - Canonical naming (alphabetically sorted types)
 - Trait bound verification
@@ -114,7 +114,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented.
 
 **Completed features:**
-- Complete SSA IR generation (`src/icnf.rs`, ~2862 lines)
+- Complete SSA IR generation (`src/icnf.rs`, ~2941 lines)
 - ICNFNode with unique SSA ID, Region annotation, ICNFInner operation
 - ICNFFuncSig for function signatures
 - ICNFProgram container
@@ -138,7 +138,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented.
 
 **Completed features:**
-- Safe-only ICNF optimizations (`src/optimization.rs`, ~514 lines)
+- Safe-only ICNF optimizations (`src/optimization.rs`, ~529 lines)
 - Constant Folding: Folds BinOp/UnOp with compile-time constants (fixed-point iteration)
 - Dead Code Elimination: BFS-based transitive dependency collection from function returns
 - Control flow structures (If/While/For/Match) preserved in DCE
@@ -151,7 +151,7 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Status:** Implemented and tested.
 
 **Completed features:**
-- Complete x86_64 assembly generator (`src/codegen.rs`, ~4738 lines)
+- Complete x86_64 assembly generator (`src/codegen.rs`, ~5254 lines)
 - Intel syntax (`.intel_syntax noprefix`)
 - Linear-scan register allocator with caller-saved registers
 - 32-bit and 64-bit register allocation
@@ -266,15 +266,17 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 **Features:**
 - `(spawn <closure>)` — Spawn actor with closure body
 - `(send <actor> <message>)` — Send message to actor mailbox
-- `(send-closure <closure>)` — Send closure with captured state
+- `(send-closure <actor> <handler> <msg>)` — Send handler invocation with captured message to actor mailbox
 - `zyl_actor_wait_all()` at end of main
 - C runtime with pthread-based actors
 - Mailbox queue with message dispatch loop
 - Closure message dispatch in mailbox processing loop
+- Handler type inference: `send-closure` unifies handler params with captured message types (e.g. String message → String param)
+- Drain loop waits for messages until `wait_all` stops actors (no send-after-spawn race)
 - Send-capability enforcement in type inference
 
 **C Runtime:**
-- `src/runtime/actor_runtime.c` (156 lines) — full actor system
+- `src/runtime/actor_runtime.c` (178 lines) — full actor system
 - `src/runtime/actor_runtime.h` (52 lines) — API header
 - Functions: `zyl_actor_init`, `zyl_actor_spawn`, `zyl_actor_send`, `zyl_actor_send_closure`, `zyl_actor_wait_all`
 

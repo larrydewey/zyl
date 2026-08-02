@@ -12,15 +12,15 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 | Phase | Status | Details |
 |-------|--------|---------|
-| 1. Parsing (Lexer + Parser → AST) | ✅ Complete | Full error model, no-dispatch parsing, 47 reserved keywords, ~1820 lines |
+| 1. Parsing (Lexer + Parser → AST) | ✅ Complete | Full error model, no-dispatch parsing, 47 reserved keywords, ~1860 lines |
 | 2. Post-Processing | ✅ Complete | Call/Apply → specialized ExprInner in ast.rs |
-| 3. Macro Expansion | ✅ Complete | Gensym hygiene, innermost-first, variadic patterns, ~1427 lines |
-| 4. Region Inference | ✅ Complete | Two-pass algorithm, R1–R8 rules, escape analysis, capture analysis, ~1132 lines |
-| 5. Type Inference | ✅ Complete | HM inference, trait resolution, derive validation, capability types, ~1836 lines |
-| 6. Monomorphization | ✅ Complete | Canonical naming, trait bound verification, ~1459 lines |
-| 7. ICNF Generation | ✅ Complete | SSA IR, region annotations, embedded control flow, ~2862 lines |
-| 8. Optimization | ✅ Complete | Constant folding (fixed-point), dead code elimination (BFS), ~514 lines |
-| 9. Code Generation | ✅ Complete | x86_64, System V AMD64 ABI, SSE floats, struct/ADT/actor/FFI/closure support, ~4738 lines |
+| 3. Macro Expansion | ✅ Complete | Gensym hygiene, innermost-first, variadic patterns, ~1449 lines |
+| 4. Region Inference | ✅ Complete | Two-pass algorithm, R1–R8 rules, escape analysis, capture analysis, ~1158 lines |
+| 5. Type Inference | ✅ Complete | HM inference, trait resolution, derive validation, capability types, ~2156 lines |
+| 6. Monomorphization | ✅ Complete | Canonical naming, trait bound verification, ~1549 lines |
+| 7. ICNF Generation | ✅ Complete | SSA IR, region annotations, embedded control flow, ~2941 lines |
+| 8. Optimization | ✅ Complete | Constant folding (fixed-point), dead code elimination (BFS), ~529 lines |
+| 9. Code Generation | ✅ Complete | x86_64, System V AMD64 ABI, SSE floats, struct/ADT/actor/FFI/closure support, ~5254 lines |
 | Linking | ✅ Complete | cc with actor_runtime.c, -lpthread |
 
 ### Language Features
