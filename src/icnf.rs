@@ -1783,6 +1783,9 @@ impl IcnfConverter {
                 for arm in arms {
                     // Bind pattern variables (field names) in scope for the arm body.
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    // Restore outer scope so arm body can reference enclosing bindings
+                    // (params, lets) — pattern vars are layered on top.
+                    self.current_scope = saved_scope.clone();
 
                     // Extract pattern variable names from arm.patterns and bind them.
                     let mut field_names: Vec<String> = Vec::new();

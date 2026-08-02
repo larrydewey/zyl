@@ -95,6 +95,120 @@ impl TypeInferer {
     /// Called by Phase 6 monomorphization to gather type info without destroying AST.
     pub fn collect(&mut self, exprs: &[Expr]) {
         self.collect_definitions(exprs);
+        // Pre-collect ADT instantiations from constructor call sites. This runs
+        // before monomorphization (which needs the concrete types to emit per-type
+        // ADT variants) but after definition collection so function signatures are
+        // available for inferring constructor argument types.
+        for expr in exprs {
+            self.collect_adt_instantiations_expr(expr);
+        }
+    }
+
+    /// Recursively walk an expression and record concrete types used with generic
+    /// ADT constructors (e.g. `(SomeV "hello")` records String for Opt).
+    fn collect_adt_instantiations_expr(&mut self, expr: &Expr) {
+        match &expr.inner {
+            ExprInner::MakeVariant(adt_name, variant_name, args) => {
+                if let Some(fields) = self
+                    .adt_defs
+                    .get(adt_name)
+                    .and_then(|variants| variants.iter().find(|(n, _)| n == variant_name).map(|(_, f)| f.clone()))
+                {
+                    for (i, arg) in args.iter().enumerate() {
+                        if i < fields.len() {
+                            // The concrete instantiation type at this field position:
+                            // generic params are resolved by inference; concrete field
+                            // types are recorded as-is (they are the instantiation).
+                            let ty_str = if is_generic_param(&fields[i]) {
+                                self.infer_expr(arg)
+                                    .map(|t| format!("{}", t))
+                                    .unwrap_or_default()
+                            } else {
+                                fields[i].clone()
+                            };
+                            if !ty_str.is_empty() {
+                                self.adt_instantiations
+                                    .entry(adt_name.clone())
+                                    .or_default()
+                                    .push(ty_str);
+                            }
+                        }
+                    }
+                }
+            }
+            ExprInner::Call(op, args) => {
+                self.collect_adt_instantiations_expr(op);
+                for a in args {
+                    self.collect_adt_instantiations_expr(a);
+                }
+            }
+            ExprInner::Apply(_, args) => {
+                for a in args {
+                    self.collect_adt_instantiations_expr(a);
+                }
+            }
+            ExprInner::Defn(_, _, body) => {
+                self.collect_adt_instantiations_expr(body);
+            }
+            ExprInner::Def(_, v) | ExprInner::Let(_, v, _) | ExprInner::LetMut(_, v, _) => {
+                self.collect_adt_instantiations_expr(v);
+            }
+            ExprInner::If(c, t, e) => {
+                self.collect_adt_instantiations_expr(c);
+                self.collect_adt_instantiations_expr(t);
+                self.collect_adt_instantiations_expr(e);
+            }
+            ExprInner::Match(scrutinee, arms) => {
+                self.collect_adt_instantiations_expr(scrutinee);
+                for arm in arms {
+                    self.collect_adt_instantiations_expr(&arm.body);
+                }
+            }
+            ExprInner::Begin(stmts) => {
+                for s in stmts {
+                    self.collect_adt_instantiations_expr(s);
+                }
+            }
+            ExprInner::Cond(branches) => {
+                for (c, b) in branches {
+                    self.collect_adt_instantiations_expr(c);
+                    self.collect_adt_instantiations_expr(b);
+                }
+            }
+            ExprInner::MakeStruct(_, args) => {
+                for a in args {
+                    self.collect_adt_instantiations_expr(a);
+                }
+            }
+            ExprInner::While(cond, body) => {
+                self.collect_adt_instantiations_expr(cond);
+                self.collect_adt_instantiations_expr(body);
+            }
+            ExprInner::For(_, cond, body) => {
+                self.collect_adt_instantiations_expr(cond);
+                self.collect_adt_instantiations_expr(body);
+            }
+            ExprInner::Lambda(_, _, b) | ExprInner::Fn(_, _, b) => {
+                self.collect_adt_instantiations_expr(b);
+            }
+            ExprInner::FfiCall(_, args, _) => {
+                for a in args {
+                    self.collect_adt_instantiations_expr(a);
+                }
+            }
+            ExprInner::Print(args) => {
+                for a in args {
+                    self.collect_adt_instantiations_expr(a);
+                }
+            }
+            ExprInner::Exit(e) | ExprInner::Unwrap(e) => {
+                self.collect_adt_instantiations_expr(e);
+            }
+            ExprInner::SetBang(_, v) => {
+                self.collect_adt_instantiations_expr(v);
+            }
+            _ => {}
+        }
     }
 
     fn collect_definitions(&mut self, exprs: &[Expr]) {
@@ -103,6 +217,7 @@ impl TypeInferer {
                 ExprInner::Defn(name, params, body) => {
                     let _param_types: Vec<Type> =
                         params.iter().map(|p| self.parse_type_str(&p.typ)).collect();
+                    self.function_bodies.insert(name.clone(), body.as_ref().clone());
                     if let Ok(ret_ty) = self.infer_expr(body) {
                         self.known_functions.insert(
                             name.clone(),
@@ -1016,40 +1131,50 @@ impl TypeInferer {
                 Ok(et)
             }
             ExprInner::Match(subject, arms) => {
-                drop(self.infer_expr(subject)?);
+                let subject_type = self.infer_expr(subject)?;
                 let mut first: Option<Type> = None;
 
-                // Check exhaustiveness: all variants of the ADT must be covered.
-                // Try to find the ADT type from the known_types map.
-                let covered_variants: std::collections::HashSet<String> = arms
-                    .iter()
-                    .map(|arm| arm.variant.clone())
-                    .collect();
-
-                for (_type_name, _ty) in &self.known_types {
-                    // Check if any arm variant belongs to this ADT type.
-                    let has_variant = arms.iter().any(|arm| {
-                        // We need to know the ADT's variants — check struct_defs or known ADTs.
-                        // For now, check if the variant name matches any known ADT variant pattern.
-                        covered_variants.contains(&arm.variant)
-                    });
-                    if has_variant {
-                        // We need to check against the actual ADT definition.
-                        // Since we don't have variant info here, we'll check by scanning all Deftype definitions.
+                // Determine the scrutinee ADT name (resolved through substitutions).
+                let scrutinee_adt = match self.resolve_nominal(&subject_type) {
+                    Some(n) => Some(n),
+                    None => {
+                        // Fallback: find which known ADT defines this variant.
+                        arms.first()
+                            .and_then(|arm| {
+                                self.adt_defs
+                                    .iter()
+                                    .find(|(_, variants)| variants.iter().any(|(vn, _)| vn == &arm.variant))
+                                    .map(|(n, _)| n.clone())
+                            })
                     }
-                }
-
-                // Exhaustiveness check: scan Deftype-like known types.
-                // We check by looking at struct_defs for ADT-like structures.
-                // For a proper implementation, we'd track ADT variant info in known_types.
-                // For now, we check if the scrutinee type has variants defined.
-                // Since we can't easily access Deftype AST here, we skip exhaustive checking
-                // unless we can find the ADT in our known_types with variant info.
+                };
 
                 for arm in arms.iter() {
-                    for p in &arm.patterns {
+                    // Field types for this arm's variant (from the ADT definition).
+                    let fields: Vec<String> = scrutinee_adt
+                        .as_ref()
+                        .and_then(|an| self.adt_field_types(an, &arm.variant))
+                        .unwrap_or_default();
+                    for (i, p) in arm.patterns.iter().enumerate() {
                         if let ExprInner::Atom(Atom::Ident(name)) = &p.inner {
-                            let pt = Type::Var(self.fresh_var());
+                            // Bind pattern var to the concrete field type when known.
+                            let pt = fields
+                                .get(i)
+                                .and_then(|ft| {
+                                    if is_generic_param(ft) {
+                                        None
+                                    } else {
+                                        match ft.as_str() {
+                                            "Int" => Some(Type::Prim(PrimType::Int)),
+                                            "Float" => Some(Type::Prim(PrimType::Float)),
+                                            "Bool" => Some(Type::Prim(PrimType::Bool)),
+                                            "String" => Some(Type::Prim(PrimType::String)),
+                                            "Unit" => Some(Type::Prim(PrimType::Unit)),
+                                            _ => self.resolve_type_name(ft).or_else(|| Some(Type::Nominal(ft.clone()))),
+                                        }
+                                    }
+                                })
+                                .unwrap_or_else(|| Type::Var(self.fresh_var()));
                             drop(self.env.bind(name.clone(), pt));
                         } else {
                             drop(self.infer_expr(p));
@@ -1540,6 +1665,25 @@ impl TypeInferer {
             }),
             None => Type::Var(self.fresh_var()),
         }
+    }
+
+    /// Resolve a Type (applying substitutions) down to a Nominal ADT name, if any.
+    fn resolve_nominal(&self, t: &Type) -> Option<String> {
+        let resolved = match t {
+            Type::Var(n) if self.subst.contains(*n) => self.subst.apply(t),
+            _ => t.clone(),
+        };
+        match &resolved {
+            Type::Nominal(n) => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    /// Look up the declared field types for an ADT variant.
+    fn adt_field_types(&self, adt_name: &str, variant: &str) -> Option<Vec<String>> {
+        self.adt_defs
+            .get(adt_name)
+            .and_then(|variants| variants.iter().find(|(vn, _)| vn == variant).map(|(_, f)| f.clone()))
     }
 
     fn resolve_type_name(&self, name: &str) -> Option<Type> {
