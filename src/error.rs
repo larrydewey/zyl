@@ -154,6 +154,9 @@ pub enum ZylError {
     #[error("type: unknown generic parameter '{}' at {}", .1, .0)]
     E_UNKNOWN_GENERIC_PARAM(Span, String),
 
+    #[error("type: cannot infer concrete type for generic parameter '{}' at {} — no call-site evidence", .1, .0)]
+    E_CANNOT_INFER(Span, String),
+
     #[error("type: function arity mismatch for '{}' — expected {} arguments, found {}", .0, .1, .2)]
     E_ARITY_MISMATCH(String, usize, usize),
 

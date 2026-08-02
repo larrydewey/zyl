@@ -61,6 +61,12 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] File I/O: file-open/read/write/close, syscalls with correct flags (577=O_WRONLY|O_CREAT|O_TRUNC), handle loading via emit_load_into, operand_ids collection for file ops, null-terminated read buffers
 - [x] Module system: ModuleResolver wired into pipeline, use statement resolution, stdlib path lookup, symbol filtering, circular dependency detection, E_MODULE_NOT_FOUND/E_SYMBOL_NOT_EXPORTED/E_CIRCULAR_MODULE error codes
 - [x] Stdlib: core.zyl (inlined Option/Result/List ADTs + helpers), list.zyl, option.zyl, result.zyl
+- [x] Generic ADT instantiation collection: `TypeInferer::collect` walks top-level expressions via `collect_adt_instantiations_expr`, recording MakeVariant concrete field types (declared String recorded as-is; generic fields inferred). Enables monomorphized ADT labels (`match_arm_Opt_String_*`) and correct struct/string field loads in match arms
+- [x] Match arm bindings: pattern variables now bind to concrete ADT field types (with `resolve_nominal` + `adt_field_types` helpers + primitive-name mapping) instead of fresh type vars; scrutinee ADT resolved through substitutions
+- [x] `function_bodies` population: now filled in the `ExprInner::Defn` collection branch (previously only via `Call(defn)`), enabling `handle_apply` body re-inference and correct `resolved_returns` for user-defined functions (e.g. `assoc-get => Prim(String)`)
+- [x] Print string detection via function return types: codegen gained `func_returns` field + `with_func_returns` builder; Print string detection traces Assign→Call and direct Call operands through `func_returns`. Function names sanitized (`-` → `_`) consistently at both construction (main.rs) and lookup (codegen.rs)
+- [x] 64-bit pointer preservation for Call-valued Assigns: on-demand `emit_load_into` for Call/FfiCall/StructGet now targets `rax` and stores 64-bit (`mov [rbp-N], rax`), fixing potential truncation of ADT/struct/string pointers returned by calls
+- [x] Multi-param generic ADTs: `Assoc<K,V>` (`zyl_map_test.zyl` with `assoc-put`/`assoc-get`) now compiles and prints `one`/`missing` correctly
 
 ---
 
@@ -100,11 +106,13 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 
 ## Next Priorities
 
-1. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
-2. Self-hosting Phase 2: Lexer + parser in Zyl
-3. Contract injection (optional overlay)
-4. Hash finalization (deterministic binary fingerprinting)
-5. Full REPL implementation
+1. Wire `E_CANNOT_INFER` into `src/monomorphization.rs` fallback (~line 712, silent `Type::Prim(PrimType::Int)`) per spec §6 v4.2
+2. Fill `stdlib/collections/` (ADT-based Assoc/List now proven; verify via multi-param generic tests) and `stdlib/allocator/` (FFI in `src/runtime/actor_runtime.c` + pure-Zyl arena)
+3. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
+4. Self-hosting Phase 2: Lexer + parser in Zyl
+5. Contract injection (optional overlay)
+6. Hash finalization (deterministic binary fingerprinting)
+7. Full REPL implementation
 
 ---
 
