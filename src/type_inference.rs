@@ -1211,8 +1211,28 @@ impl TypeInferer {
                 }
                 Ok(Type::Prim(PrimType::Unit))
             }
-            ExprInner::SendClosure(_actor, closure, _) => {
-                let _ct = self.infer_expr(closure)?;
+            ExprInner::SendClosure(_actor, closure, caps) => {
+                // Resolve the closure type; a named function reference is allowed.
+                match &closure.inner {
+                    ExprInner::Atom(Atom::Ident(h))
+                        if self.known_functions.contains_key(h) => {}
+                    _ => {
+                        drop(self.infer_expr(closure)?);
+                    }
+                }
+                // Unify the handler's params with the captured message types so the
+                // handler's own params resolve (e.g. a String message → String param).
+                if let ExprInner::Atom(Atom::Ident(handler)) = &closure.inner {
+                    if let Some(params) = self.known_functions.get(handler).cloned() {
+                        for (i, cap) in caps.iter().enumerate() {
+                            if i < params.len() {
+                                if let Some(cap_type) = self.env.get(&cap.name).cloned() {
+                                    self.unify(&cap_type, &params[i].1)?;
+                                }
+                            }
+                        }
+                    }
+                }
                 // Closure type inference — closures are always Send-capable.
                 Ok(Type::Prim(PrimType::Unit))
             }

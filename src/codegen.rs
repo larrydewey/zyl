@@ -33,6 +33,10 @@ pub struct CodeGen {
     spawn_wrappers: Vec<String>,
     /// Function name → return type (from type inference), for print type detection.
     func_returns: std::collections::HashMap<String, Type>,
+    /// Function name → resolved param (name, type) list (from type inference).
+    func_params: std::collections::HashMap<String, Vec<(String, Type)>>,
+    /// Names of parameters typed as String in the function currently being emitted.
+    string_params: std::collections::HashSet<String>,
 }
 
 #[allow(dead_code)]
@@ -50,12 +54,23 @@ impl CodeGen {
             closures: std::collections::HashMap::new(),
             spawn_wrappers: Vec::new(),
             func_returns: std::collections::HashMap::new(),
+            func_params: std::collections::HashMap::new(),
+            string_params: std::collections::HashSet::new(),
         }
     }
 
     /// Set function return types for codegen (from type inference).
     pub fn with_func_returns(mut self, returns: std::collections::HashMap<String, Type>) -> Self {
         self.func_returns = returns;
+        self
+    }
+
+    /// Set resolved function parameter types for codegen (from type inference).
+    pub fn with_func_params(
+        mut self,
+        params: std::collections::HashMap<String, Vec<(String, Type)>>,
+    ) -> Self {
+        self.func_params = params;
         self
     }
 
@@ -229,6 +244,13 @@ impl CodeGen {
                     }
                     ICNFInner::StructGet(struct_id, _) => {
                         main_operand_ids.insert(*struct_id);
+                    }
+                    ICNFInner::Send(actor_id, msg_id) => {
+                        main_operand_ids.insert(*actor_id);
+                        main_operand_ids.insert(*msg_id);
+                    }
+                    ICNFInner::SendClosure(actor_id, _, _, _) => {
+                        main_operand_ids.insert(*actor_id);
                     }
                     ICNFInner::MakeStruct(_, field_ids) => {
                         for &fid in field_ids {
@@ -459,6 +481,10 @@ impl CodeGen {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
                         | ICNFInner::Call(_, _) => continue,
+                        ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
+                            // Emitted on-demand by their parent handler.
+                            continue
+                        }
                         ICNFInner::BinOp(_, _, _) => {} // keep BinOp in lookup for emit_condition_inline
                         _ => {}
                     }
@@ -518,10 +544,20 @@ impl CodeGen {
             // Float params come in XMM registers (as bit patterns), non-floats in GPRs.
             let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
             let abi_xmm_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
+            let resolved_params = self
+                .func_params
+                .get(&func.name)
+                .cloned()
+                .unwrap_or_else(|| func.params.clone());
             for (i, (param_name, param_type)) in func.params.iter().enumerate() {
+                let resolved_type = resolved_params
+                    .iter()
+                    .find(|(n, _)| n == param_name)
+                    .map(|(_, t)| t)
+                    .unwrap_or(param_type);
                 if i < 6 && !param_name.is_empty() {
                     let offset = (i + 1) * 8;
-                    if matches!(param_type, Type::Prim(PrimType::Float)) {
+                    if matches!(resolved_type, Type::Prim(PrimType::Float)) {
                         // Float param: load from XMM register as bit pattern.
                         let xmm_reg = abi_xmm_regs[i];
                         let gpr_reg = abi_regs_64[i];
@@ -536,6 +572,15 @@ impl CodeGen {
                             "    mov [rbp-{}], {}",
                             offset,
                             gpr_reg
+                        ));
+                    } else if matches!(resolved_type, Type::Prim(PrimType::String)) {
+                        // String param: pointer value, keep full 64-bit.
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    mov [rbp-{}], {} # {}",
+                            offset,
+                            abi_regs_64[i],
+                            param_name
                         ));
                     } else {
                         self.asm_push_align();
@@ -557,6 +602,19 @@ impl CodeGen {
             for (i, param) in func.params.iter().enumerate() {
                 if !param.0.is_empty() && i < 6 {
                     local_vars.insert(param.0.clone(), i);
+                }
+            }
+
+            // Track String-typed parameters for print type detection.
+            self.string_params.clear();
+            let resolved_params = self
+                .func_params
+                .get(&func.name)
+                .cloned()
+                .unwrap_or_else(|| func.params.clone());
+            for param in resolved_params.iter() {
+                if matches!(param.1, Type::Prim(PrimType::String)) {
+                    self.string_params.insert(param.0.clone());
                 }
             }
 
@@ -655,6 +713,13 @@ impl CodeGen {
                         for &fid in field_ids {
                             operand_ids.insert(fid);
                         }
+                    }
+                    ICNFInner::Send(actor_id, msg_id) => {
+                        operand_ids.insert(*actor_id);
+                        operand_ids.insert(*msg_id);
+                    }
+                    ICNFInner::SendClosure(actor_id, _, _, _) => {
+                        operand_ids.insert(*actor_id);
                     }
                     _ => {}
                 }
@@ -765,6 +830,10 @@ impl CodeGen {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
                         | ICNFInner::Call(_, _) => continue,
+                        ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
+                            // Emitted on-demand by their parent handler.
+                            continue
+                        }
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
                         _ => {}
@@ -3605,10 +3674,10 @@ impl CodeGen {
                                     }
                                 }
                             } else {
-                                // No Assign found for this variable — not a string.
-                                result = false;
+                                // No Assign found — check if this is a String-typed parameter.
+                                result = self.string_params.contains(var_name);
                             }
-                            result
+                            result || self.string_params.contains(var_name)
                         }
                         Some(ICNFNode {
                             node: ICNFInner::Call(fname, _),
@@ -4585,9 +4654,12 @@ impl CodeGen {
                     emitted_ids.insert(*actor_id);
                 }
 
-                // Load actor_id (in eax) into rdi.
+                // Load actor_id (in eax) into rdi, and preserve in r12 (callee-saved)
+                // since the msg emit below may clobber caller-saved registers.
                 self.asm_push_align();
                 self.asm.push("    mov rdi, rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r12, rax".to_string());
 
                 // Ensure msg_id is emitted.
                 let msg_node = lookup
@@ -4613,6 +4685,8 @@ impl CodeGen {
 
                 // Call zyl_actor_send(actor_id, msg).
                 self.asm_push_align();
+                self.asm.push("    mov rdi, r12".to_string());
+                self.asm_push_align();
                 self.asm.push("    call zyl_actor_send@plt".to_string());
 
                 // Return Unit (eax = 0).
@@ -4622,7 +4696,50 @@ impl CodeGen {
                 emitted_ids.insert(node.id);
             }
 
-            ICNFInner::SendClosure(actor_id, closure_name, capture_ids) => {
+            ICNFInner::SendClosure(actor_id, closure_name, handler_name, capture_ids) => {
+                // Emit the closure wrapper function: void (closure_name)(void* state).
+                // The actor runtime invokes it as fn(state); state holds the captured
+                // values (msg + captures) that this wrapper forwards to the handler.
+                // Buffered as a standalone function (not inline).
+                if !handler_name.is_empty() {
+                    let start_len = self.asm.len();
+                    self.asm_push_align();
+                    self.asm.push(format!("{}:", closure_name));
+                    self.asm_push_align();
+                    self.asm.push("    push rbp".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    mov rbp, rsp".to_string());
+                    self.asm_push_align();
+                    self.asm.push(format!("    sub rsp, {}", 256 + capture_ids.len() * 8));
+                    // Load captured values from state (rdi) into stack slots.
+                    let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                    for i in 0..capture_ids.len().min(6) {
+                        let offset = i * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov rax, [rdi + {}]", offset));
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov [rbp - {}], rax", (i + 1) * 8));
+                    }
+                    // Load captures as handler args.
+                    for i in 0..capture_ids.len().min(6) {
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov {}, [rbp - {}]", abi_regs_64[i], (i + 1) * 8));
+                    }
+                    // Call the handler with the forwarded args.
+                    self.asm_push_align();
+                    self.asm.push(format!("    call _ZYL_{}", handler_name));
+                    // Epilogue.
+                    self.asm_push_align();
+                    self.asm.push("    mov rsp, rbp".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    pop rbp".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    ret".to_string());
+                    let wrapper_lines: Vec<String> = self.asm[start_len..].to_vec();
+                    self.asm.truncate(start_len);
+                    self.spawn_wrappers.extend(wrapper_lines);
+                }
+
                 // Emit actor_id node → value in eax.
                 let actor_node = lookup
                     .get(actor_id)
@@ -4641,13 +4758,18 @@ impl CodeGen {
                     emitted_ids.insert(*actor_id);
                 }
 
-                // Load actor_id (in eax) into rdi.
+                // Load actor_id (in eax) into rdi, and preserve it in r12
+                // (callee-saved) since the malloc + capture loop below clobbers rdi.
                 self.asm_push_align();
                 self.asm.push("    mov rdi, rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r12, rax".to_string());
 
-                // Load closure function pointer into rsi.
+                // Load closure function pointer into rsi, preserve in r13.
                 self.asm_push_align();
                 self.asm.push(format!("    lea rsi, [rip+{}]@PLT", closure_name));
+                self.asm_push_align();
+                self.asm.push("    mov r13, rsi".to_string());
 
                 // Allocate capture state struct on heap.
                 let state_size = capture_ids.len() * 8;
@@ -4663,23 +4785,17 @@ impl CodeGen {
                     // Copy each captured value into the state struct.
                     for (i, cap_id) in capture_ids.iter().enumerate() {
                         let offset = i * 8;
-                        // Emit the capture node to get its value.
-                        let cap_node = lookup
-                            .get(cap_id)
-                            .copied()
-                            .or_else(|| stmts.iter().find(|n| n.id == *cap_id));
-                        if let Some(cn) = cap_node {
-                            self.emit_node(
-                                cn,
-                                stmts,
-                                local_vars,
-                                emitted_ids,
-                                operand_ids,
-                                lookup,
-                                phi_slots,
-                            );
-                            emitted_ids.insert(*cap_id);
-                        }
+                        // Load the capture's value into rax (handles Const/Load/Assign/Call).
+                        self.emit_load_into(
+                            *cap_id,
+                            "rax",
+                            stmts,
+                            local_vars,
+                            lookup,
+                            emitted_ids,
+                            operand_ids,
+                            phi_slots,
+                        );
                         // Store into [r10 + offset].
                         self.asm_push_align();
                         self.asm.push(format!("    mov [r10 + {}], rax", offset));
@@ -4694,6 +4810,10 @@ impl CodeGen {
                 }
 
                 // Call zyl_actor_send_closure(actor_id, fn_ptr, state_ptr).
+                self.asm_push_align();
+                self.asm.push("    mov rdi, r12".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rsi, r13".to_string());
                 self.asm_push_align();
                 self.asm.push("    call zyl_actor_send_closure@plt".to_string());
 

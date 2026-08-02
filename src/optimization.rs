@@ -440,7 +440,7 @@ impl Optimizer {
                 used_ids.insert(*actor_id);
                 used_ids.insert(*msg_id);
             }
-            ICNFInner::SendClosure(actor_id, _, cap_ids) => {
+            ICNFInner::SendClosure(actor_id, _, _, cap_ids) => {
                 used_ids.insert(*actor_id);
                 for &id in cap_ids {
                     used_ids.insert(id);
