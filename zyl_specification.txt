@@ -1,5 +1,5 @@
 ================================================================================
-ZYL FORMAL SPECIFICATION (v4.1 — FINAL LOCKED VERSION)
+ZYL FORMAL SPECIFICATION (v4.2)
 "A Deterministic Lisp Systems Language with Region Inference, SSA IR, Actor
 Concurrency, Capability-Based Safety, Traits, Generics, Explicit Closures,
 ADTs, Testing Framework, Package Management, Structs, Aliases, RAII,
@@ -243,15 +243,84 @@ ResultValue:
 
 6.1 Generic Function Declaration:
     (defn name ((TypeParam : TraitBound*) (param Type) ...) body)
+    (defun is a synonym. TypeParam is an uppercase identifier (convention).
+    TraitBound is optional; if absent, the type parameter is unbounded.
+    Multiple bounds: ((T : Ord Eq)) requires T to implement both Ord and Eq.
 
-6.2 Generic Type in Collections:
-    Vec<T>, Map<K,V>
+    Multiple type parameters are declared as multiple parameter groups,
+    each starting with an uppercase identifier:
+        (defn pair ((T) (U)) (make-tuple t u))      ; 2 type params
+        (defn min ((T : Ord) a b) ...)               ; 1 bounded type param
+        (defn f ((T) (U) x Int) ...)                 ; type params may be
+                                                     ; interleaved with typed
+                                                     ; value parameters
 
-6.3 Monomorphization:
-    Alphabetical canonical naming. Deterministic.
+    Scope: TypeParam is scoped to its own defn. T in one function does
+    not leak into another. Shadowing T in a nested defn is an error.
 
-6.4 Generic ADTs:
+6.2 Type Param Semantics:
+    - Type parameters are positional (declaration order), but monomorphized
+      naming is order-independent (see 6.4).
+    - A type parameter used multiple times (e.g. (deftype Pair (Make T T)))
+      constrains both fields to the SAME concrete type at instantiation.
+    - Type parameters appear ONLY in type position:
+        * as a variant field type:   (Some T)
+        * as a function param type:  (defn unwrap ((T) opt T) ...)
+        * in collection types:       Vec<T>, Map<K,V>
+    - A type parameter cannot be used as a runtime value.
+
+6.3 Generic Type in Collections:
+    Vec<T>, Map<K,V>. T, K, V are inferred from usage context.
+
+6.4 Monomorphization:
+    For each call site of a generic function, the compiler:
+    1. Infers concrete types for ALL type parameters from argument types.
+       A single call site fixes every parameter it touches; a parameter
+       with no evidence at any call site is an error (E_CANNOT_INFER)
+       unless it carries a trait bound that selects a finite set.
+    2. Verifies all trait bounds are satisfied by the concrete types
+       (E_TRAIT_BOUND_NOT_SATISFIED otherwise).
+    3. Generates a specialized function with canonical name:
+           functionName_Type1_Type2_...
+       Types are sorted alphabetically by type name (deterministic).
+       f<Int, String> and f<String, Int> produce the SAME canonical name.
+       Distinct type maps always produce distinct names.
+    4. Caches the monomorphized function for reuse at other call sites
+       with identical concrete types.
+
+    Examples:
+        (min 3 5)       → min_Int
+        (min "a" "b")   → min_String
+        (pair 1 "hi")   → pair_Int_String
+        (pair 1.0 2.0)  → pair_Float
+
+6.5 Generic ADTs:
     (deftype Option (Some T) None)
+    (deftype Result (Ok T) (Err E))       ; 2 type params, collected from
+                                          ; uppercase variant fields
+    (deftype List (Cons T (List T)) None) ; recursive generic reference
+
+    Semantics:
+    - Option<Int> and Option<String> are distinct types.
+    - Type parameters are collected from uppercase field names in variant
+      declarations; duplicates are kept once (same-type constraint, 6.2).
+    - Monomorphization applies to ADT constructors and pattern matching
+      on generic ADTs.
+    - Generic structs (defstruct with uppercase field types) are NOT
+      supported; only ADTs and collections may be generic. (limitation,
+      not a design goal)
+
+6.6 Generic ADT Derivation:
+    (derive Result [Eq])  ; requires ALL type parameters to implement Eq.
+    Deriving on a multi-param ADT is allowed; the derived impl is
+    parameterized over the ADT's type parameters. Error E_TRAIT_NOT_DERIVABLE
+    if any concrete instantiation fails the field constraint.
+
+6.7 Error Cases:
+    E_CANNOT_INFER                — generic param with no call-site evidence
+    E_TRAIT_BOUND_NOT_SATISFIED   — concrete type violates a bound
+    E_UNKNOWN_GENERIC_PARAM       — reference to an undeclared type parameter
+    E_TRAIT_NOT_DERIVABLE         — derive constraint fails
 
 ================================================================================
 7. CLOSURES (EXPLICIT SYNTAX ONLY)
@@ -776,6 +845,7 @@ Errors:
     E_TEST_RUNNER_ERROR         — test harness error
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
+    E_CANNOT_INFER              — generic param has no call-site evidence (Compile Error)
 
 Behavior:
     Compile-time errors abort compilation.
@@ -813,6 +883,11 @@ v4.1 (CURRENT):
     - Deterministic iteration for Map.
     - Compile-time exhaustive match.
 
+v4.2 (CURRENT, WORKING):
+    - Multi-parameter generics formalized (§6).
+    - Type param scope, same-type constraint, generic ADT derivation.
+    - E_CANNOT_INFER for generic params with no call-site evidence.
+
 v5.0 (PLANNED):
     - Package management (zyl.toml, registries, signing).
     - Workspace support.
@@ -826,5 +901,5 @@ v4.2 (FUTURE):
     - Advanced derive macros.
 
 ================================================================================
-END OF ZYL FORMAL SPECIFICATION (v4.1 — FINAL LOCKED VERSION)
+END OF ZYL FORMAL SPECIFICATION (v4.2)
 ================================================================================
