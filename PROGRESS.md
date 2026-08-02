@@ -67,6 +67,8 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Print string detection via function return types: codegen gained `func_returns` field + `with_func_returns` builder; Print string detection traces Assign→Call and direct Call operands through `func_returns`. Function names sanitized (`-` → `_`) consistently at both construction (main.rs) and lookup (codegen.rs)
 - [x] 64-bit pointer preservation for Call-valued Assigns: on-demand `emit_load_into` for Call/FfiCall/StructGet now targets `rax` and stores 64-bit (`mov [rbp-N], rax`), fixing potential truncation of ADT/struct/string pointers returned by calls
 - [x] Multi-param generic ADTs: `Assoc<K,V>` (`zyl_map_test.zyl` with `assoc-put`/`assoc-get`) now compiles and prints `one`/`missing` correctly
+- [x] send-closure handler dispatch (message passing): ICNF `SendClosure` now carries the sanitized handler name; codegen emits a `_ZYL_closure_N` wrapper that forwards captured state as handler args and calls `_ZYL_<handler>` (buffered in `spawn_wrappers`). Actor intermediate nodes (Spawn/Closure) survive `let` bodies via `convert_expr_to_stmts`. Type inference unifies handler params with captured message types, enabling String-param print detection. Runtime mailbox drain loop now waits for messages until `wait_all` stops actors (fixes send-after-spawn race). Register preservation (r12/r13) added to Send/SendClosure emit so actor_id/closure_ptr survive malloc + capture emission
+- [x] String-typed function params: codegen gains `func_params` + `string_params`; String params stored 64-bit and printed as strings (fixes `(print name)` printing a pointer as an int)
 
 ---
 
