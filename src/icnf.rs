@@ -8,7 +8,7 @@ use crate::type_system::Type;
 
 /// Sanitize an identifier for use as an assembly label: replace hyphens with underscores.
 fn sanitize_name(name: &str) -> String {
-    name.replace('-', "_")
+    name.replace('-', "_").replace('.', "_")
 }
 
 /// Collect all variable names referenced in an expression (for closure capture analysis).
@@ -164,7 +164,8 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         | ExprInner::WithResource(_, _, _)
         | ExprInner::FileRead(_, _)
         | ExprInner::FileWrite(_, _)
-        | ExprInner::FileClose(_) => {}
+        | ExprInner::FileClose(_)
+        | ExprInner::BufAppend(_, _) => {}
     }
 }
 
@@ -314,6 +315,9 @@ pub enum ICNFInner {
     FileWrite { handle: usize, data: usize },
     /// Close a file handle.
     FileClose(usize),
+    /// Append a string's bytes into a raw heap arena at the end of its content
+    /// (null-terminated); returns the total content length (Int).
+    BufAppend { dst: usize, src: usize },
     /// With-resource: acquire and release pattern.
     WithResource { var_name: String, init_ssa: usize },
     /// Set! mutation (for mutable bindings).
@@ -593,6 +597,11 @@ impl IcnfConverter {
                     for param in params.iter() {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
+                        if let Some(ref t) = param.typ {
+                            if self.struct_layouts.contains_key(t) {
+                                self.struct_bindings.insert(ssa_id, t.clone());
+                            }
+                        }
                     }
                     // Save current globals, use a temp buffer for function body.
                     let saved_globals = std::mem::take(&mut self.global_stmts);
@@ -686,6 +695,11 @@ impl IcnfConverter {
                     for param in &params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
+                        if let Some(ref t) = param.typ {
+                            if self.struct_layouts.contains_key(t) {
+                                self.struct_bindings.insert(ssa_id, t.clone());
+                            }
+                        }
                     }
 
                     let body_expr = if args.len() == 3 {
@@ -2081,6 +2095,19 @@ impl IcnfConverter {
                 Ok(all)
             }
 
+            // buf-append.
+            ExprInner::BufAppend(dst, src) => {
+                let mut dst_stmts = self.convert_expr_to_stmts(dst)?;
+                let dst_id = dst_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut src_stmts = self.convert_expr_to_stmts(src)?;
+                let src_id = src_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut all: Vec<ICNFNode> = Vec::new();
+                all.append(&mut dst_stmts);
+                all.append(&mut src_stmts);
+                all.push(self.emit(ICNFInner::BufAppend { dst: dst_id, src: src_id }));
+                Ok(all)
+            }
+
             // With-resource binding.
             ExprInner::WithResource(name, init, body) => {
                 let saved_scope = std::mem::take(&mut self.current_scope);
@@ -2766,6 +2793,7 @@ impl IcnfConverter {
             ICNFInner::Exit(_) | ICNFInner::Close(_) | ICNFInner::FileOpen { .. } | ICNFInner::FileClose(_) => Region::Stack,
             ICNFInner::FileRead { .. } => Region::Heap,
             ICNFInner::FileWrite { .. } => Region::Stack,
+            ICNFInner::BufAppend { .. } => Region::Stack,
             ICNFInner::WithResource { .. } => Region::Stack,
             ICNFInner::SetBang(_, _) => Region::Stack,
             ICNFInner::Unwrap(_) => Region::Heap, // alias values are heap.

@@ -460,6 +460,10 @@ impl Optimizer {
                 used_ids.insert(*handle);
                 used_ids.insert(*data);
             }
+            ICNFInner::BufAppend { dst, src } => {
+                used_ids.insert(*dst);
+                used_ids.insert(*src);
+            }
             ICNFInner::FileClose(handle) => {
                 used_ids.insert(*handle);
             }
@@ -519,6 +523,7 @@ impl Optimizer {
                 | ICNFInner::FileOpen { .. }
                 | ICNFInner::FileRead { .. }
                 | ICNFInner::FileWrite { .. }
+                | ICNFInner::BufAppend { .. }
                 | ICNFInner::FileClose(_)
                 | ICNFInner::Assert { .. }
         ) || matches!(

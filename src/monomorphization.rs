@@ -488,6 +488,8 @@ impl MonoContext {
                         )
                     {
                         result.push(self.substitute_in_expr(expr));
+                    } else {
+                        result.push(self.substitute_in_expr(expr));
                     }
                 }
 
@@ -523,6 +525,33 @@ impl MonoContext {
                     } else {
                         result.push(self.substitute_in_expr(expr));
                     }
+                }
+
+                // Trait impl bodies become concrete top-level functions
+                // (Trait.method_Type) so they compile to native code. The receiver-type
+                // dispatch (Trait.method -> Trait.method_Type) is done in substitution.
+                ExprInner::ImplBlock(trait_name, type_name, bodies) => {
+                    for body in bodies {
+                        let concrete_name =
+                            format!("{}.{}_{}", trait_name, body.defn.name, type_name);
+                        // Type the receiver (self) param as the impl type so struct-get
+                        // resolution and ICNF param binding know its layout.
+                        let mut params = body.defn.params.clone();
+                        if let Some(first) = params.first_mut() {
+                            first.typ = Some(type_name.clone());
+                        }
+                        let defn = Expr {
+                            span: expr.span.clone(),
+                            inner: ExprInner::Defn(
+                                concrete_name,
+                                params,
+                                body.defn.body.clone(),
+                            ),
+                        };
+                        result.push(self.substitute_in_expr(&defn));
+                    }
+                    // Keep the ImplBlock as a declaration reference (ICNF skips it).
+                    result.push(expr.clone());
                 }
 
                 _ => {
@@ -935,7 +964,51 @@ impl MonoContext {
                 .last()
                 .map(|e| self.infer_arg_type(e))
                 .unwrap_or(Type::Prim(PrimType::Unit)),
+            ExprInner::MakeStruct(name, _) => Type::Nominal(name.clone()),
+            ExprInner::MakeVariant(adt_name, _, _) => Type::Nominal(adt_name.clone()),
             _ => Type::Var(0), // Unknown.
+        }
+    }
+
+    /// Resolve the concrete type of a trait-method receiver expression.
+    /// Variables are resolved from the threaded var→type environment; other
+    /// expressions fall back to `infer_arg_type`.
+    fn receiver_type(&self, expr: &Expr, var_types: &std::collections::HashMap<String, Type>) -> Option<Type> {
+        match &expr.inner {
+            ExprInner::Atom(Atom::Ident(name)) => var_types.get(name).cloned(),
+            _ => {
+                let t = self.infer_arg_type(expr);
+                match &t {
+                    Type::Var(_) => None,
+                    _ => Some(t),
+                }
+            }
+        }
+    }
+
+    /// Receiver-type dispatch: given a trait method and the receiver's type,
+    /// return the concrete impl function name (Trait.method_Type) if an impl
+    /// exists for that (trait, type) pair.
+    fn resolve_trait_method(
+        &self,
+        trait_name: &str,
+        method_name: &str,
+        recv_ty: Option<Type>,
+    ) -> Option<String> {
+        let ty = recv_ty?;
+        let type_name = match &ty {
+            Type::Nominal(n) => n.clone(),
+            _ => return None,
+        };
+        let has_impl = self
+            .trait_ctx
+            .impls
+            .iter()
+            .any(|i| i.trait_name == trait_name && format!("{}", i.impl_type) == type_name);
+        if has_impl {
+            Some(format!("{}.{}_{}", trait_name, method_name, type_name))
+        } else {
+            None
         }
     }
 
@@ -968,7 +1041,7 @@ impl MonoContext {
     }
 
     fn subst_expr(&self, expr: &Expr, type_map: &IndexMap<String, Type>) -> Expr {
-        self.subst_expr_with_var_map(expr, type_map, &std::collections::HashMap::new())
+        self.subst_expr_with_var_map(expr, type_map, &std::collections::HashMap::new(), &std::collections::HashMap::new())
     }
 
     fn subst_expr_with_var_map(
@@ -976,10 +1049,19 @@ impl MonoContext {
         expr: &Expr,
         type_map: &IndexMap<String, Type>,
         var_renames: &std::collections::HashMap<String, String>,
+        var_types: &std::collections::HashMap<String, Type>,
     ) -> Expr {
         let new_inner = match &expr.inner {
             ExprInner::Defn(name, params, body) => {
-                // Substitute in parameters and body.
+                // Substitute in parameters and body. Bind typed params to var_types so
+                // trait-method receiver dispatch can resolve them.
+                let mut child_types = var_types.clone();
+                for p in params {
+                    if let Some(ref t) = p.typ {
+                        let ty = param_type_from_str(t);
+                        child_types.insert(p.name.clone(), ty);
+                    }
+                }
                 let new_params: Vec<Param> = params
                     .iter()
                     .map(|p| {
@@ -998,86 +1080,158 @@ impl MonoContext {
                 ExprInner::Defn(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr_with_var_map(body, type_map, var_renames)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, var_renames, &child_types)),
                 )
             }
 
             ExprInner::Call(op, args) => {
-                let new_op = self.subst_expr_with_var_map(op, type_map, var_renames);
-                let new_args: Vec<Expr> =
-                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames)).collect();
-                ExprInner::Call(Box::new(new_op), new_args)
+                // Trait method call with receiver-type dispatch:
+                // (Trait.method receiver rest...) -> (Trait.method_Type receiver rest...)
+                let op_name = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => Some(n.clone()),
+                    _ => None,
+                };
+                if let Some(ref n) = op_name {
+                    if let Some((trait_name, method_name)) = n.split_once('.') {
+                        if !args.is_empty() {
+                            let recv_ty = self.receiver_type(&args[0], var_types);
+                            if let Some(concrete) = self.resolve_trait_method(trait_name, method_name, recv_ty) {
+                                let new_op = Box::new(Expr {
+                                    span: expr.span.clone(),
+                                    inner: ExprInner::Atom(Atom::Ident(concrete)),
+                                });
+                                let new_args: Vec<Expr> =
+                                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                                ExprInner::Call(new_op, new_args)
+                            } else {
+                                let new_op = self.subst_expr_with_var_map(op, type_map, var_renames, var_types);
+                                let new_args: Vec<Expr> =
+                                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                                ExprInner::Call(Box::new(new_op), new_args)
+                            }
+                        } else {
+                            let new_op = self.subst_expr_with_var_map(op, type_map, var_renames, var_types);
+                            let new_args: Vec<Expr> =
+                                args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                            ExprInner::Call(Box::new(new_op), new_args)
+                        }
+                    } else {
+                        let new_op = self.subst_expr_with_var_map(op, type_map, var_renames, var_types);
+                        let new_args: Vec<Expr> =
+                            args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                        ExprInner::Call(Box::new(new_op), new_args)
+                    }
+                } else {
+                    let new_op = self.subst_expr_with_var_map(op, type_map, var_renames, var_types);
+                    let new_args: Vec<Expr> =
+                        args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                    ExprInner::Call(Box::new(new_op), new_args)
+                }
             }
 
             ExprInner::Apply(fname, args) => {
-                let new_args: Vec<Expr> =
-                    args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames)).collect();
-                ExprInner::Apply(fname.clone(), new_args)
+                // Same receiver-type dispatch for Apply-form trait method calls.
+                if let Some((trait_name, method_name)) = fname.split_once('.') {
+                    if !args.is_empty() {
+                        let recv_ty = self.receiver_type(&args[0], var_types);
+                        if let Some(concrete) = self.resolve_trait_method(trait_name, method_name, recv_ty) {
+                            let new_args: Vec<Expr> =
+                                args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                            ExprInner::Apply(concrete, new_args)
+                        } else {
+                            let new_args: Vec<Expr> =
+                                args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                            ExprInner::Apply(fname.clone(), new_args)
+                        }
+                    } else {
+                        let new_args: Vec<Expr> =
+                            args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                        ExprInner::Apply(fname.clone(), new_args)
+                    }
+                } else {
+                    let new_args: Vec<Expr> =
+                        args.iter().map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types)).collect();
+                    ExprInner::Apply(fname.clone(), new_args)
+                }
             }
 
             ExprInner::Let(name, val, body) => {
                 let mut child_renames = var_renames.clone();
                 child_renames.insert(name.clone(), name.clone());
-                let renamed_val = Box::new(self.subst_expr_with_var_map(val, type_map, &child_renames));
-                let renamed_body = Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames));
+                let mut child_types = var_types.clone();
+                child_types.insert(name.clone(), self.infer_arg_type(val));
+                let renamed_val = Box::new(self.subst_expr_with_var_map(val, type_map, &child_renames, var_types));
+                let renamed_body = Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types));
                 ExprInner::Let(name.clone(), renamed_val, renamed_body)
             }
 
             ExprInner::If(cond, then_, else_) => ExprInner::If(
-                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)),
-                Box::new(self.subst_expr_with_var_map(then_, type_map, var_renames)),
-                Box::new(self.subst_expr_with_var_map(else_, type_map, var_renames)),
+                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames, var_types)),
+                Box::new(self.subst_expr_with_var_map(then_, type_map, var_renames, var_types)),
+                Box::new(self.subst_expr_with_var_map(else_, type_map, var_renames, var_types)),
             ),
 
             ExprInner::Lambda(name, params, body) => {
                 // Create a shadowed scope for lambda params.
                 let mut child_renames = var_renames.clone();
+                let mut child_types = var_types.clone();
                 for p in params {
                     // Lambda params shadow outer variables.
                     child_renames.remove(&p.name);
+                    if let Some(ref t) = p.typ {
+                        child_types.insert(p.name.clone(), param_type_from_str(t));
+                    }
                 }
                 let new_params: Vec<Param> = params.to_vec();
                 ExprInner::Lambda(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types)),
                 )
             }
 
             ExprInner::Fn(name, params, body) => {
                 // Same as Lambda - create shadowed scope.
                 let mut child_renames = var_renames.clone();
+                let mut child_types = var_types.clone();
                 for p in params {
                     child_renames.remove(&p.name);
+                    if let Some(ref t) = p.typ {
+                        child_types.insert(p.name.clone(), param_type_from_str(t));
+                    }
                 }
                 let new_params: Vec<Param> = params.to_vec();
                 ExprInner::Fn(
                     name.clone(),
                     new_params,
-                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)),
+                    Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types)),
                 )
             }
 
             ExprInner::Begin(exprs) => {
-                ExprInner::Begin(exprs.iter().map(|e| self.subst_expr_with_var_map(e, type_map, var_renames)).collect())
+                ExprInner::Begin(exprs.iter().map(|e| self.subst_expr_with_var_map(e, type_map, var_renames, var_types)).collect())
             }
 
             ExprInner::While(cond, body) => ExprInner::While(
-                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)),
-                Box::new(self.subst_expr_with_var_map(body, type_map, var_renames)),
+                Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames, var_types)),
+                Box::new(self.subst_expr_with_var_map(body, type_map, var_renames, var_types)),
             ),
 
             ExprInner::For(bindings, cond, body) => {
                 let mut child_renames = var_renames.clone();
+                let mut child_types = var_types.clone();
                 let new_bindings: Vec<(String, Option<Box<Expr>>)> = bindings
                     .iter()
                     .map(|(name, val)| {
                         child_renames.insert(name.clone(), name.clone());
-                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr_with_var_map(v, type_map, var_renames)));
+                        if let Some(ref v) = val {
+                            child_types.insert(name.clone(), self.infer_arg_type(v));
+                        }
+                        let new_val = val.as_ref().map(|v| Box::new(self.subst_expr_with_var_map(v, type_map, var_renames, var_types)));
                         (name.clone(), new_val)
                     })
                     .collect();
-                ExprInner::For(new_bindings, Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames)), Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames)))
+                ExprInner::For(new_bindings, Box::new(self.subst_expr_with_var_map(cond, type_map, var_renames, var_types)), Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types)))
             },
 
             ExprInner::Cond(clauses) => {
@@ -1085,8 +1239,8 @@ impl MonoContext {
                     .iter()
                     .map(|(c, b)| {
                         (
-                            Box::new(self.subst_expr_with_var_map(c, type_map, var_renames)),
-                            Box::new(self.subst_expr_with_var_map(b, type_map, var_renames)),
+                            Box::new(self.subst_expr_with_var_map(c, type_map, var_renames, var_types)),
+                            Box::new(self.subst_expr_with_var_map(b, type_map, var_renames, var_types)),
                         )
                     })
                     .collect();
@@ -1094,7 +1248,7 @@ impl MonoContext {
             }
 
             ExprInner::Match(subject, arms) => {
-                let new_subject = self.subst_expr_with_var_map(subject, type_map, var_renames);
+                let new_subject = self.subst_expr_with_var_map(subject, type_map, var_renames, var_types);
                 let new_arms: Vec<MatchArm> = arms
                     .iter()
                     .map(|arm| MatchArm {
@@ -1102,9 +1256,9 @@ impl MonoContext {
                         patterns: arm
                             .patterns
                             .iter()
-                            .map(|p| self.subst_expr_with_var_map(p, type_map, var_renames))
+                            .map(|p| self.subst_expr_with_var_map(p, type_map, var_renames, var_types))
                             .collect(),
-                        body: Box::new(self.subst_expr_with_var_map(&arm.body, type_map, var_renames)),
+                        body: Box::new(self.subst_expr_with_var_map(&arm.body, type_map, var_renames, var_types)),
                     })
                     .collect();
                 ExprInner::Match(Box::new(new_subject), new_arms)
@@ -1128,7 +1282,7 @@ impl MonoContext {
                 if let Some(concrete_adt) = self.resolve_make_variant_adt(adt_name, variant_name, args) {
                     let new_args: Vec<Expr> = args
                         .iter()
-                        .map(|a| self.subst_expr_with_var_map(a, type_map, var_renames))
+                        .map(|a| self.subst_expr_with_var_map(a, type_map, var_renames, var_types))
                         .collect();
                     ExprInner::MakeVariant(concrete_adt, variant_name.clone(), new_args)
                 } else {
@@ -1347,6 +1501,18 @@ fn arg_type_matches(inner: &ExprInner, concrete_ty: &str) -> bool {
         (ExprInner::Atom(Atom::Bool(_)), "Bool") => true,
         (ExprInner::Atom(Atom::Str(_)), "String") => true,
         (_, _) => false,
+    }
+}
+
+/// Parse a concrete type name into a `Type` for trait dispatch.
+fn param_type_from_str(t: &str) -> Type {
+    match t {
+        "Int" => Type::Prim(PrimType::Int),
+        "Float" => Type::Prim(PrimType::Float),
+        "Bool" => Type::Prim(PrimType::Bool),
+        "String" => Type::Prim(PrimType::String),
+        "Unit" => Type::Prim(PrimType::Unit),
+        other => Type::Nominal(other.to_string()),
     }
 }
 

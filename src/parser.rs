@@ -437,6 +437,12 @@ impl Parser {
                 span: span.clone(),
                 inner: ExprInner::FileClose(Box::new(args[0].clone())),
             })
+        } else if op == "buf-append" {
+            check_arity!("buf-append", 2, 2, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::BufAppend(Box::new(args[0].clone()), Box::new(args[1].clone())),
+            })
         }
         // Resource management.
         else if op == "with-resource" {

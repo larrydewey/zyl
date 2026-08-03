@@ -1,0 +1,10 @@
+(use allocator/allocator)
+
+(defn main ()
+  (let p (alloc-malloc 64)
+    (begin
+      (alloc-write-int p 0)
+      (buf-append p "hello ")
+      (buf-append p "world")
+      (file-write 1 p)
+      0)))

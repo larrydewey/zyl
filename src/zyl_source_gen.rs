@@ -310,6 +310,11 @@ impl ZylSourceGen {
                     let d = self.ensure_name(*data);
                     buf.push(format!("(let {} (file-write {} {}))", name, h, d));
                 }
+                ICNFInner::BufAppend { dst, src } => {
+                    let a = self.ensure_name(*dst);
+                    let b = self.ensure_name(*src);
+                    buf.push(format!("(let {} (buf-append {} {}))", name, a, b));
+                }
                 ICNFInner::FileClose(ssa_id) => {
                     let a = self.ensure_name(*ssa_id);
                     buf.push(format!("(let {} (file-close {}))", name, a));

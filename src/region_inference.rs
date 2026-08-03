@@ -732,6 +732,12 @@ impl RegionInferer {
             // file-write — returns Int, data may be on Heap.
             ExprInner::FileWrite(_handle, data) => self.infer_expr(data),
 
+            // buf-append — returns Int; both operands must be resolvable.
+            ExprInner::BufAppend(dst, src) => {
+                drop(self.infer_expr(dst)?);
+                self.infer_expr(src)
+            }
+
             // file-close — resource cleanup, no region change.
             ExprInner::FileClose(e) => self.infer_expr(e),
 
