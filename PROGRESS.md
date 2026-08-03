@@ -70,6 +70,22 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] send-closure handler dispatch (message passing): ICNF `SendClosure` now carries the sanitized handler name; codegen emits a `_ZYL_closure_N` wrapper that forwards captured state as handler args and calls `_ZYL_<handler>` (buffered in `spawn_wrappers`). Actor intermediate nodes (Spawn/Closure) survive `let` bodies via `convert_expr_to_stmts`. Type inference unifies handler params with captured message types, enabling String-param print detection. Runtime mailbox drain loop now waits for messages until `wait_all` stops actors (fixes send-after-spawn race). Register preservation (r12/r13) added to Send/SendClosure emit so actor_id/closure_ptr survive malloc + capture emission
 - [x] String-typed function params: codegen gains `func_params` + `string_params`; String params stored 64-bit and printed as strings (fixes `(print name)` printing a pointer as an int)
 
+### Recent Fixes (ADT/Match Recursion)
+
+- [x] Standalone Call emission: `emit_node` now emits top-level Call nodes via `emit_call_direct` instead of falling to nop
+- [x] BinOp temp slot collision: replaced hardcoded `[rbp-64]` with per-function `temp_slot_counter` — prevents collision with param slots and If result_var slots
+- [x] Const{Ident} variable references: `emit_load_into` now loads from stack slot for `Const(Atom::Ident name)` nodes (ICNF's representation of variable references)
+- [x] Full recursion stress test: 10 patterns verified — single recursion (factorial), double recursion (fib), mutual recursion (is-even/is-odd), list recursion (length, sum, reverse), all correct
+
+### Recent Fixes (ADT/Match Recursion)
+
+- [x] MakeVariant discriminant lookup: ADT definitions stored under monomorphized names (e.g. `List_Int`) but MakeVariant ICNF conversion used generic names (`List`). Fixed by trying direct lookup first, then broad search across all ADT keys.
+- [x] Match arm discriminant ordering: ICNF match arms were in source order (None first, Cons second) but codegen compared discriminant against arm index `i`. Fixed by sorting match arms by discriminant value during ICNF generation so arm index equals discriminant.
+- [x] ICNF `ICNFInner::Call` missing from `emit_node`: no handler → fell to `_ => nop`, causing intermediate Call nodes in arm/branch bodies to emit as NOPs. Added Call/FfiCall handlers to `emit_node`.
+- [x] Arm/branch body intermediate node emission: loops emitted ALL nodes (Load, Call, BinOp, Const) as flat sequence, clobbering operands to parent BinOp. Fixed by skipping operand intermediate nodes (Call, FfiCall, BinOp, UnOp, Load, Const) — emitted on-demand via `emit_load_into` instead.
+- [x] Recursive stdlib functions now work: `list-sum`, `list-length`, `list-reverse`, `list-append` all produce correct results
+- [x] Recursion bug fix complete: all 10 recursion patterns (single, double, mutual, list/ADT) verified correct end-to-end
+
 ---
 
 ## Remaining Work

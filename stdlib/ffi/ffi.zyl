@@ -1,13 +1,29 @@
 ; === Zyl Standard Library — FFI Operations ===
 ; Module: ffi
-; Provides: FFI operation wrappers and utilities
+; Provides: FFI pinning helpers and safe wrappers.
+;
+; ffi-pin copies an 8-byte value to a stable heap location and returns its
+; address (as Int). The value stays valid until ffi-unpin frees it.
 
 ; ===========================================================================
-; FFI CALL
+; FFI PIN / UNPIN
 ; ===========================================================================
 
-; Call a foreign function with error handling
-; Note: Actual FFI function name and args must be provided at call site.
+; Pin a value for FFI access. Returns a stable address (Int).
+; Returns: Int (address)
+(defn ffi-pin-value (value)
+  (ffi-pin value))
+
+; Unpin a pinned value, releasing its storage.
+; Returns: Unit
+(defn ffi-unpin-value (pointer)
+  (ffi-unpin pointer))
+
+; ===========================================================================
+; SAFE CALL WRAPPER
+; ===========================================================================
+
+; Wrap a foreign call result in a Result, converting runtime errors to Err.
 ; Returns: Result<T, Int>
 (defn ffi-safe-call (result)
   (try
@@ -15,26 +31,9 @@
     (catch e
       (Err e))))
 
-; ===========================================================================
-; FFI PIN
-; ===========================================================================
-
-; Pin a value for FFI access
-; Returns: Pointer (Int)
-(defn ffi-pin-value (value)
-  (ffi-pin value))
-
-; Unpin a pinned value
-; Returns: Unit
-(defn ffi-unpin-value (pointer)
-  (ffi-unpin pointer))
-
-; ===========================================================================
-; FFI UTILITIES
-; ===========================================================================
-
-; Pin, call, and unpin in one step
-; Note: Actual FFI call must be provided at call site.
+; Pin, call, and unpin in one step.
+; NOTE: The call itself must be written at the call site; this helper wraps
+; the result value in a Result.
 ; Returns: Result<T, Int>
 (defn ffi-pin-call-unpin (result)
   (try

@@ -48,5 +48,28 @@ void zyl_actor_send_data(uint32_t actor_id, void* data);
 void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
 void zyl_actor_wait_all(void);
 void* zyl_actor_thread_entry(void* arg);
+long long zyl_actor_is_alive(long long actor_id);
+void zyl_actor_terminate(long long actor_id);
+void zyl_actor_wait(long long actor_id);
+
+/* FFI pinning. */
+void* ffi_pin(long long value);
+void ffi_unpin(void* ptr);
+
+/* Raw memory arena. */
+long long zyl_mem_alloc(long long size);
+void zyl_mem_free(long long ptr);
+long long zyl_mem_read(long long ptr);
+void zyl_mem_write(long long ptr, long long value);
+
+/* Atomic operations. */
+long long zyl_atomic_load(long long addr);
+void zyl_atomic_store(long long addr, long long value);
+long long zyl_atomic_add(long long addr, long long value);
+long long zyl_atomic_sub(long long addr, long long value);
+long long zyl_atomic_max(long long addr, long long value);
+long long zyl_atomic_min(long long addr, long long value);
+long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
+long long zyl_atomic_fetch_add(long long addr, long long value);
 
 #endif

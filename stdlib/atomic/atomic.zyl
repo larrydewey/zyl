@@ -1,15 +1,18 @@
 ; === Zyl Standard Library — Atomic Operations ===
 ; Module: atomic
-; Provides: Atomic<T> operations (load, store, add)
+; Provides: Atomic load/store/add/sub/max/min/cas on 64-bit memory locations.
+;
+; Addresses are Ints obtained from `allocator/alloc` or `ffi-pin`.
+; All operations use seq_cst ordering and are backed by C runtime helpers.
 
 ; ===========================================================================
 ; ATOMIC LOAD
 ; ===========================================================================
 
 ; Load value from atomic location
-; Returns: T
+; Returns: Int
 (defn atomic-load (addr)
-  (ffi-call "zyl_atomic_load" (vec addr) 1000))
+  (ffi-call "zyl_atomic_load" addr 1000))
 
 ; ===========================================================================
 ; ATOMIC STORE
@@ -18,58 +21,72 @@
 ; Store value to atomic location
 ; Returns: Unit
 (defn atomic-store (addr value)
-  (ffi-call "zyl_atomic_store" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_store" addr value 1000))
 
 ; ===========================================================================
 ; ATOMIC ADD
 ; ===========================================================================
 
-; Atomically add value to atomic location
-; Returns: New value
+; Atomically add value to atomic location, return the new value
+; Returns: Int (new value)
 (defn atomic-add (addr value)
-  (ffi-call "zyl_atomic_add" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_add" addr value 1000))
 
 ; ===========================================================================
 ; ATOMIC SUB
 ; ===========================================================================
 
-; Atomically subtract value from atomic location
-; Returns: New value
+; Atomically subtract value from atomic location, return the new value
+; Returns: Int (new value)
 (defn atomic-sub (addr value)
-  (ffi-call "zyl_atomic_sub" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_sub" addr value 1000))
 
 ; ===========================================================================
 ; ATOMIC MAX
 ; ===========================================================================
 
 ; Atomically set atomic location to max of current and value
-; Returns: New value
+; Returns: Int (new value)
 (defn atomic-max (addr value)
-  (ffi-call "zyl_atomic_max" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_max" addr value 1000))
 
 ; ===========================================================================
 ; ATOMIC MIN
 ; ===========================================================================
 
 ; Atomically set atomic location to min of current and value
-; Returns: New value
+; Returns: Int (new value)
 (defn atomic-min (addr value)
-  (ffi-call "zyl_atomic_min" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_min" addr value 1000))
 
 ; ===========================================================================
 ; ATOMIC CAS
 ; ===========================================================================
 
-; Compare and swap
+; Compare and swap. If *addr == expected, set *addr = new_value.
 ; Returns: Bool (true if swap occurred)
 (defn atomic-cas (addr expected new_value)
-  (ffi-call "zyl_atomic_cas" (vec addr expected new_value) 1000))
+  (if (== (ffi-call "zyl_atomic_cas" addr expected new_value 1000) 1) true false))
 
 ; ===========================================================================
 ; ATOMIC FETCH ADD
 ; ===========================================================================
 
-; Atomically add value and return old value
-; Returns: Old value
+; Atomically add value and return the OLD value
+; Returns: Int (old value)
 (defn atomic-fetch-add (addr value)
-  (ffi-call "zyl_atomic_fetch_add" (vec addr value) 1000))
+  (ffi-call "zyl_atomic_fetch_add" addr value 1000))
+
+; ===========================================================================
+; ATOMIC CONVENIENCE
+; ===========================================================================
+
+; Increment a counter at addr by 1
+; Returns: Int (new value)
+(defn atomic-incr (addr)
+  (atomic-add addr 1))
+
+; Decrement a counter at addr by 1
+; Returns: Int (new value)
+(defn atomic-decr (addr)
+  (atomic-sub addr 1))
