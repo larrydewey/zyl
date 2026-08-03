@@ -35,6 +35,9 @@ uint32_t zyl_actor_spawn(void (*entry)(void*), void* state) {
     actor->mailbox_count = 0;
     actor->alive = 1;
     actor->running = 0;
+    actor->joined = 0;
+    pthread_mutex_init(&actor->lock, NULL);
+    pthread_cond_init(&actor->cond, NULL);
 
     pthread_create(&actor->thread, NULL, zyl_actor_thread_entry, (void*)(size_t)id);
     g_system.next_id++;
@@ -49,10 +52,6 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
     }
 
     ZylActor* actor = &g_system.actors[actor_id];
-    if (!actor->alive) {
-        free(msg);
-        return;
-    }
 
     ZylMessage* m = (ZylMessage*)malloc(sizeof(ZylMessage));
     if (!m) {
@@ -63,6 +62,13 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
     m->data = msg;
     m->next = NULL;
 
+    pthread_mutex_lock(&actor->lock);
+    if (!actor->alive) {
+        pthread_mutex_unlock(&actor->lock);
+        free(m);
+        free(msg);
+        return;
+    }
     if (actor->mailbox_tail) {
         actor->mailbox_tail->next = m;
     } else {
@@ -70,6 +76,8 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
     }
     actor->mailbox_tail = m;
     actor->mailbox_count++;
+    pthread_cond_signal(&actor->cond);
+    pthread_mutex_unlock(&actor->lock);
 }
 
 void zyl_actor_send_data(uint32_t actor_id, void* data) {
@@ -82,9 +90,6 @@ void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state) {
     }
 
     ZylActor* actor = &g_system.actors[actor_id];
-    if (!actor->alive) {
-        return;
-    }
 
     ZylClosureMsg* closure = (ZylClosureMsg*)malloc(sizeof(ZylClosureMsg));
     if (!closure) {
@@ -102,6 +107,13 @@ void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state) {
     m->data = closure;
     m->next = NULL;
 
+    pthread_mutex_lock(&actor->lock);
+    if (!actor->alive) {
+        pthread_mutex_unlock(&actor->lock);
+        free(m);
+        free(closure);
+        return;
+    }
     if (actor->mailbox_tail) {
         actor->mailbox_tail->next = m;
     } else {
@@ -109,6 +121,8 @@ void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state) {
     }
     actor->mailbox_tail = m;
     actor->mailbox_count++;
+    pthread_cond_signal(&actor->cond);
+    pthread_mutex_unlock(&actor->lock);
 }
 
 void* zyl_actor_thread_entry(void* arg) {
@@ -116,22 +130,31 @@ void* zyl_actor_thread_entry(void* arg) {
     if (id >= ZYL_MAX_ACTORS) return NULL;
 
     ZylActor* actor = &g_system.actors[id];
+
+    pthread_mutex_lock(&actor->lock);
     actor->running = 1;
+    pthread_mutex_unlock(&actor->lock);
 
     /* Run the entry function. */
     if (actor->entry) {
         actor->entry(actor->state);
     }
 
-    /* Process mailbox until the actor is stopped by wait_all. */
-    while (actor->alive) {
-        ZylMessage* m = actor->mailbox_head;
-        if (!m) {
-            usleep(1000);
-            continue;
+    /* Process mailbox FIFO until the actor is stopped by wait_all. */
+    for (;;) {
+        pthread_mutex_lock(&actor->lock);
+        while (actor->alive && !actor->mailbox_head) {
+            pthread_cond_wait(&actor->cond, &actor->lock);
         }
+        if (!actor->alive) {
+            pthread_mutex_unlock(&actor->lock);
+            break;
+        }
+        ZylMessage* m = actor->mailbox_head;
         actor->mailbox_head = m->next;
+        if (!actor->mailbox_head) actor->mailbox_tail = NULL;
         actor->mailbox_count--;
+        pthread_mutex_unlock(&actor->lock);
 
         if (m->kind == ZYL_MSG_DATA) {
             /* Data message: data pointer is opaque, nothing to execute. */
@@ -147,7 +170,9 @@ void* zyl_actor_thread_entry(void* arg) {
         free(m);
     }
 
+    pthread_mutex_lock(&actor->lock);
     actor->running = 0;
+    pthread_mutex_unlock(&actor->lock);
     return NULL;
 }
 
@@ -160,7 +185,10 @@ void zyl_actor_wait_all(void) {
         pending = 0;
         for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
             ZylActor* actor = &g_system.actors[i];
-            if ((actor->running || actor->thread) && actor->mailbox_count > 0) {
+            pthread_mutex_lock(&actor->lock);
+            int active = !actor->joined && (actor->running || actor->thread) && actor->mailbox_count > 0;
+            pthread_mutex_unlock(&actor->lock);
+            if (active) {
                 pending = 1;
                 break;
             }
@@ -170,9 +198,17 @@ void zyl_actor_wait_all(void) {
 
     for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
         ZylActor* actor = &g_system.actors[i];
-        if (actor->running || actor->thread) {
-            actor->alive = 0;
-            pthread_join(actor->thread, NULL);
+        pthread_mutex_lock(&actor->lock);
+        int active = !actor->joined && (actor->running || actor->thread);
+        if (active) actor->alive = 0;
+        pthread_t t = actor->thread;
+        pthread_mutex_unlock(&actor->lock);
+        if (active) {
+            pthread_cond_broadcast(&actor->cond);
+            pthread_join(t, NULL);
+            pthread_mutex_lock(&actor->lock);
+            actor->joined = 1;
+            pthread_mutex_unlock(&actor->lock);
         }
     }
 }
@@ -210,6 +246,136 @@ long long zyl_mem_read(long long ptr) {
 
 void zyl_mem_write(long long ptr, long long value) {
     *(volatile long long*)(size_t)ptr = value;
+}
+
+/* ==========================================================================
+   Region-based arena allocator.
+
+   Deterministic reclamation: arena-reset frees every block at once and the
+   handle stays valid for reuse; arena-destroy frees everything including the
+   handle. Allocations are 16-byte aligned bump allocations from a growable
+   block list — no per-object free, no fragmentation bookkeeping, no
+   scheduling-dependent behavior. Arenas are single-threaded by design
+   (consistent with actor isolation: one arena per actor/scope).
+   ========================================================================== */
+
+#define ZYL_ARENA_DEFAULT_BLOCK 65536
+#define ZYL_ARENA_ALIGN 16
+
+typedef struct ZylArenaBlock {
+    char* mem;
+    size_t cap;
+    size_t used;
+    struct ZylArenaBlock* next;
+} ZylArenaBlock;
+
+typedef struct ZylArena {
+    ZylArenaBlock* head;
+    size_t block_size;
+    size_t total_capacity;
+    size_t total_used;
+} ZylArena;
+
+static size_t zyl_arena_align_up(size_t n) {
+    return (n + (ZYL_ARENA_ALIGN - 1)) & ~(size_t)(ZYL_ARENA_ALIGN - 1);
+}
+
+static ZylArenaBlock* zyl_arena_new_block_of(ZylArena* a, size_t cap) {
+    if (cap < a->block_size) cap = a->block_size;
+    ZylArenaBlock* b = (ZylArenaBlock*)malloc(sizeof(ZylArenaBlock));
+    if (!b) return NULL;
+    b->mem = (char*)malloc(cap);
+    if (!b->mem) {
+        free(b);
+        return NULL;
+    }
+    b->cap = cap;
+    b->used = 0;
+    b->next = a->head;
+    a->head = b;
+    a->total_capacity += cap;
+    return b;
+}
+
+long long zyl_arena_create(long long block_size) {
+    size_t bs = (size_t)block_size;
+    if (bs < 16) bs = ZYL_ARENA_DEFAULT_BLOCK;
+    ZylArena* a = (ZylArena*)malloc(sizeof(ZylArena));
+    if (!a) return 0;
+    a->head = NULL;
+    a->block_size = bs;
+    a->total_capacity = 0;
+    a->total_used = 0;
+    return (long long)(size_t)a;
+}
+
+long long zyl_arena_alloc(long long arena, long long size) {
+    if (!arena || size < 0) return 0;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    size_t need = zyl_arena_align_up((size_t)size);
+    ZylArenaBlock* b = a->head;
+    if (!b || b->used + need > b->cap) {
+        b = zyl_arena_new_block_of(a, need);
+        if (!b) return 0;
+    }
+    char* p = b->mem + b->used;
+    b->used += need;
+    a->total_used += need;
+    return (long long)(size_t)p;
+}
+
+long long zyl_arena_alloc_zeroed(long long arena, long long size) {
+    if (!arena || size < 0) return 0;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    size_t need = zyl_arena_align_up((size_t)size);
+    ZylArenaBlock* b = a->head;
+    if (!b || b->used + need > b->cap) {
+        b = zyl_arena_new_block_of(a, need);
+        if (!b) return 0;
+    }
+    char* p = b->mem + b->used;
+    b->used += need;
+    a->total_used += need;
+    memset(p, 0, (size_t)size);
+    return (long long)(size_t)p;
+}
+
+void zyl_arena_reset(long long arena) {
+    if (!arena) return;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    ZylArenaBlock* b = a->head;
+    while (b) {
+        ZylArenaBlock* next = b->next;
+        free(b->mem);
+        free(b);
+        b = next;
+    }
+    a->head = NULL;
+    a->total_capacity = 0;
+    a->total_used = 0;
+}
+
+void zyl_arena_destroy(long long arena) {
+    if (!arena) return;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    ZylArenaBlock* b = a->head;
+    while (b) {
+        ZylArenaBlock* next = b->next;
+        free(b->mem);
+        free(b);
+        b = next;
+    }
+    free(a);
+}
+
+long long zyl_arena_used(long long arena) {
+    if (!arena) return 0;
+    return (long long)((ZylArena*)(size_t)arena)->total_used;
+}
+
+long long zyl_arena_capacity(long long arena) {
+    if (!arena) return 0;
+    return (long long)((ZylArena*)(size_t)arena)->total_capacity;
 }
 
 /* ==========================================================================
@@ -275,7 +441,11 @@ long long zyl_actor_is_alive(long long actor_id) {
     if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
         return 0;
     }
-    return g_system.actors[(uint32_t)actor_id].alive ? 1 : 0;
+    ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
+    pthread_mutex_lock(&actor->lock);
+    int alive = actor->alive ? 1 : 0;
+    pthread_mutex_unlock(&actor->lock);
+    return alive;
 }
 
 void zyl_actor_terminate(long long actor_id) {
@@ -283,9 +453,17 @@ void zyl_actor_terminate(long long actor_id) {
         return;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
-    if (actor->thread) {
-        actor->alive = 0;
-        pthread_join(actor->thread, NULL);
+    pthread_mutex_lock(&actor->lock);
+    int active = !actor->joined && actor->thread ? 1 : 0;
+    if (active) actor->alive = 0;
+    pthread_t t = actor->thread;
+    pthread_mutex_unlock(&actor->lock);
+    if (active) {
+        pthread_cond_broadcast(&actor->cond);
+        pthread_join(t, NULL);
+        pthread_mutex_lock(&actor->lock);
+        actor->joined = 1;
+        pthread_mutex_unlock(&actor->lock);
     }
 }
 
@@ -294,7 +472,14 @@ void zyl_actor_wait(long long actor_id) {
         return;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
-    if (actor->thread) {
-        pthread_join(actor->thread, NULL);
+    pthread_mutex_lock(&actor->lock);
+    int active = !actor->joined && actor->thread ? 1 : 0;
+    pthread_t t = actor->thread;
+    pthread_mutex_unlock(&actor->lock);
+    if (active) {
+        pthread_join(t, NULL);
+        pthread_mutex_lock(&actor->lock);
+        actor->joined = 1;
+        pthread_mutex_unlock(&actor->lock);
     }
 }
