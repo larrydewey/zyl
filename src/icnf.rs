@@ -806,11 +806,9 @@ impl IcnfConverter {
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     // Add captured variables to the Fn's local scope so body conversion can resolve them.
-                    eprintln!("DEBUG Fn: adding captures to scope: {:?}", captures.iter().map(|c| &c.name).collect::<Vec<_>>());
                     for cap in &captures {
                         self.current_scope.insert(cap.name.clone(), cap.ssa_id);
                     }
-                    eprintln!("DEBUG Fn: current_scope after captures: {:?}", self.current_scope);
                     for param in params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
