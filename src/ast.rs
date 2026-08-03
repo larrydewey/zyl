@@ -90,6 +90,7 @@ pub enum ExprInner {
     FileRead(Box<Expr>, Box<Expr>),
     FileWrite(Box<Expr>, Box<Expr>),
     FileClose(Box<Expr>),
+    BufAppend(Box<Expr>, Box<Expr>),
     WithResource(String, Box<Expr>, Box<Expr>),
     Deftype(String, Vec<ADTVariant>, Vec<String>, Option<String>),
     TraitDecl(String, Vec<TraitMethod>, Option<(String, String)>),
@@ -496,6 +497,13 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
         ExprInner::FileClose(handle) => {
             f.write_str("(file-close ")?;
             let _ = write_sexpr(f, handle);
+            f.write_str(")")
+        }
+        ExprInner::BufAppend(dst, src) => {
+            f.write_str("(buf-append ")?;
+            let _ = write_sexpr(f, dst);
+            f.write_str(" ")?;
+            let _ = write_sexpr(f, src);
             f.write_str(")")
         }
         ExprInner::WithResource(name, init, body) => {
@@ -988,6 +996,119 @@ impl PostProcessor {
                 expr.inner = ExprInner::Defn(name, params, body);
             }
 
+            // trait → TraitDecl (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "trait") && args.len() >= 1 => {
+                let trait_name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let mut methods = Vec::new();
+                let mut where_clause: Option<(String, String)> = None;
+                for arg in &args[1..] {
+                    if let ExprInner::Call(_, ref inner) = &arg.inner {
+                        if inner.is_empty() {
+                            continue;
+                        }
+                        if let ExprInner::Atom(Atom::Keyword(kw)) = &inner[0].inner {
+                            if kw == "where" && inner.len() >= 3 {
+                                if let (ExprInner::Atom(Atom::Ident(p)), ExprInner::Atom(Atom::Ident(t))) =
+                                    (&inner[1].inner, &inner[2].inner)
+                                {
+                                    where_clause = Some((p.clone(), t.clone()));
+                                }
+                                continue;
+                            }
+                        }
+                        let mname = match &inner[0].inner {
+                            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                            _ => continue,
+                        };
+                        let mut mparams = Vec::new();
+                        if inner.len() >= 2 {
+                            if let ExprInner::Call(_, ref pexprs) = &inner[1].inner {
+                                for pe in pexprs {
+                                    if let ExprInner::Atom(Atom::Ident(n)) = &pe.inner {
+                                        mparams.push(Param {
+                                            span: Span::default(),
+                                            name: n.clone(),
+                                            typ: None,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        let ret = inner
+                            .get(2)
+                            .and_then(|e| match &e.inner {
+                                ExprInner::Atom(Atom::Ident(t)) | ExprInner::Atom(Atom::Keyword(t)) => {
+                                    Some(t.clone())
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| "Unit".into());
+                        methods.push(TraitMethod {
+                            name: mname,
+                            params: mparams,
+                            return_type: ret,
+                        });
+                    }
+                }
+                expr.inner = ExprInner::TraitDecl(trait_name, methods, where_clause);
+            }
+
+            // impl → ImplBlock (Call form). Type names are captured raw so the
+            // uppercase MakeVariant heuristic cannot mangle them.
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "impl") && args.len() >= 3 => {
+                let trait_name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let type_name = match &args[1].inner {
+                    ExprInner::Atom(Atom::Ident(n)) | ExprInner::Atom(Atom::Keyword(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let mut bodies = Vec::new();
+                for body_expr in &args[2..] {
+                    match &body_expr.inner {
+                        ExprInner::Call(bop, barg) if Self::is_ident_op(bop, "defn") && barg.len() >= 2 => {
+                            let bname = match &barg[0].inner {
+                                ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                                _ => continue,
+                            };
+                            let bparams = Self::parse_params_list_inner(barg.get(1));
+                            let bbody = if barg.len() == 3 {
+                                Box::new(self.post_process_expr(barg[2].clone()))
+                            } else {
+                                Box::new(Expr {
+                                    span: Span::default(),
+                                    inner: ExprInner::Begin(
+                                        barg[2..].iter().map(|e| self.post_process_expr(e.clone())).collect(),
+                                    ),
+                                })
+                            };
+                            bodies.push(ImplBody {
+                                defn: DefnNode {
+                                    name: bname,
+                                    params: bparams,
+                                    body: bbody,
+                                },
+                            });
+                        }
+                        ExprInner::Defn(bname, bparams, bbody) => {
+                            bodies.push(ImplBody {
+                                defn: DefnNode {
+                                    name: bname.clone(),
+                                    params: bparams.clone(),
+                                    body: Box::new(self.post_process_expr((**bbody).clone())),
+                                },
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                expr.inner = ExprInner::ImplBlock(trait_name, type_name, bodies);
+            }
+
             // deftype → Deftype (Call form with raw variant Call/Apply children).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "deftype") && args.len() >= 2 => {
                 let type_name = match &args[0].inner {
@@ -1291,6 +1412,22 @@ impl PostProcessor {
             // file-close → FileClose (Apply form).
             ExprInner::Apply(name, args) if name == "file-close" && args.len() == 1 => {
                 expr.inner = ExprInner::FileClose(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // buf-append → BufAppend (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "buf-append") && args.len() == 2 => {
+                expr.inner = ExprInner::BufAppend(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
+            }
+
+            // buf-append → BufAppend (Apply form).
+            ExprInner::Apply(name, args) if name == "buf-append" && args.len() == 2 => {
+                expr.inner = ExprInner::BufAppend(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    Box::new(self.post_process_expr(args[1].clone())),
+                );
             }
 
             // with-resource → WithResource (Call form).
@@ -1957,8 +2094,9 @@ impl PostProcessor {
 
             // Recognize variant constructor calls: (Some x y ...) or unit variants like None.
             // Heuristic: operator starts with uppercase letter AND is not a known builtin/op.
+            // Dotted names (Trait.method) are trait-method calls, never constructors.
             ExprInner::Call(first, ref args)
-                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n))
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.'))
                     && !is_known_builtin_or_op(first) =>
             {
                 let variant_name = match &first.inner {
@@ -1976,12 +2114,12 @@ impl PostProcessor {
 
             // Recognize bare identifier variant constructors (unit variants like None).
             // Skip type parameters — they are not variant constructors.
-            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !is_known_builtin_or_apply(n) && !self.is_type_param(n) => {
+            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.') && !is_known_builtin_or_apply(n) && !self.is_type_param(n) => {
                 let adt_name = self.find_adt_for_variant(n).unwrap_or_default();
                 expr.inner = ExprInner::MakeVariant(adt_name, n.clone(), Vec::new());
             }
 
-            ExprInner::Apply(name, ref args) if is_uppercase_ident(name) && !is_known_builtin_or_apply(name) => {
+            ExprInner::Apply(name, ref args) if is_uppercase_ident(name) && !name.contains('.') && !is_known_builtin_or_apply(name) => {
                 // Skip if this name is a type parameter of any known ADT.
                 if self.is_type_param(name) {
                     return expr;

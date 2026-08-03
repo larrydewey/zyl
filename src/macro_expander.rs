@@ -788,7 +788,7 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         ModuleDecl(_) => expr.inner.clone(),
         Export(_) => expr.inner.clone(),
         ReadLine => ExprInner::ReadLine,
-        FileOpen(..) | FileRead(..) | FileWrite(..) | FileClose(..) => expr.inner.clone(),
+        FileOpen(..) | FileRead(..) | FileWrite(..) | FileClose(..) | BufAppend(..) => expr.inner.clone(),
         Atom(_) | Error(_) | Apply(_, _) => expr.inner.clone(),
     }
 }
@@ -1130,6 +1130,12 @@ impl MacroExpander {
                 expr.inner = ExprInner::FileWrite(
                     Box::new(self.expand_expr(*handle.clone())?),
                     Box::new(self.expand_expr(*data.clone())?),
+                );
+            }
+            ExprInner::BufAppend(dst, src) => {
+                expr.inner = ExprInner::BufAppend(
+                    Box::new(self.expand_expr(*dst.clone())?),
+                    Box::new(self.expand_expr(*src.clone())?),
                 );
             }
             ExprInner::FileClose(e) => {

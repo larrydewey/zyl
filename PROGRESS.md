@@ -37,6 +37,8 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 | FFI (ffi-call/ffi-pin/ffi-unpin) | ✅ Complete | Timeout enforcement, Pin region, type checking |
 | Read-Line I/O | ✅ Complete | sys_read syscall, 64-bit pointer storage, string output |
 | File I/O | ✅ Complete | file-open/file-read/file-write/file-close, sys_open/read/write/close, inline strlen, null-terminated buffers |
+| Trait System | ✅ Complete | `(trait T (method ...))` + `(impl T Type (defn ...))`; receiver-type dispatch `(Trait.method receiver ...)` → `Trait.method_Type`; impl bodies emitted as top-level defns; dotted names safe in ABI (`_` sanitization) |
+| buf-append builtin | ✅ Complete | `(buf-append dst src)` byte-copy append into raw heap arena (StringBuffer backend) |
 | Nested Conditionals | ✅ Complete | Int, float, and bool nested `if` expressions with phi slot handling |
 | Macros | ✅ Complete | unless, when, nested macros, gensym hygiene |
 | read-line | ✅ Complete | I/O via PostProcessor → ICNF → codegen → sys_read syscall |
@@ -69,6 +71,9 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Multi-param generic ADTs: `Assoc<K,V>` (`zyl_map_test.zyl` with `assoc-put`/`assoc-get`) now compiles and prints `one`/`missing` correctly
 - [x] send-closure handler dispatch (message passing): ICNF `SendClosure` now carries the sanitized handler name; codegen emits a `_ZYL_closure_N` wrapper that forwards captured state as handler args and calls `_ZYL_<handler>` (buffered in `spawn_wrappers`). Actor intermediate nodes (Spawn/Closure) survive `let` bodies via `convert_expr_to_stmts`. Type inference unifies handler params with captured message types, enabling String-param print detection. Runtime mailbox drain loop now waits for messages until `wait_all` stops actors (fixes send-after-spawn race). Register preservation (r12/r13) added to Send/SendClosure emit so actor_id/closure_ptr survive malloc + capture emission
 - [x] String-typed function params: codegen gains `func_params` + `string_params`; String params stored 64-bit and printed as strings (fixes `(print name)` printing a pointer as an int)
+- [x] Trait system end-to-end: lexer `.` in identifiers; post-processor converts `(trait ...)`/`(impl ...)` to TraitDecl/ImplBlock; uppercase-ident heuristics exclude dotted names; type inference registers trait/impl/struct defs; monomorphization emits impl methods as `Trait.method_Type` top-level defns and dispatches dotted calls by receiver type (threaded `var_types` map); ICNF binds typed struct params into `struct_bindings` so `struct-get` resolves field offsets (e.g. StringBuffer "fd" at offset 8)
+- [x] Stdlib: OutputStream trait + Stdout/StringBuffer impls + `make-stdout`/`make-string-buffer` in `stdlib/io/io.zyl`; `test_trait.zyl` verifies `(use io/io)` dispatch + StringBuffer buffering end-to-end
+- [x] Pre-existing `try`/`catch` bug documented: spec §12.2 Result-sugar never desugared; `(try A (catch n B))` stays a raw Call under no_dispatch parsing (post-processor expects ≥3 args) → codegen emits undefined `_ZYL_try`/`_ZYL_catch` → link failure. io-safe-read/write/close rewritten to explicit `Ok`/`Err` as a stopgap (behaviorally identical). Fix tracked in Remaining Work.
 
 ### Recent Fixes (ADT/Match Recursion)
 
@@ -114,6 +119,7 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 Approach A is the goal. Approach B is a fallback if Approach A proves too limiting.
 
 ### Low Priority
+- [ ] `try`/`catch` (spec §12.2 Result sugar) broken: post-processor only converts `(try A B C)` (≥3 args); the standard `(try A (catch n B))` stays raw Call → `call _ZYL_try`/`_ZYL_catch` (undefined) at link. Fix: desugar to a Result `match` in the post-processor (reuses proven match pipeline).
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming) — down to 1
 - [x] Zyl source code emitter (ICNF → Zyl S-expression) — `--emit-zyl` flag
 - [ ] Contract injection (Phase 10 — optional overlay per spec §23)
