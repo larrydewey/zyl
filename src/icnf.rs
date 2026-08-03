@@ -331,6 +331,7 @@ pub enum ICNFInner {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MatchArmICNF {
     pub variant_name: String,
+    pub discriminant: usize,
     pub field_names: Vec<String>,
     pub body: Vec<ICNFNode>,
 }
@@ -1041,14 +1042,10 @@ impl IcnfConverter {
                         node: ICNFInner::Load(name),
                     }])
                 } else {
-                    let id = self.next_ssa_id();
-                    Ok(vec![ICNFNode {
-                        id,
-                        region: Region::Heap,
-                        typ: None,
-                        is_branch_body: false,
-                        node: ICNFInner::Load(id.to_string()),
-                    }])
+                    // Not a local variable — treat as a zero-arg function call
+                    // (e.g. (assoc-empty)). Previously this emitted a Load of a
+                    // numeric-named global (never assigned), silently returning 0.
+                    Ok(vec![self.emit(ICNFInner::Call(sanitize_name(&name), vec![]))])
                 }
             }
 
@@ -1717,9 +1714,26 @@ impl IcnfConverter {
                 // Compute discriminant for this variant from the ADT definition.
                 // If type_name is empty, resolve it from the variant name.
                 let (resolved_type, discriminant) = if !type_name.is_empty() {
-                    (type_name.clone(), self.adt_defs.get(type_name).and_then(|variants| {
-                        variants.iter().position(|(vname, _)| vname == variant_name)
-                    }).unwrap_or(0))
+                    // Try direct lookup first (handles monomorphized type names like List_Int).
+                    if let Some(variants) = self.adt_defs.get(type_name) {
+                        if let Some(pos) = variants.iter().position(|(vname, _)| vname == variant_name) {
+                            (type_name.clone(), pos)
+                        } else {
+                            // Type name matches but variant not found — fall through to broad search.
+                            let (resolved_type, idx) = self.adt_defs.iter().find_map(|(tname, variants)| {
+                                variants.iter().position(|(vname, _)| vname == variant_name)
+                                    .map(|i| (tname.clone(), i))
+                            }).unwrap_or_else(|| (String::new(), 0));
+                            (resolved_type, idx)
+                        }
+                    } else {
+                        // Type name not in adt_defs (original name before monomorphization) — search all ADTs.
+                        let (resolved_type, idx) = self.adt_defs.iter().find_map(|(tname, variants)| {
+                            variants.iter().position(|(vname, _)| vname == variant_name)
+                                .map(|i| (tname.clone(), i))
+                        }).unwrap_or_else(|| (String::new(), 0));
+                        (resolved_type, idx)
+                    }
                 } else {
                     // Look up variant in all ADTs to find the type name.
                     let (resolved_type, idx) = self.adt_defs.iter().find_map(|(tname, variants)| {
@@ -1780,6 +1794,9 @@ impl IcnfConverter {
                 let mut all_stmts: Vec<ICNFNode> = Vec::new();
                 let mut icnf_arms: Vec<MatchArmICNF> = Vec::new();
 
+                // Collect discriminant->arm mapping for reordering.
+                let mut arm_with_disc: Vec<(usize, MatchArmICNF)> = Vec::new();
+
                 for arm in arms {
                     // Bind pattern variables (field names) in scope for the arm body.
                     let saved_scope = std::mem::take(&mut self.current_scope);
@@ -1808,12 +1825,22 @@ impl IcnfConverter {
                         }
                     }
 
-                    icnf_arms.push(MatchArmICNF {
+                    // Look up discriminant for this arm's variant from adt_defs.
+                    let discriminant = self.adt_defs.iter().find_map(|(_, variants)| {
+                        variants.iter().position(|(vname, _)| vname == &arm.variant)
+                    }).unwrap_or(0);
+
+                    arm_with_disc.push((discriminant, MatchArmICNF {
                         variant_name: arm.variant.clone(),
+                        discriminant,
                         field_names,
                         body: body_stmts,
-                    });
+                    }));
                 }
+
+                // Sort arms by discriminant so arm index == discriminant.
+                arm_with_disc.sort_by_key(|(disc, _)| *disc);
+                icnf_arms = arm_with_disc.into_iter().map(|(_, arm)| arm).collect();
 
                 let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
 
@@ -2148,7 +2175,10 @@ impl IcnfConverter {
             // Def (top-level variable binding).
             ExprInner::Def(name, val) => {
                 let saved_scope = std::mem::take(&mut self.current_scope);
-                let val_id = self.convert_expr(val)?;
+                // Convert the value expression and collect intermediate statements.
+                // The Call/MakeVariant stmts are needed by emit_load_into for on-demand emission.
+                let mut val_stmts = self.convert_expr_collect(val)?;
+                let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
                 let ssa_id = self.next_ssa_id();
                 let assign_node = ICNFNode {
                     id: ssa_id,
@@ -2160,7 +2190,10 @@ impl IcnfConverter {
                 self.current_scope.insert(name.clone(), ssa_id);
                 // Also emit as global statement.
                 self.global_stmts.push(assign_node.clone());
-                let result = vec![assign_node];
+                // Return value intermediates + Assign. The main emit loop must
+                // skip standalone Call stmts that are immediately followed by Assign.
+                let mut result = val_stmts;
+                result.push(assign_node);
                 self.current_scope = saved_scope;
                 Ok(result)
             }
@@ -2353,6 +2386,7 @@ impl IcnfConverter {
             "*" => self.convert_nary_fold(BinOpKind::Mul, args),
             "/" => self.convert_div(args),
             "%" => self.convert_binary_only("%", BinOpKind::Rem, args),
+            "=" => self.convert_binary_only("=", BinOpKind::Eq, args),
             "==" => self.convert_binary_only("==", BinOpKind::Eq, args),
             "!=" => self.convert_binary_only("!=", BinOpKind::Neq, args),
             "<" => self.convert_binary_only("<", BinOpKind::Lt, args),
@@ -2814,7 +2848,7 @@ fn is_arithmetic_or_cmp_expr(op: &Expr) -> bool {
 fn is_arithmetic_or_cmp_name(name: &str) -> bool {
     matches!(
         name,
-        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "and" | "or"
+        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "=" | "<" | ">" | "<=" | ">=" | "and" | "or"
     )
 }
 

@@ -176,3 +176,125 @@ void zyl_actor_wait_all(void) {
         }
     }
 }
+
+/* ==========================================================================
+   FFI pinning — copy an 8-byte value to a stable heap location and back.
+   ========================================================================== */
+
+void* ffi_pin(long long value) {
+    long long* slot = (long long*)malloc(sizeof(long long));
+    if (slot) *slot = value;
+    return (void*)slot;
+}
+
+void ffi_unpin(void* ptr) {
+    free(ptr);
+}
+
+/* ==========================================================================
+   Raw memory arena — foundation for stdlib/allocator.
+   Pointers are passed to/from Zyl as Int (64-bit).
+   ========================================================================== */
+
+long long zyl_mem_alloc(long long size) {
+    return (long long)(size_t)malloc((size_t)size);
+}
+
+void zyl_mem_free(long long ptr) {
+    free((void*)(size_t)ptr);
+}
+
+long long zyl_mem_read(long long ptr) {
+    return *(volatile long long*)(size_t)ptr;
+}
+
+void zyl_mem_write(long long ptr, long long value) {
+    *(volatile long long*)(size_t)ptr = value;
+}
+
+/* ==========================================================================
+   Atomic operations on 64-bit memory locations (address passed as Int).
+   ========================================================================== */
+
+long long zyl_atomic_load(long long addr) {
+    return __atomic_load_n((long long*)(size_t)addr, __ATOMIC_SEQ_CST);
+}
+
+void zyl_atomic_store(long long addr, long long value) {
+    __atomic_store_n((long long*)(size_t)addr, value, __ATOMIC_SEQ_CST);
+}
+
+long long zyl_atomic_add(long long addr, long long value) {
+    return __atomic_add_fetch((long long*)(size_t)addr, value, __ATOMIC_SEQ_CST);
+}
+
+long long zyl_atomic_sub(long long addr, long long value) {
+    return __atomic_sub_fetch((long long*)(size_t)addr, value, __ATOMIC_SEQ_CST);
+}
+
+long long zyl_atomic_max(long long addr, long long value) {
+    long long* p = (long long*)(size_t)addr;
+    long long old = __atomic_load_n(p, __ATOMIC_SEQ_CST);
+    for (;;) {
+        long long candidate = old > value ? old : value;
+        if (__atomic_compare_exchange_n(
+                p, &old, candidate, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+            return candidate;
+        }
+    }
+}
+
+long long zyl_atomic_min(long long addr, long long value) {
+    long long* p = (long long*)(size_t)addr;
+    long long old = __atomic_load_n(p, __ATOMIC_SEQ_CST);
+    for (;;) {
+        long long candidate = old < value ? old : value;
+        if (__atomic_compare_exchange_n(
+                p, &old, candidate, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+            return candidate;
+        }
+    }
+}
+
+long long zyl_atomic_cas(long long addr, long long expected, long long new_value) {
+    long long expected_copy = expected;
+    return __atomic_compare_exchange_n(
+        (long long*)(size_t)addr, &expected_copy, new_value,
+        0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
+long long zyl_atomic_fetch_add(long long addr, long long value) {
+    return __atomic_fetch_add((long long*)(size_t)addr, value, __ATOMIC_SEQ_CST);
+}
+
+/* ==========================================================================
+   Actor lifecycle queries (actor_id passed as Int).
+   ========================================================================== */
+
+long long zyl_actor_is_alive(long long actor_id) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+        return 0;
+    }
+    return g_system.actors[(uint32_t)actor_id].alive ? 1 : 0;
+}
+
+void zyl_actor_terminate(long long actor_id) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+        return;
+    }
+    ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
+    if (actor->thread) {
+        actor->alive = 0;
+        pthread_join(actor->thread, NULL);
+    }
+}
+
+void zyl_actor_wait(long long actor_id) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+        return;
+    }
+    ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
+    if (actor->thread) {
+        pthread_join(actor->thread, NULL);
+    }
+}

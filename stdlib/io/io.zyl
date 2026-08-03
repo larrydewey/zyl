@@ -1,34 +1,38 @@
 ; === Zyl Standard Library — I/O ===
 ; Module: io
-; Provides: File I/O operations (placeholders for FFI bindings)
+; Provides: File I/O operations (builtin file-open/file-read/file-write/file-close)
+;           and stdin/stdout helpers.
 
 ; ===========================================================================
 ; FILE OPERATIONS
 ; ===========================================================================
 
-; Open a file for reading
-; Returns: File handle (Int)
-; Note: Placeholder — actual implementation requires FFI bindings
+; Open a file for reading. Returns a file handle (Int), or -1 on error.
+; Returns: Int (handle)
 (defn io-file-open-read (path)
-  0)
+  (file-open path "r"))
 
-; Open a file for writing
-; Returns: File handle (Int)
-; Note: Placeholder — actual implementation requires FFI bindings
+; Open a file for writing (truncates). Returns a file handle (Int), or -1 on error.
+; Returns: Int (handle)
 (defn io-file-open-write (path)
-  0)
+  (file-open path "w"))
+
+; Open a file for appending. Returns a file handle (Int), or -1 on error.
+; Returns: Int (handle)
+(defn io-file-open-append (path)
+  (file-open path "a"))
 
 ; Close a file
 ; Returns: Unit
 (defn io-file-close (handle)
   (file-close handle))
 
-; Read data from file
+; Read data from file. Returns a String (content).
 ; Returns: String
 (defn io-file-read (handle count)
   (file-read handle count))
 
-; Write data to file
+; Write data to file. Returns number of bytes written.
 ; Returns: Int (bytes written)
 (defn io-file-write (handle data)
   (file-write handle data))
@@ -47,22 +51,22 @@
 (defn io-print (x)
   (print x))
 
-; Print multiple values
+; Print an integer
 ; Returns: Unit
-(defn io-print-many (x rest)
-  (begin
-    (print x)
-    (io-print-list rest)))
+(defn io-print-int (n)
+  (print n))
 
-(defn io-print-list (xs)
-  (match xs
-    (None) (print "")
-    (Cons h t)
-      (begin
-        (print h)
-        (io-print-list t))))
+; Print a string
+; Returns: Unit
+(defn io-print-string (s)
+  (print s))
 
-; Print newline
+; Print a float
+; Returns: Unit
+(defn io-print-float (f)
+  (print f))
+
+; Print a newline
 ; Returns: Unit
 (defn io-newline ()
   (print ""))

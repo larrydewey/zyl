@@ -224,6 +224,31 @@ impl ModuleResolver {
                     let name = parts.join("/");
                     use_stmts.push((name, syms.clone(), *unsafe_));
                 }
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "use") => {
+                    // PostProcessor leaves use statements as raw calls, so handle
+                    // them here the same way the top-level resolver does.
+                    if !args.is_empty() {
+                        let module_name = match &args[0].inner {
+                            ExprInner::Atom(Atom::Ident(m)) => m.clone(),
+                            _ => continue,
+                        };
+                        let mut syms: Option<Vec<String>> = None;
+                        let mut unsafe_ = false;
+                        for arg in &args[1..] {
+                            if let ExprInner::Atom(Atom::Keyword(kw)) = &arg.inner {
+                                if kw == "unsafe" {
+                                    unsafe_ = true;
+                                    continue;
+                                }
+                            }
+                            if let ExprInner::Atom(Atom::Ident(s)) = &arg.inner {
+                                syms.get_or_insert_with(Vec::new);
+                                syms.as_mut().unwrap().push(s.clone());
+                            }
+                        }
+                        use_stmts.push((module_name, syms, unsafe_));
+                    }
+                }
                 ExprInner::Export(ident) => {
                     export_stmts.push(ident.clone());
                 }
