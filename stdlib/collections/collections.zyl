@@ -1,0 +1,149 @@
+; === Zyl Standard Library — Collections ===
+; Module: collections
+; Provides: Assoc<K, V> (persistent key-value map, deterministic iteration),
+;           and higher-order List<T> utilities.
+;
+; Assoc is an association list: insert prepends, lookup scans front-to-back,
+; so the most recent value for a key wins. Deterministic by construction.
+;
+; Requires core (List/Option ADTs) — inlined via the module resolver.
+
+(use core/core)
+
+; ===========================================================================
+; ASSOC ADT — Generic: Assoc<K, V>
+; ===========================================================================
+
+(deftype Assoc (Empty) (AssocNode K V (Assoc K V)))
+
+; Empty map
+; Returns: Assoc<K, V>
+(defn assoc-empty ()
+  (Empty))
+
+; Insert (or shadow) a key with a value. The previous entry remains but is
+; shadowed — lookup finds the newest value first.
+; Returns: Assoc<K, V>
+(defn assoc-put (k v m)
+  (AssocNode k v m))
+
+; Look up a key, returning `default` when absent.
+; Returns: V
+(defn assoc-get (k m default)
+  (match m
+    (Empty) default
+    (AssocNode kk vv rest) (if (== k kk) vv (assoc-get k rest default))))
+
+; Check whether a key is present.
+; Returns: Bool
+(defn assoc-has (k m)
+  (match m
+    (Empty) false
+    (AssocNode kk vv rest) (if (== k kk) true (assoc-has k rest))))
+
+; Remove the first occurrence of a key.
+; Returns: Assoc<K, V>
+(defn assoc-remove (k m)
+  (match m
+    (Empty) (Empty)
+    (AssocNode kk vv rest) (if (== k kk) rest (AssocNode kk vv (assoc-remove k rest)))))
+
+; Number of entries (including shadowed ones).
+; Returns: Int
+(defn assoc-size (m)
+  (match m
+    (Empty) 0
+    (AssocNode _ _ rest) (+ 1 (assoc-size rest))))
+
+; All keys, in insertion order (most recent first).
+; Returns: List<K>
+(defn assoc-keys (m)
+  (match m
+    (Empty) (None)
+    (AssocNode kk _ rest) (Cons kk (assoc-keys rest))))
+
+; All values, in insertion order (most recent first).
+; Returns: List<V>
+(defn assoc-values (m)
+  (match m
+    (Empty) (None)
+    (AssocNode _ vv rest) (Cons vv (assoc-values rest))))
+
+; Map a function over values.
+; Returns: Assoc<K, V2>
+(defn assoc-map (f m)
+  (match m
+    (Empty) (Empty)
+    (AssocNode kk vv rest) (AssocNode kk (f vv) (assoc-map f rest))))
+
+; Left fold over entries, threading an accumulator.
+; Returns: A
+(defn assoc-fold (f acc m)
+  (match m
+    (Empty) acc
+    (AssocNode kk vv rest) (assoc-fold f (f kk vv acc) rest)))
+
+; ===========================================================================
+; LIST UTILITIES — Generic: List<T>
+; ===========================================================================
+
+; Map a function over a list.
+; Returns: List<U>
+(defn list-map (f xs)
+  (match xs
+    (None) (None)
+    (Cons h t) (Cons (f h) (list-map f t))))
+
+; Keep elements satisfying a predicate.
+; Returns: List<T>
+(defn list-filter (pred xs)
+  (match xs
+    (None) (None)
+    (Cons h t) (if (pred h) (Cons h (list-filter pred t)) (list-filter pred t))))
+
+; Left fold: (f acc head) → acc.
+; Returns: A
+(defn list-fold (f acc xs)
+  (match xs
+    (None) acc
+    (Cons h t) (list-fold f (f acc h) t)))
+
+; First n elements.
+; Returns: List<T>
+(defn list-take (n xs)
+  (match xs
+    (None) (None)
+    (Cons h t) (if (<= n 0) (None) (Cons h (list-take (- n 1) t)))))
+
+; Drop the first n elements.
+; Returns: List<T>
+(defn list-drop (n xs)
+  (match xs
+    (None) (None)
+    (Cons h t) (if (<= n 0) xs (list-drop (- n 1) t))))
+
+; Element at index n (0-based). None when out of range.
+; Returns: Option<T>
+(defn list-nth (n xs)
+  (match xs
+    (None) (None)
+    (Cons h t) (if (== n 0) (Some h) (list-nth (- n 1) t))))
+
+; Whether an element is present (uses ==).
+; Returns: Bool
+(defn list-contains (x xs)
+  (match xs
+    (None) false
+    (Cons h t) (if (== x h) true (list-contains x t))))
+
+; Integer range [lo, hi) as a list.
+; Returns: List<Int>
+(defn list-range (lo hi)
+  (if (> lo hi) (None) (Cons lo (list-range (+ lo 1) hi))))
+
+; Number of elements satisfying a predicate.
+; Returns: Int
+(defn list-count (pred xs)
+  (match xs
+    (None) 0
+    (Cons h t) (if (pred h) (+ 1 (list-count pred t)) (list-count pred t))))

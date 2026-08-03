@@ -1,21 +1,14 @@
 ; === Zyl Standard Library — Actor Operations ===
 ; Module: actor
-; Provides: spawn, send operations for actor concurrency
+; Provides: spawn, send, and actor lifecycle operations backed by the C runtime.
 
 ; ===========================================================================
 ; SPAWN
 ; ===========================================================================
 
 ; Spawn a new actor with the given closure
-; Returns: ActorRef
+; Returns: ActorRef (Int)
 (defn actor-spawn (closure)
-  (spawn closure))
-
-; Spawn a new actor with initial state
-; Returns: ActorRef
-(defn actor-spawn-with-state (state closure)
-  ;; Note: Actual state passing requires runtime support.
-  ;; This is a placeholder.
   (spawn closure))
 
 ; ===========================================================================
@@ -27,7 +20,7 @@
 (defn actor-send (actor message)
   (send actor message))
 
-; Send a message with timeout
+; Send a message with timeout, wrapped in a Result.
 ; Returns: Result<Unit, Int>
 (defn actor-send-with-timeout (actor message timeout)
   (try
@@ -36,26 +29,20 @@
       (Err e))))
 
 ; ===========================================================================
-; ACTOR UTILITIES
+; ACTOR LIFECYCLE
 ; ===========================================================================
 
-; Check if actor is alive (placeholder)
+; Check if an actor is alive (has not been terminated).
 ; Returns: Bool
 (defn actor-is-alive (actor)
-  ;; Note: Actual actor liveness check requires runtime support.
-  ;; This is a placeholder.
-  (error "actor-is-alive not implemented in stdlib"))
+  (if (== (ffi-call "zyl_actor_is_alive" actor 1000) 1) true false))
 
-; Wait for actor to complete (placeholder)
+; Wait for an actor to finish its thread (blocks until it exits).
 ; Returns: Unit
 (defn actor-wait (actor)
-  ;; Note: Actual actor wait requires runtime support.
-  ;; This is a placeholder.
-  (error "actor-wait not implemented in stdlib"))
+  (ffi-call "zyl_actor_wait" actor 1000))
 
-; Terminate actor (placeholder)
+; Terminate an actor: stop its message loop and join its thread.
 ; Returns: Unit
 (defn actor-terminate (actor)
-  ;; Note: Actual actor termination requires runtime support.
-  ;; This is a placeholder.
-  (error "actor-terminate not implemented in stdlib"))
+  (ffi-call "zyl_actor_terminate" actor 1000))

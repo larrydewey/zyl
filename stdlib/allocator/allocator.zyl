@@ -1,0 +1,57 @@
+; === Zyl Standard Library — Allocator ===
+; Module: allocator
+; Provides: Raw memory arena backed by C runtime helpers.
+;           All addresses are Ints (64-bit pointers).
+;
+; NOTE: No garbage collection or refcounting. Callers are responsible for
+;       freeing memory via `alloc-free`. Deterministic by design (region §).
+
+; ===========================================================================
+; RAW ALLOCATION
+; ===========================================================================
+
+; Allocate `size` bytes on the heap. Returns address as Int, or 0 on failure.
+; Returns: Int (address)
+(defn alloc-malloc (size)
+  (ffi-call "zyl_mem_alloc" size 1000))
+
+; Free memory previously returned by `alloc-malloc`.
+; Returns: Unit
+(defn alloc-free (ptr)
+  (ffi-call "zyl_mem_free" ptr 1000))
+
+; ===========================================================================
+; TYPED ACCESS
+; ===========================================================================
+
+; Read a 64-bit integer from `addr`.
+; Returns: Int
+(defn alloc-read-int (addr)
+  (ffi-call "zyl_mem_read" addr 1000))
+
+; Write a 64-bit integer to `addr`.
+; Returns: Unit
+(defn alloc-write-int (addr value)
+  (ffi-call "zyl_mem_write" addr value 1000))
+
+; Allocate a single 64-bit integer slot initialized to `value`.
+; Returns: Int (address)
+(defn alloc-int (value)
+  (let p (alloc-malloc 8)
+    (begin
+      (alloc-write-int p value)
+      p)))
+
+; ===========================================================================
+; BOXED HELPERS
+; ===========================================================================
+
+; Increment the integer stored at `addr` by 1 (non-atomic).
+; Returns: Unit
+(defn alloc-incr (addr)
+  (alloc-write-int addr (+ (alloc-read-int addr) 1)))
+
+; Decrement the integer stored at `addr` by 1 (non-atomic).
+; Returns: Unit
+(defn alloc-decr (addr)
+  (alloc-write-int addr (- (alloc-read-int addr) 1)))

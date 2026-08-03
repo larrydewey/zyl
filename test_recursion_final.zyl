@@ -1,0 +1,88 @@
+; Full recursion test suite — all working patterns
+
+; === Test 1: Single recursion (factorial) ===
+(defn factorial (n)
+  (if (<= n 0) 1 (* n (factorial (- n 1)))))
+
+; === Test 2: Double recursion (fibonacci) ===
+(defn fib (n)
+  (if (<= n 0) 0
+    (if (== n 1) 1
+      (+ (fib (- n 1)) (fib (- n 2))))))
+
+; === Test 3: Mutual recursion (even/odd) ===
+(defn my-is-even (n)
+  (if (== n 0) true (my-is-odd (- n 1))))
+
+(defn my-is-odd (n)
+  (if (== n 0) false (my-is-even (- n 1))))
+
+; === Test 4: List tail-recursive reverse ===
+(deftype Option (Some Int) None)
+(deftype List (Cons Int (List Int)) None)
+
+(defn my-list-reverse (xs)
+  (my-list-reverse-acc xs None))
+
+(defn my-list-reverse-acc (xs acc)
+  (match xs
+    (None) acc
+    (Cons h t) (my-list-reverse-acc t (Cons h acc))))
+
+; === Test 5: List head-recursive length ===
+(defn my-list-length (xs)
+  (match xs
+    (None) 0
+    (Cons _ t) (+ 1 (my-list-length t))))
+
+; === Test 6: List head-recursive sum ===
+(defn my-list-sum (xs)
+  (match xs
+    (None) 0
+    (Cons h t) (+ h (my-list-sum t))))
+
+; === Test 7: List append ===
+(defn my-list-append (xs ys)
+  (match xs
+    (None) ys
+    (Cons h t) (Cons h (my-list-append t ys))))
+
+; === TEST DRIVER ===
+
+(defn test-all ()
+  (print "=== Recursion Final Tests ===")
+
+  (print "factorial(10):")
+  (print (factorial 10))
+
+  (print "fib(10):")
+  (print (fib 10))
+
+  (print "is-even(5):")
+  (print (my-is-even 5))
+  (print "is-odd(5):")
+  (print (my-is-odd 5))
+  (print "is-even(0):")
+  (print (my-is-even 0))
+  (print "is-odd(0):")
+  (print (my-is-odd 0))
+
+  (def test-list (Cons 1 (Cons 2 (Cons 3 (Cons 4 (Cons 5 None))))))
+
+  (print "list-length [1 2 3 4 5]:")
+  (print (my-list-length test-list))
+
+  (print "list-sum [1 2 3 4 5]:")
+  (print (my-list-sum test-list))
+
+  (print "list-reverse [1 2 3 4 5]:")
+  (print (my-list-reverse test-list))
+
+  (print "list-append [1 2] [3 4 5]:")
+  (def list1 (Cons 1 (Cons 2 None)))
+  (def list2 (Cons 3 (Cons 4 (Cons 5 None))))
+  (print (my-list-append list1 list2))
+
+  (print "=== All Tests Done ==="))
+
+(test-all)
