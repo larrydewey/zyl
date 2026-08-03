@@ -1,6 +1,7 @@
 use crate::ast::Atom;
 use crate::icnf::*;
 use crate::type_system::{PrimType, Type};
+use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 // ─── x86_64 Code Generation (spec §22 — Phase 9) ──────────────────────
@@ -39,6 +40,17 @@ pub struct CodeGen {
     string_params: std::collections::HashSet<String>,
     /// Temp stack slot counter for BinOp/UnOp temporaries. Separate from If result_var slots.
     temp_slot_counter: usize,
+    /// All known function names (sanitized), used to distinguish direct calls
+    /// from indirect calls through function-typed variables, and to materialize
+    /// function-pointer values (`lea rax, _ZYL_<name>`).
+    function_names: std::collections::HashSet<String>,
+    /// Name (sanitized) of the function currently being emitted, for resolving
+    /// function-typed parameter references. Empty at top level.
+    current_func: String,
+    /// Names that hold function-pointer values (inferred structurally, since the
+    /// type records leave HOF parameter vars unresolved). Includes local/param
+    /// names that are called indirectly and names assigned from a function ref.
+    fn_value_names: std::collections::HashSet<String>,
 }
 
 #[allow(dead_code)]
@@ -59,6 +71,9 @@ impl CodeGen {
             func_params: std::collections::HashMap::new(),
             string_params: std::collections::HashSet::new(),
             temp_slot_counter: 0,
+            function_names: std::collections::HashSet::new(),
+            current_func: String::new(),
+            fn_value_names: std::collections::HashSet::new(),
         }
     }
 
@@ -101,6 +116,65 @@ impl CodeGen {
         self
     }
 
+    /// Collect all operand IDs (L/R for BinOp, arg for UnOp, args for Call/Print/FfiCall, val for Assign, cond_ssa for If, embedded stmts for Begin/While/For/Match) from an ICNF node and its children.
+    fn collect_operand_ids_in_node(node: &ICNFInner, out: &mut HashSet<usize>) {
+        match node {
+            ICNFInner::BinOp(_, l, r) => {
+                out.insert(*l);
+                out.insert(*r);
+            }
+            ICNFInner::UnOp(_, id) => {
+                out.insert(*id);
+            }
+            ICNFInner::Call(_, args) | ICNFInner::Print(args) | ICNFInner::FfiCall { args, .. } => {
+                for &a in args {
+                    out.insert(a);
+                }
+            }
+            ICNFInner::Assign(_, val) => {
+                out.insert(*val);
+            }
+            ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
+                out.insert(*cond_ssa);
+                for n in then_body {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+                for n in else_body {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+            }
+            ICNFInner::While { cond_body, body, .. } => {
+                for n in cond_body {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+                for n in body {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+            }
+            ICNFInner::For { cond_nodes, body, .. } => {
+                for n in cond_nodes {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+                for n in body {
+                    Self::collect_operand_ids_in_node(&n.node, out);
+                }
+            }
+            ICNFInner::Match { arms, .. } => {
+                for arm in arms {
+                    for n in &arm.body {
+                        Self::collect_operand_ids_in_node(&n.node, out);
+                    }
+                }
+            }
+            ICNFInner::Begin(stmts) => {
+                for s in stmts {
+                    Self::collect_operand_ids_in_node(&s.node, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Emit buffered spawn wrapper functions (standalone functions with their own prologue/epilogue).
     fn emit_spawn_wrappers(&mut self) {
         for wrapper in &self.spawn_wrappers {
@@ -131,6 +205,60 @@ impl CodeGen {
         let mut floats: Vec<(f64, String)> = Vec::new();
         Self::collect_strings(program, &mut strings);
         Self::collect_floats(program, &mut floats);
+
+        // Build the set of known function names for direct-vs-indirect call
+        // disambiguation and function-pointer materialization.
+        self.function_names.clear();
+        for func in &program.functions {
+            self.function_names.insert(func.name.clone());
+        }
+        self.function_names
+            .extend(self.func_params.keys().cloned());
+        self.function_names
+            .extend(self.func_returns.keys().cloned());
+        // Add closure names (nested defn inside functions) to function_names
+        // so they are materialized as function pointers and emitted as code.
+        for (_, (cname, _)) in &program.closures {
+            self.function_names.insert(cname.clone());
+        }
+        // Also register unqualified closure names (strip "fn_" prefix) so that
+        // code references like `add` resolve to the closure's function pointer.
+        for (_, (cname, _)) in &program.closures {
+            if let Some(unqualified) = cname.strip_prefix("fn_") {
+                self.function_names.insert(unqualified.to_string());
+            }
+        }
+
+        // Structurally infer which names hold function-pointer values: any call
+        // callee that is not a known function is an indirect function value
+        // (e.g. a higher-order parameter or local). This is type-independent
+        // because unresolved HOF param vars never surface Type::Fun to codegen.
+        self.fn_value_names.clear();
+        {
+            let mut callee_names: HashSet<String> = HashSet::new();
+            for stmt in &program.statements {
+                collect_call_names(stmt, &program.closure_bodies, &mut callee_names);
+            }
+            for func in &program.functions {
+                for stmt in &func.body {
+                    collect_call_names(stmt, &program.closure_bodies, &mut callee_names);
+                }
+            }
+            for (_, body) in &program.closure_bodies {
+                for stmt in body {
+                    collect_call_names(stmt, &program.closure_bodies, &mut callee_names);
+                }
+            }
+            self.fn_value_names = callee_names
+                .iter()
+                .filter(|n| !self.function_names.contains(*n))
+                .cloned()
+                .collect();
+        }
+
+        // Dead-function elimination: only emit functions reachable from the
+        // top-level statements and the auto-called main.
+        let reachable = reachable_functions(program);
 
         // Emit rodata section with all static data first.
         self.emit_rodata(&strings, &floats);
@@ -449,6 +577,10 @@ impl CodeGen {
                     }
                 }
             }
+            // Reset temp_slot_counter past all local variable slots so BinOp temp
+            // slots don't collide with variable slots (same as the function path).
+            self.temp_slot_counter = next_slot;
+
             // Build a full lookup map for the main program statements.
             let mut main_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
             for stmt in &program.statements {
@@ -544,6 +676,11 @@ impl CodeGen {
 
         // Emit functions for user-defined defn.
         for func in &program.functions {
+            // Skip dead functions (not reachable from top-level statements or main).
+            if !reachable.contains(&func.name) {
+                continue;
+            }
+            self.current_func = func.name.clone();
             let fn_name = format!("_ZYL_{}", func.name);
             self.asm_push_align();
             self.asm_push_align();
@@ -595,6 +732,15 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push(format!(
                             "    mov [rbp-{}], {} # {}",
+                            offset,
+                            abi_regs_64[i],
+                            param_name
+                        ));
+                    } else if matches!(resolved_type, Type::Fun(..)) || self.fn_value_names.contains(param_name) {
+                        // Function param: function-pointer value, keep full 64-bit.
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    mov [rbp-{}], {:#} # {}",
                             offset,
                             abi_regs_64[i],
                             param_name
@@ -911,6 +1057,120 @@ impl CodeGen {
             self.asm.push("    pop rbp".to_string());
             self.asm_push_align();
             self.asm.push("    ret".to_string());
+        }
+        self.current_func = String::new();
+
+        // Emit closure bodies (nested defn inside functions) as top-level functions.
+        // These are not in program.functions but are called indirectly as function pointers.
+        for (&closure_id, (closure_name, captures)) in &program.closures {
+            if let Some(body) = program.closure_bodies.get(&closure_id) {
+                // Extract parameter names from Load nodes at the start of the body.
+                // Captures (if any) come first, then parameters.
+                let mut param_names: Vec<String> = Vec::new();
+                let capture_count = captures.len();
+                for stmt in body.iter() {
+                    if let ICNFInner::Load(name) = &stmt.node {
+                        param_names.push(name.clone());
+                    } else {
+                        break;
+                    }
+                }
+                let param_count = param_names.len().saturating_sub(capture_count);
+                // Skip capture names to get actual parameters.
+                let params: Vec<String> = if capture_count > 0 {
+                    param_names.into_iter().skip(capture_count).collect()
+                } else {
+                    param_names
+                };
+
+                self.current_func = closure_name.clone();
+                let fn_name = format!("_ZYL_{}", closure_name);
+                self.asm_push_align();
+                self.asm_push_align();
+                self.asm.push(format!("{}:", fn_name));
+                self.asm_push_align();
+                self.asm.push("    push rbp".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rbp, rsp".to_string());
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 256".to_string());
+
+                // Emit prologue to store parameters from registers to stack slots.
+                // Parameters start after any captures (which are already loaded from parent scope).
+                let start_param_idx = capture_count;
+                let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                let abi_xmm_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
+                for (i, param_name) in params.iter().enumerate() {
+                    let real_idx = start_param_idx + i;
+                    if real_idx < 6 && !param_name.is_empty() {
+                        let offset = (real_idx + 1) * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    mov [rbp-{}], {} # {}",
+                            offset, abi_regs_64[real_idx], param_name
+                        ));
+                    }
+                }
+
+                // Emit the function body.
+                let mut local_vars: HashMap<String, usize> = HashMap::new();
+                // Pre-populate parameter slots.
+                for (i, param_name) in params.iter().enumerate() {
+                    if !param_name.is_empty() {
+                        local_vars.insert(param_name.clone(), i);
+                    }
+                }
+                // Pre-populate capture slots.
+                for (i, cap) in captures.iter().enumerate() {
+                    local_vars.insert(cap.name.clone(), start_param_idx + i);
+                }
+
+                // Collect operand IDs for body statements.
+                let mut operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                for stmt in body {
+                    Self::collect_operand_ids_in_node(&stmt.node, &mut operand_ids);
+                }
+
+                let mut body_emitted_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut func_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                for n in body {
+                    func_lookup.insert(n.id, n);
+                }
+                let mut phi_slots: std::collections::HashMap<String, String> = HashMap::new();
+
+                for stmt in body {
+                    if operand_ids.contains(&stmt.id) {
+                        match &stmt.node {
+                            ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
+                            | ICNFInner::Call(_, _) => continue,
+                            ICNFInner::FfiCall { .. } => continue,
+                            ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
+                                continue
+                            }
+                            ICNFInner::BinOp(_, _, _) => continue,
+                            ICNFInner::UnOp(_, _) => continue,
+                            _ => {}
+                        }
+                    }
+                    self.emit_node(
+                        stmt,
+                        body,
+                        &local_vars,
+                        &mut body_emitted_ids,
+                        &operand_ids,
+                        &func_lookup,
+                        &phi_slots,
+                    );
+                }
+
+                // Epilogue.
+                self.asm_push_align();
+                self.asm.push("    add rsp, 256".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop rbp".to_string());
+                self.asm_push_align();
+                self.asm.push("    ret".to_string());
+            }
         }
 
         // Emit buffered spawn wrapper functions (standalone with proper prologue/epilogue).
@@ -1282,6 +1542,14 @@ impl CodeGen {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
                     self.asm.push(format!("    mov {}, [rbp-{}]", target_reg, offset));
+                } else if self.function_names.contains(var_name) {
+                    // Function reference used as a value: materialize its address.
+                    self.asm_push_align();
+                    self.asm.push(format!(
+                        "    lea {}, [rip+_ZYL_{}]",
+                        target_reg,
+                        sanitize_name(var_name)
+                    ));
                 } else {
                     // Fallback: hash-based slot.
                     let hash = simple_hash(var_name);
@@ -2040,115 +2308,228 @@ impl CodeGen {
         let abi_regs = ["edi", "esi", "edx", "ecx", "r8d", "r9d"];
         let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
         let abi_xmm = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
-        // Collect argument types first.
-        let arg_info: Vec<(bool, bool)> = args
-            .iter()
-            .take(6)
-            .map(|&arg_id| {
-                let is_float = lookup
+
+        // Determine whether the callee is a function-typed variable (indirect
+        // call) or a known function name (direct call). Locals shadow functions.
+        // The ICNF call name is sanitized; local_vars keys are the raw names.
+        let callee_slot = local_vars.get(name).copied().or_else(|| {
+            local_vars
+                .iter()
+                .find(|(k, _)| sanitize_name(k) == *name)
+                .map(|(_, &s)| s)
+        });
+
+        if let Some(_slot) = callee_slot {
+            // --- Indirect call path ---
+            // Skip the push/pop dance (it leaves stale pushes on the stack
+            // after the call, corrupting subsequent calls). Instead:
+            //   1. Evaluate each arg, save to a dedicated temp slot on the stack
+            //   2. Load each temp slot into its ABI register
+            //   3. Load function-pointer from its frame slot and call
+            let num_args = args.len().min(6);
+            let mut is_floats: Vec<bool> = Vec::with_capacity(num_args);
+            for (i, &arg_id) in args.iter().enumerate().take(num_args) {
+                let arg_node = lookup
                     .get(&arg_id)
                     .copied()
-                    .or_else(|| stmts.iter().find(|n| n.id == arg_id))
+                    .or_else(|| stmts.iter().find(|n| n.id == arg_id));
+                let arg_is_float = arg_node
                     .and_then(|n| n.typ.as_ref())
                     .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                let is_io = matches!(
-                    lookup.get(&arg_id).copied().or_else(|| stmts.iter().find(|n| n.id == arg_id)),
-                    Some(ICNFNode {
-                        node: ICNFInner::ReadLine | ICNFInner::FileRead { .. },
-                        ..
-                    })
-                );
-                (is_float, is_io)
-            })
-            .collect();
-        let num_args = args.len().min(6);
-        // Load each argument, save its result to the stack to prevent clobbering
-        // by subsequent argument loading.
-        for (i, &arg_id) in args.iter().enumerate().take(num_args) {
-            let (arg_is_float, is_io) = arg_info[i];
-            if arg_is_float {
-                let xmm_reg = abi_xmm[i];
-                self.emit_float_load_into(
-                    arg_id, &xmm_reg, stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(),
-                );
-                // Save XMM result to stack (push rax to keep rsp 8-byte aligned)
-                self.asm_push_align();
-                self.asm.push("    push rax".to_string());
-                self.asm_push_align();
-                self.asm.push("    sub rsp, 16".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    movsd [rsp], {}", xmm_reg));
-            } else if is_io {
-                self.emit_load_into(
-                    arg_id,
-                    "rax",
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    &std::collections::HashSet::new(),
-                    &std::collections::HashMap::new(),
-                );
-                self.asm_push_align();
-                self.asm.push("    push rax".to_string());
-            } else {
-                let reg = abi_regs[i];
-                self.emit_load_into(
-                    arg_id,
-                    reg,
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    &std::collections::HashSet::new(),
-                    &std::collections::HashMap::new(),
-                );
-                // Save GPR result to stack (push the 64-bit register)
-                self.asm_push_align();
-                let reg_64 = abi_regs_64[i];
-                self.asm.push(format!("    push {}", reg_64));
+                if arg_is_float {
+                    let xmm_reg = abi_xmm[i];
+                    self.emit_float_load_into(
+                        arg_id, &xmm_reg, stmts, local_vars, lookup,
+                        emitted_ids, &std::collections::HashSet::new(),
+                    );
+                    // Save XMM result to stack slot
+                    self.asm_push_align();
+                    self.asm.push("    sub rsp, 16".to_string());
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movsd [rsp], {}", xmm_reg));
+                    is_floats.push(true);
+                } else {
+                    let reg = abi_regs[i];
+                    self.emit_load_into(
+                        arg_id, reg, stmts, local_vars, lookup, emitted_ids,
+                        &std::collections::HashSet::new(),
+                        &std::collections::HashMap::new(),
+                    );
+                    // Save GPR result to a dedicated temp stack slot.
+                    // We alloc *after* the load so the load's destination
+                    // register is not clobbered by the sub rsp.
+                    self.asm_push_align();
+                    self.asm.push("    sub rsp, 8".to_string());
+                    let reg_64 = abi_regs_64[i];
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov [rsp], {}", reg_64));
+                    is_floats.push(false);
+                }
             }
-        }
-        // Restore all saved argument values into their ABI registers.
-        // Pop in reverse order so arg 0 ends up in the correct ABI reg.
-        for i in (0..num_args).rev() {
-            let (arg_is_float, is_io) = arg_info[i];
-            if arg_is_float {
-                self.asm_push_align();
-                self.asm.push("    add rsp, 16".to_string());
-                self.asm_push_align();
-                self.asm.push("    pop rax".to_string());
-                let xmm_reg = abi_xmm[i];
-                self.asm_push_align();
-                self.asm.push(format!("    movsd {}, [rsp]", xmm_reg));
-                self.asm_push_align();
-                self.asm.push("    sub rsp, 8".to_string());
-            } else if is_io {
-                self.asm_push_align();
-                self.asm.push(format!("    pop {}", abi_regs_64[i]));
-            } else {
-                self.asm_push_align();
-                self.asm.push(format!("    pop {}", abi_regs_64[i]));
+            // Now load each saved arg into its ABI register (in order).
+            for (i, &arg_is_float) in is_floats.iter().enumerate() {
+                if arg_is_float {
+                    let xmm_reg = abi_xmm[i];
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movsd {}, [rsp]", xmm_reg));
+                    self.asm_push_align();
+                    self.asm.push("    add rsp, 16".to_string());
+                } else {
+                    let reg_64 = abi_regs_64[i];
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, [rsp]", reg_64));
+                    self.asm_push_align();
+                    self.asm.push("    add rsp, 8".to_string());
+                }
             }
-        }
-
-        if name != "printf" && name != "exit" {
+            // Load function pointer from its frame slot and call.
+            let slot = _slot;
+            let offset = (slot + 1) * 8;
             self.asm_push_align();
-            self.asm.push(format!("    call _ZYL_{}", name));
+            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+            self.asm_push_align();
+            self.asm.push("    call rax".to_string());
             if is_float {
                 self.asm_push_align();
-                self.asm
-                    .push(format!("    movsd {}, xmm0", target_reg));
+                self.asm.push(format!("    movsd {}, xmm0", target_reg));
             } else {
-                // Always keep result in eax (ABI convention) — callers may need it there.
                 self.asm_push_align();
                 self.asm
                     .push(format!("    mov {}, eax", reg_to_32(target_reg)));
             }
         } else {
-            // For printf/exit, move result to target_reg if specified.
-            if !target_reg.is_empty() {
+            // --- Direct call path (push/pop dance) ---
+            // Collect argument types first.
+            let arg_info: Vec<(bool, bool, bool)> = args
+                .iter()
+                .take(6)
+                .map(|&arg_id| {
+                    let arg_node = lookup
+                        .get(&arg_id)
+                        .copied()
+                        .or_else(|| stmts.iter().find(|n| n.id == arg_id));
+                    let is_float = arg_node
+                        .and_then(|n| n.typ.as_ref())
+                        .is_some_and(|t| {
+                            matches!(t, Type::Prim(PrimType::Float))
+                        });
+                    let is_io = matches!(
+                        arg_node,
+                        Some(ICNFNode {
+                            node: ICNFInner::ReadLine
+                                | ICNFInner::FileRead { .. },
+                            ..
+                        })
+                    );
+                    let is_fnptr = match arg_node.map(|n| &n.node) {
+                        Some(ICNFInner::Const(crate::ast::Atom::Ident(nm))) => {
+                            self.function_names.contains(nm)
+                                || self
+                                    .fn_value_names
+                                    .contains(&sanitize_name(nm))
+                        }
+                        Some(ICNFInner::Load(nm)) => {
+                            self.fn_value_names.contains(&sanitize_name(nm))
+                                || self
+                                    .func_params
+                                    .get(&self.current_func)
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .any(|(pn, pt)| {
+                                        (pn == nm
+                                            || sanitize_name(pn) == *nm)
+                                            && matches!(pt, Type::Fun(..))
+                                    })
+                        }
+                        _ => false,
+                    };
+                    (is_float, is_io, is_fnptr)
+                })
+                .collect();
+            let num_args = args.len().min(6);
+            // Load each argument, save its result to the stack to prevent
+            // clobbering by subsequent argument loading.
+            for (i, &arg_id) in args.iter().enumerate().take(num_args) {
+                let (arg_is_float, is_io, is_fn_ptr) = arg_info[i];
+                if arg_is_float {
+                    let xmm_reg = abi_xmm[i];
+                    self.emit_float_load_into(
+                        arg_id, &xmm_reg, stmts, local_vars, lookup,
+                        emitted_ids, &std::collections::HashSet::new(),
+                    );
+                    // Save XMM result to stack
+                    self.asm_push_align();
+                    self.asm.push("    push rax".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    sub rsp, 16".to_string());
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movsd [rsp], {}", xmm_reg));
+                } else if is_io || is_fn_ptr {
+                    self.emit_load_into(
+                        arg_id, "rax", stmts, local_vars, lookup, emitted_ids,
+                        &std::collections::HashSet::new(),
+                        &std::collections::HashMap::new(),
+                    );
+                    self.asm_push_align();
+                    self.asm.push("    push rax".to_string());
+                } else {
+                    let reg = abi_regs[i];
+                    self.emit_load_into(
+                        arg_id, reg, stmts, local_vars, lookup, emitted_ids,
+                        &std::collections::HashSet::new(),
+                        &std::collections::HashMap::new(),
+                    );
+                    self.asm_push_align();
+                    let reg_64 = abi_regs_64[i];
+                    self.asm.push(format!("    push {}", reg_64));
+                }
+            }
+            // Restore all saved argument values into their ABI registers.
+            // Pop in reverse order so arg 0 ends up in the correct ABI reg.
+            for i in (0..num_args).rev() {
+                let (arg_is_float, is_io, _is_fn_ptr) = arg_info[i];
+                if arg_is_float {
+                    self.asm_push_align();
+                    self.asm.push("    add rsp, 16".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    pop rax".to_string());
+                    let xmm_reg = abi_xmm[i];
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movsd {}, [rsp]", xmm_reg));
+                    self.asm_push_align();
+                    self.asm.push("    sub rsp, 8".to_string());
+                } else if is_io {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    pop {}", abi_regs_64[i]));
+                } else {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    pop {}", abi_regs_64[i]));
+                }
+            }
+
+            // Emit the direct call.
+            if name != "printf" && name != "exit" {
+                self.asm_push_align();
+                self.asm.push(format!("    call _ZYL_{}", name));
+                if is_float {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movsd {}, xmm0", target_reg));
+                } else {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                }
+            } else if !target_reg.is_empty() {
                 if is_float {
                     self.asm_push_align();
                     self.asm
@@ -2876,7 +3257,8 @@ impl CodeGen {
                 // a Call-valued Assign must emit the call on-demand to get its result.
                 let needs_on_demand = matches!(value_node, Some(ICNFNode { node: ICNFInner::Call(..), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::FfiCall { .. }, .. }))
-                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::StructGet(..), .. }));
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::StructGet(..), .. }))
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(crate::ast::Atom::Ident(n)), .. }) if self.function_names.contains(n));
                 if needs_on_demand && !emitted_ids.contains(&resolved_value_id) {
                     self.emit_load_into(
                         resolved_value_id,
@@ -4309,8 +4691,10 @@ impl CodeGen {
                 if operand_ids.contains(&node.id) {
                     return;
                 }
-                // Top-level Call — emit directly.
-                let mut emitted_copy: std::collections::HashSet<usize> = emitted_ids.clone();
+                // Top-level Call — emit directly. Pass the real emitted_ids (not a
+                // clone) so the node is marked emitted; otherwise an Assign that
+                // consumes this call's result re-emits it on-demand, executing the
+                // call twice (observable with side-effecting FFI/counter values).
                 self.emit_call_direct(
                     name,
                     args,
@@ -4318,7 +4702,7 @@ impl CodeGen {
                     stmts,
                     local_vars,
                     lookup,
-                    &mut emitted_copy,
+                    emitted_ids,
                     node.id,
                     false,
                 );
@@ -5499,6 +5883,162 @@ fn simple_hash(name: &str) -> u64 {
         hash = hash.wrapping_mul(31).wrapping_add(c as u64);
     }
     hash
+}
+
+/// Sanitize a function/variable name for the assembly symbol namespace.
+fn sanitize_name(name: &str) -> String {
+    name.replace('-', "_").replace('.', "_")
+}
+
+/// Recursively collect names of functions referenced by an ICNF node: direct
+/// calls, function references (`Const(Ident)`), send-closure handlers, named
+/// closures, and spawn-closure targets (resolved against `enclosing` stmts).
+/// Also walks closure bodies stored in `closure_bodies`. Names are in the
+/// sanitized function namespace.
+fn collect_func_refs(
+    node: &ICNFNode,
+    enclosing: &[ICNFNode],
+    closure_bodies: &IndexMap<usize, Vec<ICNFNode>>,
+    out: &mut Vec<String>,
+) {
+    match &node.node {
+        ICNFInner::Call(name, _) => out.push(name.clone()),
+        ICNFInner::Const(crate::ast::Atom::Ident(name)) => out.push(name.clone()),
+        ICNFInner::SendClosure(_, _, handler_name, _) => {
+            if !handler_name.is_empty() {
+                out.push(handler_name.clone());
+            }
+        }
+        ICNFInner::Closure { name, .. } => out.push(name.clone()),
+        ICNFInner::Spawn(id) => {
+            if let Some(op) = enclosing.iter().find(|n| n.id == *id) {
+                if let ICNFInner::Closure { name, .. } = &op.node {
+                    out.push(name.clone());
+                }
+            }
+        }
+        ICNFInner::If { then_body, else_body, .. } => {
+            for n in then_body.iter().chain(else_body.iter()) {
+                collect_func_refs(n, enclosing, closure_bodies, out);
+            }
+        }
+        ICNFInner::While { cond_body, body, .. } => {
+            for n in cond_body.iter().chain(body.iter()) {
+                collect_func_refs(n, enclosing, closure_bodies, out);
+            }
+        }
+        ICNFInner::For { cond_nodes, body, .. } => {
+            for n in cond_nodes.iter().chain(body.iter()) {
+                collect_func_refs(n, enclosing, closure_bodies, out);
+            }
+        }
+        ICNFInner::Begin(stmts) => {
+            for s in stmts {
+                collect_func_refs(s, enclosing, closure_bodies, out);
+            }
+        }
+        ICNFInner::Match { arms, .. } => {
+            for arm in arms {
+                for n in &arm.body {
+                    collect_func_refs(n, enclosing, closure_bodies, out);
+                }
+            }
+        }
+        ICNFInner::TryCatch { try_body, catch_body, .. } => {
+            for n in try_body.iter().chain(catch_body.iter()) {
+                collect_func_refs(n, enclosing, closure_bodies, out);
+            }
+        }
+        _ => {}
+    }
+    // Walk this closure's own body (keyed by the closure node's SSA id).
+    if matches!(node.node, ICNFInner::Closure { .. }) {
+        if let Some(body) = closure_bodies.get(&node.id) {
+            for n in body {
+                collect_func_refs(n, body, closure_bodies, out);
+            }
+        }
+    }
+}
+
+/// Recursively collect all `Call` callee names from an ICNF node and its
+/// embedded bodies. Used to structurally identify function-typed variables
+/// (any callee that is not a known function must be an indirect function value).
+fn collect_call_names(
+    node: &ICNFNode,
+    closure_bodies: &IndexMap<usize, Vec<ICNFNode>>,
+    out: &mut HashSet<String>,
+) {
+    match &node.node {
+        ICNFInner::Call(name, _) => {
+            out.insert(name.clone());
+        }
+        ICNFInner::If { then_body, else_body, .. } => {
+            for n in then_body.iter().chain(else_body.iter()) {
+                collect_call_names(n, closure_bodies, out);
+            }
+        }
+        ICNFInner::While { cond_body, body, .. } => {
+            for n in cond_body.iter().chain(body.iter()) {
+                collect_call_names(n, closure_bodies, out);
+            }
+        }
+        ICNFInner::For { cond_nodes, body, .. } => {
+            for n in cond_nodes.iter().chain(body.iter()) {
+                collect_call_names(n, closure_bodies, out);
+            }
+        }
+        ICNFInner::Begin(stmts) => {
+            for s in stmts {
+                collect_call_names(s, closure_bodies, out);
+            }
+        }
+        ICNFInner::Match { arms, .. } => {
+            for arm in arms {
+                for n in &arm.body {
+                    collect_call_names(n, closure_bodies, out);
+                }
+            }
+        }
+        ICNFInner::TryCatch { try_body, catch_body, .. } => {
+            for n in try_body.iter().chain(catch_body.iter()) {
+                collect_call_names(n, closure_bodies, out);
+            }
+        }
+        _ => {}
+    }
+    if matches!(node.node, ICNFInner::Closure { .. }) {
+        if let Some(body) = closure_bodies.get(&node.id) {
+            for n in body {
+                collect_call_names(n, closure_bodies, out);
+            }
+        }
+    }
+}
+
+/// Compute the set of functions reachable from the top-level statements and the
+/// handlers, and closure bodies. Functions outside this set are dead and can be
+/// omitted to avoid emitting bodies with undefined-symbol references.
+fn reachable_functions(program: &ICNFProgram) -> HashSet<String> {
+    let mut reachable: HashSet<String> = HashSet::new();
+    let mut worklist: Vec<String> = Vec::new();
+    for stmt in &program.statements {
+        collect_func_refs(stmt, &program.statements, &program.closure_bodies, &mut worklist);
+    }
+    if program.functions.iter().any(|f| f.name == "main") {
+        worklist.push("main".to_string());
+    }
+    while let Some(name) = worklist.pop() {
+        if !reachable.insert(name.clone()) {
+            continue;
+        }
+        if let Some(func) = program.functions.iter().find(|f| f.name == name) {
+            for stmt in &func.body {
+                collect_func_refs(stmt, &func.body, &program.closure_bodies, &mut worklist);
+            }
+        }
+    }
+    reachable
 }
 
 /// Convert f64 to its IEEE-754 bit representation.
