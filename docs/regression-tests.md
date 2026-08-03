@@ -203,9 +203,21 @@ The following spec features are implemented but lack dedicated regression tests 
 
 - `deftype` pattern matching with complex guards (basic match tested)
 - `ffi-call` end-to-end (parser/ICNF/type-checking implemented, no external C function tested)
-- `try`/`catch` error handling (implemented in all phases, no dedicated test)
+- `try`/`catch` error handling (BROKEN: spec §12.2 Result sugar never desugared; `(try A (catch n B))` emits undefined `_ZYL_try`/`_ZYL_catch` at link. stdlib `io-safe-*` use explicit `Ok`/`Err` as a stopgap)
 - `alias` type system (defined in spec, limited usage in tests)
-- `trait`/`impl`/`derive` runtime behavior (type-checking implemented)
 - Property-based testing framework (spec §20.5, not implemented)
 - Contract injection (spec §23, not implemented)
 - Hash finalization (spec §27, not implemented)
+
+## Trait System Regression Test
+
+**Trigger before modifying:** `src/ast.rs`, `src/monomorphization.rs`, `src/icnf.rs`, `src/codegen.rs`, `src/lexer.rs`
+
+```bash
+./target/debug/zyl test_trait.zyl t.bin && ./t.bin
+# Expected:
+#   trait-dispatch
+#   buffered content
+# Verifies (use io/io) stdlib OutputStream trait dispatch on Stdout and
+# StringBuffer, plus buf-append buffering and file-write flush.
+```

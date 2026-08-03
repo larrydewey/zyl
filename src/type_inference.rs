@@ -1436,6 +1436,11 @@ impl TypeInferer {
                 drop(self.infer_expr(data)?);
                 Ok(Type::Prim(PrimType::Int))
             }
+            ExprInner::BufAppend(dst, src) => {
+                drop(self.infer_expr(dst)?);
+                drop(self.infer_expr(src)?);
+                Ok(Type::Prim(PrimType::Int))
+            }
             ExprInner::FileClose(handle) => {
                 drop(self.infer_expr(handle)?);
                 Ok(Type::Prim(PrimType::Unit))

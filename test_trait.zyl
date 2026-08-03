@@ -1,0 +1,13 @@
+(use io/io)
+
+(defn main ()
+  (let out (make-stdout)
+    (begin
+      (OutputStream.write out "trait-dispatch\n")
+      (let sb (make-string-buffer)
+        (begin
+          (OutputStream.write sb "buffered ")
+          (OutputStream.write sb "content\n")
+          (OutputStream.flush sb)
+          (OutputStream.flush out)
+          0)))))

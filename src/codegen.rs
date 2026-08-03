@@ -281,6 +281,10 @@ impl CodeGen {
                         main_operand_ids.insert(*handle);
                         main_operand_ids.insert(*data);
                     }
+                    ICNFInner::BufAppend { dst, src } => {
+                        main_operand_ids.insert(*dst);
+                        main_operand_ids.insert(*src);
+                    }
                     ICNFInner::FileClose(handle) => {
                         main_operand_ids.insert(*handle);
                     }
@@ -4126,7 +4130,29 @@ impl CodeGen {
                 if let Some(ref label) = data_label {
                     self.asm.push(format!("    lea rsi, [{}]      # data pointer (rodata)", label));
                 } else {
-                    self.asm.push("    mov rsi, rdx       # data pointer (from rdx)".to_string());
+                    // Variable data pointer: load it 64-bit from its local slot (a 32-bit
+                    // load would truncate heap addresses). Fall back to emit_load_into
+                    // (into rdx) when the operand is not a plain slot load.
+                    let slot = match data_node {
+                        Some(ICNFNode { node: ICNFInner::Load(name), .. }) => {
+                            local_vars
+                                .get(name)
+                                .map(|i| (i + 1) * 8)
+                                .or_else(|| Some(((simple_hash(name) % 32) as usize + 1) * 8))
+                        }
+                        _ => None,
+                    };
+                    if let Some(offset) = slot {
+                        self.asm_push_align();
+                        self.asm
+                            .push(format!("    mov rsi, [rbp-{}]    # data pointer (variable)", offset));
+                    } else {
+                        self.emit_load_into(
+                            *data, "rdx", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                        );
+                        self.asm_push_align();
+                        self.asm.push("    mov rsi, rdx       # data pointer".to_string());
+                    }
                 }
                 self.asm_push_align();
                 self.asm.push("    mov rax, 0           # strlen result counter".to_string());
@@ -4173,6 +4199,107 @@ impl CodeGen {
                 self.asm.push("    mov rax, 3           # SYS_CLOSE".to_string());
                 self.asm_push_align();
                 self.asm.push("    syscall".to_string());
+            }
+
+            ICNFInner::BufAppend { dst, src } => {
+                // buf-append(dst, src)
+                // dst = null-terminated arena pointer (Int), src = string pointer (String).
+                // Appends src's bytes (including terminator) at the end of dst's content.
+                // Returns the new total content length (Int) in eax.
+                // r12 preserves the dst start pointer across both strlen loops.
+                let strlen_dst_done = self.new_label();
+                let strlen_src_done = self.new_label();
+                let copy_done = self.new_label();
+
+                self.emit_load_into(
+                    *dst, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+                self.asm_push_align();
+                self.asm.push("    push r12           # preserve dst start".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r12, rax        # r12 = dst start".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rsi, rax        # rsi = dst pointer".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 0          # strlen counter".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rcx, rsi        # rcx = scan pointer".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("strlen_dst_{}:", self.label_counter));
+                self.asm_push_align();
+                self.asm.push("    cmp byte ptr [rcx], 0".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    je {}", strlen_dst_done));
+                self.asm_push_align();
+                self.asm.push("    inc rcx".to_string());
+                self.asm_push_align();
+                self.asm.push("    inc rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp strlen_dst_{}", self.label_counter));
+                self.label_counter += 1;
+                self.asm_push_align();
+                self.asm.push(format!("{}:", strlen_dst_done));
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rcx        # rdi = copy destination (dst end)".to_string());
+
+                self.emit_load_into(
+                    *src, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+                self.asm_push_align();
+                self.asm.push("    mov rdx, rax        # rdx = src pointer".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, 0          # strlen counter".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rcx, rdx        # rcx = scan pointer".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("strlen_src_{}:", self.label_counter));
+                self.asm_push_align();
+                self.asm.push("    cmp byte ptr [rcx], 0".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    je {}", strlen_src_done));
+                self.asm_push_align();
+                self.asm.push("    inc rcx".to_string());
+                self.asm_push_align();
+                self.asm.push("    inc rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp strlen_src_{}", self.label_counter));
+                self.label_counter += 1;
+                self.asm_push_align();
+                self.asm.push(format!("{}:", strlen_src_done));
+                self.asm_push_align();
+                // rax = src_len. Copy src_len+1 bytes (including null terminator).
+                self.asm.push("    inc rax             # count = src_len + 1".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rcx, rax        # rcx = byte count".to_string());
+                self.asm_push_align();
+                self.asm.push("    xor rax, rax        # copy index".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("copy_loop_{}:", self.label_counter));
+                self.asm_push_align();
+                self.asm.push("    cmp rax, rcx".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jge {}", copy_done));
+                self.asm_push_align();
+                self.asm.push("    mov r8b, byte ptr [rdx + rax]".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov byte ptr [rdi + rax], r8b".to_string());
+                self.asm_push_align();
+                self.asm.push("    inc rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp copy_loop_{}", self.label_counter));
+                self.label_counter += 1;
+                self.asm_push_align();
+                self.asm.push(format!("{}:", copy_done));
+                self.asm_push_align();
+                // Return new total length = dst_len + src_len.
+                // rcx = src_len + 1 at this point; rax is a copy index (== count).
+                self.asm.push("    mov rax, rdi".to_string());
+                self.asm_push_align();
+                self.asm.push("    sub rax, r12       # rax = dst_len".to_string());
+                self.asm_push_align();
+                self.asm.push("    lea rax, [rax + rcx - 1]  # + src_len".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop r12             # restore r12".to_string());
             }
 
             ICNFInner::Call(name, args) => {
@@ -5267,6 +5394,10 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
             ICNFInner::FileWrite { handle, data } => {
                 out.insert(*handle);
                 out.insert(*data);
+            }
+            ICNFInner::BufAppend { dst, src } => {
+                out.insert(*dst);
+                out.insert(*src);
             }
             ICNFInner::FileClose(handle) => {
                 out.insert(*handle);
