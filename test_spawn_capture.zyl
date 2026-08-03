@@ -5,5 +5,3 @@
   ; Create a closure directly with lambda and spawn it
   (let (name "world")
     (spawn (fn () (begin (print "hello ") (print name))))))
-
-(main)
