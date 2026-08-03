@@ -45,6 +45,10 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Recent Fixes (Applied)
 
+- [x] Arena allocator: region-based, deterministic-reclamation bump allocator in `actor_runtime.c` (create/alloc/alloc-zeroed/reset/destroy/used/capacity, 16-byte aligned, growable blocks, oversized-block support); `stdlib/allocator/allocator.zyl` exposes `arena-*` wrappers via FFI. Verified end-to-end in `test_arena.zyl` (alignment, zeroed reads, block growth >64 KiB, reset reclaim, reuse, destroy)
+- [x] Codegen double-emission of Call-valued lets: `emit_node`'s top-level Call arm passed a **clone** of `emitted_ids` to `emit_call_direct`, so the node was never marked emitted and a consuming `Assign` re-emitted the call on-demand — every `(let x (f ...) ...)` executed `f` twice (observable only with side-effecting FFI/counter values; hidden by pure calls). Fixed by passing the real set. `used` counters in `test_arena.zyl` now correct (96 not 192)
+- [x] Actor runtime data races + busy-wait: mailbox_head/tail/count were mutated by producer and consumer threads with no lock (UB) and polled with `usleep(1000)`. Each `ZylActor` now has a `pthread_mutex_t` + `pthread_cond_t`; sends enqueue under lock + `cond_signal`, the thread waits on the condvar (no busy-wait), and `alive` is guarded. `zyl_actor_wait_all`/terminate/wait are now idempotent via a `joined` flag (no re-join UB). Verified race-free under `-fsanitize=thread`; FIFO order preserved (multi-message stress test)
+- [x] Actor test files: removed redundant top-level `(main)` from `test_message_passing.zyl`/`test_spawn_capture.zyl` — the compiler auto-calls `_ZYL_main` (codegen.rs), so the explicit call ran it twice and the second `zyl_actor_wait_all` re-joined threads (hang). Tests now terminate cleanly
 - [x] Multi-operand call + BinOp register clobbering: fixed emit_binop_direct save/restore (push rax for left operand, pop rcx after right operand load), fixed emit_call_direct argument save/restore (push rax/r64 before loading next arg, pop all before call)
 - [x] BinOp in main emit loop: added skip for BinOp/UnOp when they're operands to Print/Call (emitted on-demand via emit_load_into instead of during main loop)
 - [x] BinOp operation code: fixed Add/Sub/Mul/Div/And/Or to use correct registers (mov eax, ecx / add eax, edx pattern)
@@ -91,6 +95,12 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Recursive stdlib functions now work: `list-sum`, `list-length`, `list-reverse`, `list-append` all produce correct results
 - [x] Recursion bug fix complete: all 10 recursion patterns (single, double, mutual, list/ADT) verified correct end-to-end
 
+### Recent Fixes (Top-Level Codegen)
+
+- [x] Top-level BinOp temp-slot collision (struct-get segfault): `temp_slot_counter` was reset past local/param slots for functions (codegen.rs) but never at the top level, so `let p (make-Point 5 7)` (slot 0 → `[rbp-8]`) plus `(+ (struct-get p "x") (struct-get p "y"))` caused the BinOp temp slot 0 to also write `[rbp-8]`, clobbering `p`'s pointer with the field value, then dereferencing it (`[5+8]` → SIGSEGV). Fixed by resetting `temp_slot_counter = next_slot` at the end of the top-level slot-assignment scan (before the main emit loop). All 6 struct regression tests pass (10/20, 12, 42, 30, 256, 255).
+- [x] Empty `(begin)` link failure: `(begin)` with no args was intercepted by the bare-identifier arm in `icnf.rs` and lowered to `Call("begin", [])` → `call _ZYL_begin` (undefined). Added a dedicated empty-`begin` arm before it emitting `ICNFInner::Unit`. `core.zyl`'s `when`/`unless` (which expand to `(begin ...)`) now link cleanly.
+- [x] Nested `defn` (closures inside functions) silently discarded: `convert_expr_to_stmts` in `icnf.rs` had no `ExprInner::Defn` handler, so nested `defn` forms inside function bodies (e.g., `add`/`double` in `test_all()`) fell through the catch-all arm and emitted a no-op `Begin`. Fixed by adding a `Defn` handler to `convert_expr_to_stmts` that creates `ICNFFuncSig` entries pushed to `self.functions` (same logic as top-level). `test_recursion_v2.zyl` now links with 56 functions (incl. `add`/`double`) and runs clean exit 0.
+
 ---
 
 ## Remaining Work
@@ -131,12 +141,14 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 ## Next Priorities
 
 1. Wire `E_CANNOT_INFER` into `src/monomorphization.rs` fallback (~line 712, silent `Type::Prim(PrimType::Int)`) per spec §6 v4.2
-2. Fill `stdlib/collections/` (ADT-based Assoc/List now proven; verify via multi-param generic tests) and `stdlib/allocator/` (FFI in `src/runtime/actor_runtime.c` + pure-Zyl arena)
-3. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
-4. Self-hosting Phase 2: Lexer + parser in Zyl
-5. Contract injection (optional overlay)
-6. Hash finalization (deterministic binary fingerprinting)
-7. Full REPL implementation
+2. **Higher-order functions** (spec §4.4 `TFun`): `test_simple2.zyl`/`test_hof.zyl` pass clean (exit 0). `test_recursion_v2.zyl` now passes (exit 0, 56 functions including nested `add`/`double`). Remaining HOF issues: (a) `flip`/`compose`/`apply` unused core.zyl HOFs still emitted but no longer break programs (DCE handles them); (b) HOF param `Type::Fun` not yet structurally detected by codegen (relying on `fn_value_names` heuristic instead of type info); (c) `test_partial.zyl` has parser error (`expected ')' but found RParen at 0:0-0:0`) — uninvestigated.
+3. Build stdlib data structures on the arena allocator: `Vec<T>` (contiguous, arena-backed), `Map<K,V>` (deterministic sorted-key iteration), arena-backed `StringBuffer` — replace `stdlib/collections/` cons-list-only utilities and the raw-`malloc` StringBuffer in `stdlib/io/io.zyl`
+4. Wire the runtime Heap/Pin regions to arenas: replace codegen `malloc@plt` for MakeStruct/MakeVariant/closure-env/StringBuffer with arena allocation so region reclamation is real (R8 non-moving Pin arena)
+5. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
+6. Self-hosting Phase 2: Lexer + parser in Zyl
+7. Contract injection (optional overlay)
+8. Hash finalization (deterministic binary fingerprinting)
+9. Full REPL implementation
 
 ---
 

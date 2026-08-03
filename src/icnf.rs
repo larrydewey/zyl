@@ -1035,6 +1035,16 @@ impl IcnfConverter {
                 Ok(all_nodes)
             }
 
+            // Empty (begin) — becomes Unit, not a call to `_ZYL_begin`.
+            // Must precede the bare-identifier arm which would otherwise treat
+            // it as a zero-arg function call.
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "begin")
+                    && args.is_empty() =>
+            {
+                Ok(vec![self.emit(ICNFInner::Unit)])
+            }
+
             // Variable reference (bare identifier as expression — no arguments).
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
@@ -1599,10 +1609,14 @@ impl IcnfConverter {
                 Ok(vec![node])
             }
 
-            // begin — convert Call("begin", args) to ICNFInner::Begin.
+            // begin — convert Call("begin", args) to a statement sequence.
+            // Empty `(begin)` becomes Unit (not a call to `_ZYL_begin`).
             ExprInner::Call(op, args)
-                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "begin") && !args.is_empty() =>
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "begin") =>
             {
+                if args.is_empty() {
+                    return Ok(vec![self.emit(ICNFInner::Unit)]);
+                }
                 let mut all_stmts = Vec::new();
                 for e in args.iter() {
                     let stmts = self.convert_expr_to_stmts(e)?;
@@ -2283,6 +2297,47 @@ impl IcnfConverter {
             | ExprInner::Teardown(..)
             | ExprInner::RunTests(..)
             | ExprInner::TestCompile(..) => Ok(vec![self.emit(ICNFInner::Begin(Vec::new()))]),
+
+            // Nested defn inside a function body: process as a top-level function
+            // so the body gets its own function sig + ICNF body.
+            ExprInner::Defn(name, params, body) => {
+                let param_types: Vec<Type> =
+                    params.iter().map(|p| self.resolve_type(p)).collect();
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                for param in params.iter() {
+                    let ssa_id = self.next_ssa_id();
+                    self.current_scope.insert(param.name.clone(), ssa_id);
+                    if let Some(ref t) = param.typ {
+                        if self.struct_layouts.contains_key(t) {
+                            self.struct_bindings.insert(ssa_id, t.clone());
+                        }
+                    }
+                }
+                let saved_globals = std::mem::take(&mut self.global_stmts);
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = true;
+                let body_stmts = self.convert_expr_to_stmts(body)?;
+                for stmt in body_stmts {
+                    if self.global_stmts.iter().all(|n| n.id != stmt.id) {
+                        self.global_stmts.push(stmt);
+                    }
+                }
+                let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                self.push_to_globals = saved_push;
+                let func_sig = ICNFFuncSig {
+                    name: sanitize_name(name),
+                    params: params
+                        .iter()
+                        .zip(param_types)
+                        .map(|(p, t)| (p.name.clone(), t))
+                        .collect(),
+                    return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                    body: func_body,
+                };
+                self.functions.push(func_sig);
+                self.current_scope = saved_scope;
+                Ok(Vec::new())
+            }
 
             _ => {
                 // Fallback: emit as Begin with empty body.
