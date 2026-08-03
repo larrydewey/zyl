@@ -55,3 +55,63 @@
 ; Returns: Unit
 (defn alloc-decr (addr)
   (alloc-write-int addr (- (alloc-read-int addr) 1)))
+
+; ===========================================================================
+; REGION-BASED ARENA ALLOCATOR
+; ===========================================================================
+;
+; Arenas give deterministic, zero-fragmentation bulk reclamation:
+;   - bump allocation from growable 16-byte-aligned blocks
+;   - `arena-reset` frees every block at once (handle stays valid)
+;   - `arena-destroy` frees everything including the handle
+; No per-object free. Arenas are single-threaded by design (one per
+; actor/scope, matching actor isolation). All addresses are Ints.
+;
+; Usage:
+;   (let a (arena-create 0)         ; default 64 KiB blocks
+;     (begin
+;       (let p (arena-alloc-zeroed a 1024)
+;         (begin
+;           ... use p ...
+;           (arena-reset a)))       ; reclaim, reuse `a`
+;       (arena-destroy a)))         ; release everything
+
+; Create a new arena. `block-size` is the default block size in bytes;
+; values < 16 select the default (64 KiB). Returns a handle (Int), or 0
+; on failure.
+; Returns: Int (handle)
+(defn arena-create (block-size)
+  (ffi-call "zyl_arena_create" block-size 1000))
+
+; Allocate `size` bytes from `arena`, 16-byte aligned. Returns an address
+; (Int), or 0 on failure.
+; Returns: Int (address)
+(defn arena-alloc (arena size)
+  (ffi-call "zyl_arena_alloc" arena size 1000))
+
+; Allocate `size` zero-initialized bytes from `arena`. Returns an address
+; (Int), or 0 on failure.
+; Returns: Int (address)
+(defn arena-alloc-zeroed (arena size)
+  (ffi-call "zyl_arena_alloc_zeroed" arena size 1000))
+
+; Free every block in `arena` at once. The handle stays valid and the arena
+; can be reused immediately.
+; Returns: Unit
+(defn arena-reset (arena)
+  (ffi-call "zyl_arena_reset" arena 1000))
+
+; Free every block in `arena` and invalidate the handle.
+; Returns: Unit
+(defn arena-destroy (arena)
+  (ffi-call "zyl_arena_destroy" arena 1000))
+
+; Bytes currently allocated from `arena`.
+; Returns: Int
+(defn arena-used (arena)
+  (ffi-call "zyl_arena_used" arena 1000))
+
+; Total block capacity backing `arena`.
+; Returns: Int
+(defn arena-capacity (arena)
+  (ffi-call "zyl_arena_capacity" arena 1000))

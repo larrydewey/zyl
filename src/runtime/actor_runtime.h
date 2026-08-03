@@ -31,8 +31,11 @@ typedef struct ZylActor {
     ZylMessage* mailbox_tail;
     uint32_t mailbox_count;
     pthread_t thread;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
     int alive;
     int running;
+    int joined;
 } ZylActor;
 
 typedef struct {
@@ -61,6 +64,18 @@ long long zyl_mem_alloc(long long size);
 void zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
 void zyl_mem_write(long long ptr, long long value);
+
+/* Region-based arena allocator.
+   Deterministic reclamation: arena-reset frees every block at once; the
+   handle stays valid for reuse. Arenas are single-threaded by design
+   (consistent with actor isolation — one arena per actor/scope). */
+long long zyl_arena_create(long long block_size);
+long long zyl_arena_alloc(long long arena, long long size);
+long long zyl_arena_alloc_zeroed(long long arena, long long size);
+void zyl_arena_reset(long long arena);
+void zyl_arena_destroy(long long arena);
+long long zyl_arena_used(long long arena);
+long long zyl_arena_capacity(long long arena);
 
 /* Atomic operations. */
 long long zyl_atomic_load(long long addr);

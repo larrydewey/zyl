@@ -276,9 +276,12 @@ All 9 core compilation phases plus linking are complete and tested. The compiler
 - Send-capability enforcement in type inference
 
 **C Runtime:**
-- `src/runtime/actor_runtime.c` (178 lines) — full actor system
-- `src/runtime/actor_runtime.h` (52 lines) — API header
+- `src/runtime/actor_runtime.c` (~410 lines) — full actor system + arena allocator
+- `src/runtime/actor_runtime.h` (80 lines) — API header
 - Functions: `zyl_actor_init`, `zyl_actor_spawn`, `zyl_actor_send`, `zyl_actor_send_closure`, `zyl_actor_wait_all`
+- Per-actor `pthread_mutex_t` + `pthread_cond_t`: sends enqueue under lock and `cond_signal`; the mailbox loop waits on the condvar (no busy-wait polling); `alive` guarded by the lock
+- Idempotent join: `joined` flag prevents re-joining an already-joined thread (`wait_all`/terminate/wait safe to call repeatedly)
+- Verified race-free under `-fsanitize=thread`; FIFO per-actor ordering preserved
 
 ### FFI ✅ COMPLETE
 
