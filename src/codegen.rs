@@ -836,6 +836,7 @@ impl CodeGen {
                         ..
                     } => {
                         operand_ids.insert(*cond_ssa);
+                        collect_cond_operand_ids(*cond_ssa, &func.body, &mut operand_ids);
                         collect_body_operand_ids(then_body, &mut operand_ids);
                         collect_body_operand_ids(else_body, &mut operand_ids);
                     }
@@ -898,30 +899,65 @@ impl CodeGen {
                 }
             }
 
-            // After first pass: register nested If result_vars (in If branches and
-            // Match arm bodies) so phi slots get dedicated, non-colliding stack slots.
-            fn register_nested_func_ifs(
+            // After first pass: register slots for ALL named variables in nested
+            // bodies (If/Match/While/For/Begin) so stack slots are deterministic and
+            // non-colliding before any emission. The emit-time branch handlers must
+            // NOT re-assign these slots.
+            fn register_func_slots(
                 stmts: &[ICNFNode],
                 local_vars: &mut HashMap<String, usize>,
                 next_slot: &mut usize,
             ) {
                 for stmt in stmts {
-                    if let ICNFInner::If { result_var, then_body, else_body, .. } = &stmt.node {
-                        if !local_vars.contains_key(result_var) {
-                            local_vars.insert(result_var.clone(), *next_slot);
-                            *next_slot += 1;
+                    match &stmt.node {
+                        ICNFInner::Assign(name, _) => {
+                            if !local_vars.contains_key(name) {
+                                local_vars.insert(name.clone(), *next_slot);
+                                *next_slot += 1;
+                            }
                         }
-                        register_nested_func_ifs(then_body, local_vars, next_slot);
-                        register_nested_func_ifs(else_body, local_vars, next_slot);
-                    }
-                    if let ICNFInner::Match { arms, .. } = &stmt.node {
-                        for arm in arms {
-                            register_nested_func_ifs(&arm.body, local_vars, next_slot);
+                        ICNFInner::If { result_var, then_body, else_body, .. } => {
+                            if !local_vars.contains_key(result_var) {
+                                local_vars.insert(result_var.clone(), *next_slot);
+                                *next_slot += 1;
+                            }
+                            register_func_slots(then_body, local_vars, next_slot);
+                            register_func_slots(else_body, local_vars, next_slot);
                         }
+                        ICNFInner::Match { arms, .. } => {
+                            for arm in arms {
+                                register_func_slots(&arm.body, local_vars, next_slot);
+                            }
+                        }
+                        ICNFInner::While { cond_body, body, result_var, .. } => {
+                            if !local_vars.contains_key(result_var) {
+                                local_vars.insert(result_var.clone(), *next_slot);
+                                *next_slot += 1;
+                            }
+                            register_func_slots(cond_body, local_vars, next_slot);
+                            register_func_slots(body, local_vars, next_slot);
+                        }
+                        ICNFInner::For { init_bindings, body, result_var, .. } => {
+                            for (name, _) in init_bindings {
+                                if !local_vars.contains_key(name) {
+                                    local_vars.insert(name.clone(), *next_slot);
+                                    *next_slot += 1;
+                                }
+                            }
+                            if !local_vars.contains_key(result_var) {
+                                local_vars.insert(result_var.clone(), *next_slot);
+                                *next_slot += 1;
+                            }
+                            register_func_slots(body, local_vars, next_slot);
+                        }
+                        ICNFInner::Begin(stmts) => {
+                            register_func_slots(stmts, local_vars, next_slot);
+                        }
+                        _ => {}
                     }
                 }
             }
-            register_nested_func_ifs(&func.body, &mut local_vars, &mut next_slot);
+            register_func_slots(&func.body, &mut local_vars, &mut next_slot);
 
             // After first pass: capture phi slots for all If result variables.
             fn collect_func_phi_slots(
@@ -972,8 +1008,7 @@ impl CodeGen {
             }
             for stmt in &func.body {
                 if let ICNFInner::If { cond_ssa, then_body, else_body, .. } = &stmt.node {
-                    condition_ids.insert(*cond_ssa);
-                    // Also collect condition IDs from nested If nodes in branch bodies.
+                    condition_ids.insert(*cond_ssa);                    // Also collect condition IDs from nested If nodes in branch bodies.
                     fn collect_cond_ids(nodes: &[ICNFNode], set: &mut HashSet<usize>) {
                         for n in nodes {
                             if let ICNFInner::If { cond_ssa, then_body, else_body, .. } = &n.node {
@@ -1015,6 +1050,16 @@ impl CodeGen {
                     if is_def_call {
                         continue;
                     }
+                }
+                // Skip unreferenced pure statements (dead Load/Const supply nodes from a
+                // let's temp buffer) that are NOT the final statement. They exist only for
+                // operand lookup; emitting them clobbers the value a preceding If/While/For
+                // left in eax, which the epilogue returns as the function result.
+                if !operand_ids.contains(&stmt.id)
+                    && matches!(&stmt.node, ICNFInner::Load(_) | ICNFInner::Const(_))
+                    && func.body.last().map_or(false, |n| n.id != stmt.id)
+                {
+                    continue;
                 }
                 // Skip nodes that are operands to a parent node (Print/Call/BinOp/etc.).
                 // These are emitted on-demand via emit_load_into when a parent handler
@@ -2873,6 +2918,9 @@ impl CodeGen {
                 ICNFInner::UnOp(_, id) => { then_operand_ids.insert(*id); }
                 ICNFInner::Call(_, args) => { for &a in args { then_operand_ids.insert(a); } }
                 ICNFInner::Print(args) => { for &a in args { then_operand_ids.insert(a); } }
+                ICNFInner::StructGet(struct_id, _) => { then_operand_ids.insert(*struct_id); }
+                ICNFInner::MakeStruct(_, field_ids) => { for &f in field_ids { then_operand_ids.insert(f); } }
+                ICNFInner::MakeVariant { field_ids, .. } => { for &f in field_ids { then_operand_ids.insert(f); } }
                 ICNFInner::If { cond_ssa: c, .. } => {
                     then_operand_ids.insert(*c);
                     then_cond_ids.insert(*c);
@@ -2887,7 +2935,11 @@ impl CodeGen {
                 continue;
             }
             if let ICNFInner::Assign(name, _) = &stmt.node {
-                *then_local_vars.entry(name.clone()).or_insert(0) += 1;
+                then_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
             }
             self.emit_node(
                 stmt, &then_stmts, &then_local_vars, emitted_ids,
@@ -2925,6 +2977,9 @@ impl CodeGen {
                 ICNFInner::UnOp(_, id) => { else_operand_ids.insert(*id); }
                 ICNFInner::Call(_, args) => { for &a in args { else_operand_ids.insert(a); } }
                 ICNFInner::Print(args) => { for &a in args { else_operand_ids.insert(a); } }
+                ICNFInner::StructGet(struct_id, _) => { else_operand_ids.insert(*struct_id); }
+                ICNFInner::MakeStruct(_, field_ids) => { for &f in field_ids { else_operand_ids.insert(f); } }
+                ICNFInner::MakeVariant { field_ids, .. } => { for &f in field_ids { else_operand_ids.insert(f); } }
                 ICNFInner::If { cond_ssa: c, .. } => {
                     else_operand_ids.insert(*c);
                     else_cond_ids.insert(*c);
@@ -2939,7 +2994,11 @@ impl CodeGen {
                 continue;
             }
             if let ICNFInner::Assign(name, _) = &stmt.node {
-                *else_local_vars.entry(name.clone()).or_insert(0) += 1;
+                else_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
             }
             self.emit_node(
                 stmt, &else_stmts, &else_local_vars, emitted_ids,
@@ -3258,6 +3317,7 @@ impl CodeGen {
                 let needs_on_demand = matches!(value_node, Some(ICNFNode { node: ICNFInner::Call(..), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::FfiCall { .. }, .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::StructGet(..), .. }))
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(_), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(crate::ast::Atom::Ident(n)), .. }) if self.function_names.contains(n));
                 if needs_on_demand && !emitted_ids.contains(&resolved_value_id) {
                     self.emit_load_into(
@@ -3681,8 +3741,19 @@ impl CodeGen {
                 // Emit the 'then' branch statements inline. Clone local_vars for each branch scope.
                 let mut then_local_vars = local_vars.clone();
                 for stmt in then_body {
+                    // Skip nodes already emitted as part of a nested control-flow structure
+                    // (nested If/For/While branch members get flattened into this branch's
+                    // statement list by the Let temp-buffer handling; re-emitting them after
+                    // the nested join corrupts control flow and re-executes side effects).
+                    if emitted_ids.contains(&stmt.id) {
+                        continue;
+                    }
                     if let ICNFInner::Assign(name, _) = &stmt.node {
-                        *then_local_vars.entry(name.clone()).or_insert(0) += 1;
+                        then_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
                     }
                     if then_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
@@ -3741,8 +3812,16 @@ impl CodeGen {
                 // Emit the 'else' branch statements inline. Clone local_vars for each branch scope.
                 let mut else_local_vars = local_vars.clone();
                 for stmt in else_body {
+                    // Skip nodes already emitted by a nested control-flow structure (see then arm).
+                    if emitted_ids.contains(&stmt.id) {
+                        continue;
+                    }
                     if let ICNFInner::Assign(name, _) = &stmt.node {
-                        *else_local_vars.entry(name.clone()).or_insert(0) += 1;
+                        else_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
                     }
                     if else_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
@@ -4219,9 +4298,9 @@ impl CodeGen {
                                  node: ICNFInner::Load(var_name),
                                  ..
                              }) => {
-                                 if let Some(&slot_idx) = local_vars.get(var_name) {
-                                     let offset = (slot_idx + 1) * 8;
-                                     self.asm_push_align();
+                if let Some(&slot_idx) = local_vars.get(var_name) {
+                    let offset = (slot_idx + 1) * 8;
+                    self.asm_push_align();
                                      self.asm.push(format!("    mov rsi, [rbp-{}]", offset));
                                  } else {
                                      self.asm_push_align();
@@ -4779,6 +4858,8 @@ impl CodeGen {
                 self.asm.push("    push rbp".to_string());
                 self.asm_push_align();
                 for &field_id in field_ids.iter().rev() {
+                    let _fnode = lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id));
+                    eprintln!("DBG MakeStruct field {} node={:?}", field_id, _fnode.map(|n| format!("{:?}", n.node)));
                     match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
                         Some(ICNFNode {
                             node: ICNFInner::Const(atom),
@@ -5741,6 +5822,33 @@ fn find_phi_slot(
     None
 }
 
+/// Collect operand SSA IDs referenced by an If condition node tree. The cond node
+/// (a BinOp/UnOp, possibly nested) lives in the function body; its operand Loads
+/// must be treated as operand-supply nodes so the emit loop skips them instead of
+/// clobbering the value a preceding If left in eax.
+fn collect_cond_operand_ids(cond_id: usize, stmts: &[ICNFNode], out: &mut HashSet<usize>) {
+    if let Some(node) = stmts.iter().find(|n| n.id == cond_id) {
+        match &node.node {
+            ICNFInner::BinOp(_, l, r) => {
+                out.insert(*l);
+                out.insert(*r);
+                collect_cond_operand_ids(*l, stmts, out);
+                collect_cond_operand_ids(*r, stmts, out);
+            }
+            ICNFInner::UnOp(_, id) => {
+                out.insert(*id);
+                collect_cond_operand_ids(*id, stmts, out);
+            }
+            ICNFInner::Call(_, args) => {
+                for &a in args {
+                    out.insert(a);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Collect all operand SSA IDs from a branch body (then/else bodies of If, body of While/For).
 fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
     for node in body {
@@ -5765,6 +5873,19 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
             ICNFInner::Print(args) => {
                 for &a in args {
                     out.insert(a);
+                }
+            }
+            ICNFInner::StructGet(struct_id, _) => {
+                out.insert(*struct_id);
+            }
+            ICNFInner::MakeStruct(_, field_ids) => {
+                for &f in field_ids {
+                    out.insert(f);
+                }
+            }
+            ICNFInner::MakeVariant { field_ids, .. } => {
+                for &f in field_ids {
+                    out.insert(f);
                 }
             }
             ICNFInner::FileOpen { path, mode } => {
@@ -5822,7 +5943,12 @@ fn collect_body_operand_ids(body: &[ICNFNode], out: &mut HashSet<usize>) {
                 }
                 collect_body_operand_ids(body, out);
             }
-            ICNFInner::For { init_bindings: _, cond_nodes, body, result_var: _ } => {
+            ICNFInner::For { init_bindings, cond_nodes, body, result_var: _ } => {
+                for (_, init_id) in init_bindings {
+                    if let Some(id) = init_id {
+                        out.insert(*id);
+                    }
+                }
                 for n in cond_nodes {
                     match &n.node {
                         ICNFInner::BinOp(_, l, r) => {

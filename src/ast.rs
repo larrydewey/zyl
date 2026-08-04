@@ -2254,12 +2254,19 @@ impl PostProcessor {
             Some(e) => match &e.inner {
                 ExprInner::Call(op, ref pexprs) => {
                     let mut params = Vec::new();
-                    if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
+                    // Top-level params are spread/untyped: (a b c). Typed params use the
+                    // nested form ((a Int) (b Int)) — the operator is itself a Call, which
+                    // falls into the else branch and is parsed as a typed param.
+                    if let ExprInner::Atom(Atom::Ident(name)) = &op.inner {
                         params.push(Param {
                             span: Span::default(),
-                            name: n.clone(),
+                            name: name.clone(),
                             typ: None,
                         });
+                    } else {
+                        // Nested typed-pair form: ((a Int) (b Int)) — the operator is
+                        // itself a (name Type) Call; treat it as the first param.
+                        params.push(Self::parse_param(op));
                     }
                     for pe in pexprs {
                         params.push(Self::parse_param(pe));

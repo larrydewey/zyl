@@ -644,6 +644,11 @@ impl IcnfConverter {
                     for param in &params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
+                        if let Some(ref t) = param.typ {
+                            if self.struct_layouts.contains_key(t) {
+                                self.struct_bindings.insert(ssa_id, t.clone());
+                            }
+                        }
                     }
 
                     // Body is args[2] (or Begin of args[2..]).
@@ -1185,15 +1190,24 @@ impl IcnfConverter {
                 // by the Let handler's mem::replace). After swap: self.global_stmts
                 // = old_globals, saved_globals = temp buffer (with Load nodes).
                 std::mem::swap(&mut self.global_stmts, &mut saved_globals);
-                // Collect Load nodes from saved_globals (the temp buffer).
-                let load_stmts: Vec<ICNFNode> = saved_globals
-                    .into_iter()
-                    .filter(|n| matches!(n.node, ICNFInner::Load(_)))
-                    .collect();
+                // Collect intermediate nodes from the temp buffer (saved_globals).
+                // These are Ident Load nodes (operand supply for branch bodies) plus
+                // If condition BinOps. Preserving the cond nodes is required — dropping
+                // them orphans each If's cond_ssa, so emit_condition_inline silently
+                // falls back to "condition false" and the wrong branch is taken.
+                let load_stmts: Vec<ICNFNode> = saved_globals;
                 let mut all_stmts = val_stmts.clone();
                 all_stmts.push(assign_node);
                 all_stmts.extend(body_stmts);
-                all_stmts.extend(load_stmts);
+                // Append temp-buffer nodes (Load operand supply + If cond BinOps) that are
+                // NOT already present. body_stmts already contains the full nested chain, so
+                // without this dedup every nested Let duplicates its ancestors' statements,
+                // and codegen emits the same branch body multiple times.
+                for stmt in load_stmts {
+                    if !all_stmts.iter().any(|n| n.id == stmt.id) {
+                        all_stmts.push(stmt.clone());
+                    }
+                }
                 for stmt in &all_stmts {
                     if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
                         self.global_stmts.push(stmt.clone());
@@ -1245,7 +1259,13 @@ impl IcnfConverter {
                 // Include init values from For loop (in saved_globals after swap).
                 all_stmts.extend(saved_globals);
                 all_stmts.extend(body_stmts);
-                all_stmts.extend(load_stmts);
+                // Append temp-buffer Load nodes not already present (dedup to avoid
+                // re-emitting branch-body operands).
+                for stmt in load_stmts {
+                    if !all_stmts.iter().any(|n| n.id == stmt.id) {
+                        all_stmts.push(stmt.clone());
+                    }
+                }
                 for stmt in &all_stmts {
                     if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
                         self.global_stmts.push(stmt.clone());
@@ -2988,6 +3008,10 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                         });
                     }
                 }
+            } else {
+                // Nested typed-pair form: ((a Int) (b Int)) — the operator is itself
+                // a (name Type) Call; treat it as the first param.
+                params.push(parse_single_param(op));
             }
             for i in items.iter() {
                 params.push(parse_single_param(i));
@@ -3022,10 +3046,13 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
 
 fn parse_single_param(expr: &Expr) -> Param {
     match &expr.inner {
-        ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-            let name = match &inner[0].inner {
+        ExprInner::Call(op, ref inner) if !inner.is_empty() => {
+            let name = match &op.inner {
                 ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                _ => "___".to_string(),
+                _ => match &inner[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => "___".to_string(),
+                },
             };
             let typ = if inner.len() > 1 {
                 match &inner[1].inner {
