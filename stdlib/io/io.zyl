@@ -124,11 +124,14 @@
 (defn make-stdout ()
   (make-Stdout 1))
 
-; Construct a heap-backed StringBuffer output stream.
-; The arena is NUL-terminated so `buf-append` and `flush` can strlen it.
+; Construct an arena-backed StringBuffer output stream.
+; Creates a new arena and allocates the buffer on it for deterministic
+; reclamation. The arena is NUL-terminated so `buf-append` and `flush`
+; can strlen it.
 ; Returns: StringBuffer
 (defn make-string-buffer ()
-  (let p (alloc-malloc 64)
-    (begin
-      (alloc-write-int p 0)
-      (make-StringBuffer p 1))))
+  (let a (arena-create 0)
+    (let p (arena-alloc a 64)
+      (begin
+        (alloc-write-int p 0)
+        (make-StringBuffer p 1)))))

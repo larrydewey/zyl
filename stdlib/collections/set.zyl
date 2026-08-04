@@ -1,0 +1,74 @@
+; === Zyl Standard Library — Arena-backed Set<K> ===
+; Module: collections (set submodule)
+; Provides: Arena-backed Set<K> with deterministic insertion order.
+; Inserting an already-present key is a no-op (ignored).
+
+(use allocator/allocator)
+
+(defstruct Set (ptr Int) (len Int) (cap Int) (arena Int))
+
+; Create an empty Set with the given initial capacity on the given arena.
+; Returns: Set
+(defn set-create ((arena Int) (cap Int))
+  (make-Set (arena-alloc arena (* cap 8)) 0 cap arena))
+
+; Get the number of distinct elements.
+; Returns: Int
+(defn set-len ((s Set))
+  (struct-get s "len"))
+
+; Get the capacity.
+; Returns: Int
+(defn set-cap ((s Set))
+  (struct-get s "cap"))
+
+; Internal: index of key k, or -1 if absent. Scans from i to end.
+(defn set-find ((s Set) (k Int) (i Int))
+  (if (>= i (set-len s))
+    -1
+    (let stored (alloc-read-int (+ (struct-get s "ptr") (* i 8)))
+      (if (== k stored)
+        i
+        (set-find s k (+ i 1))))))
+
+; Whether k is present.
+; Returns: Bool
+(defn set-contains ((s Set) (k Int))
+  (>= (set-find s k 0) 0))
+
+; Insert k. If k is already present, this is a no-op (returns s unchanged).
+; Returns: Set
+(defn set-add ((s Set) (k Int))
+  (if (>= (set-find s k 0) 0)
+    s
+    (let len (set-len s)
+      (if (>= len (set-cap s))
+        (let new-cap (if (== (set-cap s) 0) 16 (* (set-cap s) 2))
+          (let new-ptr (arena-alloc (struct-get s "arena") (* new-cap 8))
+            (let old-ptr (struct-get s "ptr")
+              (begin
+                (for (j 0) (< j len)
+                  (begin
+                    (alloc-write-int (+ new-ptr (* j 8)) (alloc-read-int (+ old-ptr (* j 8))))
+                    (set! j (+ j 1))))
+                (alloc-write-int (+ new-ptr (* len 8)) k)
+                (make-Set new-ptr (+ len 1) new-cap (struct-get s "arena"))))))
+        (let new-ptr (struct-get s "ptr")
+          (begin
+            (alloc-write-int (+ new-ptr (* len 8)) k)
+            (make-Set new-ptr (+ len 1) (struct-get s "cap") (struct-get s "arena"))))))))
+
+; Remove k. Compacts the array so iteration order stays dense.
+; Returns: Set
+(defn set-remove ((s Set) (k Int))
+  (let idx (set-find s k 0)
+    (if (< idx 0)
+      s
+      (let len (set-len s)
+        (let new-ptr (struct-get s "ptr")
+          (begin
+            (for (j idx) (< j (- len 1))
+              (begin
+                (alloc-write-int (+ new-ptr (* j 8)) (alloc-read-int (+ new-ptr (* (+ j 1) 8))))
+                (set! j (+ j 1))))
+            (make-Set new-ptr (- len 1) (struct-get s "cap") (struct-get s "arena"))))))))
