@@ -1,0 +1,80 @@
+; === Zyl Standard Library — Arena-backed Vec<T> ===
+; Module: collections (vec submodule)
+
+(use allocator/allocator)
+
+(defstruct Vec (ptr Int) (len Int) (cap Int) (arena Int))
+
+; Create an empty Vec with the given initial capacity on the given arena.
+; Returns: Vec
+(defn vec-create ((arena Int) (cap Int))
+  (make-Vec (arena-alloc arena (* cap 8)) 0 cap arena))
+
+; Create an empty Vec with the given initial capacity using the default arena.
+; Returns: Vec
+(defn vec-create-default ((cap Int))
+  (let a (arena-create 0)
+    (make-Vec (arena-alloc a (* cap 8)) 0 cap a)))
+
+; Get the length of the Vec.
+; Returns: Int
+(defn vec-len ((v Vec))
+  (struct-get v "len"))
+
+; Get the capacity of the Vec.
+; Returns: Int
+(defn vec-cap ((v Vec))
+  (struct-get v "cap"))
+
+; Get element at index i. Returns -1 if out of bounds.
+; Returns: Int
+(defn vec-get ((v Vec) (i Int))
+  (if (or (< i 0) (>= i (vec-len v)))
+    -1
+    (alloc-read-int (+ (struct-get v "ptr") (* i 8)))))
+
+; Set element at index i to value. No-op if out of bounds.
+; Returns: Vec
+(defn vec-set ((v Vec) (i Int) (value Int))
+  (if (or (< i 0) (>= i (vec-len v)))
+    v
+    (let new-ptr (struct-get v "ptr")
+      (begin
+        (alloc-write-int (+ new-ptr (* i 8)) value)
+        v))))
+
+; Push a value onto the Vec, reallocating if needed.
+; Returns: Vec
+(defn vec-push ((v Vec) (value Int))
+  (let current-len (vec-len v)
+    (let current-cap (vec-cap v)
+      (if (>= current-len current-cap)
+        (let new-cap (if (== current-cap 0) 16 (* current-cap 2))
+          (let new-ptr (arena-alloc (struct-get v "arena") (* new-cap 8))
+            (let old-ptr (struct-get v "ptr")
+              (begin
+                (for (j 0) (< j current-len)
+                  (begin
+                    (alloc-write-int (+ new-ptr (* j 8)) (alloc-read-int (+ old-ptr (* j 8))))
+                    (set! j (+ j 1))))
+                (alloc-write-int (+ new-ptr (* current-len 8)) value)
+                (make-Vec new-ptr (+ current-len 1) new-cap (struct-get v "arena"))))))
+        (let new-ptr (struct-get v "ptr")
+          (begin
+            (alloc-write-int (+ new-ptr (* current-len 8)) value)
+            (make-Vec new-ptr (+ current-len 1) current-cap (struct-get v "arena"))))))))
+
+; Pop the last value from the Vec. Returns -1 if empty.
+; Returns: Int
+(defn vec-pop ((v Vec))
+  (let current-len (vec-len v)
+    (if (<= current-len 0)
+      -1
+      (alloc-read-int (+ (struct-get v "ptr") (* (- current-len 1) 8))))))
+
+; Free the arena-allocated buffer. Vec becomes empty but arena handle remains.
+; Returns: Unit
+(defn vec-free ((v Vec))
+  (begin
+    (alloc-free (struct-get v "ptr"))
+    (make-Vec 0 0 0 (struct-get v "arena"))))

@@ -1,0 +1,143 @@
+; === Zyl Standard Library — Arena-backed Map<K, V> ===
+; Module: collections (map submodule)
+; Provides: Arena-backed Map<K, V>
+
+(use allocator/allocator)
+
+(defstruct Map (kptr Int) (vptr Int) (len Int) (cap Int) (arena Int))
+
+; Create an empty Map with the given initial capacity on the given arena.
+; Returns: Map
+(defn map-create ((arena Int) (cap Int))
+  (make-Map (arena-alloc arena (* cap 8)) (arena-alloc arena (* cap 8)) 0 cap arena))
+
+; Create an empty Map with the given initial capacity using the default arena.
+; Returns: Map
+(defn map-create-default ((cap Int))
+  (let a (arena-create 0)
+    (make-Map (arena-alloc a (* cap 8)) (arena-alloc a (* cap 8)) 0 cap a)))
+
+; Get the number of entries.
+; Returns: Int
+(defn map-len ((m Map))
+  (struct-get m "len"))
+
+; Get the capacity.
+; Returns: Int
+(defn map-cap ((m Map))
+  (struct-get m "cap"))
+
+; Internal: lookup key `k` at index `i`. Returns 1-based index if found, 0 if not.
+(defn map-get-at ((m Map) (k Int) (i Int))
+  (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+    (if (== k stored)
+      (+ i 1)
+      0)))
+
+; Look up a key, returning the default when absent.
+; Returns: V
+(defn map-get ((m Map) (k Int) (default Int))
+  (let len (map-len m)
+    (if (<= len 0)
+      default
+      (map-get-loop m k default 0 len))))
+
+; Internal lookup loop.
+(defn map-get-loop ((m Map) (k Int) (default Int) (i Int) (len Int))
+  (if (>= i len)
+    default
+    (let result (map-get-at m k i)
+      (if (> result 0)
+        (alloc-read-int (+ (struct-get m "vptr") (* (- result 1) 8)))
+        (map-get-loop m k default (+ i 1) len)))))
+
+; Put a key-value pair. If key exists, overwrites value in-place.
+; Returns: Map
+(defn map-put ((m Map) (k Int) (v Int))
+  (let existing (map-get-at m k 0)
+    (if (> existing 0)
+      (let idx (- existing 1)
+        (begin
+          (alloc-write-int (+ (struct-get m "vptr") (* idx 8)) v)
+          m))
+      (map-put-inner m k v))))
+
+(defn map-put-inner ((m Map) (k Int) (v Int))
+  (let len (map-len m)
+    (let cap (map-cap m)
+      (if (>= len cap)
+        (let new-cap (if (== cap 0) 16 (* cap 2))
+          (let new-kptr (arena-alloc (struct-get m "arena") (* new-cap 8))
+            (let new-vptr (arena-alloc (struct-get m "arena") (* new-cap 8))
+              (let old-kptr (struct-get m "kptr")
+                (let old-vptr (struct-get m "vptr")
+                  (begin
+                    (for (j 0) (< j len)
+                      (begin
+                        (alloc-write-int (+ new-kptr (* j 8)) (alloc-read-int (+ old-kptr (* j 8))))
+                        (alloc-write-int (+ new-vptr (* j 8)) (alloc-read-int (+ old-vptr (* j 8))))
+                        (set! j (+ j 1))))
+                    (alloc-write-int (+ new-kptr (* len 8)) k)
+                    (alloc-write-int (+ new-vptr (* len 8)) v)
+                    (make-Map new-kptr new-vptr (+ len 1) new-cap (struct-get m "arena"))))))))
+        (let new-kptr (struct-get m "kptr")
+          (begin
+            (alloc-write-int (+ new-kptr (* len 8)) k)
+            (alloc-write-int (+ (struct-get m "vptr") (* len 8)) v)
+            (make-Map new-kptr (struct-get m "vptr") (+ len 1) cap (struct-get m "arena"))))))))
+
+; Remove a key. Returns a new Map with the key removed (compacts array).
+; Returns: Map
+(defn map-remove ((m Map) (k Int))
+  (let len (map-len m)
+    (if (<= len 0)
+      m
+      (let removed (map-find m k 0 len)
+        (if (<= removed 0)
+          m
+          (let new-len (- len 1)
+            (let new-kptr (arena-alloc (struct-get m "arena") (* new-len 8))
+              (let new-vptr (arena-alloc (struct-get m "arena") (* new-len 8))
+                (let dst 0
+                  (begin
+                    (for (j 0) (< j len)
+                      (begin
+                        (if (not (== j removed))
+                          (begin
+                            (alloc-write-int (+ new-kptr (* dst 8)) (alloc-read-int (+ (struct-get m "kptr") (* j 8))))
+                            (alloc-write-int (+ new-vptr (* dst 8)) (alloc-read-int (+ (struct-get m "vptr") (* j 8))))
+                            (set! dst (+ dst 1))))
+                        (set! j (+ j 1))))
+                    (make-Map new-kptr new-vptr new-len (map-cap m) (struct-get m "arena"))))))))))))
+(defn map-find ((m Map) (k Int) (i Int) (len Int))
+  (if (>= i len)
+    0
+    (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+      (if (== k stored)
+        (+ i 1)
+        (map-find m k (+ i 1) len)))))
+
+; Check if a key exists.
+; Returns: Bool
+(defn map-has ((m Map) (k Int))
+  (let len (map-len m)
+    (if (<= len 0)
+      false
+      (map-has-loop m k 0 len))))
+
+; Internal has-loop.
+(defn map-has-loop ((m Map) (k Int) (i Int) (len Int))
+  (if (>= i len)
+    false
+    (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+      (if (== k stored)
+        true
+        (map-has-loop m k (+ i 1) len)))))
+
+; Free all arena-allocated storage. Map becomes empty.
+; Returns: Unit
+(defn map-free ((m Map))
+  (begin
+    (alloc-free (struct-get m "kptr"))
+    (alloc-free (struct-get m "vptr"))
+    (make-Map 0 0 0 0 (struct-get m "arena"))))

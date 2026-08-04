@@ -1073,11 +1073,14 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
         // Call from special forms — all elements are params.
         ExprInner::Call(op, ref items) => {
             let mut params = Vec::new();
+            // If the operator is a simple identifier and all args are identifiers/keywords,
+            // treat this as a raw S-expression list where every element is a param.
             if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_))) {
                 let all_simple = items.iter().all(|i| {
                     matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_)))
                 });
                 if all_simple {
+                    // Raw list like (x y) — include operator as first param.
                     if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
                         params.push(Param {
                             span: Span::default(),
@@ -1086,6 +1089,10 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                         });
                     }
                 }
+            } else {
+                // Nested typed-pair form: ((a Int) (b Int)) — the operator is itself
+                // a (name Type) Call; treat it as the first param.
+                params.push(parse_single_param(op));
             }
             for i in items {
                 params.push(parse_single_param(i));
@@ -1121,10 +1128,13 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
 
 fn parse_single_param(expr: &Expr) -> Param {
     match &expr.inner {
-        ExprInner::Call(_, inner) if !inner.is_empty() => {
-            let name = match &inner[0].inner {
+        ExprInner::Call(op, inner) if !inner.is_empty() => {
+            let name = match &op.inner {
                 ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                _ => "___".to_string(),
+                _ => match &inner[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => "___".to_string(),
+                },
             };
             let typ = if inner.len() > 1 {
                 match &inner[1].inner {

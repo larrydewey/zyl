@@ -142,13 +142,17 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 
 1. Wire `E_CANNOT_INFER` into `src/monomorphization.rs` fallback (~line 712, silent `Type::Prim(PrimType::Int)`) per spec §6 v4.2
 2. **Higher-order functions** (spec §4.4 `TFun`): `test_simple2.zyl`/`test_hof.zyl` pass clean (exit 0). `test_recursion_v2.zyl` now passes (exit 0, 56 functions including nested `add`/`double`). Remaining HOF issues: (a) `flip`/`compose`/`apply` unused core.zyl HOFs still emitted but no longer break programs (DCE handles them); (b) HOF param `Type::Fun` not yet structurally detected by codegen (relying on `fn_value_names` heuristic instead of type info); (c) `test_partial.zyl` has parser error (`expected ')' but found RParen at 0:0-0:0`) — uninvestigated.
-3. Build stdlib data structures on the arena allocator: `Vec<T>` (contiguous, arena-backed), `Map<K,V>` (deterministic sorted-key iteration), arena-backed `StringBuffer` — replace `stdlib/collections/` cons-list-only utilities and the raw-`malloc` StringBuffer in `stdlib/io/io.zyl`
-4. Wire the runtime Heap/Pin regions to arenas: replace codegen `malloc@plt` for MakeStruct/MakeVariant/closure-env/StringBuffer with arena allocation so region reclamation is real (R8 non-moving Pin arena)
-5. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
-6. Self-hosting Phase 2: Lexer + parser in Zyl
-7. Contract injection (optional overlay)
-8. Hash finalization (deterministic binary fingerprinting)
-9. Full REPL implementation
+3. **Error system refinement** (spec §28): error messages lack precise line/position isolation — many errors report `0:0-0:0` instead of the actual offending token's span, and never show which source file the error occurred in. Users are left guessing where the problem is. **Requirements:** (a) every error must report the exact span of the offending token/node (not `0:0-0:0`); (b) every error must include the source filename; (c) audit all error emission sites across all 9 phases to propagate spans from lexer → parser → post-processor → macro expansion → type inference → monomorphization → ICNF → optimization → codegen.
+4. Build stdlib data structures on the arena allocator: `Vec<T>` (contiguous, arena-backed), `Map<K,V>` (deterministic sorted-key iteration), arena-backed `StringBuffer` — replace `stdlib/collections/` cons-list-only utilities and the raw-`malloc` StringBuffer in `stdlib/io/io.zyl`
+   - [x] **Arena-backed `Vec<T>`**: `stdlib/collections/vec.zyl` — `vec-create`, `vec-len`, `vec-cap`, `vec-get`, `vec-set`, `vec-push` (realloc on growth). Verified: basic create/len/cap/get/set, push with realloc, arena cleanup. Remaining: `for` loop `set! j` drop bug in function bodies with call-valued `let` bindings.
+   - [x] **Arena-backed `Map<K,V>`**: `stdlib/collections/map.zyl` — `map-create`, `map-create-default`, `map-len`, `map-cap`, `map-get-at`, `map-get`, `map-put` (with realloc + overwrite), `map-put-inner`, `map-remove` (realloc + copy), `map-find`, `map-has`, `map-free`. Verified: put/overwrite, remove, has. Fixed: paren imbalance in `map-remove` causing `set! j` loss.
+   - [x] **Arena-backed `Set<K>`**: `stdlib/collections/set.zyl` — `set-create`, `set-len`, `set-cap`, `set-find`, `set-contains`, `set-add` (grow path with realloc), `set-remove` (compaction). Verified: add/dup-avoid, contains, remove/compact.
+5. Wire the runtime Heap/Pin regions to arenas: replace codegen `malloc@plt` for MakeStruct/MakeVariant/closure-env/StringBuffer with arena allocation so region reclamation is real (R8 non-moving Pin arena)
+6. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
+7. Self-hosting Phase 2: Lexer + parser in Zyl
+8. Contract injection (optional overlay)
+9. Hash finalization (deterministic binary fingerprinting)
+10. Full REPL implementation
 
 ---
 

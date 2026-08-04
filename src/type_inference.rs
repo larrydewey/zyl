@@ -1989,7 +1989,7 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                 let all_simple = items.iter().all(|i| {
                     matches!(&i.inner, ExprInner::Atom(Atom::Ident(_) | Atom::Keyword(_)))
                 });
-                if all_simple && !items.is_empty() {
+                if all_simple {
                     // Raw list like (x y) — include operator as first param.
                     if let ExprInner::Atom(Atom::Ident(n)) = &op.inner {
                         params.push(Param {
@@ -1999,6 +1999,10 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
                         });
                     }
                 }
+            } else {
+                // Nested typed-pair form: ((a Int) (b Int)) — the operator is itself
+                // a (name Type) Call; treat it as the first param.
+                params.push(parse_single_param(op));
             }
             for i in items {
                 params.push(parse_single_param(i));
@@ -2035,10 +2039,13 @@ fn parse_params_from_expr(expr: &Expr) -> Vec<Param> {
 
 fn parse_single_param(expr: &Expr) -> Param {
     match &expr.inner {
-        ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-            let name = match &inner[0].inner {
+        ExprInner::Call(op, ref inner) if !inner.is_empty() => {
+            let name = match &op.inner {
                 ExprInner::Atom(Atom::Ident(n)) => n.clone(),
-                _ => "___".to_string(),
+                _ => match &inner[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => "___".to_string(),
+                },
             };
             let typ = if inner.len() > 1 {
                 match &inner[1].inner {
