@@ -105,7 +105,23 @@
 ; `(Trait.method_ImplType receiver ...)` at monomorphization time.
 
 (defstruct Stdout (fd Int))
-(defstruct StringBuffer (ptr Int) (fd Int))
+
+; Construct an OutputStream writing to stdout (fd 1).
+; Returns: Stdout
+(defn make-stdout ()
+  (make-Stdout 1))
+
+; Growable, arena-backed byte buffer.
+;   hdr -> arena block of 4 slots: [ptr][len][cap][arena]
+;     ptr  = buffer start (NUL-terminated content)
+;     len  = content length (excluding NUL)
+;     cap  = allocated capacity
+;     arena = owning arena handle (used for growth + destroy)
+; Content is appended in place with `buf-append`; when `len + chunk + 1`
+; exceeds `cap`, a larger zeroed block is allocated from the arena, the old
+; content is copied, and the header is updated. The arena provides
+; deterministic bulk reclamation on destroy.
+(defstruct StringBuffer (hdr Int) (fd Int))
 
 (trait OutputStream
   (write (self T) (chunk String) Int)
@@ -116,22 +132,55 @@
   (defn flush (self) 0))
 
 (impl OutputStream StringBuffer
-  (defn write (self chunk) (buf-append (struct-get self "ptr") chunk))
-  (defn flush (self) (file-write (struct-get self "fd") (struct-get self "ptr"))))
+  (defn write (self chunk)
+    (let hdr (struct-get self "hdr")
+      (let arena (alloc-read-int (+ hdr 24))
+        (let cap (alloc-read-int (+ hdr 16))
+          (let len (alloc-read-int (+ hdr 8))
+            (let clen (alloc-strlen chunk)
+              (let need (+ (+ len clen) 1)
+                (if (> need cap)
+                  (let new-cap (if (> (* cap 2) need) (* cap 2) need)
+                    (let new-ptr (arena-alloc-zeroed arena new-cap)
+                      (begin
+                        (buf-append new-ptr (alloc-read-int hdr))
+                        (buf-append new-ptr chunk)
+                        (alloc-write-int hdr new-ptr)
+                        (alloc-write-int (+ hdr 8) (+ len clen))
+                        (alloc-write-int (+ hdr 16) new-cap)
+                        (+ len clen))))
+                  (begin
+                    (buf-append (alloc-read-int hdr) chunk)
+                    (alloc-write-int (+ hdr 8) (+ len clen))
+                    (+ len clen))))))))))
+  (defn flush (self) (file-write (struct-get self "fd") (alloc-read-int (struct-get self "hdr")))))
 
-; Construct an OutputStream writing to stdout (fd 1).
-; Returns: Stdout
-(defn make-stdout ()
-  (make-Stdout 1))
+; Content pointer of a StringBuffer (NUL-terminated).
+; Returns: Int
+(defn string-buffer-str (sb)
+  (alloc-read-int (struct-get sb "hdr")))
+
+; Current content length of a StringBuffer.
+; Returns: Int
+(defn string-buffer-len (sb)
+  (alloc-read-int (+ (struct-get sb "hdr") 8)))
+
+; Destroy a StringBuffer, reclaiming its arena.
+; Returns: Unit
+(defn string-buffer-destroy (sb)
+  (arena-destroy (alloc-read-int (+ (struct-get sb "hdr") 24))))
 
 ; Construct an arena-backed StringBuffer output stream.
-; Creates a new arena and allocates the buffer on it for deterministic
-; reclamation. The arena is NUL-terminated so `buf-append` and `flush`
-; can strlen it.
+; Starts with a 64-byte zeroed block; grows automatically on overflow.
+; The arena is reclaimed via `string-buffer-destroy`.
 ; Returns: StringBuffer
 (defn make-string-buffer ()
   (let a (arena-create 0)
-    (let p (arena-alloc a 64)
-      (begin
-        (alloc-write-int p 0)
-        (make-StringBuffer p 1)))))
+    (let hdr (arena-alloc a 32)
+      (let p (arena-alloc-zeroed a 64)
+        (begin
+          (alloc-write-int hdr p)
+          (alloc-write-int (+ hdr 8) 0)
+          (alloc-write-int (+ hdr 16) 64)
+          (alloc-write-int (+ hdr 24) a)
+          (make-StringBuffer hdr 1))))))
