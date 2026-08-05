@@ -1,0 +1,14 @@
+(use io/io)
+
+(defn main ()
+  (let sb (make-string-buffer)
+    (begin
+      (OutputStream.write sb "aaaa")
+      (OutputStream.write sb "bbbbbbbb")
+      (OutputStream.write sb "cccccccccccccccc")   ; 16
+      (OutputStream.write sb "dddddddddddddddddddddddddddddddd") ; 32 -> cumulative 60
+      (OutputStream.write sb "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") ; past 64, forces growth
+      (print "length: ")
+      (print (string-buffer-len sb))
+      (OutputStream.flush sb)
+      0)))

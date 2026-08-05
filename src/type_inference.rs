@@ -215,10 +215,15 @@ impl TypeInferer {
         for expr in exprs {
             match &expr.inner {
                 ExprInner::Defn(name, params, body) => {
-                    let _param_types: Vec<Type> =
+                    let param_types: Vec<Type> =
                         params.iter().map(|p| self.parse_type_str(&p.typ)).collect();
                     self.function_bodies.insert(name.clone(), body.as_ref().clone());
+                    let old_env = self.env.clone();
+                    for (p, pt) in params.iter().zip(param_types.iter()) {
+                        drop(self.env.bind(p.name.clone(), pt.clone()));
+                    }
                     if let Ok(ret_ty) = self.infer_expr(body) {
+                        self.env = old_env;
                         self.known_functions.insert(
                             name.clone(),
                             params
@@ -228,6 +233,7 @@ impl TypeInferer {
                         );
                         self.function_returns.insert(name.clone(), ret_ty);
                     } else {
+                        self.env = old_env;
                         let fresh = Type::Var(self.fresh_var());
                         self.known_functions.insert(
                             name.clone(),
@@ -1057,7 +1063,9 @@ impl TypeInferer {
                     return Ok(Type::Prim(PrimType::Unit));
                 }
                 for e in &exprs[..exprs.len() - 1] {
-                    drop(self.infer_expr(e)?);
+                    if let Err(err) = self.infer_expr(e) {
+                        return Err(err);
+                    }
                 }
                 self.infer_expr(exprs.last().unwrap())
             }
@@ -1499,15 +1507,33 @@ impl TypeInferer {
                 ));
             }
             let arg_types: Vec<Type> = args.iter().map(|arg| self.infer_expr(arg)).collect::<std::result::Result<Vec<_>, _>>()?;
+            // Bind each param. Typed params are unified against the declared type
+            // (compile-time check). Untyped params must NOT mutate the shared stored
+            // var (that would pollute it across call sites of different arg types) —
+            // they receive this call's own fresh var instead.
+            let mut bound_param_types: Vec<Type> = Vec::with_capacity(expected_params.len());
             for (i, _arg) in args.iter().enumerate() {
-                let at = &arg_types[i];
-                self.unify(at, &expected_params[i].1)?;
+                let at = arg_types[i].clone();
+                if matches!(expected_params[i].1, Type::Var(_)) {
+                    // Untyped param: use a fresh var for THIS call so the shared
+                    // stored var is not polluted by a concrete arg type.
+                    let fresh = Type::Var(self.fresh_var());
+                    if let Err(e) = self.unify(&at, &fresh) {
+                        return Err(e);
+                    }
+                    bound_param_types.push(fresh);
+                } else {
+                    if let Err(e) = self.unify(&at, &expected_params[i].1) {
+                        return Err(e);
+                    }
+                    bound_param_types.push(expected_params[i].1.clone());
+                }
             }
             // If params were untyped, infer return type from body now that params are resolved.
             // Skip if already inferring this function (recursive call).
             if self.function_bodies.contains_key(name) && !self.inferring_functions.borrow().contains(name) {
                 let old_env = self.env.clone();
-                let param_types: Vec<Type> = expected_params.iter().map(|(_, t)| t.clone()).collect();
+                let param_types: Vec<Type> = bound_param_types.clone();
                 let param_names: Vec<String> = expected_params.iter().map(|(n, _)| n.clone()).collect();
                 for (n, t) in param_names.iter().zip(param_types.iter()) {
                     drop(self.env.bind(n.clone(), t.clone()));

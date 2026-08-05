@@ -254,6 +254,11 @@ void ffi_unpin(void* ptr) {
    Pointers are passed to/from Zyl as Int (64-bit).
    ========================================================================== */
 
+long long zyl_cstr_len(long long ptr) {
+    if (!ptr) return 0;
+    return (long long)strlen((const char*)(size_t)ptr);
+}
+
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
@@ -348,7 +353,6 @@ long long zyl_arena_alloc(long long arena, long long size) {
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
-    fprintf(stderr, "DBG zyl_arena_alloc: arena=%p, need=%zu, mem=%p, used=%zu, p=%p\n", (void*)arena, need, (void*)b->mem, (size_t)b->used, (void*)p);
     return (long long)(size_t)p;
 }
 
