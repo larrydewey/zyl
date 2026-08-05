@@ -329,6 +329,16 @@ pub enum ICNFInner {
         cond_ssa: usize,
         msg: Option<String>,
     },
+    /// Function pointer immediate: reference to a global function symbol for FFI/registration.
+    FnPtrImm(String),
+    /// 32-bit integer immediate constant.
+    I32Imm(i32),
+    /// String literal immediate (NUL-terminated rodata).
+    StrImm(String),
+    /// Return from function with given SSA value.
+    Return(usize),
+    /// Equality comparison: left == right → Bool.
+    Eq { left: usize, right: usize },
 }
 
 /// A single match arm: variant name, field bindings, and body statements.
@@ -585,6 +595,52 @@ impl IcnfConverter {
         self.push_to_globals = push;
     }
 
+    /// Create an I32Imm node if one already exists, otherwise create one.
+    /// Returns the SSA id of the integer constant.
+    fn resolve_const_int(&mut self, val: i64) -> usize {
+        // Try to find an existing I32Imm with this value.
+        for stmt in &self.global_stmts {
+            if let ICNFInner::I32Imm(v) = &stmt.node {
+                if *v as i64 == val {
+                    return stmt.id;
+                }
+            }
+        }
+        // Create new.
+        let id = self.next_ssa_id();
+        self.global_stmts.push(ICNFNode {
+            id,
+            region: Region::Stack,
+            typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+            is_branch_body: false,
+            node: ICNFInner::I32Imm(val as i32),
+        });
+        id
+    }
+
+    /// Create a StrImm node if one already exists, otherwise create one.
+    /// Returns the SSA id of the string constant.
+    fn resolve_const_string(&mut self, val: &str) -> usize {
+        // Try to find an existing StrImm with this value.
+        for stmt in &self.global_stmts {
+            if let ICNFInner::StrImm(v) = &stmt.node {
+                if v == val {
+                    return stmt.id;
+                }
+            }
+        }
+        // Create new.
+        let id = self.next_ssa_id();
+        self.global_stmts.push(ICNFNode {
+            id,
+            region: Region::Stack,
+            typ: Some(Type::Prim(crate::type_system::PrimType::String)),
+            is_branch_body: false,
+            node: ICNFInner::StrImm(val.to_string()),
+        });
+        id
+    }
+
     /// Convert a list of monomorphized AST expressions into ICNF.
     pub fn convert(&mut self, exprs: &[Expr]) -> Result<ICNFProgram, ZylError> {
         for expr in exprs {
@@ -685,6 +741,169 @@ impl IcnfConverter {
                     };
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
+                }
+                // Call form for test (no-dispatch mode).
+                ExprInner::Call(op, args) if is_ident_op(op, "test") && args.len() >= 2 => {
+                    let name = match &args[0].inner {
+                        ExprInner::Atom(Atom::Str(n)) => n.clone(),
+                        ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                        _ => continue,
+                    };
+                    let body = &args[1];
+                    let func_name = format!("_test_{}", sanitize_name(&name.replace(" ", "_")));
+                    let saved_scope = std::mem::take(&mut self.current_scope);
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
+                    // Save the ID counter before body conversion so we can collect nodes added
+                    // by body conversion (via convert_expr_collect pushing to global_stmts).
+                    let id_before = self.ssa_id_counter.get();
+                    let _body_stmts = self.convert_expr_to_stmts(body)?;
+                    // Collect all nodes added by body conversion (pushed to global_stmts).
+                    let mut func_body: Vec<ICNFNode> = self.global_stmts
+                        .iter()
+                        .skip(id_before)
+                        .map(|n| n.clone())
+                        .collect();
+                    // Test functions always return 0 (assertion failures panic via zyl_panic).
+                    let zero_id = self.next_ssa_id();
+                    func_body.push(ICNFNode {
+                        id: zero_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        is_branch_body: false,
+                        node: ICNFInner::I32Imm(0),
+                    });
+                    let ret_id = self.next_ssa_id();
+                    func_body.push(ICNFNode {
+                        id: ret_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        is_branch_body: false,
+                        node: ICNFInner::Return(zero_id),
+                    });
+                    // Restore global_stmts to saved state.
+                    self.global_stmts = saved_globals;
+                    // Push the function.
+                    let func_sig = ICNFFuncSig {
+                        name: func_name.clone(),
+                        params: Vec::new(),
+                        return_type: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        body: func_body,
+                    };
+                    self.functions.push(func_sig);
+                    self.push_to_globals = saved_push;
+                    let saved2_globals = std::mem::take(&mut self.global_stmts);
+                    let saved2_push = self.push_to_globals;
+                    self.push_to_globals = true;
+                    let name_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: name_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::String)),
+                        is_branch_body: false,
+                        node: ICNFInner::StrImm(name.clone()),
+                    });
+                    let fn_ptr_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: fn_ptr_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        is_branch_body: false,
+                    node: ICNFInner::FnPtrImm(format!("{}_{}", "_ZYL", func_name)),
+                    });
+                    self.global_stmts.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::FfiCall {
+                            name: "zyl_register_test".to_string(),
+                            args: vec![name_id, fn_ptr_id],
+                            timeout: 1000,
+                        },
+                    });
+                    let top_stmts = std::mem::replace(&mut self.global_stmts, saved2_globals);
+                    self.push_to_globals = saved2_push;
+                    self.global_stmts.extend(top_stmts);
+                    self.current_scope = saved_scope;
+                }
+                // Call form for run-tests (no-dispatch mode).
+                ExprInner::Call(op, _args) if is_ident_op(op, "run-tests") => {
+                    let run_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: run_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        is_branch_body: false,
+                        node: ICNFInner::FfiCall { name: "zyl_run_tests".to_string(), args: Vec::new(), timeout: 1000 },
+                    });
+                    self.global_stmts.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Exit(run_id),
+                    });
+                }
+                // Call form for assert-equal (no-dispatch mode).
+                ExprInner::Call(op, args) if is_ident_op(op, "assert-equal") && args.len() >= 2 => {
+                    let a_id = self.convert_expr(&args[0])?;
+                    let b_id = self.convert_expr(&args[1])?;
+                    let eq_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: eq_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                        is_branch_body: false,
+                        node: ICNFInner::Eq { left: a_id, right: b_id },
+                    });
+                    self.global_stmts.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assert {
+                            cond_ssa: eq_id,
+                            msg: Some("assert-equal failed".to_string()),
+                        },
+                    });
+                }
+                // Call form for assert-true (no-dispatch mode).
+                ExprInner::Call(op, args) if is_ident_op(op, "assert-true") && args.len() >= 1 => {
+                    let expr_id = self.convert_expr(&args[0])?;
+                    self.global_stmts.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assert {
+                            cond_ssa: expr_id,
+                            msg: Some("assert-true failed".to_string()),
+                        },
+                    });
+                }
+                // Call form for assert-false (no-dispatch mode).
+                ExprInner::Call(op, args) if is_ident_op(op, "assert-false") && args.len() >= 1 => {
+                    let expr_id = self.convert_expr(&args[0])?;
+                    let not_id = self.next_ssa_id();
+                    self.global_stmts.push(ICNFNode {
+                        id: not_id,
+                        region: Region::Stack,
+                        typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                        is_branch_body: false,
+                        node: ICNFInner::UnOp(UnOpKind::Not, expr_id),
+                    });
+                    self.global_stmts.push(ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assert {
+                            cond_ssa: not_id,
+                            msg: Some("assert-false failed".to_string()),
+                        },
+                    });
                 }
                 // Apply form for defn.
                 ExprInner::Apply(fname, args) if fname == "defn" && args.len() >= 3 => {
@@ -1643,6 +1862,128 @@ impl IcnfConverter {
                 Ok(all_stmts)
             }
 
+            // Call form for assert-equal (no-dispatch mode).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-equal")
+                    && args.len() >= 2 =>
+            {
+                let mut result = self.convert_expr_collect(&args[0])?;
+                let a_id = result.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let mut args1_stmts = self.convert_expr_collect(&args[1])?;
+                let b_id = args1_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                result.append(&mut args1_stmts);
+                let eq_id = self.next_ssa_id();
+                let eq_node = ICNFNode {
+                    id: eq_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                    is_branch_body: false,
+                    node: ICNFInner::Eq { left: a_id, right: b_id },
+                };
+                result.push(eq_node.clone());
+                self.global_stmts.push(eq_node);
+                let assert_id = self.next_ssa_id();
+                let assert_node = ICNFNode {
+                    id: assert_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: eq_id,
+                        msg: Some("assert-equal failed".to_string()),
+                    },
+                };
+                result.push(assert_node.clone());
+                self.global_stmts.push(assert_node);
+                Ok(result)
+            }
+
+            // Call form for assert-true (no-dispatch mode).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-true")
+                    && args.len() >= 1 =>
+            {
+                let mut result = self.convert_expr_collect(&args[0])?;
+                let expr_id = result.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let assert_id = self.next_ssa_id();
+                let assert_node = ICNFNode {
+                    id: assert_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: expr_id,
+                        msg: Some("assert-true failed".to_string()),
+                    },
+                };
+                result.push(assert_node.clone());
+                self.global_stmts.push(assert_node);
+                Ok(result)
+            }
+
+            // Call form for assert-false (no-dispatch mode).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-false")
+                    && args.len() >= 1 =>
+            {
+                let mut result = self.convert_expr_collect(&args[0])?;
+                let expr_id = result.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
+                let not_id = self.next_ssa_id();
+                let not_node = ICNFNode {
+                    id: not_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                    is_branch_body: false,
+                    node: ICNFInner::UnOp(UnOpKind::Not, expr_id),
+                };
+                result.push(not_node.clone());
+                self.global_stmts.push(not_node);
+                let assert_id = self.next_ssa_id();
+                let assert_node = ICNFNode {
+                    id: assert_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: not_id,
+                        msg: Some("assert-false failed".to_string()),
+                    },
+                };
+                result.push(assert_node.clone());
+                self.global_stmts.push(assert_node);
+                Ok(result)
+            }
+
+            // Call form for run-tests (no-dispatch mode).
+            ExprInner::Call(op, _args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "run-tests") =>
+            {
+                let run_id = self.next_ssa_id();
+                let mut result = Vec::new();
+                let ffi_node = ICNFNode {
+                    id: run_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall {
+                        name: "zyl_run_tests".to_string(),
+                        args: Vec::new(),
+                        timeout: 1000,
+                    },
+                };
+                result.push(ffi_node.clone());
+                self.global_stmts.push(ffi_node);
+                let exit_id = self.next_ssa_id();
+                result.push(ICNFNode {
+                    id: exit_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Exit(run_id),
+                });
+                Ok(result)
+            }
+
             // Function call (Call form with operator as first element — non-arithmetic).
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
@@ -2260,17 +2601,30 @@ impl IcnfConverter {
             // Test-related expressions.
             ExprInner::AssertEqual(a, b) => {
                 let a_id = self.convert_expr(a)?;
-                drop(self.convert_expr(b)); // TODO: compare SSA IDs for assert-equal semantics.
-                Ok(vec![ICNFNode {
-                    id: self.next_ssa_id(),
+                let b_id = self.convert_expr(b)?;
+                let eq_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: eq_id,
                     region: Region::Stack,
-                    typ: None,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
                     is_branch_body: false,
-                    node: ICNFInner::Assert {
-                        cond_ssa: a_id,
-                        msg: Some("assert-equal failed".to_string()),
+                    node: ICNFInner::Eq {
+                        left: a_id,
+                        right: b_id,
                     },
-                }])
+                });
+                Ok(vec![
+                    ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Assert {
+                            cond_ssa: eq_id,
+                            msg: Some("assert-equal failed".to_string()),
+                        },
+                    },
+                ])
             }
 
             ExprInner::AssertFail(expr, _msg) => {
@@ -2308,12 +2662,103 @@ impl IcnfConverter {
                 }])
             }
 
+            ExprInner::TestDecl(name, body, _keywords) => {
+                // Generate a function that runs the test body and returns 0 on success.
+                let func_name = format!("_test_{}", sanitize_name(name));
+                let saved_scope = std::mem::take(&mut self.current_scope);
+                let saved_globals = std::mem::take(&mut self.global_stmts);
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = true;
+                let body_stmts = self.convert_expr_to_stmts(body)?;
+                // Append: return 0.
+                let zero_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: zero_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    is_branch_body: false,
+                    node: ICNFInner::I32Imm(0),
+                });
+                let ret_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: ret_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    is_branch_body: false,
+                    node: ICNFInner::Return(zero_id),
+                });
+                let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                self.push_to_globals = saved_push;
+                let func_sig = ICNFFuncSig {
+                    name: func_name.clone(),
+                    params: Vec::new(),
+                    return_type: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    body: func_body,
+                };
+                self.functions.push(func_sig);
+                // Also emit a top-level zyl_register_test call.
+                let saved2_globals = std::mem::take(&mut self.global_stmts);
+                let saved2_push = self.push_to_globals;
+                self.push_to_globals = true;
+                let name_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: name_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::String)),
+                    is_branch_body: false,
+                    node: ICNFInner::StrImm(name.clone()),
+                });
+                // Load function pointer: _ZYL_<func_name>
+                let fn_ptr_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: fn_ptr_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    is_branch_body: false,
+                    node: ICNFInner::FnPtrImm(format!("{}_{}", "_ZYL", func_name)),
+                });
+                self.global_stmts.push(ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall {
+                        name: "zyl_register_test".to_string(),
+                        args: vec![name_id, fn_ptr_id],
+                        timeout: 1000,
+                    },
+                });
+                let top_stmts = std::mem::replace(&mut self.global_stmts, saved2_globals);
+                self.push_to_globals = saved2_push;
+                self.global_stmts.extend(top_stmts);
+                self.current_scope = saved_scope;
+                Ok(vec![self.emit(ICNFInner::Begin(Vec::new()))])
+            }
+
+            ExprInner::RunTests(_keywords) => {
+                let run_id = self.next_ssa_id();
+                self.global_stmts.push(ICNFNode {
+                    id: run_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    is_branch_body: false,
+                    node: ICNFInner::FfiCall { name: "zyl_run_tests".to_string(), args: Vec::new(), timeout: 1000 },
+                });
+                Ok(vec![
+                    ICNFNode {
+                        id: self.next_ssa_id(),
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: false,
+                        node: ICNFInner::Exit(run_id),
+                    },
+                ])
+            }
+
             ExprInner::TestSuite(..)
-            | ExprInner::TestDecl(..)
             | ExprInner::TestProperty(..)
             | ExprInner::Setup(..)
             | ExprInner::Teardown(..)
-            | ExprInner::RunTests(..)
             | ExprInner::TestCompile(..) => Ok(vec![self.emit(ICNFInner::Begin(Vec::new()))]),
 
             // Nested defn inside a function body: process as a top-level function
@@ -2871,6 +3316,11 @@ impl IcnfConverter {
             ICNFInner::SetBang(_, _) => Region::Stack,
             ICNFInner::Unwrap(_) => Region::Heap, // alias values are heap.
             ICNFInner::Assert { .. } => Region::Stack,
+            ICNFInner::FnPtrImm(_) => Region::Global, // function symbols are global.
+            ICNFInner::I32Imm(_) => Region::Stack,
+            ICNFInner::StrImm(_) => Region::Global, // string literals are in rodata.
+            ICNFInner::Return(_) => Region::Stack,
+            ICNFInner::Eq { .. } => Region::Stack,
         };
 
         ICNFNode {

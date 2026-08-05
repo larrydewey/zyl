@@ -564,6 +564,8 @@ impl CodeGen {
                         ICNFInner::FfiCall { .. } => continue,
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
+                        ICNFInner::Eq { .. } => continue,
+                        ICNFInner::I32Imm(_) => continue,
                         _ => {}
                     }
                 }
@@ -681,7 +683,9 @@ impl CodeGen {
         // Emit functions for user-defined defn.
         for func in &program.functions {
             // Skip dead functions (not reachable from top-level statements or main).
-            if !reachable.contains(&func.name) {
+            // Exception: test functions (_test_*) are always emitted since they're
+            // referenced via FnPtrImm which isn't tracked by reachability analysis.
+            if !reachable.contains(&func.name) && !func.name.starts_with("_test_") {
                 continue;
             }
             self.current_func = func.name.clone();
@@ -909,6 +913,12 @@ impl CodeGen {
                     ICNFInner::SendClosure(actor_id, _, _, _) => {
                         operand_ids.insert(*actor_id);
                     }
+                    ICNFInner::Assert { cond_ssa, .. } => {
+                        operand_ids.insert(*cond_ssa);
+                    }
+                    ICNFInner::Return(val_id) => {
+                        operand_ids.insert(*val_id);
+                    }
                     _ => {}
                 }
             }
@@ -1075,6 +1085,10 @@ impl CodeGen {
                 {
                     continue;
                 }
+                // Skip nodes already emitted by a parent handler (e.g. Eq inside Assert).
+                if func_emitted_ids.contains(&stmt.id) {
+                    continue;
+                }
                 // Skip nodes that are operands to a parent node (Print/Call/BinOp/etc.).
                 // These are emitted on-demand via emit_load_into when a parent handler
                 // requests the result, preventing clobbering by subsequent statements.
@@ -1089,6 +1103,7 @@ impl CodeGen {
                         }
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
+                        ICNFInner::Eq { .. } => continue,
                         _ => {}
                     }
                 }
@@ -1301,6 +1316,32 @@ impl CodeGen {
                 }
             }
         }
+        // Also collect strings from Assert messages.
+        for stmt in &program.statements {
+            if let ICNFInner::Assert { msg, .. } = &stmt.node {
+                if let Some(s) = msg {
+                    out.insert(s.clone());
+                }
+            }
+        }
+        for func in &program.functions {
+            for stmt in &func.body {
+                if let ICNFInner::Assert { msg, .. } = &stmt.node {
+                    if let Some(s) = msg {
+                        out.insert(s.clone());
+                    }
+                }
+                if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
+                    for node in then_body.iter().chain(else_body.iter()) {
+                        if let ICNFInner::Assert { msg, .. } = &node.node {
+                            if let Some(s) = msg {
+                                out.insert(s.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Collect all unique float literals from an ICNF program (recursively), with unique labels.
@@ -1405,6 +1446,9 @@ impl CodeGen {
     fn collect_from_node(node: &ICNFNode, out: &mut HashSet<String>) {
         match &node.node {
             ICNFInner::Const(Atom::Str(s)) => {
+                out.insert(s.clone());
+            }
+            ICNFInner::StrImm(s) => {
                 out.insert(s.clone());
             }
             ICNFInner::If {
@@ -1623,6 +1667,27 @@ impl CodeGen {
                 self.emit_const_into(target_reg, atom);
             }
             Some(ICNFNode {
+                node: ICNFInner::I32Imm(val),
+                ..
+            }) => {
+                self.emit_const_into(target_reg, &crate::ast::Atom::Int(*val as i64));
+            }
+            Some(ICNFNode {
+                node: ICNFInner::StrImm(val),
+                ..
+            }) => {
+                let label = self.emit_string_literal(val);
+                self.asm_push_align();
+                self.asm.push(format!("    lea {}, [{}]", target_reg, label));
+            }
+            Some(ICNFNode {
+                node: ICNFInner::FnPtrImm(name),
+                ..
+            }) => {
+                self.asm_push_align();
+                self.asm.push(format!("    lea {}, [{}]  # FnPtrImm", target_reg, name));
+            }
+            Some(ICNFNode {
                 node: ICNFInner::Load(name),
                 typ,
                 ..
@@ -1780,24 +1845,12 @@ impl CodeGen {
                 let already_emitted = emitted_ids.contains(&src_ssa_id)
                     || self.standalone_emitted.contains(&src_ssa_id);
                 if already_emitted {
-                    self.asm_push_align();
                     if is_float {
                         self.asm
                             .push(format!("    movsd {}, xmm0", target_reg));
-                    } else if target_reg != "rax" && target_reg != "eax" {
-                        // Copy into a plain (callee-saved) register or memory target.
-                        // Pointer-typed calls (structs/ADTs/strings) were emitted with
-                        // their result in rax; copy the full 64-bit value so the upper
-                        // pointer bits are preserved.
-                        let is_ptr = matches!(
-                            typ.as_ref(),
-                            Some(t) if !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float | PrimType::String))
-                        );
-                        if is_ptr {
-                            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                        } else {
-                            self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
-                        }
+                    } else {
+                        self.asm
+                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                     }
                 } else {
                     self.emit_call_direct(
@@ -1823,11 +1876,8 @@ impl CodeGen {
                 let already_emitted = emitted_ids.contains(&src_ssa_id)
                     || self.standalone_emitted.contains(&src_ssa_id);
                 if already_emitted {
-                    self.asm_push_align();
-                    if target_reg != "rax" && target_reg != "eax" {
-                        self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
-                    }
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
                 } else {
                     self.emit_ffi_call_direct(
                         name,
@@ -2067,6 +2117,24 @@ impl CodeGen {
                         }
                     }
                 }
+            }
+            Some(ICNFNode {
+                node: ICNFInner::Eq { left, right },
+                ..
+            }) => {
+                self.emit_binop_direct(
+                    &BinOpKind::Eq,
+                    *left,
+                    *right,
+                    target_reg,
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    false,
+                    src_ssa_id,
+                );
+                emitted_ids.insert(src_ssa_id);
             }
             Some(_) => {
                 let hash = simple_hash(&format!("{}", src_ssa_id));
@@ -2355,7 +2423,7 @@ impl CodeGen {
             | BinOpKind::Ge => {
                 let d = reg_to_32(target_reg);
                 self.asm_push_align();
-                self.asm.push("    cmp ecx, edx".to_string());
+                self.asm.push("    cmp ebx, edx".to_string());
                 let (set_instr, _) = match op {
                     BinOpKind::Eq => ("sete", ""),
                     BinOpKind::Neq => ("setne", ""),
@@ -2364,23 +2432,21 @@ impl CodeGen {
                     BinOpKind::Le => ("setle", ""),
                     BinOpKind::Ge => ("setge", ""),
                     _ => unreachable!(),
-                };
-                self.asm_push_align();
-                self.asm.push(format!("    {} al", set_instr));
-                self.asm_push_align();
-                self.asm.push(format!("    movzx {}, al", d));
+                 };
+                 self.asm.push(format!("    {} al", set_instr));
+                 self.asm.push(format!("    movzx {}, al", d));
             }
             BinOpKind::And => {
                 self.asm_push_align();
-                self.asm.push("    mov eax, edx".to_string());
+                self.asm.push("    mov eax, ebx".to_string());
                 self.asm_push_align();
-                self.asm.push("    and eax, ecx".to_string());
+                self.asm.push("    and eax, edx".to_string());
             }
             BinOpKind::Or => {
                 self.asm_push_align();
-                self.asm.push("    mov eax, edx".to_string());
+                self.asm.push("    mov eax, ebx".to_string());
                 self.asm_push_align();
-                self.asm.push("    or eax, ecx".to_string());
+                self.asm.push("    or eax, edx".to_string());
             }
         }
         emitted_ids.insert(node_id);
@@ -3283,6 +3349,10 @@ impl CodeGen {
         lookup: &std::collections::HashMap<usize, &ICNFNode>,
         phi_slots: &std::collections::HashMap<String, String>,
     ) {
+        // Skip nodes already emitted by a parent handler (e.g. Eq inside Assert's emit_load_into).
+        if emitted_ids.contains(&node.id) {
+            return;
+        }
         match &node.node {
             ICNFInner::Const(atom) => {
                 // Skip intermediate Const nodes whose result is used as an operand elsewhere.
@@ -4909,13 +4979,88 @@ impl CodeGen {
                 );
             }
 
-            ICNFInner::Exit(_code_id) => {
+            ICNFInner::Exit(code_id) => {
                 // Exit with status code using exit() from libc.
+                self.emit_load_into(
+                    *code_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
                 self.asm_push_align();
-                self.asm
-                    .push("    xor edi, edi           # exit(0)".to_string());
+                self.asm.push("    mov edi, eax".to_string());
                 self.asm_push_align();
                 self.asm.push("    call exit@plt".to_string());
+            }
+
+            ICNFInner::Eq { left, right } => {
+                self.emit_binop_direct(
+                    &BinOpKind::Eq,
+                    *left,
+                    *right,
+                    "eax",
+                    stmts,
+                    local_vars,
+                    lookup,
+                    emitted_ids,
+                    false,
+                    node.id,
+                );
+            }
+
+            ICNFInner::Assert { cond_ssa, msg } => {
+                // Load condition into eax. If zero (false), call zyl_panic.
+                self.emit_load_into(
+                    *cond_ssa, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+                let msg = msg.as_deref().unwrap_or("assertion failed");
+                let label = format!(".assert_fail_{}", self.label_counter);
+                self.label_counter += 1;
+                // Branch to panic if condition is zero.
+                self.asm.push("    test eax, eax".to_string());
+                self.asm.push(format!("    je {}", label));
+                // If we get here, the assertion passed — do nothing, let next stmts execute.
+                // The panic label is emitted later by the codegen when needed.
+                // For now, we store the label in a map so subsequent stmts know to jump over it.
+                // Actually, the simplest fix: emit the panic label AFTER all subsequent stmts.
+                // We can't do that here, so instead we emit a jump over the panic code.
+                let after_panic_label = format!(".assert_after_{}", self.label_counter);
+                self.label_counter += 1;
+                self.asm.push(format!("    jmp {}", after_panic_label));
+                // Emit panic label.
+                self.asm.push(format!("{}:", label));
+                let str_label = self.emit_string_literal(msg);
+                self.asm.push(format!("    lea rdi, [{}]", str_label));
+                self.asm.push("    call zyl_panic@plt".to_string());
+                self.asm.push(format!("{}:", after_panic_label));
+            }
+
+            ICNFInner::I32Imm(val) => {
+                if operand_ids.contains(&node.id) {
+                    return;
+                }
+                self.emit_const_into("rax", &crate::ast::Atom::Int(*val as i64));
+            }
+
+            ICNFInner::StrImm(val) => {
+                if operand_ids.contains(&node.id) {
+                    return;
+                }
+                let label = self.emit_string_literal(val);
+                self.asm_push_align();
+                self.asm.push(format!("    lea rax, [{}]", label));
+            }
+
+            ICNFInner::FnPtrImm(name) => {
+                if operand_ids.contains(&node.id) {
+                    return;
+                }
+                self.asm_push_align();
+                self.asm.push(format!("    lea rax, [{}]  # FnPtrImm", name));
+            }
+
+            ICNFInner::Return(val_id) => {
+                // Load return value into eax. The function-end epilogue handles pop rbp/ret.
+                self.emit_load_into(
+                    *val_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
             }
 
             ICNFInner::Unit | ICNFInner::Closure { .. } => {
@@ -5265,9 +5410,10 @@ impl CodeGen {
                                 ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
                                     continue
                                 }
-                                ICNFInner::BinOp(_, _, _) => continue,
-                                ICNFInner::UnOp(_, _) => continue,
-                                _ => {}
+                        ICNFInner::BinOp(_, _, _) => continue,
+                        ICNFInner::UnOp(_, _) => continue,
+                        ICNFInner::Eq { .. } => continue,
+                        _ => {}
                             }
                         }
                         self.emit_node(

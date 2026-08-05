@@ -339,6 +339,24 @@ impl ZylSourceGen {
                         buf.push(format!("(assert {})", c));
                     }
                 }
+                ICNFInner::FnPtrImm(name) => {
+                    buf.push(format!("(let {} #fnptr:{})", name, name));
+                }
+                ICNFInner::I32Imm(val) => {
+                    buf.push(format!("(let {} {})", name, val));
+                }
+                ICNFInner::StrImm(val) => {
+                    buf.push(format!("(let {} \"{}\")", name, val));
+                }
+                ICNFInner::Return(val_id) => {
+                    let v = self.ensure_name(*val_id);
+                    buf.push(format!("(return {})", v));
+                }
+                ICNFInner::Eq { left, right } => {
+                    let l = self.ensure_name(*left);
+                    let r = self.ensure_name(*right);
+                    buf.push(format!("(let {} (== {} {}))", name, l, r));
+                }
             }
         }
 
