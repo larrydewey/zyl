@@ -4778,8 +4778,12 @@ impl CodeGen {
                 let strlen_src_done = self.new_label();
                 let copy_done = self.new_label();
 
+                // buf-append's operands are pointers by contract (dst = arena/heap
+                // buffer, src = NUL-terminated string). Load them full 64-bit
+                // regardless of their inferred type, since an Int-typed variable may
+                // hold a 64-bit heap address (e.g. arena-alloc); 32-bit load truncates.
                 self.emit_load_into(
-                    *dst, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    *dst, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
                 self.asm_push_align();
                 self.asm.push("    push r12           # preserve dst start".to_string());
@@ -4810,7 +4814,7 @@ impl CodeGen {
                 self.asm.push("    mov rdi, rcx        # rdi = copy destination (dst end)".to_string());
 
                 self.emit_load_into(
-                    *src, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    *src, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
                 self.asm_push_align();
                 self.asm.push("    mov rdx, rax        # rdx = src pointer".to_string());
