@@ -177,14 +177,14 @@
 ; I/O HELPERS
 ; ===========================================================================
 
-(defn print-int (n)
+(defn print-int ((n Int))
   (print n))
 
-(defn print-float (f)
+(defn print-float ((f Float))
   (print f))
 
-(defn print-string (s)
+(defn print-string ((s String))
   (print s))
 
-(defn print-bool (b)
+(defn print-bool ((b Bool))
   (print b))
