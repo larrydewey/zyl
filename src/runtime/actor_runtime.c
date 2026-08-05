@@ -535,3 +535,56 @@ void zyl_actor_wait(long long actor_id) {
         pthread_mutex_unlock(&actor->lock);
     }
 }
+
+/* === Test Harness === */
+
+#define ZYL_MAX_TESTS 256
+#define ZYL_TEST_NAME_LEN 128
+
+typedef struct {
+    char name[ZYL_TEST_NAME_LEN];
+    int (*fn)(void);
+} ZylTestEntry;
+
+static ZylTestEntry g_tests[ZYL_MAX_TESTS];
+static int g_test_count = 0;
+
+void zyl_register_test(const char* name, int (*fn)(void)) {
+    if (g_test_count < ZYL_MAX_TESTS) {
+        strncpy(g_tests[g_test_count].name, name, ZYL_TEST_NAME_LEN - 1);
+        g_tests[g_test_count].name[ZYL_TEST_NAME_LEN - 1] = '\0';
+        g_tests[g_test_count].fn = fn;
+        g_test_count++;
+    }
+}
+
+void zyl_panic(const char* msg) {
+    fprintf(stderr, "PANIC: %s\n", msg ? msg : "assertion failed");
+    exit(1);
+}
+
+int zyl_run_tests(void) {
+    int passed = 0;
+    int failed = 0;
+
+    for (int i = 0; i < g_test_count; i++) {
+        const char* name = g_tests[i].name;
+        int (*fn)(void) = g_tests[i].fn;
+
+        /* Print test name (as C string via print-int trick — use file-write) */
+        printf("test: %s ... ", name);
+
+        int result = fn();
+        if (result == 0) {
+            printf("ok\n");
+            passed++;
+        } else {
+            printf("FAIL\n");
+            failed++;
+        }
+    }
+
+    printf("\ntest result: %d passed, %d failed, %d total\n", passed, failed, passed + failed);
+
+    return (failed > 0) ? 1 : 0;
+}
