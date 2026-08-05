@@ -64,6 +64,7 @@ long long zyl_mem_alloc(long long size);
 void zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
 void zyl_mem_write(long long ptr, long long value);
+long long zyl_cstr_len(long long ptr);
 
 /* Region-based arena allocator.
    Deterministic reclamation: arena-reset frees every block at once; the

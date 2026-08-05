@@ -939,9 +939,10 @@ impl MonoContext {
                 } else if let Some(ret_ty) = self.function_returns.get(&op_name).cloned() {
                     ret_ty
                 } else {
-                    args.first()
+                    let r = args.first()
                         .map(|a| self.infer_arg_type(a))
-                        .unwrap_or(Type::Var(0))
+                        .unwrap_or(Type::Var(0));
+                    r
                 }
             }
 

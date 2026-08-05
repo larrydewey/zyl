@@ -749,12 +749,22 @@ impl CodeGen {
                             abi_regs_64[i],
                             param_name
                         ));
-                    } else {
+                    } else if matches!(resolved_type, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)) {
+                        // Scalar 32-bit param.
                         self.asm_push_align();
                         self.asm.push(format!(
                             "    mov [rbp-{}], {} # {}",
                             offset,
                             reg_to_32(abi_regs_64[i]),
+                            param_name
+                        ));
+                    } else {
+                        // Nominal (struct/ADT) / pointer-TCap param: full 64-bit pointer.
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    mov [rbp-{}], {} # {}",
+                            offset,
+                            abi_regs_64[i],
                             param_name
                         ));
                     }
@@ -1580,7 +1590,6 @@ impl CodeGen {
             .get(&src_ssa_id)
             .copied()
             .or_else(|| stmts.iter().find(|n| n.id == src_ssa_id));
-
         match node {
             Some(ICNFNode {
                 node: ICNFInner::Const(Atom::Ident(var_name)),
@@ -1692,24 +1701,25 @@ impl CodeGen {
                     }
                 } else {
                     let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
-                    let use_rax = is_pointer;
+                    // Load into the REQUESTED target register. For pointer values the
+                    // full 64-bit value must be preserved; use the 64-bit form of the
+                    // target register so callers receive the pointer correctly. The
+                    // target_reg may be a 32-bit ABI reg (edi/esi/...) — use its 64-bit
+                    // spelling (rdi/rsi) so pointer bits are never dropped.
+                    let dest64 = if is_pointer {
+                        reg_to_64(target_reg).to_string()
+                    } else {
+                        target_reg.to_string()
+                    };
                     if let Some(&slot_idx) = local_vars.get(name) {
                         let offset = (slot_idx + 1) * 8;
                         self.asm_push_align();
-                        if use_rax {
-                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
-                        } else {
-                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
-                        }
+                        self.asm.push(format!("    mov {}, [rbp-{}]", dest64, offset));
                     } else {
                         let hash = simple_hash(name);
                         let offset = ((hash % 32) + 1) * 8;
                         self.asm_push_align();
-                        if use_rax {
-                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
-                        } else {
-                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
-                        }
+                        self.asm.push(format!("    mov {}, [rbp-{}]", dest64, offset));
                     }
                 }
             }
@@ -1774,9 +1784,20 @@ impl CodeGen {
                     if is_float {
                         self.asm
                             .push(format!("    movsd {}, xmm0", target_reg));
-                    } else {
-                        self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    } else if target_reg != "rax" && target_reg != "eax" {
+                        // Copy into a plain (callee-saved) register or memory target.
+                        // Pointer-typed calls (structs/ADTs/strings) were emitted with
+                        // their result in rax; copy the full 64-bit value so the upper
+                        // pointer bits are preserved.
+                        let is_ptr = matches!(
+                            typ.as_ref(),
+                            Some(t) if !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float | PrimType::String))
+                        );
+                        if is_ptr {
+                            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                        } else {
+                            self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        }
                     }
                 } else {
                     self.emit_call_direct(
@@ -1932,13 +1953,16 @@ impl CodeGen {
             }) => {
                 // Always emit loading code — operand nodes are skipped by emit_loop,
                 // so they need to be emitted inline by the parent handler.
+                // Fields are stored as full 64-bit words (see MakeStruct), so load
+                // the full 64-bit field value. Truncating to 32-bit would corrupt
+                // Int-typed fields that hold 64-bit pointers (e.g. arena addresses).
                 self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                 self.asm_push_align();
-                self.asm.push(format!("    mov eax, [rax + {}]", field_offset));
+                self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
                 emitted_ids.insert(src_ssa_id);
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             Some(ICNFNode {
@@ -4653,43 +4677,49 @@ impl CodeGen {
                     _ => None,
                 };
 
-                // Load handle (fd) from local variable or prior computation
-                self.emit_load_into(
-                    *handle, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
-                );
-
+                // Load the data pointer first and preserve it on the stack, THEN
+                // load the handle. Evaluating data first into rax and then reloading
+                // the handle into rax would clobber the data pointer (the write would
+                // emit bytes from the handle value, not from the buffer).
                 let strlen_done = self.new_label();
-                self.asm_push_align();
-                self.asm.push("    push r12           # preserve fd".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov r12, rax         # save fd to r12".to_string());
-                self.asm_push_align();
                 if let Some(ref label) = data_label {
+                    // String literal: materialize directly into rsi (never clobbered).
+                    self.asm_push_align();
                     self.asm.push(format!("    lea rsi, [{}]      # data pointer (rodata)", label));
+                    // Load handle (fd) preserving it in r12.
+                    self.asm_push_align();
+                    self.asm.push("    push r12           # preserve fd".to_string());
+                    self.emit_load_into(
+                        *handle, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    );
+                    self.asm_push_align();
+                    self.asm.push("    mov r12, rax         # save fd to r12".to_string());
                 } else {
-                    // Variable data pointer: load it 64-bit from its local slot (a 32-bit
-                    // load would truncate heap addresses). Fall back to emit_load_into
-                    // (into rdx) when the operand is not a plain slot load.
-                    let slot = match data_node {
-                        Some(ICNFNode { node: ICNFInner::Load(name), .. }) => {
-                            local_vars
-                                .get(name)
-                                .map(|i| (i + 1) * 8)
-                                .or_else(|| Some(((simple_hash(name) % 32) as usize + 1) * 8))
-                        }
-                        _ => None,
-                    };
-                    if let Some(offset) = slot {
-                        self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov rsi, [rbp-{}]    # data pointer (variable)", offset));
-                    } else {
-                        self.emit_load_into(
-                            *data, "rdx", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
-                        );
-                        self.asm_push_align();
-                        self.asm.push("    mov rsi, rdx       # data pointer".to_string());
-                    }
+                    // Variable data pointer: load it 64-bit into rax, save to the
+                    // stack, then load the handle (which uses rax). Pop the data
+                    // pointer back into rsi afterwards so the strlen/copy loop uses
+                    // the correct bytes.
+                    // 0. Preserve caller's r12 (popped at the very end).
+                    self.asm_push_align();
+                    self.asm.push("    push r12            # preserve old r12".to_string());
+                    // 1. Data pointer -> rax (full 64-bit, no truncation).
+                    self.emit_load_into(
+                        *data, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    );
+                    // 2. Preserve it on the stack (above old r12).
+                    self.asm_push_align();
+                    self.asm.push("    push rax            # preserve data pointer".to_string());
+                    // 3. Load handle (fd) into rax then save to r12.
+                    self.emit_load_into(
+                        *handle, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    );
+                    self.asm_push_align();
+                    self.asm.push("    mov r12, rax         # save fd to r12".to_string());
+                    // 4. Restore data pointer into rsi (pops the data, old r12 stays).
+                    self.asm_push_align();
+                    self.asm.push("    pop rax             # restore data pointer".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    mov rsi, rax         # data pointer".to_string());
                 }
                 self.asm_push_align();
                 self.asm.push("    mov rax, 0           # strlen result counter".to_string());
@@ -4852,6 +4882,14 @@ impl CodeGen {
                 // call twice (observable with side-effecting FFI/counter values).
                 let target_reg = match &node.typ {
                     Some(t) if !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float)) => "rax",
+                    // ICNF call nodes often lack a type annotation; fall back to the
+                    // known return type of the callee so pointer-returning calls
+                    // (structs/ADTs/strings) preserve the full 64-bit pointer.
+                    _ if self
+                        .func_returns
+                        .get(&name.replace('-', "_"))
+                        .is_some_and(|t| !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float)))
+                        => "rax",
                     _ => "eax",
                 };
                 self.emit_call_direct(
@@ -4938,8 +4976,6 @@ impl CodeGen {
                 self.asm.push("    push rbp".to_string());
                 self.asm_push_align();
                 for &field_id in field_ids.iter().rev() {
-                    let _fnode = lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id));
-                    eprintln!("DBG MakeStruct field {} node={:?}", field_id, _fnode.map(|n| format!("{:?}", n.node)));
                     match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
                         Some(ICNFNode {
                             node: ICNFInner::Const(atom),
