@@ -77,6 +77,11 @@ void zyl_arena_destroy(long long arena);
 long long zyl_arena_used(long long arena);
 long long zyl_arena_capacity(long long arena);
 
+/* Region-specific arena allocation wrappers for codegen. */
+void zyl_ensure_arenas(void);
+long long zyl_heap_alloc(long long size);
+long long zyl_pin_alloc(long long size);
+
 /* Atomic operations. */
 long long zyl_atomic_load(long long addr);
 void zyl_atomic_store(long long addr, long long value);

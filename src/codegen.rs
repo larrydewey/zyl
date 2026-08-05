@@ -304,6 +304,10 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    sub rsp, 256".to_string());
 
+        // Ensure Heap/Pin arenas are initialized before any allocations.
+        self.asm_push_align();
+        self.asm.push("    call zyl_ensure_arenas@plt".to_string());
+
         if !program.statements.is_empty() {
             let mut local_vars: HashMap<String, usize> = HashMap::new();
             // Track emitted IDs to avoid duplicate emission of branch body nodes.
@@ -1687,17 +1691,25 @@ impl CodeGen {
                             .push(format!("    movsd {}, xmm0", target_reg));
                     }
                 } else {
+                    let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                    let use_rax = is_pointer;
                     if let Some(&slot_idx) = local_vars.get(name) {
                         let offset = (slot_idx + 1) * 8;
                         self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
+                        if use_rax {
+                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                        } else {
+                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        }
                     } else {
                         let hash = simple_hash(name);
                         let offset = ((hash % 32) + 1) * 8;
                         self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
+                        if use_rax {
+                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                        } else {
+                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        }
                     }
                 }
             }
@@ -1868,7 +1880,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    call malloc@plt".to_string());
+                self.asm.push("    call zyl_heap_alloc@plt".to_string());
                 self.asm_push_align();
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string());
@@ -1911,7 +1923,7 @@ impl CodeGen {
                 emitted_ids.insert(src_ssa_id);
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             Some(ICNFNode {
@@ -1933,11 +1945,11 @@ impl CodeGen {
                 node: ICNFInner::MakeStruct(..),
                 ..
             }) => {
-                // Already emitted — result is in eax. Just copy to target.
+                // Already emitted — result is a struct pointer in rax. Just copy to target.
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             n @ Some(ICNFNode {
@@ -1952,7 +1964,7 @@ impl CodeGen {
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             Some(ICNFNode {
@@ -1978,21 +1990,30 @@ impl CodeGen {
                     if is_float {
                         self.asm_push_align();
                         self.asm.push(format!("    movsd {}, xmm0", target_reg));
-                    } else if let Some(slot) = phi_slots.get(result_var.as_str()) {
-                        self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), slot));
-                    } else if let Some(&slot_idx) = local_vars.get(result_var.as_str()) {
-                        let offset = (slot_idx + 1) * 8;
-                        self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov {}, [rbp-{}]", reg_to_32(target_reg), offset));
                     } else {
-                        // Fallback: load from eax (may be stale).
-                        if target_reg != "rax" && target_reg != "eax" {
+                        let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                        if let Some(slot) = phi_slots.get(result_var.as_str()) {
                             self.asm_push_align();
-                            self.asm
-                                .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            if is_pointer {
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            } else {
+                                self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                            }
+                        } else if let Some(&slot_idx) = local_vars.get(result_var.as_str()) {
+                            let offset = (slot_idx + 1) * 8;
+                            self.asm_push_align();
+                            if is_pointer {
+                                self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                            } else {
+                                self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                            }
+                        } else {
+                            // Fallback: load from eax (may be stale).
+                            if target_reg != "rax" && target_reg != "eax" {
+                                self.asm_push_align();
+                                self.asm
+                                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            }
                         }
                     }
                 } else {
@@ -2010,10 +2031,16 @@ impl CodeGen {
                             self.asm
                                 .push(format!("    movsd {}, xmm0", target_reg));
                         }
-                    } else if target_reg != "rax" && target_reg != "eax" {
-                        self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    } else {
+                        let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                        if target_reg != "rax" && target_reg != "eax" {
+                            self.asm_push_align();
+                            if is_pointer {
+                                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                            } else {
+                                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            }
+                        }
                     }
                 }
             }
@@ -2569,6 +2596,10 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm
                         .push(format!("    movsd {}, xmm0", target_reg));
+                } else if target_reg == "rax" || target_reg == "rcx" || target_reg == "rdx" || target_reg == "rsi" || target_reg == "rdi" || target_reg == "r8" || target_reg == "r9" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, rax", target_reg));
                 } else {
                     self.asm_push_align();
                     self.asm
@@ -2579,6 +2610,10 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm
                         .push(format!("    movsd {}, xmm0", target_reg));
+                } else if target_reg == "rax" || target_reg == "rcx" || target_reg == "rdx" || target_reg == "rsi" || target_reg == "rdi" || target_reg == "r8" || target_reg == "r9" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, rax", target_reg));
                 } else {
                     self.asm_push_align();
                     self.asm
@@ -2950,8 +2985,11 @@ impl CodeGen {
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
+            } else if res_is_pointer {
+                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             } else {
                 self.asm.push(format!("    mov [rbp-{}], eax", slot));
             }
@@ -3010,21 +3048,27 @@ impl CodeGen {
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
+            } else if res_is_pointer {
+                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             } else {
                 self.asm.push(format!("    mov [rbp-{}], eax", slot));
             }
         }
 
-        // Join — load phi result into eax or xmm0 so callers see it correctly.
+        // Join — load phi result into eax/xmm0/rax so callers see it correctly.
         self.asm_push_align();
         self.asm.push(format!("{}:", join_point));
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
+            } else if res_is_pointer {
+                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
             } else {
                 self.asm.push(format!("    mov eax, [rbp-{}]", slot));
             }
@@ -3244,16 +3288,25 @@ impl CodeGen {
                         self.asm.push(format!("    movsd xmm0, [rbp-{}]", offset));
                     }
                 } else {
-                    // Always use eax for loads so the function return value is in eax.
+                    // Use rax for pointer types (structs/strings/ADTs), eax for int/bool/unit.
+                    let is_pointer = !is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if let Some(&offset_idx) = local_vars.get(name) {
                         let offset = (offset_idx + 1) * 8;
                         self.asm_push_align();
-                        self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        if is_pointer {
+                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                        } else {
+                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        }
                     } else {
                         let hash = simple_hash(name);
                         let offset = ((hash % 32) + 1) * 8;
                         self.asm_push_align();
-                        self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        if is_pointer {
+                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                        } else {
+                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
+                        }
                     }
                 }
             }
@@ -3300,13 +3353,24 @@ impl CodeGen {
                     if let Some(&slot_idx) = local_vars.get(result_var) {
                         let phi_offset = (slot_idx + 1) * 8;
                         self.asm_push_align();
-                        self.asm
-                            .push(format!("    mov eax, [rbp-{}]", phi_offset));
+                        // Check If node type to decide rax vs eax.
+                        let is_if_pointer = value_node
+                            .and_then(|n| n.typ.as_ref())
+                            .map(|t| !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)))
+                            .unwrap_or(false);
+                        if is_if_pointer {
+                            self.asm.push(format!("    mov rax, [rbp-{}]", phi_offset));
+                        } else {
+                            self.asm.push(format!("    mov eax, [rbp-{}]", phi_offset));
+                        }
                         if let Some(&my_slot) = local_vars.get(var_name) {
                             let my_offset = (my_slot + 1) * 8;
                             self.asm_push_align();
-                            self.asm
-                                .push(format!("    mov [rbp-{}], eax", my_offset));
+                            if is_if_pointer {
+                                self.asm.push(format!("    mov [rbp-{}], rax", my_offset));
+                            } else {
+                                self.asm.push(format!("    mov [rbp-{}], eax", my_offset));
+                            }
                         }
                         return;
                     }
@@ -3316,8 +3380,6 @@ impl CodeGen {
                 // a Call-valued Assign must emit the call on-demand to get its result.
                 let needs_on_demand = matches!(value_node, Some(ICNFNode { node: ICNFInner::Call(..), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::FfiCall { .. }, .. }))
-                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::StructGet(..), .. }))
-                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(_), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(crate::ast::Atom::Ident(n)), .. }) if self.function_names.contains(n));
                 if needs_on_demand && !emitted_ids.contains(&resolved_value_id) {
                     self.emit_load_into(
@@ -3337,9 +3399,11 @@ impl CodeGen {
                     .or_else(|| stmts.iter().find(|n| n.id == *value_id))
                     .and_then(|n| n.typ.as_ref())
                     .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                // Check if value is from ReadLine or FileRead (String/pointer type).
-                let val_is_string = stmts.iter().any(|n| {
-                    matches!(n.node, ICNFInner::ReadLine | ICNFInner::FileRead { .. })
+                // Check if value is a pointer (ReadLine, FileRead, MakeStruct, MakeVariant, StructGet).
+                let val_is_pointer = stmts.iter().any(|n| {
+                    matches!(n.node, ICNFInner::ReadLine | ICNFInner::FileRead { .. }
+                        | ICNFInner::MakeStruct { .. } | ICNFInner::MakeVariant { .. }
+                        | ICNFInner::StructGet { .. })
                         && *value_id == n.id
                 });
                 if let Some(&slot_idx) = local_vars.get(var_name) {
@@ -3348,7 +3412,7 @@ impl CodeGen {
                     if val_is_float {
                         self.asm
                             .push(format!("    movsd [rbp-{}], xmm0", offset));
-                    } else if val_is_string || needs_on_demand {
+                    } else if val_is_pointer || needs_on_demand {
                         // Pointer-valued results (calls returning structs/strings/ADT boxes).
                         self.asm
                             .push(format!("    mov [rbp-{}], rax", offset));
@@ -3364,6 +3428,9 @@ impl CodeGen {
                     if val_is_float {
                         self.asm
                             .push(format!("    movsd [rbp-{}], xmm0", offset));
+                    } else if val_is_pointer {
+                        self.asm
+                            .push(format!("    mov [rbp-{}], rax", offset));
                     } else {
                         self.asm
                             .push(format!("    mov [rbp-{}], eax", offset));
@@ -3782,8 +3849,11 @@ impl CodeGen {
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
+                    } else if res_is_pointer {
+                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     } else {
                         self.asm.push(format!("    mov [rbp-{}], eax", slot));
                     }
@@ -3850,22 +3920,28 @@ impl CodeGen {
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
+                    } else if res_is_pointer {
+                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     } else {
                         self.asm.push(format!("    mov [rbp-{}], eax", slot));
                     }
                 }
 
-                // Join point (phi merge): load phi result into eax or xmm0.
+                // Join point (phi merge): load phi result into eax/xmm0/rax.
                 self.asm_push_align();
                 self.asm.push(format!("{}:", join_point));
 
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
+                    } else if res_is_pointer {
+                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                     } else {
                         self.asm.push(format!("    mov eax, [rbp-{}]", slot));
                     }
@@ -4774,10 +4850,14 @@ impl CodeGen {
                 // clone) so the node is marked emitted; otherwise an Assign that
                 // consumes this call's result re-emits it on-demand, executing the
                 // call twice (observable with side-effecting FFI/counter values).
+                let target_reg = match &node.typ {
+                    Some(t) if !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float)) => "rax",
+                    _ => "eax",
+                };
                 self.emit_call_direct(
                     name,
                     args,
-                    "eax",
+                    target_reg,
                     stmts,
                     local_vars,
                     lookup,
@@ -4847,12 +4927,12 @@ impl CodeGen {
             }
 
             ICNFInner::MakeStruct(name, field_ids) => {
-                // Allocate heap memory for the struct: call malloc(n * 8), then store each field.
+                // Allocate heap arena memory for the struct: call zyl_heap_alloc(n * 8), then store each field.
                 let _ = name;
                 let field_count = field_ids.len();
                 let total_size = field_count * 8;
 
-                // FIX: Save field values to the stack before malloc, because malloc clobbers eax.
+                // FIX: Save field values to the stack before heap alloc, because alloc clobbers eax.
                 // Push rbp to mark the boundary. Push in reverse order so fields pop in correct order.
                 self.asm_push_align();
                 self.asm.push("    push rbp".to_string());
@@ -4916,7 +4996,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    call malloc@plt".to_string());
+                self.asm.push("    call zyl_heap_alloc@plt".to_string());
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string()); // Save struct base pointer in r10.
 
@@ -4957,11 +5037,11 @@ impl CodeGen {
             }
 
             ICNFInner::MakeVariant { type_name: _, variant_name: _, discriminant, field_ids } => {
-                // Tagged union construction: malloc(sizeof(discriminant + fields)), store discriminant, then fields.
+                // Tagged union construction: zyl_heap_alloc(sizeof(discriminant + fields)), store discriminant, then fields.
                 let field_count = field_ids.len();
                 let total_size = (field_count + 1) * 8; // discriminant + fields.
 
-                // Save field values to stack before malloc.
+                // Save field values to stack before heap alloc.
                 self.asm_push_align();
                 self.asm.push("    push rbp".to_string());
                 self.asm_push_align();
@@ -5000,7 +5080,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    call malloc@plt".to_string());
+                self.asm.push("    call zyl_heap_alloc@plt".to_string());
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string());
 
@@ -5165,7 +5245,12 @@ impl CodeGen {
                     // Store arm body result to phi slot.
                     if let Some(ref slot) = phi_slots.get(result_var) {
                         self.asm_push_align();
-                        self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                        let res_is_pointer = !matches!(&node.typ, Some(Type::Prim(PrimType::Float | PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                        if res_is_pointer {
+                            self.asm.push(format!("    mov [rbp-{}], rax", slot));
+                        } else {
+                            self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                        }
                     }
 
                     // Jump to join.
@@ -5186,7 +5271,12 @@ impl CodeGen {
                 self.asm.push(format!("{}:", join_label));
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                    let res_is_pointer = !matches!(&node.typ, Some(Type::Prim(PrimType::Float | PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                    if res_is_pointer {
+                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                    } else {
+                        self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                    }
                 }
             }
 
@@ -5216,11 +5306,11 @@ impl CodeGen {
                     let mut env_ptr_in_rsi = false;
 
                     if env_size > 0 {
-                        // malloc(env_size) -> rax = env pointer
+                        // Allocate env struct from heap arena -> rax = env pointer
                         self.asm_push_align();
                         self.asm.push(format!("    mov edi, {}", env_size));
                         self.asm_push_align();
-                        self.asm.push("    call malloc@plt".to_string());
+                        self.asm.push("    call zyl_heap_alloc@plt".to_string());
 
                         // Copy captured values into env struct.
                         // Save env ptr in r10 once (before the loop) so it isn't overwritten.
@@ -5470,7 +5560,7 @@ impl CodeGen {
                 }
 
                 // Load actor_id (in eax) into rdi, and preserve it in r12
-                // (callee-saved) since the malloc + capture loop below clobbers rdi.
+                // (callee-saved) since the arena alloc + capture loop below clobbers rdi.
                 self.asm_push_align();
                 self.asm.push("    mov rdi, rax".to_string());
                 self.asm_push_align();
@@ -5482,13 +5572,13 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov r13, rsi".to_string());
 
-                // Allocate capture state struct on heap.
+                // Allocate capture state struct on heap arena.
                 let state_size = capture_ids.len() * 8;
                 if state_size > 0 {
                     self.asm_push_align();
                     self.asm.push(format!("    mov edi, {}", state_size));
                     self.asm_push_align();
-                    self.asm.push("    call malloc@plt".to_string());
+                    self.asm.push("    call zyl_heap_alloc@plt".to_string());
                     // Save state ptr in r10.
                     self.asm_push_align();
                     self.asm.push("    mov r10, rax".to_string());
@@ -6202,6 +6292,33 @@ fn reg_to_32(name: &str) -> &str {
         "r13" => "r13d",
         "r14" => "r14d",
         "r15" => "r15d",
+        _ => name,
+    }
+}
+
+/// Convert a register name to its 64-bit counterpart.
+fn reg_to_64(name: &str) -> &str {
+    match name {
+        "eax" => "rax",
+        "ecx" => "rcx",
+        "edx" => "rdx",
+        "esi" => "rsi",
+        "edi" => "rdi",
+        "r8d" => "r8",
+        "r9d" => "r9",
+        "rax" => "rax",
+        "rcx" => "rcx",
+        "rdx" => "rdx",
+        "rsi" => "rsi",
+        "rdi" => "rdi",
+        "r8" => "r8",
+        "r9" => "r9",
+        "r10" => "r10",
+        "r11" => "r11",
+        "r12" => "r12",
+        "r13" => "r13",
+        "r14" => "r14",
+        "r15" => "r15",
         _ => name,
     }
 }

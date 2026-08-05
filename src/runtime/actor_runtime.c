@@ -4,11 +4,32 @@
 #include <stdio.h>
 #include <unistd.h>
 
-static ZylActorSystem g_system;
+#define ZYL_HEAP_ARENA_DEFAULT_BLOCK (1024 * 1024)
+#define ZYL_PIN_ARENA_DEFAULT_BLOCK (256 * 1024)
 
-__attribute__((constructor))
-static void zyl_actor_system_init(void) {
-    zyl_actor_init();
+static ZylActorSystem g_system;
+static void* g_heap_arena = NULL;
+static void* g_pin_arena = NULL;
+
+void zyl_ensure_arenas(void) {
+    if (!g_heap_arena) {
+        g_heap_arena = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
+    }
+    if (!g_pin_arena) {
+        g_pin_arena = (void*)(size_t)zyl_arena_create(ZYL_PIN_ARENA_DEFAULT_BLOCK);
+    }
+}
+
+__attribute__((destructor))
+static void zyl_runtime_cleanup(void) {
+    if (g_pin_arena) {
+        zyl_arena_destroy((long long)(size_t)g_pin_arena);
+        g_pin_arena = NULL;
+    }
+    if (g_heap_arena) {
+        zyl_arena_destroy((long long)(size_t)g_heap_arena);
+        g_heap_arena = NULL;
+    }
 }
 
 void zyl_actor_init(void) {
@@ -218,7 +239,8 @@ void zyl_actor_wait_all(void) {
    ========================================================================== */
 
 void* ffi_pin(long long value) {
-    long long* slot = (long long*)malloc(sizeof(long long));
+    if (!g_pin_arena) return NULL;
+    long long* slot = (long long*)zyl_arena_alloc((long long)(size_t)g_pin_arena, sizeof(long long));
     if (slot) *slot = value;
     return (void*)slot;
 }
@@ -306,6 +328,11 @@ long long zyl_arena_create(long long block_size) {
     a->block_size = bs;
     a->total_capacity = 0;
     a->total_used = 0;
+    ZylArenaBlock* b = zyl_arena_new_block_of(a, bs);
+    if (!b) {
+        free(a);
+        return 0;
+    }
     return (long long)(size_t)a;
 }
 
@@ -321,6 +348,7 @@ long long zyl_arena_alloc(long long arena, long long size) {
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
+    fprintf(stderr, "DBG zyl_arena_alloc: arena=%p, need=%zu, mem=%p, used=%zu, p=%p\n", (void*)arena, need, (void*)b->mem, (size_t)b->used, (void*)p);
     return (long long)(size_t)p;
 }
 
@@ -377,6 +405,26 @@ long long zyl_arena_capacity(long long arena) {
     if (!arena) return 0;
     return (long long)((ZylArena*)(size_t)arena)->total_capacity;
 }
+
+/* ==========================================================================
+   Region-specific arena allocation wrappers for codegen.
+   Heap arena: for escaped values, structs, variants, closures, actor data.
+   Pin arena: for FFI-safe stable memory (non-moving).
+   ========================================================================== */
+
+long long zyl_heap_alloc(long long size) {
+    if (!g_heap_arena || size <= 0) return 0;
+    return zyl_arena_alloc((long long)(size_t)g_heap_arena, size);
+}
+
+long long zyl_pin_alloc(long long size) {
+    if (!g_pin_arena || size <= 0) return 0;
+    return zyl_arena_alloc((long long)(size_t)g_pin_arena, size);
+}
+
+/* ==========================================================================
+   FFI pinning — copy an 8-byte value to a stable Pin arena location and back.
+   ========================================================================== */
 
 /* ==========================================================================
    Atomic operations on 64-bit memory locations (address passed as Int).
