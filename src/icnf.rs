@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ast::*;
-use crate::error::{Span, ZylError};
+use crate::error::ZylError;
 use crate::region_inference::Region;
 use crate::type_system::Type;
 
@@ -1546,7 +1546,7 @@ impl IcnfConverter {
                         if let Some(&id) = self.current_scope.get(name) {
                             init_ssa.push((name.clone(), Some(id)));
                         } else {
-                            return Err(ZylError::E_UNBOUND_VARIABLE(Span::default(), name.clone()));
+                            return Err(ZylError::E_UNBOUND_VARIABLE(cond_expr.span.clone(), name.clone()));
                         }
                     }
                 }
