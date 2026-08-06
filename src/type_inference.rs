@@ -1079,7 +1079,7 @@ impl TypeInferer {
                 Ok(Type::Fun(pt, Box::new(rt)))
             }
 
-            ExprInner::Apply(name, args) => self.handle_apply(name, args),
+            ExprInner::Apply(name, args) => self.handle_apply(name, args, expr),
             ExprInner::Call(op, args) => self.handle_call(expr, op, args),
 
             ExprInner::While(cond, body) => {
@@ -1495,12 +1495,13 @@ impl TypeInferer {
         }
     }
 
-    fn handle_apply(&mut self, name: &str, args: &[Expr]) -> std::result::Result<Type, ZylError> {
+    fn handle_apply(&mut self, name: &str, args: &[Expr], expr: &Expr) -> std::result::Result<Type, ZylError> {
         if let Some(ret_type) = self.function_returns.get(name).cloned() {
             let expected_params: Vec<(String, Type)> =
                 self.known_functions.get(name).cloned().unwrap_or_default();
             if args.len() != expected_params.len() {
                 return Err(ZylError::E_ARITY_MISMATCH(
+                    expr.span.clone(),
                     name.to_string(),
                     expected_params.len(),
                     args.len(),
@@ -1565,6 +1566,7 @@ impl TypeInferer {
                 Type::Fun(expected_params, return_type) => {
                     if args.len() != expected_params.len() {
                         return Err(ZylError::E_ARITY_MISMATCH(
+                            expr.span.clone(),
                             name.to_string(),
                             expected_params.len(),
                             args.len(),
@@ -1577,7 +1579,7 @@ impl TypeInferer {
                     Ok((*return_type).clone())
                 }
                 _ => Err(ZylError::E_TYPE_MISMATCH(
-                    Span::default(),
+                    expr.span.clone(),
                     "function type".to_string(),
                     format!("{}", ty),
                 )),
@@ -1701,7 +1703,7 @@ impl TypeInferer {
             drop(self.infer_expr(&args[0])?);
             Ok(Type::Prim(PrimType::Unit))
         } else {
-            self.handle_apply(&op_name, args)
+            self.handle_apply(&op_name, args, expr)
         }
     }
 

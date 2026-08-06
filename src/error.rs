@@ -157,8 +157,8 @@ pub enum ZylError {
     #[error("type: cannot infer concrete type for generic parameter '{}' at {} — no call-site evidence", .1, .0)]
     E_CANNOT_INFER(Span, String),
 
-    #[error("type: function arity mismatch for '{}' — expected {} arguments, found {}", .0, .1, .2)]
-    E_ARITY_MISMATCH(String, usize, usize),
+    #[error("type: function arity mismatch for '{}' at {}: expected {} arguments, found {}", .1, .0, .2, .3)]
+    E_ARITY_MISMATCH(Span, String, usize, usize),
 
     #[error("type: return type mismatch in '{}': expected {}, got {} at {}", .1, .2, .3, .0)]
     E_RETURN_TYPE_MISMATCH(Span, String, String, String),

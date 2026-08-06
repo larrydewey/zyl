@@ -628,7 +628,12 @@ impl MonoContext {
         }
 
         if type_map.is_empty() && !generics.is_empty() {
-            return Ok(None); // No concrete types inferred for any generic param.
+            // Call site has no type evidence for generic params — error per spec §6.4.
+            let first_param = generics.first().map(|g| g.name.clone()).unwrap_or_default();
+            return Err(ZylError::E_CANNOT_INFER(
+                self.span.clone(),
+                first_param,
+            ));
         }
 
         // Generate canonical name from the mapped types (sorted alphabetically).
@@ -726,24 +731,39 @@ impl MonoContext {
         // If no instantiations found from call sites, generate one per known type that satisfies bounds.
         if instantiation_sets.is_empty() {
             let mut inst: IndexMap<String, Type> = IndexMap::new();
+            let mut missing_spans: Vec<(String, Span)> = Vec::new();
+
             for generic in generics {
                 if !generic.bounds.is_empty() {
                     // Bounded — find a satisfying concrete type.
+                    let mut found_type = false;
                     for bound in &generic.bounds {
                         let types = self.find_satisfying_types(bound);
                         if let Some(ty) = types.first().cloned() {
                             inst.insert(generic.name.clone(), ty);
+                            found_type = true;
                             break;
                         }
                     }
+                    if !found_type {
+                        missing_spans.push((generic.name.clone(), self.span.clone()));
+                    }
                 } else {
-                    // Unbounded — use Int as default.
-                    inst.insert(generic.name.clone(), Type::Prim(PrimType::Int));
+                    // Unbounded with no call-site evidence — error per spec §6.4.
+                    return Err(ZylError::E_CANNOT_INFER(
+                        self.span.clone(),
+                        generic.name.clone(),
+                    ));
                 }
             }
 
             if !inst.is_empty() {
                 instantiation_sets.push(inst);
+            } else if !missing_spans.is_empty() {
+                // All bounded generics had no satisfying types and no call-site evidence.
+                // Report the first one per spec §6.4.
+                let (param_name, span) = missing_spans.remove(0);
+                return Err(ZylError::E_CANNOT_INFER(span, param_name));
             }
         }
 
