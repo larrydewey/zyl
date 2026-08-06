@@ -1,0 +1,22 @@
+; === Test harness verification ===
+; Verifies: test, run-tests, assert-true, assert-false, assert-equal
+
+(test "addition is correct"
+  (assert-equal (+ 2 3) 5))
+
+(test "bool true works"
+  (assert-true true))
+
+(test "bool false works"
+  (assert-false false))
+
+(test "string equality"
+  (assert-equal (+ 1 2 3) 6))
+
+(test "subtraction"
+  (assert-equal (- 10 4) 6))
+
+(test "multiplication"
+  (assert-equal (* 3 7) 21))
+
+(run-tests)
