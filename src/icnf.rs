@@ -664,12 +664,8 @@ impl IcnfConverter {
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body)?;
-                    // Push top-level body statements to temp buffer.
-                    for stmt in body_stmts {
-                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
-                            self.global_stmts.push(stmt);
-                        }
-                    }
+                    // Push top-level body statements to temp buffer, preserving order.
+                    self.collect_body_into_globals(&body_stmts);
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
                     let func_sig = ICNFFuncSig {
@@ -721,11 +717,7 @@ impl IcnfConverter {
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body_expr)?;
-                    for stmt in body_stmts {
-                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
-                            self.global_stmts.push(stmt);
-                        }
-                    }
+                    self.collect_body_into_globals(&body_stmts);
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
 
@@ -939,11 +931,7 @@ impl IcnfConverter {
                     let saved_push = self.push_to_globals;
                     self.push_to_globals = true;
                     let body_stmts = self.convert_expr_to_stmts(body_expr)?;
-                    for stmt in body_stmts {
-                        if self.global_stmts.iter().all(|n| n.id != stmt.id) {
-                            self.global_stmts.push(stmt);
-                        }
-                    }
+                    self.collect_body_into_globals(&body_stmts);
                     let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                     self.push_to_globals = saved_push;
 
@@ -1418,15 +1406,22 @@ impl IcnfConverter {
                 let mut all_stmts = val_stmts.clone();
                 all_stmts.push(assign_node);
                 all_stmts.extend(body_stmts);
-                // Append temp-buffer nodes (Load operand supply + If cond BinOps) that are
-                // NOT already present. body_stmts already contains the full nested chain, so
-                // without this dedup every nested Let duplicates its ancestors' statements,
-                // and codegen emits the same branch body multiple times.
+                // Insert temp-buffer nodes (Load operand supply + If cond BinOps) that are
+                // NOT already present, keeping the final body statement LAST. body_stmts
+                // already contains the full nested chain, so without this dedup every
+                // nested Let duplicates its ancestors' statements, and codegen emits the
+                // same branch body multiple times. Appending them at the END would place
+                // If-cond supply nodes after the trailing value statement, making codegen's
+                // "not the final statement" skip rule drop the trailing value — the
+                // epilogue then returns garbage instead of the function's result.
+                let mut to_insert: Vec<ICNFNode> = Vec::new();
                 for stmt in load_stmts {
                     if !all_stmts.iter().any(|n| n.id == stmt.id) {
-                        all_stmts.push(stmt.clone());
+                        to_insert.push(stmt);
                     }
                 }
+                let pos = all_stmts.len().saturating_sub(1);
+                all_stmts.splice(pos..pos, to_insert);
                 for stmt in &all_stmts {
                     if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
                         self.global_stmts.push(stmt.clone());
@@ -2780,11 +2775,7 @@ impl IcnfConverter {
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = true;
                 let body_stmts = self.convert_expr_to_stmts(body)?;
-                for stmt in body_stmts {
-                    if self.global_stmts.iter().all(|n| n.id != stmt.id) {
-                        self.global_stmts.push(stmt);
-                    }
-                }
+                self.collect_body_into_globals(&body_stmts);
                 let func_body = std::mem::replace(&mut self.global_stmts, saved_globals);
                 self.push_to_globals = saved_push;
                 let func_sig = ICNFFuncSig {
@@ -3284,6 +3275,29 @@ impl IcnfConverter {
     }
 
     /// Emit an ICNF node with a new SSA ID (auto-generated).
+    /// Merge `body_stmts` into `self.global_stmts` preserving statement order.
+    ///
+    /// `convert_expr_to_stmts` returns the authoritative top-level statement
+    /// sequence for an expression, but during conversion intermediate operand
+    /// nodes (cond loads, call operands, trailing variable loads) are eagerly
+    /// pushed into `self.global_stmts`. Without reordering, a statement node
+    /// that was eagerly pushed (e.g. a trailing `Load x` after an `If`) can
+    /// end up BEFORE an earlier statement (the `If` node, which is only
+    /// appended here) — the function then returns the `If`'s value instead of
+    /// the trailing expression's.
+    ///
+    /// Fix: drop every statement that also appears in `body_stmts` from the
+    /// eager buffer, then re-append `body_stmts` in order. Only non-statement
+    /// intermediates (operand supply nodes) keep their eager positions.
+    fn collect_body_into_globals(&mut self, body_stmts: &[ICNFNode]) {
+        let body_ids: std::collections::HashSet<usize> =
+            body_stmts.iter().map(|n| n.id).collect();
+        self.global_stmts.retain(|n| !body_ids.contains(&n.id));
+        for stmt in body_stmts {
+            self.global_stmts.push(stmt.clone());
+        }
+    }
+
     fn emit(&mut self, inner: ICNFInner) -> ICNFNode {
         let id = self.next_ssa_id();
 

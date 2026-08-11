@@ -177,4 +177,8 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 Detailed phase-by-phase implementation history, debugging notes, and fix documentation are preserved in:
 - `docs/implementation-status.md` — current phase details
 - `specifications/` — historical specification versions (v1.0 through v4.1)
+
+### Recent Fixes
+
+- **SIGSEGV: nested `if` inside `while` body clobbered a param slot (codegen.rs)** — The `if (> i 0)` inside `emit-children`'s `while` stored its result to `[rbp-16]`, overwriting the `list` param (slot 1). Root cause: `collect_func_phi_slots` / main-path `register_nested_ifs_recursive` only recursed into If/Match branch bodies, not While/For/Begin bodies, so nested If result_vars got no pre-computed phi slot; and the While/For/cond-body emitters passed an empty `phi_slots` map, forcing the If handler's dynamic slot `(0+1+1)*8 = 16`. Fixed by (1) recursing into While/For/Begin bodies in both slot-registration passes, (2) passing the inherited `phi_slots` instead of an empty map in While/For/cond/body emission, and (3) preferring the registered `local_vars` slot in the If handler before the dynamic fallback. Verified: `test_ir.zyl` compiles and the generated binary runs to completion (no SIGSEGV); regression suite still passes.
 - Git commit history
