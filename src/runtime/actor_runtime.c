@@ -259,6 +259,15 @@ long long zyl_cstr_len(long long ptr) {
     return (long long)strlen((const char*)(size_t)ptr);
 }
 
+/* Non-zero if the two NUL-terminated strings are byte-identical. */
+long long zyl_cstr_eq(long long p1, long long p2) {
+    if (p1 == p2) return 1;
+    if (!p1 || !p2) return 0;
+    const char* s1 = (const char*)(size_t)p1;
+    const char* s2 = (const char*)(size_t)p2;
+    return (long long)(strcmp(s1, s2) == 0);
+}
+
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }

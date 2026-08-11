@@ -491,6 +491,16 @@ impl CodeGen {
                             register_nested_ifs_recursive(&arm.body, local_vars, assign_slots, assign_count);
                         }
                     }
+                    if let ICNFInner::While { cond_body, body, .. } = &stmt.node {
+                        register_nested_ifs_recursive(cond_body, local_vars, assign_slots, assign_count);
+                        register_nested_ifs_recursive(body, local_vars, assign_slots, assign_count);
+                    }
+                    if let ICNFInner::For { body, .. } = &stmt.node {
+                        register_nested_ifs_recursive(body, local_vars, assign_slots, assign_count);
+                    }
+                    if let ICNFInner::Begin(stmts) = &stmt.node {
+                        register_nested_ifs_recursive(stmts, local_vars, assign_slots, assign_count);
+                    }
                 }
             }
             register_nested_ifs_recursive(&program.statements, &mut local_vars, &mut assign_slots, &mut assign_count);
@@ -1002,6 +1012,16 @@ impl CodeGen {
                             collect_func_phi_slots(&arm.body, local_vars, phi_slots);
                         }
                     }
+                    if let ICNFInner::While { cond_body, body, .. } = &stmt.node {
+                        collect_func_phi_slots(cond_body, local_vars, phi_slots);
+                        collect_func_phi_slots(body, local_vars, phi_slots);
+                    }
+                    if let ICNFInner::For { body, .. } = &stmt.node {
+                        collect_func_phi_slots(body, local_vars, phi_slots);
+                    }
+                    if let ICNFInner::Begin(stmts) = &stmt.node {
+                        collect_func_phi_slots(stmts, local_vars, phi_slots);
+                    }
                 }
             }
             collect_func_phi_slots(&func.body, &mut local_vars, &mut phi_slots);
@@ -1498,17 +1518,7 @@ impl CodeGen {
         strings_vec.sort();
         self.asm_push_align(); // align before strings section
         for s in &strings_vec {
-            let safe_name: String = s
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() {
-                        c.to_string()
-                    } else {
-                        "_".to_string()
-                    }
-                })
-                .collect();
-            let str_label = format!(".str_{}", safe_name);
+            let str_label = Self::string_label(s);
             self.asm_push_align();
             self.asm.push(format!("{}:", str_label));
             let escaped = s
@@ -2822,17 +2832,7 @@ impl CodeGen {
                 ));
             }
             Atom::Str(s) => {
-                let safe_name: String = s
-                    .chars()
-                    .map(|c| {
-                        if c.is_ascii_alphanumeric() {
-                            c.to_string()
-                        } else {
-                            "_".to_string()
-                        }
-                    })
-                    .collect();
-                let str_label = format!(".str_{}", safe_name);
+                let str_label = Self::string_label(s);
 
                 // Load pointer to string (already emitted in rodata section).
                 self.asm_push_align();
@@ -3169,17 +3169,23 @@ impl CodeGen {
 
     /// Emit a string literal in rodata and return its label name.
     fn emit_string_literal(&mut self, s: &str) -> String {
-        let safe_name: String = s
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() {
-                    c.to_string()
-                } else {
-                    "_".to_string()
-                }
-            })
-            .collect();
-        format!(".str_{}", safe_name)
+        Self::string_label(s)
+    }
+
+    /// Deterministic, injective label for a string literal. Every distinct
+    /// byte sequence maps to a distinct safe label (alphanumeric bytes kept
+    /// verbatim, every other byte hex-escaped as `_HH`), so two different
+    /// strings can never collide to the same assembler symbol.
+    fn string_label(s: &str) -> String {
+        let mut out = String::from(".str_");
+        for b in s.bytes() {
+            if b.is_ascii_alphanumeric() {
+                out.push(b as char);
+            } else {
+                out.push_str(&format!("_{:02X}", b));
+            }
+        }
+        out
     }
 
     // ─── Integer-to-String Conversion ────────────────────────────────
@@ -3479,6 +3485,28 @@ impl CodeGen {
                     self.emit_load_into(
                         resolved_value_id,
                         "rax",
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        operand_ids,
+                        phi_slots,
+                    );
+                }
+                // Also need to load Const(Int/Bool) and Load values into eax.
+                // The main emit loop skips Const/Load/Assign nodes, so their values
+                // are never pre-loaded into eax. The store below assumes eax has the value.
+                let needs_value_load = matches!(
+                    value_node,
+                    Some(ICNFNode { node: ICNFInner::Const(atom), .. }) if !matches!(atom, crate::ast::Atom::Ident(_))
+                ) || matches!(
+                    value_node,
+                    Some(ICNFNode { node: ICNFInner::Load(_), .. })
+                );
+                if needs_value_load && !emitted_ids.contains(&resolved_value_id) {
+                    self.emit_load_into(
+                        resolved_value_id,
+                        "eax",
                         stmts,
                         local_vars,
                         lookup,
@@ -3834,9 +3862,15 @@ impl CodeGen {
                 // Nested Ifs compute their slot dynamically.
                 let mut phi_slots = phi_slots.clone();
                 if !phi_slots.contains_key(result_var) {
-                    let slot_count = phi_slots.len() + 1;
-                    let offset = ((slot_count + 1) * 8).to_string();
-                    phi_slots.insert(result_var.clone(), offset);
+                    // Prefer the registered local_vars slot (covers nested Ifs inside
+                    // While/For/Begin bodies whose phi slots were not pre-computed).
+                    if let Some(&slot) = local_vars.get(result_var) {
+                        phi_slots.insert(result_var.clone(), ((slot + 1) * 8).to_string());
+                    } else {
+                        let slot_count = phi_slots.len() + 1;
+                        let offset = ((slot_count + 1) * 8).to_string();
+                        phi_slots.insert(result_var.clone(), offset);
+                    }
                 }
                 // Emit the condition inline by looking up the condition node and
                 // computing it directly. This handles the case where the condition
@@ -4150,7 +4184,7 @@ impl CodeGen {
                         emitted_ids,
                         &cond_operand_ids,
                         &while_lookup,
-                        &std::collections::HashMap::new(),
+                        phi_slots,
                     );
                     emitted_ids.insert(stmt.id);
                 }
@@ -4189,7 +4223,7 @@ impl CodeGen {
                         emitted_ids,
                         &while_operand_ids,
                         &while_lookup,
-                        &std::collections::HashMap::new(),
+                        phi_slots,
                     );
                     emitted_ids.insert(stmt.id);
                 }
@@ -4327,7 +4361,7 @@ impl CodeGen {
                         emitted_ids,
                         &for_operand_ids,
                         &for_lookup,
-                        &std::collections::HashMap::new(),
+                        phi_slots,
                     );
                     emitted_ids.insert(cond_stmt.id);
                 }
@@ -4360,7 +4394,7 @@ impl CodeGen {
                         emitted_ids,
                         &for_operand_ids,
                         &for_lookup,
-                        &std::collections::HashMap::new(),
+                        phi_slots,
                     );
                     emitted_ids.insert(stmt.id);
                 }
@@ -4852,11 +4886,26 @@ impl CodeGen {
                 // buffer, src = NUL-terminated string). Load them full 64-bit
                 // regardless of their inferred type, since an Int-typed variable may
                 // hold a 64-bit heap address (e.g. arena-alloc); 32-bit load truncates.
+                //
+                // Load SRC FIRST and save it on the stack. If src is a function-call
+                // result that was already emitted (e.g. pool-str pool id), emit_load_into
+                // leaves that value in rax expecting no intervening code to clobber it;
+                // the dst computation below pushes and loads r12/rax/rsi/rcx, destroying
+                // rax. Saving src first lets us pop it into rdx after computing dst,
+                // and rdx is not clobbered by the dst strlen either.
+                self.emit_load_into(
+                    *src, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                );
+                // Push order matters: r12 (caller-saved dst-start) is pushed FIRST,
+                // then src on TOP. The pops below must then take src into rdx before
+                // restoring r12 — matching the LIFO order.
+                self.asm_push_align();
+                self.asm.push("    push r12           # preserve dst start".to_string());
+                self.asm_push_align();
+                self.asm.push("    push rax            # save src pointer".to_string());
                 self.emit_load_into(
                     *dst, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
-                self.asm_push_align();
-                self.asm.push("    push r12           # preserve dst start".to_string());
                 self.asm_push_align();
                 self.asm.push("    mov r12, rax        # r12 = dst start".to_string());
                 self.asm_push_align();
@@ -4882,12 +4931,8 @@ impl CodeGen {
                 self.asm.push(format!("{}:", strlen_dst_done));
                 self.asm_push_align();
                 self.asm.push("    mov rdi, rcx        # rdi = copy destination (dst end)".to_string());
-
-                self.emit_load_into(
-                    *src, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
-                );
                 self.asm_push_align();
-                self.asm.push("    mov rdx, rax        # rdx = src pointer".to_string());
+                self.asm.push("    pop rdx             # rdx = src pointer".to_string());
                 self.asm_push_align();
                 self.asm.push("    mov rax, 0          # strlen counter".to_string());
                 self.asm_push_align();
