@@ -1169,7 +1169,6 @@ impl CodeGen {
                         break;
                     }
                 }
-                let param_count = param_names.len().saturating_sub(capture_count);
                 // Skip capture names to get actual parameters.
                 let params: Vec<String> = if capture_count > 0 {
                     param_names.into_iter().skip(capture_count).collect()
@@ -1193,7 +1192,6 @@ impl CodeGen {
                 // Parameters start after any captures (which are already loaded from parent scope).
                 let start_param_idx = capture_count;
                 let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
-                let abi_xmm_regs = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
                 for (i, param_name) in params.iter().enumerate() {
                     let real_idx = start_param_idx + i;
                     if real_idx < 6 && !param_name.is_empty() {
@@ -1230,7 +1228,7 @@ impl CodeGen {
                 for n in body {
                     func_lookup.insert(n.id, n);
                 }
-                let mut phi_slots: std::collections::HashMap<String, String> = HashMap::new();
+                let phi_slots: std::collections::HashMap<String, String> = HashMap::new();
 
                 for stmt in body {
                     if operand_ids.contains(&stmt.id) {
@@ -1775,17 +1773,11 @@ impl CodeGen {
                             .push(format!("    movsd {}, xmm0", target_reg));
                     }
                 } else {
-                    let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
-                    // Load into the REQUESTED target register. For pointer values the
-                    // full 64-bit value must be preserved; use the 64-bit form of the
-                    // target register so callers receive the pointer correctly. The
-                    // target_reg may be a 32-bit ABI reg (edi/esi/...) — use its 64-bit
-                    // spelling (rdi/rsi) so pointer bits are never dropped.
-                    let dest64 = if is_pointer {
-                        reg_to_64(target_reg).to_string()
-                    } else {
-                        target_reg.to_string()
-                    };
+                    // Always use 64-bit form of target register for Int/Bool/Unit values.
+                    // Int fields often hold pointers (arena handles, addresses), and
+                    // using 32-bit truncates them. For actual small integers, 64-bit
+                    // arithmetic is safe (sign/zero extension doesn't affect results).
+                    let dest64 = reg_to_64(target_reg).to_string();
                     if let Some(&slot_idx) = local_vars.get(name) {
                         let offset = (slot_idx + 1) * 8;
                         self.asm_push_align();
@@ -1859,8 +1851,19 @@ impl CodeGen {
                         self.asm
                             .push(format!("    movsd {}, xmm0", target_reg));
                     } else {
-                        self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                        if is_pointer {
+                            self.asm_push_align();
+                            if target_reg != "rax" {
+                                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                            }
+                        } else {
+                            self.asm_push_align();
+                            if target_reg != "eax" {
+                                self.asm
+                                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            }
+                        }
                     }
                 } else {
                     self.emit_call_direct(
@@ -1882,12 +1885,15 @@ impl CodeGen {
             }) => {
                 // Emit the FFI call on demand (it is skipped in the main emit loop
                 // when it is an operand) and load the result into target_reg.
-                // FFI results are 64-bit; copy the low 32 bits unless rax/eax requested.
+                // FFI results are always 64-bit (pointers, arena handles, file descriptors).
                 let already_emitted = emitted_ids.contains(&src_ssa_id)
                     || self.standalone_emitted.contains(&src_ssa_id);
                 if already_emitted {
-                    self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    self.asm_push_align();
+                    if target_reg != "rax" {
+                        self.asm
+                            .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                    }
                 } else {
                     self.emit_ffi_call_direct(
                         name,
@@ -2068,29 +2074,20 @@ impl CodeGen {
                 ..
             }) => {
                 if emitted_ids.contains(&src_ssa_id) {
-                    // Already emitted — load from phi slot (eax may be clobbered by calls).
+                    // Already emitted — load from phi slot (full 64-bit; slots are 8 bytes).
                     // Use phi_slots (same source as the join point) for the slot index.
                     let is_float = matches!(typ.as_ref(), Some(t) if matches!(t, Type::Prim(PrimType::Float)));
                     if is_float {
                         self.asm_push_align();
                         self.asm.push(format!("    movsd {}, xmm0", target_reg));
                     } else {
-                        let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                         if let Some(slot) = phi_slots.get(result_var.as_str()) {
                             self.asm_push_align();
-                            if is_pointer {
-                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
-                            } else {
-                                self.asm.push(format!("    mov eax, [rbp-{}]", slot));
-                            }
+                            self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                         } else if let Some(&slot_idx) = local_vars.get(result_var.as_str()) {
                             let offset = (slot_idx + 1) * 8;
                             self.asm_push_align();
-                            if is_pointer {
-                                self.asm.push(format!("    mov rax, [rbp-{}]", offset));
-                            } else {
-                                self.asm.push(format!("    mov eax, [rbp-{}]", offset));
-                            }
+                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                         } else {
                             // Fallback: load from eax (may be stale).
                             if target_reg != "rax" && target_reg != "eax" {
@@ -2116,14 +2113,10 @@ impl CodeGen {
                                 .push(format!("    movsd {}, xmm0", target_reg));
                         }
                     } else {
-                        let is_pointer = !is_float && !matches!(typ.as_ref(), Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                        // Join leaves the result in rax; copy full 64-bit.
                         if target_reg != "rax" && target_reg != "eax" {
                             self.asm_push_align();
-                            if is_pointer {
-                                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                            } else {
-                                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
-                            }
+                            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                         }
                     }
                 }
@@ -2226,10 +2219,10 @@ impl CodeGen {
 
         emitted_ids.insert(node_id);
 
-        // Load the result into the target register (results are 64-bit in rax).
-        if target_reg != "rax" && target_reg != "eax" {
+        // Load the result into the target register (results are always 64-bit in rax).
+        if target_reg != "rax" {
             self.asm_push_align();
-            self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
         }
     }
 
@@ -2358,15 +2351,16 @@ impl CodeGen {
             return;
         }
 
-        let src2 = "edx";
+        let src2 = "rdx";
 
-        // Load left operand into eax, save to temp stack slot to survive nested calls.
+        // Load left operand into rax, save to temp stack slot to survive nested calls.
+        // Use 64-bit throughout to preserve pointer values (Int fields hold pointers).
         let temp_slot = self.temp_slot_counter;
         self.temp_slot_counter += 1;
         let temp_offset = (temp_slot + 1) * 8;
         self.emit_load_into(
             left_id,
-            "eax",
+            "rax",
             stmts,
             local_vars,
             lookup,
@@ -2375,7 +2369,7 @@ impl CodeGen {
             &std::collections::HashMap::new(),
         );
         self.asm_push_align();
-        self.asm.push(format!("    mov [rbp-{}], eax", temp_offset));
+        self.asm.push(format!("    mov [rbp-{}], rax", temp_offset));
         self.emit_load_into(
             right_id,
             src2,
@@ -2387,42 +2381,42 @@ impl CodeGen {
             &std::collections::HashMap::new(),
         );
         self.asm_push_align();
-        self.asm.push(format!("    mov eax, [rbp-{}]", temp_offset));
+        self.asm.push(format!("    mov rax, [rbp-{}]", temp_offset));
         self.asm_push_align();
-        self.asm.push("    mov ebx, eax".to_string());
+        self.asm.push("    mov rbx, rax".to_string());
 
         match op {
             BinOpKind::Add => {
                 self.asm_push_align();
-                self.asm.push(format!("    add eax, {}", src2));
+                self.asm.push(format!("    add rax, {}", src2));
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
             BinOpKind::Sub => {
                 self.asm_push_align();
-                self.asm.push(format!("    sub eax, {}", src2));
+                self.asm.push(format!("    sub rax, {}", src2));
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
             BinOpKind::Mul => {
                 self.asm_push_align();
-                self.asm.push(format!("    imul eax, {}", src2));
+                self.asm.push(format!("    imul rax, {}", src2));
                 self.asm_push_align();
-                self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
             BinOpKind::Div | BinOpKind::Rem => {
                 self.asm_push_align();
-                self.asm.push("    cdq".to_string());
+                self.asm.push("    cqo".to_string());
                 if op == &BinOpKind::Div {
                     self.asm_push_align();
                     self.asm.push(format!("    idiv {}", src2));
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 } else {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, edx", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rdx", reg_to_64(target_reg)));
                 }
             }
             BinOpKind::Eq
@@ -2431,9 +2425,9 @@ impl CodeGen {
             | BinOpKind::Gt
             | BinOpKind::Le
             | BinOpKind::Ge => {
-                let d = reg_to_32(target_reg);
+                let d = reg_to_64(target_reg);
                 self.asm_push_align();
-                self.asm.push("    cmp ebx, edx".to_string());
+                self.asm.push("    cmp rbx, rdx".to_string());
                 let (set_instr, _) = match op {
                     BinOpKind::Eq => ("sete", ""),
                     BinOpKind::Neq => ("setne", ""),
@@ -2448,15 +2442,15 @@ impl CodeGen {
             }
             BinOpKind::And => {
                 self.asm_push_align();
-                self.asm.push("    mov eax, ebx".to_string());
+                self.asm.push("    mov rax, rbx".to_string());
                 self.asm_push_align();
-                self.asm.push("    and eax, edx".to_string());
+                self.asm.push("    and rax, rdx".to_string());
             }
             BinOpKind::Or => {
                 self.asm_push_align();
-                self.asm.push("    mov eax, ebx".to_string());
+                self.asm.push("    mov rax, rbx".to_string());
                 self.asm_push_align();
-                self.asm.push("    or eax, edx".to_string());
+                self.asm.push("    or rax, rdx".to_string());
             }
         }
         emitted_ids.insert(node_id);
@@ -2477,7 +2471,7 @@ impl CodeGen {
         node_id: usize,
         is_float: bool,
     ) {
-        let abi_regs = ["edi", "esi", "edx", "ecx", "r8d", "r9d"];
+        // Use 64-bit ABI regs for all non-float args to preserve pointers.
         let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
         let abi_xmm = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
 
@@ -2522,7 +2516,7 @@ impl CodeGen {
                         .push(format!("    movsd [rsp], {}", xmm_reg));
                     is_floats.push(true);
                 } else {
-                    let reg = abi_regs[i];
+                    let reg = abi_regs_64[i];
                     self.emit_load_into(
                         arg_id, reg, stmts, local_vars, lookup, emitted_ids,
                         &std::collections::HashSet::new(),
@@ -2533,10 +2527,9 @@ impl CodeGen {
                     // register is not clobbered by the sub rsp.
                     self.asm_push_align();
                     self.asm.push("    sub rsp, 8".to_string());
-                    let reg_64 = abi_regs_64[i];
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov [rsp], {}", reg_64));
+                        .push(format!("    mov [rsp], {}", reg));
                     is_floats.push(false);
                 }
             }
@@ -2571,7 +2564,7 @@ impl CodeGen {
             } else {
                 self.asm_push_align();
                 self.asm
-                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
         } else {
             // --- Direct call path (push/pop dance) ---
@@ -2651,15 +2644,14 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push("    push rax".to_string());
                 } else {
-                    let reg = abi_regs[i];
+                    let reg = abi_regs_64[i];
                     self.emit_load_into(
                         arg_id, reg, stmts, local_vars, lookup, emitted_ids,
                         &std::collections::HashSet::new(),
                         &std::collections::HashMap::new(),
                     );
                     self.asm_push_align();
-                    let reg_64 = abi_regs_64[i];
-                    self.asm.push(format!("    push {}", reg_64));
+                    self.asm.push(format!("    push {}", reg));
                 }
             }
             // Restore all saved argument values into their ABI registers.
@@ -2703,7 +2695,7 @@ impl CodeGen {
                 } else {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             } else if !target_reg.is_empty() {
                 if is_float {
@@ -2717,7 +2709,7 @@ impl CodeGen {
                 } else {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
         }
@@ -3072,16 +3064,14 @@ impl CodeGen {
             );
         }
         // Store then branch result to phi slot (same slot as Assign handler).
+        // Slots are 8 bytes; store full 64-bit even for Int/Bool results.
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
-            } else if res_is_pointer {
-                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             } else {
-                self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             }
         }
         self.asm_push_align();
@@ -3134,33 +3124,27 @@ impl CodeGen {
             );
         }
 
-        // Store else branch result to phi slot.
+        // Store else branch result to phi slot (full 64-bit).
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
-            } else if res_is_pointer {
-                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             } else {
-                self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                self.asm.push(format!("    mov [rbp-{}], rax", slot));
             }
         }
 
-        // Join — load phi result into eax/xmm0/rax so callers see it correctly.
+        // Join — load phi result into xmm0/rax so callers see it correctly (64-bit).
         self.asm_push_align();
         self.asm.push(format!("{}:", join_point));
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-            let res_is_pointer = !res_is_float && !matches!(result_typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
             if res_is_float {
                 self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
-            } else if res_is_pointer {
-                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
             } else {
-                self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
             }
         }
 
@@ -3388,25 +3372,16 @@ impl CodeGen {
                         self.asm.push(format!("    movsd xmm0, [rbp-{}]", offset));
                     }
                 } else {
-                    // Use rax for pointer types (structs/strings/ADTs), eax for int/bool/unit.
-                    let is_pointer = !is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
+                    // Slots are 8 bytes; load full 64-bit for all types (Int may hold pointers).
                     if let Some(&offset_idx) = local_vars.get(name) {
                         let offset = (offset_idx + 1) * 8;
                         self.asm_push_align();
-                        if is_pointer {
-                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
-                        } else {
-                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
-                        }
+                        self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                     } else {
                         let hash = simple_hash(name);
                         let offset = ((hash % 32) + 1) * 8;
                         self.asm_push_align();
-                        if is_pointer {
-                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
-                        } else {
-                            self.asm.push(format!("    mov eax, [rbp-{}]", offset));
-                        }
+                        self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                     }
                 }
             }
@@ -3450,27 +3425,17 @@ impl CodeGen {
                 }
                 if let Some(ref result_var) = if_result_var {
                     // Load from the If's phi slot and store to this Assign's slot.
+                    // Slots are always 8 bytes, so use full 64-bit moves even for
+                    // Int/Bool results (a 32-bit store leaves garbage in the upper
+                    // half of the slot, corrupting later 64-bit reads).
                     if let Some(&slot_idx) = local_vars.get(result_var) {
                         let phi_offset = (slot_idx + 1) * 8;
                         self.asm_push_align();
-                        // Check If node type to decide rax vs eax.
-                        let is_if_pointer = value_node
-                            .and_then(|n| n.typ.as_ref())
-                            .map(|t| !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)))
-                            .unwrap_or(false);
-                        if is_if_pointer {
-                            self.asm.push(format!("    mov rax, [rbp-{}]", phi_offset));
-                        } else {
-                            self.asm.push(format!("    mov eax, [rbp-{}]", phi_offset));
-                        }
+                        self.asm.push(format!("    mov rax, [rbp-{}]", phi_offset));
                         if let Some(&my_slot) = local_vars.get(var_name) {
                             let my_offset = (my_slot + 1) * 8;
                             self.asm_push_align();
-                            if is_if_pointer {
-                                self.asm.push(format!("    mov [rbp-{}], rax", my_offset));
-                            } else {
-                                self.asm.push(format!("    mov [rbp-{}], eax", my_offset));
-                            }
+                            self.asm.push(format!("    mov [rbp-{}], rax", my_offset));
                         }
                         return;
                     }
@@ -3506,7 +3471,7 @@ impl CodeGen {
                 if needs_value_load && !emitted_ids.contains(&resolved_value_id) {
                     self.emit_load_into(
                         resolved_value_id,
-                        "eax",
+                        "rax",
                         stmts,
                         local_vars,
                         lookup,
@@ -3539,8 +3504,9 @@ impl CodeGen {
                         self.asm
                             .push(format!("    mov [rbp-{}], rax", offset));
                     } else {
+                        // Int/Bool/Unit: slots are 8 bytes, store full 64-bit.
                         self.asm
-                            .push(format!("    mov [rbp-{}], eax", offset));
+                            .push(format!("    mov [rbp-{}], rax", offset));
                     }
                 } else {
                     // Fallback: use hash-based offset if not in local_vars.
@@ -3554,8 +3520,9 @@ impl CodeGen {
                         self.asm
                             .push(format!("    mov [rbp-{}], rax", offset));
                     } else {
+                        // Int/Bool/Unit: slots are 8 bytes, store full 64-bit.
                         self.asm
-                            .push(format!("    mov [rbp-{}], eax", offset));
+                            .push(format!("    mov [rbp-{}], rax", offset));
                     }
                 }
             }
@@ -3683,106 +3650,107 @@ impl CodeGen {
                                  self.asm_push_align();
                              }
                          }
-                        } else {
-                          // Load left operand into eax, save to temp stack slot.
-                          // Right operand loading may clobber eax via nested calls/BinOps.
-                          let temp_slot = self.temp_slot_counter;
-                          self.temp_slot_counter += 1;
-                          let temp_offset = (temp_slot + 1) * 8;
-                          self.emit_load_into(
-                              *left_id,
-                              "eax",
-                              stmts,
-                              local_vars,
-                              lookup,
-                              emitted_ids,
-                              operand_ids,
-                              phi_slots,
-                          );
-                          self.asm_push_align();
-                          self.asm.push(format!("    mov [rbp-{}], eax", temp_offset));
-                          self.emit_load_into(
-                              *right_id,
-                              "edx",
-                              stmts,
-                              local_vars,
-                              lookup,
-                              emitted_ids,
-                              operand_ids,
-                              phi_slots,
-                          );
-                          self.asm_push_align();
-                          self.asm.push(format!("    mov eax, [rbp-{}]", temp_offset));
-                          emitted_ids.insert(node.id);
+                         } else {
+                           // Load left operand into rax, save to temp stack slot.
+                           // Right operand loading may clobber rax via nested calls/BinOps.
+                           // Use 64-bit throughout to preserve pointer values (arena handles, struct addresses).
+                           let temp_slot = self.temp_slot_counter;
+                           self.temp_slot_counter += 1;
+                           let temp_offset = (temp_slot + 1) * 8;
+                           self.emit_load_into(
+                               *left_id,
+                               "rax",
+                               stmts,
+                               local_vars,
+                               lookup,
+                               emitted_ids,
+                               operand_ids,
+                               phi_slots,
+                           );
+                           self.asm_push_align();
+                           self.asm.push(format!("    mov [rbp-{}], rax", temp_offset));
+                           self.emit_load_into(
+                               *right_id,
+                               "rdx",
+                               stmts,
+                               local_vars,
+                               lookup,
+                               emitted_ids,
+                               operand_ids,
+                               phi_slots,
+                           );
+                           self.asm_push_align();
+                           self.asm.push(format!("    mov rax, [rbp-{}]", temp_offset));
+                           emitted_ids.insert(node.id);
 
-                         match op {
-                             BinOpKind::Add => {
+                          match op {
+                              BinOpKind::Add => {
+                                  self.asm_push_align();
+                                  self.asm.push("    add rax, rdx".to_string());
+                              }
+                              BinOpKind::Sub => {
+                                  self.asm_push_align();
+                                  self.asm.push("    sub rax, rdx".to_string());
+                              }
+                              BinOpKind::Mul => {
+                                  self.asm_push_align();
+                                  self.asm.push("    imul rax, rdx".to_string());
+                              }
+                              BinOpKind::Div | BinOpKind::Rem => {
+                                  self.asm_push_align();
+                                  self.asm.push("    cqo".to_string()); // Sign-extend rax into rdx:rax (64-bit)
+                                  if op == &BinOpKind::Div {
+                                      self.asm_push_align();
+                                      self.asm.push("    idiv rdx".to_string());
+                                  } else {
+                                      self.asm_push_align();
+                                      self.asm.push("    idiv rdx".to_string());
+                                      self.asm_push_align();
+                                      self.asm.push("    mov rax, rdx".to_string()); // Remainder in rdx
+                                  }
+                              }
+                              BinOpKind::Eq
+                              | BinOpKind::Neq
+                              | BinOpKind::Lt
+                              | BinOpKind::Gt
+                              | BinOpKind::Le
+                              | BinOpKind::Ge => {
+                                  self.asm_push_align();
+                                  self.asm.push(format!("    mov rbx, [rbp-{}]", temp_offset));
+                                  self.asm_push_align();
+                                  self.asm.push("    cmp rbx, rdx".to_string());
+                                 let (set_instr, _) = match op {
+                                     BinOpKind::Eq => ("sete", ""),
+                                     BinOpKind::Neq => ("setne", ""),
+                                     BinOpKind::Lt => ("setl", ""),
+                                     BinOpKind::Gt => ("setg", ""),
+                                     BinOpKind::Le => ("setle", ""),
+                                     BinOpKind::Ge => ("setge", ""),
+                                     _ => unreachable!(),
+                                 };
                                  self.asm_push_align();
-                                 self.asm.push("    add eax, edx".to_string());
+                                 self.asm.push(format!("    {} al", set_instr));
+                                 self.asm_push_align();
+                                 self.asm.push("    movzx rax, al".to_string());
                              }
-                             BinOpKind::Sub => {
+                             BinOpKind::And => {
                                  self.asm_push_align();
-                                 self.asm.push("    sub eax, edx".to_string());
+                                 self.asm.push("    mov rax, rdx".to_string());
+                                 self.asm_push_align();
+                                 self.asm.push(format!("    mov rdx, [rbp-{}]", temp_offset));
+                                 self.asm_push_align();
+                                 self.asm.push("    and rax, rdx".to_string());
                              }
-                             BinOpKind::Mul => {
+                             BinOpKind::Or => {
                                  self.asm_push_align();
-                                 self.asm.push("    imul eax, edx".to_string());
+                                 self.asm.push("    mov rax, rdx".to_string());
+                                 self.asm_push_align();
+                                 self.asm.push(format!("    mov rdx, [rbp-{}]", temp_offset));
+                                 self.asm_push_align();
+                                 self.asm.push("    or rax, rdx".to_string());
                              }
-                             BinOpKind::Div | BinOpKind::Rem => {
-                                 self.asm_push_align();
-                                 self.asm.push("    cdq".to_string());
-                                 if op == &BinOpKind::Div {
-                                     self.asm_push_align();
-                                     self.asm.push("    idiv edx".to_string());
-                                     self.asm_push_align();
-                                     self.asm.push("    mov eax, eax".to_string());
-                                 } else {
-                                     self.asm_push_align();
-                                     self.asm.push("    mov eax, edx".to_string());
-                                 }
-                             }
-                             BinOpKind::Eq
-                             | BinOpKind::Neq
-                             | BinOpKind::Lt
-                             | BinOpKind::Gt
-                             | BinOpKind::Le
-                             | BinOpKind::Ge => {
-                                 self.asm_push_align();
-                                 self.asm.push(format!("    mov ebx, [rbp-{}]", temp_offset));
-                                 self.asm_push_align();
-                                 self.asm.push("    cmp ebx, edx".to_string());
-                                let (set_instr, _) = match op {
-                                    BinOpKind::Eq => ("sete", ""),
-                                    BinOpKind::Neq => ("setne", ""),
-                                    BinOpKind::Lt => ("setl", ""),
-                                    BinOpKind::Gt => ("setg", ""),
-                                    BinOpKind::Le => ("setle", ""),
-                                    BinOpKind::Ge => ("setge", ""),
-                                    _ => unreachable!(),
-                                };
-                                self.asm_push_align();
-                                self.asm.push(format!("    {} al", set_instr));
-                                self.asm_push_align();
-                                self.asm.push("    movzx eax, al".to_string());
-                            }
-                            BinOpKind::And => {
-                                self.asm_push_align();
-                                self.asm.push("    mov eax, edx".to_string());
-                                self.asm_push_align();
-                                self.asm.push(format!("    mov edx, [rbp-{}]", temp_offset));
-                                self.asm_push_align();
-                                self.asm.push("    and eax, edx".to_string());
-                            }
-                            BinOpKind::Or => {
-                                self.asm_push_align();
-                                self.asm.push("    mov eax, edx".to_string());
-                                self.asm_push_align();
-                                self.asm.push(format!("    mov edx, [rbp-{}]", temp_offset));
-                                self.asm_push_align();
-                                self.asm.push("    or eax, edx".to_string());
-                            }
-                        }
-                   }
+                         }
+                    }
                }
 
             ICNFInner::UnOp(op, arg_id) => {
@@ -3806,7 +3774,7 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    movsd [rbp-{}], {}", slot_idx * 8, xmm_result));
                 } else {
-                    let reg = self.alloc_reg_32();
+                    let reg = self.alloc_reg_64();
                     match stmts.iter().find(|n| n.id == *arg_id) {
                         Some(ICNFNode {
                             node: ICNFInner::Const(atom),
@@ -3825,30 +3793,30 @@ impl CodeGen {
                     match op {
                         UnOpKind::Not => {
                             self.asm_push_align();
-                            self.asm.push(format!("    xor {}, 1", reg_to_32(reg)));
+                            self.asm.push(format!("    xor {}, 1", reg));
                         }
                         UnOpKind::Negate => {
                             self.asm_push_align();
-                            self.asm.push(format!("    neg {}", reg_to_32(reg)));
+                            self.asm.push(format!("    neg {}", reg));
                         }
                     }
                 }
             }
             ICNFInner::SetBang(target, val_id) => {
-                // Load val_id into eax first, then store to target variable's slot.
-                self.emit_load_into(*val_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
+                // Load val_id into rax first (64-bit to preserve pointer values), then store to target variable's slot.
+                self.emit_load_into(*val_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                 if let Some(&slot_idx) = local_vars.get(target) {
                     let offset = (slot_idx + 1) * 8;
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov [rbp-{}], eax", offset));
+                        .push(format!("    mov [rbp-{}], rax", offset));
                     emitted_ids.insert(node.id);
                 } else {
                     let hash = simple_hash(target);
                     let offset = ((hash % 32) + 1) * 8;
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov [rbp-{}], eax", offset));
+                        .push(format!("    mov [rbp-{}], rax", offset));
                 }
             }
             ICNFInner::If {
@@ -3973,17 +3941,14 @@ impl CodeGen {
                     emitted_ids.insert(stmt.id);
                 }
 
-                // Store then branch result to phi slot.
+                // Store then branch result to phi slot (full 64-bit).
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
-                    } else if res_is_pointer {
-                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     } else {
-                        self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     }
                 }
 
@@ -4044,34 +4009,28 @@ impl CodeGen {
                     emitted_ids.insert(stmt.id);
                 }
 
-                // Store else branch result to phi slot.
+                // Store else branch result to phi slot (full 64-bit).
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
-                    } else if res_is_pointer {
-                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     } else {
-                        self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
                     }
                 }
 
-                // Join point (phi merge): load phi result into eax/xmm0/rax.
+                // Join point (phi merge): load phi result into xmm0/rax (64-bit).
                 self.asm_push_align();
                 self.asm.push(format!("{}:", join_point));
 
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
                     let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-                    let res_is_pointer = !res_is_float && !matches!(&node.typ, Some(Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit)));
                     if res_is_float {
                         self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
-                    } else if res_is_pointer {
-                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                     } else {
-                        self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                     }
                 }
 
@@ -4228,10 +4187,10 @@ impl CodeGen {
                     emitted_ids.insert(stmt.id);
                 }
 
-                // Store result to phi slot.
+                // Store result to phi slot (full 64-bit).
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                    self.asm.push(format!("    mov [rbp-{}], rax", slot));
                 }
 
                 // Back jump.
@@ -4262,16 +4221,16 @@ impl CodeGen {
                                 match &node.node {
                                     ICNFInner::Const(Atom::Int(v)) => {
                                         self.asm_push_align();
-                                        self.asm.push(format!("    mov eax, {}", v));
+                                        self.asm.push(format!("    mov rax, {}", v));
                                         self.asm_push_align();
-                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                        self.asm.push(format!("    mov [rbp-{}], rax", (slot_offset + 1) * 8));
                                     }
                                     ICNFInner::Const(Atom::Bool(v)) => {
                                         let val = if *v { 1 } else { 0 };
                                         self.asm_push_align();
-                                        self.asm.push(format!("    mov eax, {}", val));
+                                        self.asm.push(format!("    mov rax, {}", val));
                                         self.asm_push_align();
-                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                        self.asm.push(format!("    mov [rbp-{}], rax", (slot_offset + 1) * 8));
                                     }
                                     _ => {
                                         // Emit the value node
@@ -4286,7 +4245,7 @@ impl CodeGen {
                                             phi_slots,
                                         );
                                         self.asm_push_align();
-                                        self.asm.push(format!("    mov [rbp-{}], eax", (slot_offset + 1) * 8));
+                                        self.asm.push(format!("    mov [rbp-{}], rax", (slot_offset + 1) * 8));
                                     }
                                 }
                             }
@@ -5250,7 +5209,7 @@ impl CodeGen {
 
             ICNFInner::StructGet(struct_id, field_offset) => {
                 // Load struct pointer into rax, then load field value from rax + offset.
-                // Result in eax.
+                // All struct fields are 8 bytes (64-bit aligned), so load 64-bit.
                 self.emit_load_into(
                     *struct_id,
                     "rax",
@@ -5262,7 +5221,7 @@ impl CodeGen {
                     phi_slots,
                 );
                 self.asm_push_align();
-                self.asm.push(format!("    mov eax, [rax + {}]", field_offset));
+                self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
                 emitted_ids.insert(node.id);
             }
 
@@ -5399,13 +5358,13 @@ impl CodeGen {
                     self.asm.push(format!("{}:", arm_label));
 
                     // Load field values from the scrutinee struct (now in r12).
-                    // Fields are at [r12 + 8], [r12 + 16], etc.
+                    // Fields are at [r12 + 8], [r12 + 16], etc. All fields are 8 bytes.
                     // Clone local_vars for this arm scope since we need to add pattern bindings.
                     let mut arm_local_vars = local_vars.clone();
                     for (j, field_name) in arm.field_names.iter().enumerate() {
                         let field_offset = (j + 1) * 8;
                         self.asm_push_align();
-                        self.asm.push(format!("    mov ecx, [r12 + {}]", field_offset)); // Load field into temp reg.
+                        self.asm.push(format!("    mov rcx, [r12 + {}]", field_offset)); // Load field as 64-bit (can be pointer)
                         self.asm_push_align();
 
                         // Store to a stack slot for the pattern variable.
@@ -5415,14 +5374,14 @@ impl CodeGen {
                             let max_slot: usize = arm_local_vars.values().cloned().max().unwrap_or(0);
                             let slot = max_slot + 1;
                             let offset = (slot + 1) * 8;
-                            self.asm.push(format!("    mov [rbp-{}], ecx", offset));
+                            self.asm.push(format!("    mov [rbp-{}], rcx", offset));
                             arm_local_vars.insert(field_name.clone(), slot);
                         } else {
                             // Update existing slot.
                             if let Some(&slot_idx) = arm_local_vars.get(field_name) {
                                 let offset = (slot_idx + 1) * 8;
                                 self.asm_push_align();
-                                self.asm.push(format!("    mov [rbp-{}], ecx", offset));
+                                self.asm.push(format!("    mov [rbp-{}], rcx", offset));
                             }
                         }
                     }
@@ -5473,14 +5432,14 @@ impl CodeGen {
                         emitted_ids.insert(stmt.id);
                     }
 
-                    // Store arm body result to phi slot.
+                    // Store arm body result to phi slot (full 64-bit).
                     if let Some(ref slot) = phi_slots.get(result_var) {
                         self.asm_push_align();
-                        let res_is_pointer = !matches!(&node.typ, Some(Type::Prim(PrimType::Float | PrimType::Int | PrimType::Bool | PrimType::Unit)));
-                        if res_is_pointer {
-                            self.asm.push(format!("    mov [rbp-{}], rax", slot));
+                        let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                        if res_is_float {
+                            self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
                         } else {
-                            self.asm.push(format!("    mov [rbp-{}], eax", slot));
+                            self.asm.push(format!("    mov [rbp-{}], rax", slot));
                         }
                     }
 
@@ -5502,11 +5461,11 @@ impl CodeGen {
                 self.asm.push(format!("{}:", join_label));
                 if let Some(ref slot) = phi_slots.get(result_var) {
                     self.asm_push_align();
-                    let res_is_pointer = !matches!(&node.typ, Some(Type::Prim(PrimType::Float | PrimType::Int | PrimType::Bool | PrimType::Unit)));
-                    if res_is_pointer {
-                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                    let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                    if res_is_float {
+                        self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
                     } else {
-                        self.asm.push(format!("    mov eax, [rbp-{}]", slot));
+                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                     }
                 }
             }
@@ -5856,38 +5815,6 @@ impl CodeGen {
                 emitted_ids.insert(node.id);
             }
 
-            ICNFInner::Call(name, args) => {
-                self.emit_call_direct(
-                    name,
-                    args,
-                    "eax",
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    node.id,
-                    false,
-                );
-                emitted_ids.insert(node.id);
-            }
-
-            ICNFInner::FfiCall { name, args, timeout } => {
-                self.emit_ffi_call_direct(
-                    name,
-                    args,
-                    *timeout,
-                    "eax",
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    operand_ids,
-                    phi_slots,
-                    node.id,
-                );
-                emitted_ids.insert(node.id);
-            }
-
             _ => {
                 // Unsupported/unimplemented nodes — emit a nop placeholder.
                 self.asm_push_align();
@@ -6110,10 +6037,10 @@ impl CodeGen {
         REGS[idx]
     }
 
-    /// Allocate a 32-bit x86_64 general-purpose register.
-    fn alloc_reg_32(&self) -> &'static str {
-        // Caller-saved integer registers (32-bit names).
-        static REGS: &[&str] = &["eax", "ecx", "edx", "esi", "edi", "r8d", "r9d"];
+    /// Allocate a 64-bit x86_64 general-purpose register.
+    fn alloc_reg_64(&self) -> &'static str {
+        // Caller-saved integer registers (64-bit names).
+        static REGS: &[&str] = &["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9"];
         let idx = self.label_counter % REGS.len();
         REGS[idx]
     }

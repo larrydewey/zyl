@@ -2174,8 +2174,6 @@ impl IcnfConverter {
 
                 // Convert each arm body and collect statements.
                 let mut all_stmts: Vec<ICNFNode> = Vec::new();
-                let mut icnf_arms: Vec<MatchArmICNF> = Vec::new();
-
                 // Collect discriminant->arm mapping for reordering.
                 let mut arm_with_disc: Vec<(usize, MatchArmICNF)> = Vec::new();
 
@@ -2222,7 +2220,7 @@ impl IcnfConverter {
 
                 // Sort arms by discriminant so arm index == discriminant.
                 arm_with_disc.sort_by_key(|(disc, _)| *disc);
-                icnf_arms = arm_with_disc.into_iter().map(|(_, arm)| arm).collect();
+                let icnf_arms = arm_with_disc.into_iter().map(|(_, arm)| arm).collect();
 
                 let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
 
@@ -2572,7 +2570,7 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 // Convert the value expression and collect intermediate statements.
                 // The Call/MakeVariant stmts are needed by emit_load_into for on-demand emission.
-                let mut val_stmts = self.convert_expr_collect(val)?;
+                let val_stmts = self.convert_expr_collect(val)?;
                 let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
                 let ssa_id = self.next_ssa_id();
                 let assign_node = ICNFNode {
@@ -2664,7 +2662,7 @@ impl IcnfConverter {
                 let saved_globals = std::mem::take(&mut self.global_stmts);
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = true;
-                let body_stmts = self.convert_expr_to_stmts(body)?;
+                let _body_stmts = self.convert_expr_to_stmts(body)?;
                 // Append: return 0.
                 let zero_id = self.next_ssa_id();
                 self.global_stmts.push(ICNFNode {
