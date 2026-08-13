@@ -885,7 +885,7 @@ impl TypeInferer {
                 Ok(rt.unwrap_or(Type::Prim(PrimType::Unit)))
             }
 
-            // Handle raw try-catch.
+            // Handle raw try-catch (3+ args: try expr catch_name body).
             ExprInner::Call(op, args) if is_ident_op(op, "try") && args.len() >= 3 => {
                 let et = self.infer_expr(&args[0])?;
                 let cn = match &args[1].inner {
@@ -898,6 +898,25 @@ impl TypeInferer {
                 Ok(et)
             }
 
+            // Handle raw try-catch (2 args: try expr (catch name body)).
+            ExprInner::Call(op, args) if is_ident_op(op, "try") && args.len() == 2 => {
+                let (cn, body) = match &args[1].inner {
+                    ExprInner::Call(target, inner) if is_ident_op(target, "catch") && inner.len() >= 2 => {
+                        (match &target.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___catch_".to_string() }, inner[1].clone())
+                    }
+                    ExprInner::Apply(_name, inner) if _name == "catch" && inner.len() >= 2 => {
+                        let name = match &inner[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___catch_".to_string() };
+                        (name, inner[1].clone())
+                    }
+                    _ => return Err(ZylError::E_EXPECTED_EXPRESSION(args[1].span.clone(), "(catch name expr)".into())),
+                };
+                let et = self.infer_expr(&args[0])?;
+                drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
+                let ht = self.infer_expr(&body)?;
+                self.unify(&et, &ht)?;
+                Ok(et)
+            }
+
             ExprInner::Apply(name, args) if name == "try" && args.len() >= 3 => {
                 let et = self.infer_expr(&args[0])?;
                 let cn = match &args[1].inner {
@@ -906,6 +925,25 @@ impl TypeInferer {
                 };
                 drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
                 let ht = self.infer_expr(&args[2])?;
+                self.unify(&et, &ht)?;
+                Ok(et)
+            }
+
+            // Handle raw try-catch Apply (2 args: try expr (catch name body)).
+            ExprInner::Apply(name, args) if name == "try" && args.len() == 2 => {
+                let (cn, body) = match &args[1].inner {
+                    ExprInner::Call(target, inner) if is_ident_op(target, "catch") && inner.len() >= 2 => {
+                        (match &target.inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___catch_".to_string() }, inner[1].clone())
+                    }
+                    ExprInner::Apply(_n, inner) if _n == "catch" && inner.len() >= 2 => {
+                        let name = match &inner[0].inner { ExprInner::Atom(Atom::Ident(n)) => n.clone(), _ => "___catch_".to_string() };
+                        (name, inner[1].clone())
+                    }
+                    _ => return Err(ZylError::E_EXPECTED_EXPRESSION(args[1].span.clone(), "(catch name expr)".into())),
+                };
+                let et = self.infer_expr(&args[0])?;
+                drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
+                let ht = self.infer_expr(&body)?;
                 self.unify(&et, &ht)?;
                 Ok(et)
             }

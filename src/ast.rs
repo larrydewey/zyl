@@ -1819,7 +1819,7 @@ impl PostProcessor {
                 expr.inner = ExprInner::Cond(clauses);
             }
 
-            // try → TryCatch (Call form).
+            // try → TryCatch (Call form, 3+ args: try expr catch_name body).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "try") && args.len() >= 3 => {
                 let catch_name = match &args[1].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
@@ -1832,7 +1832,33 @@ impl PostProcessor {
                 );
             }
 
-            // try → TryCatch (Apply form).
+            // try → TryCatch (Call form, 2 args: try expr (catch name body)).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "try") && args.len() == 2 => {
+                let (catch_name, catch_body) = match &args[1].inner {
+                    ExprInner::Call(target, inner) if Self::is_ident_op(target, "catch") && inner.len() >= 2 => {
+                        let name = match &target.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                            _ => "___catch_".to_string(),
+                        };
+                        (name, inner[1].clone())
+                    }
+                    ExprInner::Apply(_name, inner) if _name == "catch" && inner.len() >= 2 => {
+                        let name = match &inner[0].inner {
+                            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                            _ => "___catch_".to_string(),
+                        };
+                        (name, inner[1].clone())
+                    }
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::TryCatch(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    catch_name,
+                    Box::new(self.post_process_expr(catch_body)),
+                );
+            }
+
+            // try → TryCatch (Apply form, 3+ args: try expr catch_name body).
             ExprInner::Apply(name, args) if name == "try" && args.len() >= 3 => {
                 let catch_name = match &args[1].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
@@ -1842,6 +1868,32 @@ impl PostProcessor {
                     Box::new(self.post_process_expr(args[0].clone())),
                     catch_name,
                     Box::new(self.post_process_expr(args[2].clone())),
+                );
+            }
+
+            // try → TryCatch (Apply form, 2 args: try expr (catch name body)).
+            ExprInner::Apply(name, args) if name == "try" && args.len() == 2 => {
+                let (catch_name, catch_body) = match &args[1].inner {
+                    ExprInner::Call(target, inner) if Self::is_ident_op(target, "catch") && inner.len() >= 2 => {
+                        let name = match &target.inner {
+                            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                            _ => "___catch_".to_string(),
+                        };
+                        (name, inner[1].clone())
+                    }
+                    ExprInner::Apply(_n, inner) if _n == "catch" && inner.len() >= 2 => {
+                        let name = match &inner[0].inner {
+                            ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                            _ => "___catch_".to_string(),
+                        };
+                        (name, inner[1].clone())
+                    }
+                    _ => return expr,
+                };
+                expr.inner = ExprInner::TryCatch(
+                    Box::new(self.post_process_expr(args[0].clone())),
+                    catch_name,
+                    Box::new(self.post_process_expr(catch_body)),
                 );
             }
 
