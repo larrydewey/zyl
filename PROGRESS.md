@@ -148,7 +148,7 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 Approach A is the goal. Approach B is a fallback if Approach A proves too limiting.
 
 ### Low Priority
-- [ ] `try`/`catch` (spec §12.2 Result sugar) broken: post-processor only converts `(try A B C)` (≥3 args); the standard `(try A (catch n B))` stays raw Call → `call _ZYL_try`/`_ZYL_catch` (undefined) at link. Fix: desugar to a Result `match` in the post-processor (reuses proven match pipeline).
+- [x] `try`/`catch` (spec §12.2 Result sugar) fixed: post-processor now handles both `(try A B C)` (3+ args) and `(try A (catch n B))` (2 args with catch-list); type_inference.rs updated for both forms
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming) — down to 1
 - [x] Zyl source code emitter (ICNF → Zyl S-expression) — `--emit-zyl` flag
 - [ ] Contract injection (Phase 10 — optional overlay per spec §23)
