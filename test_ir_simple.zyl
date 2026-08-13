@@ -1,0 +1,16 @@
+(use allocator/allocator)
+(use compiler/ir)
+
+(defn main ()
+  (let arena (arena-create 0)
+    (let pool (pool-create arena 6)
+      (begin
+        (let node (pool-append pool)
+          (node-set-kind pool node 1)
+          (node-set-str pool node (str-intern arena "hello"))
+          (print node))
+        (let node2 (pool-append pool)
+          (node-set-kind pool node2 8)
+          (print "kind8 node: ")
+          (print node2))
+        (print "done")))))

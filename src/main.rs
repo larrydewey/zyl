@@ -52,11 +52,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let source_path = &args[1];
 
     // Parse output path: first non-flag argument after source is the output.
-    let output_path = args.iter()
-        .skip(2)
-        .find(|a| !a.starts_with("--"))
-        .map(|s| s.as_str())
-        .unwrap_or("a.out");
+    // Also handles `-o output` form: if `-o` is found, use the next argument.
+    let output_path = if let Some(pos) = args.iter().position(|a| a == "-o") {
+        args.get(pos + 1).map(|s| s.as_str()).unwrap_or("a.out")
+    } else {
+        args.iter()
+            .skip(2)
+            .find(|a| !a.starts_with('-'))
+            .map(|s| s.as_str())
+            .unwrap_or("a.out")
+    };
 
     // Phase 1: Parsing — Tokenize + Parse to AST.
     println!("[Phase 1] Parsing {} ...", source_path);

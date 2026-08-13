@@ -610,6 +610,21 @@ impl Parser {
             });
         }
 
+        // Handle (let name value) form — simple binding with implicit Unit body.
+        if args.len() == 2 {
+            if let ExprInner::Atom(Atom::Ident(name)) = &args[0].inner {
+                check_reserved_keyword(name, &args[0].span)?;
+                let val = args[1].clone();
+                let body = atom_expr(span.clone(), Atom::Ident("Unit".into()));
+                let inner = if mutable {
+                    ExprInner::LetMut(name.clone(), Box::new(val), Box::new(body))
+                } else {
+                    ExprInner::Let(name.clone(), Box::new(val), Box::new(body))
+                };
+                return Ok(Expr { span: span.clone(), inner });
+            }
+        }
+
         // Handle (let ((name value) ...) body) format.
         if args.len() >= 2 {
             let bindings = match &args[0].inner {

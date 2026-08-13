@@ -1,0 +1,18 @@
+(use allocator/allocator)
+(use compiler/ir)
+
+(defn main ()
+  (let arena (arena-create 0)
+    (let pool (pool-create arena 4)
+      (let out (arena-alloc-zeroed arena 256)
+        (let expect (str-intern arena "(defn add (a b) (+ a b))")
+          (begin
+            (print 1)
+            (print (str-len expect))
+            (print 2)
+            (buf-append out expect)
+            (print 3)
+            (str-print out)
+            (print 4)
+            (print (if (str-eq out expect) 1 0))
+            (print 5)))))))

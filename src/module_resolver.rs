@@ -28,6 +28,7 @@ impl ModuleResolver {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_search_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.search_paths.push(path.into());
         self

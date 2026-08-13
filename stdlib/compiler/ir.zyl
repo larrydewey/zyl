@@ -1,0 +1,267 @@
+; === Zyl Standard Library — Compiler IR (Self-Hosting Phase 1) ===
+; Module: compiler/ir
+; Provides: Flat, ID-based AST/ICNF node pools built on the arena allocator.
+;
+; Design (see docs/self-hosting-phase1.md):
+;   - Every AST/ICNF node is one fixed-size record (8 words = 64 bytes) in a
+;     contiguous arena block. Node id = record index; record address is
+;     pool_base + id * 64.
+;   - Variadic operands (call args, begin bodies, match arms, params) live in
+;     separate child-list blocks referenced by the node's `kids` word.
+;   - Strings are interned into the arena as NUL-terminated byte buffers;
+;     a string value is its arena pointer (Int).
+;   - All pointers are full 64-bit Ints; never truncated.
+;   - Deterministic: pools grow by doubling, contents are copied in index
+;     order, interning is source-ordered (no dedup in this increment).
+;
+; NOTE: Zyl `(def NAME value)` globals are not resolved by codegen yet, so
+;       opcode/offset constants are written as integer literals and documented
+;       here. Values are arbitrary but fixed; do not change them.
+
+(use allocator/allocator)
+
+; ===========================================================================
+; OPCODES — AST
+; ===========================================================================
+;  1 AST_ATOM_IDENT    str=name
+;  2 AST_ATOM_INT      val=literal
+;  3 AST_ATOM_FLOAT    str=text
+;  4 AST_ATOM_BOOL     val=0/1
+;  5 AST_ATOM_STR      str=text
+;  6 AST_ATOM_KEYWORD  str=text
+;  7 AST_ATOM_SYMBOL   str=text
+;  8 AST_CALL          a=fn,   kids=args
+;  9 AST_DEF           a=val,  str=name
+; 10 AST_DEFN          a=body, kids=params, str=name
+; 11 AST_LET           a=value, b=body, str=name
+; 12 AST_LET_MUT       a=value, b=body, str=name
+; 13 AST_IF            a=cond, b=then, c=else
+; 14 AST_BEGIN         kids=stmts
+; 15 AST_STRUCT_GET    a=target, str=field
+; 16 AST_MAKE_STRUCT   kids=field-vals, str=type
+; 17 AST_LAMBDA        a=body, kids=params
+; 18 AST_PRINT         kids=args
+; 19 AST_MATCH         a=scrutinee, kids=arms
+; 20 AST_SPAWN         a=thunk
+; 21 AST_SEND          a=actor, b=msg
+; 22 AST_FFI_CALL      kids=args, str=ffi-name, val=timeout
+; 23 AST_PARAM         str=name, val=1 if typed
+; 24 AST_MATCH_ARM     str=variant, a=body, kids=pattern
+
+; ===========================================================================
+; OPCODES — ICNF
+; ===========================================================================
+; 51 ICNF_CONST
+; 52 ICNF_LOAD
+; 53 ICNF_ASSIGN
+; 54 ICNF_BINOP
+; 55 ICNF_UNOP
+; 56 ICNF_CALL
+; 57 ICNF_IF
+; 58 ICNF_BEGIN
+; 59 ICNF_MAKE_STRUCT
+; 60 ICNF_STRUCT_GET
+; 61 ICNF_FFI_CALL
+; 62 ICNF_PRINT
+; 63 ICNF_UNIT
+
+; ===========================================================================
+; RECORD LAYOUTS
+; ===========================================================================
+; pool header: [+0 count][+8 cap][+16 base][+24 arena]
+; node record: [+0 kind][+8 a][+16 b][+24 c][+32 kids][+40 str][+48 val][+56 aux]
+; kids header: [+0 count][+8 cap][+16 base]   (child ids at base + i*8)
+
+; ===========================================================================
+; POOL LIFECYCLE
+; ===========================================================================
+
+; Create a node pool with room for `cap` records in `arena`.
+; Returns: Int (pool handle = pointer to pool header)
+(defn pool-create (arena cap)
+  (let hdr (arena-alloc arena 32)
+    (let base (arena-alloc-zeroed arena (* cap 64))
+      (begin
+        (alloc-write-int hdr 0)
+        (alloc-write-int (+ hdr 8) cap)
+        (alloc-write-int (+ hdr 16) base)
+        (alloc-write-int (+ hdr 24) arena)
+        hdr))))
+
+; Double the pool's record block, copying existing records in index order.
+; The old block is abandoned (reclaimed on arena reset — deterministic).
+; Returns: Unit
+(defn pool-grow (pool)
+  (let cap (alloc-read-int (+ pool 8))
+    (let arena (alloc-read-int (+ pool 24))
+      (let old (alloc-read-int (+ pool 16))
+        (let new-cap (* cap 2)
+          (let new-base (arena-alloc-zeroed arena (* new-cap 64))
+            (begin
+              (for (i 0) (< i cap)
+                (begin
+                  (alloc-write-int (+ new-base (* i 64)) (alloc-read-int (+ old (* i 64))))
+                  (set! i (+ i 1))))
+              (alloc-write-int (+ pool 8) new-cap)
+              (alloc-write-int (+ pool 16) new-base))))))))
+
+; Append a fresh (zeroed) record to `pool` and return its id.
+; Grows the block if the pool is full. The record is all-zero until set.
+; Returns: Int (new node id)
+(defn pool-append (pool)
+  (let count (alloc-read-int pool)
+    (let cap (alloc-read-int (+ pool 8))
+      (begin
+        (if (>= count cap)
+          (begin
+            (pool-grow pool)
+            0)
+          0)
+        (alloc-write-int pool (+ count 1))
+        count))))
+
+; Address of node `id`'s record.
+; Returns: Int (address)
+(defn node-addr (pool id)
+  (+ (alloc-read-int (+ pool 16)) (* id 64)))
+
+; ===========================================================================
+; NODE ACCESSORS
+; ===========================================================================
+
+(defn pool-kind (pool id)
+  (alloc-read-int (node-addr pool id)))
+
+(defn pool-a (pool id)
+  (alloc-read-int (+ (node-addr pool id) 8)))
+
+(defn pool-b (pool id)
+  (alloc-read-int (+ (node-addr pool id) 16)))
+
+(defn pool-c (pool id)
+  (alloc-read-int (+ (node-addr pool id) 24)))
+
+(defn pool-kids (pool id)
+  (alloc-read-int (+ (node-addr pool id) 32)))
+
+(defn pool-str (pool id)
+  (alloc-read-int (+ (node-addr pool id) 40)))
+
+(defn pool-val (pool id)
+  (alloc-read-int (+ (node-addr pool id) 48)))
+
+(defn pool-aux (pool id)
+  (alloc-read-int (+ (node-addr pool id) 56)))
+
+; ===========================================================================
+; NODE MUTATORS
+; ===========================================================================
+
+(defn node-set-kind (pool id value)
+  (alloc-write-int (node-addr pool id) value))
+
+(defn node-set-a (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 8) value))
+
+(defn node-set-b (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 16) value))
+
+(defn node-set-c (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 24) value))
+
+(defn node-set-kids (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 32) value))
+
+(defn node-set-str (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 40) value))
+
+(defn node-set-val (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 48) value))
+
+(defn node-set-aux (pool id value)
+  (alloc-write-int (+ (node-addr pool id) 56) value))
+
+; ===========================================================================
+; CHILD LISTS
+; ===========================================================================
+
+; Create an empty child list with initial capacity for `cap` children.
+; Returns: Int (list handle)
+(defn kids-new (arena cap)
+  (let hdr (arena-alloc arena 24)
+    (let base (arena-alloc-zeroed arena (* cap 8))
+      (begin
+        (alloc-write-int hdr 0)
+        (alloc-write-int (+ hdr 8) cap)
+        (alloc-write-int (+ hdr 16) base)
+        hdr))))
+
+; Grow a child list's id block, copying existing children in order.
+; Returns: Unit
+(defn kids-grow (arena list count)
+  (let cap (alloc-read-int (+ list 8))
+    (let old (alloc-read-int (+ list 16))
+      (let new-cap (* cap 2)
+        (let new-base (arena-alloc-zeroed arena (* new-cap 8))
+          (begin
+            (for (i 0) (< i count)
+              (begin
+                (alloc-write-int (+ new-base (* i 8)) (alloc-read-int (+ old (* i 8))))
+                (set! i (+ i 1))))
+            (alloc-write-int (+ list 8) new-cap)
+            (alloc-write-int (+ list 16) new-base)))))))
+
+; Append a child id to a list, growing if needed.
+; Returns: Unit
+(defn kids-push (arena list child-id)
+  (let count (alloc-read-int list)
+    (let cap (alloc-read-int (+ list 8))
+      (begin
+        (if (>= count cap)
+          (begin
+            (kids-grow arena list count)
+            0)
+          0)
+        (alloc-write-int (+ (alloc-read-int (+ list 16)) (* count 8)) child-id)
+        (alloc-write-int list (+ count 1))))))
+
+; Number of children in a list.
+; Returns: Int
+(defn kids-len (list)
+  (alloc-read-int list))
+
+; Child id at index `i` of a list (0-based).
+; Returns: Int (node id)
+(defn kids-get (list i)
+  (alloc-read-int (+ (alloc-read-int (+ list 16)) (* i 8))))
+
+; ===========================================================================
+; STRINGS
+; ===========================================================================
+
+; Intern a String into `arena`: copy its bytes (including terminator) into a
+; fresh zeroed buffer. Returns the buffer pointer.
+; Returns: Int (pointer)
+(defn str-intern (arena s)
+  (let n (alloc-strlen s)
+    (let p (arena-alloc-zeroed arena (+ n 1))
+      (begin
+        (buf-append p s)
+        p))))
+
+; Byte length of a NUL-terminated string at `ptr`, excluding terminator.
+; Returns: Int
+(defn str-len (ptr)
+  (alloc-strlen ptr))
+
+; Whether two NUL-terminated strings are byte-identical (FFI zyl_cstr_eq).
+; Returns: Bool
+(defn str-eq (p1 p2)
+  (ffi-call "zyl_cstr_eq" p1 p2 1000))
+
+; Print a NUL-terminated string at `ptr` to stdout, followed by a newline.
+; Returns: Unit
+(defn str-print (ptr)
+  (begin
+    (file-write 1 ptr)
+    (file-write 1 "\n")))
