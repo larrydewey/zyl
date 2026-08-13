@@ -149,7 +149,7 @@ impl Parser {
 
     #[allow(dead_code)]
     fn parse_list_no_dispatch(&mut self, open: &Token) -> Result<Expr, ZylError> {
-        let elements = self.parse_exprs_no_dispatch(|k| matches!(k, TokenKind::RParen))?;
+        let mut elements = self.parse_exprs_no_dispatch(|k| matches!(k, TokenKind::RParen))?;
         self.expect_token_kind(TokenKind::RParen)?;
 
         if elements.is_empty() {
@@ -157,6 +157,42 @@ impl Parser {
                 span: open.span.clone(),
                 inner: ExprInner::Atom(Atom::Ident("Unit".into())),
             });
+        }
+
+        // FFI, concurrency, fn/lambda must always be dispatched, even in no_dispatch mode.
+        let should_dispatch = matches!(&elements[0].inner, ExprInner::Atom(Atom::Ident(n)) if matches!(n.as_str(), "ffi-call" | "ffi-pin" | "ffi-unpin" | "spawn" | "send" | "fn" | "lambda"));
+        
+        if should_dispatch {
+            let first = elements.remove(0);
+            if let ExprInner::Atom(Atom::Ident(name)) = &first.inner {
+                if name == "ffi-call" {
+                    return self.p_ffi_call(&open.span, &elements);
+                } else if name == "ffi-pin" {
+                    return Ok(Expr {
+                        span: open.span.clone(),
+                        inner: ExprInner::FfiPin(Box::new(elements[0].clone())),
+                    });
+                } else if name == "ffi-unpin" {
+                    return Ok(Expr {
+                        span: open.span.clone(),
+                        inner: ExprInner::FfiUnpin(Box::new(elements[0].clone())),
+                    });
+                } else if name == "spawn" {
+                    return Ok(Expr {
+                        span: open.span.clone(),
+                        inner: ExprInner::Spawn(Box::new(elements[0].clone())),
+                    });
+                } else if name == "send" {
+                    return Ok(Expr {
+                        span: open.span.clone(),
+                        inner: ExprInner::Send(Box::new(elements[0].clone()), Box::new(elements[1].clone())),
+                    });
+                } else if name == "fn" || name == "lambda" {
+                    return self.p_lambda(&open.span, name, &elements);
+                }
+            }
+            // Put first back if we didn't dispatch
+            elements.insert(0, first);
         }
 
         // No dispatch — build a raw Call node with all elements as children.
@@ -213,7 +249,13 @@ impl Parser {
         }
 
         Ok(match &token.kind {
-            TokenKind::LParen => self.parse_list(&token)?,
+            TokenKind::LParen => {
+                if self.no_dispatch {
+                    self.parse_list_no_dispatch(&token)?
+                } else {
+                    self.parse_list(&token)?
+                }
+            }
             TokenKind::Ident(s) => atom_expr(token.span.clone(), Atom::Ident(s.clone())),
             TokenKind::Integer(i) => atom_expr(token.span.clone(), Atom::Int(*i)),
             TokenKind::Float(f) => atom_expr(token.span.clone(), Atom::Float(*f)),
@@ -1830,7 +1872,9 @@ impl Parser {
                 "token",
             ));
         }
-        Ok(self.tokens.remove(self.pos)) // O(n); acceptable for Phase 1.
+        let token = self.tokens[self.pos].clone();
+        self.pos += 1;
+        Ok(token)
     }
 
     fn expect_token_kind(&mut self, kind: TokenKind) -> Result<(), ZylError> {

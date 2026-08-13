@@ -285,6 +285,115 @@ void zyl_mem_write(long long ptr, long long value) {
 }
 
 /* ==========================================================================
+   Character-level string access — substrate for the self-hosting lexer.
+   ========================================================================== */
+
+/* Byte at index `i` of a NUL-terminated string, or -1 if past the terminator. */
+long long zyl_cstr_byte_at(long long ptr, long long i) {
+    if (!ptr || i < 0) return -1;
+    const char* s = (const char*)(size_t)ptr;
+    if (i >= (long long)strlen(s)) return -1;
+    return (long long)(unsigned char)s[i];
+}
+
+/* Write byte `b` at index `i` of a buffer (does not manage the terminator). */
+void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
+    if (!ptr || i < 0) return;
+    ((unsigned char*)(size_t)ptr)[i] = (unsigned char)b;
+}
+
+/* Copy bytes [start, start+len) of `src` into a fresh NUL-terminated buffer
+   in `arena`, returning the new buffer pointer. Deterministic (copy order). */
+long long zyl_cstr_sub(long long arena, long long src, long long start, long long len) {
+    if (!src || start < 0 || len < 0) return 0;
+    const char* s = (const char*)(size_t)src;
+    long long n = (long long)strlen(s);
+    if (start + len > n) len = n - start < 0 ? 0 : n - start;
+    long long buf = zyl_arena_alloc_zeroed(arena, len + 1);
+    memcpy((void*)(size_t)buf, s + start, (size_t)len);
+    ((char*)(size_t)buf)[len] = 0;
+    return buf;
+}
+
+/* Parse a decimal integer string (optional leading '-') to a value. */
+long long zyl_cstr_to_int(long long ptr) {
+    if (!ptr) return 0;
+    const char* s = (const char*)(size_t)ptr;
+    long long neg = 0, v = 0;
+    if (*s == '-') { neg = 1; s++; }
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10 + (*s - '0');
+        s++;
+    }
+    return neg ? -v : v;
+}
+
+/* Convert a non-negative integer to its decimal string form in `arena`.
+   Used for spans/error messages in the lexer/parser. */
+long long zyl_cstr_from_int(long long arena, long long value) {
+    char tmp[32];
+    snprintf(tmp, sizeof tmp, "%lld", value);
+    long long n = (long long)strlen(tmp);
+    long long buf = zyl_arena_alloc_zeroed(arena, n + 1);
+    memcpy((void*)(size_t)buf, tmp, (size_t)n + 1);
+    return buf;
+}
+
+/* Decode a Zyl string literal body (src[start..end], `start` points past the
+   opening quote): handle \n \t \" \\ escapes. Returns a NUL-terminated buffer
+   in `arena`, or 0 if an escape is unterminated (caller reports a lex error).
+   Deterministic: decodes left-to-right in source order. */
+long long zyl_cstr_decode(long long arena, long long src, long long start, long long end) {
+    if (!src) return 0;
+    const char* s = (const char*)(size_t)src;
+    long long cap = (end - start) + 1;
+    long long buf = zyl_arena_alloc_zeroed(arena, cap + 1);
+    char* out = (char*)(size_t)buf;
+    long long o = 0;
+    long long i = start;
+    while (i < end) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\\' && i + 1 < end) {
+            char n = s[i + 1];
+            if (n == 'n') { out[o++] = '\n'; i += 2; }
+            else if (n == 't') { out[o++] = '\t'; i += 2; }
+            else if (n == '"') { out[o++] = '"'; i += 2; }
+            else if (n == '\\') { out[o++] = '\\'; i += 2; }
+            else return 0;
+        } else if (c == '\\') {
+            return 0; /* backslash at very end — unterminated escape */
+        } else {
+            out[o++] = (char)c;
+            i += 1;
+        }
+    }
+    out[o] = 0;
+    return buf;
+}
+
+/* Count the number of '\n' characters in src[0..end). Used for line/col. */
+long long zyl_cstr_count_newlines(long long src, long long end) {
+    if (!src) return 0;
+    const char* s = (const char*)(size_t)src;
+    long long n = 0;
+    for (long long i = 0; i < end && s[i]; i++) {
+        if (s[i] == '\n') n++;
+    }
+    return n;
+}
+
+/* Index of the last '\n' in src[0..end), or -1 if none. Used for column. */
+long long zyl_cstr_last_newline(long long src, long long end) {
+    if (!src) return -1;
+    const char* s = (const char*)(size_t)src;
+    for (long long i = end - 1; i >= 0; i--) {
+        if (s[i] == '\n') return i;
+        if (i == 0) break;
+    }
+    return -1;
+}
+
+/* ==========================================================================
    Region-based arena allocator.
 
    Deterministic reclamation: arena-reset frees every block at once and the

@@ -2936,6 +2936,33 @@ impl CodeGen {
                 self.emit_call_direct(&sanitized_name, args, "eax", stmts, local_vars, lookup, emitted_ids, cond_id, is_float);
                 emitted_ids.insert(cond_id);
             }
+            ICNFInner::If { cond_ssa, then_body, else_body, result_var } => {
+                // A nested If (e.g. produced by `and`/`or` chains) used as a
+                // condition. If the or-chain If node was already emitted as a
+                // standalone statement in the enclosing branch body, it cannot be
+                // emitted inline again (that would duplicate its join labels).
+                // Instead, load its stored result from the phi slot.
+                if emitted_ids.contains(&cond_id) || emitted_ids.contains(cond_ssa) {
+                    if let Some(&slot_idx) = local_vars.get(result_var) {
+                        let offset = (slot_idx + 1) * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                    } else {
+                        let hash = simple_hash(result_var);
+                        let offset = ((hash % 32) + 1) * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                    }
+                } else {
+                    // Emit the whole chain inline so the join point leaves its
+                    // result in eax/rax (truthiness of the whole chain).
+                    self.emit_if_inline(
+                        cond_ssa, then_body, else_body, result_var, &None,
+                        stmts, local_vars, lookup, emitted_ids,
+                    );
+                    emitted_ids.insert(cond_id);
+                }
+            }
             _ => {
                 self.asm_push_align();
                 self.asm.push("    xor eax, eax".to_string());
