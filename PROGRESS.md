@@ -152,8 +152,8 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 - [ ] ~160 compiler warnings (mostly unused variables, dead code, naming) — down to 1
 - [x] Zyl source code emitter (ICNF → Zyl S-expression) — `--emit-zyl` flag
 - [ ] Contract injection (Phase 10 — optional overlay per spec §23)
-- [ ] Hash finalization (Phase 11 — SHA-256 binary fingerprinting)
-- [ ] Full REPL (currently a minimal stub, ~4 lines)
+- [x] Hash finalization (Phase 11 — SHA-256 binary fingerprinting via `--hash` flag)
+- [x] Full REPL implemented (`src/repl.rs`) — full pipeline (parse → type check → compile → run), supports multi-line expressions, `quit` to exit
 
 ---
 
