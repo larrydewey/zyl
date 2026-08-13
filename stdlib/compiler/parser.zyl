@@ -1,0 +1,724 @@
+; === Zyl Standard Library — Compiler Parser (Self-Hosting Phase 2) ===
+; Module: compiler/parser
+; Provides: A deterministic token-list → AST pool parser.
+;
+; Mirrors the Rust compiler architecture exactly:
+;   1. no-dispatch parsing: `(a b c)` → raw AST_CALL node; atoms → AST_ATOM_*.
+;      An empty list `()` → AST_ATOM_IDENT "Unit". No form is dispatched here.
+;   2. post-processing: raw Call nodes whose head is a known special form are
+;      rewritten into specialized AST opcodes (defn, def, let, if, begin, ...),
+;      mirroring src/ast.rs PostProcessor. The rewrite happens in place and the
+;      walk continues recursively into every node's children afterwards.
+;
+; Output: a "compile context" handle:
+;   [+0] pool   — the AST node pool (ir.zyl pool)
+;   [+8] program — id of the program node = AST_BEGIN whose kids = top-level exprs
+;   [+16] err   — error counter (0 = clean)
+;   [+24] errmsg — pointer to first error message (0 = none)
+;   [+32] cur   — token cursor (used during the parse only)
+;   [+40..+176] — interned special-form name cache (16 slots)
+;
+; Determinism: pool appends happen strictly in node construction order, which
+; follows source order (left-to-right, depth-first).
+
+(use allocator/allocator)
+(use compiler/ir)
+(use compiler/lexer)
+
+; AST opcodes — see stdlib/compiler/ir.zyl §4.1:
+;   1 AST_ATOM_IDENT  2 AST_ATOM_INT   3 AST_ATOM_FLOAT  4 AST_ATOM_BOOL
+;   5 AST_ATOM_STR    6 AST_ATOM_KEYWORD 7 AST_ATOM_SYMBOL
+;   8 AST_CALL        9 AST_DEF         10 AST_DEFN       11 AST_LET
+;  12 AST_LET_MUT     13 AST_IF         14 AST_BEGIN      15 AST_STRUCT_GET
+;  16 AST_MAKE_STRUCT 17 AST_LAMBDA     18 AST_PRINT      19 AST_MATCH
+;  20 AST_SPAWN       21 AST_SEND       22 AST_FFI_CALL
+;  23 AST_PARAM       24 AST_MATCH_ARM
+
+; ===========================================================================
+; NODE BUILDERS
+; ===========================================================================
+
+; Append an atom node to the pool; return its id.
+; kind = AST_ATOM_* (1..7), text = interned text pointer (0 if none), val = int.
+; Returns: Int (node id)
+(defn ast-atom (pool nkind text val)
+  (let id (pool-append pool)
+    (begin
+      (node-set-kind pool id nkind)
+      (node-set-str pool id text)
+      (node-set-val pool id val)
+      id)))
+
+(defn atom-ident (arena pool name)
+  (ast-atom pool 1 (str-intern arena name) 0))
+
+(defn atom-int (pool v)
+  (ast-atom pool 2 0 v))
+
+(defn atom-str (arena pool text)
+  (ast-atom pool 5 text 0))
+
+(defn atom-keyword (arena pool text)
+  (ast-atom pool 6 (str-intern arena text) 0))
+
+; Append a call node: a = fn child id, kids = arg child list.
+; Returns: Int (node id)
+(defn ast-call (pool a kids)
+  (let id (pool-append pool)
+    (begin
+      (node-set-kind pool id 8)
+      (node-set-a pool id a)
+      (node-set-kids pool id kids)
+      id)))
+
+; ===========================================================================
+; PARSE CONTEXT
+; ===========================================================================
+
+; Create a parse context: pool + form-name cache in `arena`, cursor at token 0.
+; Returns: Int (ctx handle)
+(defn parse-ctx (arena)
+  (let pool (pool-create arena 256)
+    (let ctx (arena-alloc-zeroed arena 176)
+      (begin
+        (alloc-write-int ctx pool)
+        (form-cache-init arena ctx)
+        ctx))))
+
+; Fill the special-form name cache at ctx[+40..+176], one pointer per slot.
+; Slots: 0 def  1 defn  2 fn  3 lambda  4 let  5 let-mut  6 if  7 begin
+;        8 print  9 ffi-call  10 struct-get  11 spawn  12 send  13 set!
+;       14 make (prefix)  15 Unit
+; Returns: Unit
+(defn form-cache-init (arena ctx)
+  (let base (+ ctx 40)
+    (begin
+      (alloc-write-int (+ base 0) (str-intern arena "def"))
+      (alloc-write-int (+ base 8) (str-intern arena "defn"))
+      (alloc-write-int (+ base 16) (str-intern arena "fn"))
+      (alloc-write-int (+ base 24) (str-intern arena "lambda"))
+      (alloc-write-int (+ base 32) (str-intern arena "let"))
+      (alloc-write-int (+ base 40) (str-intern arena "let-mut"))
+      (alloc-write-int (+ base 48) (str-intern arena "if"))
+      (alloc-write-int (+ base 56) (str-intern arena "begin"))
+      (alloc-write-int (+ base 64) (str-intern arena "print"))
+      (alloc-write-int (+ base 72) (str-intern arena "ffi-call"))
+      (alloc-write-int (+ base 80) (str-intern arena "struct-get"))
+      (alloc-write-int (+ base 88) (str-intern arena "spawn"))
+      (alloc-write-int (+ base 96) (str-intern arena "send"))
+      (alloc-write-int (+ base 104) (str-intern arena "set!"))
+      (alloc-write-int (+ base 112) (str-intern arena "make"))
+      (alloc-write-int (+ base 120) (str-intern arena "Unit")))))
+
+; Interned form name at cache slot `idx` (0-based).
+; Returns: Int (pointer)
+(defn form-name (ctx idx)
+  (alloc-read-int (+ ctx (+ 40 (* idx 8)))))
+
+; Token cursor helpers (the cursor lives in the ctx).
+; Returns: Int
+(defn cur-get (ctx) (alloc-read-int (+ ctx 32)))
+(defn cur-set (ctx v) (alloc-write-int (+ ctx 32) v))
+
+; ===========================================================================
+; NO-DISPATCH PARSER
+; ===========================================================================
+
+; Parse all top-level expressions in `tokens` into a program node in `pool`.
+; The program node is AST_BEGIN (kind 14) whose kids = the top-level exprs.
+; Sets ctx[+8] = program id. Returns: Unit
+(defn parse-program (arena ctx tokens)
+  (let pool (alloc-read-int ctx)
+    (let body (kids-new arena 64)
+      (let prog (pool-append pool)
+        (begin
+          (node-set-kind pool prog 14)
+          (node-set-kids pool prog body)
+          (parse-toplevels arena ctx tokens body)
+          (alloc-write-int (+ ctx 8) prog))))))
+
+; Parse expressions until TK_EOF, appending each to child list `body`.
+; Returns: Unit
+(defn parse-toplevels (arena ctx tokens body)
+  (let i (cur-get ctx)
+    (if (>= i (tok-count tokens))
+      0
+      (if (= (tok-kind tokens i) 100)         ; TK_EOF
+        0
+        (begin
+          (kids-push arena body (parse-expr arena ctx tokens))
+          (parse-toplevels arena ctx tokens body))))))
+
+; Parse a single expression (atoms or lists). Advances the cursor.
+; Returns: Int (node id)
+(defn parse-expr (arena ctx tokens)
+  (let i (cur-get ctx)
+    (if (= (tok-kind tokens i) 108)           ; TK_LPAREN
+      (parse-list arena ctx tokens)
+      (parse-atom arena ctx tokens i))))
+
+; Parse an atom token at cursor i; advance cursor.
+; Returns: Int (node id)
+(defn parse-atom (arena ctx tokens i)
+  (let pool (alloc-read-int ctx)
+    (begin
+      (cur-set ctx (+ i 1))
+      (let k (tok-kind tokens i)
+        (if (= k 101)                         ; TK_IDENT
+          (ast-atom pool 1 (tok-text tokens i) 0)
+          (if (= k 102)                       ; TK_INT
+            (ast-atom pool 2 0 (tok-value tokens i))
+            (if (= k 103)                     ; TK_FLOAT
+              (ast-atom pool 3 (tok-text tokens i) 0)
+              (if (= k 104)                   ; TK_STRING
+                (ast-atom pool 5 (tok-text tokens i) 0)
+                (if (= k 105)                 ; TK_BOOL
+                  (ast-atom pool 4 0 (tok-value tokens i))
+                  (if (= k 106)               ; TK_SYMBOL
+                    (ast-atom pool 7 (tok-text tokens i) 0)
+                    (if (= k 107)             ; TK_KEYWORD
+                      (ast-atom pool 6 (tok-text tokens i) 0)
+                      (atom-ident arena pool "Unit"))))))))))))
+
+; Parse `( ... )`. No dispatch: the first element becomes the head and the rest
+; are args; `()` → Unit. Advances the cursor past the closing paren.
+; Returns: Int (node id)
+(defn parse-list (arena ctx tokens)
+  (let pool (alloc-read-int ctx)
+    (let start (cur-get ctx)
+      (begin
+        (cur-set ctx (+ start 1))             ; consume '('
+        (if (= (tok-kind tokens (cur-get ctx)) 109)   ; ')'
+          (begin
+            (cur-set ctx (+ (cur-get ctx) 1))
+            (atom-ident arena pool "Unit"))
+          (let first (parse-expr arena ctx tokens)
+            (let args (kids-new arena 8)
+              (begin
+                (parse-list-args arena ctx tokens args)
+                (ast-call pool first args)))))))))
+
+; Parse the argument list of `(a b c ...)`: append each expr until ')'.
+; Consumes the closing ')'. Returns: Unit
+(defn parse-list-args (arena ctx tokens args)
+  (let i (cur-get ctx)
+    (if (= (tok-kind tokens i) 109)
+      (cur-set ctx (+ i 1))
+      (begin
+        (kids-push arena args (parse-expr arena ctx tokens))
+        (parse-list-args arena ctx tokens args)))))
+
+; ===========================================================================
+; POST-PROCESSOR (special forms)
+; ===========================================================================
+
+; Rewrite raw AST_CALL nodes whose head is a known special form into their
+; specialized AST opcodes, then recurse into every child of every node.
+; Returns: Int (program id)
+(defn post-process (arena ctx tokens prog)
+  (begin
+    (post-node arena ctx tokens prog)
+    prog))
+
+; Process one node: rewrite the node in place if it is a special form, then
+; recurse into its children (by the node's *new* kind). Returns: Unit
+(defn post-node (arena ctx tokens id)
+  (let k0 (pool-kind (alloc-read-int ctx) id)
+    (if (= k0 8)                             ; AST_CALL
+      (let hn (call-head-name (alloc-read-int ctx) id)
+        (begin
+          (if (not (= hn 0))
+            (post-form arena ctx tokens id hn)
+            0)
+          (post-children arena ctx tokens id)))
+      (post-children arena ctx tokens id))))
+
+; Recursively process the children of node `id`, dispatching on its kind.
+; Atoms (1..7) and PARAM (23) have no children. Returns: Unit
+(defn post-children (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let k (pool-kind pool id)
+      (if (<= k 7)
+        0
+        (if (= k 8)                          ; CALL: a + kids
+          (begin
+            (post-node arena ctx tokens (pool-a pool id))
+            (post-kids arena ctx tokens (pool-kids pool id))
+            0)
+          (if (= k 9)                        ; DEF: a
+            (begin
+              (post-node arena ctx tokens (pool-a pool id))
+              0)
+            (if (= k 10)                     ; DEFN: body (a) + params kids
+              (begin
+                (post-node arena ctx tokens (pool-a pool id))
+                0)
+              (if (= k 11)                   ; LET: a (value) + b (body)
+                (begin
+                  (post-node arena ctx tokens (pool-a pool id))
+                  (post-node arena ctx tokens (pool-b pool id))
+                  0)
+                (if (= k 12)
+                  (begin
+                    (post-node arena ctx tokens (pool-a pool id))
+                    (post-node arena ctx tokens (pool-b pool id))
+                    0)
+                  (if (= k 13)               ; IF: a b c
+                    (begin
+                      (post-node arena ctx tokens (pool-a pool id))
+                      (post-node arena ctx tokens (pool-b pool id))
+                      (post-node arena ctx tokens (pool-c pool id))
+                      0)
+                    (if (= k 14)             ; BEGIN: kids
+                      (begin
+                        (post-kids arena ctx tokens (pool-kids pool id))
+                        0)
+                      (if (= k 15)           ; STRUCT_GET: a
+                        (begin
+                          (post-node arena ctx tokens (pool-a pool id))
+                          0)
+                        (if (= k 16)         ; MAKE_STRUCT: kids
+                          (begin
+                            (post-kids arena ctx tokens (pool-kids pool id))
+                            0)
+                          (if (= k 17)       ; LAMBDA: a
+                            (begin
+                              (post-node arena ctx tokens (pool-a pool id))
+                              0)
+                            (if (= k 18)     ; PRINT: kids
+                              (begin
+                                (post-kids arena ctx tokens (pool-kids pool id))
+                                0)
+                              (if (= k 19)   ; MATCH: a + arms kids
+                                (begin
+                                  (post-node arena ctx tokens (pool-a pool id))
+                                  (post-kids arena ctx tokens (pool-kids pool id))
+                                  0)
+                                (if (= k 20) ; SPAWN: a
+                                  (begin
+                                    (post-node arena ctx tokens (pool-a pool id))
+                                    0)
+                                  (if (= k 21) ; SEND: a b
+                                    (begin
+                                      (post-node arena ctx tokens (pool-a pool id))
+                                      (post-node arena ctx tokens (pool-b pool id))
+                                      0)
+                                    (if (= k 22) ; FFI_CALL: kids
+                                      (begin
+                                        (post-kids arena ctx tokens (pool-kids pool id))
+                                        0)
+                                      0)))))))))))))))))))
+
+; Process all children in a kids list.
+; Returns: Unit
+(defn post-kids (arena ctx tokens kids)
+  (let n (kids-len kids)
+    (for (i 0) (< i n)
+      (begin
+        (post-node arena ctx tokens (kids-get kids i))
+        (set! i (+ i 1))))
+    0))
+
+; Head name of a Call node, or 0 if the head isn't an identifier atom.
+; Returns: Int (head str pointer or 0)
+(defn call-head-name (pool id)
+  (let a (pool-a pool id)
+    (if (= (pool-kind pool a) 1)             ; AST_ATOM_IDENT
+      (pool-str pool a)
+      0)))
+
+; ===========================================================================
+; SPECIAL-FORM DISPATCH
+; ===========================================================================
+
+; If `head` matches a known special form, rewrite Call node `id` in place and
+; return 1; otherwise leave it as a raw Call and return 0.
+; Returns: Int (1 if rewritten)
+(defn post-form (arena ctx tokens id head)
+  (if (str-eq head (form-name ctx 0))
+    (po-def arena ctx tokens id)
+    (if (str-eq head (form-name ctx 1))
+      (po-defn arena ctx tokens id)
+      (if (str-eq head (form-name ctx 2))
+        (po-fn arena ctx tokens id)
+        (if (str-eq head (form-name ctx 3))
+          (po-fn arena ctx tokens id)         ; lambda → Lambda
+          (if (str-eq head (form-name ctx 4))
+            (po-let arena ctx tokens id 11)
+            (if (str-eq head (form-name ctx 5))
+              (po-let arena ctx tokens id 12)
+              (if (str-eq head (form-name ctx 6))
+                (po-if arena ctx tokens id)
+                (if (str-eq head (form-name ctx 7))
+                  (po-begin arena ctx tokens id)
+                  (if (str-eq head (form-name ctx 8))
+                    (po-print arena ctx tokens id)
+                    (if (str-eq head (form-name ctx 9))
+                      (po-ffi arena ctx tokens id)
+                      (if (str-eq head (form-name ctx 10))
+                        (po-struct-get arena ctx tokens id)
+                        (if (str-eq head (form-name ctx 11))
+                          (po-spawn arena ctx tokens id)
+                          (if (str-eq head (form-name ctx 12))
+                            (po-send arena ctx tokens id)
+                            (if (str-eq head (form-name ctx 14))
+                              (po-make arena ctx tokens id)
+                              0)))))))))))))))
+
+; --- def ---
+; (def name value) → Def(name, value). Requires args >= 2, name is an Ident.
+; Returns: Int (1 if rewritten)
+(defn po-def (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (begin
+                (node-set-kind pool id 9)
+                (node-set-str pool id (pool-str pool name))
+                (node-set-a pool id (kids-get args 1))
+                (node-set-kids pool id 0)
+                1)
+              0))
+          0)))))
+
+; --- defn / fn / lambda ---
+; (defn name (a b c) body...) → Defn(name, params, body).
+; Params come from the no-dispatch Call that makes up the params list:
+;   `(a b c)` → Call(a, [b, c]); `()` → Unit (no params).
+; Returns: Int (1 if rewritten)
+(defn po-defn (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (let params (params-from arena pool (kids-get args 1))
+                (let body (defn-body arena ctx tokens args n 2)
+                  (begin
+                    (node-set-kind pool id 10)
+                    (node-set-str pool id (pool-str pool name))
+                    (node-set-kids pool id params)
+                    (node-set-a pool id body)
+                    1)))
+              0))
+          0)))))
+
+; (fn (a b) body...) → Lambda(name="", params, body). (lambda ...) same.
+; Returns: Int (1 if rewritten)
+(defn po-fn (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let params (params-from arena pool (kids-get args 0))
+            (let body (defn-body arena ctx tokens args n 1)
+              (begin
+                (node-set-kind pool id 17)
+                (node-set-kids pool id params)
+                (node-set-a pool id body)
+                1)))
+          0)))))
+
+; Build a function body: 1 trailing expr → that expr; >1 → a Begin over them.
+; Returns: Int (body node id)
+(defn defn-body (arena ctx tokens args n start)
+  (if (= (- n start) 1)
+    (kids-get args start)
+    (make-begin arena ctx tokens args start n)))
+
+; Make a Begin node over args[start..n), copying child ids.
+; Returns: Int (Begin node id)
+(defn make-begin (arena ctx tokens args start n)
+  (let pool (alloc-read-int ctx)
+    (let body (kids-new arena 8)
+      (for (i start) (< i n)
+        (begin
+          (kids-push arena body (kids-get args i))
+          (set! i (+ i 1))))
+      (let id (pool-append pool)
+        (begin
+          (node-set-kind pool id 14)
+          (node-set-kids pool id body)
+          id)))))
+
+; Parse a params expr into a kids list of AST_PARAM (23) nodes.
+;   `()`          → empty list (Unit atom → no params)
+;   `(a b c)`     → Call(a, [b, c]) → [PARAM a, PARAM b, PARAM c]
+;   `((a Int) b)` → Call(Call(a,[Int]), [b]) → typed/untyped mix
+; Returns: Int (kids list handle of PARAM node ids)
+(defn params-from (arena pool expr)
+  (let params (kids-new arena 8)
+    (begin
+      (param-collect arena pool params expr)
+      params)))
+
+; Collect params from an expr node into `params`.
+; Returns: Unit
+(defn param-collect (arena pool params expr)
+  (if (= (pool-kind pool expr) 8)             ; a list
+    (begin
+      (param-push arena pool params (pool-a pool expr))
+      (let as (pool-kids pool expr)
+        (let n (kids-len as)
+          (for (i 0) (< i n)
+            (begin
+              (param-push arena pool params (kids-get as i))
+              (set! i (+ i 1)))))))
+    0))
+
+; Push one PARAM node for `e`: name = ident if e is Ident, or head of `(name T)`.
+; Returns: Unit
+(defn param-push (arena pool params e)
+  (if (= (pool-kind pool e) 1)
+    (let pid (param-make arena pool (pool-str pool e) 0)
+      (kids-push arena params pid))
+    (if (= (pool-kind pool e) 8)
+      (let h (pool-a pool e)
+        (if (= (pool-kind pool h) 1)
+          (let pid (param-make arena pool (pool-str pool h) 1)
+            (kids-push arena params pid))
+          0))
+      0)))
+
+; Make a PARAM node: str = name, val = 1 if typed.
+; Returns: Int (node id)
+(defn param-make (arena pool name typed)
+  (let id (pool-append pool)
+    (begin
+      (node-set-kind pool id 23)
+      (node-set-str pool id name)
+      (node-set-val pool id typed)
+      id)))
+
+; --- let / let-mut ---
+; (let name value body) or (let (name value) body). kind = 11 or 12.
+; Returns: Int (1 if rewritten)
+(defn po-let (arena ctx tokens id nkind)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let f (kids-get args 0)
+            (if (= (pool-kind pool f) 1)      ; (let NAME VALUE BODY...)
+              (po-let-form arena ctx tokens id nkind f (kids-get args 1) args n 2)
+              (if (= (pool-kind pool f) 8)    ; (let (NAME VALUE) BODY...)
+                (let as (pool-kids pool f)
+                  (let m (kids-len as)
+                    (if (>= m 1)
+                      (let h (pool-a pool f)
+                        (if (= (pool-kind pool h) 1)
+                          (po-let-form arena ctx tokens id nkind h (kids-get as 0) args n 1)
+                          0))
+                      0)))
+                0)))
+          0)))))
+
+; Shared let/mut rewrite: [name-node, value-node, args, n, body-start].
+; Returns: Int (1 if rewritten)
+(defn po-let-form (arena ctx tokens id nkind name value args n bstart)
+  (let pool (alloc-read-int ctx)
+    (let body (let-body arena ctx tokens args n bstart)
+      (begin
+        (node-set-kind pool id nkind)
+        (node-set-str pool id (pool-str pool name))
+        (node-set-a pool id value)
+        (node-set-b pool id body)
+        (node-set-kids pool id 0)
+        1))))
+
+; let body: 0 trailing → Keyword "___skip_"; 1 → that expr; >1 → Begin.
+; Returns: Int (body node id)
+(defn let-body (arena ctx tokens args n bstart)
+  (let pool (alloc-read-int ctx)
+    (let m (- n bstart)
+      (if (= m 0)
+        (atom-keyword arena pool "___skip_")
+        (if (= m 1)
+          (kids-get args bstart)
+          (make-begin arena ctx tokens args bstart n))))))
+
+; --- if ---
+; (if cond then else) with optional then/else → kind 13.
+; Missing branches get Keyword "___skip_". Returns: Int (1 if rewritten)
+(defn po-if (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (begin
+          (node-set-kind pool id 13)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-b pool id (if-expr arena ctx tokens args 1 n))
+          (node-set-c pool id (if-expr arena ctx tokens args 2 n))
+          (node-set-kids pool id 0)
+          1)))))
+
+; then/else picker: args[start] if present else Keyword "___skip_".
+; Returns: Int (expr node id)
+(defn if-expr (arena ctx tokens args start n)
+  (let pool (alloc-read-int ctx)
+    (if (< start n)
+      (kids-get args start)
+      (atom-keyword arena pool "___skip_"))))
+
+; --- begin ---
+; (begin ...) with >= 1 arg → kind 14, kids = the args list. Returns: 1
+(defn po-begin (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 1)
+          (begin
+            (node-set-kind pool id 14)
+            1)
+          0)))))
+
+; --- print ---
+; (print ...) with >= 1 arg → kind 18, kids = the args list. Returns: 1
+(defn po-print (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 1)
+          (begin
+            (node-set-kind pool id 18)
+            1)
+          0)))))
+
+; --- ffi-call ---
+; (ffi-call "name" a b 1000) → FfiCall. Kids = args[1..len-1], str = name,
+; val = timeout (int literal). Returns: Int (1 if rewritten)
+(defn po-ffi (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let name (kids-get args 0)
+            (let last (kids-get args (- n 1))
+              (if (and (= (pool-kind pool name) 5) (= (pool-kind pool last) 2))
+                (let kids (kids-new arena 8)
+                  (begin
+                    (for (i 1) (< i (- n 1))
+                      (begin
+                        (kids-push arena kids (kids-get args i))
+                        (set! i (+ i 1))))
+                    (node-set-kind pool id 22)
+                    (node-set-str pool id (pool-str pool name))
+                    (node-set-val pool id (pool-val pool last))
+                    (node-set-kids pool id kids)
+                    1))
+                0)))
+          0)))))
+
+; --- struct-get ---
+; (struct-get obj field) → kind 15, a = obj, str = field.
+; Returns: Int (1 if rewritten)
+(defn po-struct-get (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let field (kids-get args 1)
+            (if (or (= (pool-kind pool field) 1) (= (pool-kind pool field) 5))
+              (begin
+                (node-set-kind pool id 15)
+                (node-set-a pool id (kids-get args 0))
+                (node-set-str pool id (pool-str pool field))
+                (node-set-kids pool id 0)
+                1)
+              0)))
+          0))))
+
+; --- spawn / send ---
+; (spawn thunk) → kind 20. (send actor msg) → kind 21.
+; Returns: Int (1 if rewritten)
+(defn po-spawn (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 1)
+        (begin
+          (node-set-kind pool id 20)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+(defn po-send (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 2)
+        (begin
+          (node-set-kind pool id 21)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-b pool id (kids-get args 1))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- make-StructName (no-dispatch heuristic) ---
+; (make-Point 1 2) → kind 16. Only when name[5] is uppercase (PascalCase),
+; mirroring src/ast.rs. Returns: Int (1 if rewritten)
+(defn po-make (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 1)
+          (let head (pool-str pool (pool-a pool id))
+            (if (make-prefix-p head)
+              (let slen (str-len head)
+                (let c5 (make-char head 5)
+                  (if (and (>= c5 65) (<= c5 90))  ; uppercase
+                    (let sname (ffi-call "zyl_cstr_sub" arena head 5 (- slen 5) 1000)
+                      (begin
+                        (node-set-kind pool id 16)
+                        (node-set-str pool id sname)
+                        1))
+                    0)))
+              0)))
+          0))))
+
+; Whether `head` starts with "make-".
+; Returns: Bool (0/1)
+(defn make-prefix-p (head)
+  (let n (str-len head)
+    (if (>= n 6)
+      (if (and (and (and (and (and (= (make-char head 0) 109)
+                                    (= (make-char head 1) 97))
+                                   (= (make-char head 2) 107))
+                                  (= (make-char head 3) 101))
+                                 (= (make-char head 4) 45))
+                                (not (= (make-char head 5) 45)))
+        1
+        0)
+      0)))
+
+; char at `i` in the interned name cache / any cstr pointer.
+; Returns: Int
+(defn make-char (ptr i)
+  (ffi-call "zyl_cstr_byte_at" ptr i 1000))
+
+; ===========================================================================
+; ENTRY POINT
+; ===========================================================================
+
+; Lex and parse a source buffer into a compile context. Shorthand for tests.
+; Returns: Int (ctx handle)
+(defn zyl-parse (arena src)
+  (let tokens (zyl-lex arena src)
+    (let ctx (parse-ctx arena)
+      (begin
+        (parse-program arena ctx tokens)
+        (post-process arena ctx tokens (alloc-read-int (+ ctx 8)))
+        ctx))))
+
+; ===========================================================================
+; KIDS UTILITIES
+; ===========================================================================
+
+; Pop the last child off a kids list (decrement the count only).
+; Returns: Unit
+(defn kids-pop-last (args n)
+  (alloc-write-int args (- n 1)))

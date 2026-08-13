@@ -65,6 +65,16 @@ void zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
 void zyl_mem_write(long long ptr, long long value);
 long long zyl_cstr_len(long long ptr);
+long long zyl_cstr_eq(long long p1, long long p2);
+/* Character-level string access (self-hosting lexer substrate). */
+long long zyl_cstr_byte_at(long long ptr, long long i);
+void zyl_cstr_byte_set(long long ptr, long long i, long long b);
+long long zyl_cstr_sub(long long arena, long long src, long long start, long long len);
+long long zyl_cstr_to_int(long long ptr);
+long long zyl_cstr_from_int(long long arena, long long value);
+long long zyl_cstr_decode(long long arena, long long src, long long start, long long end);
+long long zyl_cstr_count_newlines(long long src, long long end);
+long long zyl_cstr_last_newline(long long src, long long end);
 
 /* Region-based arena allocator.
    Deterministic reclamation: arena-reset frees every block at once; the

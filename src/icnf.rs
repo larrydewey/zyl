@@ -2932,24 +2932,59 @@ impl IcnfConverter {
                 if args.is_empty() {
                     return Ok(vec![self.emit(ICNFInner::Const(Atom::Bool(false)))]);
                 }
-                let mut result = Vec::new();
-                 for arg in args.iter() {
-                     let arg_id = self.convert_expr(arg)?;
-                     let _ssa_id = self.next_ssa_id();
-                     result.push(ICNFNode {
-                         id: arg_id,
+                // Short-circuit logic, evaluated strictly left-to-right:
+                //   (and a b c) == if a (if b (if c true false) false) false
+                //   (or  a b c) == if a true (if b true (if c true false))
+                // Each argument is touched (evaluated) only if all prior args
+                // have the short-circuiting value, preserving left-to-right order
+                // and skipping later arguments on early exit.
+                let mut arg_ids = Vec::with_capacity(args.len());
+                for a in args.iter() {
+                    // Push each argument's node to globals so the nested If handler
+                    // can find it for condition operand lookup (mirrors If cond handling).
+                    let saved = std::mem::replace(&mut self.push_to_globals, true);
+                    arg_ids.push(self.convert_expr_collect_id(a)?);
+                    self.push_to_globals = saved;
+                }
+                let is_and = name == "and";
+                // Build from the innermost (last) argument outward.
+                let mut inner: Option<ICNFNode> = None;
+                for arg_id in arg_ids.iter().rev() {
+                    let if_id = self.next_ssa_id();
+                    let result_var = format!("___{}_result_{}", name, if_id);
+                    let (then_body, else_body) = if is_and {
+                        // and: truthy -> continue chain; falsy -> short-circuit to false.
+                        let then = inner.take().map(|n| vec![n]).unwrap_or_default();
+                        (then, vec!(self.emit(ICNFInner::Const(Atom::Bool(false)))))
+                    } else {
+                        // or: truthy -> short-circuit true; falsy -> continue chain.
+                        let els = inner.take().map(|n| vec![n]).unwrap_or_default();
+                        (Vec::new(), els)
+                    };
+                    inner = Some(ICNFNode {
+                        id: if_id,
                         region: Region::Stack,
                         typ: None,
                         is_branch_body: false,
                         node: ICNFInner::If {
-                            cond_ssa: arg_id,
-                            then_body: Vec::new(),
-                            else_body: Vec::new(),
-                            result_var: format!("___{}_result", name),
+                            cond_ssa: *arg_id,
+                            then_body,
+                            else_body,
+                            result_var,
                         },
                     });
                 }
-                Ok(result)
+                // Mark all branch-body Const/If nodes as is_branch_body for codegen dedup.
+                if let Some(mut top) = inner {
+                    if let ICNFInner::If { then_body, else_body, .. } = &mut top.node {
+                        for n in then_body.iter_mut().chain(else_body.iter_mut()) {
+                            n.is_branch_body = true;
+                        }
+                    }
+                    Ok(vec![top])
+                } else {
+                    Ok(vec![self.emit(ICNFInner::Const(Atom::Bool(false)))])
+                }
             }
 
                 _ => {
