@@ -79,16 +79,20 @@
 ; Returns: Int (ctx handle)
 (defn parse-ctx (arena)
   (let pool (pool-create arena 256)
-    (let ctx (arena-alloc-zeroed arena 176)
+    (let ctx (arena-alloc-zeroed arena 360)
       (begin
         (alloc-write-int ctx pool)
         (form-cache-init arena ctx)
         ctx))))
 
-; Fill the special-form name cache at ctx[+40..+176], one pointer per slot.
+; Fill the special-form name cache at ctx[+40..+360], one pointer per slot.
 ; Slots: 0 def  1 defn  2 fn  3 lambda  4 let  5 let-mut  6 if  7 begin
 ;        8 print  9 ffi-call  10 struct-get  11 spawn  12 send  13 set!
-;       14 make (prefix)  15 Unit
+;       14 make (prefix)  15 Unit  16 defmacro  17 defun  18 trait  19 impl
+;       20 deftype  21 read-line  22 exit  23 close  24 file-open
+;       25 file-read  26 file-write  27 file-close  28 buf-append
+;       29 with-resource  30 while  31 for  32 cond  33 try  34 match
+;       35 send-closure  36 ffi-pin  37 ffi-unpin  38 defstruct  39 defstruct+
 ; Returns: Unit
 (defn form-cache-init (arena ctx)
   (let base (+ ctx 40)
@@ -108,7 +112,31 @@
       (alloc-write-int (+ base 96) (str-intern arena "send"))
       (alloc-write-int (+ base 104) (str-intern arena "set!"))
       (alloc-write-int (+ base 112) (str-intern arena "make"))
-      (alloc-write-int (+ base 120) (str-intern arena "Unit")))))
+      (alloc-write-int (+ base 120) (str-intern arena "Unit"))
+      (alloc-write-int (+ base 128) (str-intern arena "defmacro"))
+      (alloc-write-int (+ base 136) (str-intern arena "defun"))
+      (alloc-write-int (+ base 144) (str-intern arena "trait"))
+      (alloc-write-int (+ base 152) (str-intern arena "impl"))
+      (alloc-write-int (+ base 160) (str-intern arena "deftype"))
+      (alloc-write-int (+ base 168) (str-intern arena "read-line"))
+      (alloc-write-int (+ base 176) (str-intern arena "exit"))
+      (alloc-write-int (+ base 184) (str-intern arena "close"))
+      (alloc-write-int (+ base 192) (str-intern arena "file-open"))
+      (alloc-write-int (+ base 200) (str-intern arena "file-read"))
+      (alloc-write-int (+ base 208) (str-intern arena "file-write"))
+      (alloc-write-int (+ base 216) (str-intern arena "file-close"))
+      (alloc-write-int (+ base 224) (str-intern arena "buf-append"))
+      (alloc-write-int (+ base 232) (str-intern arena "with-resource"))
+      (alloc-write-int (+ base 240) (str-intern arena "while"))
+      (alloc-write-int (+ base 248) (str-intern arena "for"))
+      (alloc-write-int (+ base 256) (str-intern arena "cond"))
+      (alloc-write-int (+ base 264) (str-intern arena "try"))
+      (alloc-write-int (+ base 272) (str-intern arena "match"))
+      (alloc-write-int (+ base 280) (str-intern arena "send-closure"))
+      (alloc-write-int (+ base 288) (str-intern arena "ffi-pin"))
+      (alloc-write-int (+ base 296) (str-intern arena "ffi-unpin"))
+      (alloc-write-int (+ base 304) (str-intern arena "defstruct"))
+      (alloc-write-int (+ base 312) (str-intern arena "defstruct+")))))
 
 ; Interned form name at cache slot `idx` (0-based).
 ; Returns: Int (pointer)
@@ -307,7 +335,112 @@
                                       (begin
                                         (post-kids arena ctx tokens (pool-kids pool id))
                                         0)
-                                      0)))))))))))))))))))
+                                      (if (= k 25) ; SET_BANG: a
+                                        (begin
+                                          (post-node arena ctx tokens (pool-a pool id))
+                                          0)
+                                        (if (= k 26) ; WHILE: a b
+                                          (begin
+                                            (post-node arena ctx tokens (pool-a pool id))
+                                            (post-node arena ctx tokens (pool-b pool id))
+                                            0)
+                                          (if (= k 27) ; FOR: a b + kids bindings
+                                            (begin
+                                              (post-kids arena ctx tokens (pool-kids pool id))
+                                              (post-node arena ctx tokens (pool-a pool id))
+                                              (post-node arena ctx tokens (pool-b pool id))
+                                              0)
+                                            (if (= k 28) ; FOR_BINDING: a (value or 0)
+                                              (begin
+                                                (if (not (= (pool-a pool id) 0))
+                                                  (post-node arena ctx tokens (pool-a pool id))
+                                                  0)
+                                                0)
+                                              (if (= k 29) ; COND: kids clauses
+                                                (begin
+                                                  (post-kids arena ctx tokens (pool-kids pool id))
+                                                  0)
+                                                (if (= k 30) ; COND_CLAUSE: a b
+                                                  (begin
+                                                    (post-node arena ctx tokens (pool-a pool id))
+                                                    (post-node arena ctx tokens (pool-b pool id))
+                                                    0)
+                                                  (if (= k 31) ; TRY: a b
+                                                    (begin
+                                                      (post-node arena ctx tokens (pool-a pool id))
+                                                      (post-node arena ctx tokens (pool-b pool id))
+                                                      0)
+                                                    (if (= k 34) ; DEFSTRUCT: kids fields
+                                                      (begin
+                                                        (post-kids arena ctx tokens (pool-kids pool id))
+                                                        0)
+                                                      (if (= k 35) ; DEFSTRUCT_PLUS
+                                                        (begin
+                                                          (post-kids arena ctx tokens (pool-kids pool id))
+                                                          0)
+                                                        (if (= k 36) ; DEF_FIELD: a (type atom)
+                                                          (begin
+                                                            (if (not (= (pool-a pool id) 0))
+                                                              (post-node arena ctx tokens (pool-a pool id))
+                                                              0)
+                                                            0)
+                                                          (if (= k 37) ; DEFMACRO: a + kids
+                                                            (begin
+                                                              (post-kids arena ctx tokens (pool-kids pool id))
+                                                              (post-node arena ctx tokens (pool-a pool id))
+                                                              0)
+                                                            (if (= k 39) ; EXIT: a
+                                                              (begin
+                                                                (post-node arena ctx tokens (pool-a pool id))
+                                                                0)
+                                                              (if (= k 40) ; CLOSE: a
+                                                                (begin
+                                                                  (post-node arena ctx tokens (pool-a pool id))
+                                                                  0)
+                                                                (if (or (= k 41) (= k 42) (= k 43) (= k 45)) ; FILE_OPEN/READ/WRITE, BUF_APPEND: a b
+                                                                  (begin
+                                                                    (post-node arena ctx tokens (pool-a pool id))
+                                                                    (post-node arena ctx tokens (pool-b pool id))
+                                                                    0)
+                                                                  (if (= k 44) ; FILE_CLOSE: a
+                                                                    (begin
+                                                                      (post-node arena ctx tokens (pool-a pool id))
+                                                                      0)
+                                                                    (if (= k 46) ; WITH_RESOURCE: a b
+                                                                      (begin
+                                                                        (post-node arena ctx tokens (pool-a pool id))
+                                                                        (post-node arena ctx tokens (pool-b pool id))
+                                                                        0)
+                                                                      (if (= k 47) ; SEND_CLOSURE: a b + kids caps
+                                                                        (begin
+                                                                          (post-node arena ctx tokens (pool-a pool id))
+                                                                          (post-node arena ctx tokens (pool-b pool id))
+                                                                          0)
+                                                                        (if (= k 48) ; TRAIT: kids methods
+                                                                          (begin
+                                                                            (post-kids arena ctx tokens (pool-kids pool id))
+                                                                            0)
+                                                                          (if (= k 49) ; TRAIT_METHOD: kids params
+                                                                            (begin
+                                                                              (post-kids arena ctx tokens (pool-kids pool id))
+                                                                              0)
+                                                                            (if (= k 50) ; IMPL: a + kids bodies
+                                                                              (begin
+                                                                                (post-kids arena ctx tokens (pool-kids pool id))
+                                                                                0)
+                                                                              (if (= k 51) ; IMPL_BODY: a defn
+                                                                                (begin
+                                                                                  (post-node arena ctx tokens (pool-a pool id))
+                                                                                  0)
+                                                                                (if (= k 52) ; MAKE_VARIANT: kids args
+                                                                                  (begin
+                                                                                    (post-kids arena ctx tokens (pool-kids pool id))
+                                                                                    0)
+                                                                                  (if (or (= k 53) (= k 54)) ; FFI_PIN/UNPIN: a
+                                                                                    (begin
+                                                                                      (post-node arena ctx tokens (pool-a pool id))
+                                                                                      0)
+                                                                                    0))))))))))))))))))))))))))))))))))))))))))
 
 ; Process all children in a kids list.
 ; Returns: Unit
@@ -361,9 +494,59 @@
                           (po-spawn arena ctx tokens id)
                           (if (str-eq head (form-name ctx 12))
                             (po-send arena ctx tokens id)
-                            (if (str-eq head (form-name ctx 14))
-                              (po-make arena ctx tokens id)
-                              0)))))))))))))))
+                            (if (str-eq head (form-name ctx 13))
+                              (po-setbang arena ctx tokens id)
+                              (if (str-eq head (form-name ctx 14))
+                                (po-make arena ctx tokens id)
+                                (if (str-eq head (form-name ctx 16))
+                                  (po-defmacro arena ctx tokens id)
+                                  (if (str-eq head (form-name ctx 17))
+                                    (po-defn arena ctx tokens id)   ; defun alias
+                                    (if (str-eq head (form-name ctx 18))
+                                      (po-trait arena ctx tokens id)
+                                      (if (str-eq head (form-name ctx 19))
+                                        (po-impl arena ctx tokens id)
+                                        (if (str-eq head (form-name ctx 20))
+                                          (po-deftype arena ctx tokens id)
+                                          (if (str-eq head (form-name ctx 21))
+                                            (po-readline arena ctx tokens id)
+                                            (if (str-eq head (form-name ctx 22))
+                                              (po-exit arena ctx tokens id)
+                                              (if (str-eq head (form-name ctx 23))
+                                                (po-close arena ctx tokens id)
+                                                (if (str-eq head (form-name ctx 24))
+                                                  (po-file2 arena ctx tokens id 41)
+                                                  (if (str-eq head (form-name ctx 25))
+                                                    (po-file2 arena ctx tokens id 42)
+                                                    (if (str-eq head (form-name ctx 26))
+                                                      (po-file2 arena ctx tokens id 43)
+                                                      (if (str-eq head (form-name ctx 27))
+                                                        (po-file1 arena ctx tokens id 44)
+                                                        (if (str-eq head (form-name ctx 28))
+                                                          (po-file2 arena ctx tokens id 45)
+                                                          (if (str-eq head (form-name ctx 29))
+                                                            (po-with-resource arena ctx tokens id)
+                                                            (if (str-eq head (form-name ctx 30))
+                                                              (po-while arena ctx tokens id)
+                                                              (if (str-eq head (form-name ctx 31))
+                                                                (po-for arena ctx tokens id)
+                                                                (if (str-eq head (form-name ctx 32))
+                                                                  (po-cond arena ctx tokens id)
+                                                                  (if (str-eq head (form-name ctx 33))
+                                                                    (po-try arena ctx tokens id)
+                                                                    (if (str-eq head (form-name ctx 34))
+                                                                      (po-match arena ctx tokens id)
+                                                                      (if (str-eq head (form-name ctx 35))
+                                                                        (po-send-closure arena ctx tokens id)
+                                                                        (if (str-eq head (form-name ctx 36))
+                                                                          (po-fpi arena ctx tokens id 53)
+                                                                          (if (str-eq head (form-name ctx 37))
+                                                                            (po-fpi arena ctx tokens id 54)
+                                                                            (if (str-eq head (form-name ctx 38))
+                                                                              (po-defstruct arena ctx tokens id 34)
+                                                                              (if (str-eq head (form-name ctx 39))
+                                                                                (po-defstruct arena ctx tokens id 35)
+                                                                                0))))))))))))))))))))))))))))))))))))))))
 
 ; --- def ---
 ; (def name value) → Def(name, value). Requires args >= 2, name is an Ident.
@@ -699,6 +882,584 @@
 ; Returns: Int
 (defn make-char (ptr i)
   (ffi-call "zyl_cstr_byte_at" ptr i 1000))
+
+; ===========================================================================
+; NEW SPECIAL-FORM REWRITES (self-hosting extension)
+; ===========================================================================
+
+; --- set! ---
+; (set! name value) → kind 25, a=value, str=name. Requires exactly 2 args,
+; name is an Ident. Returns: Int (1 if rewritten)
+(defn po-setbang (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 2)
+        (let name (kids-get args 0)
+          (if (= (pool-kind pool name) 1)
+            (begin
+              (node-set-kind pool id 25)
+              (node-set-a pool id (kids-get args 1))
+              (node-set-str pool id (pool-str pool name))
+              (node-set-kids pool id 0)
+              1)
+            0))
+        0))))
+
+; --- while ---
+; (while cond body) → kind 26, a=cond, b=body. body is 1 expr or a Begin.
+; Returns: Int (1 if rewritten)
+(defn po-while (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (begin
+            (node-set-kind pool id 26)
+            (node-set-a pool id (kids-get args 0))
+            (node-set-b pool id (while-body arena ctx tokens args n 1))
+            (node-set-kids pool id 0)
+            1)
+          0)))))
+
+; while body: 1 trailing expr → it; >1 → Begin.
+; Returns: Int (body node id)
+(defn while-body (arena ctx tokens args n start)
+  (if (= (- n start) 1)
+    (kids-get args start)
+    (make-begin arena ctx tokens args start n)))
+
+; --- for ---
+; (for (init-bindings) cond body) → kind 27, a=cond, b=body, kids=bindings.
+; init-bindings is a list like (i 0) or a Begin of (i 0) pairs.
+; Returns: Int (1 if rewritten)
+(defn po-for (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let bindings (for-bindings arena pool (kids-get args 0))
+            (begin
+              (node-set-kind pool id 27)
+              (node-set-kids pool id bindings)
+              (node-set-a pool id (kids-get args 1))
+              (node-set-b pool id (kids-get args 2))
+              1))
+          0)))))
+
+; Collect for-loop init bindings from the bindings expr into a kids list of
+; AST_FOR_BINDING (28) nodes. Each binding: str=name, a=value-or-0.
+; Handles (i 0), (i), and Begin-of-pairs.
+; Returns: Int (kids list handle)
+(defn for-bindings (arena pool expr)
+  (let bindings (kids-new arena 4)
+    (begin
+      (for-bindings-1 arena pool bindings expr)
+      bindings)))
+
+(defn for-bindings-1 (arena pool bindings expr)
+  (if (= (pool-kind pool expr) 14)             ; Begin
+    (let bs (pool-kids pool expr)
+      (let n (kids-len bs)
+        (for (i 0) (< i n)
+          (begin
+            (binding-push arena pool bindings (kids-get bs i))
+            (set! i (+ i 1))))))
+    (binding-push arena pool bindings expr)))
+
+; Push one FOR_BINDING node for a binding expr: ident atom (no value) or a
+; Call (name value) from no-dispatch parsing.
+; Returns: Unit
+(defn binding-push (arena pool bindings e)
+  (if (= (pool-kind pool e) 1)                 ; bare ident: (i)
+    (let bid (binding-make arena pool (pool-str pool e) 0)
+      (kids-push arena bindings bid))
+    (if (= (pool-kind pool e) 8)               ; Call (name value)
+      (let h (pool-a pool e)
+        (let as (pool-kids pool e)
+          (if (= (pool-kind pool h) 1)
+            (let bid (binding-make arena pool (pool-str pool h) (kids-get as 0))
+              (kids-push arena bindings bid))
+            0)))
+      0)))
+
+; Make a FOR_BINDING node: str=name, a=value (0 = none).
+; Returns: Int (node id)
+(defn binding-make (arena pool name value)
+  (let id (pool-append pool)
+    (begin
+      (node-set-kind pool id 28)
+      (node-set-str pool id name)
+      (node-set-a pool id value)
+      id)))
+
+; --- cond ---
+; (cond (p1 b1...) (p2 b2...)) → kind 29, kids=clauses (AST_COND_CLAUSE 30).
+; Returns: Int (1 if rewritten)
+(defn po-cond (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 1)
+          (let clauses (kids-new arena 8)
+            (begin
+              (for (i 0) (< i n)
+                (begin
+                  (cond-clause-push arena pool clauses (kids-get args i))
+                  (set! i (+ i 1))))
+              (node-set-kind pool id 29)
+              (node-set-kids pool id clauses)
+              (node-set-a pool id 0)
+              1))
+          0)))))
+
+; Push a COND_CLAUSE node for a clause expr. A clause is a Call (pred body...)
+; from no-dispatch parsing; pred = head, body = Begin of rest (or Unit).
+; Returns: Unit
+(defn cond-clause-push (arena pool clauses e)
+  (if (= (pool-kind pool e) 8)
+    (let h (pool-a pool e)
+      (let body-args (pool-kids pool e)
+        (let m (kids-len body-args)
+          (let cid (pool-append pool)
+            (begin
+              (node-set-kind pool cid 30)
+              (node-set-a pool cid h)
+              (node-set-b pool cid (cond-body arena pool body-args m))
+              (kids-push arena clauses cid))))))
+    0))
+
+; cond clause body: 0 trailing → Keyword "___skip_"; 1 → it; >1 → Begin.
+; Returns: Int (body node id)
+(defn cond-body (arena pool body-args m)
+  (if (= m 0)
+    (atom-keyword arena pool "___skip_")
+    (if (= m 1)
+      (kids-get body-args 0)
+      (begin
+        (let body (kids-new arena 8)
+          (begin
+            (for (i 0) (< i m)
+              (begin
+                (kids-push arena body (kids-get body-args i))
+                (set! i (+ i 1))))
+            (let id (pool-append pool)
+              (begin
+                (node-set-kind pool id 14)
+                (node-set-kids pool id body)
+                id))))))))
+
+; --- try ---
+; (try expr (catch n body)) or (try expr catch-name body) → kind 31.
+; a=try-expr, b=catch-body, str=catch-name. Returns: Int (1 if rewritten)
+(defn po-try (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let catch-form (kids-get args 1)
+            (if (= (pool-kind pool catch-form) 8)   ; (catch n body)
+              (let ch (pool-a pool catch-form)
+                (let cname (pool-str pool ch)
+                  (let cargs (pool-kids pool catch-form)
+                    (let m (kids-len cargs)
+                      (if (>= m 1)
+                        (begin
+                          (node-set-kind pool id 31)
+                          (node-set-a pool id (kids-get args 0))
+                          (node-set-str pool id cname)
+                          (node-set-b pool id (kids-get cargs 0))
+                          (node-set-kids pool id 0)
+                          1)
+                        0))))
+              (if (>= n 3)                         ; (try expr catch-name body)
+                (begin
+                  (node-set-kind pool id 31)
+                  (node-set-a pool id (kids-get args 0))
+                  (node-set-str pool id (pool-str pool catch-form))
+                  (node-set-b pool id (kids-get args 2))
+                  (node-set-kids pool id 0)
+                  1)
+                0)))
+          0))))))
+
+; --- deftype ---
+; (deftype Name (V1 f1 f2) (V2) ...) → kind 32, str=name, kids=variants.
+; Each variant → AST_ADT_VARIANT (33): str=name, kids=fields (ident atoms).
+; Returns: Int (1 if rewritten)
+(defn po-deftype (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (let variants (kids-new arena 4)
+                (begin
+                  (for (i 1) (< i n)
+                    (begin
+                      (adt-variant-push arena pool variants (kids-get args i))
+                      (set! i (+ i 1))))
+                  (node-set-kind pool id 32)
+                  (node-set-str pool id (pool-str pool name))
+                  (node-set-kids pool id variants)
+                  1))
+              0)))
+          0))))
+
+; Push an ADT variant node for a variant expr (ident atom or Call).
+; Returns: Unit
+(defn adt-variant-push (arena pool variants e)
+  (if (= (pool-kind pool e) 1)                 ; bare variant name (None)
+    (adt-variant-unit arena pool variants e)
+    (if (= (pool-kind pool e) 8)               ; (V f1 f2)
+      (adt-variant-list arena pool variants e)
+      0)))
+
+; Push a unit variant (no fields).
+; Returns: Unit
+(defn adt-variant-unit (arena pool variants e)
+  (let vid (pool-append pool)
+    (begin
+      (node-set-kind pool vid 33)
+      (node-set-str pool vid (pool-str pool e))
+      (node-set-kids pool vid 0)
+      (kids-push arena variants vid))))
+
+; Push a variant with fields, given its Call node (h = name head, kids = fields).
+; Returns: Unit
+(defn adt-variant-list (arena pool variants e)
+  (let h (pool-a pool e)
+    (if (= (pool-kind pool h) 1)
+      (let fields (pool-kids pool e)
+        (let vid (pool-append pool)
+          (begin
+            (node-set-kind pool vid 33)
+            (node-set-str pool vid (pool-str pool h))
+            (node-set-kids pool vid fields)
+            (kids-push arena variants vid))))
+      0)))
+
+; Copy variant field idents into a fields list (ident atoms only).
+; Returns: Unit
+(defn variant-field-push (arena pool fields fs n)
+  (for (i 0) (< i n)
+    (begin
+      (if (= (pool-kind pool (kids-get fs i)) 1)
+        (kids-push arena fields (kids-get fs i))
+        0)
+      (set! i (+ i 1))))
+  0)
+
+; --- defstruct / defstruct+ ---
+; (defstruct Name field1 (field2 T) ...) → kind 34/35, str=name, kids=fields
+; (AST_DEF_FIELD 36: str=name, a=type-atom-or-0). Returns: Int (1 if rewritten)
+(defn po-defstruct (arena ctx tokens id nkind)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (let fields (kids-new arena 8)
+                (begin
+                  (for (i 1) (< i n)
+                    (begin
+                      (def-field-push arena pool fields (kids-get args i))
+                      (set! i (+ i 1))))
+                  (node-set-kind pool id nkind)
+                  (node-set-str pool id (pool-str pool name))
+                  (node-set-kids pool id fields)
+                  1))
+              0))
+          0)))))
+
+; Push a DEF_FIELD node for a field expr (ident atom or (name Type) Call).
+; Returns: Unit
+(defn def-field-push (arena pool fields e)
+  (if (= (pool-kind pool e) 1)
+    (let fid (field-make arena pool (pool-str pool e) 0)
+      (kids-push arena fields fid))
+    (if (= (pool-kind pool e) 8)
+      (let h (pool-a pool e)
+        (if (= (pool-kind pool h) 1)
+          (let fid (field-make arena pool (pool-str pool h) (kids-get (pool-kids pool e) 0))
+            (kids-push arena fields fid))
+          0))
+      0)))
+
+; Make a DEF_FIELD node: str=name, a=type-atom (0 = untyped).
+; Returns: Int (node id)
+(defn field-make (arena pool name type-atom)
+  (let id (pool-append pool)
+    (begin
+      (node-set-kind pool id 36)
+      (node-set-str pool id name)
+      (node-set-a pool id type-atom)
+      id)))
+
+; --- defmacro ---
+; (defmacro name (patterns...) template) → kind 37, str=name, kids=patterns,
+; a=template. Returns: Int (1 if rewritten)
+(defn po-defmacro (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (let pats (pool-kids pool (kids-get args 1))
+                (begin
+                  (node-set-kind pool id 37)
+                  (node-set-str pool id (pool-str pool name))
+                  (node-set-kids pool id pats)
+                  (node-set-a pool id (kids-get args (- n 1)))
+                  1))
+              0))
+          0)))))
+
+; --- read-line ---
+; (read-line) → kind 38. Requires 0 args. Returns: Int (1 if rewritten)
+(defn po-readline (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 0)
+        (begin
+          (node-set-kind pool id 38)
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- exit ---
+; (exit code) → kind 39, a=code. 1 arg. Returns: Int (1 if rewritten)
+(defn po-exit (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 1)
+        (begin
+          (node-set-kind pool id 39)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- close ---
+; (close x) → kind 40, a=x. 1 arg. Returns: Int (1 if rewritten)
+(defn po-close (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 1)
+        (begin
+          (node-set-kind pool id 40)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- match ---
+; (match scrutinee arm1 arm2 ...) → kind 19, a=scrutinee, kids=arms.
+; Each arm: kind 24, str=variant, a=body, kids=pattern.
+; Returns: Int (1 if rewritten)
+(defn po-match (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 2)
+          (begin
+            (node-set-kind pool id 19)
+            (node-set-a pool id (kids-get args 0))
+            (let arms (kids-new arena 4)
+              (po-match-arms arena pool arms (pool-kids pool id) 1 n)
+              (node-set-kids pool id arms))
+            1)
+          0)))))
+
+; Process match arms from idx to n-1.
+; Returns: Unit
+(defn po-match-arms (arena pool arms args idx n)
+  (if (< idx n)
+    (begin
+      (po-match-arm arena pool arms (kids-get args idx))
+      (po-match-arms arena pool arms args (+ idx 1) n))
+    0))
+
+; Convert one arm (Call: (variant pattern...)) to kind 24.
+; Returns: Unit
+(defn po-match-arm (arena pool arms e)
+  (let aid (pool-append pool)
+    (begin
+      (node-set-kind pool aid 24)
+      (node-set-str pool aid (pool-str pool (pool-a pool e)))
+      (let k (pool-kids pool e)
+        (let m (kids-len k)
+          (if (> m 1)
+            (begin
+              (node-set-a pool aid (kids-get k (- m 1)))
+              (node-set-kids pool aid k)
+              1)
+            (node-set-a pool aid 0))
+          (kids-push arena arms aid)))
+      0)))
+
+; --- exit / close / file-* / buf-append (single-arg) ---
+; (exit code) → kind 39, a=code. (close x) → 40. (file-close fd) → 44.
+; Returns: Int (1 if rewritten)
+(defn po-file1 (arena ctx tokens id nkind)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 1)
+        (begin
+          (node-set-kind pool id nkind)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- file-open / file-read / file-write / buf-append (two-arg) ---
+; → kind 41/42/43/45, a=first, b=second. Returns: Int (1 if rewritten)
+(defn po-file2 (arena ctx tokens id nkind)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 2)
+        (begin
+          (node-set-kind pool id nkind)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-b pool id (kids-get args 1))
+          (node-set-kids pool id 0)
+          1)
+        0))))
+
+; --- with-resource ---
+; (with-resource name resource body) → kind 46, str=name, a=resource, b=body.
+; Returns: Int (1 if rewritten)
+(defn po-with-resource (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (begin
+                (node-set-kind pool id 46)
+                (node-set-str pool id (pool-str pool name))
+                (node-set-a pool id (kids-get args 1))
+                (node-set-b pool id (kids-get args 2))
+                (node-set-kids pool id 0)
+                1)
+              0)))
+          0))))
+
+; --- send-closure ---
+; (send-closure actor closure cap1 cap2 ...) → kind 47, a=actor, b=closure,
+; kids=caps (ident atoms). Returns: Int (1 if rewritten)
+(defn po-send-closure (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let caps (kids-new arena 4)
+            (begin
+              (for (i 2) (< i n)
+                (begin
+                  (kids-push arena caps (kids-get args i))
+                  (set! i (+ i 1))))
+              (node-set-kind pool id 47)
+              (node-set-a pool id (kids-get args 0))
+              (node-set-b pool id (kids-get args 1))
+              (node-set-kids pool id caps)
+              1))
+          0)))))
+
+; --- trait ---
+; (trait Name (m1 (a b) Ret) (m2) ...) → kind 48, str=name, kids=methods
+; (AST_TRAIT_METHOD 49: str=name, kids=params, aux=return-type-str-ptr).
+; Returns: Int (1 if rewritten)
+(defn po-trait (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 1)
+          (let name (kids-get args 0)
+            (if (= (pool-kind pool name) 1)
+              (let methods (kids-new arena 4)
+                (begin
+                  (for (i 1) (< i n)
+                    (begin
+                      (trait-method-push arena pool methods (kids-get args i))
+                      (set! i (+ i 1))))
+                  (node-set-kind pool id 48)
+                  (node-set-str pool id (pool-str pool name))
+                  (node-set-kids pool id methods)
+                  1))
+              0)))
+          0))))
+
+; Push a TRAIT_METHOD node for a method expr (Call (mname params) ret).
+; Returns: Unit
+(defn trait-method-push (arena pool methods e)
+  (if (= (pool-kind pool e) 8)
+    (let h (pool-a pool e)
+      (if (= (pool-kind pool h) 1)
+        (let inner (pool-kids pool e)
+          (let m (kids-len inner)
+            (if (>= m 1)
+              (let params (params-from arena pool (kids-get inner 0))
+                (let mid (pool-append pool)
+                  (begin
+                    (node-set-kind pool mid 49)
+                    (node-set-str pool mid (pool-str pool h))
+                    (node-set-kids pool mid params)
+                    (if (>= m 2)
+                      (node-set-aux pool mid (pool-str pool (kids-get inner 1)))
+                      0)
+                    (kids-push arena methods mid))))))))
+      0)))
+
+; --- impl ---
+; (impl Trait Type (defn ...) ...) → kind 50, str=trait, a=type-atom,
+; kids=bodies (AST_IMPL_BODY 51, each a=defn-node). Returns: Int (1 if rewritten)
+(defn po-impl (arena ctx tokens id)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (let n (kids-len args)
+        (if (>= n 3)
+          (let trait-name (kids-get args 0)
+            (if (= (pool-kind pool trait-name) 1)
+              (let bodies (kids-new arena 4)
+                (begin
+                  (for (i 2) (< i n)
+                    (begin
+                      (impl-body-push arena pool bodies (kids-get args i))
+                      (set! i (+ i 1))))
+                  (node-set-kind pool id 50)
+                  (node-set-str pool id (pool-str pool trait-name))
+                  (node-set-a pool id (kids-get args 1))
+                  (node-set-kids pool id bodies)
+                  1))
+              0))
+          0)))))
+
+; Push an IMPL_BODY node wrapping a defn node.
+; Returns: Unit
+(defn impl-body-push (arena pool bodies e)
+  (let bid (pool-append pool)
+    (begin
+      (node-set-kind pool bid 51)
+      (node-set-a pool bid e)
+      (kids-push arena bodies bid))))
+
+; --- ffi-pin / ffi-unpin ---
+; (ffi-pin expr) → kind 53. (ffi-unpin expr) → kind 54. 1 arg.
+; Returns: Int (1 if rewritten)
+(defn po-fpi (arena ctx tokens id nkind)
+  (let pool (alloc-read-int ctx)
+    (let args (pool-kids pool id)
+      (if (= (kids-len args) 1)
+        (begin
+          (node-set-kind pool id nkind)
+          (node-set-a pool id (kids-get args 0))
+          (node-set-kids pool id 0)
+          1)
+        0))))
 
 ; ===========================================================================
 ; ENTRY POINT

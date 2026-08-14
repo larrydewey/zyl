@@ -135,7 +135,9 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 5. **Self-compile + determinism check** — Zyl compiler compiles its own source, verify identical binary
 
 - [x] Phase 1: Compiler IR in Zyl (provisional — see below)
-- [ ] Phase 2: Compiler core logic (lexer, parser, AST ops)
+- [x] Phase 2a: Lexer in Zyl (`stdlib/compiler/lexer.zyl`) — complete token set, all 15 token kinds, float-marker scanning, string literal handling, keyword disambiguation
+- [x] Phase 2b: Parser in Zyl (`stdlib/compiler/parser.zyl`) — full paren-balanced, all PostProcessor special forms (set!, while, for, cond, try, deftype, adt-variant, defstruct, defmacro, read-line, with-resource, send-closure, trait, impl, ffi-pin, ffi-unpin, exit, close, match), ~1485 lines, compiles and links clean
+- [ ] Phase 2c: Parser verification + AST manipulation helpers
 - [ ] Phase 3: ICNF + codegen in Zyl
 - [ ] Phase 4: Boot build
 - [ ] Phase 5: Determinism verification
@@ -155,6 +157,24 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 - [x] Hash finalization (Phase 11 — SHA-256 binary fingerprinting via `--hash` flag)
 - [x] Full REPL implemented (`src/repl.rs`) — full pipeline (parse → type check → compile → run), supports multi-line expressions, `quit` to exit
 
+### Recent Fixes (REPL Rewrite)
+
+- [x] **REPL rewritten as a first-class component (`src/repl.rs`)** — replaced the naive per-line shell-out with a stateful toplevel. Additions:
+  - **Raw terminal input (`termios` crate, correct API)**: `Termios::from_fd` + `tcsetattr(TCSANOW)`, `c_cc[VMIN]/c_cc[VTIME]` controlled on-demand; disables `ICANON|ECHO|ISIG`; restores settings on drop. ESC-vs-arrow disambiguation uses a 0.1 s VMIN=0/VTIME=1 read timeout instead of a blocking `read_exact`.
+  - **Line editor**: insert/backspace/delete, Left/Right/Home/End cursor movement, UTF-8 code-point decoding, cursor-column-precise redraw (`\x1b[K`, `\x1b[N G`).
+  - **History navigation**: Up/Down recall of submitted forms from a single-line index; `:history` lists every submission flagged `ok`/`FAIL`.
+  - **Multi-line input**: forms accumulate across physical lines until parens balance (continuation prompt `.. `); strings and `;` comments respected.
+  - **Stateful compile-all model (OCaml-style)**: definitions committed across rounds and re-compiled from scratch each submission; expressions auto-wrapped in an internal `(print ...)` so their value is displayed (avoiding re-prints of earlier expression results in later rounds).
+  - **Definition/statement classification**: persistent defs (`defn`/`def`/`deftype`/`defstruct`/`trait`/`impl`/`module`/`use`/`export`/test forms/…) are committed; statement forms (`print`, `assert-*`) run once unwrapped; duplicates of named defs are rejected with a clear message.
+  - **Error recovery**: a failed form never corrupts the session (defs staged and only committed on success); failures are marked in history.
+  - **Commands**: `:quit`/`:exit`/`quit`/`exit`, `:help`, `:clear`, `:show`, `:history`, `:stats`; `Ctrl-C` cancels the pending input, `Ctrl-D` exits.
+  - **Fallback line mode** for non-TTY (piped) input with the same buffer/state semantics (`= value` result lines).
+  - Pipeline kept identical to `main.rs` (`with_adt_defs`, closure bodies/captures, `-`→`_` ABI name sanitization).
+
+  **Verification**: `(defn double (x) (* x 2))` + `(double 21)` → `42`; multi-line `defn`; Up-arrow recall/re-execution; `:clear` drops definitions so later uses fail cleanly; failed submissions do not corrupt state; raw-TTY keystroke/redraw/cursor behavior confirmed under `script` (pty). Noted limitations recorded in `:help` (print of Int/Float/Bool/String only; `use` not resolved; `(read-line)` in child has no terminal).
+
+  **Known limitation (not a REPL bug)**: re-loading top-level `(def Name Expr)` bindings across rounds surfaces a pre-existing compiler issue — the same `(def n 100)` + `(print n)` misprints in a plain `.zyl` file compiled with the `zyl` binary (ICNF/codegen emit a Load of a top-level `def` value that is never stored in the slot).
+
 ---
 
 ## Next Priorities
@@ -171,9 +191,12 @@ Approach A is the goal. Approach B is a fallback if Approach A proves too limiti
 5. ~~Wire the runtime Heap/Pin regions to arenas~~ — **done**: `zyl_heap_alloc` and `zyl_pin_alloc` in `actor_runtime.c` route codegen allocations (MakeStruct, MakeVariant, closure-env, Spawn states) into per-region bump arenas (`g_heap_arena`, `g_pin_arena`) created in `zyl_ensure_arenas`, invoked from every `main` prologue. Deterministic bulk reclamation via `zyl_runtime_cleanup`. <br/>Also fixed remaining **32-bit pointer truncation** in codegen: (a) Call/FfiCall already-emitted reloads were 32-bit (`mov eax, …`) — now 64-bit `rax`; (b) FFI result to non-rax target used `eax` — now `rax`; (c) match-arm ADT field loads `mov ecx,[r12+off]` — now `rcx` 64-bit; (d) Int-valued BinOp in main emit loop used 32-bit `eax/edx/ebx` + `cdq/idiv` — now `rax/rdx/rbx` + `cqo/idiv`; (e) UnOp and SetBang used 32-bit regs — now 64-bit; (f) for-loop init const/path stores used `eax` — now `rax`; (g) **phi-slot stores/loads** (If/Match/While results) wrote 32-bit `eax` into 8-byte slots, leaving garbage in the upper half that later 64-bit reads picked up — this was the root cause of the `test_stringbuffer_growth.zyl` SIGSEGV (the grow-size passed to `arena-alloc-zeroed` came back as `0x7fff00000080`); all slots now store/load full `rax`. Verified: `test_stringbuffer_growth.zyl` prints `length: 104` exit 0; all struct regression tests (6) + stdlib_test pass; 12 test_*.zyl files exit 0.
 6. ~~Hash finalization (Phase 11)~~ — **done**: SHA-256 binary fingerprinting via `--hash` flag.
 7. ~~Full REPL~~ — **done**: complete REPL with full pipeline (parse → type check → compile → run).
-8. Self-hosting Phase 1: Define compiler IR in Zyl (AST types, ICNF types)
-9. Self-hosting Phase 2: Lexer + parser in Zyl
-10. Contract injection (optional overlay, spec §23)
+8. ~~Self-hosting Phase 1: Define compiler IR in Zyl~~ — **done**: IR opcodes, lexer, parser all in Zyl
+9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
+10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
+11. Self-hosting Phase 2c: Parser verification + AST manipulation helpers
+12. Self-hosting Phase 3: ICNF + codegen in Zyl
+13. Contract injection (optional overlay, spec §23)
 
 ---
 
