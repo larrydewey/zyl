@@ -47,6 +47,37 @@
 ; 22 AST_FFI_CALL      kids=args, str=ffi-name, val=timeout
 ; 23 AST_PARAM         str=name, val=1 if typed
 ; 24 AST_MATCH_ARM     str=variant, a=body, kids=pattern
+; 25 AST_SET_BANG      a=value, str=name
+; 26 AST_WHILE         a=cond, b=body
+; 27 AST_FOR           a=cond, b=body, kids=bindings (AST_FOR_BINDING)
+; 28 AST_FOR_BINDING   str=name, a=value-or-0
+; 29 AST_COND          kids=clauses (AST_COND_CLAUSE)
+; 30 AST_COND_CLAUSE   a=pred, b=body
+; 31 AST_TRY           a=try-expr, b=catch-body, str=catch-name
+; 32 AST_DEFTYPE       str=name, kids=variants (AST_ADT_VARIANT)
+; 33 AST_ADT_VARIANT   str=name, kids=fields (ident atoms)
+; 34 AST_DEFSTRUCT     str=name, kids=fields (AST_DEF_FIELD)
+; 35 AST_DEFSTRUCT_PLUS str=name, kids=fields (AST_DEF_FIELD)
+; 36 AST_DEF_FIELD     str=name, a=type-atom-or-0
+; 37 AST_DEFMACRO      str=name, a=template, kids=patterns
+; 38 AST_READ_LINE     (no children)
+; 39 AST_EXIT          a=code
+; 40 AST_CLOSE         a=handle
+; 41 AST_FILE_OPEN     a=path, b=mode
+; 42 AST_FILE_READ     a=fd, b=count
+; 43 AST_FILE_WRITE    a=fd, b=data
+; 44 AST_FILE_CLOSE    a=fd
+; 45 AST_BUF_APPEND    a=dst, b=src
+; 46 AST_WITH_RESOURCE str=name, a=resource, b=body
+; 47 AST_SEND_CLOSURE  a=actor, b=closure, kids=caps (ident atoms)
+; 48 AST_TRAIT         str=name, kids=methods (AST_TRAIT_METHOD)
+; 49 AST_TRAIT_METHOD  str=name, kids=params, aux=return-type-str-ptr
+; 50 AST_IMPL          str=trait, a=type-atom, kids=bodies (AST_IMPL_BODY)
+; 51 AST_IMPL_BODY     a=defn-node
+; 52 AST_MAKE_VARIANT  str=variant, a=adt-name-atom, kids=args
+; 53 AST_FFI_PIN       a=expr
+; 54 AST_FFI_UNPIN     a=expr
+; 55 AST_DEFUN         = AST_DEFN alias (kind 10), no separate opcode
 
 ; ===========================================================================
 ; OPCODES — ICNF
