@@ -2145,40 +2145,72 @@ impl PostProcessor {
             }
 
             // Recognize variant constructor calls: (Some x y ...) or unit variants like None.
-            // Heuristic: operator starts with uppercase letter AND is not a known builtin/op.
+            // Priority 1: if operator is a known ADT variant name, convert to MakeVariant
+            // regardless of builtin exclusion (enables variants named Int, Bool, etc.).
+            // Priority 2: uppercase heuristic for unknown names, excluding builtins.
             // Dotted names (Trait.method) are trait-method calls, never constructors.
             ExprInner::Call(first, ref args)
-                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.'))
-                    && !is_known_builtin_or_op(first) =>
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.')) =>
             {
                 let variant_name = match &first.inner {
                     ExprInner::Atom(Atom::Ident(v)) => v.clone(),
                     _ => return expr,
                 };
-                let adt_name = self.find_adt_for_variant(&variant_name).unwrap_or_default();
-                let new_args: Vec<Expr> = args
-                    .iter()
-                    .map(|a| self.post_process_expr(a.clone()))
-                    .filter(|a| !matches!(&a.inner, ExprInner::Atom(Atom::Ident(n)) if self.is_type_param(n)))
-                    .collect();
-                expr.inner = ExprInner::MakeVariant(adt_name, variant_name, new_args);
+                // Check if this is a known ADT variant (priority over builtin exclusion)
+                if self.find_adt_for_variant(&variant_name).is_some() {
+                    let adt_name = self.find_adt_for_variant(&variant_name).unwrap_or_default();
+                    let new_args: Vec<Expr> = args
+                        .iter()
+                        .map(|a| self.post_process_expr(a.clone()))
+                        .filter(|a| !matches!(&a.inner, ExprInner::Atom(Atom::Ident(n)) if self.is_type_param(n)))
+                        .collect();
+                    expr.inner = ExprInner::MakeVariant(adt_name, variant_name, new_args);
+                } else if !is_known_builtin_or_op(first) {
+                    // Not a known variant, but passes uppercase heuristic — treat as MakeVariant
+                    let adt_name = self.find_adt_for_variant(&variant_name).unwrap_or_default();
+                    let new_args: Vec<Expr> = args
+                        .iter()
+                        .map(|a| self.post_process_expr(a.clone()))
+                        .filter(|a| !matches!(&a.inner, ExprInner::Atom(Atom::Ident(n)) if self.is_type_param(n)))
+                        .collect();
+                    expr.inner = ExprInner::MakeVariant(adt_name, variant_name, new_args);
+                }
+                // else: known builtin name that's not an ADT variant — fall through to Call processing
             }
 
             // Recognize bare identifier variant constructors (unit variants like None).
-            // Skip type parameters — they are not variant constructors.
-            ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.') && !is_known_builtin_or_apply(n) && !self.is_type_param(n) => {
-                let adt_name = self.find_adt_for_variant(n).unwrap_or_default();
-                expr.inner = ExprInner::MakeVariant(adt_name, n.clone(), Vec::new());
+            // Priority: if known ADT variant, convert regardless of builtin exclusion.
+            // Otherwise: uppercase heuristic, excluding builtins and type parameters.
+            ExprInner::Atom(Atom::Ident(ref n)) if is_uppercase_ident(n) && !n.contains('.') => {
+                if !self.is_type_param(n) {
+                    if self.find_adt_for_variant(n).is_some() {
+                        // Known ADT variant — convert regardless of builtin status
+                        let adt_name = self.find_adt_for_variant(n).unwrap_or_default();
+                        expr.inner = ExprInner::MakeVariant(adt_name, n.clone(), Vec::new());
+                    } else if !is_known_builtin_or_apply(n) {
+                        // Not a known variant, but passes uppercase heuristic
+                        let adt_name = self.find_adt_for_variant(n).unwrap_or_default();
+                        expr.inner = ExprInner::MakeVariant(adt_name, n.clone(), Vec::new());
+                    }
+                }
             }
 
-            ExprInner::Apply(name, ref args) if is_uppercase_ident(name) && !name.contains('.') && !is_known_builtin_or_apply(name) => {
+            ExprInner::Apply(ref name, ref args) if is_uppercase_ident(name) && !name.contains('.') => {
                 // Skip if this name is a type parameter of any known ADT.
                 if self.is_type_param(name) {
                     return expr;
                 }
-                let adt_name = self.find_adt_for_variant(name).unwrap_or_default();
-                let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
-                expr.inner = ExprInner::MakeVariant(adt_name, name.clone(), new_args);
+                if self.find_adt_for_variant(name).is_some() {
+                    // Known ADT variant — convert regardless of builtin status
+                    let adt_name = self.find_adt_for_variant(name).unwrap_or_default();
+                    let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                    expr.inner = ExprInner::MakeVariant(adt_name, name.clone(), new_args);
+                } else if !is_known_builtin_or_apply(name) {
+                    // Not a known variant, but passes uppercase heuristic
+                    let adt_name = self.find_adt_for_variant(name).unwrap_or_default();
+                    let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
+                    expr.inner = ExprInner::MakeVariant(adt_name, name.clone(), new_args);
+                }
             }
 
             // Recursively process children of Call/Apply nodes.
