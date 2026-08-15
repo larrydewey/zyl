@@ -124,11 +124,35 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ## Remaining Work
 
+### Recursive deftype (CRITICAL — blocks self-hosting)
+
+**Problem:** Zyl's `deftype` cannot express recursive types (`deftype Tree (Leaf Int) (Node Tree Tree)`). This is the single largest blocker for self-hosting — the compiler's AST is inherently recursive.
+
+**Decision:** Recursive ADTs with implicit boxing. Syntax: implicit forward refs (`(deftype Tree (Leaf Int) (Node Tree Tree))` — `Tree` self-references automatically). Recursive fields are always pointers (8 bytes) in memory. Non-recursive ADTs unaffected.
+
+**Implementation steps:**
+
+1. **`ast.rs` PostProcessor**: ✅ DONE — Forward-declare ADT before parsing variants so self-references resolve. Also fixed: ADT variants named `Int`, `Bool`, etc. now correctly recognized as `MakeVariant` (previously blocked by `is_known_builtin_or_apply` exclusion).
+2. **`type_inference.rs`**: ✅ ALREADY WORKING — Recursive field types unify correctly against `Type::Nominal(adt_name)`. No changes needed.
+3. **`icnf.rs`**: ✅ ALREADY WORKING — `MakeVariant`/`Match` carry through unchanged. No changes needed.
+4. **`codegen.rs`**: ✅ DONE — Fixed nested `MakeVariant` operand clobbering: `MakeVariant` field ids now collected into `main_operand_ids`/function `operand_ids` and added to both emit-loop operand-skip lists so nested constructions are emitted on-demand (not standalone, which clobbered `rax` — `(Node (Leaf 1) (Leaf 2))` summed to 4 instead of 3). Added `MakeVariant` arm to `collect_operand_ids_in_node`. Also fixed match-arm slot corruption: removed a `*arm_local_vars.entry(name).or_insert(0) += 1` bug that shifted pre-registered `Assign` slots into pattern-var slots (`let` in match-arm body summed to 2 instead of 3), and bumped `temp_slot_counter` past arm-local slots so BinOp temps never collide with pattern vars.
+5. **Verify**: ✅ DONE — `(deftype Tree (Leaf Int) (Node Tree Tree))` → make, match, recursive traversal → correct output (tested: count, sum, nested nodes, let-in-arm bodies, multi-variant eval). `stdlib_test.zyl` output byte-identical to pre-fix baseline. Note: pre-existing `cond` `"x is 5"` print missing from `stdlib_test.zyl` output (unrelated, predates these fixes).
+6. **Self-hosting**: Expose recursive `deftype` in Zyl syntax so the Zyl compiler can define its own AST types.
+
+### Compiler bugs blocking self-hosting (found during Phase 2c runtime test)
+
+First runtime run of `test_parser_verify.zyl` (Zyl lexer + parser) fails: token stream is corrupted — every real token is interleaved with spurious TK_EOF (100) tokens (13 expected, 30 produced). Two Rust-compiler bugs identified:
+
+1. **ICNF generation** (`src/icnf.rs`): nested `If` nodes inside a `let`-in-branch-body get flattened into top-level statements instead of staying nested. In `lex_loop`, the comment-handling `If(e>=len)` (from the `is_semicolon` else-branch) is hoisted into the outer `If(i>=len)`'s else_body and runs unconditionally for every character, emitting an EOF token. Root cause is the `Let` handler unconditionally pushing its statements to `global_stmts` (line ~1425-1429) regardless of `push_to_globals`, leaking nested `If` nodes to the function body. Minimal repro tests (`nest.zyl`, `nest2.zyl`, `nest3.zyl` with `let`-wrap-`begin`-wrap-nested-`if` + recursion) all PASS — the bug needs the specific `if`-in-branch with the deeper nesting pattern of `lex_loop`.
+2. **Codegen** (`src/codegen.rs`): functions with >6 parameters never receive args 7+ from the stack. `toks_push` (7 params) and `lex_loop`/`lex_token` (7 params) never load the 7th arg (`col`) at function entry — `col` is garbage. No stack-argument passing is emitted at call sites or read at prologue.
+
+Both must be fixed before the Zyl lexer/parser can run and Phase 2c can proceed.
+
 ### Self-Hosting (Priority)
 
 The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 
-1. **Compiler IR in Zyl** — Define AST/ICNF types in Zyl (flat, ID-based, no recursive types)
+1. **Compiler IR in Zyl** — Define AST/ICNF types in Zyl (recursive deftype support required)
 2. **Compiler core logic** — Lexer, parser, AST manipulation, type system in Zyl
 3. **ICNF + codegen in Zyl** — SSA IR generation, x86_64 codegen in Zyl
 4. **Boot build** — Use Rust compiler to compile Zyl compiler → Zyl binary
@@ -137,17 +161,10 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 - [x] Phase 1: Compiler IR in Zyl (provisional — see below)
 - [x] Phase 2a: Lexer in Zyl (`stdlib/compiler/lexer.zyl`) — complete token set, all 15 token kinds, float-marker scanning, string literal handling, keyword disambiguation
 - [x] Phase 2b: Parser in Zyl (`stdlib/compiler/parser.zyl`) — full paren-balanced, all PostProcessor special forms (set!, while, for, cond, try, deftype, adt-variant, defstruct, defmacro, read-line, with-resource, send-closure, trait, impl, ffi-pin, ffi-unpin, exit, close, match), ~1485 lines, compiles and links clean
-- [ ] Phase 2c: Parser verification + AST manipulation helpers
+- [ ] Phase 2c: Parser verification + AST manipulation helpers *(blocked — see "Compiler bugs blocking self-hosting" below; recursive deftype now works)*
 - [ ] Phase 3: ICNF + codegen in Zyl
 - [ ] Phase 4: Boot build
 - [ ] Phase 5: Determinism verification
-
-**Note on Phase 1:** Zyl's deftype does not support recursive types (no `deftype Expr (Call Atom (List Expr))`). The compiler's AST is inherently recursive (Expr contains Expr). Two approaches:
-
-- **Approach A (flat):** Use ICNF-style flat representation — all AST nodes stored in a list, referenced by ID. No recursive types needed. This matches how the Rust compiler's ICNF works. The Zyl compiler would operate on ID lists instead of tree structures.
-- **Approach B (Rust bridge):** Keep AST types in Rust, write only the pipeline logic in Zyl. Less pure but more practical.
-
-Approach A is the goal. Approach B is a fallback if Approach A proves too limiting.
 
 ### Low Priority
 - [x] `try`/`catch` (spec §12.2 Result sugar) fixed: post-processor now handles both `(try A B C)` (3+ args) and `(try A (catch n B))` (2 args with catch-list); type_inference.rs updated for both forms

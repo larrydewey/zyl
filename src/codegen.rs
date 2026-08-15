@@ -134,6 +134,11 @@ impl CodeGen {
             ICNFInner::Assign(_, val) => {
                 out.insert(*val);
             }
+            ICNFInner::MakeVariant { field_ids, .. } => {
+                for &f in field_ids {
+                    out.insert(f);
+                }
+            }
             ICNFInner::If { cond_ssa, then_body, else_body, .. } => {
                 out.insert(*cond_ssa);
                 for n in then_body {
@@ -401,6 +406,11 @@ impl CodeGen {
                             main_operand_ids.insert(fid);
                         }
                     }
+                    ICNFInner::MakeVariant { field_ids, .. } => {
+                        for &fid in field_ids {
+                            main_operand_ids.insert(fid);
+                        }
+                    }
                     ICNFInner::FileOpen { path, mode } => {
                         main_operand_ids.insert(*path);
                         main_operand_ids.insert(*mode);
@@ -576,6 +586,7 @@ impl CodeGen {
                         ICNFInner::UnOp(_, _) => continue,
                         ICNFInner::Eq { .. } => continue,
                         ICNFInner::I32Imm(_) => continue,
+                        ICNFInner::MakeVariant { .. } => continue,
                         _ => {}
                     }
                 }
@@ -916,6 +927,11 @@ impl CodeGen {
                             operand_ids.insert(fid);
                         }
                     }
+                    ICNFInner::MakeVariant { field_ids, .. } => {
+                        for &fid in field_ids {
+                            operand_ids.insert(fid);
+                        }
+                    }
                     ICNFInner::Send(actor_id, msg_id) => {
                         operand_ids.insert(*actor_id);
                         operand_ids.insert(*msg_id);
@@ -1124,6 +1140,7 @@ impl CodeGen {
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
                         ICNFInner::Eq { .. } => continue,
+                        ICNFInner::MakeVariant { .. } => continue,
                         _ => {}
                     }
                 }
@@ -5413,6 +5430,15 @@ impl CodeGen {
                         }
                     }
 
+                    // Advance temp_slot_counter past all arm-local slots (pattern vars
+                    // plus any pre-registered Assign names) so BinOp/UnOp temp slots
+                    // never collide with a live arm variable.
+                    if let Some(&max_slot) = arm_local_vars.values().max() {
+                        if max_slot + 1 > self.temp_slot_counter {
+                            self.temp_slot_counter = max_slot + 1;
+                        }
+                    }
+
                     // Emit the arm body statements.
                     let mut arm_operand_ids: HashSet<usize> = HashSet::new();
                     collect_body_operand_ids(&arm.body, &mut arm_operand_ids);
@@ -5427,9 +5453,9 @@ impl CodeGen {
                     }
 
                     for stmt in &arm.body {
-                        if let ICNFInner::Assign(name, _) = &stmt.node {
-                            *arm_local_vars.entry(name.clone()).or_insert(0) += 1;
-                        }
+                        // Slots for Assign names are pre-registered by register_func_slots.
+                        // Do NOT mutate arm_local_vars here (a `+= 1` corruption caused
+                        // Assign slots to shift and collide with pattern-var slots).
                         // Skip intermediate nodes that are operands of the arm body's value expression.
                         // These are emitted on-demand via emit_load_into when a parent handler
                         // requests the result, preventing clobbering by subsequent statements.
@@ -5444,6 +5470,7 @@ impl CodeGen {
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
                         ICNFInner::Eq { .. } => continue,
+                        ICNFInner::MakeVariant { .. } => continue,
                         _ => {}
                             }
                         }
