@@ -140,6 +140,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         regioned_for_mono.len()
     );
 
+    // Mark generic function names to skip in collect_definitions so their resolved
+    // types aren't overwritten by fresh type vars from original generic defs.
+    let generic_names: std::collections::HashSet<String> = mono_ctx.get_generic_names().into_iter().cloned().collect();
+    inferer.mark_skipped_generic_defs(generic_names);
+
     // Now run full type inference on the monomorphized AST.
     let typed_exprs = match inferer.infer(&regioned_for_mono) {
         Ok(e) => e,
@@ -155,11 +160,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("[Phase 7] ICNF generation ...");
     // Build struct layouts from the AST (struct definitions are in the AST).
     // All fields are 8 bytes (64-bit aligned) in the MVP.
+    // Untyped fields use the type inferred from constructor call sites.
+    let resolved_struct_defs = inferer.get_resolved_struct_defs();
     let mut struct_layouts: codegen::StructLayout = std::collections::HashMap::new();
     for expr in &regioned_for_mono {
         if let ast::ExprInner::StructDef(sd) | ast::ExprInner::StructDefPlus(sd) = &expr.inner {
-            let layout: Vec<(String, usize)> = sd.fields.iter().enumerate().map(|(i, (fname, _typ))| {
-                (fname.clone(), i * 8)
+            let inferred = resolved_struct_defs.get(&sd.name);
+            let layout: Vec<(String, usize, String)> = sd.fields.iter().enumerate().map(|(i, (fname, typ))| {
+                let type_str = if let Some(t) = typ {
+                    t.clone()
+                } else {
+                    inferred
+                        .and_then(|fields| {
+                            fields
+                                .iter()
+                                .find(|(n, _)| n == fname)
+                                .and_then(|(_, ft)| ft.as_ref())
+                        })
+                        .map(|ty| match ty {
+                            type_system::Type::Nominal(n) => n.clone(),
+                            other => format!("{}", other),
+                        })
+                        .unwrap_or_else(|| "Int".into())
+                };
+                (fname.clone(), i * 8, type_str)
             }).collect();
             struct_layouts.insert(sd.name.clone(), layout);
         }
@@ -312,6 +336,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Output ICNF as JSON (SSA IR with region annotations, post-optimization).
     let _icnf_json = serde_json::to_string_pretty(&optimized_icnf)?;
+    if let Some(idx) = args.iter().position(|a| a == "--dump-icnf") {
+        let path = args.get(idx + 1).map(|s| s.as_str()).unwrap_or("/tmp/icnf.json");
+        fs::write(path, &_icnf_json)?;
+    }
     println!("\n--- ICNF Program ---");
     println!("Functions: {}", optimized_icnf.functions.len());
     for func in &optimized_icnf.functions {
