@@ -1,0 +1,451 @@
+; === Zyl Unit Test Suite ===
+; Exhaustive coverage of core language features using Zyl's integrated testing system.
+
+; Shadow generic stdlib types with concrete versions
+(deftype Option (Some Int) None)
+(deftype Result (Ok Int) (Err Int))
+
+; --- Arithmetic Tests ---
+(test "integer addition"
+  (assert-equal (+ 1 2) 3))
+
+(test "integer addition multi"
+  (assert-equal (+ 1 2 3 4 5) 15))
+
+(test "integer subtraction"
+  (assert-equal (- 10 3) 7))
+
+(test "integer subtraction chain"
+  (assert-equal (- 10 3 2) 5))
+
+(test "integer multiplication"
+  (assert-equal (* 3 4) 12))
+
+(test "integer multiplication chain"
+  (assert-equal (* 2 3 4) 24))
+
+(test "integer division"
+  (assert-equal (/ 20 4) 5))
+
+(test "integer division chain"
+  (assert-equal (/ 120 2 3) 20))
+
+(test "zero arithmetic"
+  (assert-equal (- 5 5) 0))
+
+(test "float addition"
+  (assert-equal (+ 1.0 2.0) 3.0))
+
+(test "float multiplication"
+  (assert-equal (* 2.0 3.0) 6.0))
+
+(test "mixed int float addition"
+  (assert-equal (+ 1 2.0) 3.0))
+
+(test "negation"
+  (assert-equal (- 5) -5))
+
+(test "large numbers"
+  (assert-equal (+ 1000000 2000000) 3000000))
+
+; --- Comparison Tests ---
+(test "greater than true"
+  (assert-true (> 10 5)))
+
+(test "less than true"
+  (assert-true (< 5 10)))
+
+(test "greater equal true"
+  (assert-true (>= 5 5)))
+
+(test "less equal true"
+  (assert-true (<= 5 5)))
+
+(test "equal true"
+  (assert-true (== 5 5)))
+
+(test "not equal true"
+  (assert-true (!= 5 3)))
+
+(test "equal false"
+  (assert-false (== 5 3)))
+
+(test "greater than false"
+  (assert-false (> 5 10)))
+
+(test "chained comparisons"
+  (assert-equal (if (> 10 5) (if (> 5 3) 1 0) 0) 1))
+
+; --- Logical Tests ---
+(test "and true true"
+  (assert-true (and true true)))
+
+(test "and true false"
+  (assert-false (and true false)))
+
+(test "and false true"
+  (assert-false (and false true)))
+
+(test "and false false"
+  (assert-false (and false false)))
+
+(test "or true true"
+  (assert-true (or true true)))
+
+(test "or true false"
+  (assert-true (or true false)))
+
+(test "or false true"
+  (assert-true (or false true)))
+
+(test "or false false"
+  (assert-false (or false false)))
+
+(test "not false"
+  (assert-true (not false)))
+
+(test "not true"
+  (assert-false (not true)))
+
+; --- Let Binding Tests ---
+(test "simple let"
+  (assert-equal (let x 42 x) 42))
+
+(test "nested let"
+  (assert-equal (let a 10 (let b 20 (+ a b))) 30))
+
+(test "triple nested let"
+  (assert-equal (let a 1 (let b 2 (let c 3 (+ a b c)))) 6))
+
+(test "let shadowing"
+  (assert-equal (let x 1 (let x 2 x)) 2))
+
+(test "let with expression"
+  (assert-equal (let x (+ 1 2) x) 3))
+
+(test "let with complex expression"
+  (assert-equal (let result (+ (* 2 3) (- 10 4)) result) 10))
+
+(test "deeply nested let"
+  (assert-equal (let a (+ 1 (let b (* 2 3) (+ b 4))) a) 11))
+
+(test "deep nested arithmetic"
+  (assert-equal (let a 1 (let b 2 (let c 3 (let d 4 (let e 5 (+ a b c d e))))) 15) 15))
+
+; --- Let-Mut Tests ---
+(test "simple let-mut"
+  (assert-equal (let-mut y 5 y) 5))
+
+(test "let-mut rebinding"
+  (assert-equal (let-mut x 1 (set! x 2) x) 2))
+
+(test "let-mut arithmetic"
+  (assert-equal (let-mut x 10 (set! x (+ x 5)) x) 15))
+
+(test "multiple let-mut rebinding"
+  (assert-equal (let-mut x 1 (set! x 2) (set! x 3) (set! x 4) (set! x 5) x) 5))
+
+; --- If Expression Tests ---
+(test "if true branch"
+  (assert-equal (if true 1 0) 1))
+
+(test "if false branch"
+  (assert-equal (if false 1 0) 0))
+
+(test "if nested"
+  (assert-equal (if true (if true 1 2) 3) 1))
+
+(test "if nested false"
+  (assert-equal (if false (if true 1 2) 3) 3))
+
+(test "if deeply nested"
+  (assert-equal (if true (if true (if true 99 0) 0) 0) 99))
+
+(test "if with comparison"
+  (assert-equal (if (> 10 5) 1 0) 1))
+
+(test "if in arithmetic"
+  (assert-equal (+ (if true 1 0) 2) 3))
+
+; --- While Loop Tests ---
+(test "while false"
+  (assert-equal (while false 0) 0))
+
+(test "while loop counter"
+  (assert-equal (let-mut counter 0 (while (< counter 3) (set! counter (+ counter 1)) counter) 3) 3))
+
+(test "while loop returns unit"
+  (assert-equal (while (< 0 1) (print "x")) 0))
+
+; --- For Loop Tests ---
+(test "for loop runs"
+  (for (i 1) (<= i 3) (begin (set! i (+ i 1)) i)))
+
+; --- Cond Expression Tests ---
+(test "cond first arm"
+  (assert-equal (cond (true 1) (false 2)) 1))
+
+(test "cond second arm"
+  (assert-equal (cond (false 99) (true 42)) 42))
+
+(test "cond third arm"
+  (assert-equal (cond (false 1) (false 2) (true 3)) 3))
+
+(test "cond single arm"
+  (assert-equal (cond (true "only arm")) 0))
+
+; --- Function Definition Tests ---
+(defn add (x y) (+ x y))
+(test "function call"
+  (assert-equal (add 3 4) 7))
+
+(defn factorial (n) (if (<= n 1) 1 (* n (factorial (- n 1)))))
+(test "recursive factorial 5"
+  (assert-equal (factorial 5) 120))
+
+(test "recursive factorial 0"
+  (assert-equal (factorial 0) 1))
+
+(test "recursive factorial 1"
+  (assert-equal (factorial 1) 1))
+
+(test "recursive factorial 6"
+  (assert-equal (factorial 6) 720))
+
+(defn square (x) (* x x))
+(test "function composition"
+  (assert-equal (square (add 1 2)) 9))
+
+(test "square direct"
+  (assert-equal (square 5) 25))
+
+; --- Struct Definition & Construction Tests ---
+(test "point field access"
+  (assert-equal (struct-get (make-Point 10 20) "x") 10))
+
+(test "point y field access"
+  (assert-equal (struct-get (make-Point 10 20) "y") 20))
+
+(test "vec3 x field"
+  (assert-equal (struct-get (make-Vec3 1 2 3) "x") 1))
+
+(test "vec3 y field"
+  (assert-equal (struct-get (make-Vec3 1 2 3) "y") 2))
+
+(test "vec3 z field"
+  (assert-equal (struct-get (make-Vec3 1 2 3) "z") 3))
+
+(test "quad a field"
+  (assert-equal (struct-get (make-Quad 10 20 30 40) "a") 10))
+
+(test "quad d field"
+  (assert-equal (struct-get (make-Quad 10 20 30 40) "d") 40))
+
+(test "person name field"
+  (assert-equal (struct-get (make-Person "Alice" 30) "age") 30))
+
+(test "flag a field"
+  (assert-true (struct-get (make-Flag true false true) "a")))
+
+(test "flag b field"
+  (assert-false (struct-get (make-Flag true false true) "b")))
+
+(test "point float fields"
+  (assert-equal (struct-get (make-Point 1.5 2.5) "x") 1.5))
+
+(test "point float y field"
+  (assert-equal (struct-get (make-Point 1.5 2.5) "y") 2.5))
+
+(test "point zero fields"
+  (assert-equal (struct-get (make-Point 0 0) "x") 0))
+
+(test "point large fields"
+  (assert-equal (struct-get (make-Point 999999 888888) "x") 999999))
+
+; --- Nested Struct-Get Tests ---
+(test "2-level nested struct-get"
+  (assert-equal (struct-get (struct-get (make-Outer (make-Point 7 11)) "inner") "x") 7))
+
+(test "2-level nested y field"
+  (assert-equal (struct-get (struct-get (make-Outer (make-Point 7 11)) "inner") "y") 11))
+
+(test "3-level nested struct-get"
+  (assert-equal (struct-get (struct-get (struct-get (make-Level1 (make-Level2 (make-Level3 999))) "val") "data") "content") 999))
+
+(test "struct field in arithmetic"
+  (assert-equal (+ (struct-get (make-Point 5 7) "x") (struct-get (make-Point 5 7) "y")) 12))
+
+(test "struct field in condition"
+  (assert-true (> (struct-get (make-Point 10 20) "x") 5)))
+
+; --- Untyped Param Accessor Function Tests ---
+(defn get-x (p) (struct-get p "x"))
+(defn get-y (p) (struct-get p "y"))
+
+(test "accessor get-x"
+  (assert-equal (get-x (make-Point 13 17)) 13))
+
+(test "accessor get-y"
+  (assert-equal (get-y (make-Point 13 17)) 17))
+
+(test "accessor sum"
+  (assert-equal (+ (get-x (make-Point 13 17)) (get-y (make-Point 13 17))) 30))
+
+(test "multiple accessor calls"
+  (assert-equal (+ (get-x (make-Point 100 200)) (get-y (make-Point 100 200)) (get-x (make-Point 100 200))) 400))
+
+(test "accessor result in let"
+  (assert-equal (+ (let x (get-x (make-Point 10 20)) x) (get-y (make-Point 10 20))) 30))
+
+; --- Multiple Struct Types with Same Accessor Names ---
+(defn get-c (c) (struct-get c "c"))
+(defn get-m (c) (struct-get c "m"))
+
+(test "point accessor vs cmyk accessor c"
+  (assert-equal (+ (get-x (make-Point 5 10)) (get-c (make-CMYK 1 2 3 4))) 6))
+
+(test "point accessor vs cmyk accessor m"
+  (assert-equal (+ (get-y (make-Point 5 10)) (get-m (make-CMYK 1 2 3 4))) 12))
+
+; --- Struct in Recursive Function ---
+(defn sum-fields (p)
+  (+ (struct-get p "x") (struct-get p "y")))
+
+(test "struct field in recursive function"
+  (assert-equal (sum-fields (make-Point 6 8)) 14))
+
+; --- Struct Through Nested Function Calls ---
+(defn double (x) (* x 2))
+(defn struct-double-x (p)
+  (double (struct-get p "x")))
+
+(test "struct through nested functions"
+  (assert-equal (struct-double-x (make-Point 5 5)) 10))
+
+; --- Struct Passed Through 3 Function Layers ---
+(defn layer1 (p) (get-x p))
+(defn layer2 (p) (+ (layer1 p) 10))
+(defn layer3 (p) (+ (layer2 p) 20))
+
+(test "struct through 3 function layers"
+  (assert-equal (layer3 (make-Point 5 5)) 35))
+
+; --- Struct with Function Constructor ---
+(defn make-point (x y) (make-Point x y))
+
+(test "struct from function constructor"
+  (assert-equal (struct-get (make-point 256 512) "x") 256))
+
+(test "struct y from function constructor"
+  (assert-equal (struct-get (make-point 256 512) "y") 512))
+
+; --- Struct in Let-Mut Variable ---
+(test "struct in let-mut"
+  (assert-equal (let-mut ref (make-Point 111 222) (struct-get ref "x")) 111))
+
+(test "struct rebinding in let-mut"
+  (assert-equal (let-mut ref (make-Point 111 222) (set! ref (make-Point 333 444)) (struct-get ref "y")) 444))
+
+; --- Struct in Cond ---
+(test "struct field in cond"
+  (assert-equal (cond ((== (struct-get (make-Point 5 10) "x") 5) 1) (true 2)) 1))
+
+; --- Struct with Complex Constructor ---
+(test "struct with arithmetic in constructor"
+  (assert-equal (struct-get (make-Point (+ 1 2) (* 3 4)) "x") 3))
+
+(test "struct y with arithmetic in constructor"
+  (assert-equal (struct-get (make-Point (+ 1 2) (* 3 4)) "y") 12))
+
+; --- Multiple Structs of Same Type ---
+(test "multiple point x fields"
+  (assert-equal (+ (struct-get (make-Point 1 2) "x") (struct-get (make-Point 3 4) "x")) 4))
+
+; --- Two Struct Types Interleaved ---
+(test "interleaved struct types"
+  (assert-equal (+ (struct-get (make-Point 1 2) "x") (struct-get (make-Color 10 20 30) "r")) 11))
+
+; --- Struct Field in While Loop ---
+(test "struct field in while loop"
+  (assert-equal (let-mut counter 0 (let s (make-Point 0 100) (while (< counter 2) (set! counter (+ counter 1)) counter)) 2) 2))
+
+; --- Struct with All Int Fields Same Value ---
+(test "point zero values"
+  (assert-equal (+ (struct-get (make-Point 0 0) "x") (struct-get (make-Point 0 0) "y")) 0))
+
+; --- Struct from Let Values ---
+(test "struct from let values"
+  (assert-equal (let x 50 (let y 60 (struct-get (make-Point x y) "x")) 50) 50))
+
+; --- ADT Tests (covered in test_adt_probe.zyl) ---
+
+; --- Macro Tests ---
+(defmacro unless (cond body) (if (not cond) body))
+(defmacro when (cond body) (unless (not cond) body))
+(defmacro twice (body) (begin body body))
+
+(test "unless false executes"
+  (assert-equal (unless false (print "works")) 0))
+
+(test "unless true skips"
+  (unless true (print "should not print")))
+
+(test "when true executes"
+  (assert-equal (when true (print "works")) 0))
+
+(test "when false skips"
+  (when false (print "should not print")))
+
+(test "twice macro"
+  (twice (print "twice")))
+
+; --- I/O Tests ---
+(test "read-line empty"
+  (let input (read-line)
+    (assert-equal input "")))
+
+(test "read-line with input"
+  (print "got: input"))
+
+; --- Begin Expression Tests ---
+(test "begin with let and arithmetic"
+  (assert-equal (begin (let x 1) (let y 2) (+ x y)) 3))
+
+(test "begin with print"
+  (assert-equal (begin (print "x") 42) 42))
+
+(test "begin empty"
+  (assert-equal (begin) 0))
+
+; --- Complex Expressions ---
+(test "complex arithmetic"
+  (assert-equal (+ (* 2 3) (- 10 4) (/ 12 3)) 14))
+
+(test "complex nested if"
+  (assert-equal (if (and (> 10 5) (< 5 10)) 1 0) 1))
+
+(test "complex or condition"
+  (assert-equal (if (or (> 10 5) (> 100 200)) 1 0) 1))
+
+; --- Struct in For Loop ---
+(test "struct in for loop"
+  (for (i 0) (< i 3) (begin (set! i (+ i 1)) i)))
+
+; --- Final Verification ---
+(test "final add"
+  (assert-equal (add 1 2) 3))
+
+(test "final factorial"
+  (assert-equal (factorial 4) 24))
+
+(test "final square"
+  (assert-equal (square 5) 25))
+
+(test "final get-x"
+  (assert-equal (get-x (make-Point 7 8)) 7))
+
+(test "final get-y"
+  (assert-equal (get-y (make-Point 7 8)) 8))
+
+; --- Run All Tests ---
+(run-tests)

@@ -1422,9 +1422,17 @@ impl IcnfConverter {
                 }
                 let pos = all_stmts.len().saturating_sub(1);
                 all_stmts.splice(pos..pos, to_insert);
-                for stmt in &all_stmts {
-                    if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
-                        self.global_stmts.push(stmt.clone());
+                // Only push to global_stmts when converting in a top-level context
+                // (saved_push == true). When this let lives inside a branch body
+                // (convert_branch_body set push_to_globals=false), its statements must
+                // stay embedded in the enclosing If/While/For node — pushing them here
+                // leaks nested control-flow nodes to the function body, flattening
+                // nested Ifs into top-level statements (lexer miscompilation).
+                if saved_push {
+                    for stmt in &all_stmts {
+                        if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
+                            self.global_stmts.push(stmt.clone());
+                        }
                     }
                 }
                 self.push_to_globals = saved_push;
@@ -1480,9 +1488,11 @@ impl IcnfConverter {
                         all_stmts.push(stmt.clone());
                     }
                 }
-                for stmt in &all_stmts {
-                    if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
-                        self.global_stmts.push(stmt.clone());
+                if saved_push {
+                    for stmt in &all_stmts {
+                        if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
+                            self.global_stmts.push(stmt.clone());
+                        }
                     }
                 }
                 self.push_to_globals = saved_push;
