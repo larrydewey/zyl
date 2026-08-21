@@ -89,6 +89,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
     pub no_dispatch: bool,
+    parse_stack: Vec<Span>,
 }
 
 impl Parser {
@@ -97,6 +98,7 @@ impl Parser {
             tokens,
             pos: 0,
             no_dispatch: false,
+            parse_stack: Vec::new(),
         }
     }
 
@@ -149,8 +151,10 @@ impl Parser {
 
     #[allow(dead_code)]
     fn parse_list_no_dispatch(&mut self, open: &Token) -> Result<Expr, ZylError> {
+        self.parse_stack.push(open.span.clone());
         let mut elements = self.parse_exprs_no_dispatch(|k| matches!(k, TokenKind::RParen))?;
         self.expect_token_kind(TokenKind::RParen)?;
+        self.parse_stack.pop();
 
         if elements.is_empty() {
             return Ok(Expr {
@@ -273,8 +277,10 @@ impl Parser {
     }
 
     fn parse_list(&mut self, open: &Token) -> Result<Expr, ZylError> {
+        self.parse_stack.push(open.span.clone());
         let elements = self.parse_exprs(|k| matches!(k, TokenKind::RParen))?;
         self.expect_token_kind(TokenKind::RParen)?;
+        self.parse_stack.pop();
 
         if elements.is_empty() {
             return Ok(Expr {
@@ -384,7 +390,16 @@ impl Parser {
         } else if op == "while" {
             Ok(self.p_while(args))
         } else if op == "for" {
-            std::process::exit(42);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Call(
+                    Box::new(Expr {
+                        span: span.clone(),
+                        inner: ExprInner::Atom(Atom::Ident("for".into())),
+                    }),
+                    args.to_vec(),
+                ),
+            })
         } else if op == "cond" {
             Ok(Expr {
                 span: span.clone(),
@@ -1789,9 +1804,25 @@ impl Parser {
     fn parse_params_list(&self, arg: Option<&Expr>) -> Vec<Param> {
         match arg {
             Some(e) => match &e.inner {
-                ExprInner::Call(_, ref pexprs) => {
+                ExprInner::Call(op, ref pexprs) => {
                     // Call from special forms — all elements are params.
-                    pexprs.iter().map(|pe| self.parse_param(pe)).collect()
+                    // If pexprs is empty, the operator itself is the param (e.g., (x)).
+                    let mut params = Vec::new();
+                    if pexprs.is_empty() {
+                        if let ExprInner::Atom(Atom::Ident(name)) = &op.inner {
+                            params.push(Param {
+                                span: Span::default(),
+                                name: name.clone(),
+                                typ: None,
+                            });
+                        }
+                    } else {
+                        params.push(self.parse_param(op));
+                        for pe in pexprs {
+                            params.push(self.parse_param(pe));
+                        }
+                    }
+                    params
                 }
                 ExprInner::Apply(ref name, ref args)
                     if !name.starts_with("make-")
@@ -1800,9 +1831,7 @@ impl Parser {
                     // Apply from generic calls — treat all components as params.
                     let mut params = Vec::new();
                     // Add the operator (name) as a param if it looks like an identifier.
-                    if !args.is_empty()
-                        && name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!'))
-                    {
+                    if name.chars().all(|c| c.is_alphabetic() || matches!(c, '_' | '-' | '?' | '!')) {
                         params.push(Param {
                             span: Span::default(),
                             name: name.clone(),
@@ -1816,6 +1845,13 @@ impl Parser {
                 }
                 ExprInner::Atom(Atom::Ident(name)) if name == "Unit" || name.is_empty() => {
                     Vec::new()
+                }
+                ExprInner::Atom(Atom::Ident(name)) => {
+                    vec![Param {
+                        span: Span::default(),
+                        name: name.clone(),
+                        typ: None,
+                    }]
                 }
                 _ => Vec::new(),
             },
@@ -1879,9 +1915,17 @@ impl Parser {
 
     fn expect_token_kind(&mut self, kind: TokenKind) -> Result<(), ZylError> {
         if *self.peek_kind() != kind {
+            let token = &self.tokens[self.pos];
+            if matches!(token.kind, TokenKind::EOF) && !self.parse_stack.is_empty() {
+                let unclosed = &self.parse_stack[self.parse_stack.len() - 1];
+                return Err(ZylError::E_EXPECTED_RPAREN(
+                    token.span.clone(),
+                    format!("expected {:?} but found '{}'. Possibly unbalanced parentheses: {} unclosed expression(s) starting at {}", kind, token.kind, self.parse_stack.len(), unclosed),
+                ));
+            }
             return Err(ZylError::E_EXPECTED_RPAREN(
-                Span::default(),
-                format!("expected {:?}", kind),
+                token.span.clone(),
+                format!("expected {:?} but found '{}'", kind, token.kind),
             ));
         }
         self.pos += 1;
