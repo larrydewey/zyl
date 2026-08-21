@@ -1,0 +1,77 @@
+; Symbol table: simple open-addressing hash map for variable → type binding.
+; Used by type inference phase.
+;
+; Layout:
+;   sym-table: ptr to header (24 bytes)
+;     [0]: count (u64)
+;     [8]: cap   (u64)
+;     [16]: base (ptr to array of entries)
+;   Each entry (16 bytes):
+;     [0]: name  (ptr to interned string, 0 if empty)
+;     [8]: type  (type id, 0 if unbound)
+
+; Create a new symbol table with initial capacity.
+; Returns: Int (sym-table pointer)
+(defn sym-table-new (arena cap)
+  (let hdr (arena-alloc arena 24)
+    (let base (arena-alloc-zeroed arena (* cap 16))
+      (begin
+        (alloc-write-int hdr 0)
+        (alloc-write-int (+ hdr 8) cap)
+        (alloc-write-int (+ hdr 16) base)
+        hdr))))
+
+; Hash a string pointer (simple FNV-1a 64-bit, reduced to table size).
+; For now, just use the pointer value modulo cap.
+; Returns: Int (index)
+(defn sym-hash (table str)
+  (let cap (alloc-read-int (+ table 8))
+    (let ptr (alloc-read-int str)
+      (let h 0)
+        ; Simple hash: XOR bytes of pointer representation
+        (let i 0)
+        (while (< i 8)
+          (begin
+            ; This is a placeholder — proper string hashing needs byte access
+            (set! h (+ h ptr))
+            (set! i (+ i 1)))))
+      (% h cap)))
+
+; Look up a name in the symbol table.
+; Returns: Int (type id, 0 if not found)
+(defn sym-lookup (table name)
+  0)  ; TODO: implement hash lookup
+
+; Bind a name to a type.
+; Returns: Unit
+(defn sym-bind (table name type-id)
+  ; TODO: implement hash insert
+  0)
+
+; ===========================================================================
+; Type variables
+; ===========================================================================
+; Type representation (for future type inference):
+;   0: unbound
+;   1: Int
+;   2: Float
+;   3: Bool
+;   4: String
+;   5: Unit
+;   6..: fresh type variables (negative = type var index)
+
+; Create a fresh type variable in arena.
+; Returns: Int (type id)
+(defn fresh-tvar (arena base)
+  (let next (alloc-read-int base)
+    (begin
+      (alloc-write-int base (+ next 1))
+      (- 0 next))))  ; Return negative to distinguish from concrete types
+
+; Initialize a type variable counter.
+; Returns: Int (base pointer)
+(defn tvar-counter (arena)
+  (let b (arena-alloc arena 8)
+    (begin
+      (alloc-write-int b 6)
+      b)))
