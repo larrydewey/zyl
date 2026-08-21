@@ -1,0 +1,62 @@
+; Deep Recursion Stress Tests — factorial, fibonacci, mutual recursion
+
+; Single recursion: factorial
+(defn _dr_factorial (n)
+  (if (<= n 1) 1 (* n (_dr_factorial (- n 1)))))
+
+(test "dr-factorial-0"
+  (assert-equal (_dr_factorial 0) 1))
+(test "dr-factorial-1"
+  (assert-equal (_dr_factorial 1) 1))
+(test "dr-factorial-5"
+  (assert-equal (_dr_factorial 5) 120))
+(test "dr-factorial-10"
+  (assert-equal (_dr_factorial 10) 3628800))
+
+; Double recursion: fibonacci
+(defn _dr_fib (n)
+  (if (<= n 1) n (+ (_dr_fib (- n 1)) (_dr_fib (- n 2)))))
+
+(test "dr-fib-0"
+  (assert-equal (_dr_fib 0) 0))
+(test "dr-fib-1"
+  (assert-equal (_dr_fib 1) 1))
+(test "dr-fib-5"
+  (assert-equal (_dr_fib 5) 5))
+(test "dr-fib-10"
+  (assert-equal (_dr_fib 10) 55))
+
+; Mutual recursion: is-even / is-odd
+(defn _dr_is-even (n)
+  (if (== n 0) true (_dr_is-odd (- n 1))))
+(defn _dr_is-odd (n)
+  (if (== n 0) false (_dr_is-even (- n 1))))
+
+(test "dr-is-even-0"
+  (assert-true (_dr_is-even 0)))
+(test "dr-is-even-10"
+  (assert-true (_dr_is-even 10)))
+(test "dr-is-even-7"
+  (assert-false (_dr_is-even 7)))
+(test "dr-is-odd-0"
+  (assert-false (_dr_is-odd 0)))
+(test "dr-is-odd-7"
+  (assert-true (_dr_is-odd 7)))
+(test "dr-is-odd-10"
+  (assert-false (_dr_is-odd 10)))
+
+; Recursive list sum (via Option-based linked list from stdlib)
+; Uses the Option/Cons pattern from core.zyl
+
+; Struct-based recursive traversal
+(defstruct _dr_Node (val) (next))
+
+(defn _dr_sum-list (node)
+  (if (== node 0)
+    0
+    (+ (struct-get node "val") (_dr_sum-list (struct-get node "next")))))
+
+(test "dr-sum-empty"
+  (assert-equal (_dr_sum-list 0) 0))
+
+(run-tests)

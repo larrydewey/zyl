@@ -1,0 +1,10 @@
+(test "if-true"
+  (assert-equal (if true 1 0) 1))
+(test "if-false"
+  (assert-equal (if false 1 0) 0))
+(test "if-nested"
+  (assert-equal (if true (if true 1 2) 3) 1))
+(test "if-then-unit"
+  (assert-true (if true (begin (print "then-branch") true))))
+
+(run-tests)

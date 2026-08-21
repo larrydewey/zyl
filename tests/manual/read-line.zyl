@@ -1,0 +1,7 @@
+; Manual Test: read-line
+; This test requires stdin input and cannot be automated.
+; Run manually: echo 'hello world' | ./target/debug/zyl tests/manual/read-line.zyl t.bin && ./t.bin
+; Expected: got: hello world
+
+(let input (read-line)
+  (print "got: " input))

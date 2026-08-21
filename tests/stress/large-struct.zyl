@@ -1,0 +1,42 @@
+; Large Struct Stress Test — 20+ field structs
+
+(defstruct _ls_LargeStruct
+  (f01) (f02) (f03) (f04) (f05)
+  (f06) (f07) (f08) (f09) (f10)
+  (f11) (f12) (f13) (f14) (f15)
+  (f16) (f17) (f18) (f19) (f20)
+  (f21) (f22) (f23) (f24) (f25))
+
+(test "large-struct-create"
+  (let s (make-_ls_LargeStruct 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25)
+    (assert-equal (struct-get s "f01") 1)
+    (assert-equal (struct-get s "f13") 13)
+    (assert-equal (struct-get s "f25") 25)))
+
+(test "large-struct-all-zero"
+  (let s (make-_ls_LargeStruct 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+    (assert-equal (struct-get s "f01") 0)
+    (assert-equal (struct-get s "f12") 0)
+    (assert-equal (struct-get s "f25") 0)))
+
+(test "large-struct-same-values"
+  (let s (make-_ls_LargeStruct 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42 42)
+    (assert-equal (struct-get s "f01") 42)
+    (assert-equal (struct-get s "f25") 42)))
+
+; 30-field struct
+(defstruct _ls_BiggerStruct
+  (a1) (a2) (a3) (a4) (a5)
+  (a6) (a7) (a8) (a9) (a10)
+  (a11) (a12) (a13) (a14) (a15)
+  (a16) (a17) (a18) (a19) (a20)
+  (a21) (a22) (a23) (a24) (a25)
+  (a26) (a27) (a28) (a29) (a30))
+
+(test "bigger-struct-30"
+  (let s (make-_ls_BiggerStruct 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30)
+    (assert-equal (struct-get s "a01") 1)
+    (assert-equal (struct-get s "a15") 15)
+    (assert-equal (struct-get s "a30") 30)))
+
+(run-tests)

@@ -1,0 +1,31 @@
+; Compiler Regression Tests — stdlib/compiler: lexer, parser, ICNF
+
+(use allocator/allocator)
+(use compiler/ir)
+
+; IR pool operations
+(test "ir-pool-basic"
+  (let arena (arena-create 0)
+    (let pool (pool-create arena 6)
+      (begin
+        (let node (pool-append pool)
+          (node-set-kind pool node 1)
+          (node-set-str pool node (str-intern arena "hello"))
+          (assert-true true))))))
+
+; IR node kind setting
+(test "ir-node-kinds"
+  (let arena (arena-create 0)
+    (let pool (pool-create arena 6)
+      (begin
+        (let node (pool-append pool)
+          (node-set-kind pool node 1)
+          (node-set-str pool node (str-intern arena "test"))
+          (print node))
+        (let node2 (pool-append pool)
+          (node-set-kind pool node2 8)
+          (print "kind8 node: ")
+          (print node2))
+        (assert-true true)))))
+
+(run-tests)

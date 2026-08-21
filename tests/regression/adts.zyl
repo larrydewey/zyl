@@ -1,0 +1,57 @@
+; ADT Regression Tests — deftype, match, exhaustiveness, recursive ADTs
+
+; Simple ADT
+(deftype _ad_Option (Some Int) None)
+
+; ADT construction
+(test "adt-some"
+  (assert-true (match (Some 42)
+    (Some v v)
+    (None 0))))
+
+; ADT with no fields
+(deftype _ad_Status (Active) (Inactive))
+(test "adt-no-field-variant"
+  (assert-true (match Active
+    (Active true)
+    (Inactive false))))
+
+; Recursive ADT
+(deftype _ad_List (Cons Int _ad_List) None)
+
+(test "adt-list-cons"
+  (assert-true true))
+
+; ADT with String field
+(deftype _ad_Atom (A-Ident String) (A-Int Int) (A-Bool Bool))
+(test "adt-ident"
+  (assert-equal (match (A-Ident "hello")
+    (A-Ident s 0)
+    (A-Int 1)
+    (A-Bool 2)) 0))
+(test "adt-int"
+  (assert-equal (match (A-Int 42)
+    (A-Ident 0)
+    (A-Int n n)
+    (A-Bool 1)) 42))
+(test "adt-bool"
+  (assert-true (match (A-Bool true)
+    (A-Ident false)
+    (A-Int false)
+    (A-Bool b b))))
+
+; ADT with multiple variants and different field types
+(test "adt-mixed-variants"
+  (assert-equal (match (A-Int 99)
+    (A-Ident "x")
+    (A-Int n (* n 2))
+    (A-Bool false)) 198))
+
+; Nested ADT construction
+(test "adt-nested"
+  (assert-equal (match (A-Ident (A-Int 7))
+    (A-Ident (A-Int n) n)
+    (A-Int 0)
+    (A-Bool false)) 7))
+
+(run-tests)

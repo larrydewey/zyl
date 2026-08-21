@@ -1,0 +1,35 @@
+; Multi-Ooperand Chain Stress Tests — 20+ operand arithmetic, 10+ operand calls
+
+; 10-operand addition
+(test "add-10"
+  (assert-equal (+ 1 2 3 4 5 6 7 8 9 10) 55))
+
+; 15-operand addition
+(test "add-15"
+  (assert-equal (+ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15) 120))
+
+; 20-operand addition
+(test "add-20"
+  (assert-equal (+ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20) 210))
+
+; 10-operand multiplication
+(test "mul-10"
+  (assert-equal (* 1 2 3 4 5 6 7 8 9 10) 3628800))
+
+; 5-operand float addition
+(test "fadd-5"
+  (assert-equal (+ 1.0 2.0 3.0 4.0 5.0) 15.0))
+
+; 10-operand float addition
+(test "fadd-10"
+  (assert-equal (+ 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0) 55.0))
+
+; Nested multi-operand calls
+(test "nested-multi-operand"
+  (assert-equal (+ (* 1 2 3 4) (- 10 3) (/ 20 4)) 19))
+
+; Complex nested expressions
+(test "complex-nested"
+  (assert-equal (+ (* 1 2 3) (* 4 5 6) (* 7 8 9)) 126))
+
+(run-tests)

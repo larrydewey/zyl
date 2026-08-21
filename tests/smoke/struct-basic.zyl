@@ -1,0 +1,7 @@
+(defstruct Point (x) (y))
+(test "struct-basic"
+  (assert-equal (let p (make-Point 10 20) (struct-get p "x")) 10))
+(test "struct-basic-y"
+  (assert-equal (let p (make-Point 10 20) (struct-get p "y")) 20))
+
+(run-tests)

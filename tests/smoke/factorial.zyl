@@ -1,0 +1,13 @@
+(defn factorial (n)
+  (if (<= n 1) 1 (* n (factorial (- n 1)))))
+
+(test "factorial-0"
+  (assert-equal (factorial 0) 1))
+(test "factorial-1"
+  (assert-equal (factorial 1) 1))
+(test "factorial-5"
+  (assert-equal (factorial 5) 120))
+(test "factorial-6"
+  (assert-equal (factorial 6) 720))
+
+(run-tests)

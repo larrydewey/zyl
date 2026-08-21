@@ -1,0 +1,4 @@
+(test "hello-world"
+  (assert-equal (+ 1 2) 3))
+
+(run-tests)

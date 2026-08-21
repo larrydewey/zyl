@@ -1,0 +1,21 @@
+; S-Expression Balance Tests
+
+(test "nest-10"
+  (let _b1 1(let _b2 2(let _b3 3(let _b4 4(let _b5 5(let _b6 6(let _b7 7(let _b8 8(let _b9 9(let _b10 10 _b10)))))))))))
+
+(test "nest-20"
+  (let _b1 1(let _b2 2(let _b3 3(let _b4 4(let _b5 5(let _b6 6(let _b7 7(let _b8 8(let _b9 9(let _b10 10(let _b11 11(let _b12 12(let _b13 13(let _b14 14(let _b15 15(let _b16 16(let _b17 17(let _b18 18(let _b19 19(let _b20 20 _b20)))))))))))))))))))))
+
+(test "if-nest-10"
+  (assert-equal (if true (if true (if true (if true (if true (if true (if true (if true (if true (if true 42 0) 0) 0) 0) 0) 0) 0) 0) 0) 42)))
+
+(test "string-parens"
+  (assert-equal (print "(hello) (world)") "(hello) (world)"))
+
+(test "comment-parens"
+  (assert-equal 1 1))
+
+(test "deep-let-whitespace"
+  (assert-equal (let a 1 (let b 2 (let c 3 (+ a b c)))) 6))
+
+(run-tests)

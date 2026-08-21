@@ -1,0 +1,26 @@
+; I/O Regression Tests — read-line, file-open/read/write/close
+
+; File operations
+(test "file-open"
+  (assert-equal (file-open "/tmp/zyl_regression_test.txt" 1) 1))
+
+(test "file-write"
+  (assert-equal (file-write 1 "test") 4))
+
+(test "file-read"
+  (let fd (file-open "/tmp/zyl_regression_test.txt" 0)
+    (begin
+      (assert-true (> (file-read fd 100) 0))
+      (file-close fd)
+      0)))
+
+(test "file-close"
+  (let fd (file-open "/tmp/zyl_regression_test.txt" 0)
+    (begin
+      (file-close fd)
+      0)))
+
+; read-line placeholder (requires stdin — documented as manual test)
+; See docs/regression-tests.md for manual read-line test
+
+(run-tests)

@@ -1,0 +1,157 @@
+; Struct Regression Tests
+
+(defstruct _s_Point (x) (y))
+(defstruct _s_Vec3 (x) (y) (z))
+(defstruct _s_Person (name String) (age Int))
+(defstruct _s_Pair (left) (right))
+(defstruct _s_Outer (inner))
+(defstruct+ _s_Color (r) (g) (b))
+(defstruct _s_Flag (a) (b) (c))
+(defstruct _s_Quad (a) (b) (c) (d))
+(defstruct _s_Single (value))
+(defstruct _s_Level1 (val))
+(defstruct _s_Level2 (data))
+(defstruct _s_Level3 (content))
+
+(defn _s-get-x (p) (struct-get p "x"))
+(defn _s-get-y (p) (struct-get p "y"))
+(defn _s-make-point (x y) (make-_s_Point x y))
+(defn _s-sum-fields (p) (+ (struct-get p "x") (struct-get p "y")))
+(defn _s-double (x) (* x 2))
+(defn _s-struct-double-x (p) (_s-double (struct-get p "x")))
+
+; Basic field access
+(test "struct-basic"
+  (assert-equal (let p (make-_s_Point 10 20) (struct-get p "x")) 10))
+
+(test "struct-basic-y"
+  (assert-equal (let p (make-_s_Point 10 20) (struct-get p "y")) 20))
+
+; Field access in arithmetic
+(test "struct-field-arithmetic"
+  (assert-equal (let p (make-_s_Point 5 7) (+ (struct-get p "x") (struct-get p "y"))) 12))
+
+; Multiple field access from same struct
+(test "struct-multi-access"
+  (assert-equal (let p (make-_s_Point 100 200) (let px (struct-get p "x") (let py (struct-get p "y") (+ px py)))) 300))
+
+; Struct with 3 fields
+(test "struct-3fields"
+  (assert-equal (let v (make-_s_Vec3 1 2 3) (+ (struct-get v "x") (struct-get v "y") (struct-get v "z"))) 6))
+
+; Struct with String field
+(test "struct-string-field"
+  (assert-equal (let alice (make-_s_Person "Alice" 30) (struct-get alice "name")) "Alice"))
+
+; Struct with Int field
+(test "struct-int-field"
+  (assert-equal (let alice (make-_s_Person "Alice" 30) (struct-get alice "age")) 30))
+
+; Nested struct-get
+(test "struct-nested-construct"
+  (assert-equal (let p (make-_s_Point 42 99) (let pair (make-_s_Pair (struct-get p "x") (struct-get p "y")) (struct-get pair "left"))) 42))
+
+(test "struct-nested-construct-r"
+  (assert-equal (let p (make-_s_Point 42 99) (let pair (make-_s_Pair (struct-get p "x") (struct-get p "y")) (struct-get pair "right"))) 99))
+
+; Single field struct
+(test "struct-single-field"
+  (assert-equal (let s (make-_s_Single 42) (struct-get s "value")) 42))
+
+; Struct with 4 fields
+(test "struct-4fields"
+  (assert-equal (let q (make-_s_Quad 1 2 3 4) (+ (struct-get q "a") (struct-get q "b") (struct-get q "c") (struct-get q "d"))) 10))
+
+; Struct with boolean fields
+(test "struct-flag-fields"
+  (assert-equal (let f (make-_s_Flag 10 20 30) (+ (struct-get f "a") (struct-get f "b") (struct-get f "c"))) 60))
+
+; defstruct+ variant
+(test "struct-color-r"
+  (assert-equal (let c (make-_s_Color 255 128 64) (struct-get c "r")) 255))
+
+(test "struct-color-g"
+  (assert-equal (let c (make-_s_Color 255 128 64) (struct-get c "g")) 128))
+
+(test "struct-color-b"
+  (assert-equal (let c (make-_s_Color 255 128 64) (struct-get c "b")) 64))
+
+; 3-level deep nested struct-get
+(test "struct-recursive-1"
+  (assert-equal (let l1 (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 99))) (struct-get (struct-get (struct-get l1 "val") "data") "content")) 99))
+
+(test "struct-recursive-2"
+  (assert-equal (let l1 (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 100))) (let l2 (struct-get l1 "val") (let l3 (struct-get l2 "data") (struct-get l3 "content"))) 100)))
+
+; Struct returned from function
+(test "struct-double-x"
+  (assert-equal (let p (make-_s_Point 5 6) (_s-struct-double-x p)) 10))
+
+; Struct passed through function calls
+(test "struct-sum-fields"
+  (assert-equal (let p (make-_s_Point 3 4) (_s-sum-fields p)) 7))
+
+; Complex nested struct access
+(test "struct-complex-nested"
+  (assert-equal (let p (make-_s_Point 5 6) (let q (make-_s_Point 7 8) (let pair (make-_s_Pair (struct-get p "x") (struct-get q "y")) (struct-get pair "right"))) 8)))
+
+; Mixed field types in arithmetic
+(test "struct-mixed-access"
+  (assert-equal (let v (make-_s_Vec3 10 20 30) (+ (struct-get v "x") (* (struct-get v "y") (struct-get v "z")))) 610))
+
+; Const struct access
+(test "struct-const-access"
+  (assert-equal (struct-get (make-_s_Point 99 1) "x") 99))
+
+(test "struct-const-access-y"
+  (assert-equal (struct-get (make-_s_Point 2 88) "y") 88))
+
+; Struct with same value in multiple fields
+(test "struct-same-values"
+  (assert-equal (let p (make-_s_Point 42 42) (+ (struct-get p "x") (struct-get p "y"))) 84))
+
+; Struct with all-zero fields
+(test "struct-zero-fields"
+  (assert-equal (let p (make-_s_Point 0 0) (struct-get p "x")) 0))
+
+; Struct with type-annotated fields
+(test "struct-person-name"
+  (assert-equal (struct-get (make-_s_Person "Bob" 25) "name") "Bob"))
+
+(test "struct-person-age"
+  (assert-equal (struct-get (make-_s_Person "Charlie" 40) "age") 40))
+
+; Struct in if condition
+(test "struct-in-if"
+  (assert-equal (let p (make-_s_Point 10 20) (if (> (struct-get p "x") 5) 1 0)) 1))
+
+; Struct in while loop
+(test "struct-in-while"
+  (assert-equal (let-mut counter 0 (let s (make-_s_Point 0 100) (while (< counter 3) (set! counter (+ counter 1)) counter)) 3) 3))
+
+; Struct field in cond
+(test "struct-in-cond"
+  (assert-equal (let p (make-_s_Point 5 10) (cond ((== (struct-get p "x") 5) (struct-get p "y")) (true 0)) 10) 10))
+
+; Struct construction with arithmetic in constructor
+(test "struct-constructor-arithmetic"
+  (assert-equal (let p (make-_s_Point (+ 1 2) (* 3 4)) (+ (struct-get p "x") (struct-get p "y"))) 14))
+
+; Struct rebinding via let-mut
+(test "struct-rebind"
+  (let-mut p (make-_s_Point 1 2)
+    (set! p (make-_s_Point 10 20))
+    (assert-equal (struct-get p "x") 10)
+    (assert-equal (struct-get p "y") 20)))
+
+; Multiple structs of same type
+(test "struct-multiple-same-type"
+  (assert-equal (let p1 (make-_s_Point 1 2) (let p2 (make-_s_Point 3 4) (+ (struct-get p1 "x") (struct-get p2 "x"))) 4)))
+
+; Struct with let-mut rebinding
+(test "let-mut-struct"
+  (let-mut p (make-_s_Point 1 2)
+    (set! p (make-_s_Point 10 20))
+    (assert-equal (struct-get p "x") 10)))
+
+(run-tests)

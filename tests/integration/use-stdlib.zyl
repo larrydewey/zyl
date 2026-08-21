@@ -1,0 +1,12 @@
+; Integration Test: multi-module use + export
+
+(use collections/collections)
+(use allocator/allocator)
+
+(test "multi-module-vec"
+  (assert-true (option-is-some (vec-create 0 5))))
+
+(test "multi-module-alloc"
+  (assert-equal (alloc-malloc 64) 64))
+
+(run-tests)

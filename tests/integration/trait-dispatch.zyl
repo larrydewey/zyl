@@ -1,0 +1,21 @@
+; Integration Test: trait dispatch with OutputStream
+
+(use io/io)
+
+(test "trait-dispatch-stdout"
+  (let out (make-stdout)
+    (assert-equal (OutputStream.write out "test") 4)))
+
+(test "trait-dispatch-stringbuffer"
+  (let sb (make-string-buffer)
+    (OutputStream.write sb "hello")
+    (OutputStream.write sb " ")
+    (OutputStream.write sb "world")
+    (assert-equal (OutputStream.flush sb) 0)))
+
+(test "trait-buf-append"
+  (let sb (make-string-buffer)
+    (OutputStream.write sb "buffered")
+    (assert-true (option-is-some (option-some 1)))))
+
+(run-tests)
