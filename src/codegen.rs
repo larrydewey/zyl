@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 /// Uses a linear-scan register allocator over SSA values within each function body.
 /// Struct field layout: struct name → [(field_name, byte_offset)].
 /// All fields are 8 bytes (64-bit aligned) in the MVP.
-pub type StructLayout = HashMap<String, Vec<(String, usize)>>;
+pub type StructLayout = HashMap<String, Vec<(String, usize, String)>>;
 
 pub struct CodeGen {
     /// Collected assembly output lines.
@@ -195,7 +195,7 @@ impl CodeGen {
             .and_then(|fields| {
                 fields
                     .iter()
-                    .position(|(name, _)| name == field_name)
+                    .position(|(name, _, _)| name == field_name)
                     .map(|pos| pos * 8) // 8 bytes per field (64-bit)
             })
     }
@@ -2139,22 +2139,30 @@ impl CodeGen {
                 }
             }
             Some(ICNFNode {
-                node: ICNFInner::Eq { left, right },
+                 node: ICNFInner::Eq { left, right },
                 ..
             }) => {
-                self.emit_binop_direct(
-                    &BinOpKind::Eq,
-                    *left,
-                    *right,
-                    target_reg,
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    false,
-                    src_ssa_id,
-                );
-                emitted_ids.insert(src_ssa_id);
+                let already_emitted = emitted_ids.contains(&src_ssa_id)
+                    || self.standalone_emitted.contains(&src_ssa_id);
+                if already_emitted {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                } else {
+                    self.emit_binop_direct(
+                        &BinOpKind::Eq,
+                        *left,
+                        *right,
+                        target_reg,
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        false,
+                        src_ssa_id,
+                    );
+                    emitted_ids.insert(src_ssa_id);
+                }
             }
             Some(_) => {
                 let hash = simple_hash(&format!("{}", src_ssa_id));
@@ -3185,10 +3193,10 @@ impl CodeGen {
         if let Some(ref slot) = phi_slot {
             self.asm_push_align();
             let res_is_float = matches!(result_typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
-            if res_is_float {
-                self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
-            } else {
-                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                    if res_is_float {
+                        self.asm.push(format!("    movsd xmm0, [rbp-{}]", slot));
+                    } else {
+                        self.asm.push(format!("    mov rax, [rbp-{}]", slot));
             }
         }
 
@@ -3424,6 +3432,7 @@ impl CodeGen {
                     } else {
                         let hash = simple_hash(name);
                         let offset = ((hash % 32) + 1) * 8;
+                        eprintln!("DEBUG LOAD fallback: name={}, hash={}, offset={}", name, hash, offset);
                         self.asm_push_align();
                         self.asm.push(format!("    mov rax, [rbp-{}]", offset));
                     }
@@ -3722,9 +3731,9 @@ impl CodeGen {
                                emitted_ids,
                                operand_ids,
                                phi_slots,
-                           );
-                           self.asm_push_align();
-                           self.asm.push(format!("    mov rax, [rbp-{}]", temp_offset));
+                            );
+                            self.asm_push_align();
+                            self.asm.push(format!("    mov rax, [rbp-{}]", temp_offset));
                            emitted_ids.insert(node.id);
 
                           match op {
@@ -5111,8 +5120,15 @@ impl CodeGen {
                 );
             }
 
-            ICNFInner::Unit | ICNFInner::Closure { .. } => {
+            ICNFInner::Unit => {
                 // No-op in assembly.
+            }
+
+            ICNFInner::Closure { name, .. } => {
+                // Load the address of the closure function into rax.
+                let fn_name = format!("_ZYL_{}", name);
+                self.asm_push_align();
+                self.asm.push(format!("    lea rax, [{}]", fn_name));
             }
 
             ICNFInner::Begin(stmts) => {
