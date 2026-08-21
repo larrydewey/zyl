@@ -71,6 +71,15 @@ impl TypeInferer {
         self.collect_definitions(exprs);
         let mut result = Vec::with_capacity(exprs.len());
         for expr in exprs {
+            // Skip definition-only expressions
+            if matches!(&expr.inner, ExprInner::Deftype(_, _, _, _) | ExprInner::StructDef(_) | ExprInner::StructDefPlus(_)) {
+                result.push(Expr {
+                    span: expr.span.clone(),
+                    inner: ExprInner::Atom(Atom::Ident("T_UNIT".into())),
+                });
+                continue;
+            }
+
             let ty = self.infer_expr(expr)?;
             result.push(Expr {
                 span: expr.span.clone(),
@@ -679,7 +688,7 @@ impl TypeInferer {
             // Handle raw Call/Apply forms of special forms (from no-dispatch parsing).
             ExprInner::Call(op, args) if is_ident_op(op, "if") && !args.is_empty() => {
                 let cond_type = self.infer_expr(&args[0])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 let then_ = if args.len() > 1 {
                     self.infer_expr(&args[1])?
                 } else {
@@ -690,13 +699,13 @@ impl TypeInferer {
                 } else {
                     Type::Var(self.fresh_var())
                 };
-                self.unify(&then_, &els)?;
+                self.unify(&then_, &els, expr.span.clone())?;
                 Ok(then_)
             }
 
             ExprInner::Apply(name, args) if name == "if" && !args.is_empty() => {
                 let cond_type = self.infer_expr(&args[0])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 let then_ = if args.len() > 1 {
                     self.infer_expr(&args[1])?
                 } else {
@@ -707,7 +716,7 @@ impl TypeInferer {
                 } else {
                     Type::Var(self.fresh_var())
                 };
-                self.unify(&then_, &els)?;
+                self.unify(&then_, &els, expr.span.clone())?;
                 Ok(then_)
             }
 
@@ -773,14 +782,14 @@ impl TypeInferer {
             // Handle raw while.
             ExprInner::Call(op, args) if is_ident_op(op, "while") && args.len() >= 2 => {
                 let cond_type = self.infer_expr(&args[0])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 drop(self.infer_expr(&args[1])?);
                 Ok(Type::Prim(PrimType::Unit))
             }
 
             ExprInner::Apply(name, args) if name == "while" && args.len() >= 2 => {
                 let cond_type = self.infer_expr(&args[0])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 drop(self.infer_expr(&args[1])?);
                 Ok(Type::Prim(PrimType::Unit))
             }
@@ -799,7 +808,7 @@ impl TypeInferer {
                 };
                 drop(self.infer_expr(&args[1])?);
                 let cond_type = self.infer_expr(&args[2])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 drop(self.infer_expr(&args[3])?);
                 self.env.bind(fname.clone(), Type::Var(self.fresh_var()))?;
                 drop(self.infer_expr(&args[4])?);
@@ -819,7 +828,7 @@ impl TypeInferer {
                 };
                 drop(self.infer_expr(&args[1])?);
                 let cond_type = self.infer_expr(&args[2])?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 drop(self.infer_expr(&args[3])?);
                 self.env.bind(fname.clone(), Type::Var(self.fresh_var()))?;
                 drop(self.infer_expr(&args[4])?);
@@ -835,14 +844,14 @@ impl TypeInferer {
                             if !inner.is_empty() =>
                         {
                             let pt = self.infer_expr(&inner[0])?;
-                            self.unify(&pt, &Type::Prim(PrimType::Bool))?;
+                            self.unify(&pt, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                             let bt = if inner.len() > 1 {
                                 self.infer_expr(&inner[1])?
                             } else {
                                 Type::Var(self.fresh_var())
                             };
                             if let Some(ref r) = rt {
-                                drop(self.unify(r, &bt));
+                                drop(self.unify(r, &bt, expr.span.clone()));
                             } else {
                                 rt = Some(bt);
                             }
@@ -861,14 +870,14 @@ impl TypeInferer {
                             if !inner.is_empty() =>
                         {
                             let pt = self.infer_expr(&inner[0])?;
-                            self.unify(&pt, &Type::Prim(PrimType::Bool))?;
+                            self.unify(&pt, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                             let bt = if inner.len() > 1 {
                                 self.infer_expr(&inner[1])?
                             } else {
                                 Type::Var(self.fresh_var())
                             };
                             if let Some(ref r) = rt {
-                                drop(self.unify(r, &bt));
+                                drop(self.unify(r, &bt, expr.span.clone()));
                             } else {
                                 rt = Some(bt);
                             }
@@ -888,7 +897,7 @@ impl TypeInferer {
                 };
                 drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
                 let ht = self.infer_expr(&args[2])?;
-                self.unify(&et, &ht)?;
+                self.unify(&et, &ht, expr.span.clone())?;
                 Ok(et)
             }
 
@@ -907,7 +916,7 @@ impl TypeInferer {
                 let et = self.infer_expr(&args[0])?;
                 drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
                 let ht = self.infer_expr(&body)?;
-                self.unify(&et, &ht)?;
+                self.unify(&et, &ht, expr.span.clone())?;
                 Ok(et)
             }
 
@@ -919,7 +928,7 @@ impl TypeInferer {
                 };
                 drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
                 let ht = self.infer_expr(&args[2])?;
-                self.unify(&et, &ht)?;
+                self.unify(&et, &ht, expr.span.clone())?;
                 Ok(et)
             }
 
@@ -938,7 +947,7 @@ impl TypeInferer {
                 let et = self.infer_expr(&args[0])?;
                 drop(self.env.bind(cn, Type::Prim(PrimType::Unit)));
                 let ht = self.infer_expr(&body)?;
-                self.unify(&et, &ht)?;
+                self.unify(&et, &ht, expr.span.clone())?;
                 Ok(et)
             }
 
@@ -960,7 +969,7 @@ impl TypeInferer {
                             );
                             let abt = self.infer_expr(inner.last().unwrap())?;
                             if let Some(ref t) = first {
-                                drop(self.unify(t, &abt));
+                                drop(self.unify(t, &abt, expr.span.clone()));
                             } else {
                                 first = Some(abt);
                             }
@@ -988,7 +997,7 @@ impl TypeInferer {
                             );
                             let abt = self.infer_expr(inner.last().unwrap())?;
                             if let Some(ref t) = first {
-                                drop(self.unify(t, &abt));
+                                drop(self.unify(t, &abt, expr.span.clone()));
                             } else {
                                 first = Some(abt);
                             }
@@ -1001,12 +1010,12 @@ impl TypeInferer {
 
             ExprInner::If(cond, then_, else_) => {
                 let ct = self.infer_expr(cond)?;
-                self.unify(&ct, &Type::Prim(PrimType::Bool))?;
+                self.unify(&ct, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 let tt = self.infer_expr(then_)?;
                 let et = self.infer_expr(else_)?;
                 // If the else branch is a ___skip_ placeholder, skip type unification.
                 if !is_skip_placeholder(else_.as_ref()) {
-                    self.unify(&tt, &et)?;
+                    self.unify(&tt, &et, expr.span.clone())?;
                 }
                 Ok(tt)
             }
@@ -1116,7 +1125,7 @@ impl TypeInferer {
 
             ExprInner::While(cond, body) => {
                 let ct = self.infer_expr(cond)?;
-                self.unify(&ct, &Type::Prim(PrimType::Bool))?;
+                self.unify(&ct, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 drop(self.infer_expr(body)?);
                 Ok(Type::Prim(PrimType::Unit))
             }
@@ -1144,7 +1153,7 @@ impl TypeInferer {
                     drop(self.env.bind(name.clone(), Type::Cap(CapKind::TMut, Box::new(typ))));
                 }
                 let cond_type = self.infer_expr(cond)?;
-                self.unify(&cond_type, &Type::Prim(PrimType::Bool))?;
+                self.unify(&cond_type, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 let body_type = self.infer_expr(body)?;
                 let _ = self.env.exit_scope();
                 Ok(body_type)
@@ -1154,10 +1163,10 @@ impl TypeInferer {
                 let mut rt: Option<Type> = None;
                 for (pred, body) in clauses {
                     let pt = self.infer_expr(pred)?;
-                    self.unify(&pt, &Type::Prim(PrimType::Bool))?;
+                    self.unify(&pt, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                     let bt = self.infer_expr(body)?;
                     if let Some(ref r) = rt {
-                        self.unify(r, &bt)?;
+                        self.unify(r, &bt, expr.span.clone())?;
                     } else {
                         rt = Some(bt);
                     }
@@ -1223,7 +1232,7 @@ impl TypeInferer {
                     let abt = self.infer_expr(&arm.body)?;
                     {
                         if let Some(ref t) = first {
-                            drop(self.unify(t, &abt));
+                            drop(self.unify(t, &abt, expr.span.clone()));
                         } else {
                             first = Some(abt);
                         }
@@ -1267,7 +1276,7 @@ impl TypeInferer {
                         for (i, cap) in caps.iter().enumerate() {
                             if i < params.len() {
                                 if let Some(cap_type) = self.env.get(&cap.name).cloned() {
-                                    self.unify(&cap_type, &params[i].1)?;
+                                    self.unify(&cap_type, &params[i].1, expr.span.clone())?;
                                 }
                             }
                         }
@@ -1291,7 +1300,7 @@ impl TypeInferer {
             }
             ExprInner::Assert(cond, _) => {
                 let ct = self.infer_expr(cond)?;
-                self.unify(&ct, &Type::Prim(PrimType::Bool))?;
+                self.unify(&ct, &Type::Prim(PrimType::Bool), expr.span.clone())?;
                 Ok(Type::Prim(PrimType::Unit))
             }
             ExprInner::Error(_) => Ok(Type::Prim(PrimType::Unit)),
@@ -1526,7 +1535,7 @@ impl TypeInferer {
                                 .push(concrete_type.clone());
                         } else {
                             let expected_ty = self.resolve_type_name(expected_type).unwrap_or_else(|| Type::Var(self.fresh_var()));
-                            drop(self.unify(&inferred_type, &expected_ty));
+                            drop(self.unify(&inferred_type, &expected_ty, expr.span.clone()));
                         }
                     }
                 }
@@ -1561,7 +1570,7 @@ impl TypeInferer {
                 if matches!(expected_params[i].1, Type::Var(_)) {
                     bound_param_types.push(at);
                 } else {
-                    if let Err(e) = self.unify(&at, &expected_params[i].1) {
+                    if let Err(e) = self.unify(&at, &expected_params[i].1, expr.span.clone()) {
                         return Err(e);
                     }
                     bound_param_types.push(expected_params[i].1.clone());
@@ -1638,7 +1647,7 @@ impl TypeInferer {
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let at = self.infer_expr(arg)?;
-                        self.unify(&at, &expected_params[i])?;
+                        self.unify(&at, &expected_params[i], expr.span.clone())?;
                     }
                     Ok((*return_type).clone())
                 }
@@ -1719,7 +1728,7 @@ impl TypeInferer {
         } else if op_name == "not" || op_name == "and" || op_name == "or" {
             for arg in args {
                 let t = self.infer_expr(arg)?;
-                self.unify(&t, &Type::Prim(PrimType::Bool))?;
+                self.unify(&t, &Type::Prim(PrimType::Bool), expr.span.clone())?;
             }
             Ok(Type::Prim(PrimType::Bool))
         } else if matches!(op_name.as_str(), "str" | "int" | "float") {
@@ -1865,23 +1874,23 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
 }
 
-    fn unify(&mut self, t1: &Type, t2: &Type) -> std::result::Result<(), ZylError> {
+    fn unify(&mut self, t1: &Type, t2: &Type, span: Span) -> std::result::Result<(), ZylError> {
         match (t1, t2) {
             (a, b) if a == b => Ok(()),
             (Type::Var(n), _) => {
                 let s = &self.subst;
                 if s.contains(*n) {
-                    return self.unify(&s.apply(t1), t2);
+                    return self.unify(&s.apply(t1), t2, span.clone());
                 }
                 if self.type_contains_var(t2, *n) {
                     return Err(ZylError::E_TYPE_MISMATCH(
-                        Span::default(),
+                        span.clone(),
                         format!("type containing ?{}", n),
                         "occurs".to_string(),
                     ));
                 }
                 let ns = s.extend(*n, t2).map_err(|e| {
-                    ZylError::E_TYPE_MISMATCH(Span::default(), "unification error".into(), e)
+                    ZylError::E_TYPE_MISMATCH(span.clone(), "unification error".into(), e)
                 })?;
                 self.subst = ns;
                 Ok(())
@@ -1889,17 +1898,17 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
             (_, Type::Var(n)) => {
                 let s = &self.subst;
                 if s.contains(*n) {
-                    return self.unify(t1, &s.apply(t2));
+                    return self.unify(t1, &s.apply(t2), span.clone());
                 }
                 if self.type_contains_var(t1, *n) {
                     return Err(ZylError::E_TYPE_MISMATCH(
-                        Span::default(),
+                        span.clone(),
                         format!("type containing ?{}", n),
                         "occurs".to_string(),
                     ));
                 }
                 let ns = s.extend(*n, t1).map_err(|e| {
-                    ZylError::E_TYPE_MISMATCH(Span::default(), "unification error".into(), e)
+                    ZylError::E_TYPE_MISMATCH(span.clone(), "unification error".into(), e)
                 })?;
                 self.subst = ns;
                 Ok(())
@@ -1907,47 +1916,47 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
             (Type::Fun(a1, r1), Type::Fun(a2, r2)) => {
                 if a1.len() != a2.len() {
                     return Err(ZylError::E_TYPE_MISMATCH(
-                        Span::default(),
+                        span.clone(),
                         format!("TFun({} params)", a1.len()),
                         format!("TFun({} params)", a2.len()),
                     ));
                 }
                 for (a, b) in a1.iter().zip(a2.iter()) {
-                    self.unify(a, b)?;
+                    self.unify(a, b, span.clone())?;
                 }
-                self.unify(r1, r2)
+                self.unify(r1, r2, span)
             }
             (Type::Cap(k1, i1), Type::Cap(k2, i2)) => {
                 if k1 != k2 {
                     return Err(ZylError::E_TYPE_MISMATCH(
-                        Span::default(),
+                        span.clone(),
                         format!("{}<...>", k1),
                         format!("{}<...>", k2),
                     ));
                 };
-                self.unify(i1, i2)
+                self.unify(i1, i2, span)
             }
             (Type::Collection(k1, i1), Type::Collection(k2, i2)) => {
                 if k1 != k2 {
                     return Err(ZylError::E_TYPE_MISMATCH(
-                        Span::default(),
+                        span.clone(),
                         format!("{:?}<...>", k1),
                         format!("{:?}<...>", k2),
                     ));
                 };
-                self.unify(i1, i2)
+                self.unify(i1, i2, span)
             }
             (Type::Map(k1, v1), Type::Map(k2, v2)) => {
-                self.unify(k1, k2)?;
-                self.unify(v1, v2)
+                self.unify(k1, k2, span.clone())?;
+                self.unify(v1, v2, span)
             }
             (Type::ResultType(t1, e1), Type::ResultType(t2, e2)) => {
-                self.unify(t1, t2)?;
-                self.unify(e1, e2)
+                self.unify(t1, t2, span.clone())?;
+                self.unify(e1, e2, span)
             }
             (Type::Nominal(n1), Type::Nominal(n2)) if n1 == n2 => Ok(()),
             _ => Err(ZylError::E_TYPE_MISMATCH(
-                Span::default(),
+                span.clone(),
                 format!("{}", t1),
                 format!("{}", t2),
             )),
