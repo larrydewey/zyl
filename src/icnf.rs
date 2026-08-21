@@ -554,7 +554,7 @@ impl IcnfConverter {
                     .and_then(|fields| {
                         fields
                             .iter()
-                            .position(|(fname, _)| fname == field_name)
+                            .position(|(fname, _, _)| fname == field_name)
                             .map(|pos| pos * 8)
                     })
                     .map(|offset| (name.clone(), offset))
@@ -568,7 +568,7 @@ impl IcnfConverter {
                     .and_then(|fields| {
                         fields
                             .iter()
-                            .position(|(fname, _)| fname == field_name)
+                            .position(|(fname, _, _)| fname == field_name)
                             .map(|pos| pos * 8)
                     })
                     .map(|offset| (struct_name.clone(), offset))
@@ -582,7 +582,7 @@ impl IcnfConverter {
                     .and_then(|fields| {
                         fields
                             .iter()
-                            .position(|(fname, _)| fname == field_name)
+                            .position(|(fname, _, _)| fname == field_name)
                             .map(|pos| (struct_name, pos * 8))
                     })
             }
@@ -977,14 +977,21 @@ impl IcnfConverter {
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    // Save current globals, use a temp buffer for closure body.
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
                     let _body_params = params.clone();
                     for param in params {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
                     let body_stmts = self.convert_expr_to_stmts(_body)?;
-                    if !body_stmts.is_empty() {
-                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    self.collect_body_into_globals(&body_stmts);
+                    let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    if !closure_body.is_empty() {
+                        self.closure_bodies.insert(ssa_id, closure_body);
                     }
                     self.current_scope = saved_scope;
                 }
@@ -1017,6 +1024,10 @@ impl IcnfConverter {
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    // Save current globals, use a temp buffer for closure body.
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
                     // Add captured variables to the Fn's local scope so body conversion can resolve them.
                     for cap in &captures {
                         self.current_scope.insert(cap.name.clone(), cap.ssa_id);
@@ -1026,8 +1037,11 @@ impl IcnfConverter {
                         self.current_scope.insert(param.name.clone(), ssa_id);
                     }
                     let body_stmts = self.convert_expr_to_stmts(body)?;
-                    if !body_stmts.is_empty() {
-                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    self.collect_body_into_globals(&body_stmts);
+                    let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    if !closure_body.is_empty() {
+                        self.closure_bodies.insert(ssa_id, closure_body);
                     }
                     self.current_scope = saved_scope;
                 }
@@ -1647,13 +1661,20 @@ impl IcnfConverter {
 
                 let ssa_id = self.next_ssa_id();
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Save current globals, use a temp buffer for closure body.
+                let saved_globals = std::mem::take(&mut self.global_stmts);
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = true;
                 for param in params {
                     let ssa_id = self.next_ssa_id();
                     self.current_scope.insert(param.name.clone(), ssa_id);
                 }
                 let body_stmts = self.convert_expr_to_stmts(_body)?;
-                if !body_stmts.is_empty() {
-                    self.closure_bodies.insert(ssa_id, body_stmts);
+                self.collect_body_into_globals(&body_stmts);
+                let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                self.push_to_globals = saved_push;
+                if !closure_body.is_empty() {
+                    self.closure_bodies.insert(ssa_id, closure_body);
                 }
                 self.closures.insert(ssa_id, (sanitize_name(name), captures.clone()));
                 self.current_scope = saved_scope;
@@ -1686,13 +1707,19 @@ impl IcnfConverter {
                     let orig_name = self.let_binding_name.clone();
                     self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default()));
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
                     for param in params {
                         let sid = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), sid);
                     }
                     let body_stmts = self.convert_expr_to_stmts(_body)?;
-                    if !body_stmts.is_empty() {
-                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    self.collect_body_into_globals(&body_stmts);
+                    let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    if !closure_body.is_empty() {
+                        self.closure_bodies.insert(ssa_id, closure_body);
                     }
                     self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), Vec::new()));
                     self.current_scope = saved_scope;
@@ -1722,6 +1749,10 @@ impl IcnfConverter {
 
                 let ssa_id = self.next_ssa_id();
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Save current globals, use a temp buffer for closure body.
+                let saved_globals = std::mem::take(&mut self.global_stmts);
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = true;
                 // Add captured variables to scope BEFORE body conversion so their
                 // references emit Load nodes instead of Const(Ident).
                 for cap in &captures {
@@ -1733,8 +1764,11 @@ impl IcnfConverter {
                     self.current_scope.insert(param.name.clone(), sid);
                 }
                 let body_stmts = self.convert_expr_to_stmts(_body)?;
-                if !body_stmts.is_empty() {
-                    self.closure_bodies.insert(ssa_id, body_stmts);
+                self.collect_body_into_globals(&body_stmts);
+                let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                self.push_to_globals = saved_push;
+                if !closure_body.is_empty() {
+                    self.closure_bodies.insert(ssa_id, closure_body);
                 }
                 self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), captures.clone()));
                 self.current_scope = saved_scope;
@@ -1780,13 +1814,19 @@ impl IcnfConverter {
                     let orig_name = self.let_binding_name.clone().unwrap_or_default();
                     self.deferred_captures.push((ssa_id, body_for_defer, orig_name));
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = self.push_to_globals;
+                    self.push_to_globals = true;
                     for param in &params {
                         let pssa = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), pssa);
                     }
                     let body_stmts = self.convert_expr_to_stmts(&body_expr)?;
-                    if !body_stmts.is_empty() {
-                        self.closure_bodies.insert(ssa_id, body_stmts);
+                    self.collect_body_into_globals(&body_stmts);
+                    let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    if !closure_body.is_empty() {
+                        self.closure_bodies.insert(ssa_id, closure_body);
                     }
                     self.closures.insert(ssa_id, ("fn_".to_string(), Vec::new()));
                     self.current_scope = saved_scope;
@@ -1819,6 +1859,10 @@ impl IcnfConverter {
 
                 let ssa_id = self.next_ssa_id();
                 let saved_scope = std::mem::take(&mut self.current_scope);
+                // Save current globals, use a temp buffer for closure body.
+                let saved_globals = std::mem::take(&mut self.global_stmts);
+                let saved_push = self.push_to_globals;
+                self.push_to_globals = true;
                 // Add captured variables to scope BEFORE body conversion so their
                 // references emit Load nodes instead of Const(Ident).
                 for cap in &captures {
@@ -1830,8 +1874,11 @@ impl IcnfConverter {
                     self.current_scope.insert(param.name.clone(), pssa);
                 }
                 let body_stmts = self.convert_expr_to_stmts(&body_expr)?;
-                if !body_stmts.is_empty() {
-                    self.closure_bodies.insert(ssa_id, body_stmts);
+                self.collect_body_into_globals(&body_stmts);
+                let closure_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                self.push_to_globals = saved_push;
+                if !closure_body.is_empty() {
+                    self.closure_bodies.insert(ssa_id, closure_body);
                 }
                 self.closures.insert(ssa_id, ("fn_".to_string(), captures.clone()));
                 self.current_scope = saved_scope;
@@ -2080,7 +2127,7 @@ impl IcnfConverter {
                                     .and_then(|fields| {
                                         fields
                                             .iter()
-                                            .position(|(fname, _)| fname == field_name)
+                                            .position(|(fname, _, _)| fname == field_name)
                                             .map(|pos| (name, pos * 8))
                                     })
                                     .unwrap_or_else(|| (String::new(), 0))
