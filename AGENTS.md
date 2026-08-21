@@ -96,7 +96,20 @@ cargo check          # Fast compile check
 
 ## Regression Tests
 
-Before modifying struct-related code (`ast.rs`, `codegen.rs`, `icnf.rs`, `type_inference.rs`, `parser.rs`, `region_inference.rs`), run struct regression tests documented in `docs/regression-tests.md`.
+```bash
+./run_regression_tests.sh --quick   # Smoke tests + unit test
+./run_regression_tests.sh --full    # All tests
+./run_regression_tests.sh --filter structs  # Struct regression tests only
+```
+
+**Trigger before modifying struct-related code** (`ast.rs`, `codegen.rs`, `icnf.rs`, `type_inference.rs`, `parser.rs`, `region_inference.rs`):
+```bash
+./run_regression_tests.sh --filter structs
+```
+
+Full test infrastructure documented in `docs/regression-tests.md`. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
+
+**S-expression balance** is critical — always run `--filter balanced-parens` after modifying parser/lexer.
 
 ## Architecture Notes
 
