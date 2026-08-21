@@ -56,7 +56,7 @@ pub enum ZylError {
     E_UNEXPECTED_EOF(Location, &'static str),
 
     // --- Parser errors (E_PARSE_*) ---
-    #[error("parser: expected ')' but found {} at {}", .1, .0)]
+    #[error("parser: expected ')' at {} but found {}", .0, .1)]
     E_EXPECTED_RPAREN(Span, String),
 
     #[error("parser: expected ']' but found {} at {}", .1, .0)]
