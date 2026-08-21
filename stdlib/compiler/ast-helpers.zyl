@@ -1,0 +1,291 @@
+; AST traversal helpers for type inference.
+; Operates on pool-based AST nodes (same representation as parser output).
+
+; ===========================================================================
+; Node kind constants (mirrors Rust PostProcessor)
+; ===========================================================================
+; 0:  UNIT
+; 1:  ATOM_IDENT
+; 2:  ATOM_INT
+; 3:  ATOM_STR
+; 4:  ATOM_KEYWORD
+; 8:  CALL
+; 10: DEFN
+; 11: FN (closure)
+; 12: LET
+; 13: IF
+; 14: BEGIN (Program)
+; 15: BEGIN
+; 16: MAKE_STRUCT
+; 17: FFI_CALL
+; 18: APPLY
+; 19: MATCH
+; 20: STRUCT_GET
+; 21: LAMBDA
+; 22: SPAWN
+; 23: SEND
+; 24: MATCH_ARM
+; 25: SETBANG
+; 26: WHILE
+; 27: FOR
+; 28: FOR_BINDING
+; 29: COND
+; 30: COND_CLAUSE
+; 31: TRY
+; 32: DEFTYPE
+; 33: ADT_VARIANT
+; 34: DEFSTRUCT
+; 35: DEFSTRUCT_PLUS
+; 36: STRUCT_FIELD
+; 37: MACRO_DEF
+; 38: READLINE
+; 39: EXIT
+; 40: CLOSE
+; 41: FILE_OPEN
+; 42: FILE_READ
+; 43: FILE_WRITE
+; 44: FILE_CLOSE
+; 45: BUF_APPEND
+; 46: WITH_RESOURCE
+; 47: SEND_CLOSURE
+; 48: TRAIT
+; 49: TRAIT_METHOD
+; 50: IMPL
+; 51: IMPL_BODY
+; 52: MAKE_VARIANT (uppercase heuristic)
+; 53: FFI_PIN
+; 54: FFI_UNPIN
+
+; ===========================================================================
+; Walk: traverse AST, applying fn to each node
+; ===========================================================================
+; fn signature: fn(pool node) → Int (continue: 1=yes, 0=stop)
+; Returns: Unit
+(defn ast-walk (pool node fn)
+  (let cont (fn pool node)
+    (if (> cont 0)
+      (begin
+        (let kids (pool-kids pool node)
+          (let n (kids-len kids)
+            (let i 0)
+            (while (< i n)
+              (begin
+                (ast-walk pool (kids-get kids i) fn)
+                (set! i (+ i 1))))))
+      0))))
+
+; ===========================================================================
+; Count nodes of a specific kind in the AST
+; ===========================================================================
+; Returns: Int (count)
+(defn ast-count-kind (pool node kind)
+  (ast-count-kind-1 pool node kind 0))
+
+; Returns: Int (accumulated count)
+(defn ast-count-kind-1 (pool node kind acc)
+  (let k (pool-kind pool node)
+    (let new-acc (if (= k kind) (+ acc 1) acc)
+      (let kids (pool-kids pool node)
+        (if (> kids 0)
+          (begin
+            (let n (kids-len kids)
+              (let i 0)
+              (let cur-acc new-acc)
+              (while (< i n)
+                (begin
+                  (let cur-acc (ast-count-kind-1 pool (kids-get kids i) kind cur-acc)
+                    (set! i (+ i 1))
+                    0)))
+              cur-acc)
+            0)
+          new-acc)))))
+
+; ===========================================================================
+; Collect all identifier names in the AST
+; ===========================================================================
+; Returns: Int (kids list of name pointers)
+(defn ast-collect-idents (arena pool node)
+  (let names (kids-new arena 16)
+    (begin
+      (ast-collect-idents-1 arena pool node names)
+      names)))
+
+; Returns: Unit
+(defn ast-collect-idents-1 (arena pool node names)
+  (let k (pool-kind pool node)
+    (if (= k 1)
+      (begin
+        (kids-push arena names (pool-str pool node))
+        0)
+      (begin
+        (let kids (pool-kids pool node)
+          (let n (kids-len kids)
+            (let i 0)
+            (while (< i n)
+              (begin
+                (ast-collect-idents-1 arena pool (kids-get kids i) names)
+                (set! i (+ i 1))))))
+        0))))
+
+; ===========================================================================
+; Get function parameters from a DEFN node
+; ===========================================================================
+; DEFN node: str=name, kids[0]=params list, a=body
+; Returns: Int (params kids list)
+(defn defn-params (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 0)
+        (kids-get kids 0)
+        0))))
+
+; Get function body from a DEFN node.
+; Returns: Int (body node id)
+(defn defn-body (pool node)
+  (pool-a pool node))
+
+; Get function name from a DEFN node.
+; Returns: Int (string pointer)
+(defn defn-name (pool node)
+  (pool-str pool node))
+
+; ===========================================================================
+; Get LET bindings
+; ===========================================================================
+; LET node: kids[0]=name (ident), kids[1]=init, a=body
+; (For let-mut: similar structure)
+; Returns: Int (name node id)
+(defn let-name (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 0)
+        (kids-get kids 0)
+        0))))
+
+; Returns: Int (init node id)
+(defn let-init (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 1)
+        (kids-get kids 1)
+        0))))
+
+; Returns: Int (body node id)
+(defn let-body (pool node)
+  (pool-a pool node))
+
+; ===========================================================================
+; Get IF branches
+; ===========================================================================
+; IF node: kids[0]=cond, kids[1]=then, kids[2]=else (if present)
+; Returns: Int (cond node id)
+(defn if-cond (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 0)
+        (kids-get kids 0)
+        0))))
+
+; Returns: Int (then node id)
+(defn if-then (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 1)
+        (kids-get kids 1)
+        0))))
+
+; Returns: Int (else node id, 0 if missing)
+(defn if-else (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 2)
+        (kids-get kids 2)
+        0))))
+
+; ===========================================================================
+; Get CALL arguments
+; ===========================================================================
+; CALL node: a=op (function expr), kids=args
+; Returns: Int (op node id)
+(defn call-op (pool node)
+  (pool-a pool node))
+
+; Returns: Int (args kids list)
+(defn call-args (pool node)
+  (pool-kids pool node))
+
+; ===========================================================================
+; Get MATCH components
+; ===========================================================================
+; MATCH node: a=scrutinee, kids=arms
+; Returns: Int (scrutinee node id)
+(defn match-scrutinee (pool node)
+  (pool-a pool node))
+
+; Returns: Int (arms kids list)
+(defn match-arms (pool node)
+  (pool-kids pool node))
+
+; ===========================================================================
+; Get FOR loop components
+; ===========================================================================
+; FOR node: kids[0]=bindings, kids[1]=cond, a=body
+; Returns: Int (bindings kids list)
+(defn for-bindings (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 0)
+        (kids-get kids 0)
+        0))))
+
+; Returns: Int (cond node id)
+(defn for-cond (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 1)
+        (kids-get kids 1)
+        0))))
+
+; Returns: Int (body node id)
+(defn for-body (pool node)
+  (pool-a pool node))
+
+; ===========================================================================
+; Get WHILE loop components
+; ===========================================================================
+; WHILE node: kids[0]=cond, a=body
+; Returns: Int (cond node id)
+(defn while-cond (pool node)
+  (let kids (pool-kids pool node)
+    (let n (kids-len kids)
+      (if (> n 0)
+        (kids-get kids 0)
+        0))))
+
+; Returns: Int (body node id)
+(defn while-body (pool node)
+  (pool-a pool node))
+
+; ===========================================================================
+; Get DEFTYPE variants
+; ===========================================================================
+; DEFTYPE node: str=name, kids=variants
+; Returns: Int (variants kids list)
+(defn deftype-variants (pool node)
+  (pool-kids pool node))
+
+; Returns: Int (type name pointer)
+(defn deftype-name (pool node)
+  (pool-str pool node))
+
+; ===========================================================================
+; Get DEFSTRUCT fields
+; ===========================================================================
+; DEFSTRUCT node: str=name, kids=fields
+; Returns: Int (fields kids list)
+(defn defstruct-fields (pool node)
+  (pool-kids pool node))
+
+; Returns: Int (struct name pointer)
+(defn defstruct-name (pool node)
+  (pool-str pool node))
