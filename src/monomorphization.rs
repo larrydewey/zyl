@@ -82,6 +82,11 @@ impl MonoContext {
         ctx
     }
 
+    /// Return the names of all generic functions discovered during AST scanning.
+    pub fn get_generic_names(&self) -> Vec<&String> {
+        self.generic_functions.keys().collect()
+    }
+
     /// Register a generic function definition.
     #[allow(dead_code)]
     pub fn register_generic(&mut self, name: String, params: Vec<GenericParam>) {
@@ -278,7 +283,7 @@ impl MonoContext {
                             self.generate_instantiations(name, generics, params.clone(), body)?
                         {
                             result.push(Expr {
-                                span: self.span.clone(),
+                                span: expr.span.clone(),
                                 inner: ExprInner::Defn(
                                     mono.canonical_name,
                                     mono.params.clone(),
@@ -320,7 +325,7 @@ impl MonoContext {
                                 self.generate_instantiations(name, generics, params, &args[2])?
                             {
                                 result.push(Expr {
-                                    span: self.span.clone(),
+                                    span: expr.span.clone(),
                                     inner: ExprInner::Defn(
                                         mono.canonical_name,
                                         mono.params.clone(),
@@ -372,7 +377,7 @@ impl MonoContext {
                                 self.generate_instantiations(name, generics, params, &args[2])?
                             {
                                 result.push(Expr {
-                                    span: self.span.clone(),
+                                    span: expr.span.clone(),
                                     inner: ExprInner::Defn(
                                         mono.canonical_name,
                                         mono.params.clone(),
@@ -409,7 +414,7 @@ impl MonoContext {
                         let instantiations = self.collect_adt_instantiations(name, variants);
                         for (concrete_name, mono_variants) in instantiations {
                             result.push(Expr {
-                                    span: self.span.clone(),
+                                    span: expr.span.clone(),
                                     inner: ExprInner::Deftype(
                                         concrete_name,
                                         mono_variants,
@@ -604,7 +609,7 @@ impl MonoContext {
                         type_map.insert(param_name.clone(), arg_type);
                     } else {
                         // Regular typed parameter — unify with expected type.
-                        self.unify_types(&arg_type, expected_type)?;
+                        self.unify_types(&arg_type, expected_type, arg.span.clone())?;
                     }
                 }
 
@@ -622,7 +627,7 @@ impl MonoContext {
 
                 _ => {
                     // Concrete expected type — unify with argument.
-                    self.unify_types(&arg_type, expected_type)?;
+                    self.unify_types(&arg_type, expected_type, arg.span.clone())?;
                 }
             }
         }
@@ -1034,7 +1039,7 @@ impl MonoContext {
     }
 
     /// Unify two types (simplified — just check compatibility).
-    fn unify_types(&self, t1: &Type, t2: &Type) -> Result<(), ZylError> {
+    fn unify_types(&self, t1: &Type, t2: &Type, span: Span) -> Result<(), ZylError> {
         match (t1, t2) {
             (a, b) if a == b => Ok(()),
 
@@ -1049,7 +1054,7 @@ impl MonoContext {
             | (Type::Prim(PrimType::Float), Type::Prim(PrimType::Int)) => Ok(()),
 
             _ => Err(ZylError::E_TYPE_MISMATCH(
-                self.span.clone(),
+                span.clone(),
                 format!("{}", t1),
                 format!("{}", t2),
             )),
