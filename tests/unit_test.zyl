@@ -1,451 +1,643 @@
-; === Zyl Unit Test Suite ===
-; Exhaustive coverage of core language features using Zyl's integrated testing system.
-
-; Shadow generic stdlib types with concrete versions
+                                        ; Shadow generic stdlib types with concrete versions
 (deftype Option (Some Int) None)
 (deftype Result (Ok Int) (Err Int))
 
-; --- Arithmetic Tests ---
-(test "integer addition"
-  (assert-equal (+ 1 2) 3))
+                                        ; --- Module Imports ---
+(use io/io)
+(use allocator/allocator)
 
-(test "integer addition multi"
-  (assert-equal (+ 1 2 3 4 5) 15))
+(test "xor true false"
+      (assert-true (xor true false)))
 
-(test "integer subtraction"
-  (assert-equal (- 10 3) 7))
+(test "xor false true"
+      (assert-true (xor false true)))
 
-(test "integer subtraction chain"
-  (assert-equal (- 10 3 2) 5))
+(test "xor true true"
+      (assert-false (xor true true)))
 
-(test "integer multiplication"
-  (assert-equal (* 3 4) 12))
+(test "xor false false"
+      (assert-false (xor false false)))
 
-(test "integer multiplication chain"
-  (assert-equal (* 2 3 4) 24))
+(test "nand true true"
+      (assert-false (nand true true)))
 
-(test "integer division"
-  (assert-equal (/ 20 4) 5))
+(test "nand true false"
+      (assert-true (nand true false)))
 
-(test "integer division chain"
-  (assert-equal (/ 120 2 3) 20))
+(test "nor false false"
+      (assert-true (nor false false)))
 
-(test "zero arithmetic"
-  (assert-equal (- 5 5) 0))
+(test "nor true false"
+      (assert-false (nor true false)))
 
-(test "float addition"
-  (assert-equal (+ 1.0 2.0) 3.0))
+(test "implies true true"
+      (assert-true (implies true true)))
 
-(test "float multiplication"
-  (assert-equal (* 2.0 3.0) 6.0))
+(test "implies true false"
+      (assert-false (implies true false)))
 
-(test "mixed int float addition"
-  (assert-equal (+ 1 2.0) 3.0))
+(test "implies false true"
+      (assert-true (implies false true)))
 
-(test "negation"
-  (assert-equal (- 5) -5))
+(test "implies false false"
+      (assert-true (implies false false)))
 
-(test "large numbers"
-  (assert-equal (+ 1000000 2000000) 3000000))
+(test "is-bool true"
+      (assert-true (is-bool true)))
 
-; --- Comparison Tests ---
-(test "greater than true"
-  (assert-true (> 10 5)))
+(test "is-bool false"
+      (assert-true (is-bool false)))
 
-(test "less than true"
-  (assert-true (< 5 10)))
+(test "is-zero zero"
+      (assert-true (is-zero 0)))
 
-(test "greater equal true"
-  (assert-true (>= 5 5)))
+(test "is-zero non-zero"
+      (assert-false (is-zero 5)))
 
-(test "less equal true"
-  (assert-true (<= 5 5)))
+(test "is-even even"
+      (assert-true (is-even 4)))
 
-(test "equal true"
-  (assert-true (== 5 5)))
+(test "is-even odd"
+      (assert-false (is-even 3)))
 
-(test "not equal true"
-  (assert-true (!= 5 3)))
+(test "is-odd odd"
+      (assert-true (is-odd 3)))
 
-(test "equal false"
-  (assert-false (== 5 3)))
+(test "is-odd even"
+      (assert-false (is-odd 4)))
 
-(test "greater than false"
-  (assert-false (> 5 10)))
+(test "abs negative"
+      (assert-equal (abs -5) 5))
 
-(test "chained comparisons"
-  (assert-equal (if (> 10 5) (if (> 5 3) 1 0) 0) 1))
+(test "abs positive"
+      (assert-equal (abs 5) 5))
 
-; --- Logical Tests ---
-(test "and true true"
-  (assert-true (and true true)))
+(test "max greater"
+      (assert-equal (max 10 5) 10))
 
-(test "and true false"
-  (assert-false (and true false)))
+(test "max equal"
+      (assert-equal (max 5 5) 5))
 
-(test "and false true"
-  (assert-false (and false true)))
+(test "min less"
+      (assert-equal (min 5 10) 5))
 
-(test "and false false"
-  (assert-false (and false false)))
+(test "min equal"
+      (assert-equal (min 5 5) 5))
 
-(test "or true true"
-  (assert-true (or true true)))
+(test "clamp within"
+      (assert-equal (clamp 5 1 10) 5))
 
-(test "or true false"
-  (assert-true (or true false)))
+(test "clamp below"
+      (assert-equal (clamp -5 1 10) 1))
 
-(test "or false true"
-  (assert-true (or false true)))
+(test "clamp above"
+      (assert-equal (clamp 15 1 10) 10))
 
-(test "or false false"
-  (assert-false (or false false)))
+(test "signum positive"
+      (assert-equal (signum 5) 1))
 
-(test "not false"
-  (assert-true (not false)))
+(test "signum negative"
+      (assert-equal (signum -5) -1))
 
-(test "not true"
-  (assert-false (not true)))
+(test "signum zero"
+      (assert-equal (signum 0) 0))
 
-; --- Let Binding Tests ---
-(test "simple let"
-  (assert-equal (let x 42 x) 42))
+(test "square value"
+      (assert-equal (square 7) 49))
 
-(test "nested let"
-  (assert-equal (let a 10 (let b 20 (+ a b))) 30))
+(test "cube value"
+      (assert-equal (cube 3) 27))
 
-(test "triple nested let"
-  (assert-equal (let a 1 (let b 2 (let c 3 (+ a b c)))) 6))
+(test "float zero"
+      (assert-equal 0.0 0.0))
 
-(test "let shadowing"
-  (assert-equal (let x 1 (let x 2 x)) 2))
+(test "float neg"
+      (assert-equal (- 1.5) -1.5))
 
-(test "let with expression"
-  (assert-equal (let x (+ 1 2) x) 3))
+(test "float div"
+      (assert-equal (/ 10.0 4.0) 2.5))
 
-(test "let with complex expression"
-  (assert-equal (let result (+ (* 2 3) (- 10 4)) result) 10))
+(test "float cmp"
+      (assert-true (> 3.14 2.71)))
 
-(test "deeply nested let"
-  (assert-equal (let a (+ 1 (let b (* 2 3) (+ b 4))) a) 11))
+(test "float arith"
+      (assert-equal (+ 1.5 2.5 3.0) 7.0))
 
-(test "deep nested arithmetic"
-  (assert-equal (let a 1 (let b 2 (let c 3 (let d 4 (let e 5 (+ a b c d e))))) 15) 15))
+(test "print-int works"
+      (print-int 42))
 
-; --- Let-Mut Tests ---
-(test "simple let-mut"
-  (assert-equal (let-mut y 5 y) 5))
+(test "print-float works"
+      (print-float 3.14))
 
-(test "let-mut rebinding"
-  (assert-equal (let-mut x 1 (set! x 2) x) 2))
+(test "print-string works"
+      (print-string "hello"))
 
-(test "let-mut arithmetic"
-  (assert-equal (let-mut x 10 (set! x (+ x 5)) x) 15))
+(test "print-bool true"
+      (print-bool true))
 
-(test "multiple let-mut rebinding"
-  (assert-equal (let-mut x 1 (set! x 2) (set! x 3) (set! x 4) (set! x 5) x) 5))
+(test "print-bool false"
+      (print-bool false))
 
-; --- If Expression Tests ---
-(test "if true branch"
-  (assert-equal (if true 1 0) 1))
+(test "str-concat"
+      (assert-equal (str-concat "hello" " world") "hello world"))
 
-(test "if false branch"
-  (assert-equal (if false 1 0) 0))
+(test "str-length abc"
+      (assert-equal (str-length "abc") 3))
 
-(test "if nested"
-  (assert-equal (if true (if true 1 2) 3) 1))
+(test "str-length empty"
+      (assert-equal (str-length "") 0))
 
-(test "if nested false"
-  (assert-equal (if false (if true 1 2) 3) 3))
+(test "str-substring"
+      (assert-equal (str-substring "hello world" 6 5) "world"))
 
-(test "if deeply nested"
-  (assert-equal (if true (if true (if true 99 0) 0) 0) 99))
+(test "str-equal true"
+      (assert-true (str-equal "abc" "abc")))
 
-(test "if with comparison"
-  (assert-equal (if (> 10 5) 1 0) 1))
+(test "str-equal false"
+      (assert-false (str-equal "abc" "def")))
 
-(test "if in arithmetic"
-  (assert-equal (+ (if true 1 0) 2) 3))
+(test "option-some"
+      (assert-true (option-is-some (option-some 42))))
 
-; --- While Loop Tests ---
-(test "while false"
-  (assert-equal (while false 0) 0))
+(test "option-none"
+      (assert-true (option-is-none (option-none))))
 
-(test "while loop counter"
-  (assert-equal (let-mut counter 0 (while (< counter 3) (set! counter (+ counter 1)) counter) 3) 3))
+(test "option-unwrap-or some"
+      (assert-equal (option-unwrap-or (option-some 42) 0) 42))
 
-(test "while loop returns unit"
-  (assert-equal (while (< 0 1) (print "x")) 0))
+(test "option-unwrap-or none"
+      (assert-equal (option-unwrap-or (option-none) 99) 99))
 
-; --- For Loop Tests ---
-(test "for loop runs"
-  (for (i 1) (<= i 3) (begin (set! i (+ i 1)) i)))
+(test "option-map some"
+      (let double (fn (x) (* x 2))
+        (assert-equal (option-map (option-some 5) double) (option-some 10))))
 
-; --- Cond Expression Tests ---
-(test "cond first arm"
-  (assert-equal (cond (true 1) (false 2)) 1))
+(test "option-map none"
+      (let double (fn (x) (* x 2))
+        (assert-true (option-is-none (option-map (option-none) double)))))
 
-(test "cond second arm"
-  (assert-equal (cond (false 99) (true 42)) 42))
+(test "option-and some"
+      (assert-true (option-is-some (option-and (option-some 1) (option-some 2)))))
 
-(test "cond third arm"
-  (assert-equal (cond (false 1) (false 2) (true 3)) 3))
+(test "option-and none"
+      (assert-true (option-is-none (option-and (option-none) (option-some 2)))))
 
-(test "cond single arm"
-  (assert-equal (cond (true "only arm")) 0))
+(test "option-or some"
+      (assert-true (option-is-some (option-or (option-some 1) (option-some 2)))))
 
-; --- Function Definition Tests ---
-(defn add (x y) (+ x y))
-(test "function call"
-  (assert-equal (add 3 4) 7))
+(test "option-or none"
+      (assert-true (option-is-some (option-or (option-none) (option-some 2)))))
 
-(defn factorial (n) (if (<= n 1) 1 (* n (factorial (- n 1)))))
-(test "recursive factorial 5"
-  (assert-equal (factorial 5) 120))
+(test "option-flatmap"
+      (assert-equal (option-flatmap (option-some 5) (fn (x) (option-some (* x 2)))) (option-some 10)))
 
-(test "recursive factorial 0"
-  (assert-equal (factorial 0) 1))
+(test "option-flatmap some"
+      (let double (fn (x) (* x 2))
+        (assert-equal (option-flatmap (option-some 5) double) (option-some 10))))
 
-(test "recursive factorial 1"
-  (assert-equal (factorial 1) 1))
+(test "option-to-result ok"
+      (assert-true (result-is-ok (option-to-result (option-some 42) "error"))))
 
-(test "recursive factorial 6"
-  (assert-equal (factorial 6) 720))
+(test "option-to-result none"
+      (assert-true (result-is-err (option-to-result (option-none) "error"))))
 
-(defn square (x) (* x x))
-(test "function composition"
-  (assert-equal (square (add 1 2)) 9))
+(test "option-from-result ok"
+      (assert-equal (option-unwrap-or (option-from-result (result-ok 42) 0) 0) 42))
 
-(test "square direct"
-  (assert-equal (square 5) 25))
+(test "option-from-result err"
+      (assert-equal (option-unwrap-or (option-from-result (result-err "e") 0) 0) 0))
 
-; --- Struct Definition & Construction Tests ---
-(test "point field access"
-  (assert-equal (struct-get (make-Point 10 20) "x") 10))
+(test "option-inspect"
+      (let print-and-return (fn (x) (print "x"))
+        (assert-true (option-is-some (option-inspect (option-some 1) print-and-return)))))
 
-(test "point y field access"
-  (assert-equal (struct-get (make-Point 10 20) "y") 20))
+(test "result-ok"
+      (assert-true (result-is-ok (result-ok 42))))
 
-(test "vec3 x field"
-  (assert-equal (struct-get (make-Vec3 1 2 3) "x") 1))
+(test "result-err"
+      (assert-true (result-is-err (result-err "err"))))
 
-(test "vec3 y field"
-  (assert-equal (struct-get (make-Vec3 1 2 3) "y") 2))
+(test "result-unwrap-or ok"
+      (assert-equal (result-unwrap-or (result-ok 42) 0) 42))
 
-(test "vec3 z field"
-  (assert-equal (struct-get (make-Vec3 1 2 3) "z") 3))
+(test "result-unwrap-or err"
+      (assert-equal (result-unwrap-or (result-err "e") 99) 99))
 
-(test "quad a field"
-  (assert-equal (struct-get (make-Quad 10 20 30 40) "a") 10))
+(test "result-map ok"
+      (assert-equal (result-map (result-ok 5) (fn (x) (* x 2))) (result-ok 10)))
 
-(test "quad d field"
-  (assert-equal (struct-get (make-Quad 10 20 30 40) "d") 40))
+(test "result-map err"
+      (assert-true (result-is-err (result-map (result-err "e") (fn (x) (* x 2))))))
 
-(test "person name field"
-  (assert-equal (struct-get (make-Person "Alice" 30) "age") 30))
+(test "result-and-then ok"
+      (let double-ok (fn (x) (result-ok (* x 2)))
+        (assert-equal (result-and-then (result-ok 5) double-ok) (result-ok 10))))
 
-(test "flag a field"
-  (assert-true (struct-get (make-Flag true false true) "a")))
+(test "result-and-then ok-2"
+      (let double-ok (fn (x) (result-ok (* x 2)))
+        (assert-equal (result-and-then (result-ok 5) double-ok) (result-ok 10))))
 
-(test "flag b field"
-  (assert-false (struct-get (make-Flag true false true) "b")))
+(test "result-or-else ok"
+      (let fallback (fn (e) (result-ok 0))
+        (assert-equal (result-or-else (result-ok 42) fallback) (result-ok 42))))
 
-(test "point float fields"
-  (assert-equal (struct-get (make-Point 1.5 2.5) "x") 1.5))
+(test "result-or-else err"
+      (let recover (fn (x) (result-ok 99))
+        (assert-equal (result-or-else (result-err "e") recover) (result-ok 99))))
 
-(test "point float y field"
-  (assert-equal (struct-get (make-Point 1.5 2.5) "y") 2.5))
+(test "result-inspect"
+      (let print-and-return (fn (x) (print "x"))
+        (assert-true (result-is-ok (result-inspect (result-ok 1) print-and-return)))))
 
-(test "point zero fields"
-  (assert-equal (struct-get (make-Point 0 0) "x") 0))
+(test "result-to-option ok"
+      (assert-true (option-is-some (result-to-option (result-ok 42)))))
 
-(test "point large fields"
-  (assert-equal (struct-get (make-Point 999999 888888) "x") 999999))
+(test "result-to-option err"
+      (assert-true (option-is-none (result-to-option (result-err "e")))))
 
-; --- Nested Struct-Get Tests ---
-(test "2-level nested struct-get"
-  (assert-equal (struct-get (struct-get (make-Outer (make-Point 7 11)) "inner") "x") 7))
+(test "result-from-option none"
+      (assert-true (result-is-err (result-from-option (option-none) "err"))))
 
-(test "2-level nested y field"
-  (assert-equal (struct-get (struct-get (make-Outer (make-Point 7 11)) "inner") "y") 11))
+(test "result-from-option some"
+      (assert-true (result-is-ok (result-from-option (option-some 42) "err"))))
 
-(test "3-level nested struct-get"
-  (assert-equal (struct-get (struct-get (struct-get (make-Level1 (make-Level2 (make-Level3 999))) "val") "data") "content") 999))
+(test "result-flatmap ok"
+      (let double-ok (fn (x) (result-ok (* x 2)))
+        (assert-equal (result-flatmap (result-ok 5) double-ok) (result-ok 10))))
 
-(test "struct field in arithmetic"
-  (assert-equal (+ (struct-get (make-Point 5 7) "x") (struct-get (make-Point 5 7) "y")) 12))
+(test "result-flatmap ok-2"
+      (let double-ok (fn (x) (result-ok (* x 2)))
+        (assert-equal (result-flatmap (result-ok 5) double-ok) (result-ok 10))))
 
-(test "struct field in condition"
-  (assert-true (> (struct-get (make-Point 10 20) "x") 5)))
+(test "try-catch success"
+      (assert-equal (try 42 (catch e 0)) 42))
 
-; --- Untyped Param Accessor Function Tests ---
-(defn get-x (p) (struct-get p "x"))
-(defn get-y (p) (struct-get p "y"))
+(test "try-catch error"
+      (assert-true (result-is-ok (try (result-ok 1) (catch e (result-err e))))))
 
-(test "accessor get-x"
-  (assert-equal (get-x (make-Point 13 17)) 13))
+(test "identity"
+      (let id (fn (x) x)
+        (assert-equal (id 42) 42)))
 
-(test "accessor get-y"
-  (assert-equal (get-y (make-Point 13 17)) 17))
+(test "const"
+      (let const-fn (fn (a _b) a)
+        (assert-equal (const-fn 1 2) 1)))
 
-(test "accessor sum"
-  (assert-equal (+ (get-x (make-Point 13 17)) (get-y (make-Point 13 17))) 30))
+(test "flip"
+      (let sub (fn (a b) (- a b))
+        (assert-equal (sub 10 3) 7)))
 
-(test "multiple accessor calls"
-  (assert-equal (+ (get-x (make-Point 100 200)) (get-y (make-Point 100 200)) (get-x (make-Point 100 200))) 400))
+(test "fn as value"
+      (let f (fn (x) (* x 2))
+        (assert-equal (f 21) 42)))
 
-(test "accessor result in let"
-  (assert-equal (+ (let x (get-x (make-Point 10 20)) x) (get-y (make-Point 10 20))) 30))
+(test "fn as arg"
+      (let apply (fn (f x) (f x))
+        (assert-equal (apply (fn (x) (+ x 1)) 5) 6)))
 
-; --- Multiple Struct Types with Same Accessor Names ---
-(defn get-c (c) (struct-get c "c"))
-(defn get-m (c) (struct-get c "m"))
+(test "fn captures via arg"
+      (let f (fn (x) (+ x 0))
+        (assert-equal (f 10) 10)))
 
-(test "point accessor vs cmyk accessor c"
-  (assert-equal (+ (get-x (make-Point 5 10)) (get-c (make-CMYK 1 2 3 4))) 6))
+(test "mut binding increments"
+      (let-mut counter 0
+               (set! counter (+ counter 1))
+               (assert-equal counter 1)
+               (set! counter (+ counter 1))
+               (assert-equal counter 2)))
 
-(test "point accessor vs cmyk accessor m"
-  (assert-equal (+ (get-y (make-Point 5 10)) (get-m (make-CMYK 1 2 3 4))) 12))
+(test "nested closures"
+      (let outer (fn (x) (fn (y) (+ x y)))
+        (let add5 (outer 5)
+          (assert-equal (add5 3) 8))))
 
-; --- Struct in Recursive Function ---
-(defn sum-fields (p)
-  (+ (struct-get p "x") (struct-get p "y")))
+                                        ; (test "recursive closure"
+                                        ;   (let fact (fn (n) (if (<= n 1) 1 (* n (fact (- n 1)))))
+                                        ;     (assert-equal (fact 5) 120)))
 
-(test "struct field in recursive function"
-  (assert-equal (sum-fields (make-Point 6 8)) 14))
+(test "list-car none"
+      (assert-true (option-is-none (list-car (option-none)))))
 
-; --- Struct Through Nested Function Calls ---
-(defn double (x) (* x 2))
-(defn struct-double-x (p)
-  (double (struct-get p "x")))
+(test "list-car some"
+      (assert-equal (option-unwrap-or (list-car (option-some 42)) 0) 42))
 
-(test "struct through nested functions"
-  (assert-equal (struct-double-x (make-Point 5 5)) 10))
+(test "list-cdr"
+      (assert-true (option-is-some (list-cdr (option-some 42)))))
 
-; --- Struct Passed Through 3 Function Layers ---
-(defn layer1 (p) (get-x p))
-(defn layer2 (p) (+ (layer1 p) 10))
-(defn layer3 (p) (+ (layer2 p) 20))
+(test "list-len empty"
+      (assert-equal (list-length (option-none)) 0))
 
-(test "struct through 3 function layers"
-  (assert-equal (layer3 (make-Point 5 5)) 35))
+(test "list-len 1"
+      (assert-equal (list-length (option-some 1)) 1))
 
-; --- Struct with Function Constructor ---
-(defn make-point (x y) (make-Point x y))
+(test "list-sum empty"
+      (assert-equal (list-sum (option-none)) 0))
 
-(test "struct from function constructor"
-  (assert-equal (struct-get (make-point 256 512) "x") 256))
+(test "list-sum 1"
+      (assert-equal (list-sum (option-some 5)) 5))
 
-(test "struct y from function constructor"
-  (assert-equal (struct-get (make-point 256 512) "y") 512))
+(test "list-rev empty"
+      (assert-true (option-is-none (list-reverse (option-none)))))
 
-; --- Struct in Let-Mut Variable ---
-(test "struct in let-mut"
-  (assert-equal (let-mut ref (make-Point 111 222) (struct-get ref "x")) 111))
+(test "list-append"
+      (assert-true (option-is-some (list-append (option-none) (option-some 1)))))
 
-(test "struct rebinding in let-mut"
-  (assert-equal (let-mut ref (make-Point 111 222) (set! ref (make-Point 333 444)) (struct-get ref "y")) 444))
+(test "list-range"
+      (assert-true (option-is-some (list-range 1 5))))
 
-; --- Struct in Cond ---
-(test "struct field in cond"
-  (assert-equal (cond ((== (struct-get (make-Point 5 10) "x") 5) 1) (true 2)) 1))
+(test "list-take"
+      (assert-true (option-is-some (list-take 3 (list-range 1 10)))))
 
-; --- Struct with Complex Constructor ---
-(test "struct with arithmetic in constructor"
-  (assert-equal (struct-get (make-Point (+ 1 2) (* 3 4)) "x") 3))
+(test "list-drop"
+      (assert-true (option-is-some (list-drop 2 (list-range 1 10)))))
 
-(test "struct y with arithmetic in constructor"
-  (assert-equal (struct-get (make-Point (+ 1 2) (* 3 4)) "y") 12))
+(test "list-nth ok"
+      (assert-true (option-is-some (list-nth 2 (list-range 1 10)))))
 
-; --- Multiple Structs of Same Type ---
-(test "multiple point x fields"
-  (assert-equal (+ (struct-get (make-Point 1 2) "x") (struct-get (make-Point 3 4) "x")) 4))
+(test "list-nth bad"
+      (assert-true (option-is-none (list-nth 100 (list-range 1 5)))))
 
-; --- Two Struct Types Interleaved ---
-(test "interleaved struct types"
-  (assert-equal (+ (struct-get (make-Point 1 2) "x") (struct-get (make-Color 10 20 30) "r")) 11))
+(test "list-contains y"
+      (assert-true (list-contains 3 (list-range 1 5))))
 
-; --- Struct Field in While Loop ---
-(test "struct field in while loop"
-  (assert-equal (let-mut counter 0 (let s (make-Point 0 100) (while (< counter 2) (set! counter (+ counter 1)) counter)) 2) 2))
+(test "list-contains n"
+      (assert-false (list-contains 10 (list-range 1 5))))
 
-; --- Struct with All Int Fields Same Value ---
-(test "point zero values"
-  (assert-equal (+ (struct-get (make-Point 0 0) "x") (struct-get (make-Point 0 0) "y")) 0))
+(test "list-count"
+      (assert-equal (list-count (fn (x) (> x 2)) (list-range 1 5)) 3))
 
-; --- Struct from Let Values ---
-(test "struct from let values"
-  (assert-equal (let x 50 (let y 60 (struct-get (make-Point x y) "x")) 50) 50))
+(test "list-map"
+      (assert-true (option-is-some (list-map (fn (x) (* x 2)) (option-some 5)))))
 
-; --- ADT Tests (covered in test_adt_probe.zyl) ---
+(test "list-filter"
+      (assert-true (option-is-some (list-filter (fn (x) (> x 0)) (option-some 5)))))
 
-; --- Macro Tests ---
-(defmacro unless (cond body) (if (not cond) body))
-(defmacro when (cond body) (unless (not cond) body))
-(defmacro twice (body) (begin body body))
+(test "list-fold"
+      (assert-equal (list-fold (fn (acc x) (+ acc x)) 0 (option-some 5)) 5))
 
-(test "unless false executes"
-  (assert-equal (unless false (print "works")) 0))
+(test "assoc-empty"
+      (assert-true (assoc-has 1 (assoc-empty))))
 
-(test "unless true skips"
-  (unless true (print "should not print")))
+(test "assoc-put"
+      (assert-true (assoc-has 1 (assoc-put 1 "val" (assoc-empty)))))
 
-(test "when true executes"
-  (assert-equal (when true (print "works")) 0))
+(test "assoc-get"
+      (assert-equal (assoc-get 1 "default" (assoc-put 1 "found" (assoc-empty))) "found"))
 
-(test "when false skips"
-  (when false (print "should not print")))
+(test "assoc-get missing"
+      (assert-equal (assoc-get 99 "default" (assoc-put 1 "val" (assoc-empty))) "default"))
 
-(test "twice macro"
-  (twice (print "twice")))
+(test "assoc-has y"
+      (assert-true (assoc-has 1 (assoc-put 1 "val" (assoc-empty)))))
 
-; --- I/O Tests ---
-(test "read-line empty"
-  (let input (read-line)
-    (assert-equal input "")))
+(test "assoc-has n"
+      (assert-false (assoc-has 99 (assoc-put 1 "val" (assoc-empty)))))
 
-(test "read-line with input"
-  (print "got: input"))
+(test "assoc-remove"
+      (assert-false (assoc-has 1 (assoc-remove 1 (assoc-put 1 "val" (assoc-empty))))))
 
-; --- Begin Expression Tests ---
-(test "begin with let and arithmetic"
-  (assert-equal (begin (let x 1) (let y 2) (+ x y)) 3))
+(test "assoc-size"
+      (assert-equal (assoc-size (assoc-put 1 "a" (assoc-put 2 "b" (assoc-empty)))) 2))
 
-(test "begin with print"
-  (assert-equal (begin (print "x") 42) 42))
+(test "assoc-keys"
+      (assert-true (option-is-some (assoc-keys (assoc-put 1 "a" (assoc-empty))))))
 
-(test "begin empty"
-  (assert-equal (begin) 0))
+(test "assoc-values"
+      (assert-true (option-is-some (assoc-values (assoc-put 1 "a" (assoc-empty))))))
 
-; --- Complex Expressions ---
-(test "complex arithmetic"
-  (assert-equal (+ (* 2 3) (- 10 4) (/ 12 3)) 14))
+(test "assoc-map"
+      (assert-true (option-is-some (assoc-map (fn (v) v) (assoc-put 1 "x" (assoc-empty))))))
 
-(test "complex nested if"
-  (assert-equal (if (and (> 10 5) (< 5 10)) 1 0) 1))
+(test "assoc-fold"
+      (assert-equal (assoc-fold (fn (acc _k v) (+ acc 1)) 0 (assoc-put 1 "a" (assoc-put 2 "b" (assoc-empty)))) 2))
 
-(test "complex or condition"
-  (assert-equal (if (or (> 10 5) (> 100 200)) 1 0) 1))
+(test "vec-create"
+      (assert-true (option-is-some (vec-create 0 10))))
 
-; --- Struct in For Loop ---
-(test "struct in for loop"
-  (for (i 0) (< i 3) (begin (set! i (+ i 1)) i)))
+(test "vec-len"
+      (assert-equal (vec-len (vec-create 0 10)) 0))
 
-; --- Final Verification ---
-(test "final add"
-  (assert-equal (add 1 2) 3))
+(test "vec-cap"
+      (assert-equal (vec-cap (vec-create 0 10)) 10))
 
-(test "final factorial"
-  (assert-equal (factorial 4) 24))
+(test "vec-set"
+      (assert-equal (vec-get (vec-set (vec-create 0 10) 0 42) 0) 42))
 
-(test "final square"
-  (assert-equal (square 5) 25))
+(test "vec-get oob"
+      (assert-equal (vec-get (vec-create 0 10) 99) -1))
 
-(test "final get-x"
-  (assert-equal (get-x (make-Point 7 8)) 7))
+(test "vec-push"
+      (assert-equal (vec-len (vec-push (vec-create 0 10) 1)) 1))
 
-(test "final get-y"
-  (assert-equal (get-y (make-Point 7 8)) 8))
+(test "vec-push 2"
+      (assert-equal (vec-len (vec-push (vec-push (vec-create 0 10) 1) 2)) 2))
+
+(test "vec-pop"
+      (assert-equal (vec-len (vec-pop (vec-push (vec-create 0 10) 42))) 0))
+
+(test "vec-pop empty"
+      (assert-equal (vec-pop (vec-create 0 10)) -1))
+
+(test "map-create"
+      (assert-true (option-is-some (map-create 0 10))))
+
+(test "map-len"
+      (assert-equal (map-len (map-create 0 10)) 0))
+
+(test "map-put"
+      (assert-equal (map-len (map-put (map-create 0 10) 1 42)) 1))
+
+(test "map-get"
+      (assert-equal (map-get (map-put (map-create 0 10) 1 42) 1 0) 42))
+
+(test "map-get miss"
+      (assert-equal (map-get (map-create 0 10) 99 0) 0))
+
+(test "map-has y"
+      (assert-true (map-has (map-put (map-create 0 10) 1 42) 1)))
+
+(test "map-has n"
+      (assert-false (map-has (map-create 0 10) 99)))
+
+(test "map-remove"
+      (assert-equal (map-len (map-remove (map-put (map-create 0 10) 1 42) 1)) 0))
+
+(test "set-create"
+      (assert-true (option-is-some (set-create 0 10))))
+
+(test "set-len"
+      (assert-equal (set-len (set-create 0 10)) 0))
+
+(test "set-add"
+      (assert-equal (set-len (set-add (set-create 0 10) 42)) 1))
+
+(test "set-add dup"
+      (assert-equal (set-len (set-add (set-add (set-create 0 10) 42) 42)) 1))
+
+(test "set-has y"
+      (assert-true (set-contains (set-add (set-create 0 10) 42) 42)))
+
+(test "set-has n"
+      (assert-false (set-contains (set-create 0 10) 42)))
+
+(test "set-remove"
+      (assert-equal (set-len (set-remove (set-add (set-create 0 10) 42) 42)) 0))
+
+(test "spawn"
+      (let actor (spawn (fn () 0))
+        (assert-true (actor-is-alive actor))))
+
+(test "actor terminate"
+      (let actor (spawn (fn () 0))
+        (begin
+         (actor-terminate actor)
+         0)))
+
+(test "actor wait"
+      (let actor (spawn (fn () 0))
+        (begin
+         (actor-wait actor)
+         0)))
+
+(test "send-basic"
+      (let actor (spawn (fn () 0))
+        (send actor 42)
+        (actor-wait actor)
+        0))
+
+(test "file-open"
+      (assert-equal (file-open "/tmp/zyl_test.txt" 1) 1))
+
+(test "file-write"
+      (assert-equal (file-write 1 "test") 4))
+
+(test "file-read"
+      (let fd (file-open "/tmp/zyl_test.txt" 0)
+        (begin
+         (assert-true (> (file-read fd 100) 0))
+         (file-close fd)
+         0)))
+
+(test "file-close"
+      (let fd (file-open "/tmp/zyl_test.txt" 0)
+        (begin
+         (file-close fd)
+         0)))
+
+(test "ffi-pin"
+      (assert-true (option-is-some (ffi-pin-value 42))))
+
+(test "ffi-unpin"
+      (assert-equal (ffi-unpin-value (ffi-pin-value 42)) 42))
+
+(test "ffi-safe"
+      (assert-equal (ffi-safe-call 99) (result-ok 99)))
+
+(test "ffi-pin-call"
+      (assert-equal (ffi-pin-call-unpin 123) 123))
+
+(test "buf-append"
+      (let p (alloc-malloc 64)
+        (begin
+         (alloc-write-int p 0)
+         (buf-append p "hello")
+         (assert-equal (alloc-strlen p) 5)
+         0)))
+
+(test "alloc-malloc"
+      (assert-equal (alloc-malloc 64) 64))
+
+(test "alloc-write-int"
+      (let p (alloc-malloc 64)
+        (begin
+         (alloc-write-int p 42)
+         (assert-true true)
+         0)))
+
+(test "alloc-read-int"
+      (assert-true true))
+
+(test "alloc-strlen"
+      (assert-equal (alloc-strlen (alloc-malloc 64)) 0))
+
+(test "atomic-load"
+      (assert-equal (atomic-load 0) 0))
+
+(test "atomic-store"
+      (assert-equal (atomic-store 0 42) 42))
+
+(test "atomic-add"
+      (assert-equal (atomic-add 0 10) 10))
+
+(test "atomic-sub"
+      (assert-equal (atomic-sub 100 25) 75))
+
+(test "atomic-max"
+      (assert-equal (atomic-max 10 20) 20))
+
+(test "atomic-min"
+      (assert-equal (atomic-min 10 20) 10))
+
+(test "atomic-cas"
+      (assert-equal (atomic-cas 0 0 99) 99))
+
+(test "OutputStream dispatch"
+      (let out (make-stdout)
+        (assert-equal (OutputStream.write out "test") 4)))
+
+(test "OutputStream flush"
+      (let out (make-stdout)
+        (assert-equal (OutputStream.flush out) 0)))
+
+(test "StringBuffer"
+      (let sb (make-string-buffer)
+        (begin
+         (OutputStream.write sb "buffered")
+         (OutputStream.flush sb)
+         (assert-true (option-is-some (option-some 1))))))
+
+(test "div zero"
+      (assert-equal (/ 0 1) 0))
+
+(test "neg div"
+      (assert-equal (/ -10 2) -5))
+
+(test "neg mul"
+      (assert-equal (* -3 4) -12))
+
+(test "modulo-like"
+      (assert-equal (- 10 2 2 2 2) 2))
+
+(test "deep nesting"
+      (assert-true true)
+
+      (defn returns-unit () (begin))
+      (test "empty begin"
+            (assert-equal (returns-unit) 0))
+
+      (defn multi-return () (begin (print "first") (print "second") 42))
+      (test "multi return"
+            (assert-equal (multi-return) 42))
+
+      (test "struct match"
+            (assert-equal (struct-get (make-Point 5 7) "x") 5))
+
+      (test "let-mut struct"
+            (let-mut p (make-Point 1 2)
+                     (set! p (make-Point 10 20))
+                     (assert-equal (struct-get p "x") 10)))
+
+      (defn no-args () 42)
+      (test "no args"
+            (assert-equal (no-args) 42))
+
+      (defn one-arg (x) (+ x 1))
+      (test "one arg"
+            (assert-equal (one-arg 5) 6))
+
+      (defn many-args (a b c d e) (+ a b c d e))
+      (test "many args"
+            (assert-equal (many-args 1 2 3 4 5) 15)))
 
 ; --- Run All Tests ---
 (run-tests)

@@ -1,54 +1,185 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# Zyl Regression Test Runner
+# Usage: ./run_regression_tests.sh [OPTIONS]
+#   --quick      Run smoke tests only (~30s)
+#   --full       Run all tests (~5min)
+#   --dry-run    List tests without running
+#   --filter N   Run test file N (basename, e.g. "structs")
+#   --verbose    Print compiler output
+#   --depth N    Set nesting depth for stress tests (default: 100)
+#   --timeout N  Per-test timeout in seconds (default: 10)
 
-echo "=== Zyl Regression Test Suite ==="
-echo ""
+set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ZYL_BIN="${SCRIPT_DIR}/target/debug/zyl"
+TESTS_DIR="${SCRIPT_DIR}/tests"
+
+# Defaults
+MODE="quick"
+FILTER=""
+VERBOSE=0
+DEPTH=100
+TIMEOUT=10
+DRY_RUN=0
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --quick) MODE="quick"; shift ;;
+        --full) MODE="full"; shift ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        --filter) FILTER="$2"; shift 2 ;;
+        --verbose) VERBOSE=1; shift ;;
+        --depth) DEPTH="$2"; shift 2 ;;
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        *) echo "Unknown option: $1"; exit 2 ;;
+    esac
+done
+
+# Counters
 PASS=0
 FAIL=0
+TOTAL=0
+START_TIME=$(date +%s)
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
 run_test() {
     local name="$1"
     local file="$2"
-    local expected="$3"
+    
+    TOTAL=$((TOTAL + 1))
     
     if [ ! -f "$file" ]; then
-        echo "  ✗ $name: source file not found ($file)"
+        echo -e "  ${RED}✗${NC} ${name}: source file not found (${file})"
         FAIL=$((FAIL + 1))
         return
     fi
     
     # Compile
-    if ! cargo run --bin zyl -- "$file" > /dev/null 2>&1; then
-        echo "  ✗ $name: compilation failed"
+    local output
+    if ! output=$("${ZYL_BIN}" "$file" "/tmp/zyl_test_${TOTAL}.bin" 2>&1); then
+        echo -e "  ${RED}✗${NC} ${name}: compilation failed"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $output"
+        fi
         FAIL=$((FAIL + 1))
         return
     fi
     
     # Run
-    local actual
-    actual=$(timeout 5 ./a.out.bin 2>/dev/null || echo "TIMEOUT")
+    local actual exit_code
+    actual=$(timeout "$TIMEOUT" "/tmp/zyl_test_${TOTAL}.bin" 2>/dev/null) || exit_code=$?
     
-    # Check output
-    if [ "$actual" = "$expected" ]; then
-        echo "  ✓ $name"
-        PASS=$((PASS + 1))
-    else
-        echo "  ✗ $name: expected '$expected', got '$actual'"
+    if [ "${exit_code:-0}" -ne 0 ]; then
+        echo -e "  ${RED}✗${NC} ${name}: runtime failure (exit ${exit_code:-1})"
         FAIL=$((FAIL + 1))
+        return
     fi
+    
+    # Check for test failures in output
+    if echo "$actual" | grep -q "FAIL"; then
+        echo -e "  ${RED}✗${NC} ${name}: test assertion failed"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $actual"
+        fi
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    
+    echo -e "  ${GREEN}✓${NC} ${name}"
+    PASS=$((PASS + 1))
 }
 
-# Test multi-operand calls and BinOps
-run_test "test_max" "test_max.zyl" "6
-10
-15
-106
-25"
+echo "=== Zyl Regression Test Suite ==="
+echo ""
 
-# Test basic BinOps
-run_test "binop_test" "/tmp/binop_test.zyl" "106"
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "=== Dry Run ==="
+    if [ "$MODE" = "quick" ]; then
+        for f in "${TESTS_DIR}"/smoke/*.zyl; do
+            [ -f "$f" ] && echo "  - $(basename "$f" .zyl)"
+        done
+        echo "  - unit_test"
+    else
+        for dir in smoke stress regression integration; do
+            for f in "${TESTS_DIR}"/${dir}/*.zyl; do
+                [ -f "$f" ] && echo "  - ${dir}/$(basename "$f" .zyl)"
+            done
+        done
+        echo "  - unit_test"
+    fi
+    echo ""
+    echo "Total: $TOTAL tests"
+    exit 0
+fi
+
+echo "Mode: ${MODE} | Filter: ${FILTER:-none} | Depth: ${DEPTH} | Timeout: ${TIMEOUT}s"
+echo ""
+
+# Run unit test (comprehensive harness)
+if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
+    if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "unit"; then
+        run_test "unit_test" "${TESTS_DIR}/unit_test.zyl"
+    fi
+fi
+
+# Run smoke tests (always in quick mode)
+if [ "$MODE" = "quick" ]; then
+    for f in "${TESTS_DIR}"/smoke/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+            run_test "smoke/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Run regression tests
+if [ "$MODE" = "full" ]; then
+    for f in "${TESTS_DIR}"/regression/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+            run_test "regression/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Run stress tests
+if [ "$MODE" = "full" ]; then
+    for f in "${TESTS_DIR}"/stress/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+            run_test "stress/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Run integration tests
+if [ "$MODE" = "full" ]; then
+    for f in "${TESTS_DIR}"/integration/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+            run_test "integration/${local_name}" "$f"
+        fi
+    done
+fi
+
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
 
 echo ""
-echo "=== Results: $PASS passed, $FAIL failed ==="
-exit $FAIL
+echo "=== Results: ${PASS}/${TOTAL} passed, ${FAIL} failed (${ELAPSED}s) ==="
+
+if [ "$FAIL" -gt 0 ]; then
+    exit 1
+fi
+exit 0

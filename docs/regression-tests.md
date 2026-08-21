@@ -2,9 +2,69 @@
 
 ## Overview
 
-This file documents regression test commands and test suites. Run these before modifying sensitive areas to ensure no regressions are introduced.
+This file documents the test infrastructure and how to run tests for Zyl.
 
 **Canonical spec reference:** `spec/10-structs-and-data-types.md`, `spec/02-syntax-and-forms.md`
+
+---
+
+## Quick Start
+
+```bash
+./run_regression_tests.sh --quick   # Smoke tests + unit test (~30s)
+./run_regression_tests.sh --full    # All tests (~5min)
+./run_regression_tests.sh --dry-run # List tests without running
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--quick` | Run smoke tests + unit_test.zyl (default) |
+| `--full` | Run all tests (smoke, regression, stress, integration) |
+| `--dry-run` | List tests without running |
+| `--filter N` | Run only test file N (basename, e.g. `--filter structs`) |
+| `--verbose` | Print compiler/runtime output |
+| `--depth N` | Set nesting depth for stress tests (default: 100) |
+| `--timeout N` | Per-test timeout in seconds (default: 10) |
+
+---
+
+## Test Directory Structure
+
+```
+tests/
+├── unit_test.zyl              # Comprehensive harness + all stdlib tests (primary)
+├── regression/                # Domain-specific regression tests
+│   ├── arithmetic.zyl         # +, -, *, /, multi-operand, float chains
+│   ├── control-flow.zyl       # if, while, for, cond, begin, nested
+│   ├── functions.zyl          # defn, recursion, nested calls, HOFs
+│   ├── structs.zyl            # defstruct, defstruct+, struct-get (ALL spec §8/§10)
+│   ├── adts.zyl               # deftype, match, exhaustiveness, recursive ADTs
+│   ├── closures.zyl           # fn, lambda, capture, env structs
+│   ├── macros.zyl             # defmacro, gensym, nested macros, unless/when
+│   ├── types.zyl              # HM inference, traits, generics, TCap/TMut
+│   ├── concurrency.zyl        # spawn, send, send-closure, actors, mailboxes
+│   ├── ffi.zyl                # ffi-call, ffi-pin, ffi-unpin, timeout
+│   ├── io.zyl                 # read-line, file-open/read/write/close
+│   ├── collections.zyl        # Vec, Map, Set, StringBuffer growth
+│   └── compiler.zyl           # stdlib/compiler: lexer, parser, ICNF
+├── smoke/                     # Quick sanity checks (< 5s each)
+│   ├── hello-world.zyl
+│   ├── let-binding.zyl
+│   ├── struct-basic.zyl
+│   ├── factorial.zyl
+│   └── if-cond.zyl
+├── stress/                    # Edge cases and stress tests
+│   ├── balanced-parens.zyl    # S-expression balance edge cases
+│   ├── deep-recursion.zyl     # factorial, fibonacci, mutual recursion
+│   ├── large-struct.zyl       # 20+ field structs
+│   └── multi-operand-chains.zyl # 20+ operand arithmetic
+└── integration/               # Multi-module tests
+    ├── use-stdlib.zyl         # Multi-module (use + export)
+    ├── trait-dispatch.zyl     # OutputStream trait dispatch
+    └── actor-message.zyl      # Multi-actor message passing
+```
 
 ---
 
@@ -12,212 +72,82 @@ This file documents regression test commands and test suites. Run these before m
 
 **Trigger before modifying:** `src/ast.rs`, `src/codegen.rs`, `src/icnf.rs`, `src/type_inference.rs`, `src/parser.rs`, `src/region_inference.rs`
 
-### Test 1: Basic struct definition and construction
 ```bash
-echo '(defstruct Point (x) (y))(let p (make-Point 10 20)(print (struct-get p "x"))(print (struct-get p "y")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 10 then 20
+./run_regression_tests.sh --filter structs
 ```
 
-### Test 2: Struct field in arithmetic
-```bash
-echo '(defstruct Point (x) (y))(let p (make-Point 5 7)(print (+ (struct-get p "x") (struct-get p "y"))))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 12
-```
+### Spec Coverage (spec §8/§10)
 
-### Test 3: Nested struct-get (field values used to construct another struct)
-```bash
-echo '(defstruct Point (x) (y))(defstruct Pair (left) (right))(let p (make-Point 42 99)(let pair (make-Pair (struct-get p "x") (struct-get p "y")) (print (struct-get pair "left"))))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 42
-```
-
-### Test 4: Struct with field types
-```bash
-echo '(defstruct Person (name String) (age Int))(let alice (make-Person "Alice" 30)(print (struct-get alice "age")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 30
-```
-
-### Test 5: Struct passed to function and returned
-```bash
-echo '(defstruct Point (x) (y))(defn make-point (x y) (make-Point x y))(defn get-x (p) (struct-get p "x"))(let p (make-point 256 512)(print (get-x p)))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 256
-```
-
-### Test 6: defstruct+ variant
-```bash
-echo '(defstruct+ Color (r) (g) (b))(let c (make-Color 255 128 64)(print (struct-get c "r")))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 255
-```
-
-### Run full struct test suite
-```bash
-./target/debug/zyl stdlib_test.zyl stdlib_test.s 2>&1 | tail -3
-```
+| Feature | Test File |
+|---------|-----------|
+| Basic construction | `tests/regression/structs.zyl` |
+| defstruct+ variant | `tests/regression/structs.zyl` |
+| Type-annotated fields | `tests/regression/structs.zyl` |
+| Field access in arithmetic | `tests/regression/structs.zyl` |
+| Nested struct-get (3+ levels) | `tests/regression/structs.zyl` |
+| Struct in control flow | `tests/regression/structs.zyl` |
+| Struct immutability (rebinding only) | `tests/regression/structs.zyl` |
+| Large structs (20+ fields) | `tests/stress/large-struct.zyl` |
 
 ---
 
-## Full Test Suite (`stdlib_test.zyl`)
+## S-Expression Balance Testing
 
-**This file MUST be run every session before making changes. Update it when new functionality is added to ensure behavior remains consistent between sessions.**
+The S-expression balance is **critical** for this language. Any imbalance causes parse failures that cascade through the entire pipeline.
 
-The file `stdlib_test.zyl` contains 402 lines of tests covering:
+### Always test after modifying parser/lexer:
 
-### Basic Operations
-- Arithmetic: `+`, `-`, `*`, `/` with multiple arguments
-- Float arithmetic: `+`, `-`, `*`, `/` with Float64, multi-operand chains
-- Comparison: `>`, `<`, `>=`, `<=`, `==`, `!=`
-- Logical: `and`, `or`, `not`
-- Let bindings (nested)
-- Let-mut bindings
+```bash
+./run_regression_tests.sh --filter balanced-parens
+```
 
-### Control Flow
-- If (with and without else branch)
-- Nested if (int, float, bool)
-- While loop
-- For loop (3-arg syntax: `(for (init-bindings) condition body)`)
-- Cond (single and multi-clause)
-- Begin (empty)
+### What is tested (`tests/stress/balanced-parens.zyl`):
 
-### Functions
-- Function definitions (zero-arg, multi-arg)
-- Recursive functions (factorial)
-- Nested function calls
-- Function returning struct
-- Struct returned from function
-
-### Macros
-- `unless` macro (if → not)
-- `when` macro (unless → if)
-- Nested macros (`twice`)
-
-### ADT System
-- `deftype` with multiple variants
-- Variant construction
-- Match on ADT
-
-### Struct System (20+ test cases)
-- Basic construction and field access
-- Field access in arithmetic
-- Multiple field access from same struct
-- Structs with 2, 3, 4 fields
-- Structs with type annotations
-- Nested struct-get (3+ levels deep)
-- Struct construction from function results
-- Struct passed through function calls
-- Struct in control flow (if/while/cond)
-- `defstruct+` variant
-- Structs with boolean fields
-- Multiple struct types interleaved
-- Struct field in recursive function
-- Large struct with same value in multiple fields
-- Struct construction with arithmetic in constructor
-- Struct rebinding via let-mut + set!
-- Structs with all-zero fields
-- Single-field struct
-
-### Float Support
-- Float constants and literals
-- Float addition, subtraction, multiplication, division
-- Multi-operand float arithmetic chains
-- Float comparison in conditionals
-
-### I/O
-- `read-line` basic input
-- `read-line` EOF handling
+- Deep nesting (10, 20 level) via let chains, if chains, function calls
+- Adjacent S-expressions at top level
+- Empty forms `()`, `(begin)`
+- String literals with parens (should not affect balance)
+- Comment-interleaved forms
+- Mixed depth nesting (let + if + while)
 
 ---
 
-## Closure Regression Tests
+## How to Add New Tests
 
-**Trigger before modifying:** `src/parser.rs`, `src/codegen.rs`, `src/icnf.rs`, `src/macro_expander.rs`
+1. Determine the category:
+   - Quick smoke test → `tests/smoke/`
+   - Domain-specific regression → `tests/regression/<domain>.zyl`
+   - Stress/edge case → `tests/stress/`
+   - Multi-module integration → `tests/integration/`
 
-### Test 1: Basic closure
-```bash
-echo '(let f (fn (x) (+ x 1))(print (f 10)))' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 11
-```
+2. Use the assertion harness pattern:
+   ```lisp
+   (test "test name"
+     (assert-equal (expression) expected-value))
+   ```
 
-### Test 2: Closure with capture
-```bash
-./target/debug/zyl test_closure_capture.zyl t.bin && ./t.bin
-# Tests closure capture in various contexts
-```
+3. End with `(run-tests)`
 
-### Test 3: Spawn with closure capture
-```bash
-./target/debug/zyl test_spawn_capture.zyl t.bin && ./t.bin
-# Tests closure capture in spawned threads
-```
+4. Run: `./run_regression_tests.sh --full`
 
 ---
 
-## Actor Concurrency Regression Tests
+## Manual Tests
 
-**Trigger before modifying:** `src/parser.rs`, `src/codegen.rs`, `src/icnf.rs`, `src/runtime/actor_runtime.c`
+These tests require interactive input and cannot be automated:
 
-### Test 1: Spawn and send
+### read-line
+
 ```bash
-./target/debug/zyl test_spawn_capture.zyl t.bin && ./t.bin
-# Tests actor spawn with closure capture
-```
-
-### Test 2: Message passing
-```bash
-./target/debug/zyl test_message_passing.zyl t.bin && ./t.bin
-# Tests send-closure with captured state passing
-```
-
----
-
-## I/O Regression Tests
-
-**Trigger before modifying:** `src/codegen.rs`, `src/icnf.rs`, `src/parser.rs`
-
-### Test 1: read-line basic input
-```bash
-echo '(let input (read-line)(print "got: " input))' > t.zyl && ./target/debug/zyl t.zyl t.bin && echo 'hello world' | ./t.bin
+echo 'hello world' | ./target/debug/zyl tests/manual/read-line.zyl t.bin && ./t.bin
 # Expected: got: hello world
 ```
 
-### Test 2: read-line EOF
-```bash
-echo '(let input (read-line)(print "got: " input))' > t.zyl && ./target/debug/zyl t.zyl t.bin && echo -n '' | ./t.bin
-# Expected: got: (empty line)
-```
-
 ---
 
-## Quick Smoke Test
+## Future Improvements
 
-For a fast check that the compiler still works:
-
-```bash
-echo '(let x 42 x)' > t.zyl && ./target/debug/zyl t.zyl t.bin && ./t.bin
-# Expected: 42
-```
-
----
-
-## Not Yet Tested
-
-The following spec features are implemented but lack dedicated regression tests in `stdlib_test.zyl`:
-
-- `deftype` pattern matching with complex guards (basic match tested)
-- `ffi-call` end-to-end (parser/ICNF/type-checking implemented, no external C function tested)
-- `try`/`catch` error handling (BROKEN: spec §12.2 Result sugar never desugared; `(try A (catch n B))` emits undefined `_ZYL_try`/`_ZYL_catch` at link. stdlib `io-safe-*` use explicit `Ok`/`Err` as a stopgap)
-- `alias` type system (defined in spec, limited usage in tests)
-- Property-based testing framework (spec §20.5, not implemented)
-- Contract injection (spec §23, not implemented)
-- Hash finalization (spec §27, not implemented)
-
-## Trait System Regression Test
-
-**Trigger before modifying:** `src/ast.rs`, `src/monomorphization.rs`, `src/icnf.rs`, `src/codegen.rs`, `src/lexer.rs`
-
-```bash
-./target/debug/zyl test_trait.zyl t.bin && ./t.bin
-# Expected:
-#   trait-dispatch
-#   buffered content
-# Verifies (use io/io) stdlib OutputStream trait dispatch on Stdout and
-# StringBuffer, plus buf-append buffering and file-write flush.
-```
+- [ ] Golden output comparison (tracked as future work)
+- [ ] Parallel test execution
+- [ ] Test filtering by keyword
+- [ ] CI integration

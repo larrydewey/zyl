@@ -1,0 +1,32 @@
+; Debug: check token count and parse-toplevels behavior.
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+
+(defn main ()
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn foo (x) (+ x 1))")
+      (begin
+        (print "toks:")
+        (print (tok-count tokens))
+        (print "")
+        (let ctx (parse-ctx arena)
+          (begin
+            (form-cache-init ctx)
+            (let pool (alloc-read-int ctx)
+              (let body (kids-new arena 64)
+                (let prog (pool-append pool)
+                  (begin
+                    (node-set-kind pool prog 14)
+                    (node-set-kids pool prog body)
+                    (print "cur before:")
+                    (print (cur-get ctx))
+                    (print "")
+                    (parse-toplevels arena ctx tokens body)
+                    (print "cur after:")
+                    (print (cur-get ctx))
+                    (print "")
+                    (print "kids-len:")
+                    (print (kids-len body))
+                    (print ""))))))))))
+  0)
