@@ -1,0 +1,22 @@
+; Closure Regression Tests
+
+; Closure test
+(test "closure-basic"
+  (let f (fn (x) (+ x 1))
+    (assert-equal (f 10) 11)))
+
+(test "closure-as-arg"
+  (let f (fn (x) (* x 2))
+    (assert-equal (f 5) 10)))
+
+(test "closure-passed-as-arg"
+  (let apply-fn (fn (f x) (f x))
+    (assert-equal (apply-fn (fn (y) (+ y 10)) 5) 15)))
+
+(test "closure-nested"
+  (let outer (fn (x)
+    (let inner (fn (y) (+ x y))
+      (inner 10)))
+    (assert-equal (outer 5) 15)))
+
+(run-tests)

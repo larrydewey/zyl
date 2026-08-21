@@ -1,0 +1,44 @@
+; Macro Regression Tests — defmacro, gensym, nested macros, unless/when
+
+; Unless macro
+(defmacro _m_unless (cond body)
+  (if (not cond) body))
+
+(test "macro-unless-false"
+  (assert-true (_m_unless false true)))
+(test "macro-unless-true-skips"
+  (assert-true (_m_unless true (begin (print "skipped") false))))
+
+; When macro
+(defmacro _m_when (cond body)
+  (_m_unless (not cond) body))
+
+(test "macro-when-true"
+  (assert-true (_m_when true true)))
+(test "macro-when-false-skips"
+  (assert-true (_m_when false (begin (print "skipped") false))))
+
+; Nested macros
+(defmacro _m_twice (body)
+  (begin body body))
+
+(test "macro-nested"
+  (let-mut _m_count 0
+    (_m_twice (set! _m_count (+ _m_count 1)))
+    (assert-equal _m_count 2)))
+
+; Macro with gensym pattern (simple version)
+(defmacro _m-if-not (cond then-body)
+  (if (not cond) then-body))
+
+(test "macro-gensym-pattern"
+  (assert-equal (_m-if-not false 99) 99))
+
+; Macro returning value
+(defmacro _m-double (x)
+  (+ x x))
+
+(test "macro-return-value"
+  (assert-equal (_m-double 5) 10))
+
+(run-tests)

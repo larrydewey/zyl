@@ -1,0 +1,19 @@
+; FFI Regression Tests — ffi-call, ffi-pin, ffi-unpin, timeout
+
+; FFI pin
+(test "ffi-pin"
+  (assert-true (option-is-some (ffi-pin-value 42))))
+
+; FFI unpin
+(test "ffi-unpin"
+  (assert-equal (ffi-unpin-value (ffi-pin-value 42)) 42))
+
+; FFI safe call
+(test "ffi-safe"
+  (assert-equal (ffi-safe-call 99) (result-ok 99)))
+
+; FFI pin + call
+(test "ffi-pin-call"
+  (assert-equal (ffi-pin-call-unpin 123) 123))
+
+(run-tests)

@@ -1,0 +1,140 @@
+; Arithmetic Regression Tests — basic ops, multi-operand, float chains
+
+; Integer arithmetic
+(test "int-add-2"
+  (assert-equal (+ 1 2) 3))
+(test "int-add-5"
+  (assert-equal (+ 1 2 3 4 5) 15))
+(test "int-sub"
+  (assert-equal (- 10 3) 7))
+(test "int-mul"
+  (assert-equal (* 3 4) 12))
+(test "int-div"
+  (assert-equal (/ 20 4) 5))
+(test "int-div-zero-result"
+  (assert-equal (/ 0 1) 0))
+(test "int-neg-div"
+  (assert-equal (/ -10 2) -5))
+(test "int-neg-mul"
+  (assert-equal (* -3 4) -12))
+(test "int-modulo-like"
+  (assert-equal (- 10 2 2 2 2) 2))
+(test "int-sub-zero"
+  (assert-equal (- 5 5) 0))
+
+; Float arithmetic
+(test "float-add-2"
+  (assert-equal (+ 1.0 2.0) 3.0))
+(test "float-add-3"
+  (assert-equal (+ 1.0 2.0 3.0) 6.0))
+(test "float-add-4"
+  (assert-equal (+ 1.0 2.0 3.0 4.0) 10.0))
+(test "float-add-5"
+  (assert-equal (+ 1.0 2.0 3.0 4.0 5.0) 15.0))
+(test "float-sub-2"
+  (assert-equal (- 1.0 2.0) -1.0))
+(test "float-sub-3"
+  (assert-equal (- 1.0 2.0 3.0) -4.0))
+(test "float-mul-2"
+  (assert-equal (* 1.0 2.0) 2.0))
+(test "float-mul-3"
+  (assert-equal (* 1.0 2.0 3.0) 6.0))
+(test "float-div-2"
+  (assert-equal (/ 1.0 2.0) 0.5))
+(test "float-div-3"
+  (assert-equal (/ 1.0 2.0 3.0) 0.166667))
+(test "float-neg"
+  (assert-equal (- 1.5) -1.5))
+(test "float-div"
+  (assert-equal (/ 10.0 4.0) 2.5))
+(test "float-add-complex"
+  (assert-equal (+ 1.5 2.5 3.0) 7.0))
+
+; Float comparison
+(test "float-cmp"
+  (assert-true (> 3.14 2.71)))
+(test "float-equal-zero"
+  (assert-equal 0.0 0.0))
+
+; Comparison operators
+(test "greater-than"
+  (assert-true (> 10 5)))
+(test "less-than"
+  (assert-true (< 5 10)))
+(test "greater-equal"
+  (assert-true (>= 5 5)))
+(test "less-equal"
+  (assert-true (<= 5 5)))
+(test "equal"
+  (assert-true (== 5 5)))
+(test "not-equal"
+  (assert-true (!= 5 3)))
+
+; Logical operators
+(test "and-true"
+  (assert-true (and true true)))
+(test "and-false"
+  (assert-false (and true false)))
+(test "or-true"
+  (assert-true (or false true)))
+(test "or-false"
+  (assert-false (or false false)))
+(test "not-false"
+  (assert-true (not false)))
+(test "not-true"
+  (assert-false (not true)))
+
+; Boolean literals
+(test "bool-true"
+  (assert-true true))
+(test "bool-false"
+  (assert-true (not false)))
+
+; Let bindings
+(test "let-simple"
+  (assert-equal (let x 42 x) 42))
+(test "let-nested"
+  (assert-equal (let a 10 (let b 20 (+ a b))) 30))
+(test "let-mut-simple"
+  (assert-equal (let-mut y 5 y) 5))
+(test "let-mut-multiple"
+  (assert-equal (let-mut x 1 (set! x (+ x 1)) (set! x (+ x 1)) x) 3))
+(test "let-mut-basic"
+  (assert-equal (let-mut x 10 (set! x 20) x) 20))
+(test "let-mut-nested"
+  (assert-equal (let-mut x 5 (let-mut y 10 (set! x (+ x y)) x) 15) 15))
+
+; Multiple let bindings
+(test "multiple-let"
+  (assert-equal (let a 1 (let b 2 (let c 3 (+ a b c)))) 6))
+
+; Mixed arithmetic with types
+(test "mixed-arithmetic"
+  (assert-equal (let result (+ (* 2 3) (- 10 4)) result) 10))
+
+; Chained comparisons via if
+(test "chained-comparisons"
+  (assert-equal (if (> 10 5) (if (> 5 3) 1 0) 0) 1))
+
+; Deeply nested expressions
+(test "deeply-nested"
+  (assert-equal (let a (+ 1 (let b (* 2 3) (+ b 4))) a) 11))
+
+; Empty begin
+(test "empty-begin"
+  (assert-equal (begin) (begin)))
+
+; Single arm cond
+(test "single-arm-cond"
+  (assert-equal (cond (true "only arm")) "only arm"))
+
+; Function with no args
+(defn no-args () 42)
+(test "fn-no-args"
+  (assert-equal (no-args) 42))
+
+; Nested function calls
+(test "nested-fn-calls"
+  (assert-equal (let f (fn (x) (* x x)) (f (+ 1 2))) 9))
+
+(run-tests)

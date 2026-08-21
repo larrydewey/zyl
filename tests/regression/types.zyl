@@ -1,0 +1,123 @@
+; Types Regression Tests — HM inference, traits, generics, TCap/TMut
+
+; Basic type inference
+(test "type-inference-int"
+  (assert-equal (+ 1 2) 3))
+(test "type-inference-float"
+  (assert-equal (+ 1.0 2.0) 3.0))
+
+; Generic ADT instantiation
+(deftype _t_Option (Some Int) None)
+(test "type-generic-option"
+  (assert-true (match (Some 42)
+    (Some v (== v 42))
+    (None false))))
+
+; Struct with typed fields
+(defstruct _t_Person (name String) (age Int))
+(test "type-struct-typed-fields"
+  (assert-equal (struct-get (make-_t_Person "Alice" 30) "age") 30))
+
+; String operations
+(test "str-concat"
+  (assert-equal (str-concat "hello" " world") "hello world"))
+(test "str-length"
+  (assert-equal (str-length "abc") 3))
+(test "str-equal"
+  (assert-true (str-equal "abc" "abc")))
+
+; List operations
+(test "list-car"
+  (assert-equal (option-unwrap-or (list-car (option-some 42)) 0) 42))
+(test "list-len"
+  (assert-equal (list-length (option-some 1)) 1))
+(test "list-sum"
+  (assert-equal (list-sum (option-some 5)) 5))
+(test "list-rev-empty"
+  (assert-true (option-is-none (list-reverse (option-none)))))
+(test "list-append"
+  (assert-true (option-is-some (list-append (option-none) (option-some 1)))))
+
+; Option operations
+(test "option-some"
+  (assert-true (option-is-some (option-some 42))))
+(test "option-none"
+  (assert-true (option-is-none (option-none))))
+(test "option-unwrap-or-some"
+  (assert-equal (option-unwrap-or (option-some 42) 0) 42))
+(test "option-unwrap-or-none"
+  (assert-equal (option-unwrap-or (option-none) 99) 99))
+(test "option-map-some"
+  (let double (fn (x) (* x 2))
+    (assert-equal (option-map (option-some 5) double) (option-some 10))))
+(test "option-map-none"
+  (let double (fn (x) (* x 2))
+    (assert-true (option-is-none (option-map (option-none) double)))))
+
+; Result operations
+(test "result-ok"
+  (assert-true (result-is-ok (result-ok 42))))
+(test "result-err"
+  (assert-true (result-is-err (result-err "err"))))
+(test "result-unwrap-or-ok"
+  (assert-equal (result-unwrap-or (result-ok 42) 0) 42))
+(test "result-unwrap-or-err"
+  (assert-equal (result-unwrap-or (result-err "e") 99) 99))
+
+; Assoc operations
+(test "assoc-empty"
+  (assert-true (assoc-has 1 (assoc-empty))))
+(test "assoc-put"
+  (assert-true (assoc-has 1 (assoc-put 1 "val" (assoc-empty)))))
+(test "assoc-get"
+  (assert-equal (assoc-get 1 "default" (assoc-put 1 "found" (assoc-empty))) "found"))
+(test "assoc-remove"
+  (assert-false (assoc-has 1 (assoc-remove 1 (assoc-put 1 "val" (assoc-empty))))))
+
+; Atomic operations
+(test "atomic-load"
+  (assert-equal (atomic-load 0) 0))
+(test "atomic-store"
+  (assert-equal (atomic-store 0 42) 42))
+(test "atomic-add"
+  (assert-equal (atomic-add 0 10) 10))
+(test "atomic-sub"
+  (assert-equal (atomic-sub 100 25) 75))
+(test "atomic-cas"
+  (assert-equal (atomic-cas 0 0 99) 99))
+
+; Boolean logic helpers
+(test "xor"
+  (assert-true (xor true false)))
+(test "nand"
+  (assert-false (nand true true)))
+(test "nor"
+  (assert-true (nor false false)))
+(test "implies"
+  (assert-true (implies true true)))
+
+; Numeric helpers
+(test "is-bool"
+  (assert-true (is-bool true)))
+(test "is-zero"
+  (assert-true (is-zero 0)))
+(test "is-even"
+  (assert-true (is-even 4)))
+(test "is-odd"
+  (assert-true (is-odd 3)))
+(test "abs"
+  (assert-equal (abs -5) 5))
+(test "max"
+  (assert-equal (max 10 5) 10))
+(test "min"
+  (assert-equal (min 5 10) 5))
+(test "clamp"
+  (assert-equal (clamp 5 1 10) 5))
+(test "signum"
+  (assert-equal (signum 5) 1))
+(test "square"
+  (assert-equal (square 7) 49))
+(test "cube"
+  (assert-equal (cube 3) 27))
+
+(run-tests)

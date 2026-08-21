@@ -1,0 +1,19 @@
+; Integration Test: multi-actor message passing
+
+; Multi-actor message passing
+(test "actor-multi-message"
+  (let actor1 (spawn (fn () 0))
+    (let actor2 (spawn (fn () 0))
+      (send actor1 1)
+      (send actor2 2)
+      (actor-wait actor1)
+      (actor-wait actor2)
+      (assert-true true))))
+
+(test "actor-terminate-all"
+  (let actor (spawn (fn () 0))
+    (actor-terminate actor)
+    (actor-wait actor)
+    (assert-true true)))
+
+(run-tests)

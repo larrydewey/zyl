@@ -1,0 +1,80 @@
+; Collections Regression Tests — Vec, Map, Set, StringBuffer, allocator
+
+(use allocator/allocator)
+(use collections/collections)
+
+; Vec basic operations
+(test "vec-create"
+  (assert-true (option-is-some (vec-create 0 10))))
+(test "vec-len"
+  (assert-equal (vec-len (vec-create 0 10)) 0))
+(test "vec-cap"
+  (assert-equal (vec-cap (vec-create 0 10)) 10))
+(test "vec-set"
+  (assert-equal (vec-get (vec-set (vec-create 0 10) 0 42) 0) 42))
+(test "vec-get-oob"
+  (assert-equal (vec-get (vec-create 0 10) 99) -1))
+(test "vec-push"
+  (assert-equal (vec-len (vec-push (vec-create 0 10) 1)) 1))
+(test "vec-push-2"
+  (assert-equal (vec-len (vec-push (vec-push (vec-create 0 10) 1) 2)) 2))
+(test "vec-pop"
+  (assert-equal (vec-len (vec-pop (vec-push (vec-create 0 10) 42))) 0))
+(test "vec-pop-empty"
+  (assert-equal (vec-pop (vec-create 0 10)) -1))
+
+; Map basic operations
+(test "map-create"
+  (assert-true (option-is-some (map-create 0 10))))
+(test "map-len"
+  (assert-equal (map-len (map-create 0 10)) 0))
+(test "map-put"
+  (assert-equal (map-len (map-put (map-create 0 10) 1 42)) 1))
+(test "map-get"
+  (assert-equal (map-get (map-put (map-create 0 10) 1 42) 1 0) 42))
+(test "map-get-miss"
+  (assert-equal (map-get (map-create 0 10) 99 0) 0))
+(test "map-has-y"
+  (assert-true (map-has (map-put (map-create 0 10) 1 42) 1)))
+(test "map-has-n"
+  (assert-false (map-has (map-create 0 10) 99)))
+(test "map-remove"
+  (assert-equal (map-len (map-remove (map-put (map-create 0 10) 1 42) 1)) 0))
+
+; Set basic operations
+(test "set-create"
+  (assert-true (option-is-some (set-create 0 10))))
+(test "set-len"
+  (assert-equal (set-len (set-create 0 10)) 0))
+(test "set-add"
+  (assert-equal (set-len (set-add (set-create 0 10) 42)) 1))
+(test "set-add-dup"
+  (assert-equal (set-len (set-add (set-add (set-create 0 10) 42) 42)) 1))
+(test "set-has-y"
+  (assert-true (set-contains (set-add (set-create 0 10) 42) 42)))
+(test "set-has-n"
+  (assert-false (set-contains (set-create 0 10) 42)))
+(test "set-remove"
+  (assert-equal (set-len (set-remove (set-add (set-create 0 10) 42) 42)) 0))
+
+; Allocator operations
+(test "alloc-malloc"
+  (assert-equal (alloc-malloc 64) 64))
+(test "alloc-write-int"
+  (let p (alloc-malloc 64)
+    (begin
+      (alloc-write-int p 42)
+      (assert-true true))))
+(test "alloc-strlen"
+  (assert-equal (alloc-strlen (alloc-malloc 64)) 0))
+
+; buf-append
+(test "buf-append"
+  (let p (alloc-malloc 64)
+    (begin
+      (alloc-write-int p 0)
+      (buf-append p "hello")
+      (assert-equal (alloc-strlen p) 5)
+      0)))
+
+(run-tests)

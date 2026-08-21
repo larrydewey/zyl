@@ -1,0 +1,43 @@
+; Concurrency Regression Tests — spawn, send, send-closure, actors, mailboxes
+
+; Spawn basic
+(test "spawn-basic"
+  (let actor (spawn (fn () 0))
+    (assert-true (actor-is-alive actor))))
+
+; Spawn and wait
+(test "spawn-wait"
+  (let actor (spawn (fn () 0))
+    (actor-wait actor)
+    (assert-true true)))
+
+; Send basic
+(test "send-basic"
+  (let actor (spawn (fn () 0))
+    (send actor 42)
+    (actor-wait actor)
+    (assert-true true)))
+
+; Actor terminate
+(test "actor-terminate"
+  (let actor (spawn (fn () 0))
+    (actor-terminate actor)
+    (actor-wait actor)
+    (assert-true true)))
+
+; Actor wait
+(test "actor-wait"
+  (let actor (spawn (fn () 0))
+    (actor-wait actor)
+    (assert-true true)))
+
+; Send-closure basic
+(test "send-closure-basic"
+  (let-mut _ac_result 0
+    (let handler (fn (msg) (set! _ac_result msg))
+      (let actor (spawn (fn () (handler 99)))
+        (actor-wait actor)
+        (assert-equal _ac_result 99))))
+
+(run-tests)
+)

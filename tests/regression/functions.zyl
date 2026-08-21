@@ -1,0 +1,90 @@
+; Function Regression Tests — defn, recursion, nested calls, HOFs
+
+; Basic function definitions
+(defn _f_add (x y) (+ x y))
+(defn _f_sub (x y) (- x y))
+(defn _f_mul (x y) (* x y))
+(defn _f_factorial (n) (if (<= n 1) 1 (* n (_f_factorial (- n 1)))))
+(defn _f_square (x) (* x x))
+(defn _f_add3 (x y z) (+ x y z))
+(defn _f_identity (x) x)
+(defn _f_const (a _) a)
+
+; Function application
+(test "fn-add"
+  (assert-equal (_f_add 3 4) 7))
+(test "fn-sub"
+  (assert-equal (_f_sub 10 3) 7))
+(test "fn-mul"
+  (assert-equal (_f_mul 2 5) 10))
+
+; Recursive factorial
+(test "factorial-1"
+  (assert-equal (_f_factorial 1) 1))
+(test "factorial-5"
+  (assert-equal (_f_factorial 5) 120))
+(test "factorial-6"
+  (assert-equal (_f_factorial 6) 720))
+
+; Nested function calls
+(test "nested-calls"
+  (assert-equal (_f_square (_f_add 1 2)) 9))
+
+; Function identity
+(test "fn-identity"
+  (assert-equal (_f_identity 42) 42))
+
+; Const function
+(test "fn-const"
+  (assert-equal (_f_const 1 2) 1))
+
+; Multi-arg function
+(test "fn-many-args"
+  (assert-equal (_f_add3 1 2 3) 6))
+
+; Function returning struct
+(defstruct _f_Point (x) (y))
+(defn _f_make-point (x y) (make-_f_Point x y))
+(test "fn-returns-struct"
+  (assert-equal (let p (_f_make-point 256 512) (+ (struct-get p "x") (struct-get p "y"))) 768))
+
+; Struct accessor through function
+(defn _f_get-x (p) (struct-get p "x"))
+(test "fn-struct-accessor"
+  (assert-equal (_f_get-x (_f_make-point 11 22)) 11))
+
+; Nested closures (HOF)
+(test "hof-closure"
+  (let outer (fn (x) (fn (y) (+ x y)))
+    (let add5 (outer 5)
+      (assert-equal (add5 3) 8))))
+
+; Function as value
+(test "hof-fn-as-value"
+  (let f (fn (x) (* x 2))
+    (assert-equal (f 21) 42)))
+
+; Function as argument (apply pattern)
+(test "hof-fn-as-arg"
+  (let apply (fn (f x) (f x))
+    (assert-equal (apply (fn (x) (+ x 1)) 5) 6)))
+
+; Flip pattern
+(test "hof-flip"
+  (let sub (fn (a b) (- a b))
+    (assert-equal (sub 10 3) 7)))
+
+; Recursive closure (commented out — requires full HOF support)
+; (test "recursive-closure"
+;   (let fact (fn (n) (if (<= n 1) 1 (* n (fact (- n 1)))))
+;     (assert-equal (fact 5) 120)))
+
+; Mut binding in function
+(test "fn-mut-binding"
+  (let-mut _f_counter 0
+    (set! _f_counter (+ _f_counter 1))
+    (assert-equal _f_counter 1)
+    (set! _f_counter (+ _f_counter 1))
+    (assert-equal _f_counter 2)))
+
+(run-tests)
