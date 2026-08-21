@@ -56,7 +56,9 @@ fn compile_and_run(source: &str) -> Result<Option<String>, String> {
         let mut layouts = codegen::StructLayout::new();
         for e in &typed {
             if let ast::ExprInner::StructDef(sd) = &e.inner {
-                let layout: Vec<_> = sd.fields.iter().map(|(fname, _)| (fname.clone(), 8usize)).collect();
+                let layout: Vec<_> = sd.fields.iter().enumerate().map(|(i, (fname, typ))| {
+                    (fname.clone(), i * 8, typ.clone().unwrap_or_else(|| "Int".into()))
+                }).collect();
                 layouts.insert(sd.name.clone(), layout);
             }
         }
