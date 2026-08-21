@@ -965,14 +965,23 @@ impl IcnfConverter {
                     let captures = captures_vec;
 
                     let ssa_id = self.next_ssa_id();
-                    self.closures.insert(ssa_id, (sanitize_name(name), captures.clone()));
+                    let closure_name = if name.is_empty() {
+                        if let Some(ref orig_name) = self.let_binding_name {
+                            orig_name.clone()
+                        } else {
+                            format!("fn_{}", ssa_id)
+                        }
+                    } else {
+                        format!("fn_{}", sanitize_name(name))
+                    };
+                    self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
                         typ: None,
                         is_branch_body: false,
                         node: ICNFInner::Closure {
-                            name: sanitize_name(name),
+                            name: closure_name,
                             captures,
                         },
                     });
@@ -1012,14 +1021,23 @@ impl IcnfConverter {
                     let captures = captures_vec;
 
                     let ssa_id = self.next_ssa_id();
-                    self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), captures.clone()));
+                    let closure_name = if name.is_empty() {
+                        if let Some(ref orig_name) = self.let_binding_name {
+                            orig_name.clone()
+                        } else {
+                            format!("fn_{}", ssa_id)
+                        }
+                    } else {
+                        format!("fn_{}", sanitize_name(name))
+                    };
+                    self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
                         typ: None,
                         is_branch_body: false,
                         node: ICNFInner::Closure {
-                            name: format!("fn_{}", sanitize_name(name)),
+                            name: closure_name,
                             captures: captures.clone(),
                         },
                     });
@@ -1374,6 +1392,8 @@ impl IcnfConverter {
                 self.current_scope = saved_scope.clone();
                 // Mark that we're converting a let value so Fn handlers defer captures.
                 self.in_let_value = true;
+                // Track the let binding name so closure names match call targets.
+                self.let_binding_name = Some(name.clone());
                 // 2. Convert value expression (collecting intermediates, NOT pushing).
                 let val_stmts = self.convert_expr_to_stmts(val)?;
                 self.in_let_value = false;
@@ -1464,6 +1484,8 @@ impl IcnfConverter {
                 self.push_to_globals = false;
                 // Restore outer scope before converting value.
                 self.current_scope = saved_scope.clone();
+                // Track the let binding name so closure names match call targets.
+                self.let_binding_name = Some(name.clone());
                 // Convert value expression (collecting intermediates, NOT pushing to globals).
                 let val_stmts = self.convert_expr_to_stmts(val)?;
                 let val_id = val_stmts.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
@@ -1676,7 +1698,16 @@ impl IcnfConverter {
                 if !closure_body.is_empty() {
                     self.closure_bodies.insert(ssa_id, closure_body);
                 }
-                self.closures.insert(ssa_id, (sanitize_name(name), captures.clone()));
+                let closure_name = if name.is_empty() {
+                    if let Some(ref orig_name) = self.let_binding_name {
+                        orig_name.clone()
+                    } else {
+                        format!("fn_{}", ssa_id)
+                    }
+                } else {
+                    format!("fn_{}", sanitize_name(name))
+                };
+                self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -1684,7 +1715,7 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::Closure {
-                        name: sanitize_name(name),
+                        name: closure_name,
                         captures,
                     },
                 }])
@@ -1721,7 +1752,16 @@ impl IcnfConverter {
                     if !closure_body.is_empty() {
                         self.closure_bodies.insert(ssa_id, closure_body);
                     }
-                    self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), Vec::new()));
+                    let closure_name = if name.is_empty() {
+                        if let Some(ref orig_name) = self.let_binding_name {
+                            orig_name.clone()
+                        } else {
+                            format!("fn_{}", ssa_id)
+                        }
+                    } else {
+                        format!("fn_{}", sanitize_name(name))
+                    };
+                    self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
                     self.current_scope = saved_scope;
                     return Ok(vec![ICNFNode {
                         id: ssa_id,
@@ -1729,7 +1769,7 @@ impl IcnfConverter {
                         typ: None,
                         is_branch_body: false,
                         node: ICNFInner::Closure {
-                            name: format!("fn_{}", sanitize_name(name)),
+                            name: closure_name,
                             captures: Vec::new(),
                         },
                     }]);
@@ -1770,7 +1810,16 @@ impl IcnfConverter {
                 if !closure_body.is_empty() {
                     self.closure_bodies.insert(ssa_id, closure_body);
                 }
-                self.closures.insert(ssa_id, (format!("fn_{}", sanitize_name(name)), captures.clone()));
+                let closure_name = if name.is_empty() {
+                    if let Some(ref orig_name) = self.let_binding_name {
+                        orig_name.clone()
+                    } else {
+                        format!("fn_{}", ssa_id)
+                    }
+                } else {
+                    format!("fn_{}", sanitize_name(name))
+                };
+                self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -1778,7 +1827,7 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::Closure {
-                        name: format!("fn_{}", sanitize_name(name)),
+                        name: closure_name,
                         captures,
                     },
                 }])
@@ -1828,7 +1877,12 @@ impl IcnfConverter {
                     if !closure_body.is_empty() {
                         self.closure_bodies.insert(ssa_id, closure_body);
                     }
-                    self.closures.insert(ssa_id, ("fn_".to_string(), Vec::new()));
+                    let closure_name = if let Some(ref orig_name) = self.let_binding_name {
+                        orig_name.clone()
+                    } else {
+                        format!("fn_{}", ssa_id)
+                    };
+                    self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
                     self.current_scope = saved_scope;
                     let node = ICNFNode {
                         id: ssa_id,
@@ -1836,7 +1890,7 @@ impl IcnfConverter {
                         typ: None,
                         is_branch_body: false,
                         node: ICNFInner::Closure {
-                            name: "fn_".to_string(),
+                            name: closure_name,
                             captures: Vec::new(),
                         },
                     };
@@ -1880,7 +1934,12 @@ impl IcnfConverter {
                 if !closure_body.is_empty() {
                     self.closure_bodies.insert(ssa_id, closure_body);
                 }
-                self.closures.insert(ssa_id, ("fn_".to_string(), captures.clone()));
+                let closure_name = if let Some(ref orig_name) = self.let_binding_name {
+                    orig_name.clone()
+                } else {
+                    format!("fn_{}", ssa_id)
+                };
+                self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                 self.current_scope = saved_scope;
                 let node = ICNFNode {
                     id: ssa_id,
@@ -1888,7 +1947,7 @@ impl IcnfConverter {
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::Closure {
-                        name: "fn_".to_string(),
+                        name: closure_name,
                         captures,
                     },
                 };
