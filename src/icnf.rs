@@ -538,6 +538,52 @@ impl IcnfConverter {
         self.let_binding_name = None;
     }
 
+
+    /// Merge a force-pushed temp buffer with a converted statement list,
+    /// preserving execution order: the temp buffer reflects the order nodes
+    /// were force-pushed during conversion, while `body` holds the full node
+    /// set. Walk the temp buffer as the ordering backbone, pulling in body
+    /// statements as their ids are reached; then append leftovers.
+    fn merge_temp_and_body(
+        temp_nodes: Vec<ICNFNode>,
+        body: Vec<ICNFNode>,
+    ) -> Vec<ICNFNode> {
+        let mut result: Vec<ICNFNode> = Vec::new();
+        let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut bi = 0usize;
+        for t in &temp_nodes {
+            if used.contains(&t.id) {
+                continue;
+            }
+            let mut matched = false;
+            while bi < body.len() {
+                let b = &body[bi];
+                bi += 1;
+                if used.contains(&b.id) {
+                    continue;
+                }
+                used.insert(b.id);
+                result.push(b.clone());
+                if b.id == t.id {
+                    matched = true;
+                    break;
+                }
+            }
+            if !matched {
+                used.insert(t.id);
+                result.push(t.clone());
+            }
+        }
+        for b in body[bi..].iter() {
+            if !used.contains(&b.id) {
+                used.insert(b.id);
+                result.push(b.clone());
+            }
+        }
+        result
+    }
+
+    /// Resolve the SSA ID of a struct expression.
     /// Resolve the SSA ID of a struct expression.
     /// For Ident: returns scope binding. For MakeStruct: returns the expression's ID (caller sets). For StructGet: recursively resolves.
     fn resolve_struct_get_id(&self, struct_expr: &Expr) -> Option<usize> {
@@ -1542,23 +1588,10 @@ impl IcnfConverter {
                 // the outer buffer again, and saved_globals holds the temp
                 // buffer with any nodes force-pushed during conversion.
                 std::mem::swap(&mut self.global_stmts, &mut saved_globals);
-                // Force-pushed intermediates (e.g. For-loop init values)
-                // belong BEFORE the body statements.
                 let temp_nodes = saved_globals;
                 let mut all_stmts = val_stmts;
                 all_stmts.push(assign_node);
-                for stmt in temp_nodes {
-                    if !all_stmts.iter().any(|n| n.id == stmt.id) {
-                        all_stmts.push(stmt);
-                    }
-                }
-                // Body statements may overlap with force-pushed intermediates
-                // (same SSA ids) — skip any id already emitted.
-                for stmt in body_stmts {
-                    if !all_stmts.iter().any(|n| n.id == stmt.id) {
-                        all_stmts.push(stmt);
-                    }
-                }
+                all_stmts.extend(Self::merge_temp_and_body(temp_nodes, body_stmts));
                 if saved_push {
                     for stmt in &all_stmts {
                         if !self.global_stmts.iter().any(|n| n.id == stmt.id) {
@@ -1666,24 +1699,19 @@ impl IcnfConverter {
 
             // Try-catch.
             ExprInner::TryCatch(try_expr, catch_var, catch_body) => {
-                let try_stmts = self.convert_expr_to_stmts(try_expr)?;
-                if self.push_to_globals {
-                    for s in &try_stmts {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
+                // Bodies stay EMBEDDED in the TryCatch node (like If branches)
+                // — flattening them into global statements would make callers
+                // execute both paths unconditionally.
+                let mut try_stmts = self.convert_branch_body(try_expr)?;
+                for s in &mut try_stmts {
+                    s.is_branch_body = true;
                 }
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 let err_id = self.next_ssa_id();
                 self.current_scope.insert(catch_var.clone(), err_id);
-                let catch_stmts = self.convert_expr_to_stmts(catch_body)?;
-                if self.push_to_globals {
-                    for s in &catch_stmts {
-                        if !self.global_stmts.iter().any(|n| n.id == s.id) {
-                            self.global_stmts.push(s.clone());
-                        }
-                    }
+                let mut catch_stmts = self.convert_branch_body(catch_body)?;
+                for s in &mut catch_stmts {
+                    s.is_branch_body = true;
                 }
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {

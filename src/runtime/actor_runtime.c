@@ -235,6 +235,39 @@ void zyl_actor_wait_all(void) {
 }
 
 /* ==========================================================================
+   try/catch — panic handler stack. Generated code allocates a frame, links
+   it, calls setjmp on its buffer, and branches to its catch path when
+   siglongjmp returns nonzero. zyl_panic unwinds to the innermost frame.
+   ========================================================================== */
+
+#include <setjmp.h>
+#include <stdlib.h>
+
+struct ZylTryFrame {
+    jmp_buf buf;
+    struct ZylTryFrame* prev;
+    const char* msg;
+};
+
+static struct ZylTryFrame* g_try_top = 0;
+
+void* zyl_try_push(void) {
+    struct ZylTryFrame* f = (struct ZylTryFrame*)malloc(sizeof *f);
+    f->prev = g_try_top;
+    f->msg = 0;
+    g_try_top = f;
+    return (void*)f;
+}
+
+void zyl_try_pop(void) {
+    if (g_try_top) g_try_top = g_try_top->prev;
+}
+
+const char* zyl_try_last_msg(void) {
+    return g_try_top ? g_try_top->msg : 0;
+}
+
+/* ==========================================================================
    FFI pinning — copy an 8-byte value to a stable heap location and back.
    ========================================================================== */
 
@@ -740,6 +773,12 @@ void zyl_register_test(const char* name, int (*fn)(void)) {
 }
 
 void zyl_panic(const char* msg) {
+    if (g_try_top) {
+        struct ZylTryFrame* f = g_try_top;
+        g_try_top = f->prev;
+        f->msg = msg ? msg : "error";
+        longjmp(f->buf, 1);
+    }
     if (g_in_test) {
         /* Panic inside a test: unwind to the runner and mark it failed
          * instead of killing the whole process. */

@@ -375,16 +375,16 @@
       (assert-equal (list-count (fn (x) (> x 2)) (list-range 1 5)) 2))
 
 (test "list-map"
-      (assert-true (option-is-some (list-map (fn (x) (* x 2)) (option-some 5)))))
+      (assert-equal (list-sum (list-map (fn (x) (* x 2)) (list-range 1 3))) 10))
 
 (test "list-filter"
-      (assert-true (option-is-some (list-filter (fn (x) (> x 0)) (option-some 5)))))
+      (assert-equal (list-length (list-filter (fn (x) (> x 2)) (list-range 1 5))) 2))
 
 (test "list-fold"
-      (assert-equal (list-fold (fn (acc x) (+ acc x)) 0 (option-some 5)) 5))
+      (assert-equal (list-fold (fn (acc x) (+ acc x)) 0 (list-range 1 5)) 10))
 
 (test "assoc-empty"
-      (assert-true (assoc-has 1 (assoc-empty))))
+      (assert-false (assoc-has 1 (assoc-empty))))
 
 (test "assoc-put"
       (assert-true (assoc-has 1 (assoc-put 1 "val" (assoc-empty)))))

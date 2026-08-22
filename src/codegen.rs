@@ -2608,6 +2608,32 @@ impl CodeGen {
                 self.asm.push(format!("    lea {}, [{}]", reg_to_64(target_reg), fn_name));
             }
             Some(ICNFNode {
+                node: ICNFInner::TryCatch { .. },
+                ..
+            }) => {
+                let already_emitted = emitted_ids.contains(&src_ssa_id)
+                    || self.standalone_emitted.contains(&src_ssa_id);
+                if !already_emitted {
+                    if let Some(stmt) = stmts.iter().find(|n| n.id == src_ssa_id) {
+                        self.emit_node(
+                            stmt,
+                            stmts,
+                            local_vars,
+                            emitted_ids,
+                            operand_ids,
+                            lookup,
+                            phi_slots,
+                        );
+                    }
+                    emitted_ids.insert(src_ssa_id);
+                }
+                if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                }
+            }
+            Some(ICNFNode {
                 node: ICNFInner::FileWrite { .. },
                 ..
             }) => {
@@ -5010,6 +5036,16 @@ impl CodeGen {
                     while_lookup.insert(n.id, n);
                 }
 
+                // Zero-init the result slot so a zero-iteration loop yields 0
+                // instead of an uninitialized slot read at the join.
+                if let Some(&slot_idx) = local_vars.get(result_var) {
+                    let offset = (slot_idx + 1) * 8;
+                    self.asm_push_align();
+                    self.asm.push("    xor eax, eax".to_string());
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov [rbp-{}], rax", offset));
+                }
+
                 self.asm_push_align();
                 self.asm.push(format!("{}:", loop_start));
 
@@ -6016,6 +6052,99 @@ impl CodeGen {
                 self.emit_load_into(
                     *val_id, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
+            }
+
+            ICNFInner::TryCatch { try_body, catch_var, catch_body } => {
+                // Panic-handler try/catch: link a handler frame, setjmp, run
+                // the body; zyl_panic longjmps back with eax=1 and the catch
+                // path binds the message pointer to `catch_var`.
+                let tc_label = self.new_label();
+                let catch_label = format!(".tc_catch_{}", tc_label);
+                let after_label = format!(".tc_after_{}", tc_label);
+
+                let mut tc_local = local_vars.clone();
+                // Bind the catch variable to a stack slot up-front so both
+                // paths and nested code agree on its location.
+                if !tc_local.contains_key(catch_var) {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    tc_local.insert(catch_var.clone(), slot);
+                }
+
+                self.asm_push_align();
+                self.asm.push("    call zyl_try_push@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rdi, rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    call setjmp@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    test eax, eax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jne {}", catch_label));
+
+                // Try body — result value in rax at the end.
+                for stmt in try_body {
+                    self.emit_node(
+                        stmt,
+                        stmts,
+                        &mut tc_local,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                }
+                // Preserve the body result across zyl_try_pop (rax is not
+                // preserved by the C call).
+                self.asm_push_align();
+                self.asm.push("    push rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 8".to_string());
+                self.asm_push_align();
+                self.asm.push("    call zyl_try_pop@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    add rsp, 8".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    jmp {}", after_label));
+
+                // Catch path: bind error message pointer, run catch body.
+                self.asm_push_align();
+                self.asm.push(format!("{}:", catch_label));
+                self.asm_push_align();
+                self.asm
+                    .push("    call zyl_try_last_msg@plt".to_string());
+                self.asm_push_align();
+                if let Some(&slot_idx) = tc_local.get(catch_var) {
+                    let offset = (slot_idx + 1) * 8;
+                    self.asm
+                        .push(format!("    mov [rbp-{}], rax", offset));
+                }
+                for stmt in catch_body {
+                    self.emit_node(
+                        stmt,
+                        stmts,
+                        &mut tc_local,
+                        emitted_ids,
+                        operand_ids,
+                        lookup,
+                        phi_slots,
+                    );
+                }
+                self.asm_push_align();
+                self.asm.push("    push rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    sub rsp, 8".to_string());
+                self.asm_push_align();
+                self.asm.push("    call zyl_try_pop@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    add rsp, 8".to_string());
+                self.asm_push_align();
+                self.asm.push("    pop rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("{}:", after_label));
+                emitted_ids.insert(node.id);
             }
 
             ICNFInner::Unit => {
