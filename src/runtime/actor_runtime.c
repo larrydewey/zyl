@@ -259,6 +259,37 @@ long long zyl_cstr_len(long long ptr) {
     return (long long)strlen((const char*)(size_t)ptr);
 }
 
+/* Concatenate two NUL-terminated strings into freshly heap-allocated
+   storage (zyl_heap_alloc). Either argument may be NULL (treated as ""). */
+long long zyl_cstr_concat(long long a, long long b) {
+    const char* sa = a ? (const char*)(size_t)a : "";
+    const char* sb = b ? (const char*)(size_t)b : "";
+    size_t la = strlen(sa);
+    size_t lb = strlen(sb);
+    char* buf = (char*)(size_t)zyl_heap_alloc((long long)(la + lb + 1));
+    memcpy(buf, sa, la);
+    memcpy(buf + la, sb, lb);
+    buf[la + lb] = '\0';
+    return (long long)(size_t)buf;
+}
+
+/* Copy a substring [start, start+len) of a NUL-terminated string into
+   freshly heap-allocated storage (zyl_heap_alloc). Clamps len to the
+   remaining bytes. NULL src is treated as "". */
+long long zyl_cstr_substr(long long src, long long start, long long len) {
+    const char* s = src ? (const char*)(size_t)src : "";
+    size_t slen = strlen(s);
+    if (start < 0) start = 0;
+    if ((size_t)start > slen) start = (long long)slen;
+    size_t avail = slen - (size_t)start;
+    if (len < 0) len = 0;
+    if ((size_t)len > avail) len = (long long)avail;
+    char* buf = (char*)(size_t)zyl_heap_alloc(len + 1);
+    memcpy(buf, s + start, (size_t)len);
+    buf[len] = '\0';
+    return (long long)(size_t)buf;
+}
+
 /* Non-zero if the two NUL-terminated strings are byte-identical. */
 long long zyl_cstr_eq(long long p1, long long p2) {
     if (p1 == p2) return 1;
@@ -656,6 +687,8 @@ void zyl_actor_wait(long long actor_id) {
 
 /* === Test Harness === */
 
+#include <setjmp.h>
+
 #define ZYL_MAX_TESTS 256
 #define ZYL_TEST_NAME_LEN 128
 
@@ -667,6 +700,10 @@ typedef struct {
 static ZylTestEntry g_tests[ZYL_MAX_TESTS];
 static int g_test_count = 0;
 
+/* Recovery point for panics raised inside a running test. */
+static jmp_buf g_test_jmp;
+static int g_in_test = 0;
+
 void zyl_register_test(const char* name, int (*fn)(void)) {
     if (g_test_count < ZYL_MAX_TESTS) {
         strncpy(g_tests[g_test_count].name, name, ZYL_TEST_NAME_LEN - 1);
@@ -677,6 +714,12 @@ void zyl_register_test(const char* name, int (*fn)(void)) {
 }
 
 void zyl_panic(const char* msg) {
+    if (g_in_test) {
+        /* Panic inside a test: unwind to the runner and mark it failed
+         * instead of killing the whole process. */
+        g_in_test = 0;
+        longjmp(g_test_jmp, 1);
+    }
     fprintf(stderr, "PANIC: %s\n", msg ? msg : "assertion failed");
     exit(1);
 }
@@ -691,12 +734,21 @@ int zyl_run_tests(void) {
 
         /* Print test name (as C string via print-int trick — use file-write) */
         printf("test: %s ... ", name);
+        fflush(stdout);
 
-        int result = fn();
-        if (result == 0) {
-            printf("ok\n");
-            passed++;
+        if (setjmp(g_test_jmp) == 0) {
+            g_in_test = 1;
+            int result = fn();
+            g_in_test = 0;
+            if (result == 0) {
+                printf("ok\n");
+                passed++;
+            } else {
+                printf("FAIL\n");
+                failed++;
+            }
         } else {
+            /* Landed here via zyl_panic longjmp. */
             printf("FAIL\n");
             failed++;
         }
