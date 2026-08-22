@@ -129,6 +129,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 6: Monomorphization (runs before full type inference for AST preservation).
     println!("[Phase 6] Monomorphization ...");
     let mut mono_ctx = monomorphization::MonoContext::new(&inferer);
+    if std::env::var("ZYL_DBG_RET").is_ok() {
+        for (k, v) in inferer.get_resolved_function_returns().iter() {
+            if k.contains("StringBuffer") || k.contains("Stdout") {
+                eprintln!("RET {} => {:?}", k, v);
+            }
+        }
+    }
+    if std::env::var("ZYL_DBG_RET").is_ok() {
+        eprintln!("mono known: {:?}", mono_ctx.debug_has_struct("StringBuffer"));
+    }
+
     mono_ctx.discover_from_ast(&regioned_exprs);
 
     let regioned_for_mono = match mono_ctx.process(&regioned_exprs) {

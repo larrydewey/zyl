@@ -1,4 +1,10 @@
 ; Types Regression Tests — HM inference, traits, generics, TCap/TMut
+(use core/core)
+(use core/option)
+(use core/result)
+(use core/list)
+(use collections/collections)
+(use atomic/atomic)
 
 ; Basic type inference
 (test "type-inference-int"

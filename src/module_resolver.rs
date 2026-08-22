@@ -18,6 +18,9 @@ pub struct ModuleResolver {
     search_paths: Vec<PathBuf>,
     /// Track resolved modules to avoid re-processing.
     resolved: IndexMap<String, bool>,
+    /// ADT info collected from all resolved modules (ADT name → variant names).
+    /// Used to seed the PostProcessor so variant constructors get correct adt_name.
+    adt_info: IndexMap<String, Vec<String>>,
 }
 
 impl ModuleResolver {
@@ -25,6 +28,7 @@ impl ModuleResolver {
         Self {
             search_paths: vec![PathBuf::from("stdlib/")],
             resolved: IndexMap::new(),
+            adt_info: IndexMap::new(),
         }
     }
 
@@ -87,6 +91,20 @@ impl ModuleResolver {
             }
         }
 
+        // Auto-link core modules.
+        let core_loaded = use_stmts.iter().any(|(name, _, _)| name == "core/core" || name == "core/option" || name == "core/result");
+        let mut core_dep_exprs: Vec<Expr> = Vec::new();
+        if !core_loaded {
+            if let Ok(core_path) = self.find_dependency("core/core", main_file) {
+                if let Ok(core_source) = fs::read_to_string(&core_path) {
+                    let mut dep_stack = vec![_module_name.into(), "core/core".into()];
+                    if let Ok(resolved) = self.resolve_module_from_source(&core_source, "core/core", &core_path, &mut dep_stack) {
+                        core_dep_exprs = resolved;
+                    }
+                }
+            }
+        }
+
         // Resolve all use dependencies.
         let mut dep_exprs = Vec::new();
         for use_stmt in &use_stmts {
@@ -121,8 +139,30 @@ impl ModuleResolver {
             dep_exprs.extend(filtered);
         }
 
-        // Combine dependency exprs + root body exprs.
-        let mut result = dep_exprs;
+        // Combine core deps + explicit deps + root body exprs.
+        // Auto-linked core definitions that the root program re-defines are
+        // dropped — user definitions shadow stdlib defaults (otherwise the
+        // same function would be emitted twice and fail linking).
+        let root_defined: std::collections::HashSet<String> = body_exprs
+            .iter()
+            .filter_map(|e| match &e.inner {
+                ExprInner::Defn(name, _, _) | ExprInner::Def(name, _) => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut result: Vec<Expr> = core_dep_exprs
+            .into_iter()
+            .filter(|e| match &e.inner {
+                ExprInner::Defn(name, _, _) | ExprInner::Def(name, _) => {
+                    !root_defined.contains(name)
+                }
+                _ => true,
+            })
+            .collect();
+        result.extend(dep_exprs.into_iter().filter(|e| match &e.inner {
+            ExprInner::Defn(name, _, _) | ExprInner::Def(name, _) => !root_defined.contains(name),
+            _ => true,
+        }));
         result.extend(body_exprs);
         Ok(result)
     }
@@ -147,8 +187,10 @@ impl ModuleResolver {
             return Err(ZylModuleError::Circular(cycle.join(" -> ")));
         }
 
-        // Parse source to extract use statements, exports, and body expressions.
-        let (use_stmts, _export_stmts, body_exprs) = self.parse_module_contents(source)?;
+        // Parse source to extract use statements (without post-processing body yet).
+        // We defer post-processing until after dependencies are resolved so that
+        // the PostProcessor has access to all ADT definitions from imported modules.
+        let (use_stmts, _export_stmts) = self.extract_use_stmts(source)?;
 
         // Resolve all use dependencies first.
         let mut dep_exprs = Vec::new();
@@ -189,6 +231,32 @@ impl ModuleResolver {
             dep_exprs.extend(filtered);
         }
 
+        // Collect ADT info from resolved dependencies so the PostProcessor
+        // can correctly resolve variant constructors (Some, None, Ok, Err)
+        // in this module's body expressions.
+        let mut dep_adts = IndexMap::new();
+        for dep_expr in &dep_exprs {
+            if let ExprInner::Deftype(name, variants, _, _) = &dep_expr.inner {
+                let vn: Vec<String> = variants.iter().map(|v| v.name.clone()).collect();
+                dep_adts.insert(name.clone(), vn);
+            }
+        }
+        // Also merge ADT info from previously resolved modules.
+        for (name, variants) in &self.adt_info {
+            dep_adts.entry(name.clone()).or_insert_with(|| variants.clone());
+        }
+
+        // Post-process the source body with seeded ADT info.
+        let body_exprs = self.post_process_body(source, &dep_adts)?;
+
+        // Update the resolver's ADT info with this module's ADTs.
+        for expr in &body_exprs {
+            if let ExprInner::Deftype(name, variants, _, _) = &expr.inner {
+                let vn: Vec<String> = variants.iter().map(|v| v.name.clone()).collect();
+                self.adt_info.insert(name.clone(), vn);
+            }
+        }
+
         self.resolved.insert(module_name.into(), true);
 
         let mut result = dep_exprs;
@@ -196,10 +264,10 @@ impl ModuleResolver {
         Ok(result)
     }
 
-    /// Parse source to extract use statements, exports, and body expressions.
-    /// Applies PostProcessor to convert raw Call/Apply into specialized ExprInner variants.
-    fn parse_module_contents(&self, source: &str) -> Result<(Vec<(String, Option<Vec<String>>, bool)>, Vec<String>, Vec<Expr>), ZylModuleError> {
-        use crate::ast::PostProcessor;
+    /// Parse source and extract use statements (without post-processing body).
+    /// Use statements are extracted from raw parsed expressions before
+    /// dependency resolution, so post-processing isn't needed for this step.
+    fn extract_use_stmts(&self, source: &str) -> Result<(Vec<(String, Option<Vec<String>>, bool)>, Vec<String>), ZylModuleError> {
         use crate::lexer;
         use crate::parser;
 
@@ -208,26 +276,16 @@ impl ModuleResolver {
         p.no_dispatch = true;
         let exprs = p.parse_exprs(|k| matches!(k, lexer::TokenKind::EOF))?;
 
-        // Apply PostProcessor — this converts raw Call/Apply into Defn, Def, etc.
-        let mut processor = PostProcessor::new();
-        let exprs = processor.process(exprs);
-
         let mut use_stmts: Vec<(String, Option<Vec<String>>, bool)> = Vec::new();
         let mut export_stmts: Vec<String> = Vec::new();
-        let mut other_exprs: Vec<Expr> = Vec::new();
 
         for expr in &exprs {
             match &expr.inner {
-                ExprInner::ModuleDecl(_) => {
-                    // Skip module declaration — already known from context.
-                }
+                ExprInner::ModuleDecl(_) => {}
                 ExprInner::UseModule(parts, syms, unsafe_) => {
-                    let name = parts.join("/");
-                    use_stmts.push((name, syms.clone(), *unsafe_));
+                    use_stmts.push((parts.join("/"), syms.clone(), *unsafe_));
                 }
                 ExprInner::Call(op, args) if Self::is_ident_op(op, "use") => {
-                    // PostProcessor leaves use statements as raw calls, so handle
-                    // them here the same way the top-level resolver does.
                     if !args.is_empty() {
                         let module_name = match &args[0].inner {
                             ExprInner::Atom(Atom::Ident(m)) => m.clone(),
@@ -253,13 +311,44 @@ impl ModuleResolver {
                 ExprInner::Export(ident) => {
                     export_stmts.push(ident.clone());
                 }
+                _ => {}
+            }
+        }
+
+        Ok((use_stmts, export_stmts))
+    }
+
+    /// Post-process the source body with seeded ADT info from resolved dependencies.
+    fn post_process_body(
+        &self,
+        source: &str,
+        precollected_adts: &IndexMap<String, Vec<String>>,
+    ) -> Result<Vec<Expr>, ZylModuleError> {
+        use crate::ast::PostProcessor;
+        use crate::lexer;
+        use crate::parser;
+
+        let tokens = lexer::tokenize(source)?;
+        let mut p = parser::Parser::new(tokens);
+        p.no_dispatch = true;
+        let exprs = p.parse_exprs(|k| matches!(k, lexer::TokenKind::EOF))?;
+
+        let mut processor = PostProcessor::new();
+        processor.seed_adt_variants(precollected_adts);
+        let exprs = processor.process(exprs);
+
+        let mut body_exprs: Vec<Expr> = Vec::new();
+        for expr in &exprs {
+            match &expr.inner {
+                ExprInner::ModuleDecl(_) | ExprInner::UseModule(_, _, _) | ExprInner::Export(_) => {}
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "use") => {}
                 _ => {
-                    other_exprs.push(expr.clone());
+                    body_exprs.push(expr.clone());
                 }
             }
         }
 
-        Ok((use_stmts, export_stmts, other_exprs))
+        Ok(body_exprs)
     }
 
     /// Find a dependency file path given a dotted module name.

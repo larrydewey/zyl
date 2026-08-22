@@ -254,6 +254,8 @@ pub enum ICNFInner {
     Closure {
         name: String,
         captures: Vec<CaptureField>,
+        #[serde(default)]
+        params: Vec<String>,
     },
     /// Tagged union variant construction: (type_name, variant_name, discriminant, field_ids...).
     MakeVariant {
@@ -749,12 +751,13 @@ impl IcnfConverter {
                     self.push_to_globals = true;
                     // Save the ID counter before body conversion so we can collect nodes added
                     // by body conversion (via convert_expr_collect pushing to global_stmts).
-                    let id_before = self.ssa_id_counter.get();
-                    let _body_stmts = self.convert_expr_to_stmts(body)?;
+                    let len_before = self.global_stmts.len();
+                    let body_stmts = self.convert_expr_to_stmts(body)?;
+                    self.collect_body_into_globals(&body_stmts);
                     // Collect all nodes added by body conversion (pushed to global_stmts).
                     let mut func_body: Vec<ICNFNode> = self.global_stmts
                         .iter()
-                        .skip(id_before)
+                        .skip(len_before)
                         .map(|n| n.clone())
                         .collect();
                     // Test functions always return 0 (assertion failures panic via zyl_panic).
@@ -965,16 +968,16 @@ impl IcnfConverter {
                     let captures = captures_vec;
 
                     let ssa_id = self.next_ssa_id();
-                    let closure_name = if name.is_empty() {
-                        if let Some(ref orig_name) = self.let_binding_name {
-                            orig_name.clone()
-                        } else {
-                            format!("fn_{}", ssa_id)
-                        }
+                let closure_name = if name.is_empty() {
+                    if let Some(ref orig_name) = self.let_binding_name {
+                        format!("{}_{:04x}", sanitize_name(orig_name), ssa_id)
                     } else {
-                        format!("fn_{}", sanitize_name(name))
-                    };
-                    self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
+                        format!("fn_{:04x}", ssa_id)
+                    }
+                } else {
+                    format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
+                };
+                self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
@@ -983,6 +986,7 @@ impl IcnfConverter {
                         node: ICNFInner::Closure {
                             name: closure_name,
                             captures,
+                                params: params.iter().map(|p| p.name.clone()).collect(),
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
@@ -1023,12 +1027,12 @@ impl IcnfConverter {
                     let ssa_id = self.next_ssa_id();
                     let closure_name = if name.is_empty() {
                         if let Some(ref orig_name) = self.let_binding_name {
-                            orig_name.clone()
+                            format!("{}_{:04x}", sanitize_name(orig_name), ssa_id)
                         } else {
-                            format!("fn_{}", ssa_id)
+                            format!("fn_{:04x}", ssa_id)
                         }
                     } else {
-                        format!("fn_{}", sanitize_name(name))
+                        format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                     self.global_stmts.push(ICNFNode {
@@ -1039,6 +1043,7 @@ impl IcnfConverter {
                         node: ICNFInner::Closure {
                             name: closure_name,
                             captures: captures.clone(),
+                                params: params.iter().map(|p| p.name.clone()).collect(),
                         },
                     });
                     let saved_scope = std::mem::take(&mut self.current_scope);
@@ -1337,8 +1342,14 @@ impl IcnfConverter {
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "not")
                     && !args.is_empty() =>
             {
-                let arg_id = self.convert_expr(&args[0])?;
-                Ok(vec![self.emit(ICNFInner::UnOp(UnOpKind::Not, arg_id))])
+                // Collect the operand's nodes so they stay embedded in branch
+                // bodies (convert_expr alone would drop them when
+                // push_to_globals=false, leaving the UnOp with an orphan
+                // operand id codegen cannot resolve).
+                let mut stmts = self.convert_expr_collect(&args[0])?;
+                let arg_id = stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                stmts.push(self.emit(ICNFInner::UnOp(UnOpKind::Not, arg_id)));
+                Ok(stmts)
             }
 
             // If-then-else.
@@ -1717,6 +1728,7 @@ impl IcnfConverter {
                     node: ICNFInner::Closure {
                         name: closure_name,
                         captures,
+                            params: params.iter().map(|p| p.name.clone()).collect(),
                     },
                 }])
             }
@@ -1754,12 +1766,12 @@ impl IcnfConverter {
                     }
                     let closure_name = if name.is_empty() {
                         if let Some(ref orig_name) = self.let_binding_name {
-                            orig_name.clone()
+                            format!("{}_{:04x}", sanitize_name(orig_name), ssa_id)
                         } else {
-                            format!("fn_{}", ssa_id)
+                            format!("fn_{:04x}", ssa_id)
                         }
                     } else {
-                        format!("fn_{}", sanitize_name(name))
+                        format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
                     self.current_scope = saved_scope;
@@ -1771,6 +1783,7 @@ impl IcnfConverter {
                         node: ICNFInner::Closure {
                             name: closure_name,
                             captures: Vec::new(),
+                                params: params.iter().map(|p| p.name.clone()).collect(),
                         },
                     }]);
                 }
@@ -1829,6 +1842,7 @@ impl IcnfConverter {
                     node: ICNFInner::Closure {
                         name: closure_name,
                         captures,
+                            params: params.iter().map(|p| p.name.clone()).collect(),
                     },
                 }])
             }
@@ -1878,9 +1892,9 @@ impl IcnfConverter {
                         self.closure_bodies.insert(ssa_id, closure_body);
                     }
                     let closure_name = if let Some(ref orig_name) = self.let_binding_name {
-                        orig_name.clone()
+                        format!("{}_{:04x}", sanitize_name(orig_name), ssa_id)
                     } else {
-                        format!("fn_{}", ssa_id)
+                        format!("fn_{:04x}", ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
                     self.current_scope = saved_scope;
@@ -1892,6 +1906,7 @@ impl IcnfConverter {
                         node: ICNFInner::Closure {
                             name: closure_name,
                             captures: Vec::new(),
+                                params: params.iter().map(|p| p.name.clone()).collect(),
                         },
                     };
                     if !self.global_stmts.iter().any(|n| n.id == ssa_id) {
@@ -1935,9 +1950,9 @@ impl IcnfConverter {
                     self.closure_bodies.insert(ssa_id, closure_body);
                 }
                 let closure_name = if let Some(ref orig_name) = self.let_binding_name {
-                    orig_name.clone()
+                    format!("{}_{:04x}", sanitize_name(orig_name), ssa_id)
                 } else {
-                    format!("fn_{}", ssa_id)
+                    format!("fn_{:04x}", ssa_id)
                 };
                 self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
                 self.current_scope = saved_scope;
@@ -1949,6 +1964,7 @@ impl IcnfConverter {
                     node: ICNFInner::Closure {
                         name: closure_name,
                         captures,
+                            params: params.iter().map(|p| p.name.clone()).collect(),
                     },
                 };
                 if !self.global_stmts.iter().any(|n| n.id == ssa_id) {
@@ -2288,9 +2304,12 @@ impl IcnfConverter {
 
                 let scrut_id = self.convert_expr(scrutinee)?;
 
-                // Convert each arm body and collect statements.
-                let mut all_stmts: Vec<ICNFNode> = Vec::new();
-                // Collect discriminant->arm mapping for reordering.
+                // Convert each arm body; statements are EMBEDDED in the Match
+                // node's arms (mirroring If's then_body/else_body), NOT flattened
+                // into the returned statement list. Consumers rely on
+                // "last returned node = resulting value" — flattening would make
+                // them bind to the last arm's final statement instead of the
+                // match result (phi slot).
                 let mut arm_with_disc: Vec<(usize, MatchArmICNF)> = Vec::new();
 
                 for arm in arms {
@@ -2314,11 +2333,10 @@ impl IcnfConverter {
                     let body_stmts = self.convert_expr_to_stmts(&arm.body)?;
                     self.current_scope = saved_scope;
 
-                    // Add arm body statements to all_stmts (they'll be embedded).
-                    for s in &body_stmts {
-                        if !all_stmts.iter().any(|n| n.id == s.id) {
-                            all_stmts.push(s.clone());
-                        }
+                    // Arm bodies are branch bodies for codegen dedup purposes.
+                    let mut body_stmts = body_stmts;
+                    for s in &mut body_stmts {
+                        s.is_branch_body = true;
                     }
 
                     // Look up discriminant for this arm's variant from adt_defs.
@@ -2341,20 +2359,18 @@ impl IcnfConverter {
                 let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
 
                 let ssa_id = self.next_ssa_id();
-                all_stmts.insert(0, ICNFNode {
+                Ok(vec![ICNFNode {
                     id: ssa_id,
                     region: Region::Heap,
                     typ: None,
                     is_branch_body: false,
                     node: ICNFInner::Match {
                         scrutinee_ssa: scrut_id,
-                        type_name: type_name.clone(),
+                        type_name,
                         arms: icnf_arms,
                         result_var,
                     },
-                });
-
-                Ok(all_stmts)
+                }])
             }
 
             // FFI call.
@@ -2778,7 +2794,8 @@ impl IcnfConverter {
                 let saved_globals = std::mem::take(&mut self.global_stmts);
                 let saved_push = self.push_to_globals;
                 self.push_to_globals = true;
-                let _body_stmts = self.convert_expr_to_stmts(body)?;
+                let body_stmts = self.convert_expr_to_stmts(body)?;
+                self.collect_body_into_globals(&body_stmts);
                 // Append: return 0.
                 let zero_id = self.next_ssa_id();
                 self.global_stmts.push(ICNFNode {

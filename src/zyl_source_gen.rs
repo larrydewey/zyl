@@ -148,7 +148,7 @@ impl ZylSourceGen {
                     let body_expr = self.embed_stmts(body);
                     buf.push(format!("(let {} (for ({}) {} {}))", result_var, init_str, cond_expr, body_expr));
                 }
-                ICNFInner::Closure { name, captures } => {
+                ICNFInner::Closure { name, captures, .. } => {
                     if captures.is_empty() {
                         buf.push(format!("(let {} (fn {} ()))", name, name));
                     } else {

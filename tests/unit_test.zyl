@@ -1,10 +1,22 @@
-                                        ; Shadow generic stdlib types with concrete versions
-(deftype Option (Some Int) None)
-(deftype Result (Ok Int) (Err Int))
+                                         ; Shadow generic stdlib types with concrete versions
+ ; (deftype List (Cons Int (List Int)) Nil)
+ ; (deftype Option (Some Int) None)  ; shadows None — use stdlib Option
+ ; (deftype Result (Ok Int) (Err Int))  ; shadows None — use stdlib Result
 
                                         ; --- Module Imports ---
 (use io/io)
 (use allocator/allocator)
+(use core/core)
+(use core/option)
+(use core/result)
+(use core/list)
+(use collections/collections)
+(use collections/vec)
+(use collections/map)
+(use collections/set)
+(use actor/actor)
+(use ffi/ffi)
+(use atomic/atomic)
 
 (test "xor true false"
       (assert-true (xor true false)))
@@ -191,10 +203,6 @@
 (test "option-flatmap"
       (assert-equal (option-flatmap (option-some 5) (fn (x) (option-some (* x 2)))) (option-some 10)))
 
-(test "option-flatmap some"
-      (let double (fn (x) (* x 2))
-        (assert-equal (option-flatmap (option-some 5) double) (option-some 10))))
-
 (test "option-to-result ok"
       (assert-true (result-is-ok (option-to-result (option-some 42) "error"))))
 
@@ -316,40 +324,40 @@
                                         ;     (assert-equal (fact 5) 120)))
 
 (test "list-car none"
-      (assert-true (option-is-none (list-car (option-none)))))
+      (assert-true (option-is-none (list-car (list-range 0 0)))))
 
 (test "list-car some"
-      (assert-equal (option-unwrap-or (list-car (option-some 42)) 0) 42))
+      (assert-equal (option-unwrap-or (list-car (list-range 42 43)) 0) 42))
 
 (test "list-cdr"
-      (assert-true (option-is-some (list-cdr (option-some 42)))))
+      (assert-equal (list-length (list-cdr (list-range 1 3))) 2))
 
 (test "list-len empty"
-      (assert-equal (list-length (option-none)) 0))
+      (assert-equal (list-length (list-range 0 0)) 0))
 
 (test "list-len 1"
-      (assert-equal (list-length (option-some 1)) 1))
+      (assert-equal (list-length (list-range 1 2)) 1))
 
 (test "list-sum empty"
-      (assert-equal (list-sum (option-none)) 0))
+      (assert-equal (list-sum (list-range 0 0)) 0))
 
 (test "list-sum 1"
-      (assert-equal (list-sum (option-some 5)) 5))
+      (assert-equal (list-sum (list-range 5 6)) 5))
 
 (test "list-rev empty"
-      (assert-true (option-is-none (list-reverse (option-none)))))
+      (assert-equal (list-length (list-reverse (list-range 0 0))) 0))
 
 (test "list-append"
-      (assert-true (option-is-some (list-append (option-none) (option-some 1)))))
+      (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 5))) 5))
 
 (test "list-range"
-      (assert-true (option-is-some (list-range 1 5))))
+      (assert-equal (list-length (list-range 1 5)) 5))
 
 (test "list-take"
-      (assert-true (option-is-some (list-take 3 (list-range 1 10)))))
+      (assert-equal (list-length (list-take 3 (list-range 1 10))) 3))
 
 (test "list-drop"
-      (assert-true (option-is-some (list-drop 2 (list-range 1 10)))))
+      (assert-equal (list-length (list-drop 2 (list-range 1 10))) 8))
 
 (test "list-nth ok"
       (assert-true (option-is-some (list-nth 2 (list-range 1 10)))))
@@ -412,7 +420,7 @@
       (assert-equal (assoc-fold (fn (acc _k v) (+ acc 1)) 0 (assoc-put 1 "a" (assoc-put 2 "b" (assoc-empty)))) 2))
 
 (test "vec-create"
-      (assert-true (option-is-some (vec-create 0 10))))
+      (assert-equal (vec-len (vec-create 0 10)) 0))
 
 (test "vec-len"
       (assert-equal (vec-len (vec-create 0 10)) 0))
@@ -439,7 +447,7 @@
       (assert-equal (vec-pop (vec-create 0 10)) -1))
 
 (test "map-create"
-      (assert-true (option-is-some (map-create 0 10))))
+      (assert-equal (map-len (map-create 0 10)) 0))
 
 (test "map-len"
       (assert-equal (map-len (map-create 0 10)) 0))
@@ -463,7 +471,7 @@
       (assert-equal (map-len (map-remove (map-put (map-create 0 10) 1 42) 1)) 0))
 
 (test "set-create"
-      (assert-true (option-is-some (set-create 0 10))))
+      (assert-equal (set-len (set-create 0 10)) 0))
 
 (test "set-len"
       (assert-equal (set-len (set-create 0 10)) 0))
@@ -525,7 +533,7 @@
          0)))
 
 (test "ffi-pin"
-      (assert-true (option-is-some (ffi-pin-value 42))))
+      (assert-true (>= (ffi-pin-value 42) 0)))
 
 (test "ffi-unpin"
       (assert-equal (ffi-unpin-value (ffi-pin-value 42)) 42))

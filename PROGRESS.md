@@ -114,11 +114,39 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] Empty `(begin)` link failure: `(begin)` with no args was intercepted by the bare-identifier arm in `icnf.rs` and lowered to `Call("begin", [])` → `call _ZYL_begin` (undefined). Added a dedicated empty-`begin` arm before it emitting `ICNFInner::Unit`. `core.zyl`'s `when`/`unless` (which expand to `(begin ...)`) now link cleanly.
 - [x] Nested `defn` (closures inside functions) silently discarded: `convert_expr_to_stmts` in `icnf.rs` had no `ExprInner::Defn` handler, so nested `defn` forms inside function bodies (e.g., `add`/`double` in `test_all()`) fell through the catch-all arm and emitted a no-op `Begin`. Fixed by adding a `Defn` handler to `convert_expr_to_stmts` that creates `ICNFFuncSig` entries pushed to `self.functions` (same logic as top-level). `test_recursion_v2.zyl` now links with 56 functions (incl. `add`/`double`) and runs clean exit 0.
 
-### Recent Fixes (Error Reporting & Spec Compliance)
+### Recent Fixes (Correctness Sweep — codegen/ICNF/runtime)
 
-- [x] **E_CANNOT_INFER for bounded generics** (monomorphization.rs): bounded generic params with no satisfying types and no call-site evidence now emit `E_CANNOT_INFER` per spec §6.4 instead of silently vanishing. Previously `find_satisfying_types()` returning empty caused the monomorphized function to silently produce no output.
-- [x] **E_TYPE_MISMATCH span** (type_inference.rs): calling a non-function variable now reports the exact span of the call expression (e.g., `type: type mismatch at 1:10-1:11 — expected function type, found Int`) instead of `0:0-0:0`.
-- [x] **E_ARITY_MISMATCH span** (error.rs + type_inference.rs): arity mismatch errors now include the call expression span in the error message (e.g., `type: function arity mismatch for 'foo' at 2:5-2:15 — expected 3 arguments, found 2`).
+- [x] **System V stack args for >6-param calls (codegen.rs)**: `emit_call_direct` now spills every argument into an 8-byte scratch slot, loads register args into ABI regs, pushes args ≥6 in reverse order, pads to keep rsp 16-byte aligned at the call, and cleans up after. Function/closure prologues read stack args from `[rbp+16+8*(i-6)]`; `local_vars`/`next_slot` cover all param indices. Verified `sum8(1..8)=36`.
+- [x] **64-bit param stores**: function prologues stored Int/Bool params 32-bit (`edi`) into 8-byte slots, leaving stale upper-half garbage that 64-bit slot reads picked up (root cause of `factorial-5/6` miscomputations). All params now stored full 64-bit.
+- [x] **Negative Int constants sign-extended** (`emit_const_into`): `mov eax, imm32` zero-fills, so `-5` became `0x00000000FFFFFFFB` and broke 64-bit consumers (e.g. `abs -5` via stack-passed arg).
+- [x] **idiv for Rem + divisor clobber fix**: `%` never emitted `idiv` (returned garbage), and the divisor lived in `rdx` which `cqo` overwrites → SIGFPE. Div/Rem now move the divisor to rbx before cqo/idiv.
+- [x] **Top-level UnOp arm**: loaded its operand via hash-slot fallback (garbage for non-Const operands like If results) and didn't leave the result in rax. Now emits operand on demand into rax; result doubles as function return value.
+- [x] **Branch-final value emission**: If then/else bodies skipped their final node as an "operand", storing stale rax into the phi slot. Branch loops now emit the final value-kind node fresh via `emit_load_into(.., "rax", ..)`. Fixes `(if true (not true) false)` class of bugs.
+- [x] **`not` in branch bodies dropped its operand node (icnf.rs)**: the UnOp handler used `convert_expr`, which discards non-last nodes under `push_to_globals=false`, leaving orphan operand ids. Now collects operand stmts.
+- [x] **Pure-value re-emission**: BinOp/UnOp/Eq arms of `emit_load_into` no longer trust a previously-emitted node's stale `eax` (intervening loads clobber it); they re-emit fresh.
+- [x] **FileWrite return value + double emission**: FileWrite nodes now mark themselves emitted; `emit_load_into` emits them on demand so `print (file-write ...)` returns the syscall's byte count instead of garbage. Also handles StructGet handles freshly (stale-eax hazard).
+- [x] **String equality in asserts**: Eq with string-typed operands compares content via `zyl_cstr_eq`; float comparisons detected from operand shapes (ICNF Eq/BinOp nodes often carry no type) and use UCOMISD.
+- [x] **Closure param metadata**: `ICNFInner::Closure` records param names; codegen uses them instead of guessing from leading Load nodes (which missed called-but-not-loaded params, shifting all subsequent args).
+- [x] **Indirect-call arg restore order**: pops now run in reverse so arg 0 lands in rdi (previously args were reversed for multi-param fn-valued calls, e.g. `(sub 10 3)` → -7).
+- [x] **Closure values as call arguments**: Closure nodes mark themselves emitted; `emit_load_into` gained a Closure arm (`lea target, [_ZYL_name]`). Fixes segfault on inline closures passed to HOFs (`option-flatmap`).
+- [x] **Module shadowing (module_resolver.rs)**: auto-linked/explicit module defs that the root program re-defines are dropped (duplicate `_ZYL_nand` link errors).
+- [x] **Constructor type fallback (monomorphization.rs)**: unresolved returns for `make-x-y` constructors resolve to the declared struct/ADT (case/hyphen-insensitive), enabling trait dispatch on their results (`make-string-buffer` → StringBuffer). Also substituted inside Print args so trait dispatch applies there.
+- [x] **Runtime**: test-harness panic recovery (setjmp/longjmp) so one failing test doesn't kill the binary; `zyl_cstr_concat`/`zyl_cstr_substr` builtins.
+
+### Known Remaining Failures (pre-existing, documented)
+
+- `tests/unit_test.zyl`: ~17 tests fail — cluster around let-mut inside test bodies (works in `main`), closures/HOFs passed across module boundaries (option/result map/flatmap variants), list-range-based stdlib tests. Binary runs to completion except a late segfault.
+- `tests/regression/arithmetic.zyl`: mixed-arithmetic (Let used directly as an Eq operand has no `emit_load_into` arm) and single-arm-cond (string compare through cond).
+- `tests/regression/{closures,collections,compiler}.zyl`: compile errors (occurs-check remnant, `_ZYL_inner` undefined closure ref).
+- `tests/regression/concurrency.zyl`: pre-existing region escape error.
+
+---
+
+### Recent Fixes (Error Reporting & Spec Compliance) — earlier
+
+- [x] **E_CANNOT_INFER for bounded generics** (monomorphization.rs): bounded generic params with no satisfying types and no call-site evidence now emit `E_CANNOT_INFER` per spec §6.4 instead of silently vanishing.
+- [x] **E_TYPE_MISMATCH span** (type_inference.rs): calling a non-function variable now reports the exact span of the call expression instead of `0:0-0:0`.
+- [x] **E_ARITY_MISMATCH span** (error.rs + type_inference.rs): arity mismatch errors now include the call expression span in the error message.
 - [x] **E_UNBOUND_VARIABLE span** (icnf.rs): for-loop variable reference errors now use the condition expression's span instead of default.
 
 ---
@@ -127,7 +155,7 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Recursive deftype (CRITICAL — blocks self-hosting)
 
-**Problem:** Zyl's `deftype` cannot express recursive types (`deftype Tree (Leaf Int) (Node Tree Tree)`). This is the single largest blocker for self-hosting — the compiler's AST is inherently recursive.
+Recursive ADTs with implicit boxing are implemented and verified (see step list below); remaining item is exposing them for the self-hosted compiler.
 
 **Decision:** Recursive ADTs with implicit boxing. Syntax: implicit forward refs (`(deftype Tree (Leaf Int) (Node Tree Tree))` — `Tree` self-references automatically). Recursive fields are always pointers (8 bytes) in memory. Non-recursive ADTs unaffected.
 
