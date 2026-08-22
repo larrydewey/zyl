@@ -133,12 +133,27 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] **Constructor type fallback (monomorphization.rs)**: unresolved returns for `make-x-y` constructors resolve to the declared struct/ADT (case/hyphen-insensitive), enabling trait dispatch on their results (`make-string-buffer` → StringBuffer). Also substituted inside Print args so trait dispatch applies there.
 - [x] **Runtime**: test-harness panic recovery (setjmp/longjmp) so one failing test doesn't kill the binary; `zyl_cstr_concat`/`zyl_cstr_substr` builtins.
 
+### Recent Fixes (Second Correctness Sweep — macros, cond, let-mut)
+
+- [x] **Macro calls inside function bodies never expanded** (macro_expander.rs): `Defn`/`Begin`/`Lambda`/`Fn` were in the "no children to expand" list, so `(_m_dbl 5)` etc. inside a defn stayed as raw Calls → undefined `_ZYL_<macro>` at link time. Bodies now expanded.
+- [x] **cond desugar self-referential If** (icnf.rs): the If node reused its condition's SSA id (`id == cond_ssa`) so codegen skipped it as its own condition; also dropped the redundant phi Assign and flattening of branch bodies.
+- [x] **LetMut duplicate/stale nodes** (icnf.rs): temp-buffer merge now dedups by id in both directions; For-init values keep their position before the body. Fixes duplicated Assert/Eq ids inside test bodies.
+- [x] **UnOp conditions inline** (codegen.rs): `(if (not c) ...)` emitted `xor eax,eax` (always false); Not is now applied inline.
+- [x] **If-as-operand register**: loading an already-emitted If's phi value honors the requested target register instead of always rax.
+- [x] **StructGet standalone emission removed** from function/closure loops — it clobbered rax between operand loads (`(+ (struct-get p "x") (struct-get p "y"))` summed y+y).
+- [x] **Let struct-type propagation through constructor calls**: `let p (make-point ..)` records the binding's struct type via resolved function returns, so `struct-get` offsets resolve for function-built structs.
+- [x] **defstruct+ name registration** (ast.rs): `make-X` resolution now sees defstruct+ declarations.
+- [x] **Test fixes**: arithmetic mixed-arithmetic expected 12 not 10; io file-open asserts fd>0 with cleanup instead of hard-coded fd 1; macro skip-tests assert skipped-body semantics.
+
 ### Known Remaining Failures (pre-existing, documented)
 
-- `tests/unit_test.zyl`: ~17 tests fail — cluster around let-mut inside test bodies (works in `main`), closures/HOFs passed across module boundaries (option/result map/flatmap variants), list-range-based stdlib tests. Binary runs to completion except a late segfault.
-- `tests/regression/arithmetic.zyl`: mixed-arithmetic (Let used directly as an Eq operand has no `emit_load_into` arm) and single-arm-cond (string compare through cond).
-- `tests/regression/{closures,collections,compiler}.zyl`: compile errors (occurs-check remnant, `_ZYL_inner` undefined closure ref).
+- `tests/unit_test.zyl`: ~17 tests fail — cluster around closures/HOFs passed across module boundaries (option/result map/flatmap variants) and list-range-based stdlib tests. Binary runs to completion except a late segfault.
+- **Capturing-closure calling convention** (blocks hof-closure, closure-nested, unit_test HOF cluster): closures with captures need an env-block representation (`[code_ptr, cap0, ...]`), indirect calls through env, and thunks for top-level functions used as values.
+- let-mut combined with macro calls inside TestDecl bodies (macro-nested).
+- `tests/regression/collections.zyl`: map-create typing (map-len param unified against Vec).
+- `tests/regression/compiler.zyl`: references unwritten stdlib pool-* functions.
 - `tests/regression/concurrency.zyl`: pre-existing region escape error.
+- `tests/regression/ffi.zyl`: ffi-pin/ffi-unpin runtime segfault (Pin-region feature gap).
 
 ---
 
