@@ -70,7 +70,7 @@ impl TypeInferer {
         // Register ADT definitions, function signatures, etc. from the AST.
         self.collect_definitions(exprs);
         let mut result = Vec::with_capacity(exprs.len());
-        for expr in exprs {
+        for expr in exprs.iter() {
             // Skip definition-only expressions
             if matches!(&expr.inner, ExprInner::Deftype(_, _, _, _) | ExprInner::StructDef(_) | ExprInner::StructDefPlus(_)) {
                 result.push(Expr {
@@ -387,7 +387,7 @@ impl TypeInferer {
                         .iter()
                         .map(|v| (v.name.clone(), v.fields.clone()))
                         .collect();
-                    self.adt_defs.insert(name.clone(), variant_info);
+                    self.adt_defs.insert(name.clone(), variant_info.clone());
                     let has_generic = variants
                         .iter()
                         .any(|v| v.fields.iter().any(|f| is_generic_param(f)));
@@ -1185,7 +1185,12 @@ impl TypeInferer {
 
                 // Determine the scrutinee ADT name (resolved through substitutions).
                 let scrutinee_adt = match self.resolve_nominal(&subject_type) {
-                    Some(n) => Some(n),
+                    Some(n) => {
+                        // Try direct lookup, then strip monomorphization suffix.
+                        self.adt_defs.contains_key(&n)
+                            .then_some(n.clone())
+                            .or_else(|| self.resolve_monomorphized_adt(&n))
+                    }
                     None => {
                         // Fallback: find which known ADT defines this variant.
                         arms.first()
@@ -1812,6 +1817,19 @@ impl TypeInferer {
             .and_then(|variants| variants.iter().find(|(vn, _)| vn == variant).map(|(_, f)| f.clone()))
     }
 
+    /// Resolve a monomorphized ADT name (e.g. "Option_?148") to its generic counterpart.
+    fn resolve_monomorphized_adt(&self, name: &str) -> Option<String> {
+        for adt_name in self.adt_defs.keys() {
+            if name == adt_name {
+                return Some(adt_name.clone());
+            }
+            if name.starts_with(&format!("{}_{}", adt_name, "_")) {
+                return Some(adt_name.clone());
+            }
+        }
+        None
+    }
+
     fn resolve_type_name(&self, name: &str) -> Option<Type> {
         if let Some(ty) = self.known_types.get(name).cloned() {
             return Some(ty);
@@ -1878,9 +1896,19 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
         match (t1, t2) {
             (a, b) if a == b => Ok(()),
             (Type::Var(n), _) => {
-                let s = &self.subst;
-                if s.contains(*n) {
-                    return self.unify(&s.apply(t1), t2, span.clone());
+                match self.subst.resolve(*n) {
+                    Err(()) => {
+                        // Cyclic substitution chain — occurs-check failure.
+                        return Err(ZylError::E_TYPE_MISMATCH(
+                            span.clone(),
+                            format!("type containing ?{}", n),
+                            "occurs".to_string(),
+                        ));
+                    }
+                    Ok(resolved) if resolved != Type::Var(*n) => {
+                        return self.unify(&resolved, t2, span.clone());
+                    }
+                    _ => {}
                 }
                 if self.type_contains_var(t2, *n) {
                     return Err(ZylError::E_TYPE_MISMATCH(
@@ -1889,16 +1917,25 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                         "occurs".to_string(),
                     ));
                 }
-                let ns = s.extend(*n, t2).map_err(|e| {
+                let ns = self.subst.extend(*n, t2).map_err(|e| {
                     ZylError::E_TYPE_MISMATCH(span.clone(), "unification error".into(), e)
                 })?;
                 self.subst = ns;
                 Ok(())
             }
             (_, Type::Var(n)) => {
-                let s = &self.subst;
-                if s.contains(*n) {
-                    return self.unify(t1, &s.apply(t2), span.clone());
+                match self.subst.resolve(*n) {
+                    Err(()) => {
+                        return Err(ZylError::E_TYPE_MISMATCH(
+                            span.clone(),
+                            format!("type containing ?{}", n),
+                            "occurs".to_string(),
+                        ));
+                    }
+                    Ok(resolved) if resolved != Type::Var(*n) => {
+                        return self.unify(t1, &resolved, span.clone());
+                    }
+                    _ => {}
                 }
                 if self.type_contains_var(t1, *n) {
                     return Err(ZylError::E_TYPE_MISMATCH(
@@ -1907,7 +1944,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                         "occurs".to_string(),
                     ));
                 }
-                let ns = s.extend(*n, t1).map_err(|e| {
+                let ns = self.subst.extend(*n, t1).map_err(|e| {
                     ZylError::E_TYPE_MISMATCH(span.clone(), "unification error".into(), e)
                 })?;
                 self.subst = ns;
@@ -1955,11 +1992,13 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                 self.unify(e1, e2, span)
             }
             (Type::Nominal(n1), Type::Nominal(n2)) if n1 == n2 => Ok(()),
-            _ => Err(ZylError::E_TYPE_MISMATCH(
-                span.clone(),
-                format!("{}", t1),
-                format!("{}", t2),
-            )),
+            _ => {
+                Err(ZylError::E_TYPE_MISMATCH(
+                    span.clone(),
+                    format!("{}", t1),
+                    format!("{}", t2),
+                ))
+            }
         }
     }
 

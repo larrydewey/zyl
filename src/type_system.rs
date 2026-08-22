@@ -116,9 +116,27 @@ impl Subst {
         Self(m)
     }
 
+    /// Fully resolve a type variable through the substitution chain.
+    /// Returns Err(()) if the chain is cyclic (corrupt substitution) — callers
+    /// must treat this as an occurs-check failure rather than re-unifying
+    /// (which would recurse forever).
+    pub fn resolve(&self, n: usize) -> Result<Type, ()> {
+        let mut cur = n;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            if !seen.insert(cur) {
+                return Err(()); // Cyclic binding: ?a -> ?b -> ... -> ?a
+            }
+            match self.0.get(&cur) {
+                Some(Type::Var(next)) => cur = *next,
+                Some(t) => return Ok(t.clone()),
+                None => return Ok(Type::Var(cur)),
+            }
+        }
+    }
+
     /// Apply substitution to a type, returning the result.
-    pub fn apply(&self, t: &Type) -> Type {
-        match t {
+    pub fn apply(&self, t: &Type) -> Type {        match t {
             Type::Var(n) => self.0.get(n).cloned().unwrap_or_else(|| t.clone()),
             Type::Cap(k, inner) => Type::Cap(k.clone(), Box::new(self.apply(inner))),
             Type::Fun(args, ret) => {
