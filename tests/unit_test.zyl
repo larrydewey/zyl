@@ -375,7 +375,7 @@
       (assert-equal (list-count (fn (x) (> x 2)) (list-range 1 5)) 2))
 
 (test "list-map"
-      (assert-equal (list-sum (list-map (fn (x) (* x 2)) (list-range 1 3))) 10))
+      (assert-equal (list-sum (list-map (fn (x) (* x 2)) (list-range 1 3))) 6))
 
 (test "list-filter"
       (assert-equal (list-length (list-filter (fn (x) (> x 2)) (list-range 1 5))) 2))

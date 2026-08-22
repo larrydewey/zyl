@@ -1262,32 +1262,56 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    sub rsp, 256".to_string());
 
-                // Emit prologue to store parameters from registers to stack slots.
-                // Parameters start after any captures (which are already loaded from parent scope).
+                // Emit prologue. Capturing closures use the env convention:
+                // rdi = env block ([env]=code, [env+8+8i]=capture i), params
+                // arrive in rsi onward. Captureless closures take params in
+                // rdi onward.
                 let start_param_idx = capture_count;
                 let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
-                for (i, param_name) in params.iter().enumerate() {
-                    let real_idx = start_param_idx + i;
-                    if real_idx < 6 && !param_name.is_empty() {
-                        let offset = (real_idx + 1) * 8;
+                if capture_count > 0 {
+                    // Load captures from the env block into their slots.
+                    for (i, cap) in captures.iter().enumerate() {
+                        let offset = (start_param_idx + i + 1) * 8;
                         self.asm_push_align();
                         self.asm.push(format!(
-                            "    mov [rbp-{}], {} # {}",
-                            offset, abi_regs_64[real_idx], param_name
-                        ));
-                    } else if !param_name.is_empty() {
-                        let offset = (real_idx + 1) * 8;
-                        let stack_off = 16 + 8 * (real_idx - 6);
-                        self.asm_push_align();
-                        self.asm.push(format!(
-                            "    mov r10, [rbp+{}] # {}",
-                            stack_off, param_name
+                            "    mov r10, [rdi + {}] # cap {}",
+                            8 * (i + 1),
+                            cap.name
                         ));
                         self.asm_push_align();
                         self.asm.push(format!(
                             "    mov [rbp-{}], r10",
                             offset
                         ));
+                    }
+                }
+                for (i, param_name) in params.iter().enumerate() {
+                    if !param_name.is_empty() {
+                        // Param slots precede capture slots (local_vars
+                        // registers params at index i).
+                        let offset = (i + 1) * 8;
+                        // Env convention (captures>0): rdi holds the env, so
+                        // params arrive one ABI register over.
+                        let abi_idx = i + if capture_count > 0 { 1 } else { 0 };
+                        if abi_idx < 6 {
+                            self.asm_push_align();
+                            self.asm.push(format!(
+                                "    mov [rbp-{}], {} # {}",
+                                offset, abi_regs_64[abi_idx], param_name
+                            ));
+                        } else {
+                            let stack_off = 16 + 8 * (abi_idx - 6);
+                            self.asm_push_align();
+                            self.asm.push(format!(
+                                "    mov r10, [rbp+{}] # {}",
+                                stack_off, param_name
+                            ));
+                            self.asm_push_align();
+                            self.asm.push(format!(
+                                "    mov [rbp-{}], r10",
+                                offset
+                            ));
+                        }
                     }
                 }
 
@@ -3114,6 +3138,33 @@ impl CodeGen {
             //   1. Evaluate each arg, save to a dedicated temp slot on the stack
             //   2. Load each temp slot into its ABI register
             //   3. Load function-pointer from its frame slot and call
+            //
+            // Capturing closures use the env convention: the value is an env
+            // block ([env]=code ptr, captures follow), rdi carries the env,
+            // and user args start at rsi.
+            // Static callee-shape detection:
+            //   - Assign(name, Closure{captures}) -> known convention
+            //   - anything else (call result, fn param) -> ambiguous: use
+            //     the dynamic zyl_callN dispatcher.
+            let mut env_call = false;
+            let mut known = false;
+            for s in stmts.iter() {
+                if let ICNFInner::Assign(nm, vid) = &s.node {
+                    if nm == name || sanitize_name(nm) == *name {
+                        match lookup.get(vid) {
+                            Some(ICNFNode {
+                                node: ICNFInner::Closure { captures, .. },
+                                ..
+                            }) => {
+                                env_call = !captures.is_empty();
+                                known = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let dynamic_dispatch = !known;
             let num_args = args.len().min(6);
             let mut is_floats: Vec<bool> = Vec::with_capacity(num_args);
             for (i, &arg_id) in args.iter().enumerate().take(num_args) {
@@ -3158,16 +3209,17 @@ impl CodeGen {
             // Now load each saved arg into its ABI register. Args were pushed
             // in order (arg 0 deepest), so pop in REVERSE order: the top of
             // the stack is arg n-1, which belongs in abi_regs[n-1].
+            let abi_base = if env_call || dynamic_dispatch { 1 } else { 0 };
             for (i, &arg_is_float) in is_floats.iter().enumerate().rev() {
                 if arg_is_float {
-                    let xmm_reg = abi_xmm[i];
+                    let xmm_reg = abi_xmm[i + abi_base];
                     self.asm_push_align();
                     self.asm
                         .push(format!("    movsd {}, [rsp]", xmm_reg));
                     self.asm_push_align();
                     self.asm.push("    add rsp, 16".to_string());
                 } else {
-                    let reg_64 = abi_regs_64[i];
+                    let reg_64 = abi_regs_64[i + abi_base];
                     self.asm_push_align();
                     self.asm
                         .push(format!("    mov {}, [rsp]", reg_64));
@@ -3175,13 +3227,30 @@ impl CodeGen {
                     self.asm.push("    add rsp, 8".to_string());
                 }
             }
-            // Load function pointer from its frame slot and call.
+            // Load the closure value from its frame slot and call.
             let slot = _slot;
             let offset = (slot + 1) * 8;
             self.asm_push_align();
             self.asm.push(format!("    mov rax, [rbp-{}]", offset));
             self.asm_push_align();
-            self.asm.push("    call rax".to_string());
+            if dynamic_dispatch {
+                // Move the closure value into rdi; args already sit in
+                // rsi.. — exactly the zyl_callN signature. The helper
+                // detects env vs raw by address range and forwards.
+                self.asm.push("    mov rdi, rax".to_string());
+                self.asm_push_align();
+                let helper = format!("zyl_call{}@plt", num_args);
+                self.asm.push(format!("    call {}", helper));
+            } else if env_call {
+                self.asm.push("    mov rdi, rax".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov rax, [rax]".to_string());
+                self.asm_push_align();
+                self.asm.push("    call rax".to_string());
+            } else {
+                self.asm_push_align();
+                self.asm.push("    call rax".to_string());
+            }
             if is_float {
                 self.asm_push_align();
                 self.asm.push(format!("    movsd {}, xmm0", target_reg));
@@ -6151,11 +6220,47 @@ impl CodeGen {
                 // No-op in assembly.
             }
 
-            ICNFInner::Closure { name, .. } => {
-                // Load the address of the closure function into rax.
+            ICNFInner::Closure { name, captures, .. } if captures.is_empty() => {
+                // Captureless closure: value = raw code address.
                 let fn_name = format!("_ZYL_{}", name);
                 self.asm_push_align();
                 self.asm.push(format!("    lea rax, [{}]", fn_name));
+                emitted_ids.insert(node.id);
+            }
+            ICNFInner::Closure { name, captures, .. } => {
+                // Capturing closure: value = env block pointer
+                //   [env+0] = code ptr, [env+8+8i] = capture i.
+                let fn_name = format!("_ZYL_{}", name);
+                let n = captures.len();
+                self.asm_push_align();
+                self.asm.push(format!("    mov edi, {}", 8 * (n + 1)));
+                self.asm_push_align();
+                self.asm.push("    call zyl_heap_alloc@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r10, rax".to_string());
+                self.asm_push_align();
+                self.asm.push(format!("    lea rax, [{}]", fn_name));
+                self.asm_push_align();
+                self.asm.push("    mov [r10], rax".to_string());
+                for (i, cap) in captures.iter().enumerate() {
+                    // Captured variables live in this frame's slots — resolve
+                    // by name; fall back to on-demand node emission.
+                    if let Some(&slot_idx) = local_vars.get(&cap.name) {
+                        let offset = (slot_idx + 1) * 8;
+                        self.asm_push_align();
+                        self.asm
+                            .push(format!("    mov rax, [rbp-{}]", offset));
+                    } else {
+                        self.emit_load_into(
+                            cap.ssa_id, "rax", stmts, local_vars, lookup, emitted_ids,
+                            operand_ids, phi_slots,
+                        );
+                    }
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov [r10 + {}], rax", 8 * (i + 1)));
+                }
+                self.asm_push_align();
+                self.asm.push("    mov rax, r10".to_string());
                 emitted_ids.insert(node.id);
             }
 

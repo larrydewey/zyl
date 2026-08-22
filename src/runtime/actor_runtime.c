@@ -235,6 +235,45 @@ void zyl_actor_wait_all(void) {
 }
 
 /* ==========================================================================
+   Dynamic closure invocation. A closure value is either a raw code pointer
+   (static binary text, low addresses) or an env-block pointer (heap, high
+   addresses) whose first qword is the code pointer and which takes the env
+   as an extra leading argument. These helpers dispatch dynamically so call
+   sites whose callee shape is unknown at compile time work for both.
+   ========================================================================== */
+
+#define ZYL_HEAP_THRESHOLD 0x100000000LL
+
+long long zyl_call0(long long v) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(void))v)();
+    return ((long long (*)(void*))*(long long*)(size_t)v)((void*)v);
+}
+long long zyl_call1(long long v, long long a) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long))v)(a);
+    return ((long long (*)(void*, long long))*(long long*)(size_t)v)((void*)v, a);
+}
+long long zyl_call2(long long v, long long a, long long b) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long))v)(a, b);
+    return ((long long (*)(void*, long long, long long))*(long long*)(size_t)v)((void*)v, a, b);
+}
+long long zyl_call3(long long v, long long a, long long b, long long c) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long))v)(a, b, c);
+    return ((long long (*)(void*, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c);
+}
+long long zyl_call4(long long v, long long a, long long b, long long c, long long d) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long))v)(a, b, c, d);
+    return ((long long (*)(void*, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d);
+}
+long long zyl_call5(long long v, long long a, long long b, long long c, long long d, long long e) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long))v)(a, b, c, d, e);
+    return ((long long (*)(void*, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e);
+}
+long long zyl_call6(long long v, long long a, long long b, long long c, long long d, long long e, long long f) {
+    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long, long long))v)(a, b, c, d, e, f);
+    return ((long long (*)(void*, long long, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e, f);
+}
+
+/* ==========================================================================
    try/catch — panic handler stack. Generated code allocates a frame, links
    it, calls setjmp on its buffer, and branches to its catch path when
    siglongjmp returns nonzero. zyl_panic unwinds to the innermost frame.

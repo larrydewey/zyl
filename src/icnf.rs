@@ -451,7 +451,8 @@ pub struct IcnfConverter {
     /// Closure metadata: closure_id → (name, captures).
     closures: IndexMap<usize, (String, Vec<CaptureField>)>,
     /// Deferred captures: (closure_ssa_id, body_expr, original_binding_name) collected during let-value conversion.
-    deferred_captures: Vec<(usize, Expr, String, IndexMap<String, usize>)>,
+    deferred_captures: Vec<(usize, Expr, String, IndexMap<String, usize>, Vec<String>)>,
+    pending_cap_patches: Vec<(String, Vec<CaptureField>)>,
     /// True while converting a let-binding value expression.
     in_let_value: bool,
     /// Monomorphized let binding name added to scope (for capture resolution).
@@ -477,6 +478,7 @@ impl IcnfConverter {
             closure_bodies: IndexMap::new(),
             closures: IndexMap::new(),
             deferred_captures: Vec::new(),
+            pending_cap_patches: Vec::new(),
             in_let_value: false,
             let_binding_name: None,
         }
@@ -502,9 +504,16 @@ impl IcnfConverter {
 
     /// Resolve deferred captures after a let binding has been established.
     fn resolve_deferred_captures(&mut self) {
-        for (closure_id, body_expr, _orig_name, scope_snapshot) in std::mem::take(&mut self.deferred_captures) {
+        for (closure_id, body_expr, _orig_name, scope_snapshot, own_params) in std::mem::take(&mut self.deferred_captures) {
+            if std::env::var("ZYL_DBG2").is_ok() {
+                eprintln!("RESOLVE def id={} name={:?} caps={:?}", closure_id, self.closures.get(&closure_id).map(|(n,_)|n.clone()), scope_snapshot.keys().collect::<Vec<_>>());
+            }
             let mut captured_names = std::collections::HashSet::new();
             collect_expr_vars(&body_expr, &mut captured_names);
+            // Own parameters are not captures.
+            for p in &own_params {
+                captured_names.remove(p);
+            }
             // The closure body may reference the original (pre-monomorphization) name
             // while the scope has the monomorphized name. We handle this by also checking
             // if a captured name matches the monomorphized let binding name we track.
@@ -531,11 +540,85 @@ impl IcnfConverter {
                 }
                 None
             }).collect();
+            if std::env::var("ZYL_DBG2").is_ok() {
+                eprintln!("RESOLVED id={} resolved={:?} closures-map-name={:?}", closure_id, resolved.iter().map(|c|c.name.clone()).collect::<Vec<_>>(), self.closures.get(&closure_id).map(|(n,_)|n.clone()));
+            }
             if let Some(entry) = self.closures.get_mut(&closure_id) {
-                entry.1 = resolved;
+                entry.1 = resolved.clone();
+            }
+            // Queue node patching until conversion completes — the Closure
+            // value node may not be stored anywhere walkable yet (it lives in
+            // an enclosing closure body still being built).
+            if !resolved.is_empty() {
+                if let Some((name, _)) = self.closures.get(&closure_id) {
+                    self.pending_cap_patches.push((name.clone(), resolved.clone()));
+                }
             }
         }
         self.let_binding_name = None;
+    }
+
+    /// Apply queued capture patches to every stored Closure node.
+    fn apply_pending_cap_patches(&mut self) {
+        let patches = std::mem::take(&mut self.pending_cap_patches);
+        for (name, caps) in patches {
+            Self::patch_node_captures(&mut self.global_stmts, &name, &caps);
+            let keys: Vec<usize> = self.closure_bodies.keys().copied().collect();
+            for k in keys {
+                if let Some(body) = self.closure_bodies.get_mut(&k) {
+                    Self::patch_node_captures(body, &name, &caps);
+                }
+            }
+        }
+    }
+
+    /// Recursively rewrite ICNFInner::Closure nodes with `name` so their
+    /// captures match `caps`.
+    fn patch_node_captures(
+        stmts: &mut Vec<ICNFNode>,
+        name: &str,
+        caps: &[CaptureField],
+    ) {
+        if std::env::var("ZYL_DBG2").is_ok() {
+            let names: Vec<String> = stmts.iter().filter_map(|st| if let ICNFInner::Closure{name:n,..}=&st.node {Some(n.clone())} else {None}).collect();
+            if !names.is_empty() {
+                eprintln!("WALK looking={} closures_here={:?} ids={:?}", name, names, stmts.iter().map(|s|s.id).collect::<Vec<_>>());
+            }
+        }
+        for stmt in stmts.iter_mut() {
+            match &mut stmt.node {
+                ICNFInner::Closure { name: n, captures, .. } if n == name => {
+                    if std::env::var("ZYL_DBG2").is_ok() {
+                        eprintln!("PATCHED node {} with {} caps", n, caps.len());
+                    }
+                    *captures = caps.to_vec();
+                }
+                ICNFInner::If { then_body, else_body, .. } => {
+                    Self::patch_node_captures(then_body, name, caps);
+                    Self::patch_node_captures(else_body, name, caps);
+                }
+                ICNFInner::Match { arms, .. } => {
+                    for arm in arms {
+                        Self::patch_node_captures(&mut arm.body, name, caps);
+                    }
+                }
+                ICNFInner::While { cond_body, body, .. } => {
+                    Self::patch_node_captures(cond_body, name, caps);
+                    Self::patch_node_captures(body, name, caps);
+                }
+                ICNFInner::For { body, .. } => {
+                    Self::patch_node_captures(body, name, caps);
+                }
+                ICNFInner::Begin(stmts2) => {
+                    Self::patch_node_captures(stmts2, name, caps);
+                }
+                ICNFInner::TryCatch { try_body, catch_body, .. } => {
+                    Self::patch_node_captures(try_body, name, caps);
+                    Self::patch_node_captures(catch_body, name, caps);
+                }
+                _ => {}
+            }
+        }
     }
 
 
@@ -1218,6 +1301,10 @@ impl IcnfConverter {
             }
         }
 
+        // Closure value nodes created during deferred conversion need their
+        // capture lists synced now that every body is stored.
+        self.apply_pending_cap_patches();
+
         Ok(ICNFProgram {
             functions: std::mem::take(&mut self.functions),
             statements: std::mem::take(&mut self.global_stmts),
@@ -1801,7 +1888,8 @@ impl IcnfConverter {
                     // This is tracked by the Let handler setting let_binding_name.
                     let orig_name = self.let_binding_name.clone();
                     let scope_snapshot = self.current_scope.clone();
-                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default(), scope_snapshot));
+                    let own_params: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default(), scope_snapshot, own_params));
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
@@ -1929,7 +2017,8 @@ impl IcnfConverter {
                     let body_for_defer = body_expr.clone();
                     let orig_name = self.let_binding_name.clone().unwrap_or_default();
                     let scope_snapshot = self.current_scope.clone();
-                    self.deferred_captures.push((ssa_id, body_for_defer, orig_name, scope_snapshot));
+                    let own_params: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+                    self.deferred_captures.push((ssa_id, body_for_defer, orig_name, scope_snapshot, own_params));
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
