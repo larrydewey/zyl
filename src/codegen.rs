@@ -1414,6 +1414,82 @@ impl CodeGen {
 
 
 
+
+    /// True when the node statically resolves to an ADT variant value: a call
+    /// to a function whose resolved return type is a Nominal that is NOT a
+    /// declared struct (i.e. a variant/ADT), or anything transitively
+    /// carrying such a value (Assign / result-var Load).
+    fn node_looks_variant(
+        &self,
+        id: usize,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+        depth: usize,
+    ) -> bool {
+        if depth > 4 {
+            return false;
+        }
+        let node = match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            Some(n) => n,
+            None => return false,
+        };
+        match &node.node {
+            ICNFInner::MakeVariant { .. } => true,
+            ICNFInner::Call(name, _) => {
+                let sanitized = sanitize_name(name);
+                matches!(
+                    self.func_returns.get(&sanitized),
+                    Some(Type::Nominal(t)) if !self.struct_layouts.contains_key(t)
+                )
+            }
+            ICNFInner::Assign(_, val) => self.node_looks_variant(*val, lookup, stmts, depth + 1),
+            ICNFInner::Load(nm) => {
+                for s in stmts {
+                    if let ICNFInner::Assign(n2, val) = &s.node {
+                        if n2 == nm && self.node_looks_variant(*val, lookup, stmts, depth + 1) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Emit a structural equality check for heap aggregates (ADT variants /
+    /// structs) via the runtime's hidden-size headers.
+    fn emit_variant_eq(
+        &mut self,
+        left: usize,
+        right: usize,
+        target_reg: &str,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut std::collections::HashSet<usize>,
+    ) {
+        // Evaluate both sides first (each side may involve calls whose arg
+        // setup clobbers rdi/rsi), stashing the left result on the stack.
+        self.emit_load_into(
+            left, "rax", stmts, local_vars, lookup, emitted_ids,
+            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+        );
+        self.asm_push_align();
+        self.asm.push("    push rax".to_string());
+        self.emit_load_into(
+            right, "rsi", stmts, local_vars, lookup, emitted_ids,
+            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+        );
+        self.asm_push_align();
+        self.asm.push("    pop rdi".to_string());
+        self.asm_push_align();
+        self.asm.push("    call zyl_variant_eq@plt".to_string());
+        self.asm_push_align();
+        self.asm
+            .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+    }
+
     /// True when the node statically looks like a string value (string
     /// literal or call to a known str-* builtin).
     fn node_looks_string(
@@ -1488,13 +1564,17 @@ impl CodeGen {
         emitted_ids: &mut std::collections::HashSet<usize>,
     ) {
         self.emit_load_into(
-            left, "rdi", stmts, local_vars, lookup, emitted_ids,
+            left, "rax", stmts, local_vars, lookup, emitted_ids,
             &std::collections::HashSet::new(), &std::collections::HashMap::new(),
         );
+        self.asm_push_align();
+        self.asm.push("    push rax".to_string());
         self.emit_load_into(
             right, "rsi", stmts, local_vars, lookup, emitted_ids,
             &std::collections::HashSet::new(), &std::collections::HashMap::new(),
         );
+        self.asm_push_align();
+        self.asm.push("    pop rdi".to_string());
         self.asm_push_align();
         self.asm.push("    call zyl_cstr_eq@plt".to_string());
         self.asm_push_align();
@@ -2492,6 +2572,12 @@ impl CodeGen {
                 {
                     // Strings compare by content, not pointer identity.
                     self.emit_str_eq(*left, *right, target_reg, stmts, local_vars, lookup, emitted_ids);
+                    emitted_ids.insert(src_ssa_id);
+                } else if self.node_looks_variant(*left, lookup, stmts, 0)
+                    || self.node_looks_variant(*right, lookup, stmts, 0)
+                {
+                    // ADT variants / structs compare structurally.
+                    self.emit_variant_eq(*left, *right, target_reg, stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(src_ssa_id);
                 } else {
                     // Floats compare via UCOMISD, not integer cmp.
@@ -5849,6 +5935,11 @@ impl CodeGen {
                     || Self::node_looks_string(*right, lookup, stmts)
                 {
                     self.emit_str_eq(*left, *right, "eax", stmts, local_vars, lookup, emitted_ids);
+                    emitted_ids.insert(node.id);
+                } else if self.node_looks_variant(*left, lookup, stmts, 0)
+                    || self.node_looks_variant(*right, lookup, stmts, 0)
+                {
+                    self.emit_variant_eq(*left, *right, "eax", stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(node.id);
                 } else {
                 // Detect float comparisons from operand shapes.
