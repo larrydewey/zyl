@@ -217,6 +217,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "  Optimization complete: {} passes applied.",
         optimizer.stats().len()
     );
+    if std::env::var("ZYL_DUMP_ICNF").is_ok() {
+        let dump = serde_json::to_string_pretty(&optimized_icnf)?;
+        std::fs::write("/tmp/opencode/dump.icnf.json", dump)?;
+    }
 
     // --emit-zyl: Generate Zyl source code from optimized ICNF (self-hosting).
     if emit_zyl {
