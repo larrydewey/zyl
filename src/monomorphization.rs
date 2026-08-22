@@ -921,9 +921,6 @@ impl MonoContext {
 
             ExprInner::Apply(fname, args) => {
                 if let Some(ret_ty) = self.function_returns.get(fname).cloned() {
-                    if std::env::var("ZYL_DBG_RET").is_ok() && fname.contains("string-buffer") {
-                        eprintln!("APPLY {} ret={:?} known={}", fname, ret_ty, self.struct_defs.contains_key("StringBuffer"));
-                    }
                     if !matches!(ret_ty, Type::Var(_)) {
                         return ret_ty;
                     }
@@ -975,9 +972,6 @@ impl MonoContext {
                 } else if matches!(op_name.as_str(), "==" | "!=" | "<" | ">" | "<=" | ">=") {
                     Type::Prim(PrimType::Bool)
                 } else if let Some(ret_ty) = self.function_returns.get(&op_name).cloned() {
-                    if std::env::var("ZYL_DBG_RET").is_ok() && op_name.contains("string-buffer") {
-                        eprintln!("CALLARM {} ret={:?} sd={} kt={}", op_name, ret_ty, self.struct_defs.contains_key("StringBuffer"), self.known_types.contains_key("StringBuffer"));
-                    }
                     if !matches!(ret_ty, Type::Var(_)) {
                         return ret_ty;
                     }
@@ -1062,10 +1056,6 @@ impl MonoContext {
         recv_ty: Option<Type>,
     ) -> Option<String> {
         let ty = recv_ty?;
-        if std::env::var("ZYL_DBG_RET").is_ok() {
-            eprintln!("DISPATCH {}.{} recv={:?} impls={:?}", trait_name, method_name, ty,
-                self.trait_ctx.impls.iter().map(|i| (i.trait_name.clone(), format!("{}", i.impl_type))).collect::<Vec<_>>());
-        }
         let type_name = match &ty {
             Type::Nominal(n) => n.clone(),
             _ => return None,
@@ -1230,9 +1220,6 @@ impl MonoContext {
                 child_renames.insert(name.clone(), name.clone());
                 let mut child_types = var_types.clone();
                 let dbg_t = self.infer_arg_type(val);
-                if std::env::var("ZYL_DBG_RET").is_ok() {
-                    eprintln!("LET {} => {:?} val={}", name, dbg_t, match &val.inner { ExprInner::Call(op,_) => format!("Call({:?})", op.inner), ExprInner::Apply(n,_) => format!("Apply({})", n), _ => "other".into() });
-                }
                 child_types.insert(name.clone(), dbg_t);
                 let renamed_val = Box::new(self.subst_expr_with_var_map(val, type_map, &child_renames, var_types));
                 let renamed_body = Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types));

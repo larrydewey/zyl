@@ -451,7 +451,7 @@ pub struct IcnfConverter {
     /// Closure metadata: closure_id → (name, captures).
     closures: IndexMap<usize, (String, Vec<CaptureField>)>,
     /// Deferred captures: (closure_ssa_id, body_expr, original_binding_name) collected during let-value conversion.
-    deferred_captures: Vec<(usize, Expr, String)>,
+    deferred_captures: Vec<(usize, Expr, String, IndexMap<String, usize>)>,
     /// True while converting a let-binding value expression.
     in_let_value: bool,
     /// Monomorphized let binding name added to scope (for capture resolution).
@@ -502,14 +502,21 @@ impl IcnfConverter {
 
     /// Resolve deferred captures after a let binding has been established.
     fn resolve_deferred_captures(&mut self) {
-        for (closure_id, body_expr, _orig_name) in std::mem::take(&mut self.deferred_captures) {
+        for (closure_id, body_expr, _orig_name, scope_snapshot) in std::mem::take(&mut self.deferred_captures) {
             let mut captured_names = std::collections::HashSet::new();
             collect_expr_vars(&body_expr, &mut captured_names);
             // The closure body may reference the original (pre-monomorphization) name
             // while the scope has the monomorphized name. We handle this by also checking
             // if a captured name matches the monomorphized let binding name we track.
             let resolved: Vec<CaptureField> = captured_names.iter().filter_map(|vname| {
-                // First try the name as-is (direct scope lookup).
+                // Resolve against the scope captured at defer time first — by
+                // resolution time the converter may have left the enclosing
+                // closure's scope (nested closures would otherwise lose their
+                // captures entirely).
+                if let Some(&ssa_id) = scope_snapshot.get(vname) {
+                    return Some(CaptureField { name: vname.clone(), ssa_id });
+                }
+                // Then try the name as-is (direct scope lookup).
                 if let Some(&ssa_id) = self.current_scope.get(vname) {
                     return Some(CaptureField { name: vname.clone(), ssa_id });
                 }
@@ -1418,6 +1425,23 @@ impl IcnfConverter {
                     is_branch_body: false,
                     node: ICNFInner::Assign(name.clone(), val_id),
                 };
+                // Derive struct type from a constructor/returning-call value:
+                // `let p (make-Point ..)` / `let p (make-point ..)` where the
+                // callee's resolved return type is a declared struct.
+                match &val.inner {
+                    ExprInner::Call(op, _)
+                        if let ExprInner::Atom(Atom::Ident(fname)) = &op.inner =>
+                    {
+                        if let Some(Type::Nominal(t)) = self.resolved_func_returns.get(fname) {
+                            if self.struct_layouts.contains_key(t)
+                                && !self.struct_bindings.contains_key(&val_id)
+                            {
+                                self.struct_bindings.insert(val_id, t.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
                 // Propagate struct type from value to binding: if val_id is a struct,
                 // register the binding's SSA ID so resolve_struct_get can find it.
                 if let Some(struct_name) = self.struct_bindings.get(&val_id).cloned() {
@@ -1514,25 +1538,25 @@ impl IcnfConverter {
                 // Convert body (collecting intermediates, NOT pushing to globals).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
-                // Restore globals and push all in correct order (with dedup).
+                // Restore globals. After the swap below: self.global_stmts is
+                // the outer buffer again, and saved_globals holds the temp
+                // buffer with any nodes force-pushed during conversion.
                 std::mem::swap(&mut self.global_stmts, &mut saved_globals);
-                // After swap: self.global_stmts = original function temp buffer,
-                // saved_globals = init values from For handler (extended by For during LetMut body processing).
-                // Collect Load nodes from self.global_stmts (the temp buffer).
-                let load_stmts: Vec<ICNFNode> = self.global_stmts
-                    .drain(..)
-                    .filter(|n| matches!(n.node, ICNFInner::Load(_)))
-                    .collect();
+                // Force-pushed intermediates (e.g. For-loop init values)
+                // belong BEFORE the body statements.
+                let temp_nodes = saved_globals;
                 let mut all_stmts = val_stmts;
                 all_stmts.push(assign_node);
-                // Include init values from For loop (in saved_globals after swap).
-                all_stmts.extend(saved_globals);
-                all_stmts.extend(body_stmts);
-                // Append temp-buffer Load nodes not already present (dedup to avoid
-                // re-emitting branch-body operands).
-                for stmt in load_stmts {
+                for stmt in temp_nodes {
                     if !all_stmts.iter().any(|n| n.id == stmt.id) {
-                        all_stmts.push(stmt.clone());
+                        all_stmts.push(stmt);
+                    }
+                }
+                // Body statements may overlap with force-pushed intermediates
+                // (same SSA ids) — skip any id already emitted.
+                for stmt in body_stmts {
+                    if !all_stmts.iter().any(|n| n.id == stmt.id) {
+                        all_stmts.push(stmt);
                     }
                 }
                 if saved_push {
@@ -1748,7 +1772,8 @@ impl IcnfConverter {
                     // Capture the original binding name from the current let conversion.
                     // This is tracked by the Let handler setting let_binding_name.
                     let orig_name = self.let_binding_name.clone();
-                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default()));
+                    let scope_snapshot = self.current_scope.clone();
+                    self.deferred_captures.push((ssa_id, *body_for_defer, orig_name.unwrap_or_default(), scope_snapshot));
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
@@ -1875,7 +1900,8 @@ impl IcnfConverter {
                     let ssa_id = self.next_ssa_id();
                     let body_for_defer = body_expr.clone();
                     let orig_name = self.let_binding_name.clone().unwrap_or_default();
-                    self.deferred_captures.push((ssa_id, body_for_defer, orig_name));
+                    let scope_snapshot = self.current_scope.clone();
+                    self.deferred_captures.push((ssa_id, body_for_defer, orig_name, scope_snapshot));
                     let saved_scope = std::mem::take(&mut self.current_scope);
                     let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
@@ -2972,33 +2998,28 @@ impl IcnfConverter {
             0 // last clause — no explicit else (returns Unit).
         };
 
-        let result_var = format!("___cond_result_{}", self.ssa_id_counter.get());
-        let phi_id = self.next_ssa_id();
-
-        let result_var_clone = result_var.clone();
-        let mut nodes = vec![ICNFNode {
-            id: cond_id,
+        let _result_var = format!("___cond_result_{}", self.ssa_id_counter.get());
+        // The If node gets its own fresh id (using cond_id would make the
+        // node self-referential: cond_ssa == id, so codegen skipped the
+        // statement as its own condition). Branch bodies stay embedded in
+        // the If; the If node itself carries the result value for consumers.
+        let if_id = self.next_ssa_id();
+        let mut then_stmts = body_stmts;
+        for stmt in &mut then_stmts {
+            stmt.is_branch_body = true;
+        }
+        let nodes = vec![ICNFNode {
+            id: if_id,
             region: Region::Stack,
             typ: None,
             is_branch_body: false,
             node: ICNFInner::If {
                 cond_ssa: cond_id,
-                then_body: body_stmts.clone(),
+                then_body: then_stmts,
                 else_body: Vec::new(),
-                result_var,
+                result_var: _result_var,
             },
         }];
-        for s in body_stmts {
-            nodes.push(s);
-        }
-        // Phi merge node.
-        nodes.push(ICNFNode {
-            id: phi_id,
-            region: Region::Stack,
-            typ: None,
-            is_branch_body: false,
-            node: ICNFInner::Assign(result_var_clone, cond_id),
-        });
 
         Ok(nodes)
     }

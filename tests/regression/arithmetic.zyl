@@ -110,7 +110,7 @@
 
 ; Mixed arithmetic with types
 (test "mixed-arithmetic"
-  (assert-equal (let result (+ (* 2 3) (- 10 4)) result) 10))
+  (assert-equal (let result (+ (* 2 3) (- 10 4)) result) 12))
 
 ; Chained comparisons via if
 (test "chained-comparisons"

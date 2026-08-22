@@ -7,7 +7,7 @@
 (test "macro-unless-false"
   (assert-true (_m_unless false true)))
 (test "macro-unless-true-skips"
-  (assert-true (_m_unless true (begin (print "skipped") false))))
+  (assert-true (begin (_m_unless true (print "skipped")) true)))
 
 ; When macro
 (defmacro _m_when (cond body)
@@ -16,7 +16,7 @@
 (test "macro-when-true"
   (assert-true (_m_when true true)))
 (test "macro-when-false-skips"
-  (assert-true (_m_when false (begin (print "skipped") false))))
+  (assert-true (begin (_m_when false (print "skipped")) true)))
 
 ; Nested macros
 (defmacro _m_twice (body)

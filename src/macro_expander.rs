@@ -1301,13 +1301,31 @@ impl MacroExpander {
                         TestCompile(Box::new(self.expand_expr(*e.clone())?), *expect_error)
                     }
 
+                    // Function definitions: expand the body.
+                    Defn(name, params, body) => {
+                        let nb = Box::new(self.expand_expr(*body.clone())?);
+                        Defn(name.clone(), params.clone(), nb)
+                    }
+                    Begin(exprs) => {
+                        let ne: Vec<Expr> = exprs
+                            .iter()
+                            .map(|e| self.expand_expr(e.clone()))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Begin(ne)
+                    }
+                    // Lambda / Fn bodies also contain user code.
+                    Lambda(name, params, body) => {
+                        let nb = Box::new(self.expand_expr(*body.clone())?);
+                        Lambda(name.clone(), params.clone(), nb)
+                    }
+                    Fn(name, params, body) => {
+                        let nb = Box::new(self.expand_expr(*body.clone())?);
+                        Fn(name.clone(), params.clone(), nb)
+                    }
                     // No child expressions to expand (or handled inline above).
                     Atom(_)
                     | Error(_)
-                    | Defn(_, _, _)
-                    | Begin(_)
                     | Lambda(_, _, _)
-                    | Fn(_, _, _)
                     | ModuleDecl(_)
                     | UseModule(..)
                     | Deftype(..)

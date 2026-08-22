@@ -863,6 +863,11 @@ impl PostProcessor {
                         self.struct_names.insert(n.clone());
                     }
                 }
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct+") && args.len() >= 1 => {
+                    if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
+                        self.struct_names.insert(n.clone());
+                    }
+                }
                 ExprInner::Call(op, args) if Self::is_ident_op(op, "deftype") && args.len() >= 2 => {
                     let name = match &args[0].inner {
                         ExprInner::Atom(Atom::Ident(n)) => n.clone(),
