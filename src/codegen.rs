@@ -1136,7 +1136,11 @@ impl CodeGen {
             }
             for stmt in &func.body {
                 // Skip condition BinOps — they're emitted inline by the If handler.
-                if condition_ids.contains(&stmt.id) {
+                // Only value-computing kinds are skipped here; an If whose
+                // cond_ssa collides with its own node id must still be emitted.
+                if condition_ids.contains(&stmt.id)
+                    && matches!(&stmt.node, ICNFInner::BinOp(_, _, _) | ICNFInner::Eq { .. })
+                {
                     continue;
                 }
                 // Skip nodes embedded in If/Match branch bodies — emitted by parent handler.
@@ -1189,6 +1193,7 @@ impl CodeGen {
                         ICNFInner::UnOp(_, _) => continue,
                         ICNFInner::Eq { .. } => continue,
                         ICNFInner::MakeVariant { .. } => continue,
+                        ICNFInner::StructGet(..) => continue,
                         // Emitted inline by emit_load_into when its parent
                         // requests the value — must not be emitted twice.
                         ICNFInner::Match { .. } => continue,
@@ -1298,6 +1303,54 @@ impl CodeGen {
                 for (i, cap) in captures.iter().enumerate() {
                     local_vars.insert(cap.name.clone(), start_param_idx + i);
                 }
+                // First pass: assign slots to let-bound variables (Assign
+                // nodes) and If/Match result vars, so nested closure calls
+                // resolve to the indirect path instead of an undefined
+                // direct `_ZYL_<name>` call.
+                {
+                    let mut next_slot = params.len().max(6);
+                    fn register_slots(
+                        stmts: &[ICNFNode],
+                        local_vars: &mut HashMap<String, usize>,
+                        next_slot: &mut usize,
+                    ) {
+                        for stmt in stmts {
+                            match &stmt.node {
+                                ICNFInner::Assign(name, _) => {
+                                    if !local_vars.contains_key(name) {
+                                        local_vars.insert(name.clone(), *next_slot);
+                                        *next_slot += 1;
+                                    }
+                                }
+                                ICNFInner::If { result_var, then_body, else_body, .. } => {
+                                    if !local_vars.contains_key(result_var) {
+                                        local_vars.insert(result_var.clone(), *next_slot);
+                                        *next_slot += 1;
+                                    }
+                                    register_slots(then_body, local_vars, next_slot);
+                                    register_slots(else_body, local_vars, next_slot);
+                                }
+                                ICNFInner::Match { arms, .. } => {
+                                    for arm in arms {
+                                        register_slots(&arm.body, local_vars, next_slot);
+                                    }
+                                }
+                                ICNFInner::While { cond_body, body, .. } => {
+                                    register_slots(cond_body, local_vars, next_slot);
+                                    register_slots(body, local_vars, next_slot);
+                                }
+                                ICNFInner::For { body, .. } => {
+                                    register_slots(body, local_vars, next_slot);
+                                }
+                                ICNFInner::Begin(stmts2) => {
+                                    register_slots(stmts2, local_vars, next_slot);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    register_slots(body, &mut local_vars, &mut next_slot);
+                }
 
                 // Collect operand IDs for body statements.
                 let mut operand_ids: std::collections::HashSet<usize> = HashSet::new();
@@ -1323,6 +1376,9 @@ impl CodeGen {
                             }
                             ICNFInner::BinOp(_, _, _) => continue,
                             ICNFInner::UnOp(_, _) => continue,
+                            ICNFInner::Eq { .. } => continue,
+                            ICNFInner::MakeVariant { .. } => continue,
+                            ICNFInner::StructGet(..) => continue,
                             _ => {}
                         }
                     }
@@ -1371,10 +1427,53 @@ impl CodeGen {
                 ICNFInner::Call(name, _) => {
                     matches!(name.as_str(), "str-concat" | "str_concat" | "str-substring" | "str_substring" | "read-line" | "read_line")
                 }
+                ICNFInner::Assign(_, val) => Self::node_looks_string(*val, lookup, stmts),
+                ICNFInner::If { then_body, else_body, .. } => {
+                    Self::branch_bodies_look_string(then_body, lookup, stmts)
+                        || Self::branch_bodies_look_string(else_body, lookup, stmts)
+                }
+                ICNFInner::Match { arms, .. } => arms
+                    .iter()
+                    .any(|arm| Self::branch_bodies_look_string(&arm.body, lookup, stmts)),
+                ICNFInner::Load(name) if name.starts_with("___") => {
+                    // Result var (cond/if/match phi): resolve its producing
+                    // statement and inspect the branch value(s).
+                    for s in stmts {
+                        match &s.node {
+                            ICNFInner::Assign(nm, val) if nm == name => {
+                                if Self::node_looks_string(*val, lookup, stmts) {
+                                    return true;
+                                }
+                            }
+                            ICNFInner::If { result_var, then_body, else_body, .. }
+                                if result_var == name =>
+                            {
+                                if Self::branch_bodies_look_string(then_body, lookup, stmts)
+                                    || Self::branch_bodies_look_string(else_body, lookup, stmts)
+                                {
+                                    return true;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    false
+                }
                 _ => false,
             },
             None => false,
         }
+    }
+
+    fn branch_bodies_look_string(
+        body: &[ICNFNode],
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+    ) -> bool {
+        body.iter().any(|n| match &n.node {
+            ICNFInner::Const(crate::ast::Atom::Str(_)) | ICNFInner::StrImm(_) => true,
+            _ => Self::node_looks_string(n.id, lookup, stmts),
+        })
     }
 
     /// Emit a string equality check (byte comparison via zyl_cstr_eq).
@@ -2218,11 +2317,6 @@ impl CodeGen {
                         self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                     }
                 } else {
-                    // Emit loading code — operand nodes are skipped by emit_loop,
-                    // so they need to be emitted inline by the parent handler.
-                    // Fields are stored as full 64-bit words (see MakeStruct), so load
-                    // the full 64-bit field value. Truncating to 32-bit would corrupt
-                    // Int-typed fields that hold 64-bit pointers (e.g. arena addresses).
                     self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
                     self.asm_push_align();
                     self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
@@ -2290,11 +2384,16 @@ impl CodeGen {
                     } else {
                         if let Some(slot) = phi_slots.get(result_var.as_str()) {
                             self.asm_push_align();
-                            self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            self.asm
+                                .push(format!("    mov {}, [rbp-{}]", reg_to_64(target_reg), slot));
                         } else if let Some(&slot_idx) = local_vars.get(result_var.as_str()) {
                             let offset = (slot_idx + 1) * 8;
                             self.asm_push_align();
-                            self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                            self.asm.push(format!(
+                                "    mov {}, [rbp-{}]",
+                                reg_to_64(target_reg),
+                                offset
+                            ));
                         } else {
                             // Fallback: load from eax (may be stale).
                             if target_reg != "rax" && target_reg != "eax" {
@@ -3530,6 +3629,18 @@ impl CodeGen {
                 };
                 self.emit_call_direct(&sanitized_name, args, "eax", stmts, local_vars, lookup, emitted_ids, cond_id, is_float);
                 emitted_ids.insert(cond_id);
+            }
+            ICNFInner::UnOp(op, arg_id) => {
+                // Boolean negation of a value used directly as a condition.
+                self.emit_load_into(
+                    *arg_id, "eax", stmts, local_vars, lookup, emitted_ids,
+                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                );
+                if matches!(op, crate::icnf::UnOpKind::Not) {
+                    self.asm_push_align();
+                    self.asm.push("    xor eax, 1".to_string());
+                }
+                // Negate preserves truthiness — nothing further needed.
             }
             ICNFInner::If { cond_ssa, then_body, else_body, result_var } => {
                 // A nested If (e.g. produced by `and`/`or` chains) used as a

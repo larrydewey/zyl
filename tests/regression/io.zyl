@@ -2,10 +2,14 @@
 
 ; File operations
 (test "file-open"
-  (assert-equal (file-open "/tmp/zyl_regression_test.txt" 1) 1))
+  (let fd (file-open "/tmp/zyl_regression_test.txt" 577)
+    (begin
+      (assert-true (> fd 0))
+      (file-close fd)
+      0)))
 
 (test "file-write"
-  (assert-equal (file-write 1 "test") 4))
+  (assert-equal (file-write 1 "test") 4)) ; write to stdout — fd 1 always valid
 
 (test "file-read"
   (let fd (file-open "/tmp/zyl_regression_test.txt" 0)

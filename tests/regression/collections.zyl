@@ -2,6 +2,7 @@
 
 (use allocator/allocator)
 (use collections/collections)
+(use collections/vec)
 
 ; Vec basic operations
 (test "vec-create"

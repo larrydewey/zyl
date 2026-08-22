@@ -1,6 +1,7 @@
 ; FFI Regression Tests — ffi-call, ffi-pin, ffi-unpin, timeout
 
 ; FFI pin
+(use ffi/ffi)
 (test "ffi-pin"
   (assert-true (option-is-some (ffi-pin-value 42))))
 
