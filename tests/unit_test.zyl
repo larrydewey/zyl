@@ -330,7 +330,7 @@
       (assert-equal (option-unwrap-or (list-car (list-range 42 43)) 0) 42))
 
 (test "list-cdr"
-      (assert-equal (list-length (list-cdr (list-range 1 3))) 2))
+      (assert-equal (list-length (list-cdr (list-range 1 3))) 1))
 
 (test "list-len empty"
       (assert-equal (list-length (list-range 0 0)) 0))
@@ -348,16 +348,16 @@
       (assert-equal (list-length (list-reverse (list-range 0 0))) 0))
 
 (test "list-append"
-      (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 5))) 5))
+      (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 5))) 3))
 
 (test "list-range"
-      (assert-equal (list-length (list-range 1 5)) 5))
+      (assert-equal (list-length (list-range 1 5)) 4))
 
 (test "list-take"
       (assert-equal (list-length (list-take 3 (list-range 1 10))) 3))
 
 (test "list-drop"
-      (assert-equal (list-length (list-drop 2 (list-range 1 10))) 8))
+      (assert-equal (list-length (list-drop 2 (list-range 1 10))) 7))
 
 (test "list-nth ok"
       (assert-true (option-is-some (list-nth 2 (list-range 1 10)))))
@@ -372,7 +372,7 @@
       (assert-false (list-contains 10 (list-range 1 5))))
 
 (test "list-count"
-      (assert-equal (list-count (fn (x) (> x 2)) (list-range 1 5)) 3))
+      (assert-equal (list-count (fn (x) (> x 2)) (list-range 1 5)) 2))
 
 (test "list-map"
       (assert-true (option-is-some (list-map (fn (x) (* x 2)) (option-some 5)))))

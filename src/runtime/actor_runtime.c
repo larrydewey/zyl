@@ -567,7 +567,33 @@ long long zyl_arena_capacity(long long arena) {
 
 long long zyl_heap_alloc(long long size) {
     if (!g_heap_arena || size <= 0) return 0;
-    return zyl_arena_alloc((long long)(size_t)g_heap_arena, size);
+    /* Reserve a hidden 8-byte header before the returned pointer holding the
+     * payload size (in qwords). This enables structural equality checks
+     * (zyl_variant_eq) without changing any field offsets — all consumers
+     * see the same address as before. */
+    long long qwords = (size + 7) / 8;
+    long long base = zyl_arena_alloc((long long)(size_t)g_heap_arena, qwords * 8 + 8);
+    if (!base) return 0;
+    *(long long*)(size_t)base = qwords;
+    return base + 8;
+}
+
+/* Structural equality for heap-allocated aggregates (ADT variants and
+ * structs): equal hidden sizes AND identical payload qwords (discriminant +
+ * fields). Pointer/string fields compare by identity — flat Int/Bool
+ * payloads compare by value. */
+long long zyl_variant_eq(long long a, long long b) {
+    if (a == b) return 1;
+    if (!a || !b) return 0;
+    long long ha = *(long long*)(size_t)(a - 8);
+    long long hb = *(long long*)(size_t)(b - 8);
+    if (ha != hb) return 0;
+    long long* pa = (long long*)(size_t)a;
+    long long* pb = (long long*)(size_t)b;
+    for (long long i = 0; i < ha; i++) {
+        if (pa[i] != pb[i]) return 0;
+    }
+    return 1;
 }
 
 long long zyl_pin_alloc(long long size) {

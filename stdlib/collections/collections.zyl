@@ -139,7 +139,7 @@
 ; Integer range [lo, hi) as a list.
 ; Returns: List<Int>
 (defn list-range (lo hi)
-  (if (> lo hi) (None) (Cons lo (list-range (+ lo 1) hi))))
+  (if (>= lo hi) (None) (Cons lo (list-range (+ lo 1) hi))))
 
 ; Number of elements satisfying a predicate.
 ; Returns: Int

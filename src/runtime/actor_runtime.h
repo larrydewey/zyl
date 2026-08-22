@@ -68,6 +68,7 @@ long long zyl_cstr_len(long long ptr);
 long long zyl_cstr_concat(long long a, long long b);
 long long zyl_cstr_substr(long long src, long long start, long long len);
 long long zyl_cstr_eq(long long p1, long long p2);
+long long zyl_variant_eq(long long a, long long b);
 /* Character-level string access (self-hosting lexer substrate). */
 long long zyl_cstr_byte_at(long long ptr, long long i);
 void zyl_cstr_byte_set(long long ptr, long long i, long long b);
