@@ -153,7 +153,7 @@
                     (buf-append (alloc-read-int hdr) chunk)
                     (alloc-write-int (+ hdr 8) (+ len clen))
                     (+ len clen))))))))))
-  (defn flush (self) (file-write (struct-get self "fd") (alloc-read-int (struct-get self "hdr")))))
+  (defn flush (self) (begin (file-write (struct-get self "fd") (alloc-read-int (struct-get self "hdr"))) 0)))
 
 ; Content pointer of a StringBuffer (NUL-terminated).
 ; Returns: Int

@@ -921,7 +921,20 @@ impl MonoContext {
 
             ExprInner::Apply(fname, args) => {
                 if let Some(ret_ty) = self.function_returns.get(fname).cloned() {
-                    ret_ty
+                    if std::env::var("ZYL_DBG_RET").is_ok() && fname.contains("string-buffer") {
+                        eprintln!("APPLY {} ret={:?} known={}", fname, ret_ty, self.struct_defs.contains_key("StringBuffer"));
+                    }
+                    if !matches!(ret_ty, Type::Var(_)) {
+                        return ret_ty;
+                    }
+                    // Unresolved return type: constructor fallback (see the
+                    // Call arm below for rationale).
+                    if fname.starts_with("make-") {
+                        if let Some(tname) = self.resolve_ctor_type(fname) {
+                            return Type::Nominal(tname);
+                        }
+                    }
+                    return ret_ty;
                 } else if fname == "vec"
                     || is_ident_op(
                         &Expr {
@@ -962,7 +975,34 @@ impl MonoContext {
                 } else if matches!(op_name.as_str(), "==" | "!=" | "<" | ">" | "<=" | ">=") {
                     Type::Prim(PrimType::Bool)
                 } else if let Some(ret_ty) = self.function_returns.get(&op_name).cloned() {
-                    ret_ty
+                    if std::env::var("ZYL_DBG_RET").is_ok() && op_name.contains("string-buffer") {
+                        eprintln!("CALLARM {} ret={:?} sd={} kt={}", op_name, ret_ty, self.struct_defs.contains_key("StringBuffer"), self.known_types.contains_key("StringBuffer"));
+                    }
+                    if !matches!(ret_ty, Type::Var(_)) {
+                        return ret_ty;
+                    }
+                    // Unresolved return type: constructor fallback (make-<T>
+                    // where <T> is a known struct/ADT) so trait dispatch on
+                    // the result still sees the concrete receiver type.
+                    if op_name.starts_with("make-") {
+                        if let Some(tname) = self.resolve_ctor_type(&op_name) {
+                            Type::Nominal(tname)
+                        } else {
+                            ret_ty
+                        }
+                    } else {
+                        ret_ty
+                    }
+                } else if op_name.starts_with("make-") {
+                    // Constructor fallback: make-x-y -> declared type matching
+                    // case-insensitively ignoring hyphens. Needed when the
+                    // constructor's body could not be inferred (e.g. FFI-heavy
+                    // builders) but trait dispatch on the result still
+                    // requires the concrete receiver type.
+                    match self.resolve_ctor_type(&op_name) {
+                        Some(tname) => Type::Nominal(tname),
+                        None => Type::Var(0),
+                    }
                 } else {
                     let r = args.first()
                         .map(|a| self.infer_arg_type(a))
@@ -1022,6 +1062,10 @@ impl MonoContext {
         recv_ty: Option<Type>,
     ) -> Option<String> {
         let ty = recv_ty?;
+        if std::env::var("ZYL_DBG_RET").is_ok() {
+            eprintln!("DISPATCH {}.{} recv={:?} impls={:?}", trait_name, method_name, ty,
+                self.trait_ctx.impls.iter().map(|i| (i.trait_name.clone(), format!("{}", i.impl_type))).collect::<Vec<_>>());
+        }
         let type_name = match &ty {
             Type::Nominal(n) => n.clone(),
             _ => return None,
@@ -1185,7 +1229,11 @@ impl MonoContext {
                 let mut child_renames = var_renames.clone();
                 child_renames.insert(name.clone(), name.clone());
                 let mut child_types = var_types.clone();
-                child_types.insert(name.clone(), self.infer_arg_type(val));
+                let dbg_t = self.infer_arg_type(val);
+                if std::env::var("ZYL_DBG_RET").is_ok() {
+                    eprintln!("LET {} => {:?} val={}", name, dbg_t, match &val.inner { ExprInner::Call(op,_) => format!("Call({:?})", op.inner), ExprInner::Apply(n,_) => format!("Apply({})", n), _ => "other".into() });
+                }
+                child_types.insert(name.clone(), dbg_t);
                 let renamed_val = Box::new(self.subst_expr_with_var_map(val, type_map, &child_renames, var_types));
                 let renamed_body = Box::new(self.subst_expr_with_var_map(body, type_map, &child_renames, &child_types));
                 ExprInner::Let(name.clone(), renamed_val, renamed_body)
@@ -1236,6 +1284,12 @@ impl MonoContext {
 
             ExprInner::Begin(exprs) => {
                 ExprInner::Begin(exprs.iter().map(|e| self.subst_expr_with_var_map(e, type_map, var_renames, var_types)).collect())
+            }
+
+            ExprInner::Print(exprs) => {
+                // Substitute inside print args so trait-method calls
+                // (OutputStream.write etc.) still get receiver dispatch.
+                ExprInner::Print(exprs.iter().map(|e| self.subst_expr_with_var_map(e, type_map, var_renames, var_types)).collect())
             }
 
             ExprInner::While(cond, body) => ExprInner::While(
@@ -1738,4 +1792,24 @@ fn check_apply_for_generics(args: &[Expr]) -> bool {
 /// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
 fn is_skip_placeholder(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
+}
+
+
+impl MonoContext {
+    /// Resolve a `make-x-y` constructor name to a declared type whose name
+    /// matches case-insensitively ignoring hyphens ("make-string-buffer" ->
+    /// "StringBuffer").
+    fn resolve_ctor_type(&self, ctor: &str) -> Option<String> {
+        let stem = ctor.strip_prefix("make-")?;
+        let norm = |s: &str| s.to_lowercase().replace('-', "");
+        let target = norm(stem);
+        self.struct_defs
+            .keys()
+            .chain(self.known_types.keys())
+            .find(|k| norm(k) == target)
+            .cloned()
+    }
+    pub fn debug_has_struct(&self, n: &str) -> (bool, bool) {
+        (self.struct_defs.contains_key(n), self.known_types.contains_key(n))
+    }
 }

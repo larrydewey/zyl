@@ -819,6 +819,13 @@ pub struct PostProcessor {
     /// ADT variant names: ADT name → list of variant names.
     /// Used to set type_name when creating MakeVariant.
     adt_variants: IndexMap<String, Vec<String>>,
+    /// Declared struct names, for make-X constructor resolution when X does
+    /// not fit the PascalCase heuristic (e.g. test-prefixed `_t_Person`).
+    struct_names: std::collections::BTreeSet<String>,
+    /// Counter for freshly generated pattern-binding variables (nested
+    /// pattern desugaring). Deterministic: same input → same names.
+    /// Cell because post_process_expr only has &self.
+    pattern_var_counter: std::cell::Cell<usize>,
 }
 
 impl PostProcessor {
@@ -826,7 +833,17 @@ impl PostProcessor {
         Self {
             adt_type_params: IndexMap::new(),
             adt_variants: IndexMap::new(),
+            struct_names: std::collections::BTreeSet::new(),
+            pattern_var_counter: std::cell::Cell::new(0),
         }
+    }
+
+    /// Generate a deterministic fresh variable name for desugared
+    /// nested-pattern bindings.
+    fn fresh_pat_var(&self) -> String {
+        let n = self.pattern_var_counter.get();
+        self.pattern_var_counter.set(n + 1);
+        format!("__match_pat_{}", n)
     }
 
     pub fn process(&mut self, exprs: Vec<Expr>) -> Vec<Expr> {
@@ -837,6 +854,14 @@ impl PostProcessor {
                     self.adt_type_params.insert(name.clone(), Vec::new());
                     let vn: Vec<String> = variants.iter().map(|v| v.name.clone()).collect();
                     self.adt_variants.insert(name.clone(), vn);
+                }
+                ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
+                    self.struct_names.insert(sd.name.clone());
+                }
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct") && args.len() >= 1 => {
+                    if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
+                        self.struct_names.insert(n.clone());
+                    }
                 }
                 ExprInner::Call(op, args) if Self::is_ident_op(op, "deftype") && args.len() >= 2 => {
                     let name = match &args[0].inner {
@@ -896,6 +921,15 @@ impl PostProcessor {
             .collect()
     }
 
+    /// Seed the variant map with ADT info from already-resolved dependencies.
+    /// This is used by the module resolver to ensure variant constructors
+    /// in a module's body get the correct adt_name.
+    pub fn seed_adt_variants(&mut self, adts: &IndexMap<String, Vec<String>>) {
+        for (name, variants) in adts {
+            self.adt_variants.entry(name.clone()).or_insert_with(|| variants.clone());
+        }
+    }
+
     fn is_type_param(&self, name: &str) -> bool {
         self.adt_type_params.values().any(|params| params.contains(&name.to_string()))
     }
@@ -908,6 +942,129 @@ impl PostProcessor {
             }
         }
         None
+    }
+
+    /// Desugar nested variant patterns in a match arm into inner matches.
+    ///
+    /// `(match e (A-Ident (A-Int n) BODY) ...)` binds the whole nested field
+    /// to a fresh variable and re-matches it:
+    ///   patterns: (A-Ident __match_pat_N)
+    ///   body:     (match __match_pat_N (A-Int n BODY) (Other1 (error ...)) ...)
+    ///
+    /// The inner match is made exhaustive by listing every other variant of
+    /// the pattern's ADT with an `(error ...)` body — those arms are
+    /// unreachable at runtime because the outer arm already fixed the tag,
+    /// but they keep exhaustiveness checking satisfied without needing a
+    /// wildcard mechanism. Desugars recursively, innermost levels first.
+    fn desugar_arm_raw(&self, _variant: &str, pats: Vec<Expr>, body: Expr, span: &Span) -> (Vec<Expr>, Expr) {
+        let mut pats = pats;
+        let mut body = body;
+        for i in 0..pats.len() {
+            // Is pattern[i] a variant-shaped pattern? Raw form: Call/Apply
+            // headed by a known variant identifier.
+            let (pat_variant, pat_inner) = match &pats[i].inner {
+                ExprInner::Call(head, inner) if !inner.is_empty() => {
+                    match &head.inner {
+                        ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                            (v.clone(), inner.clone())
+                        }
+                        _ => continue,
+                    }
+                }
+                ExprInner::Apply(name, inner) if !inner.is_empty() => (name.clone(), inner.clone()),
+                _ => continue,
+            };
+            // Only desugar when the head is a KNOWN variant (not a function call).
+            if self.find_adt_for_variant(&pat_variant).is_none() {
+                continue;
+            }
+            let Some(pat_adt) = self.find_adt_for_variant(&pat_variant) else {
+                continue;
+            };
+
+            // A nested PATTERN is (Variant sub-pattern*) — every element after
+            // the variant head is itself a pattern; there is no trailing body.
+            let sub_pats: Vec<Expr> = pat_inner.clone();
+
+            // Bind the field to a fresh variable.
+            let fresh = self.fresh_pat_var();
+            pats[i] = Expr {
+                span: pats[i].span.clone(),
+                inner: ExprInner::Atom(Atom::Ident(fresh.clone())),
+            };
+            let scrutinee = Expr {
+                span: span.clone(),
+                inner: ExprInner::Atom(Atom::Ident(fresh)),
+            };
+
+            // Recursively desugar deeper levels, carrying the current body
+            // through as the innermost arm body.
+            let (sub_pats, sub_body) =
+                self.desugar_arm_raw(&pat_variant, sub_pats, body, span);
+            body = sub_body;
+
+            // Build exhaustive arms over the pattern's ADT.
+            let mut arm_exprs: Vec<Expr> = Vec::new();
+            if let Some((_, variants)) = self.adt_variants.iter().find(|(n, _)| n.as_str() == pat_adt) {
+                for v2 in variants.clone() {
+                    if v2 == pat_variant {
+                        let mut inner_elems = sub_pats.clone();
+                        inner_elems.push(body.clone());
+                        arm_exprs.push(Expr {
+                            span: span.clone(),
+                            inner: ExprInner::Call(
+                                Box::new(Expr {
+                                    span: span.clone(),
+                                    inner: ExprInner::Atom(Atom::Ident(v2)),
+                                }),
+                                inner_elems,
+                            ),
+                        });
+                    } else {
+                        // Unreachable alternative — error keeps types general.
+                        arm_exprs.push(Expr {
+                            span: span.clone(),
+                            inner: ExprInner::Call(
+                                Box::new(Expr {
+                                    span: span.clone(),
+                                    inner: ExprInner::Atom(Atom::Ident(v2)),
+                                }),
+                                vec![Expr {
+                                    span: span.clone(),
+                                    inner: ExprInner::Call(
+                                        Box::new(Expr {
+                                            span: span.clone(),
+                                            inner: ExprInner::Atom(Atom::Ident("error".to_string())),
+                                        }),
+                                        vec![Expr {
+                                            span: span.clone(),
+                                            inner: ExprInner::Atom(Atom::Str(
+                                                "match: unreachable case".to_string(),
+                                            )),
+                                        }],
+                                    ),
+                                }],
+                            ),
+                        });
+                    }
+                }
+            }
+
+            // Wrap the body: (match <fresh> <arm>...).
+            let mut elems = vec![scrutinee];
+            elems.extend(arm_exprs);
+            body = Expr {
+                span: span.clone(),
+                inner: ExprInner::Call(
+                    Box::new(Expr {
+                        span: span.clone(),
+                        inner: ExprInner::Atom(Atom::Ident("match".to_string())),
+                    }),
+                    elems,
+                ),
+            };
+        }
+        (pats, body)
     }
 
     fn post_process_expr(&self, mut expr: Expr) -> Expr {
@@ -1898,82 +2055,73 @@ impl PostProcessor {
             }
 
             // match → Match (Call form).
+            // Spec §8.3: (match Expr (VariantName pattern* body) ...) — each arm
+            // is ONE self-contained s-expression: the head names the variant,
+            // middle elements are field patterns, and the last element is the
+            // arm body. Arms are decomposed from the RAW form BEFORE recursive
+            // post-processing, because constructor conversion would otherwise
+            // collapse patterns and body into a single argument list.
             ExprInner::Call(op, args) if Self::is_ident_op(op, "match") && !args.is_empty() => {
                 let e = Box::new(self.post_process_expr(args[0].clone()));
                 let mut arms = Vec::new();
-                let mut i = 1;
-                while i < args.len() {
-                    let processed = self.post_process_expr(args[i].clone());
-                    let (variant, patterns) = match &processed.inner {
-                        ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-                            let v = match &inner[0].inner {
+                for arm_arg in &args[1..] {
+                    let (variant, pats, raw_body) = match &arm_arg.inner {
+                        ExprInner::Call(head, inner) if !inner.is_empty() => {
+                            let v = match &head.inner {
                                 ExprInner::Atom(Atom::Ident(v))
                                 | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
-                                _ => "___".to_string(),
+                                _ => return expr,
                             };
-                            let pats = match inner.len() {
-                                1 => Vec::new(),
-                                2 => vec![inner[1].clone()],
-                                _ => inner[1..inner.len() - 1].to_vec(),
-                            };
-                            (v, pats)
+                            (
+                                v,
+                                inner[..inner.len() - 1].to_vec(),
+                                inner[inner.len() - 1].clone(),
+                            )
                         }
-                        ExprInner::MakeVariant(_, vname, ref fargs) => {
-                            (vname.clone(), fargs.clone())
-                        }
-                        ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
-                            (v.clone(), Vec::new())
-                        }
-                        _ => ("___".to_string(), Vec::new()),
+                        _ => return expr,
                     };
-                    i += 1;
-                    let body = if i < args.len() {
-                        self.post_process_expr(args[i].clone())
-                    } else {
-                        return expr;
-                    };
-                    i += 1;
+                    // Desugar nested variant patterns BEFORE post-processing.
+                    let (pats, raw_body) =
+                        self.desugar_arm_raw(&variant, pats, raw_body, &arm_arg.span);
+                    let patterns: Vec<Expr> = pats
+                        .into_iter()
+                        .map(|p| self.post_process_expr(p))
+                        .collect();
+                    let body = self.post_process_expr(raw_body);
                     arms.push(MatchArm { variant, patterns, body: Box::new(body) });
                 }
                 expr.inner = ExprInner::Match(e, arms);
             }
 
-            // match → Match (Apply form).
+            // match → Match (Apply form). Same self-contained arm grammar as above.
             ExprInner::Apply(name, args) if name == "match" && !args.is_empty() => {
                 let e = Box::new(self.post_process_expr(args[0].clone()));
                 let mut arms = Vec::new();
-                let mut i = 1;
-                while i < args.len() {
-                    let processed = self.post_process_expr(args[i].clone());
-                    let (variant, patterns) = match &processed.inner {
-                        ExprInner::Call(_, ref inner) if !inner.is_empty() => {
-                            let v = match &inner[0].inner {
+                for arm_arg in &args[1..] {
+                    // Decompose the RAW arm before post-processing.
+                    let (variant, pats, raw_body) = match &arm_arg.inner {
+                        ExprInner::Call(head, inner) if !inner.is_empty() => {
+                            let v = match &head.inner {
                                 ExprInner::Atom(Atom::Ident(v))
                                 | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
-                                _ => "___".to_string(),
+                                _ => return expr,
                             };
-                            let pats = match inner.len() {
-                                1 => Vec::new(),
-                                2 => vec![inner[1].clone()],
-                                _ => inner[1..inner.len() - 1].to_vec(),
-                            };
-                            (v, pats)
+                            (
+                                v,
+                                inner[..inner.len() - 1].to_vec(),
+                                inner[inner.len() - 1].clone(),
+                            )
                         }
-                        ExprInner::MakeVariant(_, vname, ref fargs) => {
-                            (vname.clone(), fargs.clone())
-                        }
-                        ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
-                            (v.clone(), Vec::new())
-                        }
-                        _ => ("___".to_string(), Vec::new()),
+                        _ => return expr,
                     };
-                    i += 1;
-                    let body = if i < args.len() {
-                        self.post_process_expr(args[i].clone())
-                    } else {
-                        return expr;
-                    };
-                    i += 1;
+                    // Desugar nested variant patterns BEFORE post-processing.
+                    let (pats, raw_body) =
+                        self.desugar_arm_raw(&variant, pats, raw_body, &arm_arg.span);
+                    let patterns: Vec<Expr> = pats
+                        .into_iter()
+                        .map(|p| self.post_process_expr(p))
+                        .collect();
+                    let body = self.post_process_expr(raw_body);
                     arms.push(MatchArm { variant, patterns, body: Box::new(body) });
                 }
                 expr.inner = ExprInner::Match(e, arms);
@@ -1988,7 +2136,9 @@ impl PostProcessor {
                 let struct_name = match &first.inner {
                     ExprInner::Atom(Atom::Ident(n)) => {
                         let s = &n[5..];
-                        if s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                        let is_pascal =
+                            s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+                        if is_pascal || self.struct_names.contains(s) {
                             s.to_string()
                         } else {
                             return expr;
@@ -2004,7 +2154,8 @@ impl PostProcessor {
             // Only convert if struct name starts with uppercase.
             ExprInner::Apply(name, args) if name.starts_with("make-") && !args.is_empty() => {
                 let s = &name[5..];
-                if s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                let is_pascal = s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+                if is_pascal || self.struct_names.contains(s) {
                     let struct_name = s.to_string();
                     let new_args: Vec<Expr> = args.iter().map(|a| self.post_process_expr(a.clone())).collect();
                     expr.inner = ExprInner::MakeStruct(struct_name, new_args);
