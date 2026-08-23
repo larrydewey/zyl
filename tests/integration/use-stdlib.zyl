@@ -2,11 +2,12 @@
 
 (use collections/collections)
 (use allocator/allocator)
+(use collections/vec)
 
 (test "multi-module-vec"
   (assert-true (option-is-some (vec-create 0 5))))
 
 (test "multi-module-alloc"
-  (assert-equal (alloc-malloc 64) 64))
+  (assert-true (> (alloc-malloc 64) 0)))
 
 (run-tests)

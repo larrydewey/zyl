@@ -147,11 +147,11 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Known Remaining Failures (pre-existing, documented)
 
-- `tests/unit_test.zyl`: single remaining failure cluster — assoc-get with
-  String payloads through generic ADTs (V type unified incorrectly; values
-  print as ints / crash str-eq). All other ~120 tests pass.
-- `tests/regression/collections.zyl`: map-create typing (map-len param
-  unified against Vec) — same generic-monomorphization family.
+- **Recursive generic ADT matches** (`Assoc<K,V>`): assoc-get crashes even
+  with Int values — Match against a monomorphized recursive generic
+  (`Assoc_?N`) mis-resolves variant field offsets. Blocks unit_test
+  assoc tests, tests/regression/collections.zyl and types.zyl tail.
+- `tests/unit_test.zyl`: all other ~120 tests pass.
 - `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
   functions (stdlib work, not compiler bugs).
 - `tests/regression/concurrency.zyl`: pre-existing region escape error.
