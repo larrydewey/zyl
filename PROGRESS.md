@@ -286,7 +286,7 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
 11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
-12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done (arith, if, print, while, set!); remaining: for/cond/match/calls-with-args coverage, then bootstrapping the compiler against itself
+12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done (arith, if, print, while, for, cond, set!, ADT construction/match); **next bootstrap blocker**: the Rust-compiled `post-process` segfaults when the self-hosted parser handles a `defn` with parameters — `param_collect` reads a clobbered `arena` inside its if-then branch (repro: drive `"(defn area (s) 42)"` through zyl-lex → parse-program → post-process; gdb shows `param_push` called with a rodata string pointer as arena from an `___if_result_*.then` frame). Fixing this is the gate to running the self-hosted parser over real compiler sources.
 13. Contract injection (optional overlay, spec §23)
 
 ---
