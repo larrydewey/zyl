@@ -145,25 +145,12 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 - [x] **defstruct+ name registration** (ast.rs): `make-X` resolution now sees defstruct+ declarations.
 - [x] **Test fixes**: arithmetic mixed-arithmetic expected 12 not 10; io file-open asserts fd>0 with cleanup instead of hard-coded fd 1; macro skip-tests assert skipped-body semantics.
 
-### Known Remaining Failures (pre-existing, documented)
+### Known Remaining Failures
 
-- **Struct-get inside assert-equal value positions** (structs.zyl:
-  struct-sum-fields / constructor-arithmetic / rebind): the SG result
-  cache works everywhere else (recursive chains, vec/map/assoc stdlib),
-  but when the struct flow lives directly under an assert-equal argument
-  the comparison sees stale subexpression values. Flat statement forms
-  pass. Root cause believed to be Eq operand loading re-entering make-arg
-  subexpressions instead of reading SG cache slots.
-- Chained lets over struct values in non-assert contexts now work
-  (verified: recursive 3-level struct-get chains, vec-pop/get sequences).
-- `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
-  functions (stdlib work, not compiler bugs).
-- `tests/regression/concurrency.zyl`: pre-existing region escape error.
-- `tests/regression/ffi.zyl`: ffi-pin/ffi-unpin runtime segfault (Pin-region
-  feature gap).
-- `tests/regression/control-flow.zyl` for-loop-early-exit + integration
-  actor-wait: hang pre-exists at HEAD; loop-var mutation semantics and
-  actor join protocol need design work.
+None — all previously documented failures verified fixed (2026-08-23):
+structs.zyl 34/34 (incl. struct-get-in-assert cases), ffi.zyl 4/4
+(ffi-pin/unpin), concurrency.zyl 6/6, control-flow.zyl 17/17,
+compiler.zyl 2/2 (pool-* stdlib fns written).
 
 ---
 
