@@ -2632,6 +2632,43 @@ impl CodeGen {
                 self.asm.push(format!("    lea {}, [{}]", reg_to_64(target_reg), fn_name));
             }
             Some(ICNFNode {
+                node: ICNFInner::While { result_var, .. },
+                ..
+            }) => {
+                // Loop results live in their phi/result slots.
+                if let Some(&slot_idx) = local_vars.get(result_var) {
+                    let offset = (slot_idx + 1) * 8;
+                    self.asm_push_align();
+                    self.asm.push(format!(
+                        "    mov {}, [rbp-{}]",
+                        reg_to_64(target_reg),
+                        offset
+                    ));
+                } else if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                }
+            }
+            Some(ICNFNode {
+                node: ICNFInner::For { result_var, .. },
+                ..
+            }) => {
+                if let Some(&slot_idx) = local_vars.get(result_var) {
+                    let offset = (slot_idx + 1) * 8;
+                    self.asm_push_align();
+                    self.asm.push(format!(
+                        "    mov {}, [rbp-{}]",
+                        reg_to_64(target_reg),
+                        offset
+                    ));
+                } else if target_reg != "rax" && target_reg != "eax" {
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                }
+            }
+            Some(ICNFNode {
                 node: ICNFInner::TryCatch { .. },
                 ..
             }) => {
