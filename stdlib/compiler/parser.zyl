@@ -219,25 +219,25 @@
 ; Returns: AstTok wrapping (AList forms...)
 (defn read-forms (arena toks acc)
   (if (toks-empty toks)
-    (AstOf (AList acc) toks)
+    (AstOf (AList (list-reverse acc)) toks)
     (if (= (tok-code (toks-head toks)) 9)          ; ')'
-      (AstOf (AList acc) (toks-tail toks))
+      (AstOf (AList (list-reverse acc)) (toks-tail toks))
       (let r (read-form arena toks)
         (read-forms arena (art-rest r) (Cons (art-ast r) acc))))))
 
 (defn read-forms-brace (arena toks acc)
   (if (toks-empty toks)
-    (AstOf (AList acc) toks)
+    (AstOf (AList (list-reverse acc)) toks)
     (if (= (tok-code (toks-head toks)) 11)         ; '}'
-      (AstOf (AList acc) (toks-tail toks))
+      (AstOf (AList (list-reverse acc)) (toks-tail toks))
       (let r (read-form arena toks)
         (read-forms-brace arena (art-rest r) (Cons (art-ast r) acc))))))
 
 (defn read-forms-bracket (arena toks acc)
   (if (toks-empty toks)
-    (AstOf (AList acc) toks)
+    (AstOf (AList (list-reverse acc)) toks)
     (if (= (tok-code (toks-head toks)) 13)         ; ']'
-      (AstOf (AList acc) (toks-tail toks))
+      (AstOf (AList (list-reverse acc)) (toks-tail toks))
       (let r (read-form arena toks)
         (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc))))))
 

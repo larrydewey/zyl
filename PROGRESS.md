@@ -273,22 +273,25 @@ bugs (not Zyl-source issues):**
 1b. FIXED this session (src/codegen.rs MakeVariant field save): a Const
    whose atom is Ident (variable ref) inside MakeVariant fields emitted a
    literal 0 instead of loading the local slot.
-1c. NEW PRECISE DIAGNOSIS + minimal repro (the main blocker):
-   `(if c (AstOf (AList None) rest) (AstOf (AIdent (tok-text t)) rest))`
-   returns corrupted blocks for BOTH branches. Root cause chain: when an
-   If branch's final value node is a MakeVariant already emitted earlier
-   in the branch walk, emit_load_into -> emit_node early-returns
-   (emitted_ids guard) so the phi store captures stale rax.
-   ATTEMPTED SPOT FIXES (reverted — they fix the repro but segfault
-   unit_test + collections): (a) whitelist MakeVariant/MakeStruct as
-   branch-final "fresh emit" kinds; (b) clear emitted_ids before
-   delegating to emit_node; (c) all_nodes fallback in MakeVariant field
-   save. Conclusion: per-node skip/re-emit heuristics are mutually
-   unsound; the fix must be the full always-spill scheme — every
-   value-producing statement stores its result to its own rbp slot at
-   definition time, operand loads read slots only, no skip rules. Scope:
-   emit_node / emit_call_direct / If-branch / While-For-Match emitters in
-   src/codegen.rs (~4 sites), plus a recursive id->slot pre-pass.
+1c. PRECISE DIAGNOSIS CHAIN (updated this session):
+   - ALWAYS-SPILL SCHEME NOW IMPLEMENTED in src/codegen.rs (value_slots
+     pre-pass over all embedded bodies, spill_result after every emit_node,
+     emit_load_into loads from slot when already-emitted, dynamic frames).
+     Suite back to stable 20/24 with no regressions.
+   - Parser bug fixed: read-forms returned kids un-reversed
+     ((AList (list-reverse acc)) now).
+   - REMAINING BLOCKER pinned to src/icnf.rs: for constructor args inside
+     If-branch bodies (e.g. `(AstOf (AList (list-reverse acc)) rest)`),
+     the operand sub-expression nodes get SSA ids but are NOT present in
+     the emitted body vector (verified via --dump-icnf: MakeVariant
+     field_ids reference ids missing from every reachable body). Codegen
+     therefore cannot emit them -> garbage/stale values. The MakeVariant
+     handler itself returns all arg stmts in its Ok(result); they are lost
+     between convert_branch_body/If-handler embedding and the enclosing
+     Let handler's dedup/splice merge. Fix there next session: ensure
+     convert_expr_to_stmts keeps ALL arg stmts of MakeVariant (and Call)
+     args when push_to_globals=false, e.g. by routing through
+     convert_expr_collect in the If/Let embedding path.
 Remaining integration tests fail on these; everything else green (20/24).
 
 ## Next Priorities
