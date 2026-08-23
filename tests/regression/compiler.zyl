@@ -1,31 +1,51 @@
-; Compiler Regression Tests — stdlib/compiler: lexer, parser, ICNF
+; Compiler Regression Tests — stdlib/compiler: lexer, parser, AST types
 
 (use allocator/allocator)
-(use compiler/ir)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/ast)
 
-; IR pool operations
-(test "ir-pool-basic"
-  (let arena (arena-create 0)
-    (let pool (pool-create arena 6)
-      (begin
-        (let node (pool-append pool)
-          (node-set-kind pool node 1)
-          (node-set-str pool node (str-intern arena "hello"))
-          (assert-true true))))))
+(defn tk-at (toks n)
+  (if (<= n 0)
+    toks
+    (tk-at (toks-tail toks) (- n 1))))
 
-; IR node kind setting
-(test "ir-node-kinds"
+(defn th (xs)
+  (match xs
+    (Cons t rest t)
+    (None (TkEof))))
+
+(defn ah (xs)
+  (match xs
+    (Cons a rest a)
+    (None (AList None))))
+
+; Lexer produces a (List Token) ending in TkEof
+(test "lex-stream"
   (let arena (arena-create 0)
-    (let pool (pool-create arena 6)
+    (let toks (zyl-lex arena "(+ 1 2)")
       (begin
-        (let node (pool-append pool)
-          (node-set-kind pool node 1)
-          (node-set-str pool node (str-intern arena "test"))
-          (print node))
-        (let node2 (pool-append pool)
-          (node-set-kind pool node2 8)
-          (print "kind8 node: ")
-          (print node2))
-        (assert-true true)))))
+        ; 4 tokens + EOF
+        (assert-equal (list-length toks) 5)
+        (assert-true (str-eq (ast-name (AIdent "+")) (str-intern arena "+")))
+        (assert-equal (tok-code (th toks)) 8)          ; '('
+        (assert-equal (tok-code (th (tk-at toks 3))) 2) ; int
+        (assert-equal (tok-int (th (tk-at toks 3))) 2)
+        (assert-equal (tok-code (th (tk-at toks 4))) 0) ; EOF
+        0))))
+
+; Reader builds nested Ast forms
+(test "parse-nested-ast"
+  (let arena (arena-create 0)
+    (let prog (zyl-parse arena "(defn f (x) (* x x))")
+      (let kids (ast-kids (ah prog))
+        (begin
+          (assert-equal (list-length prog) 1)
+          (assert-true (str-eq (ast-name (list-car kids)) (str-intern arena "defn")))
+          (let body (list-car (list-drop kids 3))
+            (begin
+              (assert-equal (ast-code body) 5)
+              (assert-equal (list-length (ast-kids body)) 3)
+              0)))))))
 
 (run-tests)

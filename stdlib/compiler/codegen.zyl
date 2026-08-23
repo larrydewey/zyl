@@ -1,271 +1,309 @@
-; === Zyl Standard Library — Self-Hosting Phase 3b: x86_64 codegen ===
+; === Zyl Standard Library — Self-Hosting: x86_64 codegen ===
 ; Module: compiler/codegen
-; Emits GAS .intel_syntax noprefix assembly text for the compiler/icnf IR.
+;
+; Walks the recursive Icnf instruction tree (see compiler/icnf) and emits
+; GAS .intel_syntax noprefix assembly text. Expression code is evaluated
+; into rax (a pure stack-machine discipline): every sub-expression leaves
+; its value in rax; binary operators push the left operand around the
+; right operand's evaluation.
 ;
 ; Conventions:
-;   - Every ICNF instruction id owns one stack slot at [rbp - 8*slot].
-;   - Named variables (params, let targets, join temps) get their own slots.
-;   - A function's value is the slot of its last instruction, loaded into
-;     rax before ret.
-;   - Calls use SysV register args (rdi rsi rdx rcx r8 r9), max 6 args.
-;   - print emits printf("%d\n", v).
-;
-; Output accumulates in a growable text buffer (arena-backed); the final
-; NUL-terminated string is written to a file by the caller.
+;   - Parameters arrive in SysV registers (rdi rsi rdx rcx r8 r9) and are
+;     spilled to [rbp-8*(i+1)] in the prologue.
+;   - Locals (let / match bindings) get slots from a downward-growing
+;     offset counter threaded through the emitter state.
+;   - Names are resolved through an immutable Env chain (see ast.zyl).
+;   - Calls support up to 6 register arguments; argument values are pushed
+;     and popped in reverse so evaluation order stays strictly
+;     left-to-right (spec evaluation-order rule).
+;   - Floats travel as bit patterns in rax and move to xmm0/xmm1 for SSE
+;     arithmetic; print selects %d/%f/%s by the operand's syntactic kind.
 
 (use allocator/allocator)
+(use compiler/ast)
 (use compiler/icnf)
 
-; Create a code emitter over `arena` with a 1 MiB text buffer.
-; State: [0]=arena [8]=buffer ptr [16]=label counter [24]=slot counter
-;        [32]=names list [40]=slot-index list
+; Emitter state cells:
+;   [0]=arena  [8]=text buffer  [16]=label counter  [24]=next slot offset
+;   [32]=rodata list (Rodata)
 (defn cg-new (arena)
   (let st (arena-alloc-zeroed arena 48)
     (let buf (arena-alloc-zeroed arena 1048576)
-      (let names (kids-new arena 64)
-        (let idx (kids-new arena 64)
-          (begin
-            (alloc-write-int st arena)
-            (alloc-write-int (+ st 8) buf)
-            (alloc-write-int (+ st 16) 0)
-            (alloc-write-int (+ st 24) 0)
-            (alloc-write-int (+ st 32) names)
-            (alloc-write-int (+ st 40) idx)
-            st))))))
+      (begin
+        (alloc-write-int st arena)
+        (alloc-write-int (+ st 8) buf)
+        (alloc-write-int (+ st 16) 0)
+        (alloc-write-int (+ st 24) 8)   ; params occupy slots 1..n
+        (alloc-write-int (+ st 32) (RNil))
+        st))))
 
-; Append a literal string to the output.
 (defn cg-emit (st s)
-  (let buf (alloc-read-int (+ st 8))
-    (let arena (alloc-read-int st)
-      (let len (alloc-strlen buf)
-        (begin
-          ; grow: if the line would exceed capacity, abandon the buffer and
-          ; copy (capacity is 1 MiB — ample for Phase 3 test programs)
-          (buf-append buf s)
-          0)))))
+  (buf-append (alloc-read-int (+ st 8)) s))
 
-; Append an integer in decimal.
 (defn cg-emit-int (st n)
-  (let arena (alloc-read-int st)
-    (cg-emit st (ffi-call "zyl_cstr_from_int" arena n 1000))))
+  (cg-emit st (ffi-call "zyl_cstr_from_int" (alloc-read-int st) n 1000)))
 
-; Append a raw newline.
-(defn cg-nl (st)
-  (cg-emit st "
+(defn cg-nl (st) (cg-emit st "
 "))
 
-; Fresh label .L<N>.
+; Fresh label .L<N>; returns the label string.
 (defn cg-label-new (st)
   (let arena (alloc-read-int st)
     (let n (alloc-read-int (+ st 16))
       (let buf (arena-alloc-zeroed arena 32)
-        (let num (ffi-call "zyl_cstr_from_int" arena n 1000)
-          (begin
-            (alloc-write-int (+ st 16) (+ n 1))
-            (buf-append buf (str-intern arena ".L"))
-            (buf-append buf num)
-            buf))))))
-
-; Slot for a name: look up, or allocate at the tail.
-; Returns: Int (slot index)
-(defn cg-slot-of (st name)
-  (let names (alloc-read-int (+ st 32))
-    (let idx (alloc-read-int (+ st 40))
-      (cg-slot-find st names idx name 0 (kids-len names)))))
-
-(defn cg-slot-find (st names idx name i n)
-  (if (>= i n)
-    (let arena (alloc-read-int st)
-      (let slot n
         (begin
-          (kids-push arena names name)
-          (kids-push arena idx slot)
-          slot)))
-    (if (str-eq (kids-get names i) name)
-      (kids-get idx i)
-      (cg-slot-find st names idx name (+ i 1) n))))
+          (alloc-write-int (+ st 16) (+ n 1))
+          (buf-append buf (str-intern arena ".L"))
+          (buf-append buf (ffi-call "zyl_cstr_from_int" arena n 1000))
+          buf)))))
 
-; Slot for an instruction id: ids are dense per pool; reserve
-; variable slots first, then map instruction id -> id + 4096 offset.
-(defn cg-insn-slot (id) (+ id 4096))
+; Allocate one 8-byte local slot; returns its rbp offset (negative).
+(defn cg-new-slot (st)
+  (let off (alloc-read-int (+ st 24))
+    (begin
+      (alloc-write-int (+ st 24) (+ off 8))
+      (- off))))
 
-; Frame size from slot count.
-(defn cg-frame (max-slot)
-  (* 8 (+ max-slot 4)))
+; ===========================================================================
+; RODATA COLLECTION (threaded through state cell [32]... see cg-rodata*)
+; Rodata entries live in an immutable list stored at state offset 32.
+; ===========================================================================
 
-; Emit one instruction.
-(defn cg-insn (st ir id)
-  (let pool ir
-    (let k (pool-kind pool id)
-      (if (= k 51)
-        ; CONST
-        (begin
-          (cg-emit st "    mov rax, ")
-          (cg-emit-int st (pool-val pool id))
-          (cg-nl st)
-          (cg-store-result st id))
-        (if (= k 52)
-          ; LOAD name
-          (begin
-            (cg-emit st "    mov rax, [rbp-")
-            (cg-emit-int st (* 8 (cg-slot-of st (pool-str pool id))))
-            (cg-emit st "]")
-            (cg-nl st)
-            (cg-store-result st id))
-          (if (= k 53)
-            ; ASSIGN name <- a
-            (begin
-              (cg-load-insn st (pool-a pool id))
-              (cg-emit st "    mov [rbp-")
-              (cg-emit-int st (* 8 (cg-slot-of st (pool-str pool id))))
-              (cg-emit st "], rax")
-              (cg-nl st)
-              (cg-store-result st id))
-            (if (= k 54)
-              (cg-binop st pool id)
-              (if (= k 56)
-                (cg-call st pool id)
-                (if (= k 62)
-                  (cg-print st pool id)
-                  (if (= k 58)
-                    (cg-while st pool id)
-                    (if (= k 57)
-                      (cg-if st pool id)
-                      (if (= k 59)
-                        (cg-make-variant st pool id)
-                        (if (= k 60)
-                          ; TAGOF: deref scrutinee pointer -> tag word
-                          (begin
-                            (cg-load-insn st (pool-a pool id))
-                            (cg-emit st "    mov rax, [rax]")
-                            (cg-nl st)
-                            (cg-store-result st id))
-                          (if (= k 63)
-                            ; FIELD: load ptr, then field at [ptr+8*(1+idx)]
-                            (begin
-                              (cg-load-insn st (pool-a pool id))
-                              (cg-emit st "    mov rax, [rax+")
-                              (cg-emit-int st (* 8 (+ 1 (pool-val pool id))))
-                              (cg-emit st "]")
-                              (cg-nl st)
-                              (cg-store-result st id))
-                            0))))))))))))))
+(deftype Rodata
+  (RStr String String Rodata)   ; label, content
+  (RFlt String String Rodata)   ; label, literal text
+  (RNil))
 
-; While loop: a=cond insn, kids=cond block, c=body block.
-(defn cg-while (st pool id)
-  (let start (cg-label-new st)
-    (let end (cg-label-new st)
+(defn cg-rodata-get (st) (alloc-read-int (+ st 32)))
+(defn cg-rodata-put (st rd) (alloc-write-int (+ st 32) rd))
+
+; Intern a string constant; emit `lea rax, [rip+label]`.
+(defn cg-string-const (st content)
+  (let lbl (cg-label-new st)
+    (begin
+      (cg-rodata-put st (RStr lbl content (cg-rodata-get st)))
+      (cg-emit st "    lea rax, [rip+")
+      (cg-emit st lbl)
+      (cg-emit st "]")
+      (cg-nl st))))
+
+; Intern a float constant; load its bits into rax via xmm0.
+(defn cg-float-const (st text)
+  (let lbl (cg-label-new st)
+    (begin
+      (cg-rodata-put st (RFlt lbl text (cg-rodata-get st)))
+      (cg-emit st "    movsd xmm0, [rip+")
+      (cg-emit st lbl)
+      (cg-emit st "]")
+      (cg-nl st)
+      (cg-emit st "    movq rax, xmm0")
+      (cg-nl st))))
+
+; ===========================================================================
+; KINDS (for print format + float detection)
+; ===========================================================================
+; 0 int, 1 string, 2 float
+
+(defn kind-of (env e)
+  (match e
+    (IConst 0)
+    (IStr  w1 1)
+    (IFlt  w2 2)
+    (ILoad n (env-kind-of env n))
+    (IBinop op l r
+     (if (> op 4)
+       0
+       (let kl (kind-of env l)
+         (let kr (kind-of env r)
+           (if (= kl 2)
+             2
+             (if (= kr 2) 2 0))))))
+    (IIf c t e (kind-of env t))
+    (ICall  w3  w4 0)
+    (IFfi  w5  w6 0)
+    (IPrint  w7 0)
+    (IWhile c b 0)
+    (ISet  w8  w9 0)
+    (ILet  w10  w11  w12 0)
+    (ISeq  w13 0)
+    (IVariant  w14  w15  w16 0)
+    (IMatch  w17  w18 0)))
+
+; ===========================================================================
+; EXPRESSION EMISSION (result always in rax)
+; ===========================================================================
+
+(defn cg-expr (st env e)
+  (match e
+    (IConst v
+     (begin
+       (cg-emit st "    mov rax, ")
+       (cg-emit-int st v)
+       (cg-nl st)))
+    (IStr s (cg-string-const st s))
+    (IFlt t (cg-float-const st t))
+    (ILoad n
+     (begin
+       (cg-emit st "    mov rax, [rbp")
+       (cg-emit-int st (env-lookup env n))
+       (cg-emit st "]")
+       (cg-nl st)))
+    (IBinop op l r
+     (if (> (if (= (kind-of env l) 2) 1 (if (= (kind-of env r) 2) 1 0)) 0)
+       (cg-fbinop st env op l r)
+       (cg-ibinop st env op l r)))
+    (ICall name args (cg-call-args st env name args true 0))
+    (IFfi sym args (cg-call-args st env sym args false 0))
+    (IPrint a (cg-print st env a))
+    (IIf c t eb
+     (let lelse (cg-label-new st)
+       (let lend (cg-label-new st)
+         (begin
+           (cg-expr st env c)
+           (cg-emit st "    test rax, rax")
+           (cg-nl st)
+           (cg-emit st "    je ")
+           (cg-emit st lelse)
+           (cg-nl st)
+           (cg-expr st env t)
+           (cg-emit st "    jmp ")
+           (cg-emit st lend)
+           (cg-nl st)
+           (cg-emit-label st lelse)
+           (cg-expr st env eb)
+           (cg-emit-label st lend)))))
+    (IWhile c body
+     (let lstart (cg-label-new st)
+       (let lend (cg-label-new st)
+         (begin
+           (cg-emit-label st lstart)
+           (cg-expr st env c)
+           (cg-emit st "    test rax, rax")
+           (cg-nl st)
+           (cg-emit st "    je ")
+           (cg-emit st lend)
+           (cg-nl st)
+           (cg-expr st env body)
+           (cg-emit st "    jmp ")
+           (cg-emit st lstart)
+           (cg-nl st)
+           (cg-emit-label st lend)
+           (cg-emit st "    xor eax, eax")
+           (cg-nl st)))))
+    (ISet n v
+     (begin
+       (cg-expr st env v)
+       (cg-emit st "    mov [rbp")
+       (cg-emit-int st (env-lookup env n))
+       (cg-emit st "], rax")
+       (cg-nl st)))
+    (ILet n v body
+     (let off (cg-new-slot st)
+       (let k (kind-of env v)
+         (begin
+           (cg-expr st env v)
+           (cg-emit st "    mov [rbp")
+           (cg-emit-int st off)
+           (cg-emit st "], rax")
+           (cg-nl st)
+           (cg-expr st (EnvBind n off k env) body)))))
+    (ISeq es (cg-seq st env es))
+    (IVariant  w19 tag fields (cg-variant st env tag fields))
+    (IMatch scr arms (cg-match st env scr arms))))
+
+(defn cg-seq (st env es)
+  (if (is-nil es)
+    (begin
+      (cg-emit st "    xor eax, eax")
+      (cg-nl st))
+    (if (is-nil (list-cdr es))
+      (cg-expr st env (ih es))
       (begin
-        (cg-emit-str st start)
-        (cg-emit st ":")
-        (cg-nl st)
-        (cg-block st pool (pool-kids pool id))
-        (cg-emit st "    test rax, rax")
-        (cg-nl st)
-        (cg-emit st "    je ")
-        (cg-emit-str st end)
-        (cg-nl st)
-        (cg-block st pool (pool-c pool id))
-        (cg-emit st "    jmp ")
-        (cg-emit-str st start)
-        (cg-nl st)
-        (cg-emit-label st end)
-        (cg-emit st "    mov rax, 0")
-        (cg-nl st)
-        (cg-store-result st id)))))
+        (cg-expr st env (ih es))
+        (cg-seq st env (tl2 es))))))
 
-
-; Variant construction: heap block [tag][f0]...[fn-1] via libc malloc.
-; str=variant name, val=tag, kids=field insns.
-(defn cg-make-variant (st pool id)
-  (let fk (pool-kids pool id)
-    (let n (if (= fk 0) 0 (kids-len fk))
-    (begin
-      (cg-emit st "    mov rdi, ")
-      (cg-emit-int st (* 8 (+ n 1)))
-      (cg-nl st)
-      (cg-emit st "    call malloc")
-      (cg-nl st)
-      ; keep the block pointer in rbx (callee-saved) while filling fields
-      (cg-emit st "    mov rbx, rax")
-      (cg-nl st)
-      (cg-emit st "    mov qword ptr [rbx], ")
-      (cg-emit-int st (pool-val pool id))
-      (cg-nl st)
-      (cg-fields st pool (pool-kids pool id) 0 n)
-      (cg-emit st "    mov rax, rbx")
-      (cg-nl st)
-      (cg-store-result st id)))))
-
-; Store field insns into the block rbx points at.
-(defn cg-fields (st pool fields j n)
-  (if (< j n)
-    (begin
-      (cg-load-insn st (kids-get fields j))
-      (cg-emit st "    mov [rbx+")
-      (cg-emit-int st (* 8 (+ j 1)))
-      (cg-emit st "], rax")
-      (cg-nl st)
-      (cg-fields st pool fields (+ j 1) n))
-    0))
-
-; Store rax into the instruction's own result slot.
-(defn cg-store-result (st id)
-  (cg-emit st "    mov [rbp-")
-  (cg-emit-int st (* 8 (cg-insn-slot id)))
-  (cg-emit st "], rax")
-  (cg-nl st))
-
-; Load an instruction's result slot into rax.
-(defn cg-load-insn (st id)
-  (cg-emit st "    mov rax, [rbp-")
-  (cg-emit-int st (* 8 (cg-insn-slot id)))
-  (cg-emit st "]")
-  (cg-nl st))
-
-; Binary op / comparison.
-(defn cg-binop (st pool id)
+; Integer binary op: lhs -> rax (pushed), rhs -> rax, lhs restored to rax,
+; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
+(defn cg-ibinop (st env op l r)
   (begin
-    ; lhs -> rcx first, then rhs -> rax, so cmp/sub/idiv see a OP b
-    (cg-load-insn st (pool-b pool id))
+    (cg-expr st env l)
+    (cg-emit st "    push rax")
+    (cg-nl st)
+    (cg-expr st env r)
     (cg-emit st "    mov rcx, rax")
     (cg-nl st)
-    (cg-load-insn st (pool-a pool id))
-    (let op (pool-val pool id)
-      (if (< op 5)
-            (if (= op 0)
-              (begin
-                (cg-emit st "    add rax, rcx")
-                (cg-nl st))
-              (if (= op 1)
-                (begin
-                  (cg-emit st "    sub rax, rcx")
-                  (cg-nl st))
-                (if (= op 2)
-                  (begin
-                    (cg-emit st "    imul rax, rcx")
-                    (cg-nl st))
-                  (begin
-                    (cg-emit st "    cqo")
-                    (cg-nl st)
-                    (cg-emit st "    idiv rcx")
-                    (cg-nl st)))))
+    (cg-emit st "    pop rax")
+    (cg-nl st)
+    (if (< op 5)
+      (if (= op 0)
+        (cg-emit st "    add rax, rcx")
+        (if (= op 1)
+          (cg-emit st "    sub rax, rcx")
+          (if (= op 2)
+            (cg-emit st "    imul rax, rcx")
             (begin
-          ; comparisons: cmp then setcc
-          (cg-emit st "    cmp rax, rcx")
-          (cg-nl st)
-          (cg-emit st "    set")
-          (if (= op 5) (cg-emit st "l al")
-            (if (= op 6) (cg-emit st "g al")
-              (if (= op 7) (cg-emit st "le al")
-                (if (= op 8) (cg-emit st "ge al")
-                  (if (= op 9) (cg-emit st "e al")
-                    (cg-emit st "ne al"))))))
-          (cg-nl st)
-          (cg-emit st "    movzx rax, al")
-          (cg-nl st)
-          0)))
-    (cg-store-result st id)))
+              (cg-emit st "    cqo")
+              (cg-nl st)
+              (cg-emit st "    idiv rcx")
+              (cg-nl st)
+              (if (= op 4)
+                (begin
+                  ; remainder lives in rdx after idiv
+                  (cg-emit st "    mov rax, rdx")
+                  (cg-nl st))
+                0))))))
+      (begin
+        (cg-emit st "    cmp rax, rcx")
+        (cg-nl st)
+        (cg-emit st "    set")
+        (if (= op 5) (cg-emit st "l al")
+          (if (= op 6) (cg-emit st "g al")
+            (if (= op 7) (cg-emit st "le al")
+              (if (= op 8) (cg-emit st "ge al")
+                (if (= op 9) (cg-emit st "e al")
+                  (cg-emit st "ne al"))))))
+        (cg-nl st)
+        (cg-emit st "    movzx rax, al")
+        (cg-nl st))))
+
+; Float binary op: bits in rax; xmm0 = lhs, xmm1 = rhs.
+(defn cg-fbinop (st env op l r)
+  (begin
+    (cg-expr st env l)
+    (cg-emit st "    push rax")
+    (cg-nl st)
+    (cg-expr st env r)
+    (cg-emit st "    movq xmm1, rax")
+    (cg-nl st)
+    (cg-emit st "    pop rax")
+    (cg-nl st)
+    (cg-emit st "    movq xmm0, rax")
+    (cg-nl st)
+    (if (< op 5)
+      (begin
+        (cg-emit st "    ")
+        (if (= op 0) (cg-emit st "addsd"))
+        (if (= op 1) (cg-emit st "subsd"))
+        (if (= op 2) (cg-emit st "mulsd"))
+        (if (= op 3) (cg-emit st "divsd"))
+        (cg-emit st " xmm0, xmm1")
+        (cg-nl st)
+        (cg-emit st "    movq rax, xmm0")
+        (cg-nl st))
+      (begin
+        (cg-emit st "    comisd xmm0, xmm1")
+        (cg-nl st)
+        (cg-emit st "    set")
+        ; unsigned-comparison flags: below/above carry the usual sense here
+        (if (= op 5) (cg-emit st "b al")
+          (if (= op 6) (cg-emit st "a al")
+            (if (= op 7) (cg-emit st "be al")
+              (if (= op 8) (cg-emit st "ae al")
+                (if (= op 9) (cg-emit st "e al")
+                  (cg-emit st "ne al"))))))
+        (cg-nl st)
+        (cg-emit st "    movzx rax, al")
+        (cg-nl st)))))
 
 ; Register-name dispatch by arg index (SysV).
 (defn cg-reg-of (i)
@@ -276,203 +314,363 @@
           (if (= i 4) "r8"
             "r9"))))))
 
-; User call: up to 6 register args.
-(defn cg-call (st pool id)
-  (let args (pool-kids pool id)
+; Call: evaluate args left-to-right, pushing each result; then pop into
+; registers in reverse; call; clean up any pad. `mangle` adds the f_ prefix
+; for user functions.
+(defn cg-call-args (st env name args mangle i)
+  (if (is-nil args)
+    (cg-call-fire st env name mangle i)
     (begin
-      (cg-load-args st args 0 (kids-len args))
+      (cg-expr st env (ih args))
+      (cg-emit st "    push rax")
+      (cg-nl st)
+      (cg-call-args st env name (tl2 args) mangle (+ i 1)))))
+
+(defn cg-call-fire (st env name mangle i)
+  (let pad (if (= (% i 2) 1)
+             (begin
+               (cg-emit st "    sub rsp, 8")   ; keep rsp 16-aligned for calls
+               (cg-nl st)
+               1)
+             0)
+    (begin
+      (cg-pop-regs st (- i 1))
       (cg-emit st "    call ")
-      ; name mangling: prefix f_ to avoid clashing with libc symbols
-      (let nm (pool-str pool id)
+      (if mangle (cg-emit st "f_") 0)
+      (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
+      (cg-nl st)
+      (if (= pad 1)
         (begin
-          (cg-emit st "f_")
-          ; emit name via buffer append of the raw string
-          (cg-emit-str st nm)))
-      (cg-nl st)
-      (cg-store-result st id))))
+          (cg-emit st "    add rsp, 8")
+          (cg-nl st))
+        0))))
 
-; Append an existing C string to the output.
-(defn cg-emit-str (st s)
-  (let buf (alloc-read-int (+ st 8))
-    (buf-append buf s)))
-
-; Load args[i..n) into their registers (ascending order is safe because
-; each target register is written after earlier ones are consumed).
-(defn cg-load-args (st args i n)
-  (if (< i n)
+; Pop j+1 pushed args into their registers (reverse order).
+(defn cg-pop-regs (st j)
+  (if (< j 0)
+    0
     (begin
-      (cg-emit st "    mov ")
-      (cg-emit st (cg-reg-of i))
-      (cg-emit st ", [rbp-")
-      (cg-emit-int st (* 8 (cg-insn-slot (kids-get args i))))
-      (cg-emit st "]")
+      (cg-emit st "    pop ")
+      (cg-emit st (cg-reg-of j))
       (cg-nl st)
-      (cg-load-args st args (+ i 1) n))
-    0))
+      (cg-pop-regs st (- j 1)))))
 
-; print: printf("%d\n", v)
-(defn cg-print (st pool id)
-  (let args (pool-kids pool id)
+; print: pick the format by the argument's kind.
+(defn cg-print (st env a)
+  (let k (kind-of env a)
     (begin
-      (cg-emit st "    mov rsi, [rbp-")
-      (cg-emit-int st (* 8 (cg-insn-slot (kids-get args 0))))
-      (cg-emit st "]")
-      (cg-nl st)
-      (cg-emit st "    lea rdi, [rip+.Lfmt]")
-      (cg-nl st)
-      (cg-emit st "    xor eax, eax")
-      (cg-nl st)
+      (cg-expr st env a)
+      (if (= k 2)
+        (begin
+          ; float: value already in xmm-compatible bits
+          (cg-emit st "    movq xmm0, rax")
+          (cg-nl st)
+          (cg-emit st "    lea rdi, [rip+.Lfmtf]")
+          (cg-nl st)
+          (cg-emit st "    mov eax, 1")
+          (cg-nl st))
+        (if (= k 1)
+          (begin
+            (cg-emit st "    mov rsi, rax")
+            (cg-nl st)
+            (cg-emit st "    lea rdi, [rip+.Lfmts]")
+            (cg-nl st)
+            (cg-emit st "    xor eax, eax")
+            (cg-nl st))
+          (begin
+            (cg-emit st "    mov rsi, rax")
+            (cg-nl st)
+            (cg-emit st "    lea rdi, [rip+.Lfmtd]")
+            (cg-nl st)
+            (cg-emit st "    xor eax, eax")
+            (cg-nl st))))
       (cg-emit st "    call printf")
-      (cg-nl st)
-      (cg-store-result st id))))
+      (cg-nl st))))
 
-; IF: cond / then-list / else-list.
-(defn cg-if (st ir id)
-  (let pool ir
-    (let lelse (cg-label-new st)
-      (let lend (cg-label-new st)
+; Variant construction: malloc'd block [tag][f0]..[fn-1].
+; Fields are evaluated and pushed, then popped into the block (right to
+; left). An odd field count gets 8 bytes of pad to keep rsp 16-aligned
+; across malloc.
+(defn cg-variant (st env tag fields)
+  (let n (list-length fields)
+    (begin
+      (cg-push-fields st env fields)
+      (if (= (% n 2) 1)
         (begin
-          ; cond != 0 ?
-          (cg-load-insn st (pool-a pool id))
-          (cg-emit st "    test rax, rax")
-          (cg-nl st)
-          (cg-emit st "    je ")
-          (cg-emit-str st lelse)
-          (cg-nl st)
-          ; then block
-          (cg-block st ir (pool-kids pool id))
-          (cg-emit st "    jmp ")
-          (cg-emit-str st lend)
-          (cg-nl st)
-          (cg-emit-label st lelse)
-          (cg-block st ir (pool-c pool id))
-          (cg-emit-label st lend))))))
+          (cg-emit st "    sub rsp, 8")
+          (cg-nl st))
+        0)
+      (cg-emit st "    mov rdi, ")
+      (cg-emit-int st (* 8 (+ n 1)))
+      (cg-nl st)
+      (cg-emit st "    call malloc")
+      (cg-nl st)
+      (cg-emit st "    mov rbx, rax")
+      (cg-nl st)
+      (cg-emit st "    mov qword ptr [rbx], ")
+      (cg-emit-int st tag)
+      (cg-nl st)
+      (if (= (% n 2) 1)
+        (begin
+          (cg-emit st "    add rsp, 8")
+          (cg-nl st))
+        0)
+      (cg-pop-fields st n)
+      (cg-emit st "    mov rax, rbx")
+      (cg-nl st))))
 
-; Emit a label followed by ':'.
+; Evaluate each field left-to-right, pushing its value.
+(defn cg-push-fields (st env fields)
+  (if (is-nil fields)
+    0
+    (begin
+      (cg-expr st env (ih fields))
+      (cg-emit st "    push rax")
+      (cg-nl st)
+      (cg-push-fields st env (tl2 fields)))))
+
+; Pop n fields into the block rbx points at (reverse order restores the
+; original left-to-right layout).
+(defn cg-pop-fields (st j)
+  (if (< j 0)
+    0
+    (begin
+      (cg-emit st "    pop rax")
+      (cg-nl st)
+      (cg-emit st "    mov [rbx+")
+      (cg-emit-int st (* 8 (+ j 1)))
+      (cg-emit st "], rax")
+      (cg-nl st)
+      (cg-pop-fields st (- j 1)))))
+
+; Match: evaluate scrutinee, keep it on the stack for the whole dispatch,
+; replace it with the arm-body result, pop at the end.
+; Stack invariant: exactly one pushed word ([rsp] = scrutinee or result).
+(defn cg-match (st env scr arms)
+  (let lend (cg-label-new st)
+    (let lzero (cg-label-new st)
+      (begin
+        (cg-expr st env scr)
+        (cg-emit st "    push rax")
+        (cg-nl st)
+        (cg-arms st env arms lend lzero)
+        ; fall-through: no arm matched -> 0
+        (cg-emit-label st lzero)
+        (cg-emit st "    mov qword ptr [rsp], 0")
+        (cg-nl st)
+        (cg-emit-label st lend)
+        (cg-emit st "    pop rax")
+        (cg-nl st)))))
+
+; Emit arms[i..]. Each arm checks [rsp]'s tag; a failed check jumps to
+; the next arm's label (or the zero fall-through after the last arm); a
+; successful match binds pattern vars and evaluates the body.
+(defn cg-arms (st env arms lend lzero)
+  (if (is-nil arms)
+    0
+    (let arm (list-car arms)
+      (match arm
+        ((IArm vname tag binds body)
+         (let rest (list-cdr arms)
+           (let lnext (if (is-nil rest) lzero (cg-label-new st))
+             (begin
+               ; tag check: [rsp] holds the scrutinee pointer
+               (cg-emit st "    mov rax, [rsp]")
+               (cg-nl st)
+               (cg-emit st "    mov rax, [rax]")
+               (cg-nl st)
+               (cg-emit st "    cmp rax, ")
+               (cg-emit-int st tag)
+               (cg-nl st)
+               (cg-emit st "    jne ")
+               (cg-emit st lnext)
+               (cg-nl st)
+               ; bind pattern vars to fields, then emit the body
+               (let arm-env (cg-bind-fields st env binds 0)
+                 (begin
+                   (cg-expr st arm-env body)
+                   (cg-emit st "    mov [rsp], rax")
+                   (cg-nl st)
+                   (cg-emit st "    jmp ")
+                   (cg-emit st lend)
+                   (cg-nl st)))
+               (if (is-nil rest)
+                 0
+                 (begin
+                   (cg-emit-label st lnext)
+                   (cg-arms st env rest lend lzero)))))))))))
+
+; Bind pattern variables: field j of [rsp]'s block goes into a fresh slot.
+; Returns: Env (the extended environment).
+(defn cg-bind-fields (st env binds j)
+  (if (is-nil binds)
+    env
+    (let b (list-car binds)
+      (begin
+        (cg-emit st "    mov rax, [rsp]")
+        (cg-nl st)
+        (cg-emit st "    mov rax, [rax+")
+        (cg-emit-int st (* 8 (+ j 1)))
+        (cg-emit st "]")
+        (cg-nl st)
+        (if (str-eq b (str-intern (alloc-read-int st) "_"))
+          (cg-bind-fields st env (tl2 binds) (+ j 1))
+          (let off (cg-new-slot st)
+            (begin
+              (cg-emit st "    mov [rbp")
+              (cg-emit-int st off)
+              (cg-emit st "], rax")
+              (cg-nl st)
+              (cg-bind-fields st (EnvBind b off 0 env) (list-cdr binds) (+ j 1)))))))))
+
 (defn cg-emit-label (st lbl)
   (begin
-    (cg-emit-str st lbl)
+    (cg-emit st lbl)
     (cg-emit st ":")
     (cg-nl st)))
 
-; Emit every instruction of a block list.
-(defn cg-block (st ir blk)
-  (cg-block-loop st ir blk 0 (kids-len blk)))
+; ===========================================================================
+; FUNCTION / PROGRAM EMISSION
+; ===========================================================================
 
-(defn cg-block-loop (st ir blk i n)
-  (if (< i n)
+(defn cg-function (st f)
+  (match f
+    ((IFn name params body)
+     (let env (cg-param-env params 0 None)
+       (begin
+         (cg-emit st "f_")
+         (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
+         (cg-emit st ":")
+         (cg-nl st)
+         (cg-emit st "    push rbp")
+         (cg-nl st)
+         (cg-emit st "    mov rbp, rsp")
+         (cg-nl st)
+         (cg-emit st "    sub rsp, 65536")
+         (cg-nl st)
+         (cg-param-spills st 0 (list-length params))
+         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params)))) ; locals start after params
+         (cg-expr st env body)
+         (cg-emit st "    mov rsp, rbp")
+         (cg-nl st)
+         (cg-emit st "    pop rbp")
+         (cg-nl st)
+         (cg-emit st "    ret")
+         (cg-nl st))))))
+
+; Immutable param environment: param i -> offset -(8*(i+1)).
+(defn cg-param-env (params i acc)
+  (if (is-nil params)
+    acc
+    (cg-param-env (tl2 params) (+ i 1)
+                  (EnvBind (shd params) (- (* 8 (+ i 1))) 0 acc))))
+
+; Spill incoming SysV registers to param slots.
+(defn cg-param-spills (st i n)
+  (if (>= i n)
+    0
     (begin
-      (cg-insn st ir (kids-get blk i))
-      (cg-block-loop st ir blk (+ i 1) n))
-    0))
-
-; Emit one function: prologue, param stores, body, epilogue.
-(defn cg-function (st ir fn-id)
-  (let pool ir
-    (let name (pool-str pool fn-id)
-      (let params (pool-kids pool fn-id)
-        (let body (pool-c pool fn-id)
-          (let last (pool-val pool fn-id)
-            (begin
-              ; label
-              (cg-emit st "f_")
-              (cg-emit-str st name)
-              (cg-emit st ":")
-              (cg-nl st)
-              (cg-emit st "    push rbp")
-              (cg-nl st)
-              (cg-emit st "    mov rbp, rsp")
-              (cg-nl st)
-              (cg-emit st "    sub rsp, 65536")
-              (cg-nl st)
-              ; pre-register param name slots so bodies resolve them
-              (cg-param-slots st ir params 0 (kids-len params))
-              ; store incoming registers to param slots
-              (cg-param-stores st ir params 0 (kids-len params))
-              ; body
-              (cg-block st ir body)
-              ; result: last instruction's slot -> rax
-              (cg-load-insn st last)
-              (cg-emit st "    mov rsp, rbp")
-              (cg-nl st)
-              (cg-emit st "    pop rbp")
-              (cg-nl st)
-              (cg-emit st "    ret")
-              (cg-nl st))))))))
-
-; Pre-register slots for params (so cg-slot-of allocates them first).
-(defn cg-param-slots (st ir params i n)
-  (if (< i n)
-    (begin
-      (cg-slot-of st (pool-str ir (kids-get params i)))
-      (cg-param-slots st ir params (+ i 1) n))
-    0))
-
-; Store arg registers into the named parameter slots.
-(defn cg-param-stores (st ir params i n)
-  (if (< i n)
-    (begin
-      ; slots are 1-based relative to rbp: slot 0 lives at [rbp-8]
-      (cg-emit st "    mov [rbp-")
-      (cg-emit-int st (* 8 (+ 1 (cg-slot-of st (param-name st ir params i)))))
+      (cg-emit st "    mov [rbp")
+      (cg-emit-int st (- (* 8 (+ i 1))))
       (cg-emit st "], ")
       (cg-emit st (cg-reg-of i))
       (cg-nl st)
-      (cg-param-stores st params (+ i 1) n))
-    0))
+      (cg-param-spills st (+ i 1) n))))
 
-; Param name lookup helper.
-(defn param-name (st ir params i)
-  (pool-str ir (kids-get params i)))
+; Emit the whole program: header, functions, entry stub, rodata.
+; Functions are emitted in lowering order (source order); the entry stub
+; calls f_main, which the lowering guarantees exists.
+(defn cg-program (st fns)
+  (begin
+    (cg-emit st ".intel_syntax noprefix")
+    (cg-nl st)
+    (cg-emit st ".text")
+    (cg-nl st)
+    (cg-emit st ".globl main")
+    (cg-nl st)
+    (cg-functions st fns)
+    (cg-emit st "main:")
+    (cg-nl st)
+    (cg-emit st "    push rbp")
+    (cg-nl st)
+    (cg-emit st "    mov rbp, rsp")
+    (cg-nl st)
+    (cg-emit st "    call f_main")
+    (cg-nl st)
+    (cg-emit st "    xor eax, eax")
+    (cg-nl st)
+    (cg-emit st "    pop rbp")
+    (cg-nl st)
+    (cg-emit st "    ret")
+    (cg-nl st)
+    (cg-emit st ".section .rodata")
+    (cg-nl st)
+    (cg-emit st ".Lfmtd:")
+    (cg-nl st)
+    (cg-emit st "    .string \"%d\\n\"")
+    (cg-nl st)
+    (cg-emit st ".Lfmtf:")
+    (cg-nl st)
+    (cg-emit st "    .string \"%f\\n\"")
+    (cg-nl st)
+    (cg-emit st ".Lfmts:")
+    (cg-nl st)
+    (cg-emit st "    .string \"%s\\n\"")
+    (cg-nl st)
+    (cg-rodata-emit st (cg-rodata-get st))))
 
-; Emit the whole program (header + functions + rodata) into the buffer.
-(defn cg-program (st ir)
-  (let fns (kids-new (alloc-read-int st) 64)
+
+; Typed list heads (total via fallback values).
+(defn ih (xs)
+  (match xs
+    (Cons a rest a)
+    (None (IConst 0))))
+
+(defn fh (xs)
+  (match xs
+    (Cons f rest f)
+    (None (IFn "" None (IConst 0)))))
+
+(defn shd (xs)
+  (match xs
+    (Cons s rest s)
+    (None "")))
+
+(defn cg-functions (st fns)
+  (if (is-nil fns)
+    0
     (begin
-      (cg-emit st ".intel_syntax noprefix")
-      (cg-nl st)
-      (cg-emit st ".text")
-      (cg-nl st)
-      (cg-emit st ".globl main")
-      (cg-nl st)
-      ; collect function ids
-      (cg-functions st ir 0 (pool-count ir))
-      ; entry stub
-      (cg-emit st "main:")
-      (cg-nl st)
-      (cg-emit st "    push rbp")
-      (cg-nl st)
-      (cg-emit st "    mov rbp, rsp")
-      (cg-nl st)
-      (cg-emit st "    call f_main")
-      (cg-nl st)
-      (cg-emit st "    pop rbp")
-      (cg-nl st)
-      (cg-emit st "    ret")
-      (cg-nl st)
-      ; rodata format string
-      (cg-emit st ".section .rodata")
-      (cg-nl st)
-      (cg-emit st ".Lfmt:")
-      (cg-nl st)
-      (cg-emit st "    .string \"%d\\n\"")
-      (cg-nl st))))
+      (cg-function st (fh fns))
+      (cg-functions st (tl2 fns)))))
 
-; Count nodes in a pool.
-(defn pool-count (pool)
-  (alloc-read-int pool))
-
-; Emit each function record in the output IR pool.
-(defn cg-functions (st ir i n)
-  (if (< i n)
-    (begin
-      ; kind 0 marks a function record (instructions carry opcodes >= 51)
-      (if (= (pool-kind ir i) 0)
-        (cg-function st ir i)
-        0)
-      (cg-functions st ir (+ i 1) n))
-    0))
+(defn cg-rodata-emit (st rd)
+  (match rd
+    (RNil 0)
+    ((RStr lbl content rest)
+     (begin
+       (cg-emit st lbl)
+       (cg-emit st ":")
+       (cg-nl st)
+       (cg-emit st "    .string \"")
+       (cg-emit st content)
+       (cg-emit st "\"")
+       (cg-nl st)
+       (cg-rodata-emit st rest)))
+    ((RFlt lbl text rest)
+     (begin
+       (cg-emit st lbl)
+       (cg-emit st ":")
+       (cg-nl st)
+       (cg-emit st "    .double ")
+       (cg-emit st text)
+       (cg-nl st)
+       (cg-rodata-emit st rest)))))
 
 ; Return the emitter's text buffer pointer.
 (defn cg-buffer (st)
   (alloc-read-int (+ st 8)))
+
+(defn tl2 (xs)
+  (match xs
+    (Cons a rest rest)
+    (None None)))

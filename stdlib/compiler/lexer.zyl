@@ -1,120 +1,42 @@
-; === Zyl Standard Library — Compiler Lexer (Self-Hosting Phase 2) ===
+; === Zyl Standard Library — Compiler Lexer ===
 ; Module: compiler/lexer
-; Provides: A deterministic tokenizer for Zyl source → a flat token list.
+; Provides: A deterministic tokenizer for Zyl source.
 ;
-; Input:  a NUL-terminated source buffer (Int pointer) in `arena`.
-; Output: a token list handle `tokens` (see §tokens below).
+; Input:  a NUL-terminated source buffer (Int pointer).
+; Output: a (List Token) in source order (see compiler/ast), ending with
+;         a single TkEof.
 ;
-; Token kinds (numeric literals; `def` globals are not resolved by codegen):
-;   100 TK_EOF        101 TK_IDENT   102 TK_INT   103 TK_FLOAT
-;   104 TK_STRING     105 TK_BOOL    106 TK_SYMBOL  107 TK_KEYWORD
-;   108 TK_LPAREN     109 TK_RPAREN  110 TK_LBRACE   111 TK_RBRACE
-;   112 TK_COLON      113 TK_LBRACKET  114 TK_RBRACKET
+; Determinism: source scanned strictly left-to-right; stream order
+; preserved by construction (each step conses onto the returned stream).
+; Strings are not deduplicated (source order).
 ;
-; Token record (6 words = 48 bytes at list_base + i*48):
-;   +0            kind
-;   +8            value (integer literal; bool 0/1; otherwise 0)
-;   +16           text pointer (NUL-terminated, interned in arena; 0 if none)
-;   +24           line (1-based)
-;   +32           col  (1-based)
-;
-; Determinism: source scanned strictly left-to-right; stream order preserved.
-; Strings are not deduplicated (source order; dedup is a later optimization),
-; mirroring the Rust lexer's output for the same source.
-;
-; NOTE: the Rust lexer strips `;`-comments line-by-line before tokenizing.
-;       We skip `;`..EOL inline, producing identical tokens.
+; NOTE: comments (`;` .. end of line) are skipped inline, producing the
+; same token stream as the Rust lexer for identical source.
 
 (use allocator/allocator)
-(use compiler/ir)
-
-; ===========================================================================
-; TOKEN LIST
-; ===========================================================================
-; Header: [+0 count][+8 cap][+16 base]  (like kids, but 48-byte entries)
-
-; Create an empty token list with room for `cap` tokens.
-; Returns: Int (list handle)
-(defn toks-create (arena cap)
-  (let hdr (arena-alloc arena 24)
-    (let base (arena-alloc-zeroed arena (* cap 48))
-      (begin
-        (alloc-write-int hdr 0)
-        (alloc-write-int (+ hdr 8) cap)
-        (alloc-write-int (+ hdr 16) base)
-        hdr))))
-
-; Grow a token list's block, copying existing entries in index order.
-; Returns: Unit
-(defn toks-grow (arena list count)
-  (let cap (alloc-read-int (+ list 8))
-    (let old (alloc-read-int (+ list 16))
-      (let new-cap (* cap 2)
-        (let new-base (arena-alloc-zeroed arena (* new-cap 48))
-          (begin
-            (for (i 0) (< i count)
-              (begin
-                (alloc-write-int (+ new-base (* i 48)) (alloc-read-int (+ old (* i 48))))
-                (alloc-write-int (+ new-base (+ (* i 48) 8)) (alloc-read-int (+ old (+ (* i 48) 8))))
-                (alloc-write-int (+ new-base (+ (* i 48) 16)) (alloc-read-int (+ old (+ (* i 48) 16))))
-                (alloc-write-int (+ new-base (+ (* i 48) 24)) (alloc-read-int (+ old (+ (* i 48) 24))))
-                (alloc-write-int (+ new-base (+ (* i 48) 32)) (alloc-read-int (+ old (+ (* i 48) 32))))
-                (set! i (+ i 1))))
-            (alloc-write-int (+ list 8) new-cap)
-            (alloc-write-int (+ list 16) new-base)))))))
-
-; Append a token.
-; Returns: Unit
-(defn toks-push (arena list kind value text line col)
-  (let count (alloc-read-int list)
-    (let cap (alloc-read-int (+ list 8))
-      (begin
-        (if (>= count cap)
-          (begin
-            (toks-grow arena list count)
-            0)
-          0)
-        (let base (alloc-read-int (+ list 16))
-          (begin
-            (alloc-write-int (+ base (* count 48)) kind)
-            (alloc-write-int (+ base (+ (* count 48) 8)) value)
-            (alloc-write-int (+ base (+ (* count 48) 16)) text)
-            (alloc-write-int (+ base (+ (* count 48) 24)) line)
-            (alloc-write-int (+ base (+ (* count 48) 32)) col)
-            (alloc-write-int list (+ count 1))))))))
-
-; ===========================================================================
-; TOKEN ACCESSORS
-; ===========================================================================
-
-(defn tok-count (list) (alloc-read-int list))
-
-(defn tok-kind (list i) (alloc-read-int (+ (alloc-read-int (+ list 16)) (* i 48))))
-
-(defn tok-value (list i) (alloc-read-int (+ (alloc-read-int (+ list 16)) (+ (* i 48) 8))))
-
-(defn tok-text (list i) (alloc-read-int (+ (alloc-read-int (+ list 16)) (+ (* i 48) 16))))
-
-(defn tok-line (list i) (alloc-read-int (+ (alloc-read-int (+ list 16)) (+ (* i 48) 24))))
-
-(defn tok-col (list i) (alloc-read-int (+ (alloc-read-int (+ list 16)) (+ (* i 48) 32))))
+(use compiler/ast)
 
 ; ===========================================================================
 ; CHARACTER CLASSES (byte values; ASCII)
 ; ===========================================================================
 
-; ' ' 32, '\t' 9, '\n' 10, '\r' 13
 (defn is-ws (c)
   (if (= c 32) 1 (if (= c 9) 1 (if (= c 13) 1 (if (= c 10) 1 0)))))
 
 (defn is-digit (c)
-  (if (and (>= c 48) (<= c 57)) 1 0))
+  (if (>= c 48)
+    (if (<= c 57) 1 0)
+    0))
 
 (defn is-upper (c)
-  (if (and (>= c 65) (<= c 90)) 1 0))
+  (if (>= c 65)
+    (if (<= c 90) 1 0)
+    0))
 
 (defn is-lower (c)
-  (if (and (>= c 97) (<= c 122)) 1 0))
+  (if (>= c 97)
+    (if (<= c 122) 1 0)
+    0))
 
 (defn is-alpha (c)
   (if (is-upper c) 1 (is-lower c)))
@@ -135,7 +57,7 @@
                       (if (= c 42) 1
                         (if (= c 37) 1 0)))))))))))))
 
-; Mirror Rust lexer.rs is_ident_continue: alnum | _ - ? ! / = + % .   (NOTE: no < > *)
+; Mirror Rust lexer.rs is_ident_continue: alnum | _ - ? ! / = + % .
 (defn is-ident-cont (c)
   (if (is-alpha c)
     1
@@ -151,47 +73,74 @@
                     (if (= c 37) 1
                       (if (= c 46) 1 0))))))))))))
 
-; ';' comment starter: 59
 (defn is-semicolon (c) (if (= c 59) 1 0))
 
 ; ===========================================================================
 ; SCANS
 ; ===========================================================================
 
-; Byte at `i` in `src` (NUL-terminated). -1 past end.
+; Byte at `i` in `src` (NUL-terminated).
 ; Returns: Int
 (defn byte-at (src i)
   (ffi-call "zyl_cstr_byte_at" src i 1000))
 
-; End index of an identifier starting at `start` (start is already a valid
-; ident-start; we scan continue chars). Returns: end (exclusive)
+; End index of an identifier starting at `start`. Returns: end (exclusive)
+(defn scan-ident-from (src len i)
+  (if (>= i len)
+    i
+    (if (= (is-ident-cont (byte-at src i)) 1)
+      (scan-ident-from src len (+ i 1))
+      i)))
+
 (defn scan-ident (src len start)
-  (let i (+ start 1)
-    (while (and (< i len) (is-ident-cont (byte-at src i)))
-      (set! i (+ i 1)))
-    i))
+  (scan-ident-from src len (+ start 1)))
 
-; End index of a numeric literal starting at `start`. Mirrors Rust read_numeric:
-; trailing digits/'.' then optional e/E [+-] digits. Returns: end (exclusive)
+; End index of a numeric literal starting at `start`: optional sign,
+; digits/'.' run, then optional e/E [+-] digits. Returns: end (exclusive)
+(defn scan-num-chars (src len i)
+  (if (>= i len)
+    i
+    (let c (byte-at src i)
+      (if (= (is-digit c) 1)
+        (scan-num-chars src len (+ i 1))
+        (if (= c 46)
+          (scan-num-chars src len (+ i 1))
+          i)))))
+
+(defn scan-exp-digits (src len i)
+  (if (>= i len)
+    i
+    (if (= (is-digit (byte-at src i)) 1)
+      (scan-exp-digits src len (+ i 1))
+      i)))
+
+(defn scan-exp (src len i)
+  ; i points at e/E
+  (let j (+ i 1)
+    (if (>= j len)
+      j
+      (let b (byte-at src j)
+        (let j2 (if (or2 (= b 43) (= b 45)) (+ j 1) j))
+        (scan-exp-digits src len j2)))))
+
+; small helper: logical or on two 0/1 values (avoids and/or forms)
+(defn or2 (a b)
+  (if (= a 0)
+    (if (= b 0) 0 1)
+    1))
+
 (defn scan-number (src len start)
-  (let i start
-    (begin
-      (if (= (byte-at src i) 45) (set! i (+ i 1)) 0)
-      (while (and (< i len) (or (is-digit (byte-at src i)) (= (byte-at src i) 46)))
-        (set! i (+ i 1)))
-      (if (and (< i len) (or (= (byte-at src i) 101) (= (byte-at src i) 69)))
-        (begin
-          (set! i (+ i 1))
-          (if (and (< i len) (or (= (byte-at src i) 43) (= (byte-at src i) 45)))
-            (set! i (+ i 1))
-            0)
-          (while (and (< i len) (is-digit (byte-at src i)))
-            (set! i (+ i 1)))
-          i)
-        i))))
+  (let i (if (= (byte-at src start) 45) (+ start 1) start)
+    (let mid (scan-num-chars src len i)
+      (if (>= mid len)
+        mid
+        (let c (byte-at src mid)
+          (if (or2 (= c 101) (= c 69))
+            (scan-exp src len mid)
+            mid))))))
 
-; Index of the closing '"' (or -1 if unterminated) for a string whose opening
-; quote is at `start`. Handles \n \t \" \\ escapes; other escapes are lex errors.
+; Index of the closing '"' (or -1 if unterminated) for a string whose
+; opening quote is at `start`. Handles escapes (skip byte after '\').
 ; Returns: Int (index of closing quote)
 (defn scan-str (src len i)
   (if (>= i len)
@@ -208,151 +157,6 @@
 (defn str-end (src len start)
   (scan-str src len (+ start 1)))
 
-; ===========================================================================
-; MAIN LEXER
-; ===========================================================================
-
-; Lex `src` (NUL-terminated) into a token list in `arena`.
-; Returns: Int (token list handle)
-(defn zyl-lex (arena src)
-  (let tokens (toks-create arena 128)
-    (let len (alloc-strlen src)
-      (begin
-        (lex-loop arena tokens src len 0 1 1)
-        tokens))))
-
-; The scanner loop. Position, line, and col are threaded across iterations
-; (no shared mutable state). One token (or whitespace / comment run) per step.
-; Returns: Unit
-(defn lex-loop (arena tokens src len i line col)
-  (if (>= i len)
-    (toks-push arena tokens 100 0 0 line col)   ; TK_EOF
-    (let c (byte-at src i)
-      (begin
-        (if (is-ws c)
-          (if (= c 10)
-            (lex-loop arena tokens src len (+ i 1) (+ line 1) 1)
-            (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-          (if (is-semicolon c)
-            (let e (comment-end src len (+ i 1))
-              (if (>= e len)
-                (toks-push arena tokens 100 0 0 line col)
-                (lex-loop arena tokens src len e line (+ col (- e i)))))
-            (lex-token arena tokens src len i line col)))))))
-
-; End of a `;`-comment: first '\n' index (exclusive), or len.
-; Returns: Int
-(defn comment-end (src len i)
-  (if (>= i len)
-    len
-    (if (= (byte-at src i) 10)
-      i
-      (comment-end src len (+ i 1)))))
-
-; Lex one token starting at `i` (non-whitespace, non-comment), then continue.
-; Returns: Unit
-(defn lex-token (arena tokens src len i line col)
-  (let c (byte-at src i)
-    (if (= c 40)                                  ; '('
-      (begin
-        (toks-push arena tokens 108 0 0 line col)
-        (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-      (if (= c 41)                                ; ')'
-        (begin
-          (toks-push arena tokens 109 0 0 line col)
-          (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-        (if (= c 123)                             ; '{'
-          (begin
-            (toks-push arena tokens 110 0 0 line col)
-            (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-          (if (= c 125)                           ; '}'
-            (begin
-              (toks-push arena tokens 111 0 0 line col)
-              (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-            (if (= c 91)                          ; '['
-              (begin
-                (toks-push arena tokens 113 0 0 line col)
-                (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-              (if (= c 93)                        ; ']'
-                (begin
-                  (toks-push arena tokens 114 0 0 line col)
-                  (lex-loop arena tokens src len (+ i 1) line (+ col 1)))
-                (if (= c 58)                      ; ':' → keyword or colon
-                  (lex-keywordish arena tokens src len i line col 0)
-                  (if (= c 126)                   ; '~' → symbol
-                    (lex-keywordish arena tokens src len i line col 1)
-                    (if (= c 34)                  ; '"' → string literal
-                      (lex-string arena tokens src len i line col)
-                      (if (or (is-digit c) (and (= c 45) (is-digit (byte-at src (+ i 1)))))
-                        (lex-number arena tokens src len i line col)
-                        (if (is-ident-start c)
-                          (lex-ident arena tokens src len i line col)
-                          ; Unrecognized char — emit EOF (error for later phases).
-                          (toks-push arena tokens 100 0 0 line col))))))))))))))
-
-; ':' or '~' followed (after ws) by an ident char → keyword/symbol; else Colon.
-; kind: 0 = colon branch (:keyword / standalone colon), 1 = symbol (~name).
-; Returns: Unit
-(defn lex-keywordish (arena tokens src len i line col kind)
-  (let probe (+ i 1)
-    (let pk (peek-nonws src len probe))
-    (let c0 (byte-at src i)
-      (if (and (>= pk 0) (is-ident-start (byte-at src pk)) (not (is-punctuator (byte-at src pk))))
-        (let end (scan-ident src len pk)
-          (let text (ffi-call "zyl_cstr_sub" arena src pk (- end pk) 1000)
-            (begin
-              (if (= kind 0)
-                (toks-push arena tokens 107 0 text line col)   ; TK_KEYWORD
-                (toks-push arena tokens 106 0 text line col))  ; TK_SYMBOL
-              (lex-loop arena tokens src len end line (+ col (+ 1 (- end i)))))))
-        (begin
-          (toks-push arena tokens 112 0 0 line col)            ; TK_COLON
-          (lex-loop arena tokens src len (+ i 1) line (+ col 1)))))))
-
-; Delimiters that stop a keyword/symbol head when encountered before an ident.
-; ( ) { } [ ] : ~  — mirror Rust's `"(){}[]:~"`
-(defn is-punctuator (c)
-  (if (= c 40) 1
-    (if (= c 41) 1
-      (if (= c 123) 1
-        (if (= c 125) 1
-          (if (= c 91) 1
-            (if (= c 93) 1
-              (if (= c 58) 1 (if (= c 126) 1 0)))))))))
-
-; Index of the first non-whitespace byte at or after `i`, or -1 if none.
-; Returns: Int
-(defn peek-nonws (src len i)
-  (if (>= i len)
-    -1
-    (if (is-ws (byte-at src i))
-      (peek-nonws src len (+ i 1))
-      i)))
-
-; String literal. `i` is the opening quote. Decode escapes into a fresh buffer.
-; Returns: Unit
-(defn lex-string (arena tokens src len i line col)
-  (let e (str-end src len i)
-    (if (< e 0)
-      (toks-push arena tokens 100 0 0 line col)   ; unterminated → EOF
-      (let text (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)
-        (begin
-          (toks-push arena tokens 104 0 text line col)
-          (let end (+ e 1)
-            (lex-loop arena tokens src len end line (+ col (- end i)))))))))
-
-; Numeric literal. Store value for Int; text (the raw literal) for Float.
-; Returns: Unit
-(defn lex-number (arena tokens src len i line col)
-  (let e (scan-number src len i)
-    (let text (ffi-call "zyl_cstr_sub" arena src i (- e i) 1000)
-      (let is-float (has-float-marker text)
-        (begin
-          (if is-float
-            (toks-push arena tokens 103 0 text line col)
-            (toks-push arena tokens 102 (ffi-call "zyl_cstr_to_int" text 1000) 0 line col))
-(lex-loop arena tokens src len e line (+ col (- e i))))))))
-
 ; Whether a numeric text contains '.' or 'e'/'E' (i.e. is a float literal).
 ; Returns: Bool (0/1)
 (defn has-float-marker (text)
@@ -363,42 +167,237 @@
   (if (>= i n)
     0
     (let c (byte-at text i)
-      (if (or (= c 46) (= c 101) (= c 69))
+      (if (= (or2 (= c 46) (or2 (= c 101) (= c 69))) 1)
         1
         (scan-float-marker text n (+ i 1))))))
 
-; Identifier / boolean literal. Returns: Unit
-(defn lex-ident (arena tokens src len i line col)
-  (let e (scan-ident src len i)
-    (let text (ffi-call "zyl_cstr_sub" arena src i (- e i) 1000)
-      (let is-true (ffi-call "zyl_cstr_eq" text (const-tr arena tokens) 1000))
-      (let is-false (ffi-call "zyl_cstr_eq" text (const-fa arena tokens) 1000))
+; End of a `;`-comment: first '\n' index (exclusive), or len.
+; Returns: Int
+(defn comment-end (src len i)
+  (if (>= i len)
+    len
+    (if (= (byte-at src i) 10)
+      i
+      (comment-end src len (+ i 1)))))
+
+; Index of the first non-whitespace byte at or after `i`, or -1 if none.
+; Returns: Int
+(defn peek-nonws (src len i)
+  (if (>= i len)
+    -1
+    (if (is-ws (byte-at src i))
+      (peek-nonws src len (+ i 1))
+      i)))
+
+; Delimiters that stop a keyword/symbol head: ( ) { } [ ] : ~
+(defn is-punctuator (c)
+  (if (= c 40) 1
+    (if (= c 41) 1
+      (if (= c 123) 1
+        (if (= c 125) 1
+          (if (= c 91) 1
+            (if (= c 93) 1
+              (if (= c 58) 1 (if (= c 126) 1 0)))))))))
+
+; ===========================================================================
+; MAIN LEXER
+; ===========================================================================
+;
+; NOTE: the scanner threads its cursor through a small state record
+; (arena cells) rather than long argument lists — the Rust codegen's
+; >6-argument call path is known-fragile, and the self-hosted compiler
+; therefore keeps every call at 6 arguments or fewer.
+;
+; State cells: [0]=arena [8]=src [16]=len [24]=i [32]=line [40]=col
+
+(defn lex-state-new (arena src)
+  (let st (arena-alloc-zeroed arena 48)
+    (begin
+      (alloc-write-int st arena)
+      (alloc-write-int (+ st 8) src)
+      (alloc-write-int (+ st 16) (alloc-strlen src))
+      (alloc-write-int (+ st 24) 0)
+      (alloc-write-int (+ st 32) 1)
+      (alloc-write-int (+ st 40) 1)
+      st)))
+
+(defn lex-st-arena (st) (alloc-read-int st))
+(defn lex-st-src (st) (alloc-read-int (+ st 8)))
+(defn lex-st-len (st) (alloc-read-int (+ st 16)))
+
+(defn lex-st-i (st) (alloc-read-int (+ st 24)))
+(defn lex-st-line (st) (alloc-read-int (+ st 32)))
+(defn lex-st-col (st) (alloc-read-int (+ st 40)))
+
+(defn lex-st-set-i (st v) (alloc-write-int (+ st 24) v))
+(defn lex-st-set-line (st v) (alloc-write-int (+ st 32) v))
+(defn lex-st-set-col (st v) (alloc-write-int (+ st 40) v))
+
+; Advance past one character.
+(defn lex-st-adv (st n)
+  (begin
+    (lex-st-set-col st (+ (lex-st-col st) n))
+    (lex-st-set-i st (+ (lex-st-i st) n))))
+
+; Newline: advance line, reset column.
+(defn lex-st-nl (st)
+  (begin
+    (lex-st-set-line st (+ (lex-st-line st) 1))
+    (lex-st-set-col st 1)
+    (lex-st-set-i st (+ (lex-st-i st) 1))))
+
+; Lex `src` (NUL-terminated) into a (List Token) in source order,
+; terminated by a single TkEof.
+; Returns: List(Token)
+(defn zyl-lex (arena src)
+  (let st (lex-state-new arena src)
+    (let rev (lex-loop st None)
+      (let ordered (list-reverse rev)
+        ; rev is in reverse source order (cons-on-return); restore source
+        ; order and terminate the stream with a single TkEof.
+        (Cons (TkEof) ordered)))))
+
+; The scanner loop: consume whitespace/comments, then one token per step.
+; Returns: List(Token) in reverse source order.
+(defn lex-loop (st acc)
+  (if (>= (lex-st-i st) (lex-st-len st))
+    acc
+    (let c (byte-at (lex-st-src st) (lex-st-i st))
+      (if (= (is-ws c) 1)
+        (if (= c 10)
+          (begin
+            (lex-st-nl st)
+            (lex-loop st acc))
+          (begin
+            (lex-st-adv st 1)
+            (lex-loop st acc)))
+        (if (= (is-semicolon c) 1)
+          (begin
+            (lex-st-set-i st (comment-end (lex-st-src st) (lex-st-len st) (+ (lex-st-i st) 1)))
+            (lex-loop st acc))
+          (lex-token st acc c))))))
+
+; Character -> kind code: 1-6 punctuators, 7 colon-kw, 8 symbol,
+; 9 string, 10 digit, 11 '-', 12 ident-start, 0 unrecognized.
+(defn lex-kind (c)
+  (if (= c 40) 1
+  (if (= c 41) 2
+  (if (= c 123) 3
+  (if (= c 125) 4
+  (if (= c 91) 5
+  (if (= c 93) 6
+  (if (= c 58) 7
+  (if (= c 126) 8
+  (if (= c 34) 9
+  (if (> (is-digit c) 0) 10
+  (if (= c 45) 11
+  (if (> (is-ident-start c) 0) 12
+    0)))))))))))))
+
+; Lex one token starting at the cursor, then continue scanning.
+; Returns: List(Token)
+(defn lex-token (st acc c)
+  (let k (lex-kind c)
+    (if (> k 0)
+      (if (< k 7)
+        (lex-dispatch-punct st acc k)
+        (if (< k 9)
+          (lex-keywordish st acc (- k 7))
+          (if (= k 9)
+            (lex-string st acc)
+            (lex-word st acc c))))
+      (Cons (TkEof) acc))))   ; unrecognized char -> terminate with EOF
+
+; Punctuator tokens: kinds 1..6.
+(defn lex-dispatch-punct (st acc k)
+  (let tok (if (= k 1)
+             (TkLParen)
+             (if (= k 2)
+               (TkRParen)
+               (if (= k 3)
+                 (TkLBrace)
+                 (if (= k 4)
+                   (TkRBrace)
+                   (if (= k 5)
+                     (TkLBracket)
+                     (TkRBracket))))))
+    (begin
+      (lex-st-adv st 1)
+      (lex-loop st (Cons tok acc)))))
+
+; ':' / '~' followed by an ident char -> keyword / symbol; bare colon otherwise.
+; kind: 0 = keyword branch, 1 = symbol branch.
+(defn lex-keywordish (st acc kind)
+  (let src (lex-st-src st))
+  (let len (lex-st-len st))
+  (let i (lex-st-i st))
+  (let probe (+ i 1))
+  (let pk (peek-nonws src len probe))
+  (let ok1 (>= pk 0))
+  (let ok2 (if (> ok1 0) (is-ident-start (byte-at src pk)) 0))
+  (let ok3 (if (> ok2 0) (- 1 (is-punctuator (byte-at src pk))) 0))
+  (if (= ok3 1)
+    (begin
+      (let end (scan-ident src len pk))
+      (let text (ffi-call "zyl_cstr_sub" (lex-st-arena st) src pk (- end pk) 1000))
+      (let tok (if (= kind 0) (TkKeyword text) (TkSymbol text)))
       (begin
-        (if is-true
-          (toks-push arena tokens 105 1 0 line col)
-          (if is-false
-            (toks-push arena tokens 105 0 0 line col)
-            (toks-push arena tokens 101 0 text line col)))
-        (lex-loop arena tokens src len e line (+ col (- e i)))))))
+        (lex-st-set-col st (+ (lex-st-col st) (+ 1 (- end i))))
+        (lex-st-set-i st end)
+        (lex-loop st (Cons tok acc))))
+    (begin
+      (lex-st-adv st 1)
+      (lex-loop st (Cons (TkColon) acc)))))
 
-; Interned "true" (cached in the token list header's unused +40 slot).
-; Returns: Int (pointer)
-(defn const-tr (arena list)
-  (let cached (alloc-read-int (+ list 40))
-    (if cached
-      cached
-      (let p (str-intern arena "true")
+; String literal at the cursor.
+(defn lex-string (st acc)
+  (let src (lex-st-src st))
+  (let len (lex-st-len st))
+  (let i (lex-st-i st))
+  (let e (str-end src len i)
+    (if (< e 0)
+      (Cons (TkEof) acc)   ; unterminated -> EOF
+      (let text (ffi-call "zyl_cstr_decode" (lex-st-arena st) src (+ i 1) e 1000))
+      (let end (+ e 1)
         (begin
-          (alloc-write-int (+ list 40) p)
-          p)))))
+          (lex-st-set-col st (+ (lex-st-col st) (- end i)))
+          (lex-st-set-i st end)
+          (lex-loop st (Cons (TkString text) acc)))))))
 
-; Interned "false" (cached in the token list header's unused +48 slot).
-; Returns: Int (pointer)
-(defn const-fa (arena list)
-  (let cached (alloc-read-int (+ list 48))
-    (if cached
-      cached
-      (let p (str-intern arena "false")
-        (begin
-          (alloc-write-int (+ list 48) p)
-          p)))))
+; Numeric or identifier token at the cursor.
+(defn lex-word (st acc c)
+  (let neg-num (if (= c 45) (is-digit (byte-at (lex-st-src st) (+ (lex-st-i st) 1))) 0)
+    (if (> neg-num 0)
+      (lex-number st acc)
+      (if (> (is-digit c) 0)
+        (lex-number st acc)
+        (lex-ident st acc)))))
+
+; Numeric literal. TkInt carries the value; TkFloat the raw literal text.
+(defn lex-number (st acc)
+  (let src (lex-st-src st))
+  (let len (lex-st-len st))
+  (let i (lex-st-i st))
+  (let e (scan-number src len i)
+    (let text (ffi-call "zyl_cstr_sub" (lex-st-arena st) src i (- e i) 1000))
+    (begin
+      (if (has-float-marker text)
+        (lex-loop st (Cons (TkFloat text) acc))
+        (lex-loop st (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))))
+
+; Identifier / boolean literal.
+(defn lex-ident (st acc)
+  (let src (lex-st-src st))
+  (let len (lex-st-len st))
+  (let i (lex-st-i st))
+  (let e (scan-ident src len i))
+  (let text (ffi-call "zyl_cstr_sub" (lex-st-arena st) src i (- e i) 1000))
+  (let is-true (str-eq text (str-intern (lex-st-arena st) "true")))
+  (let is-false (str-eq text (str-intern (lex-st-arena st) "false")))
+  (let tok (if (> is-true 0)
+             (TkBool true)
+             (if (> is-false 0) (TkBool false) (TkIdent text))))
+  (begin
+    (lex-st-set-col st (+ (lex-st-col st) (- e i)))
+    (lex-st-set-i st e)
+    (lex-loop st (Cons tok acc))))

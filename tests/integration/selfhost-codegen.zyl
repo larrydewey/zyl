@@ -1,33 +1,33 @@
-; Phase 3 — self-hosted ICNF + codegen end-to-end.
-; Parses a small program with the Zyl parser, lowers it to ICNF with
-; compiler/icnf, generates x86_64 assembly with compiler/codegen, writes
-; the .s file to /tmp/zyl_selfhost.s, and asserts pipeline invariants.
+; Phase 3 — self-hosted ICNF + codegen end-to-end (recursive AST edition).
+; Parses a program with the Zyl reader, lowers it with compiler/icnf,
+; generates x86_64 assembly with compiler/codegen, and writes the .s file
+; to /tmp/zyl_selfhost.s.
 ;
 ; Build & run the generated program:
 ;   cc /tmp/zyl_selfhost.s -o prog && ./prog
+; Expected output: 3 / 40 / hello / 3.750000 / 3
 
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)
+(use compiler/ast)
 (use compiler/icnf)
 (use compiler/codegen)
+(use testing/testing)
 
 (test "selfhost-codegen"
   (let arena (arena-create 0)
-    (let tokens (zyl-lex arena "(defn main () (begin (print (+ 1 2)) (print (* 10 4)) 0))")
-      (let ctx (parse-ctx arena)
+    (let src "(defn main () (begin (print (+ 1 2)) (print (* 10 4)) (if true (print \"hello\") (print \"no\")) (print (+ 1.5 2.25)) (print (ffi-call \"strlen\" \"abc\" 1000)) 0))"
+      (let prog (zyl-parse arena src)
         (begin
-          (form-cache-init arena ctx)
-          (let prog (parse-program arena ctx tokens)
-            (post-process arena ctx tokens prog))
-          (let astpool (alloc-read-int ctx)
-            (let ir (icnf-program arena astpool prog)
+          ; one top-level defn
+          (assert-equal (list-length prog) 1)
+          (let fns (ic-program arena prog)
+            (begin
+              (assert-equal (list-length fns) 1)
               (let cg (cg-new arena)
                 (begin
-                  ; one function record + non-empty instruction block
-                  (assert-true (> (alloc-read-int ir) 1))
-                  (assert-true (> (kids-len (pool-c ir 0)) 4))
-                  (cg-program cg ir)
+                  (cg-program cg fns)
                   (file-write (file-open "/tmp/zyl_selfhost.s" "w") (cg-buffer cg))
                   (assert-true (> (alloc-strlen (cg-buffer cg)) 100))
                   (print "selfhost: wrote /tmp/zyl_selfhost.s"))))))))))
