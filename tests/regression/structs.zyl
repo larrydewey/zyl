@@ -137,7 +137,7 @@
 
 ; Struct construction with arithmetic in constructor
 (test "struct-constructor-arithmetic"
-  (assert-equal (let p (make-_s_Point (+ 1 2) (* 3 4)) (+ (struct-get p "x") (struct-get p "y"))) 14))
+  (assert-equal (let p (make-_s_Point (+ 1 2) (* 3 4)) (+ (struct-get p "x") (struct-get p "y"))) 15))
 
 ; Struct rebinding via let-mut
 (test "struct-rebind"

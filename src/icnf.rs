@@ -773,12 +773,24 @@ impl IcnfConverter {
                     let param_types: Vec<Type> =
                         params.iter().map(|p| self.resolve_type(p)).collect();
                     let saved_scope = std::mem::take(&mut self.current_scope);
+                    // Resolved parameter types from type inference: untyped
+                    // params get concrete types at call sites; use them to
+                    // seed struct bindings so field offsets resolve.
+                    let resolved_sig = self.resolved_func_params.get(name).cloned();
                     for param in params.iter() {
                         let ssa_id = self.next_ssa_id();
                         self.current_scope.insert(param.name.clone(), ssa_id);
                         if let Some(ref t) = param.typ {
                             if self.struct_layouts.contains_key(t) {
                                 self.struct_bindings.insert(ssa_id, t.clone());
+                            }
+                        } else if let Some(ref sig) = resolved_sig {
+                            if let Some((_, pt)) = sig.iter().find(|(pn, _)| pn == &param.name) {
+                                if let Type::Nominal(tn) = pt {
+                                    if self.struct_layouts.contains_key(tn) {
+                                        self.struct_bindings.insert(ssa_id, tn.clone());
+                                    }
+                                }
                             }
                         }
                     }
@@ -1739,6 +1751,11 @@ impl IcnfConverter {
                 };
                 // Update scope BEFORE converting body.
                 self.current_scope.insert(name.clone(), ssa_id);
+                // Propagate the value's struct type to the binding so field
+                // offsets resolve in the body.
+                if let Some(struct_name) = self.struct_bindings.get(&val_id).cloned() {
+                    self.struct_bindings.insert(ssa_id, struct_name);
+                }
                 // Convert body (collecting intermediates, NOT pushing to globals).
                 let body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
@@ -2850,6 +2867,10 @@ impl IcnfConverter {
                     let new_ssa = self.next_ssa_id();
                     // Update scope to point to new SSA.
                     self.current_scope.insert(target.clone(), new_ssa);
+                    // Propagate struct type of the new value to the binding.
+                    if let Some(struct_name) = self.struct_bindings.get(&val_id).cloned() {
+                        self.struct_bindings.insert(new_ssa, struct_name);
+                    }
                     let mut result = val_nodes;
                     result.push(ICNFNode {
                         id: setbang_id,
