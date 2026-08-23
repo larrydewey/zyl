@@ -124,3 +124,27 @@
 ; Returns: Int
 (defn arena-capacity (arena)
   (ffi-call "zyl_arena_capacity" arena 1000))
+
+; ===========================================================================
+; STRING HELPERS
+; ===========================================================================
+
+; Byte length of a NUL-terminated string at `ptr`, excluding terminator.
+; Returns: Int
+(defn str-len (ptr)
+  (alloc-strlen ptr))
+
+; Intern a String into `arena`: copy its bytes (including terminator) into a
+; fresh zeroed buffer. Returns the buffer pointer.
+; Returns: Int (pointer)
+(defn str-intern (arena s)
+  (let n (alloc-strlen s)
+    (let p (arena-alloc-zeroed arena (+ n 1))
+      (begin
+        (buf-append p s)
+        p))))
+
+; Whether two NUL-terminated strings are byte-identical.
+; Returns: Bool (0/1)
+(defn str-eq (p1 p2)
+  (ffi-call "zyl_cstr_eq" p1 p2 1000))

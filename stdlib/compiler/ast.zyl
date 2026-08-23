@@ -1,0 +1,86 @@
+; === Zyl Standard Library — Compiler AST types ===
+; Module: compiler/ast
+;
+; The compiler front-end is built entirely on recursive algebraic data
+; types (spec §9 deftype). There are no flat pools, no raw arena record
+; layouts, and no index-based node tables anywhere in stdlib/compiler.
+;
+;   Token  — lexer output; a token stream is a (List Token)
+;   Ast    — reader/parser output; source trees are nested AList forms
+;            (Zyl's no-dispatch parsing: special forms are recognised by
+;            the consumer, not by the parser)
+;   Env    — immutable name→slot chain used by lowering/codegen
+;   VTable — immutable variant-name→(tag, arity) chain for ADTs
+;   Icnf   — lowered instruction tree (see compiler/icnf)
+;
+; All recursion is structural over these types.
+
+(deftype Token
+  (TkEof)
+  (TkIdent String)
+  (TkInt Int)
+  (TkFloat String)
+  (TkString String)
+  (TkBool Bool)
+  (TkSymbol String)
+  (TkKeyword String)
+  (TkLParen)
+  (TkRParen)
+  (TkLBrace)
+  (TkRBrace)
+  (TkLBracket)
+  (TkRBracket))
+
+; A parsed s-expression: an atom or a parenthesised list of forms.
+(deftype Ast
+  (AIdent String)
+  (AInt Int)
+  (AFloat String)
+  (AString String)
+  (ABool Bool)
+  (AList (List Ast)))
+
+; Immutable environment chain: name -> stack slot offset from rbp.
+(deftype Env
+  (EnvBind String Int Int Env)   ; name, rbp-offset, kind (0 int,1 str,2 float)
+  (EnvNil))
+
+; Look up a name in an Env chain.
+; Returns: Int (offset, or 0 if unbound)
+(defn env-lookup (env name)
+  (match env
+    (EnvBind n off  w1 rest (if (str-eq n name) off (env-lookup rest name)))
+    (EnvNil 0)))
+
+; Look up the kind of a name in an Env chain.
+; Returns: Int (0 int, 1 str, 2 float, 0 if unbound)
+(defn env-kind-of (env name)
+  (match env
+    (EnvBind n  w2 k rest (if (str-eq n name) k (env-kind-of rest name)))
+    (EnvNil 0)))
+
+; Immutable variant table: variant name -> tag + field count.
+(deftype VTable
+  (VTEntry String Int Int VTable)  ; variant name, tag, arity
+  (VTNil))
+
+(defn vt-tag-of (vt name)
+  (match vt
+    (VTEntry n tag  w3 rest (if (str-eq n name) tag (vt-tag-of rest name)))
+    (VTNil -1)))
+
+(defn vt-arity-of (vt name)
+  (match vt
+    (VTEntry n  w4 ar rest (if (str-eq n name) ar (vt-arity-of rest name)))
+    (VTNil -1)))
+
+; Head of a token stream (TkEof when empty).
+(defn toks-head (toks)
+  (match toks
+    (Cons t rest t)
+    (None (TkEof))))
+
+(defn toks-tail (toks)
+  (match toks
+    (Cons t rest rest)
+    (None None)))

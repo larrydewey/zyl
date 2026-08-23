@@ -3822,10 +3822,12 @@ impl CodeGen {
                     format!(".___match_default_{}_{}", type_label, match_id)
                 };
 
-                // For each arm, compare discriminant and jump if match.
-                for (i, _arm) in arms.iter().enumerate() {
+                 // For each arm, compare discriminant and jump if match.
+                // NOTE: compare against the arm's actual discriminant, not the
+                // arm index — the ICNF sort does not guarantee index == disc.
+                for (i, arm) in arms.iter().enumerate() {
                     self.asm_push_align();
-                    self.asm.push(format!("    cmp eax, {}", i)); // Compare with discriminant i.
+                    self.asm.push(format!("    cmp eax, {}", arm.discriminant));
                     self.asm_push_align();
                     self.asm.push(format!("    je {}", arm_labels[i]));
                 }

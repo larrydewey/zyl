@@ -255,6 +255,36 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 
 ---
 
+### Self-Hosting Migration: pool IR -> recursive deftype AST (WIP, 2026-08-23)
+
+User decision: ALL arena/pool/kids-based IR removed from stdlib/compiler.
+Recursive deftype AST only. ir.zyl / ast-helpers.zyl / sym.zyl deleted;
+new compiler/ast.zyl defines Token/Ast/Env/VTable (+ toks-head/tail);
+lexer/parser/icnf/codegen rewritten on ADTs (List Token -> List Ast ->
+Icnf tree -> asm). str-intern/str-eq moved to allocator.zyl.
+zyl_cstr_sanitize added to actor_runtime.c.
+
+**Status: compiles, end-to-end run BLOCKED by pre-existing Rust compiler
+bugs (not Zyl-source issues):**
+
+1. FIXED this session (src/codegen.rs ~3828): Match dispatch compared tag
+   against ARM INDEX (`cmp eax, {i}`) instead of arm.discriminant. Now uses
+   arm.discriminant.
+2. OPEN (src/icnf.rs): `(let x v BODY)` where BODY nests If chains loses
+   nodes — emit-zyl shows conditions as `?` and constructor args as `unit`
+   (e.g. lex_loop's `(let c (byte-at ...) (if ...))` chain). Blocks lexer
+   self-host path; causes infinite recursion / garbage tokens.
+3. OPEN: functions whose type inference partially fails are silently
+   DROPPED from emission -> undefined symbol link errors instead of errors
+   (e.g. _ZYL_pv_hd).
+4. WORKAROUND in place: wildcard `_` patterns miscompile (arm returns
+   scrutinee/tag); all patterns now use named binds.
+5. WORKAROUND in place: >6-arg calls miscompile register reload offsets;
+   all stdlib/compiler calls kept <=6 args (lexer refactored onto state
+   cell st[0..40]).
+
+Remaining integration tests fail on these; everything else green (20/24).
+
 ## Next Priorities
 
 1. ~~Wire `E_CANNOT_INFER` into `src/monomorphization.rs` fallback~~ — **done**: bounded generic params with no satisfying types now emit `E_CANNOT_INFER`.

@@ -446,6 +446,24 @@ long long zyl_cstr_from_int(long long arena, long long value) {
     return buf;
 }
 
+/* Sanitize an identifier for use as an assembler/C symbol: every byte
+   outside [A-Za-z0-9_] becomes '_'. Returns a NUL-terminated buffer in
+   `arena`. Deterministic: copied left-to-right. */
+long long zyl_cstr_sanitize(long long arena, long long src) {
+    if (!src) return 0;
+    const char* s = (const char*)(size_t)src;
+    long long n = (long long)strlen(s);
+    long long buf = zyl_arena_alloc_zeroed(arena, n + 1);
+    char* d = (char*)(size_t)buf;
+    for (long long i = 0; i < n; i++) {
+        char c = s[i];
+        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                 (c >= '0' && c <= '9') || c == '_';
+        d[i] = ok ? c : '_';
+    }
+    return buf;
+}
+
 /* Decode a Zyl string literal body (src[start..end], `start` points past the
    opening quote): handle \n \t \" \\ escapes. Returns a NUL-terminated buffer
    in `arena`, or 0 if an escape is unterminated (caller reports a lex error).

@@ -1,22 +1,19 @@
+; Minimal reader smoke test — recursive Ast edition.
+
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)
-(use compiler/ast-helpers)
+(use compiler/ast)
 (use testing/testing)
-
-(defn pv-parse (arena src)
-  (let tokens (zyl-lex arena src)
-    (let ctx (parse-ctx arena)
-      (begin
-        (form-cache-init arena ctx)
-        (let prog (parse-program arena ctx tokens)
-          (post-process arena ctx tokens prog))))))
 
 (test "pv-min"
   (let arena (arena-create 0)
-    (let prog (pv-parse arena "(defn foo (x) x)")
+    (let prog (zyl-parse arena "(defn foo (x) x)")
       (begin
-        (assert-equal prog 0)
+        ; one form, head "defn", name "foo", one param
+        (assert-equal (list-length prog) 1)
+        (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd prog)))) (str-intern arena "defn")))
+        (assert-equal (list-length (ast-kids (pv-hd (list-drop (ast-kids (pv-hd prog)) 2)))) 1)
         0))))
 
 (run-tests)
