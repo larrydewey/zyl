@@ -1617,6 +1617,9 @@ impl IcnfConverter {
                 // "not the final statement" skip rule drop the trailing value — the
                 // epilogue then returns garbage instead of the function's result.
                 let mut to_insert: Vec<ICNFNode> = Vec::new();
+                if std::env::var("ZYL_DBG2").is_ok() {
+                    eprintln!("LETINSERT T={:?} have={:?}", load_stmts.iter().map(|n| n.id).collect::<Vec<_>>(), all_stmts.iter().map(|n| n.id).collect::<Vec<_>>());
+                }
                 for stmt in load_stmts {
                     if !all_stmts.iter().any(|n| n.id == stmt.id) {
                         to_insert.push(stmt);

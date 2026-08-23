@@ -29,10 +29,10 @@
 
 ; Look up a key, returning `default` when absent.
 ; Returns: V
-(defn assoc-get (k m default)
+(defn assoc-get (k default m)
   (match m
     (Empty default)
-    (AssocNode kk vv rest (if (== k kk) vv (assoc-get k rest default)))))
+    (AssocNode kk vv rest (if (== k kk) vv (assoc-get k default rest)))))
 
 ; Check whether a key is present.
 ; Returns: Bool
@@ -81,7 +81,7 @@
 (defn assoc-fold (f acc m)
   (match m
     (Empty acc)
-    (AssocNode kk vv rest (assoc-fold f (f kk vv acc) rest))))
+    (AssocNode kk vv rest (assoc-fold f (f acc kk vv) rest))))
 
 ; ===========================================================================
 ; LIST UTILITIES — Generic: List<T>

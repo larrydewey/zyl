@@ -8,7 +8,9 @@
 ; Create an empty Vec with the given initial capacity on the given arena.
 ; Returns: Vec
 (defn vec-create ((arena Int) (cap Int))
-  (make-Vec (arena-alloc arena (* cap 8)) 0 cap arena))
+  ; arena <= 0 means "create a private default arena".
+  (let a (if (> arena 0) arena (arena-create 0))
+    (make-Vec (arena-alloc a (* cap 8)) 0 cap a)))
 
 ; Create an empty Vec with the given initial capacity using the default arena.
 ; Returns: Vec
@@ -33,15 +35,17 @@
     -1
     (alloc-read-int (+ (struct-get v "ptr") (* i 8)))))
 
-; Set element at index i to value. No-op if out of bounds.
+; Set element at index i to value. Writing at or past the current length
+; extends it (up to capacity); out-of-capacity writes are no-ops.
 ; Returns: Vec
 (defn vec-set ((v Vec) (i Int) (value Int))
-  (if (or (< i 0) (>= i (vec-len v)))
+  (if (or (< i 0) (>= i (vec-cap v)))
     v
     (let new-ptr (struct-get v "ptr")
-      (begin
-        (alloc-write-int (+ new-ptr (* i 8)) value)
-        v))))
+      (let new-len (if (>= i (vec-len v)) (+ i 1) (vec-len v))
+        (begin
+          (alloc-write-int (+ new-ptr (* i 8)) value)
+          (make-Vec new-ptr new-len (struct-get v "cap") (struct-get v "arena")))))))
 
 ; Push a value onto the Vec, reallocating if needed.
 ; Returns: Vec
@@ -64,9 +68,18 @@
             (alloc-write-int (+ new-ptr (* current-len 8)) value)
             (make-Vec new-ptr (+ current-len 1) current-cap (struct-get v "arena"))))))))
 
-; Pop the last value from the Vec. Returns -1 if empty.
-; Returns: Int
+; Pop the last value: returns the Vec with length reduced by one.
+; Popping an empty Vec returns it unchanged.
+; Returns: Vec
 (defn vec-pop ((v Vec))
+  (let current-len (vec-len v)
+    (if (<= current-len 0)
+      v
+      (make-Vec (struct-get v "ptr") (- current-len 1) (struct-get v "cap") (struct-get v "arena")))))
+
+; Read the last value without removing it. Returns -1 if empty.
+; Returns: Int
+(defn vec-last ((v Vec))
   (let current-len (vec-len v)
     (if (<= current-len 0)
       -1
