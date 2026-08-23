@@ -3103,19 +3103,7 @@ impl IcnfConverter {
             0
         };
 
-        // Else branch: next clause or Unit.
-        let _else_id = if idx + 1 < clauses.len() {
-            let rest = self.convert_cond_recursive(clauses, idx + 1)?;
-            if !rest.is_empty() {
-                rest.last().unwrap().id
-            } else {
-                0
-            }
-        } else {
-            0 // last clause — no explicit else (returns Unit).
-        };
-
-        let _result_var = format!("___cond_result_{}", self.ssa_id_counter.get());
+        let result_var = format!("___cond_result_{}", self.ssa_id_counter.get());
         // The If node gets its own fresh id (using cond_id would make the
         // node self-referential: cond_ssa == id, so codegen skipped the
         // statement as its own condition). Branch bodies stay embedded in
@@ -3125,6 +3113,16 @@ impl IcnfConverter {
         for stmt in &mut then_stmts {
             stmt.is_branch_body = true;
         }
+        // Else: remaining clauses as a nested cond (chained), or empty.
+        let mut else_stmts = if idx + 1 < clauses.len() {
+            let mut rest = self.convert_cond_recursive(clauses, idx + 1)?;
+            for stmt in &mut rest {
+                stmt.is_branch_body = true;
+            }
+            rest
+        } else {
+            Vec::new()
+        };
         let nodes = vec![ICNFNode {
             id: if_id,
             region: Region::Stack,
@@ -3133,8 +3131,8 @@ impl IcnfConverter {
             node: ICNFInner::If {
                 cond_ssa: cond_id,
                 then_body: then_stmts,
-                else_body: Vec::new(),
-                result_var: _result_var,
+                else_body: else_stmts,
+                result_var,
             },
         }];
 
