@@ -223,7 +223,7 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 - [x] Phase 1: Compiler IR in Zyl (provisional — see below)
 - [x] Phase 2a: Lexer in Zyl (`stdlib/compiler/lexer.zyl`) — complete token set, all 15 token kinds, float-marker scanning, string literal handling, keyword disambiguation
 - [x] Phase 2b: Parser in Zyl (`stdlib/compiler/parser.zyl`) — full paren-balanced, all PostProcessor special forms (set!, while, for, cond, try, deftype, adt-variant, defstruct, defmacro, read-line, with-resource, send-closure, trait, impl, ffi-pin, ffi-unpin, exit, close, match), ~1485 lines, compiles and links clean
-- [ ] Phase 2c: Parser verification + AST manipulation helpers *(blocked — see "Compiler bugs blocking self-hosting" below; recursive deftype now works)*
+- [x] Phase 2c: Parser verification + AST manipulation helpers — **done** (commit 17196f2): `tests/integration/parser-verify.zyl` lexes/parses/post-processes real programs and verifies pool-AST structure (defn/let/if/while/set!/call shapes, node counting, ident collection); `stdlib/compiler/ast-helpers.zyl` accessors corrected to match actual parser layouts (str/a/b/c field model), plus new `ast-fields-of`/`ast-walk`/`ast-count-kind-deep`. Compiler fixes required: zyl_mem_write returns written value; Rem codegen saved divisor before cqo.
 - [ ] Phase 3: ICNF + codegen in Zyl
 - [ ] Phase 4: Boot build
 - [ ] Phase 5: Determinism verification
@@ -273,7 +273,7 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 8. ~~Self-hosting Phase 1: Define compiler IR in Zyl~~ — **done**: IR opcodes, lexer, parser all in Zyl
 9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
-11. Self-hosting Phase 2c: Parser verification + AST manipulation helpers
+11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
 12. Self-hosting Phase 3: ICNF + codegen in Zyl
 13. Contract injection (optional overlay, spec §23)
 
