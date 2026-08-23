@@ -147,13 +147,19 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Known Remaining Failures (pre-existing, documented)
 
-- `tests/unit_test.zyl`: ~17 tests fail — cluster around closures/HOFs passed across module boundaries (option/result map/flatmap variants) and list-range-based stdlib tests. Binary runs to completion except a late segfault.
-- **Capturing-closure calling convention** (blocks hof-closure, closure-nested, unit_test HOF cluster): closures with captures need an env-block representation (`[code_ptr, cap0, ...]`), indirect calls through env, and thunks for top-level functions used as values.
-- let-mut combined with macro calls inside TestDecl bodies (macro-nested).
-- `tests/regression/collections.zyl`: map-create typing (map-len param unified against Vec).
-- `tests/regression/compiler.zyl`: references unwritten stdlib pool-* functions.
+- `tests/unit_test.zyl`: single remaining failure cluster — assoc-get with
+  String payloads through generic ADTs (V type unified incorrectly; values
+  print as ints / crash str-eq). All other ~120 tests pass.
+- `tests/regression/collections.zyl`: map-create typing (map-len param
+  unified against Vec) — same generic-monomorphization family.
+- `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
+  functions (stdlib work, not compiler bugs).
 - `tests/regression/concurrency.zyl`: pre-existing region escape error.
-- `tests/regression/ffi.zyl`: ffi-pin/ffi-unpin runtime segfault (Pin-region feature gap).
+- `tests/regression/ffi.zyl`: ffi-pin/ffi-unpin runtime segfault (Pin-region
+  feature gap).
+- `tests/regression/control-flow.zyl` for-loop-early-exit + integration
+  actor-wait: hang pre-exists at HEAD; loop-var mutation semantics and
+  actor join protocol need design work.
 
 ---
 

@@ -1,3 +1,5 @@
+(use actor/actor)
+
 ; Integration Test: multi-actor message passing
 
 ; Multi-actor message passing
