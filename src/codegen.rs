@@ -1530,6 +1530,61 @@ impl CodeGen {
     }
 
 
+
+    /// Count all ICNF nodes in a statement list, recursing into branch
+    /// bodies and closure bodies. Used to size stack frames: every node
+    /// may need at most one temp slot, so this bounds the frame size.
+    fn count_frame_nodes(stmts: &[ICNFNode], closure_bodies: &std::collections::HashMap<usize, Vec<ICNFNode>>) -> usize {
+        fn walk(stmts: &[ICNFNode], closure_bodies: &std::collections::HashMap<usize, Vec<ICNFNode>>, n: &mut usize) {
+            for s in stmts {
+                *n += 1;
+                match &s.node {
+                    ICNFInner::If { then_body, else_body, .. } => {
+                        walk(then_body, closure_bodies, n);
+                        walk(else_body, closure_bodies, n);
+                    }
+                    ICNFInner::While { cond_body, body, .. } => {
+                        walk(cond_body, closure_bodies, n);
+                        walk(body, closure_bodies, n);
+                    }
+                    ICNFInner::For { init_bindings, cond_nodes, body, .. } => {
+                        for (_, v) in init_bindings {
+                            if v.is_some() { *n += 1; }
+                        }
+                        walk(cond_nodes, closure_bodies, n);
+                        walk(body, closure_bodies, n);
+                    }
+                    ICNFInner::Match { arms, .. } => {
+                        for a in arms { walk(&a.body, closure_bodies, n); }
+                    }
+                    ICNFInner::TryCatch { try_body, catch_body, .. } => {
+                        walk(try_body, closure_bodies, n);
+                        walk(catch_body, closure_bodies, n);
+                    }
+                    ICNFInner::Closure { .. } => {
+                        if let Some(cb) = closure_bodies.get(&s.id) {
+                            walk(cb, closure_bodies, n);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut n = 0usize;
+        walk(stmts, closure_bodies, &mut n);
+        n
+    }
+
+
+    /// Compute the `sub rsp, N` amount for a function frame: every ICNF
+    /// node may claim one 8-byte temp/variable slot; round up to 16 bytes,
+    /// with a 256-byte floor for small functions.
+    fn frame_size_for(node_count: usize) -> usize {
+        let bytes = (node_count + 8) * 8;
+        let rounded = (bytes + 15) & !15;
+        if rounded < 256 { 256 } else { rounded }
+    }
+
     fn node_is_primitive_const(
         id: usize,
         lookup: &std::collections::HashMap<usize, &ICNFNode>,
@@ -3480,12 +3535,10 @@ impl CodeGen {
             }
             // Phase 2: push stack args (index >= 6) in reverse order so that
             // arg 6 ends up at the lowest address ([rsp] at the call).
-            let pad = if (num_args % 2) == 1 { 8 } else { 0 };
-            if pad > 0 {
-                self.asm_push_align();
-                self.asm.push("    sub rsp, 8".to_string());
-            }
-            let mut pushed = pad;
+            // No alignment pad needed: total displacement is 8*N scratch +
+            // 8*S copy-pushes (S = stack args), and N+S is always even, so
+            // rsp stays 16-byte aligned at the call.
+            let mut pushed = 0usize;
             for i in (6..num_args).rev() {
                 let off = 8 * (num_args - 1 - i) + pushed;
                 self.asm_push_align();
@@ -3511,8 +3564,9 @@ impl CodeGen {
                         .push(format!("    mov {}, [rsp+{}]", reg, off));
                 }
             }
-            // Phase 4: call and clean up the scratch + stack-arg area.
-            let cleanup = 8 * num_args + pad;
+            // Phase 4: call and clean up the scratch + stack-arg area
+            // (scratch slots for all args + one copy-push per stack arg).
+            let cleanup = 8 * num_args + pushed;
 
             // Emit the direct call.
             if name != "printf" && name != "exit" {

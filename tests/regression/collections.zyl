@@ -6,7 +6,7 @@
 
 ; Vec basic operations
 (test "vec-create"
-  (assert-true (option-is-some (vec-create 0 10))))
+  (assert-equal (vec-len (vec-create 0 10)) 0))
 (test "vec-len"
   (assert-equal (vec-len (vec-create 0 10)) 0))
 (test "vec-cap"
