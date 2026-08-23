@@ -10,11 +10,6 @@
     toks
     (tk-at (toks-tail toks) (- n 1))))
 
-(defn th (xs)
-  (match xs
-    (Cons t rest t)
-    (None (TkEof))))
-
 (defn ah (xs)
   (match xs
     (Cons a rest a)
@@ -28,10 +23,10 @@
         ; 4 tokens + EOF
         (assert-equal (list-length toks) 5)
         (assert-true (str-eq (ast-name (AIdent "+")) (str-intern arena "+")))
-        (assert-equal (tok-code (th toks)) 8)          ; '('
-        (assert-equal (tok-code (th (tk-at toks 3))) 2) ; int
-        (assert-equal (tok-int (th (tk-at toks 3))) 2)
-        (assert-equal (tok-code (th (tk-at toks 4))) 0) ; EOF
+        (assert-equal (tok-code (toks-head toks)) 8)          ; '('
+        (assert-equal (tok-code (toks-head (tk-at toks 3))) 2) ; int
+        (assert-equal (tok-int (toks-head (tk-at toks 3))) 2)
+        (assert-equal (tok-code (toks-head (tk-at toks 4))) 0) ; EOF
         0))))
 
 ; Reader builds nested Ast forms

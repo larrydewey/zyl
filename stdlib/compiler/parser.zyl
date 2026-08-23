@@ -180,30 +180,40 @@
 ; Read one form at the head of `toks`.
 ; Returns: AstTok
 (defn read-form (arena toks)
-  (let t (toks-head toks)
-    (let rest (toks-tail toks)
-      (let k (tok-code t)
-        (if (= k 8)
-          (read-forms arena rest)                 ; '(' -> list form
-          (if (= k 10)
-            (read-forms-brace arena rest)         ; '{'
-            (if (= k 12)
-              (read-forms-bracket arena rest)     ; '['
-              (if (= k 2)
-                (AstOf (AInt (tok-int t)) rest)
-                (if (= k 5)
-                  (AstOf (ABool (tok-bool t)) rest)
-                  (if (= k 3)
-                    (AstOf (AFloat (tok-text t)) rest)
-                    (if (= k 4)
-                      (AstOf (AString (tok-text t)) rest)
-                      (if (= k 1)
-                        (AstOf (AIdent (tok-text t)) rest)
-                        (if (= k 6)
-                          (AstOf (AIdent (tok-text t)) rest)
-                          (if (= k 7)
-                            (AstOf (AIdent (tok-text t)) rest)
-                            (AstOf (AList None) rest)))))))))))))))  ; closers/colon/eof: empty
+  (let t (toks-head toks))
+  (let rest (toks-tail toks))
+  (let k (tok-code t))
+  (if (= k 8)
+    (read-forms arena rest)                 ; '(' -> list form
+    (if (= k 12)
+      (read-forms-bracket arena rest)       ; '['
+      (if (= k 10)
+        (read-forms-brace arena rest)       ; '{'
+        (read-form-atom arena t rest k)))))
+
+; Atoms (and closers): kinds 0-7,9,11,13,14.
+(defn read-form-atom (arena t rest k)
+  (if (= k 2)
+    (AstOf (AInt (tok-int t)) rest)
+    (if (= k 5)
+      (AstOf (ABool (tok-bool t)) rest)
+      (if (= k 3)
+        (AstOf (AFloat (tok-text t)) rest)
+        (read-form-ident arena t rest k)))))
+
+(defn read-form-ident (arena t rest k)
+  (if (= k 4)
+    (AstOf (AString (tok-text t)) rest)
+    (if (= k 1)
+      (AstOf (AIdent (tok-text t)) rest)
+      (read-form-sym arena t rest k))))
+
+(defn read-form-sym (arena t rest k)
+  (if (= k 6)
+    (AstOf (AIdent (tok-text t)) rest)
+    (if (= k 7)
+      (AstOf (AIdent (tok-text t)) rest)
+      (AstOf (AList None) rest))))          ; closers/colon/eof: empty
 
 ; Read forms until ')' (or EOF), accumulating into `acc`.
 ; Returns: AstTok wrapping (AList forms...)
