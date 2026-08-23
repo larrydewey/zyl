@@ -34,14 +34,15 @@
   (if (str-eq s (str-intern arena "!=")) 10
   -1)))))))))))))
 
-(defn icnf-state-new (arena ast-pool code-pool)
-  (let st (arena-alloc-zeroed arena 40)
+(defn icnf-state-new (arena ast-pool code-pool vt)
+  (let st (arena-alloc-zeroed arena 48)
     (begin
       (alloc-write-int st arena)
       (alloc-write-int (+ st 8) ast-pool)
       (alloc-write-int (+ st 16) 0)
       (alloc-write-int (+ st 24) 0)
       (alloc-write-int (+ st 32) code-pool)
+      (alloc-write-int (+ st 40) vt)
       st)))
 
 (defn icnf-add (st kind)
@@ -83,10 +84,16 @@
               (node-set-val cpool id (pool-val apool node))
               id))
           (if (= k 1)
-            (let id (icnf-add st 52)
-              (begin
-                (node-set-str cpool id (pool-str apool node))
-                id))
+            (if (> (variant-tag (alloc-read-int (+ st 40)) (pool-str apool node) 0) -1)
+              (let id (icnf-add st 59)
+                (begin
+                  (node-set-str cpool id (pool-str apool node))
+                  (node-set-val cpool id (variant-tag (alloc-read-int (+ st 40)) (pool-str apool node) 0))
+                  id))
+              (let id (icnf-add st 52)
+                (begin
+                  (node-set-str cpool id (pool-str apool node))
+                  id)))
             (if (= k 11)
               (icnf-let st node)
               (if (= k 12)
@@ -107,7 +114,9 @@
                                 (icnf-for st node)
                                 (if (= k 29)
                                   (icnf-cond st node)
-                                  0))))))))))))))))
+                                  (if (= k 19)
+                                    (icnf-match st node
+                                    0))))))))))))))))))
 
 ; While core: compile cond/body AST exprs into an ICNF kind-58 loop insn.
 ; Returns: Int (the while insn id)
@@ -224,7 +233,9 @@
         (let op (icnf-op-of (alloc-read-int st) (pool-str apool head))
           (if (> op -1)
             (icnf-binop st node op)
-            (icnf-generic-call st node)))
+            (if (> (variant-tag (alloc-read-int (+ st 40)) (pool-str apool head) 0) -1)
+              (icnf-make-variant st node)
+              (icnf-generic-call st node))))
         0))))
 
 (defn icnf-binop (st node op)
@@ -360,22 +371,183 @@
                                           ld)))))))))))))))))))))
 
 
+
+; --- Variant table -------------------------------------------------------
+; kids list of triples: name(str), tag(Int), arity(Int). Built from the
+; top-level deftype nodes so construction and match can resolve variants.
+
+(defn variant-table-build (arena ast-pool vt top i n)
+  (if (< i n)
+    (begin
+      (if (= (pool-kind ast-pool (kids-get top i)) 32)
+        (variant-table-deftype arena ast-pool vt (kids-get top i) 0)
+        0)
+      (variant-table-build arena ast-pool vt top (+ i 1) n))
+    0))
+
+(defn variant-table-deftype (arena ast-pool vt dt tag)
+  (let vs (pool-kids ast-pool dt)
+    (if (< tag (kids-len vs))
+      (let v (kids-get vs tag)
+        (begin
+          (kids-push arena vt (pool-str ast-pool v))
+          (kids-push arena vt tag)
+          (let fk (pool-kids ast-pool v)
+            (kids-push arena vt (if (= fk 0) 0 (kids-len fk))))
+          (variant-table-deftype arena ast-pool vt dt (+ tag 1))))
+      0)))
+
+(defn variant-tag (vt name i)
+  (let n (kids-len vt)
+    (if (>= i n)
+      -1
+      (if (str-eq (kids-get vt i) name)
+        (kids-get vt (+ i 1))
+        (variant-tag vt name (+ i 3))))))
+
+(defn variant-arity (vt name i)
+  (let n (kids-len vt)
+    (if (>= i n)
+      -1
+      (if (str-eq (kids-get vt i) name)
+        (kids-get vt (+ i 2))
+        (variant-arity vt name (+ i 3))))))
+
+
+
+; Variant construction: (V a b ...) -> MakeVariant insn kind 59.
+; str=variant name, val=tag, kids=compiled field insns.
+(defn icnf-make-variant (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let arena (alloc-read-int st)
+        (let name (pool-str apool (pool-a apool node))
+          (let args-src (pool-kids apool node)
+            (let n (kids-len args-src)
+              (let dst (kids-new arena 8)
+                (let ok (icnf-copy-args st arena apool args-src dst 0 n))
+                  (if (= ok 0)
+                    0
+                    (let id (icnf-add st 59)
+                      (begin
+                        (node-set-str cpool id name)
+                        (node-set-val cpool id (variant-tag (alloc-read-int (+ st 40)) name 0))
+                        (node-set-kids cpool id dst)
+                        id)))))))))))
+
+
+; Match: AST kind 19 (a=scrutinee, kids=arms kind 24: str=variant,
+; a=body, kids=pattern idents). Lowers to nested Ifs on the variant tag
+; with field bindings; falling through all arms yields Const 0.
+(defn icnf-match (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let scrut-id (icnf-expr st (pool-a apool node))
+        (if (= scrut-id 0)
+          0
+          (let tmp (icnf-temp st)
+            (let saved (alloc-read-int (+ st 16))
+              (let arena (alloc-read-int st)
+                (let else-blk (kids-new arena 8)
+                  (begin
+                    (alloc-write-int (+ st 16) else-blk)
+                    (let ev (icnf-match-arms st (pool-kids apool node) 0 (kids-len (pool-kids apool node)) scrut-id tmp)
+                      (begin
+                        (if (= ev 0) 0 (icnf-assign-to st tmp ev))
+                        (alloc-write-int (+ st 16) saved)
+                        (let ld (icnf-add st 52)
+                          (begin
+                            (node-set-str cpool ld tmp)
+                            ld))))))))))))))
+
+(defn icnf-match-arms (st arms i n scrut-id tmp)
+  (if (>= i n)
+    (let id (icnf-add st 51)
+      (begin
+        (node-set-val (alloc-read-int (+ st 32)) id 0)
+        id))
+    (let apool (alloc-read-int (+ st 8))
+      (let cpool (alloc-read-int (+ st 32))
+        (let arm (kids-get arms i)
+          (let tag (variant-tag (alloc-read-int (+ st 40)) (pool-str apool arm) 0)
+            (if (< tag 0)
+              (icnf-match-arms st arms (+ i 1) n scrut-id tmp)
+              (let tg (icnf-add st 60)
+                (begin
+                  (node-set-a cpool tg scrut-id)
+                  (let kc (icnf-add st 51)
+                    (begin
+                      (node-set-val cpool kc tag)
+                      (let eq (icnf-add st 54)
+                        (begin
+                          (node-set-a cpool eq tg)
+                          (node-set-b cpool eq kc)
+                          (node-set-val cpool eq 9)
+                          (let saved2 (alloc-read-int (+ st 16))
+                            (let then-blk (kids-new (alloc-read-int st) 8)
+                              (begin
+                                (alloc-write-int (+ st 16) then-blk)
+                                (let tv (icnf-match-bind-body st arm scrut-id tmp)
+                                  (let else-blk (kids-new (alloc-read-int st) 8)
+                                    (begin
+                                      (alloc-write-int (+ st 16) else-blk)
+                                      (let ev (icnf-match-arms st arms (+ i 1) n scrut-id tmp)
+                                        (begin
+                                          (if (= ev 0) 0 (icnf-assign-to st tmp ev))
+                                          (alloc-write-int (+ st 16) saved2)
+                                          (let iff (icnf-add st 57)
+                                            (begin
+                                              (node-set-a cpool iff eq)
+                                              (node-set-kids cpool iff then-blk)
+                                              (node-set-c cpool iff else-blk)
+                                              (let ld (icnf-add st 52)
+                                                (begin
+                                                  (node-set-str cpool ld tmp)
+                                                  ld)))))))))))))))))))))))))
+
+(defn icnf-match-bind-body (st arm scrut-id tmp)
+  (let apool (alloc-read-int (+ st 8))
+    (let pats (pool-kids apool arm)
+      (let m (if (= pats 0) 0 (kids-len pats))
+        (let bound (icnf-match-binds st pats m scrut-id 0)
+          (let body-ast (pool-a apool arm)
+            (if (= body-ast 0)
+              0
+              (let tv (icnf-expr st body-ast)
+                (if (= tv 0) 0 (icnf-assign-to st tmp tv))))))))))
+
+(defn icnf-match-binds (st pats m scrut-id j)
+  (if (< j m)
+    (let apool (alloc-read-int (+ st 8))
+      (let cpool (alloc-read-int (+ st 32))
+        (let fg (icnf-add st 63)
+          (begin
+            (node-set-a cpool fg scrut-id)
+            (node-set-val cpool fg j)
+            (icnf-assign-to st (pool-str apool (kids-get pats j)) fg)
+            (icnf-match-binds st pats m scrut-id (+ j 1))))))
+    1))
+
+
 (defn icnf-program (arena ast-pool prog-id)
   (let out (pool-create arena 1024)
     (let top (pool-kids ast-pool prog-id)
-      (icnf-program-stmts arena ast-pool out top 0 (kids-len top)))))
+      (let vt (kids-new arena 16)
+        (begin
+          (variant-table-build arena ast-pool vt top 0 (kids-len top))
+          (icnf-program-stmts arena ast-pool out vt top 0 (kids-len top)))))))
 
-(defn icnf-program-stmts (arena ast-pool out kids i n)
+(defn icnf-program-stmts (arena ast-pool out vt kids i n)
   (if (>= i n)
     out
     (if (= (pool-kind ast-pool (kids-get kids i)) 10)
       (begin
-        (icnf-defn arena ast-pool out (kids-get kids i))
-        (icnf-program-stmts arena ast-pool out kids (+ i 1) n))
-      (icnf-program-stmts arena ast-pool out kids (+ i 1) n))))
+        (icnf-defn arena ast-pool out vt (kids-get kids i))
+        (icnf-program-stmts arena ast-pool out vt kids (+ i 1) n))
+      (icnf-program-stmts arena ast-pool out vt kids (+ i 1) n))))
 
-(defn icnf-defn (arena ast-pool code-pool defn-node)
-  (let st (icnf-state-new arena ast-pool code-pool)
+(defn icnf-defn (arena ast-pool code-pool vt defn-node)
+  (let st (icnf-state-new arena ast-pool code-pool vt)
     (let blk (kids-new arena 64)
       (let fn-id (pool-append code-pool)
         (begin

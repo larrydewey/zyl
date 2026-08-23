@@ -1282,7 +1282,8 @@
       (po-match-arms arena pool arms args (+ idx 1) n))
     0))
 
-; Convert one arm (Call: (variant pattern...)) to kind 24.
+; Convert one arm (Call: (variant pattern... body)) to kind 24.
+; str=variant, a=body, kids=pattern idents (body excluded).
 ; Returns: Unit
 (defn po-match-arm (arena pool arms e)
   (let aid (pool-append pool)
@@ -1294,11 +1295,30 @@
           (if (> m 1)
             (begin
               (node-set-a pool aid (kids-get k (- m 1)))
-              (node-set-kids pool aid k)
+              (node-set-kids pool aid (match-patterns arena pool k 0 (- m 1)))
               1)
-            (node-set-a pool aid 0))
-          (kids-push arena arms aid)))
+            (if (= m 1)
+              ; (V body): zero patterns, body present
+              (begin
+                (node-set-a pool aid (kids-get k 0))
+                (node-set-kids pool aid (match-patterns arena pool k 0 0))
+                1)
+              (node-set-a pool aid 0))))
+        (kids-push arena arms aid))
       0)))
+
+; Copy k[start..end) (patterns only) into a fresh kids list.
+; Returns: Int (kids handle)
+(defn match-patterns (arena pool k start end)
+  (let pats (kids-new arena 4)
+    (match-patterns-copy arena pats k start end)))
+
+(defn match-patterns-copy (arena pats k i end)
+  (if (< i end)
+    (begin
+      (kids-push arena pats (kids-get k i))
+      (match-patterns-copy arena pats k (+ i 1) end))
+    pats))
 
 ; --- exit / close / file-* / buf-append (single-arg) ---
 ; (exit code) → kind 39, a=code. (close x) → 40. (file-close fd) → 44.

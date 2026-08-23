@@ -1412,7 +1412,17 @@ impl CodeGen {
                                     register_slots(cond_body, local_vars, next_slot);
                                     register_slots(body, local_vars, next_slot);
                                 }
-                                ICNFInner::For { body, .. } => {
+                                ICNFInner::For { init_bindings, body, .. } => {
+                                    // For-loop variables must own slots like any
+                                    // other local, otherwise set! on them falls
+                                    // back to hash-based slots that can collide
+                                    // with parameter/let slots.
+                                    for (name, _) in init_bindings {
+                                        if !local_vars.contains_key(name) {
+                                            local_vars.insert(name.clone(), *next_slot);
+                                            *next_slot += 1;
+                                        }
+                                    }
                                     register_slots(body, local_vars, next_slot);
                                 }
                                 ICNFInner::Begin(stmts2) => {
