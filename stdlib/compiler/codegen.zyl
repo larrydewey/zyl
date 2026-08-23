@@ -178,7 +178,8 @@
 ; Variant construction: heap block [tag][f0]...[fn-1] via libc malloc.
 ; str=variant name, val=tag, kids=field insns.
 (defn cg-make-variant (st pool id)
-  (let n (kids-len (pool-kids pool id))
+  (let fk (pool-kids pool id)
+    (let n (if (= fk 0) 0 (kids-len fk))
     (begin
       (cg-emit st "    mov rdi, ")
       (cg-emit-int st (* 8 (+ n 1)))
@@ -194,7 +195,7 @@
       (cg-fields st pool (pool-kids pool id) 0 n)
       (cg-emit st "    mov rax, rbx")
       (cg-nl st)
-      (cg-store-result st id))))
+      (cg-store-result st id)))))
 
 ; Store field insns into the block rbx points at.
 (defn cg-fields (st pool fields j n)
@@ -385,9 +386,9 @@
               (cg-emit st "    sub rsp, 65536")
               (cg-nl st)
               ; pre-register param name slots so bodies resolve them
-              (cg-param-slots st params 0 (kids-len params))
+              (cg-param-slots st ir params 0 (kids-len params))
               ; store incoming registers to param slots
-              (cg-param-stores st params 0 (kids-len params))
+              (cg-param-stores st ir params 0 (kids-len params))
               ; body
               (cg-block st ir body)
               ; result: last instruction's slot -> rax
@@ -400,19 +401,20 @@
               (cg-nl st))))))))
 
 ; Pre-register slots for params (so cg-slot-of allocates them first).
-(defn cg-param-slots (st params i n)
+(defn cg-param-slots (st ir params i n)
   (if (< i n)
     (begin
-      (cg-slot-of st (pool-str (alloc-read-int (+ st 8)) (kids-get params i)))
-      (cg-param-slots st params (+ i 1) n))
+      (cg-slot-of st (pool-str ir (kids-get params i)))
+      (cg-param-slots st ir params (+ i 1) n))
     0))
 
 ; Store arg registers into the named parameter slots.
-(defn cg-param-stores (st params i n)
+(defn cg-param-stores (st ir params i n)
   (if (< i n)
     (begin
+      ; slots are 1-based relative to rbp: slot 0 lives at [rbp-8]
       (cg-emit st "    mov [rbp-")
-      (cg-emit-int st (* 8 (cg-slot-of st (param-name st params i))))
+      (cg-emit-int st (* 8 (+ 1 (cg-slot-of st (param-name st ir params i)))))
       (cg-emit st "], ")
       (cg-emit st (cg-reg-of i))
       (cg-nl st)
@@ -420,8 +422,8 @@
     0))
 
 ; Param name lookup helper.
-(defn param-name (st params i)
-  (pool-str (alloc-read-int (+ st 8)) (kids-get params i)))
+(defn param-name (st ir params i)
+  (pool-str ir (kids-get params i)))
 
 ; Emit the whole program (header + functions + rodata) into the buffer.
 (defn cg-program (st ir)

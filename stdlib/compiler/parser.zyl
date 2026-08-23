@@ -646,8 +646,8 @@
     (begin
       (param-push arena pool params (pool-a pool expr))
       (let as (pool-kids pool expr)
-        (let n (kids-len as)
-          (for (i 0) (< i n)
+        (let-mut i 0
+          (while (< i (kids-len as))
             (begin
               (param-push arena pool params (kids-get as i))
               (set! i (+ i 1)))))))
