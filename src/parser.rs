@@ -164,7 +164,9 @@ impl Parser {
         }
 
         // FFI, concurrency, fn/lambda must always be dispatched, even in no_dispatch mode.
-        let should_dispatch = matches!(&elements[0].inner, ExprInner::Atom(Atom::Ident(n)) if matches!(n.as_str(), "ffi-call" | "ffi-pin" | "ffi-unpin" | "spawn" | "send" | "fn" | "lambda"));
+        let should_dispatch = matches!(&elements[0].inner, ExprInner::Atom(Atom::Ident(n)) if matches!(n.as_str(),
+            "ffi-call" | "ffi-pin" | "ffi-unpin" | "spawn" | "send" | "fn" | "lambda"
+            | "assert-equal" | "assert-true" | "assert-false" | "assert-fail" | "assert"));
         
         if should_dispatch {
             let first = elements.remove(0);

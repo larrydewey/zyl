@@ -1339,6 +1339,15 @@ impl IcnfConverter {
 
     /// Convert a single AST expression into one or more ICNF nodes.
     fn convert_expr_to_stmts(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
+        if std::env::var("ZYL_DBG2").is_ok() {
+            let k = match &expr.inner {
+                crate::ast::ExprInner::Apply(n, _) => format!("Apply({})", n),
+                crate::ast::ExprInner::Call(op, _) => format!("Call({:?})", op.inner),
+                crate::ast::ExprInner::AssertEqual(_, _) => "AssertEqual".to_string(),
+                _ => "other".to_string(),
+            };
+            if k.contains("assert") { eprintln!("CEXPR {} args={}", k, match &expr.inner { crate::ast::ExprInner::Call(_,a)=>a.len(), _=>99 }); }
+        }
         match &expr.inner {
             ExprInner::Atom(Atom::Ident(name)) => {
                 // Variable reference: look up in current scope for SSA ID.
@@ -1410,6 +1419,78 @@ impl IcnfConverter {
             // Empty (begin) — becomes Unit, not a call to `_ZYL_begin`.
             // Must precede the bare-identifier arm which would otherwise treat
             // it as a zero-arg function call.
+            // Raw Call/Apply forms of assertions can survive post-processing
+            // when assert-equal sits in value position (e.g. last expr of a
+            // let chain). Convert them exactly like the specialized variant.
+            ExprInner::Apply(nm, args) if nm == "assert-equal" && args.len() == 2 => {
+                let mut stmts = self.convert_expr_collect(&args[0])?;
+                let a_id = stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                let b_stmts = self.convert_expr_collect(&args[1])?;
+                let b_id = b_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                stmts.extend(b_stmts);
+                let eq_id = self.next_ssa_id();
+                stmts.push(ICNFNode {
+                    id: eq_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                    is_branch_body: false,
+                    node: ICNFInner::Eq { left: a_id, right: b_id },
+                });
+                stmts.push(ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: eq_id,
+                        msg: Some("assert-equal failed".to_string()),
+                    },
+                });
+                Ok(stmts)
+            }
+
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-equal")
+                    && (args.len() == 1 || args.len() == 2) =>
+            {
+                if std::env::var("ZYL_DBG2").is_ok() { eprintln!("ARM-EQ HIT args={}", args.len()); }
+                let mut stmts = self.convert_expr_collect(&args[0])?;
+                let a_id = stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                // 2-arg form compares; the 1-arg form asserts truthiness.
+                let b_id = if args.len() == 2 {
+                    let b_stmts = self.convert_expr_collect(&args[1])?;
+                    let bid = b_stmts.last().map(|n| n.id).unwrap_or(a_id);
+                    stmts.extend(b_stmts);
+                    bid
+                } else {
+                    a_id
+                };
+                let eq_id = self.next_ssa_id();
+                stmts.push(ICNFNode {
+                    id: eq_id,
+                    region: Region::Stack,
+                    typ: Some(Type::Prim(crate::type_system::PrimType::Bool)),
+                    is_branch_body: false,
+                    node: ICNFInner::Eq { left: a_id, right: b_id },
+                });
+                let msg = if args.len() == 2 {
+                    "assert-equal failed"
+                } else {
+                    "assert failed"
+                };
+                stmts.push(ICNFNode {
+                    id: self.next_ssa_id(),
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Assert {
+                        cond_ssa: eq_id,
+                        msg: Some(msg.to_string()),
+                    },
+                });
+                Ok(stmts)
+            }
+
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "begin")
                     && args.is_empty() =>
@@ -3410,6 +3491,9 @@ impl IcnfConverter {
 
     /// Convert an Apply form function call (e.g., (add x y)).
     fn convert_apply_call(&mut self, name: &str, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
+        if std::env::var("ZYL_DBG2").is_ok() && name.contains("assert") {
+            eprintln!("APPLYCALL {}", name);
+        }
         // Skip type annotation atoms like T_INT, ?0 etc. — these are from Phase 5's output replacement.
         if is_type_annotation_atom(name) {
             return Ok(Vec::new());

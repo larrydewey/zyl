@@ -147,14 +147,15 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Known Remaining Failures (pre-existing, documented)
 
-- **Struct ops across chained lets**: flat forms work
-  (`(map-len (map-put (map-create ..) ..))` ✓) but binding intermediate
-  struct values to names and chaining crashes
-  (`(let m2 (map-put m 1 42)) (map-get m2 ..)` → segfault in
-  alloc-read-int). ICNF offsets all resolve correctly (verified); the
-  corruption happens at codegen register/slot level for nested-let
-  struct flows. Blocks unit_test map-get/assoc tail, types.zyl tail,
-  vec-pop-keeps-values.
+- **Struct-get inside assert-equal value positions** (structs.zyl:
+  struct-sum-fields / constructor-arithmetic / rebind): the SG result
+  cache works everywhere else (recursive chains, vec/map/assoc stdlib),
+  but when the struct flow lives directly under an assert-equal argument
+  the comparison sees stale subexpression values. Flat statement forms
+  pass. Root cause believed to be Eq operand loading re-entering make-arg
+  subexpressions instead of reading SG cache slots.
+- Chained lets over struct values in non-assert contexts now work
+  (verified: recursive 3-level struct-get chains, vec-pop/get sequences).
 - `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
   functions (stdlib work, not compiler bugs).
 - `tests/regression/concurrency.zyl`: pre-existing region escape error.
