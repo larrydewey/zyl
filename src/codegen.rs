@@ -23,6 +23,7 @@ pub struct CodeGen {
     /// IDs of nodes already emitted as standalone statements.
     standalone_emitted: std::collections::HashSet<usize>,
     all_nodes: std::collections::HashMap<usize, ICNFNode>,
+    sg_slots: std::collections::HashMap<usize, usize>,
     /// Struct field layouts for offset computation.
     struct_layouts: StructLayout,
     /// ADT definitions: type_name → list of (variant_name, field_count).
@@ -67,6 +68,7 @@ impl CodeGen {
             spawn_counter: 0,
             standalone_emitted: std::collections::HashSet::new(),
             all_nodes: std::collections::HashMap::new(),
+            sg_slots: std::collections::HashMap::new(),
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::HashMap::new(),
             closure_bodies: std::collections::HashMap::new(),
@@ -705,6 +707,10 @@ impl CodeGen {
                             continue
                         }
                         ICNFInner::BinOp(_, _, _) => {} // keep BinOp in lookup for emit_condition_inline
+                        ICNFInner::StructGet(..) => {
+                            // Pure value: emitted on demand by its consumer.
+                            continue
+                        }
                         _ => {}
                     }
                 }
@@ -1129,6 +1135,7 @@ impl CodeGen {
             // Reset temp_slot_counter for this function. Must start after all param slots (0-5),
             // all local var slots, and all If result_var slots — to avoid colliding with params.
             self.temp_slot_counter = next_slot;
+            self.sg_slots.clear();
 
             // Second pass: emit code.
             // Collect condition IDs to skip them in the emit loop (they'll be emitted inline by If handler).
@@ -1481,6 +1488,48 @@ impl CodeGen {
     /// carrying such a value (Assign / result-var Load).
     /// True when the node is a primitive constant (Int/Float/Bool) — such
     /// values must never be routed to structural (dereferencing) equality.
+
+    /// Emit a StructGet: computes fresh on first use and caches the result
+    /// in a dedicated stack slot keyed by node id, so repeated consumers
+    /// neither recompute (extra heap derefs) nor read stale registers.
+    fn emit_struct_get_cached(
+        &mut self,
+        src_ssa_id: usize,
+        struct_id: usize,
+        field_offset: usize,
+        target_reg: &str,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut std::collections::HashSet<usize>,
+        operand_ids: &std::collections::HashSet<usize>,
+        phi_slots: &std::collections::HashMap<String, String>,
+    ) {
+        if !self.sg_slots.contains_key(&src_ssa_id) {
+            self.emit_load_into(
+                struct_id, "rax", stmts, local_vars, lookup, emitted_ids,
+                operand_ids, phi_slots,
+            );
+            self.asm_push_align();
+            self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
+            let slot = self.temp_slot_counter;
+            self.temp_slot_counter += 1;
+            self.asm_push_align();
+            self.asm.push(format!("    mov [rbp-{}], rax", (slot + 1) * 8));
+            self.sg_slots.insert(src_ssa_id, slot);
+            emitted_ids.insert(src_ssa_id);
+        }
+        let slot = self.sg_slots[&src_ssa_id];
+        let offset = (slot + 1) * 8;
+        self.asm_push_align();
+        self.asm.push(format!(
+            "    mov {}, [rbp-{}]",
+            reg_to_64(target_reg),
+            offset
+        ));
+    }
+
+
     fn node_is_primitive_const(
         id: usize,
         lookup: &std::collections::HashMap<usize, &ICNFNode>,
@@ -2469,16 +2518,7 @@ impl CodeGen {
                 node: ICNFInner::StructGet(struct_id, field_offset),
                 ..
             }) => {
-                // Pure value: always re-emit. A previous standalone emission's
-                // rax copy is stale by the time most consumers run.
-                self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
-                self.asm_push_align();
-                self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
-                emitted_ids.insert(src_ssa_id);
-                if target_reg != "rax" && target_reg != "eax" {
-                    self.asm_push_align();
-                    self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                }
+                self.emit_struct_get_cached(src_ssa_id, *struct_id, *field_offset, target_reg, stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
             }
             n @ Some(ICNFNode {
                 node: ICNFInner::MakeStruct(..),
@@ -6555,21 +6595,7 @@ impl CodeGen {
             }
 
             ICNFInner::StructGet(struct_id, field_offset) => {
-                // Load struct pointer into rax, then load field value from rax + offset.
-                // All struct fields are 8 bytes (64-bit aligned), so load 64-bit.
-                self.emit_load_into(
-                    *struct_id,
-                    "rax",
-                    stmts,
-                    local_vars,
-                    lookup,
-                    emitted_ids,
-                    operand_ids,
-                    phi_slots,
-                );
-                self.asm_push_align();
-                self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
-                emitted_ids.insert(node.id);
+                self.emit_struct_get_cached(node.id, *struct_id, *field_offset, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
             }
 
             ICNFInner::MakeVariant { type_name: _, variant_name: _, discriminant, field_ids } => {
