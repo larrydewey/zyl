@@ -1,3 +1,4 @@
+(use allocator/allocator)
 ; Types Regression Tests — HM inference, traits, generics, TCap/TMut
 (use core/core)
 (use core/option)
@@ -42,7 +43,7 @@
 (test "list-rev-empty"
   (assert-equal (list-length (list-reverse (list-range 0 0))) 0))
 (test "list-append"
-  (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 4))) 3))
+  (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 4))) 2))
 
 ; Option operations
 (test "option-some"
@@ -72,7 +73,7 @@
 
 ; Assoc operations
 (test "assoc-empty"
-  (assert-true (assoc-has 1 (assoc-empty))))
+  (assert-false (assoc-has 1 (assoc-empty))))
 (test "assoc-put"
   (assert-true (assoc-has 1 (assoc-put 1 "val" (assoc-empty)))))
 (test "assoc-get"
@@ -82,15 +83,35 @@
 
 ; Atomic operations
 (test "atomic-load"
-  (assert-equal (atomic-load 0) 0))
+  (let p (alloc-malloc 8)
+    (begin
+      (atomic-store p 42)
+      (assert-equal (atomic-load p) 42)
+      0)))
 (test "atomic-store"
-  (assert-equal (atomic-store 0 42) 42))
+  (let p (alloc-malloc 8)
+    (begin
+      (assert-equal (atomic-store p 42) 42)
+      0)))
 (test "atomic-add"
-  (assert-equal (atomic-add 0 10) 10))
+  (let p (alloc-malloc 8)
+    (begin
+      (atomic-store p 0)
+      (assert-equal (atomic-add p 10) 10)
+      0)))
 (test "atomic-sub"
-  (assert-equal (atomic-sub 100 25) 75))
+  (let p (alloc-malloc 8)
+    (begin
+      (atomic-store p 100)
+      (assert-equal (atomic-sub p 25) 75)
+      0)))
 (test "atomic-cas"
-  (assert-equal (atomic-cas 0 0 99) 99))
+  (let p (alloc-malloc 8)
+    (begin
+      (atomic-store p 0)
+      (assert-true (atomic-cas p 0 99))
+      (assert-equal (atomic-load p) 99)
+      0)))
 
 ; Boolean logic helpers
 (test "xor"
