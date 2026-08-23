@@ -6,6 +6,18 @@
 (use compiler/ast)
 (use testing/testing)
 
+(defn pv-hd (xs)
+  (match xs
+    (Cons a rest a)
+    (None (AList None))))
+
+(defn pv-drop (xs n)
+  (if (is-nil xs)
+    xs
+    (if (<= n 0)
+      xs
+      (pv-drop (list-cdr xs) (- n 1)))))
+
 (test "pv-min"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn foo (x) x)")
@@ -13,7 +25,7 @@
         ; one form, head "defn", name "foo", one param
         (assert-equal (list-length prog) 1)
         (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd prog)))) (str-intern arena "defn")))
-        (assert-equal (list-length (ast-kids (pv-hd (list-drop (ast-kids (pv-hd prog)) 2)))) 1)
+        (assert-equal (list-length (ast-kids (pv-hd (pv-drop (ast-kids (pv-hd prog)) 2)))) 1)
         0))))
 
 (run-tests)

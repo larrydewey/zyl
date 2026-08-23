@@ -6695,6 +6695,19 @@ impl CodeGen {
                 for &field_id in field_ids.iter().rev() {
                     match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
                         Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
+                            // A Const whose atom is an Ident is a variable
+                            // reference (ICNF encodes idents this way): load
+                            // from its local slot, never emit a literal 0.
+                            if let Atom::Ident(lvar) = atom {
+                                if let Some(&slot_idx) = local_vars.get(lvar) {
+                                    let slot = (slot_idx + 1) * 8;
+                                    self.asm_push_align();
+                                    self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                                    self.asm_push_align();
+                                    self.asm.push("    push rax".to_string());
+                                    continue;
+                                }
+                            }
                             self.emit_const_into("rax", atom);
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());

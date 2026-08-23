@@ -252,10 +252,9 @@
 (defn zyl-lex (arena src)
   (let st (lex-state-new arena src)
     (let rev (lex-loop st None)
-      (let ordered (list-reverse rev)
-        ; rev is in reverse source order (cons-on-return); restore source
-        ; order and terminate the stream with a single TkEof.
-        (Cons (TkEof) ordered)))))
+      ; rev is reverse source order with the TkEof at its head; reversing
+      ; yields source order terminated by the single TkEof.
+      (list-reverse rev))))
 
 ; The scanner loop: consume whitespace/comments, then one token per step.
 ; Returns: List(Token) in reverse source order.
@@ -378,12 +377,14 @@
   (let src (lex-st-src st))
   (let len (lex-st-len st))
   (let i (lex-st-i st))
-  (let e (scan-number src len i)
-    (let text (ffi-call "zyl_cstr_sub" (lex-st-arena st) src i (- e i) 1000))
-    (begin
-      (if (has-float-marker text)
-        (lex-loop st (Cons (TkFloat text) acc))
-        (lex-loop st (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))))
+  (let e (scan-number src len i))
+  (let text (ffi-call "zyl_cstr_sub" (lex-st-arena st) src i (- e i) 1000))
+  (begin
+    (lex-st-set-col st (+ (lex-st-col st) (- e i)))
+    (lex-st-set-i st e)
+    (if (has-float-marker text)
+      (lex-loop st (Cons (TkFloat text) acc))
+      (lex-loop st (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc)))))
 
 ; Identifier / boolean literal.
 (defn lex-ident (st acc)
