@@ -286,12 +286,14 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
 11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
-12. Self-hosting Phase 3: ICNF + codegen in Zyl
+12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done (arith, if, print, while, set!); remaining: for/cond/match/calls-with-args coverage, then bootstrapping the compiler against itself
 13. Contract injection (optional overlay, spec §23)
 
 ---
 
 ## History
+
+- **Self-hosting: while + set! in self-hosted ICNF/codegen; three Rust codegen result-propagation fixes (60344c8, 8af69f0, 779f73b)** — (1) `src/codegen.rs`: dead Load/Const skip rule now only skips pure statements followed by a non-pure statement, so leaked control-flow supply nodes after the true trailing value no longer suppress the function result (while-in-function returned the stale condition flag). (2) If-branch phi stores: the branch's final value node is re-emitted fresh via `emit_load_into` before the `emitted_ids` check, and Call/FfiCall count as value kinds — nested if-expressions whose branches were calls returned `1` (the comparison flag) instead of the branch value. (3) Self-hosted lexer `str-end` rewritten as pure recursion (`scan-str`); self-hosted icnf gained while/set! lowering and codegen gained loop emission plus setcc-with-al and non-reversed binop operand order. Verified end-to-end: the Zyl-written pipeline compiles a while/accumulator program that prints `10`; suite 24/24.
 
 Detailed phase-by-phase implementation history, debugging notes, and fix documentation are preserved in:
 - `docs/implementation-status.md` — current phase details
