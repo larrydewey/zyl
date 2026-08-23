@@ -9,6 +9,9 @@
 ; Requires core (List/Option ADTs) — inlined via the module resolver.
 
 (use core/core)
+(use collections/map)
+(use collections/set)
+(use collections/vec)
 
 ; ===========================================================================
 ; ASSOC ADT — Generic: Assoc<K, V>

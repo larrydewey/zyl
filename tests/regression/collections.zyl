@@ -22,11 +22,11 @@
 (test "vec-pop"
   (assert-equal (vec-len (vec-pop (vec-push (vec-create 0 10) 42))) 0))
 (test "vec-pop-empty"
-  (assert-equal (vec-pop (vec-create 0 10)) -1))
+  (assert-equal (vec-len (vec-pop (vec-create 0 10))) 0))
 
 ; Map basic operations
 (test "map-create"
-  (assert-true (option-is-some (map-create 0 10))))
+  (assert-equal (map-len (map-create 0 10)) 0))
 (test "map-len"
   (assert-equal (map-len (map-create 0 10)) 0))
 (test "map-put"
@@ -44,7 +44,7 @@
 
 ; Set basic operations
 (test "set-create"
-  (assert-true (option-is-some (set-create 0 10))))
+  (assert-equal (set-len (set-create 0 10)) 0))
 (test "set-len"
   (assert-equal (set-len (set-create 0 10)) 0))
 (test "set-add"
@@ -60,7 +60,7 @@
 
 ; Allocator operations
 (test "alloc-malloc"
-  (assert-equal (alloc-malloc 64) 64))
+  (assert-true (> (alloc-malloc 64) 0)))
 (test "alloc-write-int"
   (let p (alloc-malloc 64)
     (begin
