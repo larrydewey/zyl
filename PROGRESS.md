@@ -270,6 +270,21 @@ bugs (not Zyl-source issues):**
 1. FIXED this session (src/codegen.rs ~3828): Match dispatch compared tag
    against ARM INDEX (`cmp eax, {i}`) instead of arm.discriminant. Now uses
    arm.discriminant.
+1b. FIXED this session (src/codegen.rs MakeVariant field save): a Const
+   whose atom is Ident (variable ref) inside MakeVariant fields emitted a
+   literal 0 instead of loading the local slot.
+1c. NEW PRECISE DIAGNOSIS (the main blocker): in embedded branch-body
+   emission, emit_call_direct's argument scheduling is unsound. Observed
+   for `read_forms(arena, art_rest(r), Cons(...))`: the Cons MakeVariant
+   is emitted FIRST (leaving its pointer only in rax), then sibling args
+   are evaluated (art_rest call CLOBBERS rax — the Cons pointer is lost),
+   and the ABI register reload reads wrong scratch slots (rdi gets stale
+   data). Result: recursive accumulators receive garbage -> empty parse
+   trees / infinite recursion. Fix direction: MakeVariant (and every
+   value-producing node) must spill its result to a dedicated slot at
+   definition time, and call-arg loading must read slots only — i.e.
+   finish the "always-spill" scheme over the heuristic skip/re-emit
+   logic. This also subsumes the wildcard-_ and >6-arg workarounds.
 2. OPEN (src/icnf.rs): `(let x v BODY)` where BODY nests If chains loses
    nodes — emit-zyl shows conditions as `?` and constructor args as `unit`
    (e.g. lex_loop's `(let c (byte-at ...) (if ...))` chain). Blocks lexer

@@ -1,0 +1,19 @@
+(use allocator/allocator)
+
+(defn sink (x y z w v u t) x)
+
+(defn d12 (a) (sink a a a a a a a))
+(defn d11 (a) (if (> a 90) (d12 91) (d12 92)))
+(defn d10 (a) (if (> a 80) (d11 81) (d11 82)))
+(defn d9 (a) (if (> a 70) (d10 71) (d10 72)))
+(defn d8 (a) (if (> a 60) (d9 61) (d9 62)))
+(defn d7 (a) (if (> a 50) (d8 51) (d8 52)))
+
+(defn run-deep (a)
+  (if (= a 1) (d7 11)
+  (if (= a 2) (d8 21)
+  (if (= a 3) (d9 31)
+  (if (= a 4) (d10 41)
+  (if (= a 5) (d11 51)
+  (if (= a 6) (d12 61)
+      0)))))))
