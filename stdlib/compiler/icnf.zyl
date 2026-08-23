@@ -1,0 +1,263 @@
+; === Zyl Standard Library — Self-Hosting Phase 3a: ICNF generation ===
+; Module: compiler/icnf
+; Converts the post-processed pool-AST into a flat instruction IR for a
+; core subset: int literals, ident refs, + - * / % < > <= >= == = !=,
+; let / let-mut, if, begin, defn, calls (<=6 args), print.
+;
+; ICNF opcodes (pool kind field):
+;   51 IC_CONST   val=value
+;   52 IC_LOAD    str=name
+;   53 IC_ASSIGN  str=name, a=src-id
+;   54 IC_BINOP   a=lhs, b=rhs, val=op
+;   56 IC_CALL    str=name, kids=args
+;   57 IC_IF      a=cond-id, kids=then-list, c=else-list
+;   62 IC_PRINT   kids=[arg]
+; BINOP ops (val): 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
+
+(use allocator/allocator)
+(use compiler/parser)
+(use compiler/ast-helpers)
+
+; Operator name -> BINOP opcode (-1 if not an operator).
+(defn icnf-op-of (arena s)
+  (if (str-eq s (str-intern arena "+")) 0
+  (if (str-eq s (str-intern arena "-")) 1
+  (if (str-eq s (str-intern arena "*")) 2
+  (if (str-eq s (str-intern arena "/")) 3
+  (if (str-eq s (str-intern arena "%")) 4
+  (if (str-eq s (str-intern arena "<")) 5
+  (if (str-eq s (str-intern arena ">")) 6
+  (if (str-eq s (str-intern arena "<=")) 7
+  (if (str-eq s (str-intern arena ">=")) 8
+  (if (str-eq s (str-intern arena "==")) 9
+  (if (str-eq s (str-intern arena "=")) 9
+  (if (str-eq s (str-intern arena "!=")) 10
+  -1)))))))))))))
+
+(defn icnf-state-new (arena ast-pool code-pool)
+  (let st (arena-alloc-zeroed arena 40)
+    (begin
+      (alloc-write-int st arena)
+      (alloc-write-int (+ st 8) ast-pool)
+      (alloc-write-int (+ st 16) 0)
+      (alloc-write-int (+ st 24) 0)
+      (alloc-write-int (+ st 32) code-pool)
+      st)))
+
+(defn icnf-add (st kind)
+  (let cpool (alloc-read-int (+ st 32))
+    (let blk (alloc-read-int (+ st 16))
+      (let arena (alloc-read-int st)
+        (let id (pool-append cpool)
+          (begin
+            (node-set-kind cpool id kind)
+            (kids-push arena blk id)
+            id))))))
+
+(defn icnf-temp (st)
+  (let arena (alloc-read-int st)
+    (let n (alloc-read-int (+ st 24))
+      (let num (ffi-call "zyl_cstr_from_int" arena n 1000)
+        (let buf (arena-alloc-zeroed arena 64)
+          (begin
+            (alloc-write-int (+ st 24) (+ n 1))
+            (buf-append buf (str-intern arena "___t"))
+            (buf-append buf num)
+            buf))))))
+
+(defn icnf-assign-to (st name src)
+  (let cpool (alloc-read-int (+ st 32))
+    (let id (icnf-add st 53)
+      (begin
+        (node-set-str cpool id name)
+        (node-set-a cpool id src)
+        id))))
+
+(defn icnf-expr (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let k (pool-kind apool node)
+        (if (= k 2)
+          (let id (icnf-add st 51)
+            (begin
+              (node-set-val cpool id (pool-val apool node))
+              id))
+          (if (= k 1)
+            (let id (icnf-add st 52)
+              (begin
+                (node-set-str cpool id (pool-str apool node))
+                id))
+            (if (= k 11)
+              (icnf-let st node)
+              (if (= k 12)
+                (icnf-let st node)
+                (if (= k 13)
+                  (icnf-if-compile st node)
+                  (if (= k 14)
+                    (icnf-begin-compile st node)
+                    (if (= k 18)
+                      (icnf-print-expr st node)
+                      (if (= k 8)
+                        (icnf-call-expr st node)
+                        0))))))))))))
+
+(defn icnf-let (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let v (icnf-expr st (pool-a apool node))
+        (if (= v 0)
+          0
+          (let asg (icnf-add st 53)
+            (begin
+              (node-set-str cpool asg (pool-str apool node))
+              (node-set-a cpool asg v)
+              (icnf-expr st (pool-b apool node)))))))))
+
+(defn icnf-begin-compile (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let kids (pool-kids apool node)
+      (icnf-stmts st kids 0 (kids-len kids)))))
+
+(defn icnf-stmts (st kids i n)
+  (if (= i (- n 1))
+    (icnf-expr st (kids-get kids i))
+    (begin
+      (icnf-expr st (kids-get kids i))
+      (icnf-stmts st kids (+ i 1) n))))
+
+(defn icnf-print-expr (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let arena (alloc-read-int st)
+        (let args-src (pool-kids apool node)
+          (let n (kids-len args-src)
+            (if (> n 6)
+              0
+              ; compile args first so they precede the print in the block
+              (let dst (kids-new arena 8)
+                (let ok (icnf-copy-args st arena apool args-src dst 0 n))
+                  (if (= ok 0)
+                    0
+                    (let id (icnf-add st 62)
+                      (begin
+                        (node-set-str cpool id (str-intern arena "print"))
+                        (node-set-kids cpool id dst)
+                        id)))))))))))
+
+(defn icnf-call-expr (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let head (pool-a apool node)
+      (if (= (pool-kind apool head) 1)
+        (let op (icnf-op-of (alloc-read-int st) (pool-str apool head))
+          (if (> op -1)
+            (icnf-binop st node op)
+            (icnf-generic-call st node)))
+        0))))
+
+(defn icnf-binop (st node op)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let args (pool-kids apool node)
+        (if (= (kids-len args) 2)
+          (let lhs (icnf-expr st (kids-get args 0))
+            (if (= lhs 0)
+              0
+              (let rhs (icnf-expr st (kids-get args 1))
+                (if (= rhs 0)
+                  0
+                  (let id (icnf-add st 54)
+                    (begin
+                      (node-set-a cpool id lhs)
+                      (node-set-b cpool id rhs)
+                      (node-set-val cpool id op)
+                      id))))))
+          0)))))
+
+(defn icnf-generic-call (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let arena (alloc-read-int st)
+        (let name (pool-str apool (pool-a apool node))
+          (let args-src (pool-kids apool node)
+            (let n (kids-len args-src)
+              (if (> n 6)
+                0
+                ; compile args first so they precede the call
+                (let dst (kids-new arena 8)
+                  (let ok (icnf-copy-args st arena apool args-src dst 0 n))
+                    (if (= ok 0)
+                      0
+                      (let id (icnf-add st 56)
+                        (begin
+                          (node-set-str cpool id name)
+                          (node-set-kids cpool id dst)
+                          id))))))))))))
+
+(defn icnf-copy-args (st arena apool src dst i n)
+  (if (= i n)
+    1
+    (let a (icnf-expr st (kids-get src i))
+      (if (= a 0)
+        0
+        (begin
+          (kids-push arena dst a)
+          (icnf-copy-args st arena apool src dst (+ i 1) n))))))
+
+(defn icnf-if-compile (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let cond-id (icnf-expr st (pool-a apool node))
+        (if (= cond-id 0)
+          0
+          (let tmp (icnf-temp st)
+            (let saved (alloc-read-int (+ st 16))
+              (let then-blk (kids-new (alloc-read-int st) 8)
+                (begin
+                  (alloc-write-int (+ st 16) then-blk)
+                  (let tv (icnf-expr st (pool-b apool node)))
+                  (let else-blk (kids-new (alloc-read-int st) 8)
+                    (begin
+                      (alloc-write-int (+ st 16) else-blk)
+                      (let ev (icnf-expr st (pool-c apool node))))
+                    (alloc-write-int (+ st 16) saved)
+                    (if (> tv -1)
+                      (if (= tv 0) 0 (icnf-assign-to st tmp tv))
+                      0)
+                    (if (= ev 0) 0 (icnf-assign-to st tmp ev))
+                    (let iff (icnf-add st 57)
+                      (begin
+                        (node-set-a cpool iff cond-id)
+                        (node-set-kids cpool iff then-blk)
+                        (node-set-c cpool iff else-blk)
+                        (let ld (icnf-add st 52)
+                          (begin
+                            (node-set-str cpool ld tmp)
+                            ld))))))))))))))
+
+(defn icnf-program (arena ast-pool prog-id)
+  (let out (pool-create arena 1024)
+    (let top (pool-kids ast-pool prog-id)
+      (icnf-program-stmts arena ast-pool out top 0 (kids-len top)))))
+
+(defn icnf-program-stmts (arena ast-pool out kids i n)
+  (if (>= i n)
+    out
+    (if (= (pool-kind ast-pool (kids-get kids i)) 10)
+      (begin
+        (icnf-defn arena ast-pool out (kids-get kids i))
+        (icnf-program-stmts arena ast-pool out kids (+ i 1) n))
+      (icnf-program-stmts arena ast-pool out kids (+ i 1) n))))
+
+(defn icnf-defn (arena ast-pool code-pool defn-node)
+  (let st (icnf-state-new arena ast-pool code-pool)
+    (let blk (kids-new arena 64)
+      (let fn-id (pool-append code-pool)
+        (begin
+          (node-set-str code-pool fn-id (defn-name ast-pool defn-node))
+          (node-set-kids code-pool fn-id (pool-kids ast-pool defn-node))
+          (alloc-write-int (+ st 16) blk)
+          (let last (icnf-expr st (defn-body ast-pool defn-node))
+            (begin
+              (node-set-c code-pool fn-id blk)
+              (node-set-val code-pool fn-id last)
+              fn-id)))))))

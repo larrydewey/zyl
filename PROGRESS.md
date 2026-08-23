@@ -224,7 +224,19 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 - [x] Phase 2a: Lexer in Zyl (`stdlib/compiler/lexer.zyl`) — complete token set, all 15 token kinds, float-marker scanning, string literal handling, keyword disambiguation
 - [x] Phase 2b: Parser in Zyl (`stdlib/compiler/parser.zyl`) — full paren-balanced, all PostProcessor special forms (set!, while, for, cond, try, deftype, adt-variant, defstruct, defmacro, read-line, with-resource, send-closure, trait, impl, ffi-pin, ffi-unpin, exit, close, match), ~1485 lines, compiles and links clean
 - [x] Phase 2c: Parser verification + AST manipulation helpers — **done** (commit 17196f2): `tests/integration/parser-verify.zyl` lexes/parses/post-processes real programs and verifies pool-AST structure (defn/let/if/while/set!/call shapes, node counting, ident collection); `stdlib/compiler/ast-helpers.zyl` accessors corrected to match actual parser layouts (str/a/b/c field model), plus new `ast-fields-of`/`ast-walk`/`ast-count-kind-deep`. Compiler fixes required: zyl_mem_write returns written value; Rem codegen saved divisor before cqo.
-- [ ] Phase 3: ICNF + codegen in Zyl
+- [x] Phase 3 (core subset): ICNF + codegen in Zyl — **done** (first working end-to-end):
+      `stdlib/compiler/icnf.zyl` lowers the pool-AST to a flat instruction IR
+      (const/load/assign/binop/call/if/print; two-pool design: AST pool
+      read-only, all ICNF records appended to a code pool) and
+      `stdlib/compiler/codegen.zyl` emits GAS .intel_syntax x86_64 text
+      (stack slots per instruction id + named var slots, SysV register
+      calls <=6 args, printf-based print, if via labels).
+      Verified by `tests/integration/selfhost-codegen.zyl`: parses
+      "(defn main () (begin (print (+ 1 2)) (print (* 10 4)) 0))" with the
+      Zyl parser, lowers + generates + writes /tmp/zyl_selfhost.s;
+      `cc` that file and running prints 3 / 40.
+      Remaining for full Phase 3: strings/floats/bools, while/for/match,
+      comparison-driven control flow beyond if, structs/ADTs, FFI.
 - [ ] Phase 4: Boot build
 - [ ] Phase 5: Determinism verification
 

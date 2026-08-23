@@ -1,0 +1,397 @@
+; === Zyl Standard Library — Self-Hosting Phase 3b: x86_64 codegen ===
+; Module: compiler/codegen
+; Emits GAS .intel_syntax noprefix assembly text for the compiler/icnf IR.
+;
+; Conventions:
+;   - Every ICNF instruction id owns one stack slot at [rbp - 8*slot].
+;   - Named variables (params, let targets, join temps) get their own slots.
+;   - A function's value is the slot of its last instruction, loaded into
+;     rax before ret.
+;   - Calls use SysV register args (rdi rsi rdx rcx r8 r9), max 6 args.
+;   - print emits printf("%d\n", v).
+;
+; Output accumulates in a growable text buffer (arena-backed); the final
+; NUL-terminated string is written to a file by the caller.
+
+(use allocator/allocator)
+(use compiler/icnf)
+
+; Create a code emitter over `arena` with a 1 MiB text buffer.
+; State: [0]=arena [8]=buffer ptr [16]=label counter [24]=slot counter
+;        [32]=names list [40]=slot-index list
+(defn cg-new (arena)
+  (let st (arena-alloc-zeroed arena 48)
+    (let buf (arena-alloc-zeroed arena 1048576)
+      (let names (kids-new arena 64)
+        (let idx (kids-new arena 64)
+          (begin
+            (alloc-write-int st arena)
+            (alloc-write-int (+ st 8) buf)
+            (alloc-write-int (+ st 16) 0)
+            (alloc-write-int (+ st 24) 0)
+            (alloc-write-int (+ st 32) names)
+            (alloc-write-int (+ st 40) idx)
+            st))))))
+
+; Append a literal string to the output.
+(defn cg-emit (st s)
+  (let buf (alloc-read-int (+ st 8))
+    (let arena (alloc-read-int st)
+      (let len (alloc-strlen buf)
+        (begin
+          ; grow: if the line would exceed capacity, abandon the buffer and
+          ; copy (capacity is 1 MiB — ample for Phase 3 test programs)
+          (buf-append buf s)
+          0)))))
+
+; Append an integer in decimal.
+(defn cg-emit-int (st n)
+  (let arena (alloc-read-int st)
+    (cg-emit st (ffi-call "zyl_cstr_from_int" arena n 1000))))
+
+; Append a raw newline.
+(defn cg-nl (st)
+  (cg-emit st "
+"))
+
+; Fresh label .L<N>.
+(defn cg-label-new (st)
+  (let arena (alloc-read-int st)
+    (let n (alloc-read-int (+ st 16))
+      (let buf (arena-alloc-zeroed arena 32)
+        (let num (ffi-call "zyl_cstr_from_int" arena n 1000)
+          (begin
+            (alloc-write-int (+ st 16) (+ n 1))
+            (buf-append buf (str-intern arena ".L"))
+            (buf-append buf num)
+            buf))))))
+
+; Slot for a name: look up, or allocate at the tail.
+; Returns: Int (slot index)
+(defn cg-slot-of (st name)
+  (let names (alloc-read-int (+ st 32))
+    (let idx (alloc-read-int (+ st 40))
+      (cg-slot-find st names idx name 0 (kids-len names)))))
+
+(defn cg-slot-find (st names idx name i n)
+  (if (>= i n)
+    (let arena (alloc-read-int st)
+      (let slot n
+        (begin
+          (kids-push arena names name)
+          (kids-push arena idx slot)
+          slot)))
+    (if (str-eq (kids-get names i) name)
+      (kids-get idx i)
+      (cg-slot-find st names idx name (+ i 1) n))))
+
+; Slot for an instruction id: ids are dense per pool; reserve
+; variable slots first, then map instruction id -> id + 4096 offset.
+(defn cg-insn-slot (id) (+ id 4096))
+
+; Frame size from slot count.
+(defn cg-frame (max-slot)
+  (* 8 (+ max-slot 4)))
+
+; Emit one instruction.
+(defn cg-insn (st ir id)
+  (let pool ir
+    (let k (pool-kind pool id)
+      (if (= k 51)
+        ; CONST
+        (begin
+          (cg-emit st "    mov rax, ")
+          (cg-emit-int st (pool-val pool id))
+          (cg-nl st)
+          (cg-store-result st id))
+        (if (= k 52)
+          ; LOAD name
+          (begin
+            (cg-emit st "    mov rax, [rbp-")
+            (cg-emit-int st (* 8 (cg-slot-of st (pool-str pool id))))
+            (cg-emit st "]")
+            (cg-nl st)
+            (cg-store-result st id))
+          (if (= k 53)
+            ; ASSIGN name <- a
+            (begin
+              (cg-load-insn st (pool-a pool id))
+              (cg-emit st "    mov [rbp-")
+              (cg-emit-int st (* 8 (cg-slot-of st (pool-str pool id))))
+              (cg-emit st "], rax")
+              (cg-nl st)
+              (cg-store-result st id))
+            (if (= k 54)
+              (cg-binop st pool id)
+              (if (= k 56)
+                (cg-call st pool id)
+                (if (= k 62)
+                  (cg-print st pool id)
+                  0)))))))))
+
+; Store rax into the instruction's own result slot.
+(defn cg-store-result (st id)
+  (cg-emit st "    mov [rbp-")
+  (cg-emit-int st (* 8 (cg-insn-slot id)))
+  (cg-emit st "], rax")
+  (cg-nl st))
+
+; Load an instruction's result slot into rax.
+(defn cg-load-insn (st id)
+  (cg-emit st "    mov rax, [rbp-")
+  (cg-emit-int st (* 8 (cg-insn-slot id)))
+  (cg-emit st "]")
+  (cg-nl st))
+
+; Binary op / comparison.
+(defn cg-binop (st pool id)
+  (begin
+    ; lhs -> its slot already; load into rax; rhs -> rcx
+    (cg-load-insn st (pool-a pool id))
+    (cg-emit st "    mov rcx, rax")
+    (cg-nl st)
+    (cg-load-insn st (pool-b pool id))
+    (let op (pool-val pool id)
+      (if (< op 5)
+            (if (= op 0)
+              (begin
+                (cg-emit st "    add rax, rcx")
+                (cg-nl st))
+              (if (= op 1)
+                (begin
+                  (cg-emit st "    sub rax, rcx")
+                  (cg-nl st))
+                (if (= op 2)
+                  (begin
+                    (cg-emit st "    imul rax, rcx")
+                    (cg-nl st))
+                  (begin
+                    (cg-emit st "    cqo")
+                    (cg-nl st)
+                    (cg-emit st "    idiv rcx")
+                    (cg-nl st)))))
+            (begin
+          ; comparisons: cmp then setcc
+          (cg-emit st "    cmp rax, rcx")
+          (cg-nl st)
+          (cg-emit st "    set")
+          (if (= op 5) (cg-emit st "l")
+            (if (= op 6) (cg-emit st "g")
+              (if (= op 7) (cg-emit st "le")
+                (if (= op 8) (cg-emit st "ge")
+                  (if (= op 9) (cg-emit st "e")
+                    (cg-emit st "ne"))))))
+          (cg-nl st)
+          (cg-emit st "    movzx rax, al")
+          (cg-nl st)
+          0)))
+    (cg-store-result st id)))
+
+; Register-name dispatch by arg index (SysV).
+(defn cg-reg-of (i)
+  (if (= i 0) "rdi"
+    (if (= i 1) "rsi"
+      (if (= i 2) "rdx"
+        (if (= i 3) "rcx"
+          (if (= i 4) "r8"
+            "r9"))))))
+
+; User call: up to 6 register args.
+(defn cg-call (st pool id)
+  (let args (pool-kids pool id)
+    (begin
+      (cg-load-args st args 0 (kids-len args))
+      (cg-emit st "    call ")
+      ; name mangling: prefix f_ to avoid clashing with libc symbols
+      (let nm (pool-str pool id)
+        (begin
+          (cg-emit st "f_")
+          ; emit name via buffer append of the raw string
+          (cg-emit-str st nm)))
+      (cg-nl st)
+      (cg-store-result st id))))
+
+; Append an existing C string to the output.
+(defn cg-emit-str (st s)
+  (let buf (alloc-read-int (+ st 8))
+    (buf-append buf s)))
+
+; Load args[i..n) into their registers (ascending order is safe because
+; each target register is written after earlier ones are consumed).
+(defn cg-load-args (st args i n)
+  (if (< i n)
+    (begin
+      (cg-emit st "    mov ")
+      (cg-emit st (cg-reg-of i))
+      (cg-emit st ", [rbp-")
+      (cg-emit-int st (* 8 (cg-insn-slot (kids-get args i))))
+      (cg-emit st "]")
+      (cg-nl st)
+      (cg-load-args st args (+ i 1) n))
+    0))
+
+; print: printf("%d\n", v)
+(defn cg-print (st pool id)
+  (let args (pool-kids pool id)
+    (begin
+      (cg-emit st "    mov rsi, [rbp-")
+      (cg-emit-int st (* 8 (cg-insn-slot (kids-get args 0))))
+      (cg-emit st "]")
+      (cg-nl st)
+      (cg-emit st "    lea rdi, [rip+.Lfmt]")
+      (cg-nl st)
+      (cg-emit st "    xor eax, eax")
+      (cg-nl st)
+      (cg-emit st "    call printf")
+      (cg-nl st)
+      (cg-store-result st id))))
+
+; IF: cond / then-list / else-list.
+(defn cg-if (st ir id)
+  (let pool ir
+    (let lelse (cg-label-new st)
+      (let lend (cg-label-new st)
+        (begin
+          ; cond != 0 ?
+          (cg-load-insn st (pool-a pool id))
+          (cg-emit st "    test rax, rax")
+          (cg-nl st)
+          (cg-emit st "    je ")
+          (cg-emit-str st lelse)
+          (cg-nl st)
+          ; then block
+          (cg-block st ir (pool-kids pool id))
+          (cg-emit st "    jmp ")
+          (cg-emit-str st lend)
+          (cg-nl st)
+          (cg-emit-label st lelse)
+          (cg-block st ir (pool-c pool id))
+          (cg-emit-label st lend))))))
+
+; Emit a label followed by ':'.
+(defn cg-emit-label (st lbl)
+  (begin
+    (cg-emit-str st lbl)
+    (cg-emit st ":")
+    (cg-nl st)))
+
+; Emit every instruction of a block list.
+(defn cg-block (st ir blk)
+  (cg-block-loop st ir blk 0 (kids-len blk)))
+
+(defn cg-block-loop (st ir blk i n)
+  (if (< i n)
+    (begin
+      (cg-insn st ir (kids-get blk i))
+      (cg-block-loop st ir blk (+ i 1) n))
+    0))
+
+; Emit one function: prologue, param stores, body, epilogue.
+(defn cg-function (st ir fn-id)
+  (let pool ir
+    (let name (pool-str pool fn-id)
+      (let params (pool-kids pool fn-id)
+        (let body (pool-c pool fn-id)
+          (let last (pool-val pool fn-id)
+            (begin
+              ; label
+              (cg-emit st "f_")
+              (cg-emit-str st name)
+              (cg-emit st ":")
+              (cg-nl st)
+              (cg-emit st "    push rbp")
+              (cg-nl st)
+              (cg-emit st "    mov rbp, rsp")
+              (cg-nl st)
+              (cg-emit st "    sub rsp, 65536")
+              (cg-nl st)
+              ; pre-register param name slots so bodies resolve them
+              (cg-param-slots st params 0 (kids-len params))
+              ; store incoming registers to param slots
+              (cg-param-stores st params 0 (kids-len params))
+              ; body
+              (cg-block st ir body)
+              ; result: last instruction's slot -> rax
+              (cg-load-insn st last)
+              (cg-emit st "    mov rsp, rbp")
+              (cg-nl st)
+              (cg-emit st "    pop rbp")
+              (cg-nl st)
+              (cg-emit st "    ret")
+              (cg-nl st))))))))
+
+; Pre-register slots for params (so cg-slot-of allocates them first).
+(defn cg-param-slots (st params i n)
+  (if (< i n)
+    (begin
+      (cg-slot-of st (pool-str (alloc-read-int (+ st 8)) (kids-get params i)))
+      (cg-param-slots st params (+ i 1) n))
+    0))
+
+; Store arg registers into the named parameter slots.
+(defn cg-param-stores (st params i n)
+  (if (< i n)
+    (begin
+      (cg-emit st "    mov [rbp-")
+      (cg-emit-int st (* 8 (cg-slot-of st (param-name st params i))))
+      (cg-emit st "], ")
+      (cg-emit st (cg-reg-of i))
+      (cg-nl st)
+      (cg-param-stores st params (+ i 1) n))
+    0))
+
+; Param name lookup helper.
+(defn param-name (st params i)
+  (pool-str (alloc-read-int (+ st 8)) (kids-get params i)))
+
+; Emit the whole program (header + functions + rodata) into the buffer.
+(defn cg-program (st ir)
+  (let fns (kids-new (alloc-read-int st) 64)
+    (begin
+      (cg-emit st ".intel_syntax noprefix")
+      (cg-nl st)
+      (cg-emit st ".text")
+      (cg-nl st)
+      (cg-emit st ".globl main")
+      (cg-nl st)
+      ; collect function ids
+      (cg-functions st ir 0 (pool-count ir))
+      ; entry stub
+      (cg-emit st "main:")
+      (cg-nl st)
+      (cg-emit st "    push rbp")
+      (cg-nl st)
+      (cg-emit st "    mov rbp, rsp")
+      (cg-nl st)
+      (cg-emit st "    call f_main")
+      (cg-nl st)
+      (cg-emit st "    pop rbp")
+      (cg-nl st)
+      (cg-emit st "    ret")
+      (cg-nl st)
+      ; rodata format string
+      (cg-emit st ".section .rodata")
+      (cg-nl st)
+      (cg-emit st ".Lfmt:")
+      (cg-nl st)
+      (cg-emit st "    .string \"%d\\n\"")
+      (cg-nl st))))
+
+; Count nodes in a pool.
+(defn pool-count (pool)
+  (alloc-read-int pool))
+
+; Emit each function record in the output IR pool.
+(defn cg-functions (st ir i n)
+  (if (< i n)
+    (begin
+      ; kind 0 marks a function record (instructions carry opcodes >= 51)
+      (if (= (pool-kind ir i) 0)
+        (cg-function st ir i)
+        0)
+      (cg-functions st ir (+ i 1) n))
+    0))
+
+; Return the emitter's text buffer pointer.
+(defn cg-buffer (st)
+  (alloc-read-int (+ st 8)))
