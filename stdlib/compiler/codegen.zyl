@@ -131,7 +131,25 @@
                     (cg-while st pool id)
                     (if (= k 57)
                       (cg-if st pool id)
-                      0)))))))))))
+                      (if (= k 59)
+                        (cg-make-variant st pool id)
+                        (if (= k 60)
+                          ; TAGOF: deref scrutinee pointer -> tag word
+                          (begin
+                            (cg-load-insn st (pool-a pool id))
+                            (cg-emit st "    mov rax, [rax]")
+                            (cg-nl st)
+                            (cg-store-result st id))
+                          (if (= k 63)
+                            ; FIELD: load ptr, then field at [ptr+8*(1+idx)]
+                            (begin
+                              (cg-load-insn st (pool-a pool id))
+                              (cg-emit st "    mov rax, [rax+")
+                              (cg-emit-int st (* 8 (+ 1 (pool-val pool id))))
+                              (cg-emit st "]")
+                              (cg-nl st)
+                              (cg-store-result st id))
+                            0))))))))))))))
 
 ; While loop: a=cond insn, kids=cond block, c=body block.
 (defn cg-while (st pool id)
@@ -155,6 +173,40 @@
         (cg-emit st "    mov rax, 0")
         (cg-nl st)
         (cg-store-result st id)))))
+
+
+; Variant construction: heap block [tag][f0]...[fn-1] via libc malloc.
+; str=variant name, val=tag, kids=field insns.
+(defn cg-make-variant (st pool id)
+  (let n (kids-len (pool-kids pool id))
+    (begin
+      (cg-emit st "    mov rdi, ")
+      (cg-emit-int st (* 8 (+ n 1)))
+      (cg-nl st)
+      (cg-emit st "    call malloc")
+      (cg-nl st)
+      ; keep the block pointer in rbx (callee-saved) while filling fields
+      (cg-emit st "    mov rbx, rax")
+      (cg-nl st)
+      (cg-emit st "    mov qword ptr [rbx], ")
+      (cg-emit-int st (pool-val pool id))
+      (cg-nl st)
+      (cg-fields st pool (pool-kids pool id) 0 n)
+      (cg-emit st "    mov rax, rbx")
+      (cg-nl st)
+      (cg-store-result st id))))
+
+; Store field insns into the block rbx points at.
+(defn cg-fields (st pool fields j n)
+  (if (< j n)
+    (begin
+      (cg-load-insn st (kids-get fields j))
+      (cg-emit st "    mov [rbx+")
+      (cg-emit-int st (* 8 (+ j 1)))
+      (cg-emit st "], rax")
+      (cg-nl st)
+      (cg-fields st pool fields (+ j 1) n))
+    0))
 
 ; Store rax into the instruction's own result slot.
 (defn cg-store-result (st id)
