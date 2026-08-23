@@ -193,21 +193,20 @@
 ; Index of the closing '"' (or -1 if unterminated) for a string whose opening
 ; quote is at `start`. Handles \n \t \" \\ escapes; other escapes are lex errors.
 ; Returns: Int (index of closing quote)
+(defn scan-str (src len i)
+  (if (>= i len)
+    -1
+    (let b (byte-at src i)
+      (if (= b 92)
+        (if (<= (+ i 1) (- len 1))
+          (scan-str src len (+ i 2))
+          0)
+        (if (= b 34)
+          i
+          (scan-str src len (+ i 1)))))))
+
 (defn str-end (src len start)
-  (let i (+ start 1)
-    (let found -1)
-    (begin
-      (while (< i len)
-        (if (= (byte-at src i) 92)
-          (begin
-            (if (<= (+ i 1) (- len 1)) (set! i (+ i 2)) (set! i len))
-            (if (>= i len) (set! found 0) 0))
-          (if (= (byte-at src i) 34)
-            (begin
-              (set! found i)
-              (set! i len))
-            (set! i (+ i 1)))))
-      found)))
+  (scan-str src len (+ start 1)))
 
 ; ===========================================================================
 ; MAIN LEXER

@@ -5097,23 +5097,12 @@ impl CodeGen {
                 let mut then_local_vars = local_vars.clone();
                 let then_last_id = then_body.last().map(|s| s.id);
                 for stmt in then_body {
-                    // Skip nodes already emitted as part of a nested control-flow structure
-                    // (nested If/For/While branch members get flattened into this branch's
-                    // statement list by the Let temp-buffer handling; re-emitting them after
-                    // the nested join corrupts control flow and re-executes side effects).
-                    if emitted_ids.contains(&stmt.id) {
-                        continue;
-                    }
-                    if let ICNFInner::Assign(name, _) = &stmt.node {
-                        then_local_vars.entry(name.clone()).or_insert_with(|| {
-                    let slot = self.temp_slot_counter;
-                    self.temp_slot_counter += 1;
-                    slot
-                });
-                    }
                     // The branch's final node is its result value: emit it
-                    // fresh into rax even when flagged as an operand (the phi
-                    // store below reads rax).
+                    // fresh into rax even when flagged as an operand or
+                    // previously emitted (the phi store below reads rax).
+                    // This check must precede the emitted_ids skip below,
+                    // otherwise a value node emitted by the outer walk leaves
+                    // the phi store reading a stale register.
                     let is_value_kind = matches!(
                         stmt.node,
                         ICNFInner::Const(_)
@@ -5124,6 +5113,8 @@ impl CodeGen {
                             | ICNFInner::UnOp(..)
                             | ICNFInner::Eq { .. }
                             | ICNFInner::StructGet(..)
+                            | ICNFInner::Call(..)
+                            | ICNFInner::FfiCall { .. }
                     );
                     if Some(stmt.id) == then_last_id && is_value_kind {
                         self.emit_load_into(
@@ -5138,6 +5129,20 @@ impl CodeGen {
                         );
                         emitted_ids.insert(stmt.id);
                         continue;
+                    }
+                    // Skip nodes already emitted as part of a nested control-flow structure
+                    // (nested If/For/While branch members get flattened into this branch's
+                    // statement list by the Let temp-buffer handling; re-emitting them after
+                    // the nested join corrupts control flow and re-executes side effects).
+                    if emitted_ids.contains(&stmt.id) {
+                        continue;
+                    }
+                    if let ICNFInner::Assign(name, _) = &stmt.node {
+                        then_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
                     }
                     if then_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
@@ -5197,17 +5202,10 @@ impl CodeGen {
                 let mut else_local_vars = local_vars.clone();
                 let else_last_id = else_body.last().map(|s| s.id);
                 for stmt in else_body {
-                    // Skip nodes already emitted by a nested control-flow structure (see then arm).
-                    if emitted_ids.contains(&stmt.id) {
-                        continue;
-                    }
-                    if let ICNFInner::Assign(name, _) = &stmt.node {
-                        else_local_vars.entry(name.clone()).or_insert_with(|| {
-                    let slot = self.temp_slot_counter;
-                    self.temp_slot_counter += 1;
-                    slot
-                });
-                    }
+                    // The branch's final node is its result value: emit it
+                    // fresh into rax even when flagged as an operand or
+                    // previously emitted (the phi store below reads rax).
+                    // This check must precede the emitted_ids skip below.
                     let is_value_kind_else = matches!(
                         stmt.node,
                         ICNFInner::Const(_)
@@ -5218,6 +5216,8 @@ impl CodeGen {
                             | ICNFInner::UnOp(..)
                             | ICNFInner::Eq { .. }
                             | ICNFInner::StructGet(..)
+                            | ICNFInner::Call(..)
+                            | ICNFInner::FfiCall { .. }
                     );
                     if Some(stmt.id) == else_last_id && is_value_kind_else {
                         self.emit_load_into(
@@ -5232,6 +5232,17 @@ impl CodeGen {
                         );
                         emitted_ids.insert(stmt.id);
                         continue;
+                    }
+                    // Skip nodes already emitted by a nested control-flow structure (see then arm).
+                    if emitted_ids.contains(&stmt.id) {
+                        continue;
+                    }
+                    if let ICNFInner::Assign(name, _) = &stmt.node {
+                        else_local_vars.entry(name.clone()).or_insert_with(|| {
+                    let slot = self.temp_slot_counter;
+                    self.temp_slot_counter += 1;
+                    slot
+                });
                     }
                     if else_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
