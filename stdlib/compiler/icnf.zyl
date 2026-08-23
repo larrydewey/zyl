@@ -103,31 +103,65 @@
                             (icnf-while st node)
                             (if (= k 25)
                               (icnf-setbang st node)
-                              0))))))))))))))
+                              (if (= k 27)
+                                (icnf-for st node)
+                                (if (= k 29)
+                                  (icnf-cond st node)
+                                  0))))))))))))))))
+
+; While core: compile cond/body AST exprs into an ICNF kind-58 loop insn.
+; Returns: Int (the while insn id)
+(defn icnf-while-core (st cond-ast body-ast)
+  (let cpool (alloc-read-int (+ st 32))
+    (let arena (alloc-read-int st)
+      (let saved (alloc-read-int (+ st 16))
+        (let cond-blk (kids-new arena 8)
+          (begin
+            (alloc-write-int (+ st 16) cond-blk)
+            (let cond-id (icnf-expr st cond-ast)
+              (let body-blk (kids-new arena 8)
+                (begin
+                  (alloc-write-int (+ st 16) body-blk)
+                  (let bv (icnf-expr st body-ast)
+                    (begin
+                      (alloc-write-int (+ st 16) saved)
+                      (let w (icnf-add st 58)
+                        (begin
+                          (node-set-a cpool w cond-id)
+                          (node-set-kids cpool w cond-blk)
+                          (node-set-c cpool w body-blk)
+                          w)))))))))))))
 
 ; While loop: AST kind 26 (a=cond, b=body) -> ICNF kind 58.
 ; Cond and body compile into their own blocks; the loop's value is 0.
 (defn icnf-while (st node)
   (let apool (alloc-read-int (+ st 8))
-    (let cpool (alloc-read-int (+ st 32))
-      (let arena (alloc-read-int st)
-        (let saved (alloc-read-int (+ st 16))
-          (let cond-blk (kids-new arena 8)
-            (begin
-              (alloc-write-int (+ st 16) cond-blk)
-              (let cond-id (icnf-expr st (pool-a apool node))
-                (let body-blk (kids-new arena 8)
-                  (begin
-                    (alloc-write-int (+ st 16) body-blk)
-                    (let bv (icnf-expr st (pool-b apool node))
-                      (begin
-                        (alloc-write-int (+ st 16) saved)
-                        (let w (icnf-add st 58)
-                          (begin
-                            (node-set-a cpool w cond-id)
-                            (node-set-kids cpool w cond-blk)
-                            (node-set-c cpool w body-blk)
-                            w))))))))))))))
+    (icnf-while-core st (pool-a apool node) (pool-b apool node))))
+
+; For loop: AST kind 27 (a=cond, b=body, kids=AST_FOR_BINDING nodes with
+; str=name, a=init-or-0). Lowers to sequential init assigns + a while.
+; Zyl for-loops have no implicit step; the body updates the variable.
+; Returns: Int (the while insn id, or 0 on failure)
+(defn icnf-for (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let bindings (pool-kids apool node)
+      (icnf-for-binds st bindings 0 (kids-len bindings)
+                      (pool-a apool node) (pool-b apool node)))))
+
+(defn icnf-for-binds (st bindings i n cond-ast body-ast)
+  (if (>= i n)
+    (icnf-while-core st cond-ast body-ast)
+    (let apool (alloc-read-int (+ st 8))
+      (let b (kids-get bindings i)
+        (let init (pool-a apool b)
+          (if (= init 0)
+            (icnf-for-binds st bindings (+ i 1) n cond-ast body-ast)
+            (let v (icnf-expr st init)
+              (if (= v 0)
+                0
+                (begin
+                  (icnf-assign-to st (pool-str apool b) v)
+                  (icnf-for-binds st bindings (+ i 1) n cond-ast body-ast))))))))))
 
 
 ; SetBang: AST kind 25 (str=name, a=value) -> ICNF Assign.
@@ -244,34 +278,87 @@
 
 (defn icnf-if-compile (st node)
   (let apool (alloc-read-int (+ st 8))
-    (let cpool (alloc-read-int (+ st 32))
-      (let cond-id (icnf-expr st (pool-a apool node))
-        (if (= cond-id 0)
-          0
-          (let tmp (icnf-temp st)
-            (let saved (alloc-read-int (+ st 16))
-              (let then-blk (kids-new (alloc-read-int st) 8)
+    (icnf-if-gen st (pool-a apool node) (pool-b apool node) (pool-c apool node))))
+
+; Generalized if: compile pred/then/else AST exprs into an If insn whose
+; branches each end with an assignment of their value to a shared temp.
+; Returns: Int (Load insn id of the temp, or 0 on failure)
+(defn icnf-if-gen (st pred-ast then-ast else-ast)
+  (let cpool (alloc-read-int (+ st 32))
+    (let cond-id (icnf-expr st pred-ast)
+      (if (= cond-id 0)
+        0
+        (let tmp (icnf-temp st)
+          (let saved (alloc-read-int (+ st 16))
+            (let arena (alloc-read-int st)
+              (let then-blk (kids-new arena 8)
                 (begin
                   (alloc-write-int (+ st 16) then-blk)
-                  (let tv (icnf-expr st (pool-b apool node)))
-                  (let else-blk (kids-new (alloc-read-int st) 8)
+                  (let tv (icnf-expr st then-ast)
                     (begin
-                      (alloc-write-int (+ st 16) else-blk)
-                      (let ev (icnf-expr st (pool-c apool node))))
-                    (alloc-write-int (+ st 16) saved)
-                    (if (> tv -1)
+                      ; branch-local phi assign so cg-if leaves the value in rax
                       (if (= tv 0) 0 (icnf-assign-to st tmp tv))
-                      0)
-                    (if (= ev 0) 0 (icnf-assign-to st tmp ev))
-                    (let iff (icnf-add st 57)
-                      (begin
-                        (node-set-a cpool iff cond-id)
-                        (node-set-kids cpool iff then-blk)
-                        (node-set-c cpool iff else-blk)
-                        (let ld (icnf-add st 52)
-                          (begin
-                            (node-set-str cpool ld tmp)
-                            ld))))))))))))))
+                      (let else-blk (kids-new arena 8)
+                        (begin
+                          (alloc-write-int (+ st 16) else-blk)
+                          (let ev (icnf-expr st else-ast)
+                            (begin
+                              (if (= ev 0) 0 (icnf-assign-to st tmp ev))
+                              (alloc-write-int (+ st 16) saved)
+                              (let iff (icnf-add st 57)
+                                (begin
+                                  (node-set-a cpool iff cond-id)
+                                  (node-set-kids cpool iff then-blk)
+                                  (node-set-c cpool iff else-blk)
+                                  (let ld (icnf-add st 52)
+                                    (begin
+                                      (node-set-str cpool ld tmp)
+                                      ld)))))))))))))))))))
+
+; Cond: AST kind 29, kids = clause nodes (kind 30: a=pred, b=body).
+; Lowers to nested Ifs; falling off the end yields Const 0.
+; Returns: Int (value insn id, or 0 on failure)
+(defn icnf-cond (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (icnf-cond-from st (pool-kids apool node) 0 (kids-len (pool-kids apool node)))))
+
+(defn icnf-cond-from (st clauses i n)
+  (if (>= i n)
+    (let id (icnf-add st 51)
+      (begin
+        (node-set-val (alloc-read-int (+ st 32)) id 0)
+        id))
+    (let cid (kids-get clauses i)
+      (let cpool (alloc-read-int (+ st 32))
+        (let cond-id (icnf-expr st (pool-a (alloc-read-int (+ st 8)) cid))
+          (if (= cond-id 0)
+            0
+            (let tmp (icnf-temp st)
+              (let saved (alloc-read-int (+ st 16))
+                (let arena (alloc-read-int st)
+                  (let then-blk (kids-new arena 8)
+                    (begin
+                      (alloc-write-int (+ st 16) then-blk)
+                      (let tv (icnf-expr st (pool-b (alloc-read-int (+ st 8)) cid))
+                        (begin
+                          (if (= tv 0) 0 (icnf-assign-to st tmp tv))
+                          (let else-blk (kids-new arena 8)
+                            (begin
+                              (alloc-write-int (+ st 16) else-blk)
+                              (let ev (icnf-cond-from st clauses (+ i 1) n)
+                                (begin
+                                  (if (= ev 0) 0 (icnf-assign-to st tmp ev))
+                                  (alloc-write-int (+ st 16) saved)
+                                  (let iff (icnf-add st 57)
+                                    (begin
+                                      (node-set-a cpool iff cond-id)
+                                      (node-set-kids cpool iff then-blk)
+                                      (node-set-c cpool iff else-blk)
+                                      (let ld (icnf-add st 52)
+                                        (begin
+                                          (node-set-str cpool ld tmp)
+                                          ld)))))))))))))))))))))
+
 
 (defn icnf-program (arena ast-pool prog-id)
   (let out (pool-create arena 1024)

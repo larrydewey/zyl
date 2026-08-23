@@ -129,7 +129,9 @@
                   (cg-print st pool id)
                   (if (= k 58)
                     (cg-while st pool id)
-                    0))))))))))
+                    (if (= k 57)
+                      (cg-if st pool id)
+                      0)))))))))))
 
 ; While loop: a=cond insn, kids=cond block, c=body block.
 (defn cg-while (st pool id)
