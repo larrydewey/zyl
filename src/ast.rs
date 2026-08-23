@@ -1074,6 +1074,19 @@ impl PostProcessor {
 
     fn post_process_expr(&self, mut expr: Expr) -> Expr {
         match &expr.inner {
+            // Already-structured forms built by the parser's no-dispatch path
+            // still need their children post-processed.
+            ExprInner::Spawn(inner) => {
+                expr.inner = ExprInner::Spawn(Box::new(self.post_process_expr((**inner).clone())));
+                return expr;
+            }
+            ExprInner::Send(a, m) => {
+                expr.inner = ExprInner::Send(
+                    Box::new(self.post_process_expr((**a).clone())),
+                    Box::new(self.post_process_expr((**m).clone())),
+                );
+                return expr;
+            }
             // defmacro → MacroDef.
             ExprInner::Call(op, args) if Self::is_ident_op(op, "defmacro") && args.len() >= 3 => {
                 let name = match &args[0].inner {
