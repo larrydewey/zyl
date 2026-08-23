@@ -505,9 +505,6 @@ impl IcnfConverter {
     /// Resolve deferred captures after a let binding has been established.
     fn resolve_deferred_captures(&mut self) {
         for (closure_id, body_expr, _orig_name, scope_snapshot, own_params) in std::mem::take(&mut self.deferred_captures) {
-            if std::env::var("ZYL_DBG2").is_ok() {
-                eprintln!("RESOLVE def id={} name={:?} caps={:?}", closure_id, self.closures.get(&closure_id).map(|(n,_)|n.clone()), scope_snapshot.keys().collect::<Vec<_>>());
-            }
             let mut captured_names = std::collections::HashSet::new();
             collect_expr_vars(&body_expr, &mut captured_names);
             // Own parameters are not captures.
@@ -540,9 +537,6 @@ impl IcnfConverter {
                 }
                 None
             }).collect();
-            if std::env::var("ZYL_DBG2").is_ok() {
-                eprintln!("RESOLVED id={} resolved={:?} closures-map-name={:?}", closure_id, resolved.iter().map(|c|c.name.clone()).collect::<Vec<_>>(), self.closures.get(&closure_id).map(|(n,_)|n.clone()));
-            }
             if let Some(entry) = self.closures.get_mut(&closure_id) {
                 entry.1 = resolved.clone();
             }
@@ -579,18 +573,9 @@ impl IcnfConverter {
         name: &str,
         caps: &[CaptureField],
     ) {
-        if std::env::var("ZYL_DBG2").is_ok() {
-            let names: Vec<String> = stmts.iter().filter_map(|st| if let ICNFInner::Closure{name:n,..}=&st.node {Some(n.clone())} else {None}).collect();
-            if !names.is_empty() {
-                eprintln!("WALK looking={} closures_here={:?} ids={:?}", name, names, stmts.iter().map(|s|s.id).collect::<Vec<_>>());
-            }
-        }
         for stmt in stmts.iter_mut() {
             match &mut stmt.node {
                 ICNFInner::Closure { name: n, captures, .. } if n == name => {
-                    if std::env::var("ZYL_DBG2").is_ok() {
-                        eprintln!("PATCHED node {} with {} caps", n, caps.len());
-                    }
                     *captures = caps.to_vec();
                 }
                 ICNFInner::If { then_body, else_body, .. } => {
@@ -1565,7 +1550,12 @@ impl IcnfConverter {
                     ExprInner::Call(op, _)
                         if let ExprInner::Atom(Atom::Ident(fname)) = &op.inner =>
                     {
-                        if let Some(Type::Nominal(t)) = self.resolved_func_returns.get(fname) {
+                        let key = fname.replace('-', "_");
+                        let ret = self
+                            .resolved_func_returns
+                            .get(fname)
+                            .or_else(|| self.resolved_func_returns.get(&key));
+                        if let Some(Type::Nominal(t)) = ret {
                             if self.struct_layouts.contains_key(t)
                                 && !self.struct_bindings.contains_key(&val_id)
                             {
@@ -1617,9 +1607,6 @@ impl IcnfConverter {
                 // "not the final statement" skip rule drop the trailing value — the
                 // epilogue then returns garbage instead of the function's result.
                 let mut to_insert: Vec<ICNFNode> = Vec::new();
-                if std::env::var("ZYL_DBG2").is_ok() {
-                    eprintln!("LETINSERT T={:?} have={:?}", load_stmts.iter().map(|n| n.id).collect::<Vec<_>>(), all_stmts.iter().map(|n| n.id).collect::<Vec<_>>());
-                }
                 for stmt in load_stmts {
                     if !all_stmts.iter().any(|n| n.id == stmt.id) {
                         to_insert.push(stmt);
