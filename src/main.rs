@@ -125,6 +125,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Collect function definitions first (needed by monomorphization).
     inferer.collect(&regioned_exprs);
+    // Surface inference errors found inside function bodies. Body inference is
+    // best-effort, but silently dropping errors hid real bugs (e.g. wrong call
+    // arity producing garbage arguments at runtime).
+    if let Some(err) = inferer.take_first_body_error() {
+        eprintln!("warning: type check issue in function body: {}", err);
+    }
 
     // Phase 6: Monomorphization (runs before full type inference for AST preservation).
     println!("[Phase 6] Monomorphization ...");

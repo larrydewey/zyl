@@ -26,6 +26,7 @@ pub struct TypeInferer {
     adt_instantiations: IndexMap<String, Vec<String>>,
     /// Caches inferred return types for function bodies to avoid redundant inference on repeated call sites.
     body_infer_cache: RefCell<IndexMap<String, Type>>,
+    first_body_error: Option<ZylError>,
     /// Names of generic functions already monomorphized — skip re-processing originals
     /// in collect_definitions so their resolved types aren't overwritten by fresh type vars.
     skip_generic_def_names: RefCell<std::collections::HashSet<String>>,
@@ -55,6 +56,7 @@ impl TypeInferer {
             adt_defs: IndexMap::new(),
             adt_instantiations: IndexMap::new(),
             body_infer_cache: RefCell::new(IndexMap::new()),
+            first_body_error: None,
             skip_generic_def_names: RefCell::new(std::collections::HashSet::new()),
         }
     }
@@ -110,6 +112,19 @@ impl TypeInferer {
 
     /// Collect function definitions from expressions (populates known_functions etc.).
     /// Called by Phase 6 monomorphization to gather type info without destroying AST.
+    /// Record the first inference error seen inside a function body so it can
+    /// be surfaced as a diagnostic; body inference is best-effort (legacy),
+    /// but silent swallowing hides real bugs like wrong call arity.
+    fn note_body_error(&mut self, e: ZylError) {
+        if self.first_body_error.is_none() {
+            self.first_body_error = Some(e);
+        }
+    }
+
+    pub fn take_first_body_error(&mut self) -> Option<ZylError> {
+        self.first_body_error.take()
+    }
+
     pub fn collect(&mut self, exprs: &[Expr]) {
         self.body_infer_cache.borrow_mut().clear();
         self.collect_definitions(exprs);
@@ -244,22 +259,26 @@ impl TypeInferer {
                     for (p, pt) in params.iter().zip(param_types.iter()) {
                         drop(self.env.bind(p.name.clone(), pt.clone()));
                     }
-                    if let Ok(ret_ty) = self.infer_expr(body) {
-                        self.env = old_env;
-                        // Don't overwrite existing entries (from first infer pass).
-                        let new_known: Vec<_> = params.iter()
-                            .map(|p| (p.name.clone(), self.parse_type_str(&p.typ)))
-                            .collect();
-                        self.known_functions.entry(name.clone()).or_insert(new_known);
-                        self.function_returns.insert(name.clone(), ret_ty);
-                    } else {
-                        self.env = old_env;
-                        let fresh = Type::Var(self.fresh_var());
-                        let new_known: Vec<_> = params.iter()
-                            .map(|p| (p.name.clone(), self.parse_type_str(&p.typ)))
-                            .collect();
-                        self.known_functions.entry(name.clone()).or_insert(new_known);
-                        self.function_returns.entry(name.clone()).or_insert(fresh);
+                    match self.infer_expr(body) {
+                        Ok(ret_ty) => {
+                            self.env = old_env;
+                            // Don't overwrite existing entries (from first infer pass).
+                            let new_known: Vec<_> = params.iter()
+                                .map(|p| (p.name.clone(), self.parse_type_str(&p.typ)))
+                                .collect();
+                            self.known_functions.entry(name.clone()).or_insert(new_known);
+                            self.function_returns.insert(name.clone(), ret_ty);
+                        }
+                        Err(e) => {
+                            self.note_body_error(e);
+                            self.env = old_env;
+                            let fresh = Type::Var(self.fresh_var());
+                            let new_known: Vec<_> = params.iter()
+                                .map(|p| (p.name.clone(), self.parse_type_str(&p.typ)))
+                                .collect();
+                            self.known_functions.entry(name.clone()).or_insert(new_known);
+                            self.function_returns.entry(name.clone()).or_insert(fresh);
+                        }
                     }
                 }
 

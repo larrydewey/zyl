@@ -5,7 +5,7 @@
 (use collections/vec)
 
 (test "multi-module-vec"
-  (assert-true (option-is-some (vec-create 0 5))))
+  (assert-equal (vec-len (vec-create 0 5)) 0))
 
 (test "multi-module-alloc"
   (assert-true (> (alloc-malloc 64) 0)))

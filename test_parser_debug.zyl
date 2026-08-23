@@ -12,7 +12,7 @@
         (print "")
         (let ctx (parse-ctx arena)
           (begin
-            (form-cache-init ctx)
+            (form-cache-init arena ctx)
             (let pool (alloc-read-int ctx)
               (let body (kids-new arena 64)
                 (let prog (pool-append pool)
