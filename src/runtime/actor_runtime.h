@@ -109,7 +109,7 @@ long long zyl_pin_alloc(long long size);
 
 /* Atomic operations. */
 long long zyl_atomic_load(long long addr);
-void zyl_atomic_store(long long addr, long long value);
+long long zyl_atomic_store(long long addr, long long value);
 long long zyl_atomic_add(long long addr, long long value);
 long long zyl_atomic_sub(long long addr, long long value);
 long long zyl_atomic_max(long long addr, long long value);

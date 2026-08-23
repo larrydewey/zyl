@@ -1,0 +1,126 @@
+{
+  "schema_version": 4,
+  "compiler": "radiowave",
+  "generated_unix_seconds": 1787398753,
+  "source": "/home/larry/git/larry/zyl/.hipfire_kernels/gfx1152/fused_qk_l2_norm_scale_interleave_f32_batched.hip",
+  "output": "/home/larry/git/larry/zyl/.hipfire_kernels/gfx1152/fused_qk_l2_norm_scale_interleave_f32_batched.hsaco",
+  "arch": "gfx1152",
+  "wavefront": "wave32",
+  "scheduler_profile": "default",
+  "hipcc": "/opt/rocm/bin/hipcc",
+  "hipcc_version": "HIP version: 7.2.53211-9999\nAMD clang version 22.0.0git (/srcdest/rocm-llvm f58b06dce1f9c15707c5f808fd002e18c2accf7e)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /opt/rocm/lib/llvm/bin",
+  "command": [
+    "/opt/rocm/bin/hipcc",
+    "hipfire-kernel-cache",
+    "fused_qk_l2_norm_scale_interleave_f32_batched"
+  ],
+  "source_sha256": "d5952593a9891cb17c31faa17b92cb89f99329c0ebf96b468b2c7927f277c667",
+  "support_header_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "output_sha256": "c6d389de400cd71f37430e8204b8587af748ab6763fc02a6da406169889a2fa9",
+  "inspection": {
+    "bundle_target": "hipv4-amdgcn-amd-amdhsa--gfx1152",
+    "identity": {
+      "architecture": "gfx1152",
+      "elf_machine_id": 85,
+      "isa": {
+        "major": 11,
+        "minor": 5,
+        "stepping": 2
+      }
+    },
+    "kernels": [
+      {
+        "name": "fused_qk_l2_norm_scale_interleave_f32_batched",
+        "wavefront_size": 32,
+        "vgpr_count": 14,
+        "sgpr_count": 28,
+        "vgpr_spill_count": 0,
+        "sgpr_spill_count": 0,
+        "private_segment_fixed_size": 0,
+        "mutable_read_cache": "vmem_only",
+        "arguments": [
+          {
+            "offset": 0,
+            "size": 8,
+            "value_kind": "global_buffer",
+            "address_space": "global",
+            "actual_access": "read_only"
+          },
+          {
+            "offset": 8,
+            "size": 8,
+            "value_kind": "global_buffer",
+            "address_space": "global",
+            "actual_access": "read_only"
+          },
+          {
+            "offset": 16,
+            "size": 8,
+            "value_kind": "global_buffer",
+            "address_space": "global",
+            "actual_access": "write_only"
+          },
+          {
+            "offset": 24,
+            "size": 8,
+            "value_kind": "global_buffer",
+            "address_space": "global",
+            "actual_access": "write_only"
+          },
+          {
+            "offset": 32,
+            "size": 4,
+            "value_kind": "by_value",
+            "address_space": null,
+            "actual_access": null
+          },
+          {
+            "offset": 36,
+            "size": 4,
+            "value_kind": "by_value",
+            "address_space": null,
+            "actual_access": null
+          },
+          {
+            "offset": 40,
+            "size": 4,
+            "value_kind": "by_value",
+            "address_space": null,
+            "actual_access": null
+          },
+          {
+            "offset": 44,
+            "size": 4,
+            "value_kind": "by_value",
+            "address_space": null,
+            "actual_access": null
+          },
+          {
+            "offset": 48,
+            "size": 4,
+            "value_kind": "by_value",
+            "address_space": null,
+            "actual_access": null
+          }
+        ],
+        "instructions": {
+          "static_instructions": 234,
+          "buffer_loads": 0,
+          "buffer_stores": 0,
+          "global_loads": 4,
+          "global_stores": 2,
+          "flat_loads": 0,
+          "flat_stores": 0,
+          "scalar_loads": 3,
+          "kernarg_scalar_loads": 3,
+          "scalar_buffer_loads": 0,
+          "unknown_scalar_loads": 0,
+          "wait_instructions": 32,
+          "delay_alu_instructions": 17,
+          "memory_clause_instructions": 1,
+          "max_consecutive_vmem_instructions": 2
+        }
+      }
+    ]
+  }
+}

@@ -591,22 +591,46 @@
           (assert-equal (atomic-load p) 99))))
 
 (test "atomic-store"
-      (assert-equal (atomic-store 0 42) 42))
+      (let p (alloc-malloc 8)
+        (begin
+          (assert-equal (atomic-store p 42) 42)
+          0)))
 
 (test "atomic-add"
-      (assert-equal (atomic-add 0 10) 10))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 0)
+          (assert-equal (atomic-add p 10) 10)
+          0)))
 
 (test "atomic-sub"
-      (assert-equal (atomic-sub 100 25) 75))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 100)
+          (assert-equal (atomic-sub p 25) 75)
+          0)))
 
 (test "atomic-max"
-      (assert-equal (atomic-max 10 20) 20))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 10)
+          (assert-equal (atomic-max p 20) 20)
+          0)))
 
 (test "atomic-min"
-      (assert-equal (atomic-min 10 20) 10))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 20)
+          (assert-equal (atomic-min p 10) 10)
+          0)))
 
 (test "atomic-cas"
-      (assert-equal (atomic-cas 0 0 99) 99))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 0)
+          (assert-true (atomic-cas p 0 99))
+          (assert-equal (atomic-load p) 99)
+          0)))
 
 (test "OutputStream dispatch"
       (let out (make-stdout)
