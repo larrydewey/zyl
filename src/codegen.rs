@@ -56,6 +56,13 @@ pub struct CodeGen {
     /// Mapping from original closure name → unique closure name (with SSA ID suffix).
     /// Used to resolve Call instructions that reference the original name.
     closure_name_map: std::collections::HashMap<String, String>,
+    /// Always-spill scheme: stack slot index for every value-producing
+    /// statement id. After a statement is emitted, its result (rax) is
+    /// spilled to [rbp-8*(slot+1)]; operand loads read the slot instead of
+    /// trusting registers that intervening calls may have clobbered.
+    value_slots: std::collections::HashMap<usize, usize>,
+    /// Frame size (bytes) implied by value_slots; used by all prologues.
+    spill_frame: usize,
 }
 
 #[allow(dead_code)]
@@ -82,6 +89,8 @@ impl CodeGen {
             current_func: String::new(),
             fn_value_names: std::collections::HashSet::new(),
             closure_name_map: std::collections::HashMap::new(),
+            value_slots: std::collections::HashMap::new(),
+            spill_frame: 256,
         }
     }
 
@@ -238,6 +247,56 @@ impl CodeGen {
                 walk(body, &mut self.all_nodes);
             }
         }
+        // Always-spill pre-pass: assign a stack slot to every value-producing
+        // statement (recursively through embedded bodies) so operand loads can
+        // read memory instead of trusting clobber-prone registers.
+        {
+            fn vwalk(stmts: &[ICNFNode], next: &mut usize, out: &mut std::collections::HashMap<usize, usize>) {
+                for st in stmts {
+                    let value_kind = matches!(
+                        &st.node,
+                        ICNFInner::Call(..)
+                            | ICNFInner::FfiCall { .. }
+                            | ICNFInner::BinOp(..)
+                            | ICNFInner::UnOp(..)
+                            | ICNFInner::Eq { .. }
+                            | ICNFInner::MakeVariant { .. }
+                            | ICNFInner::MakeStruct(..)
+                            | ICNFInner::StructGet(..)
+                            | ICNFInner::FileWrite { .. }
+                            | ICNFInner::I32Imm(_)
+                            | ICNFInner::StrImm(_)
+                            | ICNFInner::ReadLine
+                    );
+                    if value_kind && !out.contains_key(&st.id) {
+                        out.insert(st.id, *next);
+                        *next += 1;
+                    }
+                    let nested: Vec<&Vec<ICNFNode>> = match &st.node {
+                        ICNFInner::If { then_body, else_body, .. } => vec![then_body, else_body],
+                        ICNFInner::Match { arms, .. } => arms.iter().map(|a| &a.body).collect(),
+                        ICNFInner::While { cond_body, body, .. } => vec![cond_body, body],
+                        ICNFInner::For { cond_nodes, body, .. } => vec![cond_nodes, body],
+                        ICNFInner::Begin(b) => vec![b],
+                        ICNFInner::TryCatch { try_body, catch_body, .. } => vec![try_body, catch_body],
+                        _ => vec![],
+                    };
+                    for b in nested {
+                        vwalk(b, next, out);
+                    }
+                }
+            }
+            let mut next = 512usize; // base above named-local slots
+            vwalk(&program.statements, &mut next, &mut self.value_slots);
+            for f in &program.functions {
+                vwalk(&f.body, &mut next, &mut self.value_slots);
+            }
+            for body in program.closure_bodies.values() {
+                vwalk(body, &mut next, &mut self.value_slots);
+            }
+            // Frame must cover the highest slot offset used anywhere.
+            self.spill_frame = ((next + 2) * 8 + 15) / 16 * 16;
+        }
 
         // Use Intel syntax (no % prefix for registers).
         self.asm.push(".intel_syntax noprefix".to_string());
@@ -350,9 +409,10 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    mov rbp, rsp".to_string());
 
-        // Allocate stack space for local variables (conservative: 256 bytes).
+        // Allocate stack space for locals + always-spill value slots.
         self.asm_push_align();
-        self.asm.push("    sub rsp, 256".to_string());
+        self.asm
+            .push(format!("    sub rsp, {}", self.spill_frame.max(256)));
 
         // Ensure Heap/Pin arenas are initialized before any allocations.
         self.asm_push_align();
@@ -768,9 +828,10 @@ impl CodeGen {
             self.asm_push_align();
             self.asm.push("    mov rbp, rsp".to_string());
 
-            // Reserve stack space for local variables (conservative: 256 bytes).
+            // Reserve stack space for locals + always-spill value slots.
             self.asm_push_align();
-            self.asm.push("    sub rsp, 256".to_string());
+            self.asm
+                .push(format!("    sub rsp, {}", self.spill_frame.max(256)));
 
             // Store function parameters from registers to known stack slots.
             // Float params come in XMM registers (as bit patterns), non-floats in GPRs.
@@ -1268,7 +1329,7 @@ impl CodeGen {
 
             // Return result: if body ends with a value in eax, keep it; otherwise return 0.
             self.asm_push_align();
-            self.asm.push("    add rsp, 256".to_string());
+            self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256)));
             self.asm_push_align();
             self.asm.push("    pop rbp".to_string());
             self.asm_push_align();
@@ -1309,7 +1370,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov rbp, rsp".to_string());
                 self.asm_push_align();
-                self.asm.push("    sub rsp, 256".to_string());
+                self.asm.push(format!("    sub rsp, {}", self.spill_frame.max(256)));
 
                 // Emit prologue. Capturing closures use the env convention:
                 // rdi = env block ([env]=code, [env+8+8i]=capture i), params
@@ -1478,7 +1539,7 @@ impl CodeGen {
 
                 // Epilogue.
                 self.asm_push_align();
-                self.asm.push("    add rsp, 256".to_string());
+                self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256)));
                 self.asm_push_align();
                 self.asm.push("    pop rbp".to_string());
                 self.asm_push_align();
@@ -2193,6 +2254,32 @@ impl CodeGen {
     /// emits it first to ensure the computation happens.
     #[expect(clippy::too_many_arguments)]
     #[expect(clippy::only_used_in_recursion)]
+    /// Emit a single ICNF node, then spill its result (rax) into the
+    /// always-spill slot so later operand loads never trust registers.
+    fn emit_node(
+        &mut self,
+        node: &ICNFNode,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        emitted_ids: &mut std::collections::HashSet<usize>,
+        operand_ids: &std::collections::HashSet<usize>,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        phi_slots: &std::collections::HashMap<String, String>,
+    ) {
+        self.emit_node_inner(node, stmts, local_vars, emitted_ids, operand_ids, lookup, phi_slots);
+        self.spill_result(node.id);
+    }
+
+    /// Spill rax into the value slot for statement `id` (always-spill scheme).
+    #[inline]
+    fn spill_result(&mut self, id: usize) {
+        if let Some(&slot) = self.value_slots.get(&id) {
+            let off = (slot + 1) * 8;
+            self.asm_push_align();
+            self.asm.push(format!("    mov [rbp-{}], rax", off));
+        }
+    }
+
     fn emit_load_into(
         &mut self,
         src_ssa_id: usize,
@@ -2207,6 +2294,23 @@ impl CodeGen {
         // Check if already emitted. Only skip if the node type stores its result in eax
         // AND we can safely assume eax still has that value.
         // Look up the statement by ID: check lookup first (branch bodies), then stmts.
+        // Always-spill: an already-emitted value-producing statement's
+        // result lives in its own slot — load it rather than trusting any
+        // register that intervening calls may have clobbered.
+        if let Some(&slot) = self.value_slots.get(&src_ssa_id) {
+            if emitted_ids.contains(&src_ssa_id)
+                || self.standalone_emitted.contains(&src_ssa_id)
+            {
+                let off = (slot + 1) * 8;
+                self.asm_push_align();
+                self.asm.push(format!(
+                    "    mov {}, [rbp-{}]",
+                    reg_to_64(target_reg),
+                    off
+                ));
+                return;
+            }
+        }
         let node = lookup
             .get(&src_ssa_id)
             .copied()
@@ -4240,6 +4344,7 @@ impl CodeGen {
                         emitted_ids, &std::collections::HashSet::new(),
                         &std::collections::HashMap::new(),
                     );
+                    self.spill_result(stmt.id);
                     continue;
                 }
             }
@@ -4521,7 +4626,7 @@ impl CodeGen {
 
     /// Emit a single ICNF node as x86_64 instructions.
     #[expect(clippy::too_many_arguments)]
-    fn emit_node(
+    fn emit_node_inner(
         &mut self,
         node: &ICNFNode,
         stmts: &[ICNFNode],
