@@ -273,31 +273,22 @@ bugs (not Zyl-source issues):**
 1b. FIXED this session (src/codegen.rs MakeVariant field save): a Const
    whose atom is Ident (variable ref) inside MakeVariant fields emitted a
    literal 0 instead of loading the local slot.
-1c. NEW PRECISE DIAGNOSIS (the main blocker): in embedded branch-body
-   emission, emit_call_direct's argument scheduling is unsound. Observed
-   for `read_forms(arena, art_rest(r), Cons(...))`: the Cons MakeVariant
-   is emitted FIRST (leaving its pointer only in rax), then sibling args
-   are evaluated (art_rest call CLOBBERS rax — the Cons pointer is lost),
-   and the ABI register reload reads wrong scratch slots (rdi gets stale
-   data). Result: recursive accumulators receive garbage -> empty parse
-   trees / infinite recursion. Fix direction: MakeVariant (and every
-   value-producing node) must spill its result to a dedicated slot at
-   definition time, and call-arg loading must read slots only — i.e.
-   finish the "always-spill" scheme over the heuristic skip/re-emit
-   logic. This also subsumes the wildcard-_ and >6-arg workarounds.
-2. OPEN (src/icnf.rs): `(let x v BODY)` where BODY nests If chains loses
-   nodes — emit-zyl shows conditions as `?` and constructor args as `unit`
-   (e.g. lex_loop's `(let c (byte-at ...) (if ...))` chain). Blocks lexer
-   self-host path; causes infinite recursion / garbage tokens.
-3. OPEN: functions whose type inference partially fails are silently
-   DROPPED from emission -> undefined symbol link errors instead of errors
-   (e.g. _ZYL_pv_hd).
-4. WORKAROUND in place: wildcard `_` patterns miscompile (arm returns
-   scrutinee/tag); all patterns now use named binds.
-5. WORKAROUND in place: >6-arg calls miscompile register reload offsets;
-   all stdlib/compiler calls kept <=6 args (lexer refactored onto state
-   cell st[0..40]).
-
+1c. NEW PRECISE DIAGNOSIS + minimal repro (the main blocker):
+   `(if c (AstOf (AList None) rest) (AstOf (AIdent (tok-text t)) rest))`
+   returns corrupted blocks for BOTH branches. Root cause chain: when an
+   If branch's final value node is a MakeVariant already emitted earlier
+   in the branch walk, emit_load_into -> emit_node early-returns
+   (emitted_ids guard) so the phi store captures stale rax.
+   ATTEMPTED SPOT FIXES (reverted — they fix the repro but segfault
+   unit_test + collections): (a) whitelist MakeVariant/MakeStruct as
+   branch-final "fresh emit" kinds; (b) clear emitted_ids before
+   delegating to emit_node; (c) all_nodes fallback in MakeVariant field
+   save. Conclusion: per-node skip/re-emit heuristics are mutually
+   unsound; the fix must be the full always-spill scheme — every
+   value-producing statement stores its result to its own rbp slot at
+   definition time, operand loads read slots only, no skip rules. Scope:
+   emit_node / emit_call_direct / If-branch / While-For-Match emitters in
+   src/codegen.rs (~4 sites), plus a recursive id->slot pre-pass.
 Remaining integration tests fail on these; everything else green (20/24).
 
 ## Next Priorities

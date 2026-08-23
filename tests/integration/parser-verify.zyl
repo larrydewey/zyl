@@ -13,6 +13,13 @@
   (match xs
     (Cons a rest a)
     (None (AList None))))
+
+(defn pv-drop (xs n)
+  (if (is-nil xs)
+    xs
+    (if (<= n 0)
+      xs
+      (pv-drop (list-cdr xs) (- n 1)))))
 (defn pv-first (prog)
   (match prog
     (Cons a rest a)
@@ -31,8 +38,8 @@
               (assert-true (str-eq (ast-name (pv-hd kids)) (str-intern arena "defn")))
               ; name, params, body
               (assert-true (str-eq (ast-name (pv-hd (list-cdr kids))) (str-intern arena "foo")))
-              (assert-equal (list-length (ast-kids (pv-hd (list-drop kids 2)))) 2)
-              (let body (pv-hd (list-drop kids 3))
+              (assert-equal (list-length (ast-kids (pv-hd (pv-drop kids 2)))) 2)
+              (let body (pv-hd (pv-drop kids 3))
                 (begin
                   ; body is the list (+ x y): head "+", two ident args
                   (assert-equal (ast-code body) 5)
@@ -43,7 +50,7 @@
 (test "pv-atoms"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn main () (begin (print 42) (print \"hi\") (print true) (print 1.5) 0))")
-      (let body-kids (ast-kids (pv-hd (list-drop (ast-kids (pv-first prog)) 3)))
+      (let body-kids (ast-kids (pv-hd (pv-drop (ast-kids (pv-first prog)) 3)))
         (begin
           ; (begin ...) has 5 elements
           (assert-equal (list-length body-kids) 5)
@@ -54,22 +61,22 @@
               ; string literal
               (assert-true (> (alloc-strlen (ast-text (pv-hd (ast-kids (pv-hd (list-cdr body-kids)))))) 0))
               ; bool literal
-              (assert-true (ast-bool (pv-hd (ast-kids (pv-hd (list-drop body-kids 2))))))
+              (assert-true (ast-bool (pv-hd (ast-kids (pv-hd (pv-drop body-kids 2))))))
               ; float literal text
-              (assert-true (str-eq (ast-text (pv-hd (ast-kids (pv-hd (list-drop body-kids 3))))) (str-intern arena "1.5")))
+              (assert-true (str-eq (ast-text (pv-hd (ast-kids (pv-hd (pv-drop body-kids 3))))) (str-intern arena "1.5")))
               0)))))))
 
 (test "pv-nesting"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn f (x) (if (> x 0) (foo x) (bar (baz x))))")
-      (let ifform (pv-hd (list-drop (ast-kids (pv-first prog)) 3))
+      (let ifform (pv-hd (pv-drop (ast-kids (pv-first prog)) 3))
         (begin
           (assert-equal (ast-code ifform) 5)
           (assert-equal (list-length (ast-kids ifform)) 4)
           ; then-branch is a call to foo
-          (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd (list-drop (ast-kids ifform) 2))))) (str-intern arena "foo")))
+          (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd (pv-drop (ast-kids ifform) 2))))) (str-intern arena "foo")))
           ; else-branch nests bar(baz(x))
-          (let else-call (pv-hd (list-drop (ast-kids ifform) 3))
+          (let else-call (pv-hd (pv-drop (ast-kids ifform) 3))
             (begin
               (assert-true (str-eq (ast-name (pv-hd (ast-kids else-call))) (str-intern arena "bar")))
               (assert-equal (list-length (ast-kids else-call)) 2)
