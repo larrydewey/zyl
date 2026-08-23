@@ -414,7 +414,7 @@
       (assert-true (option-is-some (assoc-values (assoc-put 1 "a" (assoc-empty))))))
 
 (test "assoc-map"
-      (assert-true (option-is-some (assoc-map (fn (v) v) (assoc-put 1 "x" (assoc-empty))))))
+      (assert-equal (assoc-get 1 "" (assoc-map (fn (v) "y") (assoc-put 1 "x" (assoc-empty)))) "y"))
 
 (test "assoc-fold"
       (assert-equal (assoc-fold (fn (acc _k v) (+ acc 1)) 0 (assoc-put 1 "a" (assoc-put 2 "b" (assoc-empty)))) 2))
@@ -443,8 +443,15 @@
 (test "vec-pop"
       (assert-equal (vec-len (vec-pop (vec-push (vec-create 0 10) 42))) 0))
 
+(test "vec-pop keeps values"
+      (let v (vec-push (vec-push (vec-create 0 10) 42) 43)
+        (let popped (vec-pop v)
+          (begin
+            (assert-equal (vec-len popped) 1)
+            (assert-equal (vec-get popped 0) 42)))))
+
 (test "vec-pop empty"
-      (assert-equal (vec-pop (vec-create 0 10)) -1))
+      (assert-equal (vec-len (vec-pop (vec-create 0 10))) 0))
 
 (test "map-create"
       (assert-equal (map-len (map-create 0 10)) 0))

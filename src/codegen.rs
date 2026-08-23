@@ -22,6 +22,7 @@ pub struct CodeGen {
     spawn_counter: usize,
     /// IDs of nodes already emitted as standalone statements.
     standalone_emitted: std::collections::HashSet<usize>,
+    all_nodes: std::collections::HashMap<usize, ICNFNode>,
     /// Struct field layouts for offset computation.
     struct_layouts: StructLayout,
     /// ADT definitions: type_name → list of (variant_name, field_count).
@@ -65,6 +66,7 @@ impl CodeGen {
             xmm_counter: 0,
             spawn_counter: 0,
             standalone_emitted: std::collections::HashSet::new(),
+            all_nodes: std::collections::HashMap::new(),
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::HashMap::new(),
             closure_bodies: std::collections::HashMap::new(),
@@ -206,6 +208,35 @@ impl CodeGen {
 
     /// Generate assembly from an optimized ICNF program.
     pub fn generate(&mut self, program: &ICNFProgram) {
+        // Build a program-wide id -> node map so deeply nested nodes (e.g. an
+        // If condition inside another If's else body) can always be resolved.
+        {
+            fn walk<'a>(stmts: &'a [ICNFNode], map: &mut std::collections::HashMap<usize, ICNFNode>) {
+                for st in stmts {
+                    map.insert(st.id, st.clone());
+                    let nested: Vec<&Vec<ICNFNode>> = match &st.node {
+                        ICNFInner::If { then_body, else_body, .. } => vec![then_body, else_body],
+                        ICNFInner::Match { arms, .. } => arms.iter().map(|a| &a.body).collect(),
+                        ICNFInner::While { cond_body, body, .. } => vec![cond_body, body],
+                        ICNFInner::For { cond_nodes, body, .. } => vec![cond_nodes, body],
+                        ICNFInner::Begin(b) => vec![b],
+                        ICNFInner::TryCatch { try_body, catch_body, .. } => vec![try_body, catch_body],
+                        _ => vec![],
+                    };
+                    for b in nested {
+                        walk(b, map);
+                    }
+                }
+            }
+            walk(&program.statements, &mut self.all_nodes);
+            for f in &program.functions {
+                walk(&f.body, &mut self.all_nodes);
+            }
+            for body in program.closure_bodies.values() {
+                walk(body, &mut self.all_nodes);
+            }
+        }
+
         // Use Intel syntax (no % prefix for registers).
         self.asm.push(".intel_syntax noprefix".to_string());
 
@@ -2723,6 +2754,20 @@ impl CodeGen {
                 }
             }
             Some(_) => {
+                // Last resort: the node may exist somewhere else in the
+                // program (deeply nested). Emit it from the global map.
+                if self.all_nodes.contains_key(&src_ssa_id) {
+                    // Recurse against the program-wide node map.
+                    self.emit_load_into_owned(
+                        src_ssa_id,
+                        target_reg,
+                        stmts,
+                        local_vars,
+                        emitted_ids,
+                        phi_slots,
+                    );
+                    return;
+                }
                 let hash = simple_hash(&format!("{}", src_ssa_id));
                 let offset = ((hash % 32) + 1) * 8;
                 self.asm_push_align();
@@ -2733,6 +2778,38 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm
                     .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+            }
+        }
+    }
+
+    /// emit_load_into against the program-wide node map (used when local
+    /// lookups fail for deeply nested nodes).
+    fn emit_load_into_owned(
+        &mut self,
+        src_ssa_id: usize,
+        target_reg: &str,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        emitted_ids: &mut std::collections::HashSet<usize>,
+        phi_slots: &std::collections::HashMap<String, String>,
+    ) {
+        if let Some(n) = self.all_nodes.get(&src_ssa_id) {
+            let node = n.clone();
+            let lookup: HashMap<usize, &ICNFNode> = std::collections::HashMap::new();
+            let empty: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            self.emit_node(
+                &node,
+                stmts,
+                local_vars,
+                emitted_ids,
+                &empty,
+                &lookup,
+                phi_slots,
+            );
+            if target_reg != "rax" && target_reg != "eax" {
+                self.asm_push_align();
+                self.asm
+                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
         }
     }
@@ -3942,7 +4019,15 @@ impl CodeGen {
         let join_point = format!("{}.join", result_var);
 
         // Emit condition.
-        let cond_node = lookup.get(cond_ssa).copied().or_else(|| stmts.iter().find(|n| n.id == *cond_ssa));
+        let cond_node = lookup
+            .get(cond_ssa)
+            .copied()
+            .or_else(|| stmts.iter().find(|n| n.id == *cond_ssa))
+            .or_else(|| self.all_nodes.get(cond_ssa).map(|n| {
+                static SENTINEL: Option<ICNFNode> = None;
+                let _ = &SENTINEL;
+                Box::leak(Box::new(n.clone())) as &ICNFNode
+            }));
         if let Some(ICNFNode { node, id: cond_id, .. }) = cond_node {
             // Merge body nodes into lookup so emit_condition_inline can find
             // condition operands (e.g., Const nodes in nested if conditions).
@@ -4834,7 +4919,17 @@ impl CodeGen {
                 }
 
                 // Look up the condition node in the full lookup.
-                let cond_node = full_lookup.get(cond_ssa).copied();
+                let cond_node = full_lookup.get(cond_ssa).copied().or_else(|| {
+                    self.all_nodes.get(cond_ssa).map(|n| Box::leak(Box::new(n.clone())) as &ICNFNode)
+                });
+                // Merge the program-wide map so condition operands from
+                // deeply nested contexts resolve too.
+                let mut full_lookup = full_lookup;
+                let all: Vec<(usize, ICNFNode)> =
+                    self.all_nodes.iter().map(|(k, v)| (*k, v.clone())).collect();
+                for (id, n) in &all {
+                    full_lookup.entry(*id).or_insert(n);
+                }
                 // Emit condition computation if found.
                 if let Some(cond) = cond_node {
                     self.emit_condition_inline(&cond.node, local_vars, &full_lookup, stmts, emitted_ids, cond.id);

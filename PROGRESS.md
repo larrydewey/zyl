@@ -147,10 +147,12 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Known Remaining Failures (pre-existing, documented)
 
-- **Recursive generic ADT matches** (`Assoc<K,V>`): assoc-get crashes even
-  with Int values — Match against a monomorphized recursive generic
-  (`Assoc_?N`) mis-resolves variant field offsets. Blocks unit_test
-  assoc tests, tests/regression/collections.zyl and types.zyl tail.
+- **Struct bindings through doubly-nested lets**: `(let b (f a) (let c (g b)
+  ...))` — struct-get offsets resolve inconsistently past one let level
+  (fields read shifted). Blocks vec-pop-keeps-values and assoc tail tests;
+  single-level propagation works (Let handler derives types from resolved
+  function returns).
+- `tests/regression/types.zyl` / unit_test assoc tail: blocked by the above.
 - `tests/unit_test.zyl`: all other ~120 tests pass.
 - `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
   functions (stdlib work, not compiler bugs).
