@@ -1177,7 +1177,7 @@ impl CodeGen {
             for n in &body_stmts {
                 func_lookup.insert(n.id, n);
             }
-            for stmt in &func.body {
+            for (stmt_idx, stmt) in func.body.iter().enumerate() {
                 // Skip condition BinOps — they're emitted inline by the If handler.
                 // Only value-computing kinds are skipped here; an If whose
                 // cond_ssa collides with its own node id must still be emitted.
@@ -1207,12 +1207,18 @@ impl CodeGen {
                     }
                 }
                 // Skip unreferenced pure statements (dead Load/Const supply nodes from a
-                // let's temp buffer) that are NOT the final statement. They exist only for
-                // operand lookup; emitting them clobbers the value a preceding If/While/For
-                // left in eax, which the epilogue returns as the function result.
+                // let's temp buffer) that are followed by a non-pure statement. They
+                // exist only for operand lookup; emitting them mid-body clobbers the
+                // value a preceding If/While/For left in eax. Trailing pure statements
+                // (after the last control node) ARE emitted: one of them is the real
+                // function result, and leaked control-flow supply nodes load the same
+                // variable it does.
+                let later_non_pure = func.body[stmt_idx + 1..]
+                    .iter()
+                    .any(|n| !matches!(&n.node, ICNFInner::Load(_) | ICNFInner::Const(_)));
                 if !operand_ids.contains(&stmt.id)
                     && matches!(&stmt.node, ICNFInner::Load(_) | ICNFInner::Const(_))
-                    && func.body.last().map_or(false, |n| n.id != stmt.id)
+                    && later_non_pure
                 {
                     continue;
                 }
