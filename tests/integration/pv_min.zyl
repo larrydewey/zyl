@@ -1,0 +1,22 @@
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/ast-helpers)
+(use testing/testing)
+
+(defn pv-parse (arena src)
+  (let tokens (zyl-lex arena src)
+    (let ctx (parse-ctx arena)
+      (begin
+        (form-cache-init arena ctx)
+        (let prog (parse-program arena ctx tokens)
+          (post-process arena ctx tokens prog))))))
+
+(test "pv-min"
+  (let arena (arena-create 0)
+    (let prog (pv-parse arena "(defn foo (x) x)")
+      (begin
+        (assert-equal prog 0)
+        0))))
+
+(run-tests)

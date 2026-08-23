@@ -386,8 +386,9 @@ long long zyl_mem_read(long long ptr) {
     return *(volatile long long*)(size_t)ptr;
 }
 
-void zyl_mem_write(long long ptr, long long value) {
+long long zyl_mem_write(long long ptr, long long value) {
     *(volatile long long*)(size_t)ptr = value;
+    return value;
 }
 
 /* ==========================================================================

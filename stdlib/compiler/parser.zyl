@@ -580,7 +580,7 @@
           (let name (kids-get args 0)
             (if (= (pool-kind pool name) 1)
               (let params (params-from arena pool (kids-get args 1))
-                (let body (defn-body arena ctx tokens args n 2)
+                (let body (defn-body-list arena ctx tokens args n 2)
                   (begin
                     (node-set-kind pool id 10)
                     (node-set-str pool id (pool-str pool name))
@@ -598,7 +598,7 @@
       (let n (kids-len args)
         (if (>= n 2)
           (let params (params-from arena pool (kids-get args 0))
-            (let body (defn-body arena ctx tokens args n 1)
+            (let body (defn-body-list arena ctx tokens args n 1)
               (begin
                 (node-set-kind pool id 17)
                 (node-set-kids pool id params)
@@ -608,7 +608,7 @@
 
 ; Build a function body: 1 trailing expr → that expr; >1 → a Begin over them.
 ; Returns: Int (body node id)
-(defn defn-body (arena ctx tokens args n start)
+(defn defn-body-list (arena ctx tokens args n start)
   (if (= (- n start) 1)
     (kids-get args start)
     (make-begin arena ctx tokens args start n)))
@@ -704,7 +704,7 @@
 ; Returns: Int (1 if rewritten)
 (defn po-let-form (arena ctx tokens id nkind name value args n bstart)
   (let pool (alloc-read-int ctx)
-    (let body (let-body arena ctx tokens args n bstart)
+    (let body (let-body-list arena ctx tokens args n bstart)
       (begin
         (node-set-kind pool id nkind)
         (node-set-str pool id (pool-str pool name))
@@ -715,7 +715,7 @@
 
 ; let body: 0 trailing → Keyword "___skip_"; 1 → that expr; >1 → Begin.
 ; Returns: Int (body node id)
-(defn let-body (arena ctx tokens args n bstart)
+(defn let-body-list (arena ctx tokens args n bstart)
   (let pool (alloc-read-int ctx)
     (let m (- n bstart)
       (if (= m 0)
@@ -916,14 +916,14 @@
           (begin
             (node-set-kind pool id 26)
             (node-set-a pool id (kids-get args 0))
-            (node-set-b pool id (while-body arena ctx tokens args n 1))
+            (node-set-b pool id (while-body-list arena ctx tokens args n 1))
             (node-set-kids pool id 0)
             1)
           0)))))
 
 ; while body: 1 trailing expr → it; >1 → Begin.
 ; Returns: Int (body node id)
-(defn while-body (arena ctx tokens args n start)
+(defn while-body-list (arena ctx tokens args n start)
   (if (= (- n start) 1)
     (kids-get args start)
     (make-begin arena ctx tokens args start n)))
@@ -937,7 +937,7 @@
     (let args (pool-kids pool id)
       (let n (kids-len args)
         (if (>= n 3)
-          (let bindings (for-bindings arena pool (kids-get args 0))
+          (let bindings (for-bindings-collect arena pool (kids-get args 0))
             (begin
               (node-set-kind pool id 27)
               (node-set-kids pool id bindings)
@@ -950,7 +950,7 @@
 ; AST_FOR_BINDING (28) nodes. Each binding: str=name, a=value-or-0.
 ; Handles (i 0), (i), and Begin-of-pairs.
 ; Returns: Int (kids list handle)
-(defn for-bindings (arena pool expr)
+(defn for-bindings-collect (arena pool expr)
   (let bindings (kids-new arena 4)
     (begin
       (for-bindings-1 arena pool bindings expr)

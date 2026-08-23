@@ -63,7 +63,7 @@ long long ffi_unpin(long long ptr);
 long long zyl_mem_alloc(long long size);
 void zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
-void zyl_mem_write(long long ptr, long long value);
+long long zyl_mem_write(long long ptr, long long value);
 long long zyl_cstr_len(long long ptr);
 long long zyl_cstr_concat(long long a, long long b);
 long long zyl_cstr_substr(long long src, long long start, long long len);

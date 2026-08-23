@@ -4871,14 +4871,16 @@ impl CodeGen {
                                   self.asm.push("    imul rax, rdx".to_string());
                               }
                               BinOpKind::Div | BinOpKind::Rem => {
+                                  // cqo sign-extends rax into rdx, destroying
+                                  // the divisor if it lives in rdx — save it
+                                  // in rbx first.
+                                  self.asm_push_align();
+                                  self.asm.push("    mov rbx, rdx".to_string());
                                   self.asm_push_align();
                                   self.asm.push("    cqo".to_string()); // Sign-extend rax into rdx:rax (64-bit)
-                                  if op == &BinOpKind::Div {
-                                      self.asm_push_align();
-                                      self.asm.push("    idiv rdx".to_string());
-                                  } else {
-                                      self.asm_push_align();
-                                      self.asm.push("    idiv rdx".to_string());
+                                  self.asm_push_align();
+                                  self.asm.push("    idiv rbx".to_string());
+                                  if op == &BinOpKind::Rem {
                                       self.asm_push_align();
                                       self.asm.push("    mov rax, rdx".to_string()); // Remainder in rdx
                                   }
