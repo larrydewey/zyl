@@ -193,14 +193,22 @@ Recursive ADTs with implicit boxing are implemented and verified (see step list 
 5. **Verify**: ✅ DONE — `(deftype Tree (Leaf Int) (Node Tree Tree))` → make, match, recursive traversal → correct output (tested: count, sum, nested nodes, let-in-arm bodies, multi-variant eval). `stdlib_test.zyl` output byte-identical to pre-fix baseline. Note: pre-existing `cond` `"x is 5"` print missing from `stdlib_test.zyl` output (unrelated, predates these fixes).
 6. **Self-hosting**: Expose recursive `deftype` in Zyl syntax so the Zyl compiler can define its own AST types.
 
-### Compiler bugs blocking self-hosting (found during Phase 2c runtime test)
+### Compiler bugs blocking self-hosting (found during Phase 2c runtime test) — RESOLVED
 
-First runtime run of `test_parser_verify.zyl` (Zyl lexer + parser) fails: token stream is corrupted — every real token is interleaved with spurious TK_EOF (100) tokens (13 expected, 30 produced). Two Rust-compiler bugs identified:
+1. ~~Codegen >6-param stack args~~ **FIXED** (commit 7e75837): call sites now
+   push scratch slots for all args, copy args 7+ into stack-arg position, and
+   restore rsp by exactly `8*num_args + 8*num_stack_args`. The earlier attempt
+   (ce5bb61) leaked 8 bytes per stack arg and misaligned rsp.
+2. ~~Nested If flattening / Let handler global push~~ The Let handler already
+   guards on `push_to_globals`; the real culprit behind the observed crashes
+   was a TEST bug — `(form-cache-init ctx)` called with one argument (it takes
+   `(arena ctx)`), silently accepted because body-inference errors were
+   swallowed. Garbage rsi made str-intern allocate from a bogus arena,
+   corrupting the heap. Fixed the call; inference errors are now surfaced as
+   warnings (see type_inference first_body_error).
 
-1. **ICNF generation** (`src/icnf.rs`): nested `If` nodes inside a `let`-in-branch-body get flattened into top-level statements instead of staying nested. In `lex_loop`, the comment-handling `If(e>=len)` (from the `is_semicolon` else-branch) is hoisted into the outer `If(i>=len)`'s else_body and runs unconditionally for every character, emitting an EOF token. Root cause is the `Let` handler unconditionally pushing its statements to `global_stmts` (line ~1425-1429) regardless of `push_to_globals`, leaking nested `If` nodes to the function body. Minimal repro tests (`nest.zyl`, `nest2.zyl`, `nest3.zyl` with `let`-wrap-`begin`-wrap-nested-`if` + recursion) all PASS — the bug needs the specific `if`-in-branch with the deeper nesting pattern of `lex_loop`.
-2. **Codegen** (`src/codegen.rs`): functions with >6 parameters never receive args 7+ from the stack. `toks_push` (7 params) and `lex_loop`/`lex_token` (7 params) never load the 7th arg (`col`) at function entry — `col` is garbage. No stack-argument passing is emitted at call sites or read at prologue.
-
-Both must be fixed before the Zyl lexer/parser can run and Phase 2c can proceed.
+Phase 2c verification: `test_parser_debug.zyl` lexes "(defn foo (x) (+ x 1))"
+into exactly 13 tokens and parses 1 top-level form. Phase 2c can proceed.
 
 ### Self-Hosting (Priority)
 
