@@ -147,13 +147,14 @@ All 9 core compilation phases are implemented and tested. The compiler builds an
 
 ### Known Remaining Failures (pre-existing, documented)
 
-- **Struct bindings through doubly-nested lets**: `(let b (f a) (let c (g b)
-  ...))` — struct-get offsets resolve inconsistently past one let level
-  (fields read shifted). Blocks vec-pop-keeps-values and assoc tail tests;
-  single-level propagation works (Let handler derives types from resolved
-  function returns).
-- `tests/regression/types.zyl` / unit_test assoc tail: blocked by the above.
-- `tests/unit_test.zyl`: all other ~120 tests pass.
+- **Struct ops across chained lets**: flat forms work
+  (`(map-len (map-put (map-create ..) ..))` ✓) but binding intermediate
+  struct values to names and chaining crashes
+  (`(let m2 (map-put m 1 42)) (map-get m2 ..)` → segfault in
+  alloc-read-int). ICNF offsets all resolve correctly (verified); the
+  corruption happens at codegen register/slot level for nested-let
+  struct flows. Blocks unit_test map-get/assoc tail, types.zyl tail,
+  vec-pop-keeps-values.
 - `tests/regression/compiler.zyl`: references unwritten stdlib pool-*
   functions (stdlib work, not compiler bugs).
 - `tests/regression/concurrency.zyl`: pre-existing region escape error.

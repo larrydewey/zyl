@@ -8,8 +8,10 @@
 
 ; Create an empty Map with the given initial capacity on the given arena.
 ; Returns: Map
+; arena <= 0 means "create a private default arena".
 (defn map-create ((arena Int) (cap Int))
-  (make-Map (arena-alloc arena (* cap 8)) (arena-alloc arena (* cap 8)) 0 cap arena))
+  (let a (if (> arena 0) arena (arena-create 0))
+    (make-Map (arena-alloc a (* cap 8)) (arena-alloc a (* cap 8)) 0 cap a)))
 
 ; Create an empty Map with the given initial capacity using the default arena.
 ; Returns: Map
