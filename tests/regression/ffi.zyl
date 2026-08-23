@@ -3,7 +3,7 @@
 ; FFI pin
 (use ffi/ffi)
 (test "ffi-pin"
-  (assert-true (option-is-some (ffi-pin-value 42))))
+  (assert-true (> (ffi-pin-value 42) 0)))
 
 ; FFI unpin
 (test "ffi-unpin"
@@ -15,6 +15,6 @@
 
 ; FFI pin + call
 (test "ffi-pin-call"
-  (assert-equal (ffi-pin-call-unpin 123) 123))
+  (assert-equal (result-unwrap (ffi-pin-call-unpin 123) 0) 123))
 
 (run-tests)
