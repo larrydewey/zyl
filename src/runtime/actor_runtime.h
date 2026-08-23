@@ -57,7 +57,7 @@ void zyl_actor_wait(long long actor_id);
 
 /* FFI pinning. */
 void* ffi_pin(long long value);
-void ffi_unpin(void* ptr);
+long long ffi_unpin(long long ptr);
 
 /* Raw memory arena. */
 long long zyl_mem_alloc(long long size);

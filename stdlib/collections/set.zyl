@@ -9,8 +9,10 @@
 
 ; Create an empty Set with the given initial capacity on the given arena.
 ; Returns: Set
+; arena <= 0 means "create a private default arena".
 (defn set-create ((arena Int) (cap Int))
-  (make-Set (arena-alloc arena (* cap 8)) 0 cap arena))
+  (let a (if (> arena 0) arena (arena-create 0))
+    (make-Set (arena-alloc a (* cap 8)) 0 cap a)))
 
 ; Get the number of distinct elements.
 ; Returns: Int

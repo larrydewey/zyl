@@ -1084,6 +1084,11 @@ impl CodeGen {
                 }
             }
             register_func_slots(&func.body, &mut local_vars, &mut next_slot);
+            if std::env::var("ZYL_DBG2").is_ok() {
+                let mut lv: Vec<_> = local_vars.iter().collect();
+                lv.sort_by_key(|(_,v)| **v);
+                eprintln!("SLOTS {} next={} map={:?}", func.name, next_slot, lv);
+            }
 
             // After first pass: capture phi slots for all If result variables.
             fn collect_func_phi_slots(
@@ -1474,6 +1479,25 @@ impl CodeGen {
     /// to a function whose resolved return type is a Nominal that is NOT a
     /// declared struct (i.e. a variant/ADT), or anything transitively
     /// carrying such a value (Assign / result-var Load).
+    /// True when the node is a primitive constant (Int/Float/Bool) — such
+    /// values must never be routed to structural (dereferencing) equality.
+    fn node_is_primitive_const(
+        id: usize,
+        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+    ) -> bool {
+        match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            Some(n) => matches!(
+                &n.node,
+                ICNFInner::Const(Atom::Int(_))
+                    | ICNFInner::Const(Atom::Float(_))
+                    | ICNFInner::Const(Atom::Bool(_))
+                    | ICNFInner::I32Imm(_)
+            ),
+            None => false,
+        }
+    }
+
     fn node_looks_variant(
         &self,
         id: usize,
@@ -2445,21 +2469,15 @@ impl CodeGen {
                 node: ICNFInner::StructGet(struct_id, field_offset),
                 ..
             }) => {
-                if emitted_ids.contains(&src_ssa_id) {
-                    // Already emitted by a parent handler — just copy the result.
-                    if target_reg != "rax" && target_reg != "eax" {
-                        self.asm_push_align();
-                        self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                    }
-                } else {
-                    self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
+                // Pure value: always re-emit. A previous standalone emission's
+                // rax copy is stale by the time most consumers run.
+                self.emit_load_into(*struct_id, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
+                self.asm_push_align();
+                self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
+                emitted_ids.insert(src_ssa_id);
+                if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
-                    self.asm.push(format!("    mov rax, [rax + {}]", field_offset));
-                    emitted_ids.insert(src_ssa_id);
-                    if target_reg != "rax" && target_reg != "eax" {
-                        self.asm_push_align();
-                        self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                    }
+                    self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             n @ Some(ICNFNode {
@@ -2628,8 +2646,10 @@ impl CodeGen {
                     // Strings compare by content, not pointer identity.
                     self.emit_str_eq(*left, *right, target_reg, stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(src_ssa_id);
-                } else if self.node_looks_variant(*left, lookup, stmts, 0)
-                    || self.node_looks_variant(*right, lookup, stmts, 0)
+                } else if (self.node_looks_variant(*left, lookup, stmts, 0)
+                    || self.node_looks_variant(*right, lookup, stmts, 0))
+                    && !Self::node_is_primitive_const(*left, lookup, stmts)
+                    && !Self::node_is_primitive_const(*right, lookup, stmts)
                 {
                     // ADT variants / structs compare structurally.
                     self.emit_variant_eq(*left, *right, target_reg, stmts, local_vars, lookup, emitted_ids);
@@ -6173,8 +6193,10 @@ impl CodeGen {
                 {
                     self.emit_str_eq(*left, *right, "eax", stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(node.id);
-                } else if self.node_looks_variant(*left, lookup, stmts, 0)
-                    || self.node_looks_variant(*right, lookup, stmts, 0)
+                } else if (self.node_looks_variant(*left, lookup, stmts, 0)
+                    || self.node_looks_variant(*right, lookup, stmts, 0))
+                    && !Self::node_is_primitive_const(*left, lookup, stmts)
+                    && !Self::node_is_primitive_const(*right, lookup, stmts)
                 {
                     self.emit_variant_eq(*left, *right, "eax", stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(node.id);
