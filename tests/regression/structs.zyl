@@ -78,10 +78,12 @@
 
 ; 3-level deep nested struct-get
 (test "struct-recursive-1"
-  (assert-equal (let l1 (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 99))) (struct-get (struct-get (struct-get l1 "val") "data") "content")) 99))
+  (assert-equal (struct-get (struct-get (struct-get (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 99))) "val") "data") "content") 99))
 
 (test "struct-recursive-2"
-  (assert-equal (let l1 (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 100))) (let l2 (struct-get l1 "val") (let l3 (struct-get l2 "data") (struct-get l3 "content"))) 100)))
+  (assert-equal (let l2 (struct-get (make-_s_Level1 (make-_s_Level2 (make-_s_Level3 100))) "val")
+                  (struct-get (struct-get l2 "data") "content"))
+                100))
 
 ; Struct returned from function
 (test "struct-double-x"

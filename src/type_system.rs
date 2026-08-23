@@ -137,7 +137,23 @@ impl Subst {
 
     /// Apply substitution to a type, returning the result.
     pub fn apply(&self, t: &Type) -> Type {        match t {
-            Type::Var(n) => self.0.get(n).cloned().unwrap_or_else(|| t.clone()),
+            Type::Var(n) => {
+                // Fully resolve variable chains (?a -> ?b -> concrete).
+                // Cycle-safe: stop if we revisit a variable.
+                let mut cur = *n;
+                let mut seen = std::collections::HashSet::new();
+                loop {
+                    if !seen.insert(cur) {
+                        break; // Cyclic chain — leave as-is rather than loop forever.
+                    }
+                    match self.0.get(&cur) {
+                        Some(Type::Var(next)) => cur = *next,
+                        Some(t) => return t.clone(),
+                        None => break,
+                    }
+                }
+                Type::Var(cur)
+            }
             Type::Cap(k, inner) => Type::Cap(k.clone(), Box::new(self.apply(inner))),
             Type::Fun(args, ret) => {
                 let new_args: Vec<Type> = args.iter().map(|a| self.apply(a)).collect();
@@ -626,5 +642,13 @@ impl TypeResult {
     #[allow(dead_code)]
     pub fn new(ty: Type) -> Self {
         Self { inferred_type: ty }
+    }
+}
+
+/// Extract the variable index from a `Type::Var`, or `usize::MAX` otherwise.
+pub fn inner_as_var(t: &Type) -> usize {
+    match t {
+        Type::Var(n) => *n,
+        _ => usize::MAX,
     }
 }

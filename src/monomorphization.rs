@@ -1080,6 +1080,12 @@ impl MonoContext {
             // Type vars can unify with anything.
             (Type::Var(_), _) | (_, Type::Var(_)) => Ok(()),
 
+            // Capability-boxed opaque values (e.g. FFI results like
+            // TBox<?15>) adapt to whatever the context expects; the C
+            // runtime returns raw machine words that callers reinterpret.
+            (Type::Cap(_, inner), _) | (_, Type::Cap(_, inner))
+                if matches!(inner.as_ref(), Type::Var(_)) => Ok(()),
+
             // Primitives must match exactly for arithmetic ops.
             (Type::Prim(p1), Type::Prim(p2)) if p1 == p2 => Ok(()),
 

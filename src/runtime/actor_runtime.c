@@ -320,7 +320,8 @@ void* ffi_pin(long long value) {
 /* Unpinning returns the pinned value; the Pin arena reclaims storage in
  * bulk, so individual slots are never freed here. */
 long long ffi_unpin(long long ptr) {
-    return ptr;
+    if (!ptr) return 0;
+    return *(long long*)(size_t)ptr;
 }
 
 /* ==========================================================================
@@ -687,8 +688,9 @@ long long zyl_atomic_load(long long addr) {
     return __atomic_load_n((long long*)(size_t)addr, __ATOMIC_SEQ_CST);
 }
 
-void zyl_atomic_store(long long addr, long long value) {
+long long zyl_atomic_store(long long addr, long long value) {
     __atomic_store_n((long long*)(size_t)addr, value, __ATOMIC_SEQ_CST);
+    return value;
 }
 
 long long zyl_atomic_add(long long addr, long long value) {

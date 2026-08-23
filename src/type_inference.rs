@@ -1896,9 +1896,28 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
         match (t1, t2) {
             (a, b) if a == b => Ok(()),
             (Type::Var(n), _) => {
+                // If t2 is a variable whose substitution chain terminates at
+                // this same variable, the unification is an identity — not an
+                // occurs violation.
+                if let Type::Var(m) = t2 {
+                    if let Ok(resolved_m) = self.subst.resolve(*m) {
+                        if resolved_m == Type::Var(*n) {
+                            return Ok(());
+                        }
+                    }
+                }
                 match self.subst.resolve(*n) {
                     Err(()) => {
                         // Cyclic substitution chain — occurs-check failure.
+                        #[allow(unused_mut)]
+                        let mut chain = vec![*n];
+                        let mut cur = *n;
+                        while let Some(Type::Var(next)) = self.subst.0.get(&cur) {
+                            chain.push(*next);
+                            cur = *next;
+                            if chain.len() > 50 { break; }
+                        }
+                        let _ = chain; // retained for future diagnostics
                         return Err(ZylError::E_TYPE_MISMATCH(
                             span.clone(),
                             format!("type containing ?{}", n),
@@ -1924,6 +1943,13 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                 Ok(())
             }
             (_, Type::Var(n)) => {
+                if let Type::Var(m) = t1 {
+                    if let Ok(resolved_m) = self.subst.resolve(*m) {
+                        if resolved_m == Type::Var(*n) {
+                            return Ok(());
+                        }
+                    }
+                }
                 match self.subst.resolve(*n) {
                     Err(()) => {
                         return Err(ZylError::E_TYPE_MISMATCH(
@@ -1992,6 +2018,13 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                 self.unify(e1, e2, span)
             }
             (Type::Nominal(n1), Type::Nominal(n2)) if n1 == n2 => Ok(()),
+            // A capability-boxed opaque (e.g. an FFI result TBox<?v> whose
+            // variable is still unbound) adapts to any expected type: the C
+            // runtime hands back raw machine words that callers reinterpret.
+            (Type::Cap(_, inner), _)
+                if matches!(self.subst.resolve(inner_as_var(inner)), Ok(Type::Var(_))) => Ok(()),
+            (_, Type::Cap(_, inner))
+                if matches!(self.subst.resolve(inner_as_var(inner)), Ok(Type::Var(_))) => Ok(()),
             _ => {
                 Err(ZylError::E_TYPE_MISMATCH(
                     span.clone(),
