@@ -522,7 +522,11 @@
         0))
 
 (test "file-open"
-      (assert-equal (file-open "/tmp/zyl_test.txt" 1) 1))
+      (let fd (file-open "/tmp/zyl_test.txt" 577)
+        (begin
+          (assert-true (> fd 0))
+          (file-close fd)
+          0)))
 
 (test "file-write"
       (assert-equal (file-write 1 "test") 4))
@@ -550,7 +554,7 @@
       (assert-equal (ffi-safe-call 99) (result-ok 99)))
 
 (test "ffi-pin-call"
-      (assert-equal (ffi-pin-call-unpin 123) 123))
+      (assert-equal (result-unwrap (ffi-pin-call-unpin 123) 0) 123))
 
 (test "buf-append"
       (let p (alloc-malloc 64)
@@ -561,7 +565,11 @@
          0)))
 
 (test "alloc-malloc"
-      (assert-equal (alloc-malloc 64) 64))
+      (let p (alloc-malloc 64)
+        (begin
+          (assert-true (> p 0))
+          (alloc-free p)
+          0)))
 
 (test "alloc-write-int"
       (let p (alloc-malloc 64)
@@ -577,7 +585,10 @@
       (assert-equal (alloc-strlen (alloc-malloc 64)) 0))
 
 (test "atomic-load"
-      (assert-equal (atomic-load 0) 0))
+      (let p (alloc-malloc 8)
+        (begin
+          (atomic-store p 99)
+          (assert-equal (atomic-load p) 99))))
 
 (test "atomic-store"
       (assert-equal (atomic-store 0 42) 42))

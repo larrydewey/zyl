@@ -317,8 +317,10 @@ void* ffi_pin(long long value) {
     return (void*)slot;
 }
 
-void ffi_unpin(void* ptr) {
-    free(ptr);
+/* Unpinning returns the pinned value; the Pin arena reclaims storage in
+ * bulk, so individual slots are never freed here. */
+long long ffi_unpin(long long ptr) {
+    return ptr;
 }
 
 /* ==========================================================================
@@ -772,10 +774,15 @@ void zyl_actor_wait(long long actor_id) {
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
     pthread_mutex_lock(&actor->lock);
-    int active = !actor->joined && actor->thread ? 1 : 0;
+    int need_join = !actor->joined && actor->thread ? 1 : 0;
     pthread_t t = actor->thread;
+    if (need_join && actor->alive) {
+        /* Ask this actor's thread to exit its mailbox loop. */
+        actor->alive = 0;
+        pthread_cond_signal(&actor->cond);
+    }
     pthread_mutex_unlock(&actor->lock);
-    if (active) {
+    if (need_join) {
         pthread_join(t, NULL);
         pthread_mutex_lock(&actor->lock);
         actor->joined = 1;
