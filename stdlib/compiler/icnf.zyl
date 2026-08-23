@@ -93,13 +93,52 @@
                 (icnf-let st node)
                 (if (= k 13)
                   (icnf-if-compile st node)
-                  (if (= k 14)
-                    (icnf-begin-compile st node)
-                    (if (= k 18)
-                      (icnf-print-expr st node)
-                      (if (= k 8)
-                        (icnf-call-expr st node)
-                        0))))))))))))
+                    (if (= k 14)
+                      (icnf-begin-compile st node)
+                      (if (= k 18)
+                        (icnf-print-expr st node)
+                        (if (= k 8)
+                          (icnf-call-expr st node)
+                          (if (= k 26)
+                            (icnf-while st node)
+                            (if (= k 25)
+                              (icnf-setbang st node)
+                              0))))))))))))))
+
+; While loop: AST kind 26 (a=cond, b=body) -> ICNF kind 58.
+; Cond and body compile into their own blocks; the loop's value is 0.
+(defn icnf-while (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let cpool (alloc-read-int (+ st 32))
+      (let arena (alloc-read-int st)
+        (let saved (alloc-read-int (+ st 16))
+          (let cond-blk (kids-new arena 8)
+            (begin
+              (alloc-write-int (+ st 16) cond-blk)
+              (let cond-id (icnf-expr st (pool-a apool node))
+                (let body-blk (kids-new arena 8)
+                  (begin
+                    (alloc-write-int (+ st 16) body-blk)
+                    (let bv (icnf-expr st (pool-b apool node))
+                      (begin
+                        (alloc-write-int (+ st 16) saved)
+                        (let w (icnf-add st 58)
+                          (begin
+                            (node-set-a cpool w cond-id)
+                            (node-set-kids cpool w cond-blk)
+                            (node-set-c cpool w body-blk)
+                            w))))))))))))))
+
+
+; SetBang: AST kind 25 (str=name, a=value) -> ICNF Assign.
+; Returns: Int (assign insn id, or 0 on failure)
+(defn icnf-setbang (st node)
+  (let apool (alloc-read-int (+ st 8))
+    (let v (icnf-expr st (pool-a apool node))
+      (if (= v 0)
+        0
+        (icnf-assign-to st (pool-str apool node) v)))))
+
 
 (defn icnf-let (st node)
   (let apool (alloc-read-int (+ st 8))
