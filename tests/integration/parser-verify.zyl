@@ -1,0 +1,168 @@
+; Phase 2c — Parser verification + AST manipulation helpers.
+; Lexes and parses programs exercising the major special forms, then
+; verifies the pool-AST structure via ast-helpers accessors.
+;
+; Node layout reference (must match parser.zyl):
+;   DEFN(10): str=name, kids=params list, a=body
+;   LET(11)/LET-MUT(12): str=name, a=value, b=body
+;   IF(13): a=cond, b=then, c=else
+;   BEGIN(14): kids = statements
+;   CALL(8): a=head expr, kids=args
+;   WHILE(26): a=cond, b=body
+;   SETBANG(25): str=target name, a=value
+;   ATOM kinds: 1 ident (str), 2 int (val), 4 bool (val), 5 string
+
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/ast-helpers)
+
+(test "pv-defn-shape"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn foo (x y) (+ x y))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (post-process arena ctx tokens (parse-program arena ctx tokens))
+          (let pool (alloc-read-int ctx)
+            (let top (pool-kids pool (alloc-read-int (+ ctx 8)))
+              (begin
+                (assert-equal (kids-len top) 1)
+                (let d (kids-get top 0)
+                  (begin
+                    (assert-equal (pool-kind pool d) 10)
+                    (assert-equal (str-len (defn-name pool d)) 3)
+                    (assert-equal (kids-len (defn-params pool d)) 2)
+                    (let body (defn-body pool d)
+                      (begin
+                        (assert-equal (pool-kind pool body) 8)
+                        (assert-equal (kids-len (call-args pool body)) 2)
+                        0))))))))))))
+
+(test "pv-call-head-and-args"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn foo (x y) (+ x y))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (post-process arena ctx tokens (parse-program arena ctx tokens))
+          (let pool (alloc-read-int ctx)
+            (let d (kids-get (pool-kids pool (alloc-read-int (+ ctx 8))) 0)
+              (let body (defn-body pool d)
+                (let head (call-op pool body)
+                  (begin
+                    ; head is the raw ident atom "+" (not interned via cache)
+                    (assert-equal (pool-kind pool head) 1)
+                    (assert-equal (str-len (pool-str pool head)) 1)
+                    (let arg0 (kids-get (call-args pool body) 0)
+                      (begin
+                        (assert-equal (pool-kind pool arg0) 1)
+                        (let arg1 (kids-get (call-args pool body) 1)
+                          (assert-equal (pool-kind pool arg1) 1))))))))))))))
+
+(test "pv-let-shape"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn f () (let v 42 v))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (post-process arena ctx tokens (parse-program arena ctx tokens))
+          (let pool (alloc-read-int ctx)
+            (let d (kids-get (pool-kids pool (alloc-read-int (+ ctx 8))) 0)
+              (let body (defn-body pool d)
+                (begin
+                  ; zero-param defn: params list is empty
+                  (assert-equal (kids-len (defn-params pool d)) 0)
+                  (assert-equal (pool-kind pool body) 11)
+                  (assert-equal (str-len (let-name pool body)) 1)
+                  (let init (let-init pool body)
+                    (begin
+                      (assert-equal (pool-kind pool init) 2)
+                      (assert-equal (pool-val pool init) 42)
+                      (let lbody (let-body pool body)
+                        (assert-equal (pool-kind pool lbody) 1)))))))))))))
+
+(test "pv-if-shape"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn f (c) (if c 1 2))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (post-process arena ctx tokens (parse-program arena ctx tokens))
+          (let pool (alloc-read-int ctx)
+            (let d (kids-get (pool-kids pool (alloc-read-int (+ ctx 8))) 0)
+              (let body (defn-body pool d)
+                (begin
+                  (assert-equal (pool-kind pool body) 13)
+                  (let cond (if-cond pool body)
+                    (let then (if-then pool body)
+                      (let els (if-else pool body)
+                        (begin
+                          (assert-equal (pool-kind pool cond) 1)
+                          (assert-equal (pool-kind pool then) 2)
+                          (assert-equal (pool-val pool then) 1)
+                          (assert-equal (pool-kind pool els) 2)
+                          (assert-equal (pool-val pool els) 2)
+                          0))))))))))))) 
+
+(test "pv-while-and-set"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn f () (let-mut i 0 (begin (while (< i 3) (set! i (+ i 1))) i)))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (post-process arena ctx tokens (parse-program arena ctx tokens))
+          (let pool (alloc-read-int ctx)
+            (let d (kids-get (pool-kids pool (alloc-read-int (+ ctx 8))) 0)
+              (let body (defn-body pool d)
+                (begin
+                  ; let-mut is kind 12
+                  (assert-equal (pool-kind pool body) 12)
+                  (let w (let-body pool body)
+                    (begin
+                      ; trailing single body expr stays itself: BEGIN(14)
+                      (assert-equal (pool-kind pool w) 14)
+                      (let stmts (pool-kids pool w)
+                        (begin
+                          (assert-equal (kids-len stmts) 2)
+                          (let whl (kids-get stmts 0)
+                            (begin
+                              (assert-equal (pool-kind pool whl) 26)
+                              (let wc (while-cond pool whl)
+                                (begin
+                                  (assert-equal (pool-kind pool wc) 8)
+                                  ; while body IS the single set! statement
+                                  (let st (while-body pool whl)
+                                    (begin
+                                      (assert-equal (pool-kind pool st) 25)
+                                      (assert-equal (str-len (set-name pool st)) 1)
+                                      (let sv (set-value pool st)
+                                        (begin
+                                          (assert-equal (pool-kind pool sv) 8)
+                                          (let tail (kids-get stmts 1)
+                                            (assert-equal (pool-kind pool tail) 1)))))))))))))))))))))))
+
+(test "pv-count-and-idents"
+  (let arena (arena-create 0)
+    (let tokens (zyl-lex arena "(defn a (x) x) (defn b (y) (+ y 1))")
+      (let ctx (parse-ctx arena)
+        (begin
+          (form-cache-init arena ctx)
+          (let prog (parse-program arena ctx tokens)
+            (begin
+              (post-process arena ctx tokens prog)
+              (let pool (alloc-read-int ctx)
+                (let top (pool-kids pool (alloc-read-int (+ ctx 8)))
+                  (begin
+                    (assert-equal (kids-len top) 2)
+                    (assert-equal (ast-count-kind pool (kids-get top 0) 10) 1)
+                    ; nested call inside b's body contributes one CALL node
+                    (assert-equal (ast-count-kind-deep pool (kids-get top 1) 8) 1)
+                    (let names (ast-collect-idents arena pool (kids-get top 1))
+                      (begin
+                        ; head '+' plus arg 'y'; the int atom and the
+                        ; kind-23 param node are not idents
+                        (assert-equal (kids-len names) 2)
+                        0))))))))))))
+
+(run-tests)
