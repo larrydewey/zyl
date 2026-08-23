@@ -32,17 +32,17 @@
 (test "str-equal"
   (assert-true (str-equal "abc" "abc")))
 
-; List operations
+; List operations (Lists, not Options — stdlib list functions take List<T>)
 (test "list-car"
-  (assert-equal (option-unwrap-or (list-car (option-some 42)) 0) 42))
+  (assert-equal (option-unwrap-or (list-car (list-range 42 43)) 0) 42))
 (test "list-len"
-  (assert-equal (list-length (option-some 1)) 1))
+  (assert-equal (list-length (list-range 1 2)) 1))
 (test "list-sum"
-  (assert-equal (list-sum (option-some 5)) 5))
+  (assert-equal (list-sum (list-range 5 6)) 5))
 (test "list-rev-empty"
-  (assert-true (option-is-none (list-reverse (option-none)))))
+  (assert-equal (list-length (list-reverse (list-range 0 0))) 0))
 (test "list-append"
-  (assert-true (option-is-some (list-append (option-none) (option-some 1)))))
+  (assert-equal (list-length (list-append (list-range 1 2) (list-range 3 4))) 3))
 
 ; Option operations
 (test "option-some"
