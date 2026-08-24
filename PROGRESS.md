@@ -392,6 +392,22 @@ All integration tests pass; full suite 24/24 (2026-08-23).
       ZYL_DBG2=1 and inspect the "SLOTS ic_arms" line to see what
       local_vars maps "arms" to, then fix emit_load_into's slot choice.
       Also added zyl_heap_alloc failure diagnostics to stderr.
+    - **CRITICAL FINDING (2026-08-24, late):** the SAME lowering
+      (zyl-parse + ic-program over the match input) works perfectly in a
+      minimal Rust-compiled harness (/tmp/opencode/mh.zyl pattern) — both
+      arms lower, ic-program returns cleanly. So icnf.zyl's match
+      lowering is CORRECT; stage1's crash comes from its EXECUTION
+      ENVIRONMENT: stage1's functions were monomorphized against the
+      FULL assembled program, and some generic function instance used in
+      the match path (list-reverse / list-drop-last / ic-arm-binds /
+      cg-* chain) behaves differently in that context. Next session:
+      bisect assembled-source size (strip modules from assemble.py until
+      stage1 stops crashing on the match input) to find which module's
+      presence perturbs monomorphization; then fix the instance
+      selection. NOTE: working-tree debug prints in ic-arm-one must be
+      dropped when applying fixes (use python S-builder for balanced
+      edits — see /tmp/opencode/patch_arm.py technique).
+    - Stage1 verified again post-cleanup: fact 10 = 3628800 end-to-end.
     **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
     battery of programs through the Zyl-written compiler only (parse →
     ic-program → cg-program → cc): arithmetic, if/else both arms, while +
