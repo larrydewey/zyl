@@ -138,6 +138,20 @@ impl TypeInferer {
         for expr in exprs {
             self.collect_adt_instantiations_expr(expr);
         }
+        if std::env::var("ZYL_DBG_TY").is_ok() {
+            for (k, v) in &self.known_functions {
+                if k.contains("ic-") || k.contains("zyl-parse") {
+                    eprintln!("[ty] fn {} params {:?}", k, v.iter().map(|(_, t)| format!("{}", t)).collect::<Vec<_>>());
+                }
+            }
+            for (k, v) in &self.function_returns {
+                if k.contains("ic-program") {
+                    eprintln!("[ty] ret {} = {}", k, v);
+                }
+            }
+            // substitution bindings touching List/Option
+            eprintln!("[ty] done collect");
+        }
     }
 
     /// Recursively walk an expression and record concrete types used with generic

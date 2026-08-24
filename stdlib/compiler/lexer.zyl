@@ -167,8 +167,8 @@
             (if (= c 93) 1
               (if (= c 58) 1 (if (= c 126) 1 0)))))))))
 
-; Empty token stream (typed so `None` never unifies as Option).
-(defn no-tokens () None)
+; Empty token stream (typed so `Nil` never unifies as Option).
+(defn no-tokens () Nil)
 
 ; ===========================================================================
 ; MAIN LEXER — cursor threaded functionally

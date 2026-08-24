@@ -67,7 +67,7 @@
     (CGS arena buf 0 8 (no-rentries))))   ; params occupy slots 1..n
 
 ; Empty rodata list.
-(defn no-rentries () None)
+(defn no-rentries () Nil)
 
 (defn cg-buffer (st)
   (match st
@@ -580,7 +580,7 @@
 
 (defn icnf-count-list (xs)
   (match xs
-    (None 0)
+    (Nil 0)
     (Cons h t (+ (icnf-size h) (icnf-count-list t)))))
 
 (defn icnf-count-arms (xs)
@@ -650,7 +650,7 @@
 
 (defn cg-rev-acc (xs acc)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (cg-rev-acc t (Cons h acc)))))
 
 (defn cg-header (st)
@@ -707,7 +707,7 @@
 
 (defn cg-rodata-emit-list (st xs)
   (match xs
-    (None st)
+    (Nil st)
     (Cons e rest
       (let st2 (cg-rodata-entry st e)
         (cg-rodata-emit-list st2 rest)))))
@@ -718,22 +718,22 @@
 (defn ih-ic (xs)
   (match xs
     (Cons a d70 a)
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 (defn fh-if (xs)
   (match xs
     (Cons f d71 f)
-    (None (IFn "" None (IConst 0)))))
+    (Nil (IFn "" Nil (IConst 0)))))
 
 (defn shd (xs)
   (match xs
     (Cons s d72 s)
-    (None "")))
+    (Nil "")))
 
 (defn hd-ia (xs)
   (match xs
     (Cons a d73 a)
-    (None (IArm "" -1 None (IConst 0)))))
+    (Nil (IArm "" -1 Nil (IConst 0)))))
 
 (defn cg-arena-of (st)
   (match st
@@ -742,4 +742,4 @@
 (defn tl2 (xs)
   (match xs
     (Cons a rest rest)
-    (None None)))
+    (Nil Nil)))

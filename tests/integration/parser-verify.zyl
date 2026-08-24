@@ -13,14 +13,14 @@
 (defn pv-first (prog)
   (match prog
     (Cons a rest a)
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; nth element of an Ast list.
 (defn nth-ast (xs n)
   (match xs
     (Cons a rest
       (if (<= n 0) a (nth-ast rest (- n 1))))
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; Number of children when `a` is an AList; 0 otherwise.
 (defn ast-list-len (a)
@@ -95,11 +95,11 @@
 (defn kids-of (a)
   (match a
     (AList kids kids)
-    (AIdent d26 None)
-    (AInt d27 None)
-    (AFloat d28 None)
-    (AString d29 None)
-    (ABool d30 None)))
+    (AIdent d26 Nil)
+    (AInt d27 Nil)
+    (AFloat d28 Nil)
+    (AString d29 Nil)
+    (ABool d30 Nil)))
 
 (test "pv-atoms"
   (let arena (arena-create 0)

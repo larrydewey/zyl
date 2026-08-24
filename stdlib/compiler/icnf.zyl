@@ -55,13 +55,13 @@
   (if (> (str-eq s (str-intern arena "!=")) 0) 10
   -1)))))))))))))
 
-; Typed empty lists (bare `None` values unify ambiguously as Option vs
+; Typed empty lists (bare `Nil` values unify ambiguously as Option vs
 ; List depending on module load order — always name the element type).
-(defn no-strs () None)
-(defn no-icnfs () None)
-(defn no-asts () None)
-(defn no-ifuncs () None)
-(defn no-iarms () None)
+(defn no-strs () Nil)
+(defn no-icnfs () Nil)
+(defn no-asts () Nil)
+(defn no-ifuncs () Nil)
+(defn no-iarms () Nil)
 
 ; ===========================================================================
 ; GENERIC STRUCTURAL LIST HELPERS (Ast-typed streams)
@@ -71,13 +71,13 @@
 (defn first-ast (xs)
   (match xs
     (Cons a d1 a)
-    (None (AInt 0))))
+    (Nil (AInt 0))))
 
 ; Tail of an Ast list (empty when empty).
 (defn rest-ast (xs)
   (match xs
     (Cons d2 r r)
-    (None None)))
+    (Nil Nil)))
 
 ; Last element of an Ast list.
 (defn last-ast (xs)
@@ -85,7 +85,7 @@
 
 (defn last-loop (xs acc)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (last-loop t h))))
 
 ; All-but-last elements, in source order.
@@ -123,7 +123,7 @@
 (defn head-name-is (arena kids s)
   (match kids
     (Cons head d14 (> (str-eq (ident-name head "") (str-intern arena s)) 0))
-    (None 0)))
+    (Nil 0)))
 
 ; Form-level test: parenthesised form whose head identifier equals `s`.
 (defn form-head-is (arena form s)
@@ -148,7 +148,7 @@
 ; Walk top-level forms; deftype forms extend the variant table.
 (defn ic-collect-vt (arena forms vt)
   (match forms
-    (None vt)
+    (Nil vt)
     (Cons form rest
       (if (= (form-head-is arena form "deftype") 1)
         (ic-collect-vt arena rest (ic-vt-deftype arena form vt))
@@ -173,7 +173,7 @@
 ; Link one variant entry per remaining variant; tail = next entry chain.
 (defn vt-from-variants (arena variants vt tag)
   (match variants
-    (None vt)
+    (Nil vt)
     (Cons v rest
       (let tail (vt-from-variants arena rest vt (+ tag 1))
         (VTEntry (str-intern arena (variant-name v))
@@ -204,7 +204,7 @@
 ; Lower all top-level defn forms to IFn records (source order preserved).
 (defn ic-defns (arena forms acc vt)
   (match forms
-    (None acc)
+    (Nil acc)
     (Cons form rest
       (if (= (form-head-is arena form "defn") 1)
         (ic-defns arena rest (Cons (ic-defn arena form vt) acc) vt)
@@ -221,7 +221,7 @@
     (ABool d39 (ic-defn-none arena))))
 
 (defn ic-defn-none (arena)
-  (IFn (str-intern arena "?") None (IConst 0)))
+  (IFn (str-intern arena "?") Nil (IConst 0)))
 
 (defn ic-defn-kids (arena kids vt)
   (if (> (list-length kids) 3)
@@ -238,7 +238,7 @@
 
 (defn ic-defn-short (arena kids vt)
   (let nm (first-ast (rest-ast kids))
-    (IFn (str-intern arena (ident-name nm "")) None (IConst 0))))
+    (IFn (str-intern arena (ident-name nm "")) Nil (IConst 0))))
 
 ; Collect parameter names from a parenthesised param node. Typed params
 ; ((name Type) ...) take the first element's name.
@@ -253,7 +253,7 @@
 
 (defn param-names-loop (kids acc)
   (match kids
-    (None acc)
+    (Nil acc)
     (Cons p rest (param-names-loop rest (Cons (param-name p) acc)))))
 
 (defn param-name (p)
@@ -289,7 +289,7 @@
 ; A parenthesised form. kids may be empty (-> Const 0).
 (defn ic-form (arena kids vt)
   (match kids
-    (None (IConst 0))
+    (Nil (IConst 0))
     (Cons head args (ic-headed-form arena head args vt))))
 
 (defn ic-headed-form (arena head args vt)
@@ -368,7 +368,7 @@
   (match args
     (Cons c rest
       (IWhile (ic-expr arena c vt) (ic-body-forms arena rest vt)))
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 ; (set! name expr)
 (defn ic-set-form (arena args vt)
@@ -407,11 +407,11 @@
     (Cons sym tail
       ; tail = everything after the symbol: (arg* timeout).
       ; Both branches lower through ic-arg-list so their types unify
-      ; (a bare None here would clash as Option vs List).
+      ; (a bare Nil here would clash as Option vs List).
       (if (> (list-length tail) 1)
         (ic-arg-list arena (butlast tail (no-asts)) vt)
-        (ic-arg-list arena None vt)))
-    (None (IFfi "?" None))))
+        (ic-arg-list arena Nil vt)))
+    (Nil (IFfi "?" Nil))))
 
 
 ; (match scrutinee arm...): arm = (Variant pat* body).
@@ -420,11 +420,11 @@
     (Cons scr arms
       (IMatch (ic-expr arena scr vt)
               (list-reverse (ic-arms arena arms (no-iarms) vt))))
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 (defn ic-arms (arena arms acc vt)
   (match arms
-    (None acc)
+    (Nil acc)
     (Cons arm rest (ic-arms arena rest (Cons (ic-arm arena arm vt) acc) vt))))
 
 ; One arm: (VariantName pat* body) — name first, body last, middle binds.
@@ -438,7 +438,7 @@
     (ABool d53 (ic-arm-none arena))))
 
 (defn ic-arm-none (arena)
-  (IArm (str-intern arena "?") -1 None (IConst 0)))
+  (IArm (str-intern arena "?") -1 Nil (IConst 0)))
 
 (defn ic-arm-parts (arena parts vt)
   (match parts
@@ -449,7 +449,7 @@
                 tag
                 (bind-names arena pats (no-strs))
                 (ic-expr arena (last-ast parts) vt)))))
-    (None (IArm (str-intern arena "?") -1 None (IConst 0)))))
+    (Nil (IArm (str-intern arena "?") -1 Nil (IConst 0)))))
 
 ; Pattern binding names ("_" wildcards kept, skipped by codegen), in
 ; source order: every element except the trailing body.
@@ -469,6 +469,6 @@
 
 (defn ic-arg-list-acc (arena args vt acc)
   (match args
-    (None (list-reverse acc))
+    (Nil (list-reverse acc))
     (Cons a rest
       (ic-arg-list-acc arena rest vt (Cons (ic-expr arena a vt) acc)))))

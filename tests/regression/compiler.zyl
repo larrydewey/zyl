@@ -13,14 +13,14 @@
 (defn ah (xs)
   (match xs
     (Cons a rest a)
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; nth element of an Ast list.
 (defn nth-ast (xs n)
   (match xs
     (Cons a rest
       (if (<= n 0) a (nth-ast rest (- n 1))))
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; True when the Ast node is an identifier equal to `s`.
 (defn ident-eq (arena a s)
@@ -95,11 +95,11 @@
 (defn kids-of-form (a)
   (match a
     (AList kids kids)
-    (AIdent d18 None)
-    (AInt d19 None)
-    (AFloat d20 None)
-    (AString d21 None)
-    (ABool d22 None)))
+    (AIdent d18 Nil)
+    (AInt d19 Nil)
+    (AFloat d20 Nil)
+    (AString d21 Nil)
+    (ABool d22 Nil)))
 
 ; Number of children when `a` is an AList; 0 otherwise.
 (defn list-len-or-0 (a)

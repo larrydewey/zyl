@@ -62,14 +62,14 @@
 ; Returns: List<K>
 (defn assoc-keys (m)
   (match m
-    (Empty (None))
+    (Empty (Nil))
     (AssocNode kk _ rest (Cons kk (assoc-keys rest)))))
 
 ; All values, in insertion order (most recent first).
 ; Returns: List<V>
 (defn assoc-values (m)
   (match m
-    (Empty (None))
+    (Empty (Nil))
     (AssocNode _ vv rest (Cons vv (assoc-values rest)))))
 
 ; Map a function over values.
@@ -94,59 +94,59 @@
 ; Returns: List<U>
 (defn list-map (f xs)
   (match xs
-    (None (None))
+    (Nil (Nil))
     (Cons h t (Cons (f h) (list-map f t)))))
 
 ; Keep elements satisfying a predicate.
 ; Returns: List<T>
 (defn list-filter (pred xs)
   (match xs
-    (None (None))
+    (Nil (Nil))
     (Cons h t (if (pred h) (Cons h (list-filter pred t)) (list-filter pred t)))))
 
 ; Left fold: (f acc head) → acc.
 ; Returns: A
 (defn list-fold (f acc xs)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (list-fold f (f acc h) t))))
 
 ; First n elements.
 ; Returns: List<T>
 (defn list-take (n xs)
   (match xs
-    (None (None))
-    (Cons h t (if (<= n 0) (None) (Cons h (list-take (- n 1) t))))))
+    (Nil (Nil))
+    (Cons h t (if (<= n 0) (Nil) (Cons h (list-take (- n 1) t))))))
 
 ; Drop the first n elements.
 ; Returns: List<T>
 (defn list-drop (n xs)
   (match xs
-    (None (None))
+    (Nil (Nil))
     (Cons h t (if (<= n 0) xs (list-drop (- n 1) t)))))
 
-; Element at index n (0-based). None when out of range.
+; Element at index n (0-based). None (Option) when out of range.
 ; Returns: Option<T>
 (defn list-nth (n xs)
   (match xs
-    (None (None))
+    (Nil (None))
     (Cons h t (if (== n 0) (Some h) (list-nth (- n 1) t)))))
 
 ; Whether an element is present (uses ==).
 ; Returns: Bool
 (defn list-contains (x xs)
   (match xs
-    (None false)
+    (Nil false)
     (Cons h t (if (== x h) true (list-contains x t)))))
 
 ; Integer range [lo, hi) as a list.
 ; Returns: List<Int>
 (defn list-range (lo hi)
-  (if (>= lo hi) (None) (Cons lo (list-range (+ lo 1) hi))))
+  (if (>= lo hi) (Nil) (Cons lo (list-range (+ lo 1) hi))))
 
 ; Number of elements satisfying a predicate.
 ; Returns: Int
 (defn list-count (pred xs)
   (match xs
-    (None 0)
+    (Nil 0)
     (Cons h t (if (pred h) (+ 1 (list-count pred t)) (list-count pred t)))))
