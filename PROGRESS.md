@@ -383,13 +383,15 @@ All integration tests pass; full suite 24/24 (2026-08-23).
     - **Current blocker:** stage1 still SIGSEGVs compiling multi-module
       input — vt_tag_of receives vt=0 (NULL) from an if-else branch in
       the lowering path (crash PC in list_drop_last label region, actual
-      faulting call site shifts between runs). Debugging approach for
-      next session: insert Zyl-level debug prints into ic-defns/ic-form/
-      ic-ident in the ASSEMBLED source (they execute inside stage1) to
-      find exactly where the threaded vt becomes 0; suspect one of the
-      newly rewritten functions returns 0 instead of vt on some path, or
-      an ILet/If value-propagation miscompile in stage1's own Rust-
-      compiled code that only manifests on this input shape.
+      faulting call site shifts between runs). **Debug findings
+      (2026-08-24):** minimal trigger = ANY (match ...) in the input
+      (deftype alone is fine). ic_arm_one is ENTERED with arm=0/rest=0;
+      disassembly of stage1's ic_arms shows the recursive ic-arm_one
+      call computing (hd arena) — Load "arms" resolved to the ARENA
+      param slot (-8) instead of arms' (-16). Next step: run with
+      ZYL_DBG2=1 and inspect the "SLOTS ic_arms" line to see what
+      local_vars maps "arms" to, then fix emit_load_into's slot choice.
+      Also added zyl_heap_alloc failure diagnostics to stderr.
     **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
     battery of programs through the Zyl-written compiler only (parse →
     ic-program → cg-program → cc): arithmetic, if/else both arms, while +
