@@ -667,7 +667,10 @@ long long zyl_heap_alloc(long long size) {
      * see the same address as before. */
     long long qwords = (size + 7) / 8;
     long long base = zyl_arena_alloc((long long)(size_t)g_heap_arena, qwords * 8 + 8);
-    if (!base) return 0;
+    if (!base) {
+        fprintf(stderr, "zyl_heap_alloc: FAILED size=%lld\n", size);
+        return 0;
+    }
     *(long long*)(size_t)base = qwords;
     return base + 8;
 }
