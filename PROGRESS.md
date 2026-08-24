@@ -337,23 +337,17 @@ All integration tests pass; full suite 24/24 (2026-08-23).
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
 11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
 12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done and verified end-to-end for: arith, if, while, for, cond, set!, defn-with-params, ADT construction, match over field-carrying and nullary variants.
-    **Current status after recursive-AST rewrite + 2b6cfe5 fixes:** full
-    pipeline (zyl-parse -> ic-program -> cg-program -> file-write -> cc)
-    works for if/else and string prints (`tests/integration/selfhost-codegen`
-    green). **Remaining bug (precise repro):** arithmetic print miscompiles —
-    `(print (+ 1 2))` generates `add` followed by the comparison branch
-    (`cmp/setne`) and prints 1. Repro: build `/tmp/opencode/gen_arith.zyl`
-    shape (parse "(defn main () (begin (print (+ 1 2)) 0))" through
-    ic-program + cg-program). Diagnosis: `_ZYL_cg_ibinop` func_body
-    statement ORDER is wrong in the ICNF dump — the If condition supply
-    chain (Load op / Const / Lt, ids ~3957-3972) appears AFTER the branch
-    bodies (ids 3973+) in the flat list, so codegen emits the comparison
-    unconditionally. Suspect the Let handler's temp-buffer
-    splice-at-len-1 insertion interacting with the new If/Match handlers
-    returning their condition/scrutinee statements. Next session: fix
-    statement ordering for nested let/if inside defn bodies (consider
-    giving the Let handler the same isolated-buffer treatment as Match
-    arms). **Next bootstrap blockers** (in rough priority): self-hosted codegen lacks calls-with-arg-evaluation robustness for >6 args, string/FFI emission paths are untested, and Rust-codegen statement-emission heuristics still miscompile some value-returning if/let chains in stdlib shapes (symptom: crashes that shift when debug prints are added — e.g. an iterative variant-tag using while+set! inside if/begin miscompiled, fixed by using tail-recursion instead). Prefer recursion and flat begin-sequences in stdlib compiler modules until emission heuristics are replaced with a sound scheme.
+    **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
+    battery of programs through the Zyl-written compiler only (parse →
+    ic-program → cg-program → cc): arithmetic, if/else both arms, while +
+    set! + multi-body let, string prints (rodata), unary minus, user
+    function calls with SysV register args, recursion (fact 5 = 120).
+    Fixes: cg-ibinop else branch was nested inside then (paren bug);
+    ic-param-names walked the Ast node as a list (params never bound →
+    [rbp0] loads); unary minus missing from ic-binop; ic-let dropped extra
+    body expressions; Rust convert_sub returned empty vec for 1-arg minus
+    leaving orphan SSA ids; Negate was 32-bit; call alignment pad applied
+    before register pops shifted pushed args. **Next bootstrap blockers** (in rough priority): self-hosted codegen lacks calls-with-arg-evaluation robustness for >6 args, string/FFI emission paths are untested, and Rust-codegen statement-emission heuristics still miscompile some value-returning if/let chains in stdlib shapes (symptom: crashes that shift when debug prints are added — e.g. an iterative variant-tag using while+set! inside if/begin miscompiled, fixed by using tail-recursion instead). Prefer recursion and flat begin-sequences in stdlib compiler modules until emission heuristics are replaced with a sound scheme.
 13. Contract injection (optional overlay, spec §23)
 
 ---
