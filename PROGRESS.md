@@ -392,6 +392,20 @@ All integration tests pass; full suite 24/24 (2026-08-23).
       ZYL_DBG2=1 and inspect the "SLOTS ic_arms" line to see what
       local_vars maps "arms" to, then fix emit_load_into's slot choice.
       Also added zyl_heap_alloc failure diagnostics to stderr.
+    - **BISECTED (2026-08-24):** built a MINI stage1 (core+allocator+
+      ast+lexer+parser+icnf + tiny driver calling only ic-program, NO
+      codegen module): compiles match inputs WITHOUT crashing — so
+      icnf-level lowering is fully correct even in selfhost-compiled
+      form. Adding codegen.zyl back (still mini driver, no cg calls)
+      ALSO works. **The crash requires EXECUTING the full driver path:
+      cg-program/cg-new/file-ops over a match-containing input.** Next
+      session: instrument stdlib/compiler/codegen.zyl's cg-match/
+      cg-arms/cg-bind-fields with prints (they execute inside stage1)
+      to find the Zyl-side misexecution — this is the documented
+      "statement-emission heuristics" class of bug; prefer recursion
+      and flat begin-sequences when rewriting those functions.
+      Repro assets: /tmp/opencode/{mini_src.zyl,srcA.zyl} assembly
+      variants; input = any (match ...) program.
     - **CRITICAL FINDING (2026-08-24, late):** the SAME lowering
       (zyl-parse + ic-program over the match input) works perfectly in a
       minimal Rust-compiled harness (/tmp/opencode/mh.zyl pattern) — both
