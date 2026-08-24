@@ -507,12 +507,17 @@
 ; Exponent tail: e/E [+-] digits. `i` points at e/E.
 ; Returns: Int (end, exclusive)
 (defn scan-exp (src len i)
-  (let j (+ i 1)
-    (if (>= j len)
-      j
-      (let b (byte-at src j)
-        (let j2 (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j))
-        (scan-exp-digits src len j2)))))
+  (scan-exp-j src len i (+ i 1)))
+
+; j = candidate exponent-digit start.
+(defn scan-exp-j (src len i j)
+  (if (>= j len)
+    i
+    (scan-exp-b src len i j (byte-at src j))))
+
+(defn scan-exp-b (src len i j b)
+  (scan-exp-digits src len
+                   (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j)))
 
 ; Full numeric literal end from `start` (sign included in caller).
 ; Returns: Int (end, exclusive)
@@ -685,13 +690,14 @@
       (lex-ident-done arena src len e acc text))))
 
 (defn lex-ident-done (arena src len i acc text)
-  (let is-true (str-eq text (str-intern arena "true")))
-  (if (> is-true 0)
+  (if (> (str-eq text (str-intern arena "true")) 0)
     (lex-continue arena src len i (Cons (TkBool true) acc))
-    (let is-false (str-eq text (str-intern arena "false"))
-      (if (> is-false 0)
-        (lex-continue arena src len i (Cons (TkBool false) acc))
-        (lex-continue arena src len i (Cons (TkIdent text) acc))))))
+    (lex-ident-done2 arena src len i acc text)))
+
+(defn lex-ident-done2 (arena src len i acc text)
+  (if (> (str-eq text (str-intern arena "false")) 0)
+    (lex-continue arena src len i (Cons (TkBool false) acc))
+    (lex-continue arena src len i (Cons (TkIdent text) acc))))
 
 ; Route the non-punctuator cases by leading character.
 ; Returns: List(Token) (reverse order)
@@ -1655,8 +1661,7 @@
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+f_")
-    (let st3 (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000)))
-      (cg-nl st3)))
+    (cg-nl (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000)))))
 
 ; P1 note: kept for parity with previous behavior; flagged for hardening.
 (defn cg-load-unresolved (st)
@@ -1756,14 +1761,25 @@
 (defn cg-cmp-set (st op)
   (let st2 (cg-emit-line st "    cmp rax, rcx")
     (let st3 (cg-emit st2 "    set")
-      (let st4 (if (= op 5) (cg-emit st3 "l al")
-               (if (= op 6) (cg-emit st3 "g al")
-                 (if (= op 7) (cg-emit st3 "le al")
-                   (if (= op 8) (cg-emit st3 "ge al")
-                     (if (= op 9) (cg-emit st3 "e al")
-                       (cg-emit st3 "ne al"))))))
-        (let st5 (cg-nl st4)
-          (cg-emit-line st5 "    movzx rax, al"))))))
+      (if (= op 5)
+        (cg-setcc st3 "l al")
+        (if (= op 6)
+          (cg-setcc st3 "g al")
+          (if (= op 7)
+            (cg-setcc st3 "le al")
+            (if (= op 8)
+              (cg-setcc st3 "ge al")
+              (if (= op 9)
+                (cg-setcc st3 "e al")
+                (cg-setcc-ne st3)))))))))
+
+(defn cg-setcc (st s)
+  (let st4 (cg-nl (cg-emit st s))
+    (cg-emit-line st4 "    movzx rax, al")))
+
+(defn cg-setcc-ne (st)
+  (let st4 (cg-nl (cg-emit st "ne al"))
+    (cg-emit-line st4 "    movzx rax, al")))
 
 ; Float binary op: bits in rax; xmm0 = lhs, xmm1 = rhs.
 (defn cg-fbinop (st env op l r)
@@ -1789,15 +1805,26 @@
 (defn cg-fcmp (st op)
   (let st2 (cg-emit-line st "    comisd xmm0, xmm1")
     (let st3 (cg-emit st2 "    set")
-      (let st4 (if (= op 5) (cg-emit st3 "b al")
-               ; unsigned-comparison flags carry the usual sense here
-               (if (= op 6) (cg-emit st3 "a al")
-                 (if (= op 7) (cg-emit st3 "be al")
-                   (if (= op 8) (cg-emit st3 "ae al")
-                     (if (= op 9) (cg-emit st3 "e al")
-                       (cg-emit st3 "ne al")))))))
-        (let st5 (cg-nl st4)
-          (cg-emit-line st5 "    movzx rax, al")))))
+      (if (= op 5)
+        (cg-fsetcc st3 "b al")
+        (if (= op 6)
+          (cg-fsetcc st3 "a al")
+          (if (= op 7)
+            (cg-fsetcc st3 "be al")
+            (if (= op 8)
+              (cg-fsetcc st3 "ae al")
+              (if (= op 9)
+                (cg-fsetcc st3 "e al")
+                (cg-fsetcc-ne st3)))))))))
+
+; unsigned-comparison flags carry the usual sense here
+(defn cg-fsetcc (st s)
+  (let st4 (cg-nl (cg-emit st s))
+    (cg-emit-line st4 "    movzx rax, al")))
+
+(defn cg-fsetcc-ne (st)
+  (let st4 (cg-nl (cg-emit st "ne al"))
+    (cg-emit-line st4 "    movzx rax, al")))
 
 ; Register-name dispatch by arg index (SysV).
 (defn cg-reg-of (i)
@@ -1818,29 +1845,37 @@
       (let st3 (cg-emit-line st2 "    push rax")
         (cg-call-args st3 env name (tl2 args) mangle (+ i 1))))))
 
+; HOF indirect calls are implemented but gated OFF: the path crashes
+; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
+(defn cg-hof-enabled () 0)
+
 (defn cg-call-fire (st env name mangle i)
-  (cg-call-fire-direct st env name mangle i))
+  (let off (env-lookup env name)
+    (if (= off 0)
+      (cg-call-fire-direct st env name mangle i)
+      (if (= (cg-hof-enabled) 1)
+        (cg-call-fire-indirect st env name i off
+        (cg-call-fire-unresolved st name))))))
+
+; P1: an unresolved fn-name call must be visible, never silent.
+(defn cg-call-fire-unresolved (st name)
+  (let st2 (cg-emit st "    call ")
+    (let st3 (cg-emit st2 "f_")
+      (cg-nl (cg-emit st3 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))))))
 
 (defn cg-call-fire-direct (st env name mangle i)
   (let pad (if (= (% i 2) 1) 1 0)
     (let st2 (cg-pop-regs st (- i 1))
-      ; alignment pad goes AFTER the pops so it cannot shift a pushed arg
-      ; out of place for the register pops.
       (let st3 (if (= pad 1)
                  (cg-emit-line st2 "    sub rsp, 8")
                  st2)
         (let st4 (cg-emit st3 "    call ")
-          (let st5 (if mangle (cg-emit st4 "f_") st4)
-            (let st6 (cg-emit st5 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000)))
-              (let st7 (cg-nl st6)
-                (if (= pad 1)
-                  (cg-emit-line st7 "    add rsp, 8")
-                  st7))))))))
-
-(defn cg-call-fire-tail (st env name mangle i off)
-  (if (= off 0)
-    (cg-call-fire-direct st env name mangle i)
-    (cg-call-fire-indirect st env name i off)))
+          (let st5 (cg-nl (cg-emit
+                            (if mangle (cg-emit st4 "f_") st4)
+                            (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))))
+            (if (= pad 1)
+              (cg-emit-line st5 "    add rsp, 8"
+              st5)))))))
 
 (defn cg-call-fire-indirect (st env name i off)
   (let pad (if (= (% i 2) 1) 1 0)
@@ -2188,10 +2223,53 @@
         (cg-str-entry st lbl text)
         (cg-flt-entry st lbl text)))))
 
+; Escape a string for a .string directive: backslash and quote doubled,
+; everything else copied verbatim. Deterministic left-to-right.
+(defn cg-escape (arena s)
+  (let n (alloc-strlen s)
+    (cg-esc-loop arena s n 0 (arena-alloc-zeroed arena (+ (* 2 n) 1)))))
+
+(defn cg-esc-loop (arena s n i out)
+  (if (>= i n)
+    out
+    (cg-esc-ch arena s n i out (byte-at s i))))
+
+(defn cg-esc-ch (arena s n i out c)
+  (if (= c 92)
+    (cg-esc-both arena s n i out c)
+    (if (= c 34)
+      (cg-esc-quote arena s n i out c)
+      (if (= c 10)
+        (cg-esc-newline arena s n i out)
+        (cg-esc-one arena s n i out c)))))
+
+(defn cg-esc-one (arena s n i out c)
+  (begin
+    (buf-append out (sub-str arena s i 1))
+    (cg-esc-loop arena s n (+ i 1) out)))
+
+(defn cg-esc-both (arena s n i out c)
+  (begin
+    (buf-append out (sub-str arena s i 1))
+    (buf-append out (sub-str arena s i 1))
+    (cg-esc-loop arena s n (+ i 1) out)))
+
+(defn cg-esc-quote (arena s n i out c)
+  (begin
+    (buf-append out (str-intern arena "\\"))
+    (buf-append out (sub-str arena s i 1))
+    (cg-esc-loop arena s n (+ i 1) out)))
+
+(defn cg-esc-newline (arena s n i out)
+  (begin
+    (buf-append out (str-intern arena "\\"))
+    (buf-append out (str-intern arena "n"))
+    (cg-esc-loop arena s n (+ i 1) out)))
+
 (defn cg-str-entry (st lbl content)
   (let st2 (cg-label-def st lbl)
     (let st4 (cg-emit st2 "    .string \"")
-      (let st5 (cg-emit st4 content)
+      (let st5 (cg-emit st4 (cg-escape (cg-arena-of st) content))
         (cg-nl (cg-emit st5 "\""))))))
 
 ; Emit "<label>:" on one line.

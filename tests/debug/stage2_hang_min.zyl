@@ -1,0 +1,25 @@
+; MINIMAL stage2 blocker repro (2026-08-24).
+; stage1 (self-hosted compiler) SEGFAULTS while compiling this input,
+; while each function compiles fine alone or in smaller combinations.
+; Repro:
+;   ./stage1.bin < this-file   -> SIGSEGV during cg phase (~8MB stack)
+; Suspect: latent state corruption in stage1's own compiled cg-expr/
+; cg-match when processing >=4 functions whose matches mix wildcard
+; patterns, param-returning arms, and HOF calls.
+(deftype Option (Some T) None)
+
+(defn option-unwrap (opt default)
+  (match opt
+    (Some v v)
+    (None default)))
+
+(defn is-some (opt) (match opt (Some _ true) (None false)))
+
+(defn is-none (opt) (match opt (Some _ false) (None true)))
+
+(defn omap (opt f)
+  (match opt
+    (Some v (Some (f v)))
+    (None None)))
+
+(defn main () 0)
