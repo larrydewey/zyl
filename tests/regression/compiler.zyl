@@ -15,6 +15,53 @@
     (Cons a rest a)
     (None (AList None))))
 
+; nth element of an Ast list.
+(defn nth-ast (xs n)
+  (match xs
+    (Cons a rest
+      (if (<= n 0) a (nth-ast rest (- n 1))))
+    (None (AList None))))
+
+; True when the Ast node is an identifier equal to `s`.
+(defn ident-eq (arena a s)
+  (match a
+    (AIdent n (> (str-eq n (str-intern arena s)) 0))
+    (AInt d1 0)
+    (AFloat d2 0)
+    (AString d3 0)
+    (ABool d4 0)
+    (AList d5 0)))
+
+; Token classifier: 1 when the token matches the expected constructor,
+; 0 otherwise (all constructors enumerated).
+(defn tok-is (t want)
+  (match t
+    (TkEof (= 0 want))
+    (TkLParen (= 8 want))
+    (TkRParen (= 9 want))
+    (TkLBrace (= 10 want))
+    (TkRBrace (= 11 want))
+    (TkLBracket (= 12 want))
+    (TkRBracket (= 13 want))
+    (TkColon (= 14 want))
+    (TkInt d6 (= 2 want))
+    (TkFloat d7 (= 3 want))
+    (TkString d8 (= 4 want))
+    (TkBool d9 (= 5 want))
+    (TkIdent d10 (= 1 want))
+    (TkSymbol d11 (= 6 want))
+    (TkKeyword d12 (= 7 want))))
+
+; Payload of an AInt node; -1 otherwise.
+(defn atom-int (a)
+  (match a
+    (AInt v v)
+    (AIdent d13 -1)
+    (AFloat d14 -1)
+    (AString d15 -1)
+    (ABool d16 -1)
+    (AList d17 -1)))
+
 ; Lexer produces a (List Token) ending in TkEof
 (test "lex-stream"
   (let arena (arena-create 0)
@@ -22,26 +69,46 @@
       (begin
         ; 5 tokens + EOF
         (assert-equal (list-length toks) 6)
-        (assert-true (str-eq (ast-name (AIdent "+")) (str-intern arena "+")))
-        (assert-equal (tok-code (toks-head toks)) 8)          ; '('
-        (assert-equal (tok-code (toks-head (tk-at toks 3))) 2) ; int
-        (assert-equal (tok-int (toks-head (tk-at toks 3))) 2)
-        (assert-equal (tok-code (toks-head (tk-at toks 4))) 9) ; ')'
-        (assert-equal (tok-code (toks-head (tk-at toks 5))) 0) ; EOF
+        ; token 0: '('
+        (assert-true (= (tok-is (toks-head toks) 8) 1))
+        ; token 3: int 2
+        (assert-true (= (tok-is (toks-head (tk-at toks 3)) 2) 1))
+        ; token 4: ')'
+        (assert-true (= (tok-is (toks-head (tk-at toks 4)) 9) 1))
+        ; token 5: EOF
+        (assert-true (= (tok-is (toks-head (tk-at toks 5)) 0) 1))
         0))))
 
 ; Reader builds nested Ast forms
 (test "parse-nested-ast"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn f (x) (* x x))")
-      (let kids (ast-kids (ah prog))
-        (begin
-          (assert-equal (list-length prog) 1)
-          (assert-true (str-eq (ast-name (ah kids)) (str-intern arena "defn")))
-          (let body (ah (list-cdr (list-cdr (list-cdr kids))))
-            (begin
-              (assert-equal (ast-code body) 5)
-              (assert-equal (list-length (ast-kids body)) 3)
-              0)))))))
+      (begin
+        (assert-equal (list-length prog) 1)
+        ; head identifier is "defn"
+        (assert-true (> (ident-eq arena (nth-ast (kids-of-form (ah prog)) 0) "defn") 0))
+        ; body (4th element) is a 3-element list form (* x x)
+        (assert-equal (list-len-or-0 (nth-ast (kids-of-form (ah prog)) 3)) 3)
+        0))))
+
+; Children of an AList node; empty otherwise.
+(defn kids-of-form (a)
+  (match a
+    (AList kids kids)
+    (AIdent d18 None)
+    (AInt d19 None)
+    (AFloat d20 None)
+    (AString d21 None)
+    (ABool d22 None)))
+
+; Number of children when `a` is an AList; 0 otherwise.
+(defn list-len-or-0 (a)
+  (match a
+    (AList kids (list-length kids))
+    (AIdent d23 0)
+    (AInt d24 0)
+    (AFloat d25 0)
+    (AString d26 0)
+    (ABool d27 0)))
 
 (run-tests)

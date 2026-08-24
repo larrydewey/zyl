@@ -2,8 +2,8 @@
 ; Module: compiler/ast
 ;
 ; The compiler front-end is built entirely on recursive algebraic data
-; types (spec §9 deftype). There are no flat pools, no raw arena record
-; layouts, and no index-based node tables anywhere in stdlib/compiler.
+; types (spec §9 deftype). Every phase communicates in ADT values and
+; every traversal is a structural `match`:
 ;
 ;   Token  — lexer output; a token stream is a (List Token)
 ;   Ast    — reader/parser output; source trees are nested AList forms
@@ -11,9 +11,17 @@
 ;            the consumer, not by the parser)
 ;   Env    — immutable name→slot chain used by lowering/codegen
 ;   VTable — immutable variant-name→(tag, arity) chain for ADTs
-;   Icnf   — lowered instruction tree (see compiler/icnf)
 ;
-; All recursion is structural over these types.
+; There are no numeric node-kind tags, no projection/downcast accessors,
+; no raw arena record layouts, and no index-based node tables anywhere.
+;
+; Bootstrap constraint note: pattern wildcards must be named dummies
+; (`d1`, `d2`, ...) because the Rust bootstrap miscompiles bare `_`
+; patterns. This is spelled `dN` uniformly across stdlib/compiler.
+
+(use allocator/allocator)
+
+; --- Lexer tokens ----------------------------------------------------------
 
 (deftype Token
   (TkEof)
@@ -32,6 +40,8 @@
   (TkRBracket)
   (TkColon))
 
+; --- Parsed source ---------------------------------------------------------
+
 ; A parsed s-expression: an atom or a parenthesised list of forms.
 (deftype Ast
   (AIdent String)
@@ -40,6 +50,8 @@
   (AString String)
   (ABool Bool)
   (AList (List Ast)))
+
+; --- Immutable environments -------------------------------------------------
 
 ; Immutable environment chain: name -> stack slot offset from rbp.
 (deftype Env
@@ -50,38 +62,49 @@
 ; Returns: Int (offset, or 0 if unbound)
 (defn env-lookup (env name)
   (match env
-    (EnvBind n off  w1 rest (if (str-eq n name) off (env-lookup rest name)))
+    (EnvBind n off d1 rest (if (str-eq n name) off (env-lookup rest name)))
     (EnvNil 0)))
 
 ; Look up the kind of a name in an Env chain.
 ; Returns: Int (0 int, 1 str, 2 float, 0 if unbound)
 (defn env-kind-of (env name)
   (match env
-    (EnvBind n  w2 k rest (if (str-eq n name) k (env-kind-of rest name)))
+    (EnvBind n d2 k rest (if (str-eq n name) k (env-kind-of rest name)))
     (EnvNil 0)))
+
+; --- Variant tables ---------------------------------------------------------
 
 ; Immutable variant table: variant name -> tag + field count.
 (deftype VTable
   (VTEntry String Int Int VTable)  ; variant name, tag, arity
   (VTNil))
 
+; Tag for an interned variant name; -1 when absent.
+; Returns: Int
 (defn vt-tag-of (vt name)
   (match vt
-    (VTEntry n tag  w3 rest (if (str-eq n name) tag (vt-tag-of rest name)))
+    (VTEntry n tag d3 rest (if (str-eq n name) tag (vt-tag-of rest name)))
     (VTNil -1)))
 
+; Field count for an interned variant name; -1 when absent.
+; Returns: Int
 (defn vt-arity-of (vt name)
   (match vt
-    (VTEntry n  w4 ar rest (if (str-eq n name) ar (vt-arity-of rest name)))
+    (VTEntry n d4 ar rest (if (str-eq n name) ar (vt-arity-of rest name)))
     (VTNil -1)))
 
+; --- Token stream helpers ----------------------------------------------------
+
 ; Head of a token stream (TkEof when empty).
+; Returns: Token
 (defn toks-head (toks)
   (match toks
-    (Cons t rest t)
+    (Cons t d5 t)
     (None (TkEof))))
 
+; Tail of a token stream (empty when empty).
+; Returns: List(Token)
 (defn toks-tail (toks)
   (match toks
-    (Cons t rest rest)
+    (Cons d6 rest rest)
     (None None)))
