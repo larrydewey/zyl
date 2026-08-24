@@ -439,7 +439,7 @@ pub struct IcnfConverter {
     /// Struct field layouts for offset computation (struct_name → [(field_name, byte_offset)]).
     struct_layouts: crate::codegen::StructLayout,
     /// Maps SSA IDs to struct names for tracking which bindings hold struct values.
-    struct_bindings: std::collections::HashMap<usize, String>,
+    struct_bindings: std::collections::BTreeMap<usize, String>,
     /// ADT definitions: type_name → list of (variant_name, field_type_names).
     adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
     /// Resolved function parameter types from type inference.
@@ -471,7 +471,7 @@ impl IcnfConverter {
             push_to_globals: true,
             body_intermediates: Vec::new(),
             struct_layouts: crate::codegen::StructLayout::new(),
-            struct_bindings: std::collections::HashMap::new(),
+            struct_bindings: std::collections::BTreeMap::new(),
             adt_defs: IndexMap::new(),
             resolved_func_params: IndexMap::new(),
             resolved_func_returns: IndexMap::new(),

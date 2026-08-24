@@ -1,5 +1,85 @@
 ; ===== AUTO-ASSEMBLED SELF-HOSTED COMPILER (boot source) =====
 
+; ---------- stdlib/core/option.zyl ----------
+; === Zyl Standard Library — Option ADT ===
+; Module: option
+; Provides: Generic Option<T> ADT and helpers
+;
+; Cross-module conversions (option-to-result, option-from-result) are in core/core.zyl
+; to avoid a circular dependency between option and result modules.
+
+; ===========================================================================
+; OPTION ADT — Generic: Option<T>
+; ===========================================================================
+
+(deftype Option (Some T) None)
+
+; ===========================================================================
+; OPTION OPERATIONS
+; ===========================================================================
+
+(defn option-unwrap (opt default)
+  (match opt
+    (Some v v)
+    (None default)))
+
+(defn option-is-some (opt)
+  (match opt
+    (Some _ true)
+    (None false)))
+
+(defn option-is-none (opt)
+  (match opt
+    (Some _ false)
+    (None true)))
+
+(defn option-map (opt f)
+  (match opt
+    (Some v (Some (f v)))
+    (None None)))
+
+(defn option-and (opt other)
+  (match opt
+    (Some _ other)
+    (None None)))
+
+(defn option-or (opt other)
+  (match opt
+    (Some _ opt)
+    (None other)))
+
+(defn option-expect (opt msg)
+  (match opt
+    (Some v v)
+    (None (error msg))))
+
+(defn option-unwrap-or (opt default)
+  (match opt
+    (Some v v)
+    (None default)))
+
+; ===========================================================================
+; OPTION CONSTRUCTORS
+; ===========================================================================
+
+(defn option-none () None)
+
+(defn option-some (x) (Some x))
+
+; ===========================================================================
+; OPTION UTILITIES
+; ===========================================================================
+
+(defn option-flatmap (opt f)
+  (match opt
+    (Some v (f v))
+    (None None)))
+
+(defn option-inspect (opt f)
+  (match opt
+    (Some v (begin (f v) opt))
+    (None opt)))
+
 ; ---------- stdlib/core/list.zyl ----------
 ; === Zyl Standard Library — List ADT ===
 ; Module: list
@@ -26,12 +106,12 @@
 (defn list-car (xs)
   (match xs
     (Cons v _ (Some v))
-    (Nil Nil)))
+    (Nil None)))
 
 (defn list-cdr (xs)
   (match xs
     (Cons _ rest rest)
-    (Nil Nil)))
+    (Nil None)))
 
 ; Length
 (defn list-length (xs)
@@ -2089,25 +2169,33 @@
 
 
 
+(defn dbg-log (msg)
+  (let f (file-open "/tmp/dbg" "a")
+    (let d1 (file-write f msg)
+      (file-close f))))
+
+(defn emit-out (arena fns)
+  (let st (cg-program (cg-new arena) fns)
+    (let out (file-open "/tmp/zyl_boot_out.s" "w")
+      (let n (file-write out (cg-buffer st))
+        (let d3 (file-close out)
+          n)))))
+
+(defn boot-run (arena fd)
+  (let srcbuf (file-read fd 1048576)
+    (let d2 (file-close fd)
+      (dbg-log "parse\n")
+      (let prog (zyl-parse arena srcbuf)
+        (dbg-log "lower\n")
+        (let fns (ic-program arena prog)
+          (dbg-log "codegen\n")
+          (emit-out arena fns))))))
+
 (defn main ()
   (let arena (arena-create 1048576)
     (let fd (file-open "/tmp/zyl_boot_in.zyl" "r")
       (if (> fd 0)
         (boot-run arena fd)
-        (begin (print "boot: cannot open input") 1)))))
-
-(defn boot-run (arena fd)
-  (let srcbuf (file-read fd 1048576)
-    (let d1 (file-close fd)
-      (let prog (zyl-parse arena srcbuf)
-        (let fns (ic-program arena prog)
-          (let st (cg-program (cg-new arena) fns)
-            (boot-write st)))))))
-
-(defn boot-write (st)
-  (let out (file-open "/tmp/zyl_boot_out.s" "w")
-    (let d2 (file-write out (cg-buffer st))
-      (let d3 (file-close out)
         (begin
-          (print "boot: wrote /tmp/zyl_boot_out.s")
-          0)))))
+          (dbg-log "no input\n")
+          1)))))

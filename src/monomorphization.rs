@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::ast::*;
 use crate::error::{Span, ZylError};
@@ -44,7 +44,7 @@ pub struct MonoContext {
 
     /// Cache of monomorphized functions by canonical name.
     #[allow(dead_code)]
-    mono_cache: HashMap<String, MonoInstance>,
+    mono_cache: BTreeMap<String, MonoInstance>,
 
     /// All known nominal types (for ADT monomorphization).
     known_types: IndexMap<String, Type>,
@@ -70,7 +70,7 @@ impl MonoContext {
             known_functions: inferer.get_known_functions().clone(),
             function_returns: inferer.get_function_returns().clone(),
             trait_ctx: inferer.get_trait_context().clone(),
-            mono_cache: HashMap::new(),
+            mono_cache: BTreeMap::new(),
             known_types: inferer.get_known_types().clone(),
             struct_defs: inferer.get_struct_defs().clone(),
             adt_defs: inferer.get_adt_defs().clone(),
@@ -1033,7 +1033,7 @@ impl MonoContext {
     /// Resolve the concrete type of a trait-method receiver expression.
     /// Variables are resolved from the threaded var→type environment; other
     /// expressions fall back to `infer_arg_type`.
-    fn receiver_type(&self, expr: &Expr, var_types: &std::collections::HashMap<String, Type>) -> Option<Type> {
+    fn receiver_type(&self, expr: &Expr, var_types: &std::collections::BTreeMap<String, Type>) -> Option<Type> {
         match &expr.inner {
             ExprInner::Atom(Atom::Ident(name)) => var_types.get(name).cloned(),
             _ => {
@@ -1127,15 +1127,15 @@ impl MonoContext {
     }
 
     fn subst_expr(&self, expr: &Expr, type_map: &IndexMap<String, Type>) -> Expr {
-        self.subst_expr_with_var_map(expr, type_map, &std::collections::HashMap::new(), &std::collections::HashMap::new())
+        self.subst_expr_with_var_map(expr, type_map, &std::collections::BTreeMap::new(), &std::collections::BTreeMap::new())
     }
 
     fn subst_expr_with_var_map(
         &self,
         expr: &Expr,
         type_map: &IndexMap<String, Type>,
-        var_renames: &std::collections::HashMap<String, String>,
-        var_types: &std::collections::HashMap<String, Type>,
+        var_renames: &std::collections::BTreeMap<String, String>,
+        var_types: &std::collections::BTreeMap<String, Type>,
     ) -> Expr {
         let new_inner = match &expr.inner {
             ExprInner::Defn(name, params, body) => {

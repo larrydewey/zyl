@@ -306,6 +306,27 @@ deftype + match-with-bindings + recursion verified (3-element list length
    are shared across element types; each module keeps its own typed
    head/tail helpers (e.g. `ih-ic`, `fh-if`, `shd`, `hd-ia`).
 
+**Stage 2 status (2026-08-24): stage1 compiles 224 functions / 17.5K lines
+of its own source before hitting remaining bootstrap limits.**
+
+Findings from the stage2 attempt:
+1. The Rust bootstrap emitted NO tail-call optimization: every function
+   frame is a uniform ~15KB, and recursive walks (lexer per token,
+   ic-defns/cg-functions per element) leak frames until the 8MB main
+   stack dies. A 40-line input was the practical ceiling.
+2. Implemented self-tail-call optimization in `src/codegen.rs`
+   (`.__TCO_entry_<fn>` labels + arg-copy-into-param-slots + jmp when a
+   call to the CURRENT function is its final statement with register-class
+   args). Sibling (mutual) TCO was tried and reverted — unsound across
+   differing frame contents; revisit only after frames carry explicit
+   layouts.
+3. With TCO, stage2 progresses to the allocator module and then hangs in
+   an FFI nanosleep retry loop while codegen processes `alloc-malloc`
+   (context-dependent; isolated alloc-malloc compiles fine). Next steps:
+   investigate the FFI timeout-retry path in the generated/runtime code,
+   and audit TCO-vs-Assign interaction (a tail call whose result is
+   stored into an Assign slot skips that store on the jump path).
+
 Known remaining gaps in the Rust bootstrap (future hardening): silent
 zero fallbacks in `src/codegen.rs` MakeVariant emission should become
 E_* compile errors (P1 no-null principle); spurious "expected function
