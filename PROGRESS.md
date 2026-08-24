@@ -415,6 +415,18 @@ All integration tests pass; full suite 24/24 (2026-08-23).
       point. Next session: print between label-new calls to isolate;
       consider rewriting cg-label-new without buf-append (build label
       strings via str-concat into fresh arena memory instead).
+    - **FINAL instrumentation round:** cg-label-new works fine (3
+      successful calls: lend, lzero, then first arm's lnext). Crash hits
+      right after entering the FIRST arm's bind path:
+      cg_bind_fields receives binds=0 (NULL) — yet ic-arm-binds returns a
+      real List cell (verified in Rust harness). So an IArm cell's binds
+      slot (@+24) reads as NULL in stage1. Prime suspect: the IArm
+      MakeVariant construction in stage1's compiled ic_arm_one stores
+      fields shifted (4-field push/pop mapping), OR cg-arms' extraction
+      of the binds field reads the wrong offset. Next session: print
+      binds pointer inside ic_arm_one right after ic-arm-binds AND right
+      before the Cons/IArm construction; then print the extracted binds
+      in cg-arms — brackets down to the exact store/load pair.
     - **CRITICAL FINDING (2026-08-24, late):** the SAME lowering
       (zyl-parse + ic-program over the match input) works perfectly in a
       minimal Rust-compiled harness (/tmp/opencode/mh.zyl pattern) — both
