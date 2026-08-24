@@ -258,6 +258,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_adt_defs(adt_defs)
         .with_func_returns(resolved_returns.iter().map(|(k, v)| (k.replace('-', "_"), v.clone())).collect())
         .with_func_params(resolved_params.iter().map(|(k, v)| (k.replace('-', "_"), v.clone())).collect())
+        .with_string_locals(inferer.get_string_match_vars())
         .with_closure_bodies(optimized_icnf.closure_bodies.iter().map(|(k, v)| (*k, v.clone())).collect())
         .with_closures(optimized_icnf.closures.iter().map(|(k, v)| (*k, v.clone())).collect());
     codegen.generate(&optimized_icnf);

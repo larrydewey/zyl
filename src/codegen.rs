@@ -40,6 +40,8 @@ pub struct CodeGen {
     func_params: std::collections::HashMap<String, Vec<(String, Type)>>,
     /// Names of parameters typed as String in the function currently being emitted.
     string_params: std::collections::HashSet<String>,
+    /// Match-arm pattern variables bound to String fields (from type inference).
+    string_locals: std::collections::HashSet<String>,
     /// Temp stack slot counter for BinOp/UnOp temporaries. Separate from If result_var slots.
     temp_slot_counter: usize,
     /// All known function names (sanitized), used to distinguish direct calls
@@ -84,6 +86,7 @@ impl CodeGen {
             func_returns: std::collections::HashMap::new(),
             func_params: std::collections::HashMap::new(),
             string_params: std::collections::HashSet::new(),
+            string_locals: std::collections::HashSet::new(),
             temp_slot_counter: 0,
             function_names: std::collections::HashSet::new(),
             current_func: String::new(),
@@ -97,6 +100,12 @@ impl CodeGen {
     /// Set function return types for codegen (from type inference).
     pub fn with_func_returns(mut self, returns: std::collections::HashMap<String, Type>) -> Self {
         self.func_returns = returns;
+        self
+    }
+
+    /// Set match-arm pattern variables that bind String fields.
+    pub fn with_string_locals(mut self, vars: std::collections::HashSet<String>) -> Self {
+        self.string_locals = vars;
         self
     }
 
@@ -5812,7 +5821,7 @@ impl CodeGen {
                                 // No Assign found — check if this is a String-typed parameter.
                                 result = self.string_params.contains(var_name);
                             }
-                            result || self.string_params.contains(var_name)
+                            result || self.string_params.contains(var_name) || self.string_locals.contains(var_name)
                         }
                         Some(ICNFNode {
                             node: ICNFInner::Call(fname, _),
