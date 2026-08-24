@@ -337,6 +337,30 @@ All integration tests pass; full suite 24/24 (2026-08-23).
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
 11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
 12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done and verified end-to-end for: arith, if, while, for, cond, set!, defn-with-params, ADT construction, match over field-carrying and nullary variants.
+    **Phase 4 boot build STARTED (2026-08-23):**
+    - `selfhost/driver.zyl`: boot driver — reads `/tmp/zyl_boot_in.zyl`,
+      compiles through zyl-parse → ic-program → cg-program, writes
+      `/tmp/zyl_boot_out.s`. File ops lowered to new C helpers
+      (`zyl_file_open_c/_read_c/_write_c/_close_c` in actor_runtime.c).
+    - `selfhost/assemble.py`: concatenates core/list + allocator +
+      compiler/{ast,lexer,parser,icnf,codegen} + driver into
+      `selfhost/zyl_selfhost_compiler.zyl` (single-file boot source).
+    - **stage1 achieved**: Rust compiler builds that source into
+      `/tmp/opencode/stage1.bin`, which compiles Zyl programs end-to-end
+      by ITSELF (arith/if/while/strings/calls/recursion verified).
+    - Selfhost codegen fixes required for stage1: ic-vt-deftype now emits
+      4-field VTEntry (rest chain was missing → garbage walk); variant
+      name extracted from first child of raw deftype variants; arity =
+      len(kids)-1; cg-new buffer 1MB→8MB; function frames 64KB→4KB.
+    - **Self-compilation (stage1 compiling the compiler source) blocked**
+      by one remaining selfhost codegen bug: compiling `ast.zyl`, a
+      VTEntry cell's `rest` field receives literal 1 instead of the chain
+      pointer (crash in vt-tag-of). Repro:
+      `cp stdlib/compiler/ast.zyl /tmp/zyl_boot_in.zyl && bash -c 'ulimit -s unlimited; /tmp/opencode/stage1.bin'`.
+      Suspect cg-call-args/cg-pop-regs interaction with nested heap-alloc
+      side effects during argument evaluation of the 4-field MakeVariant
+      inside ic-vt-deftype's recursive call. Run stage1 under
+      `ulimit -s unlimited` until recursion depth handling improves.
     **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
     battery of programs through the Zyl-written compiler only (parse →
     ic-program → cg-program → cc): arithmetic, if/else both arms, while +
