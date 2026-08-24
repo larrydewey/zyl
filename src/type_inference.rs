@@ -30,6 +30,8 @@ pub struct TypeInferer {
     /// Names of generic functions already monomorphized — skip re-processing originals
     /// in collect_definitions so their resolved types aren't overwritten by fresh type vars.
     skip_generic_def_names: RefCell<std::collections::HashSet<String>>,
+    /// Match-arm pattern variables bound to String fields (for codegen print detection).
+    string_match_vars: RefCell<std::collections::HashSet<String>>,
 }
 
 impl TypeInferer {
@@ -58,6 +60,7 @@ impl TypeInferer {
             body_infer_cache: RefCell::new(IndexMap::new()),
             first_body_error: None,
             skip_generic_def_names: RefCell::new(std::collections::HashSet::new()),
+            string_match_vars: RefCell::new(std::collections::HashSet::new()),
         }
     }
 
@@ -1248,6 +1251,9 @@ impl TypeInferer {
                                     }
                                 })
                                 .unwrap_or_else(|| Type::Var(self.fresh_var()));
+                            if matches!(&pt, Type::Prim(PrimType::String)) {
+                                self.string_match_vars.borrow_mut().insert(name.clone());
+                            }
                             drop(self.env.bind(name.clone(), pt));
                         } else {
                             drop(self.infer_expr(p));
@@ -2111,6 +2117,11 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     /// Expose function return types for monomorphization.
     pub fn get_function_returns(&self) -> &IndexMap<String, Type> {
         &self.function_returns
+    }
+
+    /// Expose match-arm pattern variables that bind String fields.
+    pub fn get_string_match_vars(&self) -> std::collections::HashSet<String> {
+        self.string_match_vars.borrow().clone()
     }
 
     /// Expose function return types with type variables resolved via substitution.
