@@ -766,6 +766,86 @@ impl IcnfConverter {
 
     /// Convert a list of monomorphized AST expressions into ICNF.
     pub fn convert(&mut self, exprs: &[Expr]) -> Result<ICNFProgram, ZylError> {
+        // Pre-pass: register every deftype BEFORE converting any expressions,
+        // so constructors used earlier in source order still resolve their
+        // ADT (discriminants otherwise default to 0 and corrupt dispatch).
+        for expr in exprs {
+            match &expr.inner {
+                ExprInner::Deftype(name, variants, _, _) => {
+                    let variant_info: Vec<(String, Vec<String>)> = variants
+                        .iter()
+                        .map(|v| (v.name.clone(), v.fields.to_vec()))
+                        .collect();
+                    let entry = self.adt_defs.entry(name.clone()).or_default();
+                    for vi in variant_info {
+                        if !entry.iter().any(|(n, _)| n == &vi.0) {
+                            entry.push(vi);
+                        }
+                    }
+                }
+                // Raw Call form: (deftype Name (Variant field*)* ...)
+                ExprInner::Call(op, args)
+                    if is_ident_op(op, "deftype") && args.len() >= 2 =>
+                {
+                    if let Some(tname) = match &args[0].inner {
+                        ExprInner::Atom(Atom::Ident(n)) => Some(n.clone()),
+                        _ => None,
+                    } {
+                        let variant_info: Vec<(String, Vec<String>)> = args[1..]
+                            .iter()
+                            .filter_map(|arg| match &arg.inner {
+                                ExprInner::MakeVariant(_, vname, fargs) => {
+                                    let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                            Some(f.clone())
+                                        } else {
+                                            None
+                                        }
+                                    }).collect();
+                                    Some((vname.clone(), fields))
+                                }
+                                ExprInner::Call(head, fargs) => {
+                                    if let ExprInner::Atom(Atom::Ident(vname)) = &head.inner {
+                                        let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                            if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                                Some(f.clone())
+                                            } else {
+                                                None
+                                            }
+                                        }).collect();
+                                        Some((vname.clone(), fields))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                ExprInner::Apply(vname, fargs) => {
+                                    let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                            Some(f.clone())
+                                        } else {
+                                            None
+                                        }
+                                    }).collect();
+                                    Some((vname.clone(), fields))
+                                }
+                                ExprInner::Atom(Atom::Ident(v))
+                                | ExprInner::Atom(Atom::Keyword(v)) => {
+                                    Some((v.clone(), Vec::new()))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        let entry = self.adt_defs.entry(tname).or_default();
+                        for vi in variant_info {
+                            if !entry.iter().any(|(n, _)| n == &vi.0) {
+                                entry.push(vi);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         for expr in exprs {
             match &expr.inner {
                 // Specialized Defn (from parser when no_dispatch=false, or from monomorphization).
@@ -1210,7 +1290,12 @@ impl IcnfConverter {
                             (v.name.clone(), field_types)
                         })
                         .collect();
-                    self.adt_defs.insert(name.clone(), variant_info);
+                    let entry = self.adt_defs.entry(name.clone()).or_default();
+                    for vi in variant_info {
+                        if !entry.iter().any(|(n, _)| n == &vi.0) {
+                            entry.push(vi);
+                        }
+                    }
                 }
                 ExprInner::TraitDecl(..)
                 | ExprInner::ImplBlock(..)
@@ -1243,6 +1328,32 @@ impl IcnfConverter {
                                     }).collect();
                                     Some((vname.clone(), fields))
                                 }
+                                // Raw Call form from no-dispatch parsing:
+                                // (RStr String String Rodata) etc.
+                                ExprInner::Call(head, fargs) => {
+                                    if let ExprInner::Atom(Atom::Ident(vname)) = &head.inner {
+                                        let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                            if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                                Some(f.clone())
+                                            } else {
+                                                None
+                                            }
+                                        }).collect();
+                                        Some((vname.clone(), fields))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                ExprInner::Apply(vname, fargs) => {
+                                    let fields: Vec<String> = fargs.iter().filter_map(|fa| {
+                                        if let ExprInner::Atom(Atom::Ident(f)) = &fa.inner {
+                                            Some(f.clone())
+                                        } else {
+                                            None
+                                        }
+                                    }).collect();
+                                    Some((vname.clone(), fields))
+                                }
                                 ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
                                     Some((v.clone(), Vec::new()))
                                 }
@@ -1250,7 +1361,12 @@ impl IcnfConverter {
                             }
                         })
                         .collect();
-                    self.adt_defs.insert(name, variant_info);
+                    let entry = self.adt_defs.entry(name).or_default();
+                    for vi in variant_info {
+                        if !entry.iter().any(|(n, _)| n == &vi.0) {
+                            entry.push(vi);
+                        }
+                    }
                 }
 
                 // Raw Apply form for deftype: (deftype Name Variant1 Variant2 ...)
@@ -1280,7 +1396,12 @@ impl IcnfConverter {
                             }
                         })
                         .collect();
-                    self.adt_defs.insert(tname, variant_info);
+                    let entry = self.adt_defs.entry(tname).or_default();
+                    for vi in variant_info {
+                        if !entry.iter().any(|(n, _)| n == &vi.0) {
+                            entry.push(vi);
+                        }
+                    }
                 }
 
                 // Raw Call/Apply for trait/impl/struct — skip (type-level constructs from no-dispatch parsing).
@@ -1575,7 +1696,9 @@ impl IcnfConverter {
                 // Always push condition to globals so it's visible for operand lookup,
                 // even when nested in branch bodies (push_to_globals=false).
                 let saved = std::mem::replace(&mut self.push_to_globals, true);
-                let cond_id = self.convert_expr_collect_id(cond)?;
+                let cond_stmts = self.convert_expr_collect(cond)?;
+                let cond_id = cond_stmts.last().map(|n| n.id)
+                    .unwrap_or_else(|| self.next_ssa_id());
                 self.push_to_globals = saved;
 
                 // Convert branch bodies - push to globals so intermediate nodes are visible for operand lookup.
@@ -1594,7 +1717,16 @@ impl IcnfConverter {
                 // Use fresh IDs - don't reuse cond_id which may collide with existing nodes.
                 let if_node_id = self.next_ssa_id();
 
-                Ok(vec![ICNFNode {
+                // Return the condition statements along with the If node so
+                // consumers embedding this If (e.g. match arms) also embed its
+                // condition evaluation, keeping each statement in one place.
+                let mut result: Vec<ICNFNode> = Vec::with_capacity(cond_stmts.len() + 1);
+                for s in cond_stmts {
+                    if s.id != if_node_id && !result.iter().any(|r| r.id == s.id) {
+                        result.push(s);
+                    }
+                }
+                result.push(ICNFNode {
                     id: if_node_id,
                     region: Region::Stack,
                     typ: None,
@@ -1605,7 +1737,8 @@ impl IcnfConverter {
                         else_body: else_stmts,
                         result_var,
                     },
-                }])
+                });
+                Ok(result)
             }
 
             // Let binding.
@@ -2533,7 +2666,12 @@ impl IcnfConverter {
                 // Resolve the type name from scrutinee expression (or use first arm's type).
                 let type_name = self.resolve_match_type(scrutinee, arms);
 
-                let scrut_id = self.convert_expr(scrutinee)?;
+                // Collect the scrutinee's statements (not just its id) so they
+                // can be emitted before the dispatch even in non-pushing
+                // contexts (match inside a let value / branch body).
+                let mut scrut_stmts = self.convert_expr_collect(scrutinee)?;
+                let scrut_id = scrut_stmts.last().map(|n| n.id)
+                    .unwrap_or_else(|| self.next_ssa_id());
 
                 // Convert each arm body; statements are EMBEDDED in the Match
                 // node's arms (mirroring If's then_body/else_body), NOT flattened
@@ -2560,15 +2698,28 @@ impl IcnfConverter {
                         }
                     }
 
-                    // Convert the arm body.
+                    // Convert the arm body in non-pushing mode so arm-internal
+                    // statements stay embedded in the Match node instead of
+                    // leaking into the enclosing function's flat statement
+                    // list (mirrors If's convert_branch_body). Some handlers
+                    // (e.g. Atom::Ident) push to global_stmts unconditionally,
+                    // so also swap in a throwaway buffer for the duration.
+                    // Convert the arm body into an isolated buffer (like a
+                    // function body): handlers push there, the returned
+                    // statements are merged back in order, and the complete,
+                    // deduplicated sequence is embedded into the Match arm so
+                    // no arm statement leaks into the enclosing flat list.
+                    let saved_globals = std::mem::take(&mut self.global_stmts);
+                    let saved_push = std::mem::replace(&mut self.push_to_globals, true);
                     let body_stmts = self.convert_expr_to_stmts(&arm.body)?;
-                    self.current_scope = saved_scope;
-
-                    // Arm bodies are branch bodies for codegen dedup purposes.
-                    let mut body_stmts = body_stmts;
-                    for s in &mut body_stmts {
+                    self.collect_body_into_globals(&body_stmts);
+                    let mut full_body = std::mem::replace(&mut self.global_stmts, saved_globals);
+                    self.push_to_globals = saved_push;
+                    for s in full_body.iter_mut() {
                         s.is_branch_body = true;
                     }
+                    self.current_scope = saved_scope;
+
 
                     // Look up discriminant for this arm's variant from adt_defs.
                     let discriminant = self.adt_defs.iter().find_map(|(_, variants)| {
@@ -2579,7 +2730,7 @@ impl IcnfConverter {
                         variant_name: arm.variant.clone(),
                         discriminant,
                         field_names,
-                        body: body_stmts,
+                        body: full_body,
                     }));
                 }
 
@@ -2590,7 +2741,9 @@ impl IcnfConverter {
                 let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
 
                 let ssa_id = self.next_ssa_id();
-                Ok(vec![ICNFNode {
+                let mut result: Vec<ICNFNode> = Vec::with_capacity(scrut_stmts.len() + 1);
+                result.append(&mut scrut_stmts);
+                result.push(ICNFNode {
                     id: ssa_id,
                     region: Region::Heap,
                     typ: None,
@@ -2601,7 +2754,8 @@ impl IcnfConverter {
                         arms: icnf_arms,
                         result_var,
                     },
-                }])
+                });
+                Ok(result)
             }
 
             // FFI call.
@@ -3795,6 +3949,27 @@ impl IcnfConverter {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/// Recursively collect all statement ids embedded in an ICNF node's
+/// nested control flow (If branches, Match arms).
+fn collect_embedded_ids(node: &ICNFNode, out: &mut std::collections::HashSet<usize>) {
+    out.insert(node.id);
+    match &node.node {
+        ICNFInner::If { then_body, else_body, .. } => {
+            for s in then_body.iter().chain(else_body.iter()) {
+                collect_embedded_ids(s, out);
+            }
+        }
+        ICNFInner::Match { arms, .. } => {
+            for arm in arms.iter() {
+                for s in arm.body.iter() {
+                    collect_embedded_ids(s, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
 
 #[allow(dead_code)]
 fn is_special_form_ident(op: &Expr) -> bool {

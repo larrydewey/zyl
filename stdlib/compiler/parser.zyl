@@ -184,11 +184,11 @@
   (let rest (toks-tail toks))
   (let k (tok-code t))
   (if (= k 8)
-    (read-forms arena rest)                 ; '(' -> list form
+    (read-forms arena rest None)                 ; '(' -> list form
     (if (= k 12)
-      (read-forms-bracket arena rest)       ; '['
+      (read-forms-bracket arena rest None)       ; '['
       (if (= k 10)
-        (read-forms-brace arena rest)       ; '{'
+        (read-forms-brace arena rest None)       ; '{'
         (read-form-atom arena t rest k)))))
 
 ; Atoms (and closers): kinds 0-7,9,11,13,14.

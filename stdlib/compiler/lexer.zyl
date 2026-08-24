@@ -260,7 +260,7 @@
 ; Returns: List(Token) in reverse source order.
 (defn lex-loop (st acc)
   (if (>= (lex-st-i st) (lex-st-len st))
-    acc
+    (Cons (TkEof) acc)
     (let c (byte-at (lex-st-src st) (lex-st-i st))
       (if (= (is-ws c) 1)
         (if (= c 10)
@@ -356,12 +356,12 @@
   (let e (str-end src len i)
     (if (< e 0)
       (Cons (TkEof) acc)   ; unterminated -> EOF
-      (let text (ffi-call "zyl_cstr_decode" (lex-st-arena st) src (+ i 1) e 1000))
-      (let end (+ e 1)
-        (begin
-          (lex-st-set-col st (+ (lex-st-col st) (- end i)))
-          (lex-st-set-i st end)
-          (lex-loop st (Cons (TkString text) acc)))))))
+      (let text (ffi-call "zyl_cstr_decode" (lex-st-arena st) src (+ i 1) e 1000)
+        (let end (+ e 1)
+          (begin
+            (lex-st-set-col st (+ (lex-st-col st) (- end i)))
+            (lex-st-set-i st end)
+            (lex-loop st (Cons (TkString text) acc))))))))
 
 ; Numeric or identifier token at the cursor.
 (defn lex-word (st acc c)

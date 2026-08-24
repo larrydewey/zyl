@@ -2037,6 +2037,23 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
                 self.unify(e1, e2, span)
             }
             (Type::Nominal(n1), Type::Nominal(n2)) if n1 == n2 => Ok(()),
+            // An empty Nominal is an unresolved-ADT fallback; it adapts to any
+            // concrete ADT.
+            (Type::Nominal(n1), _) if n1.is_empty() => Ok(()),
+            (_, Type::Nominal(n2)) if n2.is_empty() => Ok(()),
+            // A monomorphized ADT instance (Token_String) adapts to its base
+            // ADT (Token) and vice versa: inference may record either name for
+            // the same value depending on which call site it saw first.
+            (Type::Nominal(n1), Type::Nominal(n2))
+                if n1.starts_with(n2.as_str()) && n1[n2.len()..].starts_with('_') =>
+            {
+                Ok(())
+            }
+            (Type::Nominal(n1), Type::Nominal(n2))
+                if n2.starts_with(n1.as_str()) && n2[n1.len()..].starts_with('_') =>
+            {
+                Ok(())
+            }
             // A capability-boxed opaque (e.g. an FFI result TBox<?v> whose
             // variable is still unbound) adapts to any expected type: the C
             // runtime hands back raw machine words that callers reinterpret.
