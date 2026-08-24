@@ -336,7 +336,24 @@ All integration tests pass; full suite 24/24 (2026-08-23).
 9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
 10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
 11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
-12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done and verified end-to-end for: arith, if, while, for, cond, set!, defn-with-params, ADT construction, match over field-carrying and nullary variants. **Next bootstrap blockers** (in rough priority): self-hosted codegen lacks calls-with-arg-evaluation robustness for >6 args, string/FFI emission paths are untested, and Rust-codegen statement-emission heuristics still miscompile some value-returning if/let chains in stdlib shapes (symptom: crashes that shift when debug prints are added — e.g. an iterative variant-tag using while+set! inside if/begin miscompiled, fixed by using tail-recursion instead). Prefer recursion and flat begin-sequences in stdlib compiler modules until emission heuristics are replaced with a sound scheme.
+12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done and verified end-to-end for: arith, if, while, for, cond, set!, defn-with-params, ADT construction, match over field-carrying and nullary variants.
+    **Current status after recursive-AST rewrite + 2b6cfe5 fixes:** full
+    pipeline (zyl-parse -> ic-program -> cg-program -> file-write -> cc)
+    works for if/else and string prints (`tests/integration/selfhost-codegen`
+    green). **Remaining bug (precise repro):** arithmetic print miscompiles —
+    `(print (+ 1 2))` generates `add` followed by the comparison branch
+    (`cmp/setne`) and prints 1. Repro: build `/tmp/opencode/gen_arith.zyl`
+    shape (parse "(defn main () (begin (print (+ 1 2)) 0))" through
+    ic-program + cg-program). Diagnosis: `_ZYL_cg_ibinop` func_body
+    statement ORDER is wrong in the ICNF dump — the If condition supply
+    chain (Load op / Const / Lt, ids ~3957-3972) appears AFTER the branch
+    bodies (ids 3973+) in the flat list, so codegen emits the comparison
+    unconditionally. Suspect the Let handler's temp-buffer
+    splice-at-len-1 insertion interacting with the new If/Match handlers
+    returning their condition/scrutinee statements. Next session: fix
+    statement ordering for nested let/if inside defn bodies (consider
+    giving the Let handler the same isolated-buffer treatment as Match
+    arms). **Next bootstrap blockers** (in rough priority): self-hosted codegen lacks calls-with-arg-evaluation robustness for >6 args, string/FFI emission paths are untested, and Rust-codegen statement-emission heuristics still miscompile some value-returning if/let chains in stdlib shapes (symptom: crashes that shift when debug prints are added — e.g. an iterative variant-tag using while+set! inside if/begin miscompiled, fixed by using tail-recursion instead). Prefer recursion and flat begin-sequences in stdlib compiler modules until emission heuristics are replaced with a sound scheme.
 13. Contract injection (optional overlay, spec §23)
 
 ---
