@@ -280,18 +280,21 @@ bugs (not Zyl-source issues):**
      Suite back to stable 20/24 with no regressions.
    - Parser bug fixed: read-forms returned kids un-reversed
      ((AList (list-reverse acc)) now).
-   - REMAINING BLOCKER pinned to src/icnf.rs: for constructor args inside
-     If-branch bodies (e.g. `(AstOf (AList (list-reverse acc)) rest)`),
-     the operand sub-expression nodes get SSA ids but are NOT present in
-     the emitted body vector (verified via --dump-icnf: MakeVariant
-     field_ids reference ids missing from every reachable body). Codegen
-     therefore cannot emit them -> garbage/stale values. The MakeVariant
-     handler itself returns all arg stmts in its Ok(result); they are lost
-     between convert_branch_body/If-handler embedding and the enclosing
-     Let handler's dedup/splice merge. Fix there next session: ensure
-     convert_expr_to_stmts keeps ALL arg stmts of MakeVariant (and Call)
-     args when push_to_globals=false, e.g. by routing through
-     convert_expr_collect in the If/Let embedding path.
+   - icnf.rs DCE BUG FIXED: optimization.rs collect_used_ssa did not track
+     MakeVariant field_ids, Assign sources, or Match arm bodies — DCE was
+     deleting exactly those operand nodes. Now tracked; ICNF dumps show
+     zero missing field nodes.
+   - read-forms un-reversed accumulator fixed ((AList (list-reverse acc))).
+   - REMAINING BLOCKER (final): parsing a form containing a NESTED list
+     (e.g. "(defn foo (x) x)" — but "(x y)" works) crashes in
+     list_reverse_acc walking a corrupted Cons chain. Single-level lists
+     parse correctly. Suspect: value slots are rbp-relative so recursion
+     should be safe, but the corruption appears after the inner recursive
+     read-forms returns — next step is diffing slot loads/stores for
+     read_forms' nodes across one nested call (ZYL_DBG2-style trace), or
+     testing whether the crash predates always-spill on the same input
+     (it does — same crash pre-refactor), which points at ICNF embedding
+     of the inner AstOf rather than codegen slots.
 Remaining integration tests fail on these; everything else green (20/24).
 
 ## Next Priorities
