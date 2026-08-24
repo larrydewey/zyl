@@ -78,6 +78,8 @@
           (ic-collect-vt arena rest vt))))))
 
 ; Add one deftype's variants (kids = (deftype Name Variant...)).
+; Entries link through VTEntry.rest directly (NOT Cons cells): every walker
+; matches VTable variants against this chain.
 (defn ic-vt-deftype (arena kids vt tag)
   (let rem (list-drop kids 2)
     (if (is-nil rem)
@@ -88,9 +90,8 @@
             (ast-name (hd (ast-kids v)))
             (ast-name v))
           (let arity (- (list-length (ast-kids v)) 1)
-            (ic-vt-deftype arena (list-cdr rem)
-                           (Cons (VTEntry (str-intern arena vname) tag arity vt) vt)
-                           (+ tag 1))))))))
+            (let tail (ic-vt-deftype arena (list-cdr rem) vt (+ tag 1)))
+              (VTEntry (str-intern arena vname) tag arity tail)))))))
 
 ; Lower all top-level defn forms to IFn records (source order preserved).
 (defn ic-defns (arena forms acc vt)
@@ -189,7 +190,7 @@
                               (ic-let arena args env vt false)
                               (if (str-eq hname (str-intern arena "let-mut"))
                                 (ic-let arena args env vt true)
-                            (if (str-eq hname (str-intern arena "if")) (IIf (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt) (ic-expr arena (hd (list-drop args 2)) env vt)) (if (str-eq hname (str-intern arena "while")) (IWhile (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "set!")) (ISet (str-intern arena (ast-name (hd args))) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "begin")) (ISeq (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-close")) (IFfi "zyl_file_close_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-write")) (IFfi "zyl_file_write_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-read")) (IFfi "zyl_file_read_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-open")) (IFfi "zyl_file_open_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "print")) (ic-print arena args env vt) (ICall (str-intern arena hname) (ic-arg-list arena args env vt))))))))))))))))))))
+                            (if (str-eq hname (str-intern arena "if")) (IIf (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt) (ic-expr arena (hd (list-drop args 2)) env vt)) (if (str-eq hname (str-intern arena "while")) (IWhile (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "set!")) (ISet (str-intern arena (ast-name (hd args))) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "begin")) (ISeq (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-close")) (IFfi "zyl_file_close_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-write")) (IFfi "zyl_file_write_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-read")) (IFfi "zyl_file_read_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-open")) (IFfi "zyl_file_open_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "print")) (ic-print arena args env vt) (if (str-eq hname (str-intern arena "ffi-call")) (ic-ffi arena args env vt) (if (str-eq hname (str-intern arena "match")) (ic-match arena args env vt) (if (> (vt-tag-of vt (str-intern arena hname)) -1) (ic-variant arena hname args env vt) (ICall (str-intern arena hname) (ic-arg-list arena args env vt)))))))))))))))))))))))
 
 ; (let name val body...) — extra body expressions become an implicit ISeq.
 (defn ic-let (arena args env vt mutable)
@@ -255,12 +256,18 @@
     (let vname (ast-name (hd parts))
       (let pats (list-drop-last (list-cdr parts))
         (let tag (vt-tag-of vt (str-intern arena vname))
-          (let binds (ic-arm-binds arena pats None)
+          (let binds (begin (print -555) (print (alloc-read-int (+ (list-car (list-cdr (list-cdr pats))) 0)) ) (ic-arm-binds arena pats None))
             (let body (ic-expr arena (hd (list-drop-last parts)) env vt)
               (ic-arms arena rest
                        (Cons (IArm (str-intern arena vname) tag binds body) acc)))))))))
 
 ; Variant construction with fields: (V a b ...).
+; Pattern binding names ("_" wildcards kept, skipped by codegen).
+(defn ic-arm-binds (arena pats acc)
+  (if (is-nil pats)
+    (list-reverse acc)
+    (ic-arm-binds arena (list-cdr pats) (Cons (str-intern arena (ast-name (hd pats))) acc))))
+
 (defn ic-variant (arena vname args env vt)
   (let tag (vt-tag-of vt (str-intern arena vname))
     (IVariant (str-intern arena vname) tag (ic-arg-list arena args env vt))))
