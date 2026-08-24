@@ -11,123 +11,156 @@
 ;   - Parameters arrive in SysV registers (rdi rsi rdx rcx r8 r9) and are
 ;     spilled to [rbp-8*(i+1)] in the prologue.
 ;   - Locals (let / match bindings) get slots from a downward-growing
-;     offset counter threaded through the emitter state.
+;     offset counter carried in the emitter state.
 ;   - Names are resolved through an immutable Env chain (see ast.zyl).
 ;   - Calls support up to 6 register arguments; argument values are pushed
 ;     and popped in reverse so evaluation order stays strictly
 ;     left-to-right (spec evaluation-order rule).
 ;   - Floats travel as bit patterns in rax and move to xmm0/xmm1 for SSE
-;     arithmetic; print selects %d/%f/%s by the operand's syntactic kind.
+;     arithmetic; print selects %d/%f/%s by the operand's kind.
+;
+; Emitter state is an immutable CGState threaded functionally through
+; every emitter function (no mutable records, no raw cells):
+;   CGState = (CGS arena buffer next-label next-slot rodata)
+; Two-value results use small wrapper ADTs:
+;   CGR = state + int + string  (fresh labels / slot offsets)
+;   CGE = state + env           (match-binding sequences)
+;
+; Bootstrap constraint note: pattern wildcards must be named dummies
+; (`dN`) because the Rust bootstrap miscompiles bare `_` patterns.
 
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/icnf)
 
-; Emitter state cells:
-;   [0]=arena  [8]=text buffer  [16]=label counter  [24]=next slot offset
-;   [32]=rodata list (Rodata)
+; --- Emitter state ----------------------------------------------------------
+
+; One rodata entry: label, payload text, kind (0 string, 1 float).
+(deftype REntry (REntry String String Int))
+
+(deftype CGState (CGS Int Int Int Int (List REntry)))
+; fields: arena, text buffer, next label number, next slot offset,
+; rodata entries (reverse collection order; emitted reversed at end)
+
+(deftype CGR (CGR CGState Int String))
+
+(deftype CGE (CGE CGState Env))
+
+; Result wrapper: state + two labels.
+(deftype CGP (CGP CGState String String))
+
+; Allocate two consecutive labels. Each match is the entire body of its
+; own defn (nested matches miscompile in the current bootstrap).
+(defn cg-label-pair (st)
+  (cg-label-pair-2 (cg-label-new st)))
+
+(defn cg-label-pair-2 (r1)
+  (match r1
+    (CGR st1 d1 la (cg-label-second st1 la))))
+
+(defn cg-label-second (st1 la)
+  (match (cg-label-new st1)
+    (CGR st2 d2 lb (CGP st2 la lb))))
+
 (defn cg-new (arena)
-  (let st (arena-alloc-zeroed arena 48)
-    (let buf (arena-alloc-zeroed arena 8388608)
-      (begin
-        (alloc-write-int st arena)
-        (alloc-write-int (+ st 8) buf)
-        (alloc-write-int (+ st 16) 0)
-        (alloc-write-int (+ st 24) 8)   ; params occupy slots 1..n
-        (alloc-write-int (+ st 32) (RNil))
-        st))))
+  (let buf (arena-alloc-zeroed arena 8388608)
+    (CGS arena buf 0 8 None)))   ; params occupy slots 1..n
+
+(defn cg-buffer (st)
+  (match st
+    (CGS d1 buf d2 d3 d4 buf)))
+
+(defn cg-with-rodata (st entry)
+  (match st
+    (CGS a b n s rd (CGS a b n s (Cons entry rd)))))
 
 (defn cg-emit (st s)
-  (buf-append (alloc-read-int (+ st 8)) s))
+  (match st
+    (CGS d6 buf d7 d8 d9
+      (begin (buf-append buf s) st))))
 
 (defn cg-emit-int (st n)
-  (cg-emit st (ffi-call "zyl_cstr_from_int" (alloc-read-int st) n 1000)))
+  (match st
+    (CGS arena buf d10 d11 d12
+      (begin
+        (buf-append buf (ffi-call "zyl_cstr_from_int" arena n 1000))
+        st))))
 
-(defn cg-nl (st) (cg-emit st "
+(defn cg-nl (st)
+  (cg-emit st "
 "))
 
-; Fresh label .L<N>; returns the label string.
+; Fresh label .L<N>.
+; Returns: CGR (advanced state; string field carries the label text).
 (defn cg-label-new (st)
-  (let arena (alloc-read-int st)
-    (let n (alloc-read-int (+ st 16))
-      (let buf (arena-alloc-zeroed arena 32)
+  (match st
+    (CGS arena buf n slot rd
+      (let lblbuf (arena-alloc-zeroed arena 32)
         (begin
-          (alloc-write-int (+ st 16) (+ n 1))
-          (buf-append buf (str-intern arena ".L"))
-          (buf-append buf (ffi-call "zyl_cstr_from_int" arena n 1000))
-          buf)))))
+          (buf-append lblbuf (str-intern arena ".L"))
+          (buf-append lblbuf (ffi-call "zyl_cstr_from_int" arena n 1000))
+          (CGR (CGS arena buf (+ n 1) slot rd) 0 lblbuf))))))
 
-; Allocate one 8-byte local slot; returns its rbp offset (negative).
+; Allocate one 8-byte local slot.
+; Returns: CGR (advanced state; int field carries the rbp offset, negative).
 (defn cg-new-slot (st)
-  (let off (alloc-read-int (+ st 24))
-    (begin
-      (alloc-write-int (+ st 24) (+ off 8))
-      (- off))))
+  (match st
+    (CGS a b n off rd
+      (CGR (CGS a b n (+ off 8) rd) (- off) ""))))
 
 ; ===========================================================================
-; RODATA COLLECTION (threaded through state cell [32]... see cg-rodata*)
-; Rodata entries live in an immutable list stored at state offset 32.
+; RODATA INTERNING
 ; ===========================================================================
-
-(deftype Rodata
-  (RStr String String Rodata)   ; label, content
-  (RFlt String String Rodata)   ; label, literal text
-  (RNil))
-
-(defn cg-rodata-get (st) (alloc-read-int (+ st 32)))
-(defn cg-rodata-put (st rd) (alloc-write-int (+ st 32) rd))
 
 ; Intern a string constant; emit `lea rax, [rip+label]`.
 (defn cg-string-const (st content)
-  (let lbl (cg-label-new st)
-    (begin
-      (cg-rodata-put st (RStr lbl content (cg-rodata-get st)))
-      (cg-emit st "    lea rax, [rip+")
-      (cg-emit st lbl)
-      (cg-emit st "]")
-      (cg-nl st))))
+  (match (cg-label-new st)
+    (CGR st2 d13 lbl
+      (let st3 (cg-with-rodata st2 (REntry lbl content 0))
+        (let st4 (cg-emit st3 "    lea rax, [rip+")
+          (let st5 (cg-emit st4 lbl)
+            (cg-nl (cg-emit st5 "]"))))))))
 
 ; Intern a float constant; load its bits into rax via xmm0.
 (defn cg-float-const (st text)
-  (let lbl (cg-label-new st)
-    (begin
-      (cg-rodata-put st (RFlt lbl text (cg-rodata-get st)))
-      (cg-emit st "    movsd xmm0, [rip+")
-      (cg-emit st lbl)
-      (cg-emit st "]")
-      (cg-nl st)
-      (cg-emit st "    movq rax, xmm0")
-      (cg-nl st))))
+  (match (cg-label-new st)
+    (CGR st2 d14 lbl
+      (let st3 (cg-with-rodata st2 (REntry lbl text 1))
+        (let st4 (cg-emit st3 "    movsd xmm0, [rip+")
+          (let st5 (cg-emit st4 lbl)
+            (let st6 (cg-nl (cg-emit st5 "]"))
+              (cg-nl (cg-emit st6 "    movq rax, xmm0")))))))))
+
+(defn cg-rodata-of (st)
+  (match st
+    (CGS d15 d16 d17 d18 rd rd)))
 
 ; ===========================================================================
-; KINDS (for print format + float detection)
+; KINDS (for print format + float detection): 0 int, 1 string, 2 float
 ; ===========================================================================
-; 0 int, 1 string, 2 float
 
 (defn kind-of (env e)
   (match e
     (IConst 0)
-    (IStr  w1 1)
-    (IFlt  w2 2)
+    (IStr d19 1)
+    (IFlt d20 2)
     (ILoad n (env-kind-of env n))
     (IBinop op l r
      (if (> op 4)
        0
-       (let kl (kind-of env l)
-         (let kr (kind-of env r)
-           (if (= kl 2)
-             2
-             (if (= kr 2) 2 0))))))
-    (IIf c t e (kind-of env t))
-    (ICall  w3  w4 0)
-    (IFfi  w5  w6 0)
-    (IPrint  w7 0)
-    (IWhile c b 0)
-    (ISet  w8  w9 0)
-    (ILet  w10  w11  w12 0)
-    (ISeq  w13 0)
-    (IVariant  w14  w15  w16 0)
-    (IMatch  w17  w18 0)))
+       (if (= (kind-of env l) 2)
+         2
+         (if (= (kind-of env r) 2) 2 0))))
+    (IIf d21 t d22 (kind-of env t))
+    (ICall d23 d24 0)
+    (IFfi d25 d26 0)
+    (IPrint d27 0)
+    (IWhile d28 d29 0)
+    (ISet d30 d31 0)
+    (ILet d32 d33 d34 0)
+    (ISeq d35 0)
+    (IVariant d36 d37 d38 0)
+    (IMatch d39 d40 0)))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -136,18 +169,15 @@
 (defn cg-expr (st env e)
   (match e
     (IConst v
-     (begin
-       (cg-emit st "    mov rax, ")
-       (cg-emit-int st v)
-       (cg-nl st)))
+     (let st2 (cg-emit st "    mov rax, ")
+       (let st3 (cg-emit-int st2 v)
+         (cg-nl st3))))
     (IStr s (cg-string-const st s))
     (IFlt t (cg-float-const st t))
     (ILoad n
-     (begin
-       (cg-emit st "    mov rax, [rbp")
-       (cg-emit-int st (env-lookup env n))
-       (cg-emit st "]")
-       (cg-nl st)))
+     (let st2 (cg-emit st "    mov rax, [rbp")
+       (let st3 (cg-emit-int st2 (env-lookup env n))
+         (cg-nl (cg-emit st3 "]")))))
     (IBinop op l r
      (if (> (if (= (kind-of env l) 2) 1 (if (= (kind-of env r) 2) 1 0)) 0)
        (cg-fbinop st env op l r)
@@ -155,115 +185,151 @@
     (ICall name args (cg-call-args st env name args true 0))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
-    (IIf c t eb
-     (let lelse (cg-label-new st)
-       (let lend (cg-label-new st)
-         (begin
-           (cg-expr st env c)
-           (cg-emit st "    test rax, rax")
-           (cg-nl st)
-           (cg-emit st "    je ")
-           (cg-emit st lelse)
-           (cg-nl st)
-           (cg-expr st env t)
-           (cg-emit st "    jmp ")
-           (cg-emit st lend)
-           (cg-nl st)
-           (cg-emit-label st lelse)
-           (cg-expr st env eb)
-           (cg-emit-label st lend)))))
-    (IWhile c body
-     (let lstart (cg-label-new st)
-       (let lend (cg-label-new st)
-         (begin
-           (cg-emit-label st lstart)
-           (cg-expr st env c)
-           (cg-emit st "    test rax, rax")
-           (cg-nl st)
-           (cg-emit st "    je ")
-           (cg-emit st lend)
-           (cg-nl st)
-           (cg-expr st env body)
-           (cg-emit st "    jmp ")
-           (cg-emit st lstart)
-           (cg-nl st)
-           (cg-emit-label st lend)
-           (cg-emit st "    xor eax, eax")
-           (cg-nl st)))))
+    (IIf c t eb (cg-if-dispatch st env c t eb))
+    (IWhile c body (cg-while-dispatch st env c body))
     (ISet n v
-     (begin
-       (cg-expr st env v)
-       (cg-emit st "    mov [rbp")
-       (cg-emit-int st (env-lookup env n))
-       (cg-emit st "], rax")
-       (cg-nl st)))
-    (ILet n v body
-     (let off (cg-new-slot st)
-       (let k (kind-of env v)
-         (begin
-           (cg-expr st env v)
-           (cg-emit st "    mov [rbp")
-           (cg-emit-int st off)
-           (cg-emit st "], rax")
-           (cg-nl st)
-           (cg-expr st (EnvBind n off k env) body)))))
+     (let st2 (cg-expr st env v)
+       (let st3 (cg-emit st2 "    mov [rbp")
+         (let st4 (cg-emit-int st3 (env-lookup env n))
+           (cg-nl (cg-emit st4 "], rax"))))))
+    (ILet n v body (cg-let-dispatch st env n v body))
     (ISeq es (cg-seq st env es))
-    (IVariant  w19 tag fields (cg-variant st env tag fields))
+    (IVariant d46 tag fields (cg-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms))))
+
+(defn cg-if-dispatch (st env c t eb)
+  (cg-if-labels (cg-label-pair st) env c t eb))
+
+(defn cg-if-labels (p env c t eb)
+  (match p
+    (CGP st lelse lend (cg-if-parts st env c t eb lelse lend))))
+
+(defn cg-while-dispatch (st env c body)
+  (cg-while-labels (cg-label-pair st) env c body))
+
+(defn cg-while-labels (p env c body)
+  (match p
+    (CGP st lstart lend (cg-while-parts st env c body lstart lend))))
+
+(defn cg-let-dispatch (st env n v body)
+  (match (cg-new-slot st)
+    (CGR st2 off d45
+      (cg-let-store st2 env n v body off))))
+
+(defn cg-let-store (st env n v body off)
+  (let st3 (cg-expr st env v)
+    (let st4 (cg-emit st3 "    mov [rbp")
+      (let st5 (cg-emit-int st4 off)
+        (let st6 (cg-nl (cg-emit st5 "], rax"))
+          (cg-expr st6 (EnvBind n off (kind-of env v) env) body))))))
+
+; (if c t e): condition tested, then branch tails.
+(defn cg-if-parts (st env c t eb lelse lend)
+  (let st2 (cg-expr st env c)
+    (let st3 (cg-emit st2 "    test rax, rax")
+      (let st4 (cg-nl st3)
+        (let st5 (cg-emit st4 "    je ")
+          (let st6 (cg-nl (cg-emit st5 lelse))
+            (let st7 (cg-expr st6 env t)
+              (let st8 (cg-emit st7 "    jmp ")
+                (let st9 (cg-nl (cg-emit st8 lend))
+                  (let st10 (cg-emit-label st9 lelse)
+                    (let st11 (cg-expr st10 env eb)
+                      (cg-emit-label st11 lend))))))))))))
+
+; (while c body...)
+(defn cg-while-parts (st env c body lstart lend)
+  (let st2 (cg-emit-label st lstart)
+    (let st3 (cg-expr st2 env c)
+      (let st4 (cg-emit st3 "    test rax, rax")
+        (let st5 (cg-nl st4)
+          (let st6 (cg-emit st5 "    je ")
+            (let st7 (cg-nl (cg-emit st6 lend))
+              (let st8 (cg-expr st7 env body)
+                (let st9 (cg-emit st8 "    jmp ")
+                  (let st10 (cg-nl (cg-emit st9 lstart))
+                    (let st11 (cg-emit-label st10 lend)
+                      (cg-emit-line st11 "    xor eax, eax"))))))))))))
+
+(defn cg-emit-line (st s)
+  (cg-nl (cg-emit st s)))
 
 (defn cg-seq (st env es)
   (if (is-nil es)
-    (begin
-      (cg-emit st "    xor eax, eax")
-      (cg-nl st))
-    (if (is-nil (list-cdr es))
-      (cg-expr st env (ih es))
-      (begin
-        (cg-expr st env (ih es))
-        (cg-seq st env (tl2 es))))))
+    (cg-emit-line st "    xor eax, eax")
+    (if (is-nil (tl2 es))
+      (cg-expr st env (ih-ic es))
+      (let st2 (cg-expr st env (ih-ic es))
+        (cg-seq st2 env (tl2 es))))))
 
 ; Integer binary op: lhs -> rax (pushed), rhs -> rax, lhs restored to rax,
 ; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
-(defn cg-ibinop (st env op l r) (begin (cg-expr st env l) (cg-emit st "    push rax") (cg-nl st) (cg-expr st env r) (cg-emit st "    mov rcx, rax") (cg-nl st) (cg-emit st "    pop rax") (cg-nl st) (if (< op 5) (begin (let mnem (if (= op 0) "    add rax, rcx" (if (= op 1) "    sub rax, rcx" (if (= op 2) "    imul rax, rcx" "    idiv rcx"))) (begin (if (= op 3) (begin (cg-emit st "    cqo") (cg-nl st)) 0) (cg-emit st mnem) (cg-nl st) (if (= op 4) (begin (cg-emit st "    mov rax, rdx") (cg-nl st)) 0)))) (begin (cg-emit st "    cmp rax, rcx") (cg-nl st) (cg-emit st "    set") (if (= op 5) (cg-emit st "l al") (if (= op 6) (cg-emit st "g al") (if (= op 7) (cg-emit st "le al") (if (= op 8) (cg-emit st "ge al") (if (= op 9) (cg-emit st "e al") (cg-emit st "ne al")))))) (cg-nl st) (cg-emit st "    movzx rax, al") (cg-nl st)))))
+(defn cg-ibinop (st env op l r)
+  (let st2 (cg-expr st env l)
+    (let st3 (cg-emit-line st2 "    push rax")
+      (let st4 (cg-expr st3 env r)
+        (let st5 (cg-emit-line st4 "    mov rcx, rax")
+          (let st6 (cg-emit-line st5 "    pop rax")
+            (if (< op 5)
+              (cg-arith-mnem st6 op)
+              (cg-cmp-set st6 op))))))))
+
+(defn cg-arith-mnem (st op)
+  (let st2 (if (= op 3) (cg-emit-line st "    cqo") st)
+    (let mnem (if (= op 0) "    add rax, rcx"
+              (if (= op 1) "    sub rax, rcx"
+                (if (= op 2) "    imul rax, rcx"
+                  "    idiv rcx")))
+      (let st3 (cg-emit-line st2 mnem)
+        (if (= op 4)
+          (cg-emit-line st3 "    mov rax, rdx")
+          st3)))))
+
+(defn cg-cmp-set (st op)
+  (let st2 (cg-emit-line st "    cmp rax, rcx")
+    (let st3 (cg-emit st2 "    set")
+      (let st4 (if (= op 5) (cg-emit st3 "l al")
+               (if (= op 6) (cg-emit st3 "g al")
+                 (if (= op 7) (cg-emit st3 "le al")
+                   (if (= op 8) (cg-emit st3 "ge al")
+                     (if (= op 9) (cg-emit st3 "e al")
+                       (cg-emit st3 "ne al"))))))
+        (let st5 (cg-nl st4)
+          (cg-emit-line st5 "    movzx rax, al"))))))
 
 ; Float binary op: bits in rax; xmm0 = lhs, xmm1 = rhs.
 (defn cg-fbinop (st env op l r)
-  (begin
-    (cg-expr st env l)
-    (cg-emit st "    push rax")
-    (cg-nl st)
-    (cg-expr st env r)
-    (cg-emit st "    movq xmm1, rax")
-    (cg-nl st)
-    (cg-emit st "    pop rax")
-    (cg-nl st)
-    (cg-emit st "    movq xmm0, rax")
-    (cg-nl st)
-    (if (< op 5)
-      (begin
-        (cg-emit st "    ")
-        (if (= op 0) (cg-emit st "addsd"))
-        (if (= op 1) (cg-emit st "subsd"))
-        (if (= op 2) (cg-emit st "mulsd"))
-        (if (= op 3) (cg-emit st "divsd"))
-        (cg-emit st " xmm0, xmm1")
-        (cg-nl st)
-        (cg-emit st "    movq rax, xmm0")
-        (cg-nl st))
-      (begin
-        (cg-emit st "    comisd xmm0, xmm1")
-        (cg-nl st)
-        (cg-emit st "    set")
-        ; unsigned-comparison flags: below/above carry the usual sense here
-        (if (= op 5) (cg-emit st "b al")
-          (if (= op 6) (cg-emit st "a al")
-            (if (= op 7) (cg-emit st "be al")
-              (if (= op 8) (cg-emit st "ae al")
-                (if (= op 9) (cg-emit st "e al")
-                  (cg-emit st "ne al"))))))
-        (cg-nl st)
-        (cg-emit st "    movzx rax, al")
-        (cg-nl st)))))
+  (let st2 (cg-expr st env l)
+    (let st3 (cg-emit-line st2 "    push rax")
+      (let st4 (cg-expr st3 env r)
+        (let st5 (cg-emit-line st4 "    movq xmm1, rax")
+          (let st6 (cg-emit-line st5 "    pop rax")
+            (let st7 (cg-emit-line st6 "    movq xmm0, rax")
+              (if (< op 5)
+                (cg-farith st7 op)
+                (cg-fcmp st7 op)))))))))
+
+(defn cg-farith (st op)
+  (let st2 (cg-emit st "    ")
+    (let st3 (if (= op 0) (cg-emit st2 "addsd")
+             (if (= op 1) (cg-emit st2 "subsd")
+               (if (= op 2) (cg-emit st2 "mulsd")
+                 (cg-emit st2 "divsd"))))
+      (let st4 (cg-emit-line st3 " xmm0, xmm1")
+        (cg-emit-line st4 "    movq rax, xmm0")))))
+
+(defn cg-fcmp (st op)
+  (let st2 (cg-emit-line st "    comisd xmm0, xmm1")
+    (let st3 (cg-emit st2 "    set")
+      (let st4 (if (= op 5) (cg-emit st3 "b al")
+               ; unsigned-comparison flags carry the usual sense here
+               (if (= op 6) (cg-emit st3 "a al")
+                 (if (= op 7) (cg-emit st3 "be al")
+                   (if (= op 8) (cg-emit st3 "ae al")
+                     (if (= op 9) (cg-emit st3 "e al")
+                       (cg-emit st3 "ne al")))))))
+        (let st5 (cg-nl st4)
+          (cg-emit-line st5 "    movzx rax, al")))))
 
 ; Register-name dispatch by arg index (SysV).
 (defn cg-reg-of (i)
@@ -279,77 +345,51 @@
 ; for user functions.
 (defn cg-call-args (st env name args mangle i)
   (if (is-nil args)
-    (cg-call-fire st env name mangle i)
-    (begin
-      (cg-expr st env (ih args))
-      (cg-emit st "    push rax")
-      (cg-nl st)
-      (cg-call-args st env name (tl2 args) mangle (+ i 1)))))
+    (cg-call-fire st name mangle i)
+    (let st2 (cg-expr st env (ih-ic args))
+      (let st3 (cg-emit-line st2 "    push rax")
+        (cg-call-args st3 env name (tl2 args) mangle (+ i 1))))))
 
-(defn cg-call-fire (st env name mangle i)
-  (let pad (if (= (% i 2) 1)
-             1
-             0)
-    (begin
-      (cg-pop-regs st (- i 1))
+(defn cg-call-fire (st name mangle i)
+  (let pad (if (= (% i 2) 1) 1 0)
+    (let st2 (cg-pop-regs st (- i 1))
       ; alignment pad goes AFTER the pops so it cannot shift a pushed arg
       ; out of place for the register pops.
-      (if (= pad 1)
-        (begin
-          (cg-emit st "    sub rsp, 8")
-          (cg-nl st))
-        0)
-      (cg-emit st "    call ")
-      (if mangle (cg-emit st "f_") 0)
-      (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
-      (cg-nl st)
-      (if (= pad 1)
-        (begin
-          (cg-emit st "    add rsp, 8")
-          (cg-nl st))
-        0))))
+      (let st3 (if (= pad 1) (cg-emit-line st2 "    sub rsp, 8") st2)
+        (let st4 (cg-emit st3 "    call ")
+          (let st5 (if mangle (cg-emit st4 "f_") st4)
+            (let st6 (cg-emit st5 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
+              (let st7 (cg-nl st6)
+                (if (= pad 1)
+                  (cg-emit-line st7 "    add rsp, 8")
+                  st7)))))))))
 
 ; Pop j+1 pushed args into their registers (reverse order).
 (defn cg-pop-regs (st j)
   (if (< j 0)
-    0
-    (begin
-      (cg-emit st "    pop ")
-      (cg-emit st (cg-reg-of j))
-      (cg-nl st)
-      (cg-pop-regs st (- j 1)))))
+    st
+    (let st2 (cg-emit st "    pop ")
+      (let st3 (cg-emit st2 (cg-reg-of j))
+        (cg-pop-regs (cg-nl st3) (- j 1))))))
 
 ; print: pick the format by the argument's kind.
 (defn cg-print (st env a)
   (let k (kind-of env a)
-    (begin
-      (cg-expr st env a)
+    (let st2 (cg-expr st env a)
       (if (= k 2)
-        (begin
-          ; float: value already in xmm-compatible bits
-          (cg-emit st "    movq xmm0, rax")
-          (cg-nl st)
-          (cg-emit st "    lea rdi, [rip+.Lfmtf]")
-          (cg-nl st)
-          (cg-emit st "    mov eax, 1")
-          (cg-nl st))
+        (let st3 (cg-emit-line st2 "    movq xmm0, rax")
+          (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtf]")
+            (let st5 (cg-emit-line st4 "    mov eax, 1")
+              (cg-emit-line st5 "    call printf"))))
         (if (= k 1)
-          (begin
-            (cg-emit st "    mov rsi, rax")
-            (cg-nl st)
-            (cg-emit st "    lea rdi, [rip+.Lfmts]")
-            (cg-nl st)
-            (cg-emit st "    xor eax, eax")
-            (cg-nl st))
-          (begin
-            (cg-emit st "    mov rsi, rax")
-            (cg-nl st)
-            (cg-emit st "    lea rdi, [rip+.Lfmtd]")
-            (cg-nl st)
-            (cg-emit st "    xor eax, eax")
-            (cg-nl st))))
-      (cg-emit st "    call printf")
-      (cg-nl st))))
+          (let st3 (cg-emit-line st2 "    mov rsi, rax")
+            (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmts]")
+              (let st5 (cg-emit-line st4 "    xor eax, eax")
+                (cg-emit-line st5 "    call printf"))))
+          (let st3 (cg-emit-line st2 "    mov rsi, rax")
+            (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtd]")
+              (let st5 (cg-emit-line st4 "    xor eax, eax")
+                (cg-emit-line st5 "    call printf")))))))))
 
 ; Variant construction: malloc'd block [tag][f0]..[fn-1].
 ; Fields are evaluated and pushed, then popped into the block (right to
@@ -357,196 +397,220 @@
 ; across malloc.
 (defn cg-variant (st env tag fields)
   (let n (list-length fields)
-    (begin
-      (cg-push-fields st env fields)
-      (if (= (% n 2) 1)
-        (begin
-          (cg-emit st "    sub rsp, 8")
-          (cg-nl st))
-        0)
-      (cg-emit st "    mov rdi, ")
-      (cg-emit-int st (* 8 (+ n 1)))
-      (cg-nl st)
-      (cg-emit st "    call malloc")
-      (cg-nl st)
-      (cg-emit st "    mov rbx, rax")
-      (cg-nl st)
-      (cg-emit st "    mov qword ptr [rbx], ")
-      (cg-emit-int st tag)
-      (cg-nl st)
-      (if (= (% n 2) 1)
-        (begin
-          (cg-emit st "    add rsp, 8")
-          (cg-nl st))
-        0)
-      (cg-pop-fields st (- n 1))
-      (cg-emit st "    mov rax, rbx")
-      (cg-nl st))))
+    (let st2 (cg-push-fields st env fields)
+      (let st3 (if (= (% n 2) 1) (cg-emit-line st2 "    sub rsp, 8") st2)
+        (let st4 (cg-nl (cg-emit-int (cg-emit st3 "    mov rdi, ") (* 8 (+ n 1))))
+          (let st5 (cg-emit-line st4 "    call malloc")
+            (let st6 (cg-emit-line st5 "    mov rbx, rax")
+              (let st7 (cg-emit-int (cg-emit st6 "    mov qword ptr [rbx], ") tag)
+                (let st8 (cg-nl st7)
+                  (let st9 (if (= (% n 2) 1) (cg-emit-line st8 "    add rsp, 8") st8)
+                    (let st10 (cg-pop-fields st9 (- n 1))
+                      (cg-emit-line st10 "    mov rax, rbx"))))))))))))
 
 ; Evaluate each field left-to-right, pushing its value.
 (defn cg-push-fields (st env fields)
   (if (is-nil fields)
-    0
-    (begin
-      (cg-expr st env (ih fields))
-      (cg-emit st "    push rax")
-      (cg-nl st)
-      (cg-push-fields st env (tl2 fields)))))
+    st
+    (let st2 (cg-expr st env (ih-ic fields))
+      (cg-push-fields (cg-emit-line st2 "    push rax") env (tl2 fields)))))
 
 ; Pop n fields into the block rbx points at (reverse order restores the
 ; original left-to-right layout).
 (defn cg-pop-fields (st j)
   (if (< j 0)
-    0
-    (begin
-      (cg-emit st "    pop rax")
-      (cg-nl st)
-      (cg-emit st "    mov [rbx+")
-      (cg-emit-int st (* 8 (+ j 1)))
-      (cg-emit st "], rax")
-      (cg-nl st)
-      (cg-pop-fields st (- j 1)))))
+    st
+    (let st2 (cg-emit-line st "    pop rax")
+      (let st3 (cg-emit st2 "    mov [rbx+")
+        (let st4 (cg-emit-int st3 (* 8 (+ j 1)))
+          (let st5 (cg-nl (cg-emit st4 "], rax"))
+            (cg-pop-fields st5 (- j 1))))))))
 
 ; Match: evaluate scrutinee, keep it on the stack for the whole dispatch,
 ; replace it with the arm-body result, pop at the end.
 ; Stack invariant: exactly one pushed word ([rsp] = scrutinee or result).
 (defn cg-match (st env scr arms)
-  (let lend (cg-label-new st)
-    (let lzero (cg-label-new st)
-      (begin
-        (cg-expr st env scr)
-        (cg-emit st "    push rax")
-        (cg-nl st)
-        (cg-arms st env arms lend lzero)
-        ; fall-through: no arm matched -> 0
-        (cg-emit-label st lzero)
-        (cg-emit st "    mov qword ptr [rsp], 0")
-        (cg-nl st)
-        (cg-emit-label st lend)
-        (cg-emit st "    pop rax")
-        (cg-nl st)))))
+  (cg-match-labels (cg-label-pair st) env scr arms))
+
+(defn cg-match-labels (p env scr arms)
+  (match p
+    (CGP st lend lzero
+      (cg-match-scrutinee st env scr arms lend lzero))))
+
+(defn cg-match-scrutinee (st env scr arms lend lzero)
+  (let st3 (cg-expr st env scr)
+    (let st4 (cg-emit-line st3 "    push rax")
+      (cg-match-arms st4 env arms lend lzero))))
+
+(defn cg-match-arms (st env arms lend lzero)
+  (let st5 (cg-arms st env arms lend lzero)
+    ; fall-through: no arm matched -> 0
+    (let st6 (cg-emit-label st5 lzero)
+      (let st7 (cg-emit-line st6 "    mov qword ptr [rsp], 0")
+        (let st8 (cg-emit-label st7 lend)
+          (cg-emit-line st8 "    pop rax"))))))
 
 ; Emit arms[i..]. Each arm checks [rsp]'s tag; a failed check jumps to
 ; the next arm's label (or the zero fall-through after the last arm); a
 ; successful match binds pattern vars and evaluates the body.
 (defn cg-arms (st env arms lend lzero)
   (if (is-nil arms)
-    0
-    (let arm (list-car arms)
-      (match arm
-        (IArm vname tag binds body
-         (let rest (list-cdr arms)
-           (let lnext (if (is-nil rest) lzero (cg-label-new st))
-             (begin
-               ; tag check: [rsp] holds the scrutinee pointer
-               (cg-emit st "    mov rax, [rsp]")
-               (cg-nl st)
-               (cg-emit st "    mov rax, [rax]")
-               (cg-nl st)
-               (cg-emit st "    cmp rax, ")
-               (cg-emit-int st tag)
-               (cg-nl st)
-               (cg-emit st "    jne ")
-               (cg-emit st lnext)
-               (cg-nl st)
-               ; bind pattern vars to fields, then emit the body
-               (let arm-env (cg-bind-fields st env binds 0)
-                 (begin
-                   (cg-expr st arm-env body)
-                   (cg-emit st "    mov [rsp], rax")
-                   (cg-nl st)
-                   (cg-emit st "    jmp ")
-                   (cg-emit st lend)
-                   (cg-nl st)))
-               (if (is-nil rest)
-                 0
-                 (begin
-                   (cg-emit-label st lnext)
-                   (cg-arms st env rest lend lzero)))))))))))
+    st
+    (cg-arm-one st env (hd-ia arms) (tl2 arms) lend lzero)))
+
+(defn cg-arm-one (st env arm rest lend lzero)
+  (match arm
+    (IArm vname tag binds body
+      (cg-arm-tail st env tag binds body rest lend lzero))))
+
+(defn cg-arm-next (st env rest lend lzero lnext st-after)
+  (if (is-nil rest)
+    st-after
+    (cg-arms (cg-emit-label st-after lnext) env rest lend lzero)))
+
+(defn cg-arm-tail (st env tag binds body rest lend lzero)
+  (let picked (cg-pick-label st rest lzero)
+    (let lnext (cgr-str picked)
+      (let st2 (cgr-st picked)
+        (let st3 (cg-tag-check st2 tag)
+          (let st4 (cg-emit st3 "    jne ")
+            (let st5 (cg-nl (cg-emit st4 lnext))
+              (cg-arm-body st5 env binds body rest lend lzero lnext))))))))
+
+(defn cg-pick-label (st rest lzero)
+  (if (is-nil rest)
+    (CGR st 0 lzero)
+    (cg-label-new st)))
+
+(defn cg-arm-body (st env binds body rest lend lzero lnext)
+  (match (cg-bind-fields st env binds 0)
+    (CGE st6 arm-env
+      (cg-arm-finish st6 arm-env body rest lend lzero lnext))))
+
+(defn cg-arm-finish (st env body rest lend lzero lnext)
+  (let st7 (cg-expr st env body)
+    (let st8 (cg-emit-line st7 "    mov [rsp], rax")
+      (let st9 (cg-emit st8 "    jmp ")
+        (let st10 (cg-nl (cg-emit st9 lend))
+          (cg-arm-next st env rest lend lzero lnext st10))))))
+
+(defn cgr-st (r)
+  (match r
+    (CGR s d49 d50 s)))
+
+(defn cgr-str (r)
+  (match r
+    (CGR d51 d52 s s)))
+
+; Arm prologue: load scrutinee pointer from [rsp] and its tag.
+(defn cg-tag-check (st tag)
+  (let st2 (cg-emit-line st "    mov rax, [rsp]")
+    (let st3 (cg-emit-line st2 "    mov rax, [rax]")
+      (let st4 (cg-emit st3 "    cmp rax, ")
+        (cg-nl (cg-emit-int st4 tag))))))
 
 ; Bind pattern variables: field j of [rsp]'s block goes into a fresh slot.
-; Returns: Env (the extended environment).
+; "_" wildcards are skipped by codegen. Returns: CGE (state + extended env).
 (defn cg-bind-fields (st env binds j)
   (if (is-nil binds)
-    env
-    (let b (list-car binds)
-      (begin
-        (cg-emit st "    mov rax, [rsp]")
-        (cg-nl st)
-        (cg-emit st "    mov rax, [rax+")
-        (cg-emit-int st (* 8 (+ j 1)))
-        (cg-emit st "]")
-        (cg-nl st)
-        (if (str-eq b (str-intern (alloc-read-int st) "_"))
-          (cg-bind-fields st env (tl2 binds) (+ j 1))
-          (let off (cg-new-slot st)
-            (begin
-              (cg-emit st "    mov [rbp")
-              (cg-emit-int st off)
-              (cg-emit st "], rax")
-              (cg-nl st)
-              (cg-bind-fields st (EnvBind b off 0 env) (list-cdr binds) (+ j 1)))))))))
+    (CGE st env)
+    (cg-bind-one st env binds j)))
+
+(defn cg-bind-one (st env binds j)
+  (let st2 (cg-load-field st j)
+    (let b (shd binds)
+      (if (> (str-eq b (str-intern (cg-arena-of st) "_")) 0)
+        (cg-bind-fields st2 env (tl2 binds) (+ j 1))
+        (cg-bind-slot st2 env binds j b)))))
+
+(defn cg-bind-slot (st env binds j b)
+  (match (cg-new-slot st)
+    (CGR st3 off d53
+      (cg-bind-store st3 env binds j b off))))
+
+(defn cg-bind-store (st env binds j b off)
+  (let st4 (cg-store-rax-slot st off)
+    (cg-bind-fields st4 (EnvBind b off 0 env) (tl2 binds) (+ j 1))))
+
+; Load field j of the block at [rsp]: rax = [[rsp] + 8*(j+1)].
+(defn cg-load-field (st j)
+  (let st2 (cg-emit-line st "    mov rax, [rsp]")
+    (let st3 (cg-emit st2 "    mov rax, [rax+")
+      (let st4 (cg-emit-int st3 (* 8 (+ j 1)))
+        (cg-nl (cg-emit st4 "]"))))))
+
+(defn cg-store-rax-slot (st off)
+  (let st2 (cg-emit st "    mov [rbp")
+    (let st3 (cg-emit-int st2 off)
+      (cg-nl (cg-emit st3 "], rax")))))
 
 (defn cg-emit-label (st lbl)
-  (begin
-    (cg-emit st lbl)
-    (cg-emit st ":")
-    (cg-nl st)))
+  (cg-nl (cg-emit (cg-emit st lbl) ":")))
 
 ; ===========================================================================
 ; FUNCTION / PROGRAM EMISSION
 ; ===========================================================================
 
-
-; ─── Frame sizing ──────────────────────────────────────────────────────
+; ─── Frame sizing ────────────────────────────────────────────────────────
 ; Upper bound on stack slots a function needs: total Icnf nodes in its
 ; body (every node may own one 8-byte slot). Keeps frames small so deep
 ; recursion in the compiler stays within the machine stack.
+
+(defn icnf-size (e)
+  (match e
+    (IConst d54 1)
+    (IStr d55 1)
+    (IFlt d56 1)
+    (ILoad d57 1)
+    (IBinop d58 l r (+ 3 (icnf-size l) (icnf-size r)))
+    (ICall d59 args (+ 2 (icnf-count-list args)))
+    (IFfi d60 args (+ 2 (icnf-count-list args)))
+    (IPrint a (+ 1 (icnf-size a)))
+    (IIf c t eb (+ 4 (icnf-size c) (icnf-size t) (icnf-size eb)))
+    (IWhile c b (+ 3 (icnf-size c) (icnf-size b)))
+    (ISet d61 v (+ 2 (icnf-size v)))
+    (ILet d62 v b (+ 3 (icnf-size v) (icnf-size b)))
+    (ISeq es (+ 1 (icnf-count-list es)))
+    (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
+    (IMatch scr arms (+ 2 (icnf-size scr) (icnf-count-arms arms)))))
+
 (defn icnf-count-list (xs)
-  (if (is-nil xs)
-    0
-    (+ (icnf-size (hd xs)) (icnf-count-list (tl2 xs)))))
+  (match xs
+    (None 0)
+    (Cons h t (+ (icnf-size h) (icnf-count-list t)))))
 
 (defn icnf-count-arms (xs)
   (if (is-nil xs)
     0
-    (+ 1 (icnf-size (alloc-read-int (+ (hd xs) 32))) (icnf-count-arms (tl2 xs)))))
+    (icnf-arm-size (hd-ia xs) (tl2 xs))))
 
-(defn icnf-size (e)
-  (if (is-nil e)
-    1
-    (let t (alloc-read-int e)
-      (if (= t 4) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 5) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 6) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 7) (+ 2 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 8) (+ 4 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 9) (+ 3 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16)))) (if (= t 10) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 11) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 12) (+ 1 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 13) (+ 2 (icnf-size (alloc-read-int (+ e 24)))) 1)))))))))))))
+(defn icnf-arm-size (arm rest)
+  (match arm
+    (IArm d65 d66 d67 body (+ 1 (icnf-size body) (icnf-count-arms rest)))))
 
 (defn cg-function (st f)
   (match f
     (IFn name params body
      (let env (cg-param-env params 0 None)
-      (let fsz (* 16 (+ 64 (icnf-size body)))
-       (begin
+       (let fsz (* 16 (+ 64 (icnf-size body)))
+         (let st1 (cg-emit st "f_")
+           (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
+             (let st3 (cg-emit-line st2 ":")
+               (let st4 (cg-emit-line st3 "    push rbp")
+                 (let st5 (cg-emit-line st4 "    mov rbp, rsp")
+                   (let st6 (cg-emit st5 "    sub rsp, ")
+                     (let st7 (cg-nl (cg-emit-int st6 fsz))
+                       (let st8 (cg-param-spills st7 0 (list-length params))
+                         ; per-function slot counter reset after params
+                         (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
+                           (let st10 (cg-expr st9 env body)
+                             (let st11 (cg-emit-line st10 "    mov rsp, rbp")
+                               (let st12 (cg-emit-line st11 "    pop rbp")
+                                 (cg-emit-line st12 "    ret")))))))))))))))))
 
-         (cg-emit st "f_")
-         (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
-         (cg-emit st ":")
-         (cg-nl st)
-         (cg-emit st "    push rbp")
-         (cg-nl st)
-         (cg-emit st "    mov rbp, rsp")
-         (cg-nl st)
-         (cg-emit st "    sub rsp, ")
-         (cg-emit-int st fsz)
-         (cg-nl st)
-         (cg-param-spills st 0 (list-length params))
-         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params))))
-         (cg-expr st env body)
-         (cg-emit st "    mov rsp, rbp")
-         (cg-nl st)
-         (cg-emit st "    pop rbp")
-         (cg-nl st)
-         (cg-emit st "    ret")
-         (cg-nl st)
-))))))
-
+(defn cg-reset-slots (st next-off)
+  (match st
+    (CGS a b n d69 rd (CGS a b n next-off rd))))
 
 ; Immutable param environment: param i -> offset -(8*(i+1)).
 (defn cg-param-env (params i acc)
@@ -558,107 +622,118 @@
 ; Spill incoming SysV registers to param slots.
 (defn cg-param-spills (st i n)
   (if (>= i n)
-    0
-    (begin
-      (cg-emit st "    mov [rbp")
-      (cg-emit-int st (- (* 8 (+ i 1))))
-      (cg-emit st "], ")
-      (cg-emit st (cg-reg-of i))
-      (cg-nl st)
-      (cg-param-spills st (+ i 1) n))))
+    st
+    (let st2 (cg-emit st "    mov [rbp")
+      (let st3 (cg-emit-int st2 (- (* 8 (+ i 1))))
+        (let st4 (cg-emit st3 "], ")
+          (let st5 (cg-emit st4 (cg-reg-of i))
+            (cg-param-spills (cg-nl st5) (+ i 1) n)))))))
 
-; Emit the whole program: header, functions, entry stub, rodata.
-; Functions are emitted in lowering order (source order); the entry stub
-; calls f_main, which the lowering guarantees exists.
+; Emit the whole program: header, functions, entry stub, format strings,
+; rodata. Functions are emitted in lowering order (source order); the
+; entry stub calls f_main, which the lowering guarantees exists.
+; Returns: final CGState (retrieve the buffer with cg-buffer).
 (defn cg-program (st fns)
-  (begin
-    (cg-emit st ".intel_syntax noprefix")
-    (cg-nl st)
-    (cg-emit st ".text")
-    (cg-nl st)
-    (cg-emit st ".globl main")
-    (cg-nl st)
-    (cg-functions st fns)
-    (cg-emit st "main:")
-    (cg-nl st)
-    (cg-emit st "    push rbp")
-    (cg-nl st)
-    (cg-emit st "    mov rbp, rsp")
-    (cg-nl st)
-    (cg-emit st "    call f_main")
-    (cg-nl st)
-    (cg-emit st "    xor eax, eax")
-    (cg-nl st)
-    (cg-emit st "    pop rbp")
-    (cg-nl st)
-    (cg-emit st "    ret")
-    (cg-nl st)
-    (cg-emit st ".section .rodata")
-    (cg-nl st)
-    (cg-emit st ".Lfmtd:")
-    (cg-nl st)
-    (cg-emit st "    .string \"%d\\n\"")
-    (cg-nl st)
-    (cg-emit st ".Lfmtf:")
-    (cg-nl st)
-    (cg-emit st "    .string \"%f\\n\"")
-    (cg-nl st)
-    (cg-emit st ".Lfmts:")
-    (cg-nl st)
-    (cg-emit st "    .string \"%s\\n\"")
-    (cg-nl st)
-    (cg-rodata-emit st (cg-rodata-get st))))
+  (let st1 (cg-header st)
+    (let st2 (cg-functions st1 fns)
+      (let st3 (cg-entry-stub st2)
+        (let st4 (cg-format-strings st3)
+          (cg-rodata-emit-list st4 (cg-reverse-rodata (cg-rodata-of st4))))))))
 
+; Reverse the collected rodata list so entries emit in creation order.
+(defn cg-reverse-rodata (xs)
+  (cg-rev-acc xs None))
 
-; Typed list heads (total via fallback values).
-(defn ih (xs)
+(defn cg-rev-acc (xs acc)
   (match xs
-    (Cons a rest a)
+    (None acc)
+    (Cons h t (cg-rev-acc t (Cons h acc)))))
+
+(defn cg-header (st)
+  (let st1 (cg-emit-line st ".intel_syntax noprefix")
+    (let st2 (cg-emit-line st1 ".text")
+      (cg-emit-line st2 ".globl main"))))
+
+(defn cg-entry-stub (st)
+  (let st1 (cg-emit-line st "main:")
+    (let st2 (cg-emit-line st1 "    push rbp")
+      (let st3 (cg-emit-line st2 "    mov rbp, rsp")
+        (let st4 (cg-emit-line st3 "    call f_main")
+          (let st5 (cg-emit-line st4 "    xor eax, eax")
+            (let st6 (cg-emit-line st5 "    pop rbp")
+              (cg-emit-line st6 "    ret")))))))))
+
+(defn cg-format-strings (st)
+  (let st1 (cg-emit-line st ".section .rodata")
+    (let st2 (cg-emit-line st1 ".Lfmtd:")
+      (let st3 (cg-emit-line st2 "    .string \"%d\\n\"")
+        (let st4 (cg-emit-line st3 ".Lfmtf:")
+          (let st5 (cg-emit-line st4 "    .string \"%f\\n\"")
+            (let st6 (cg-emit-line st5 ".Lfmts:")
+              (cg-emit-line st6 "    .string \"%s\\n\""))))))))
+
+(defn cg-functions (st fns)
+  (if (is-nil fns)
+    st
+    (let st2 (cg-function st (fh-if fns))
+      (cg-functions st2 (tl2 fns)))))
+
+; Emit one rodata entry.
+(defn cg-rodata-entry (st e)
+  (match e
+    (REntry lbl text kind
+      (if (= kind 0)
+        (cg-str-entry st lbl text)
+        (cg-flt-entry st lbl text)))))
+
+(defn cg-str-entry (st lbl content)
+  (let st2 (cg-label-def st lbl)
+    (let st4 (cg-emit st2 "    .string \"")
+      (let st5 (cg-emit st4 content)
+        (cg-nl (cg-emit st5 "\""))))))
+
+; Emit "<label>:" on one line.
+(defn cg-label-def (st lbl)
+  (cg-nl (cg-emit (cg-emit st lbl) ":")))
+
+(defn cg-flt-entry (st lbl text)
+  (let st2 (cg-label-def st lbl)
+    (let st4 (cg-emit st2 "    .double ")
+      (cg-nl (cg-emit st4 text)))))
+
+(defn cg-rodata-emit-list (st xs)
+  (match xs
+    (None st)
+    (Cons e rest
+      (let st2 (cg-rodata-entry st e)
+        (cg-rodata-emit-list st2 rest)))))
+; ===========================================================================
+; TYPED LIST HEADS/TAILS (total via fallback values)
+; ===========================================================================
+
+(defn ih-ic (xs)
+  (match xs
+    (Cons a d70 a)
     (None (IConst 0))))
 
-(defn fh (xs)
+(defn fh-if (xs)
   (match xs
-    (Cons f rest f)
+    (Cons f d71 f)
     (None (IFn "" None (IConst 0)))))
 
 (defn shd (xs)
   (match xs
-    (Cons s rest s)
+    (Cons s d72 s)
     (None "")))
 
-(defn cg-functions (st fns)
-  (if (is-nil fns)
-    0
-    (begin
-      (cg-function st (fh fns))
-      (cg-functions st (tl2 fns)))))
+(defn hd-ia (xs)
+  (match xs
+    (Cons a d73 a)
+    (None (IArm "" -1 None (IConst 0)))))
 
-(defn cg-rodata-emit (st rd)
-  (match rd
-    (RNil 0)
-    (RStr lbl content rest
-     (begin
-       (cg-emit st lbl)
-       (cg-emit st ":")
-       (cg-nl st)
-       (cg-emit st "    .string \"")
-       (cg-emit st content)
-       (cg-emit st "\"")
-       (cg-nl st)
-       (cg-rodata-emit st rest)))
-    (RFlt lbl text rest
-     (begin
-       (cg-emit st lbl)
-       (cg-emit st ":")
-       (cg-nl st)
-       (cg-emit st "    .double ")
-       (cg-emit st text)
-       (cg-nl st)
-       (cg-rodata-emit st rest)))))
-
-; Return the emitter's text buffer pointer.
-(defn cg-buffer (st)
-  (alloc-read-int (+ st 8)))
+(defn cg-arena-of (st)
+  (match st
+    (CGS a d74 d75 d76 d77 a)))
 
 (defn tl2 (xs)
   (match xs

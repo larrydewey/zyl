@@ -2,18 +2,18 @@
 ; Module: compiler/parser
 ;
 ; A pure recursive-descent reader over a (List Token) stream, producing
-; nested Ast values (see compiler/ast). This is deliberately *dispatch-
-; free* (spec architecture decision): every parenthesised form becomes an
+; nested Ast values (see compiler/ast). Deliberately *dispatch-free*
+; (spec architecture decision): every parenthesised form becomes an
 ; (AList ...); special forms (defn, let, if, ...) are recognised by the
-; consumer phases, never by the parser. The Rust compiler's PostProcessor
-; responsibilities therefore live in the icnf lowering phase.
+; consumer phases, never by the parser.
 ;
 ; read-* functions return an AstTok: the parsed form plus the remaining
 ; token stream (functional threading, no mutable state).
 ;
-; NOTE: Zyl patterns are flat (VariantName pat* body) and exhaustive, so
-;       each ADT gets one total discriminator + payload extractors; the
-;       reader itself branches on integer kind codes.
+; Every decision is a structural `match` on Token/Ast variants with ALL
+; constructors enumerated (Zyl matches are exhaustive and have no
+; wildcard catch-all). There are no numeric kind codes and no projection
+; accessors.
 
 (use allocator/allocator)
 (use compiler/ast)
@@ -21,82 +21,29 @@
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
 
-(defn art-ast (r)  (match r (AstOf a rest a)))
-(defn art-rest (r) (match r (AstOf a rest rest)))
+(defn art-ast (r)
+  (match r
+    (AstOf a d1 a)))
+
+(defn art-rest (r)
+  (match r
+    (AstOf d2 rest rest)))
 
 ; ===========================================================================
-; TOKEN DISCRIMINATION (total, exhaustive)
+; STREAM HELPERS
 ; ===========================================================================
-; Codes: 0 eof 1 ident 2 int 3 float 4 string 5 bool 6 symbol 7 keyword
-;        8 lparen 9 rparen 10 lbrace 11 rbrace 12 lbracket 13 rbracket 14 colon
 
-(defn tok-code (t)
+; True only for the stream terminator token.
+(defn tok-is-eof (t)
   (match t
-    (TkEof 0)
-    (TkIdent  w1 1)
-    (TkInt  w2 2)
-    (TkFloat  w3 3)
-    (TkString  w4 4)
-    (TkBool  w5 5)
-    (TkSymbol  w6 6)
-    (TkKeyword  w7 7)
-    (TkLParen 8)
-    (TkRParen 9)
-    (TkLBrace 10)
-    (TkRBrace 11)
-    (TkLBracket 12)
-    (TkRBracket 13)
-    (TkColon 14)))
-
-; Text payload of a token ("" when none).
-(defn tok-text (t)
-  (match t
-    (TkEof "")
-    (TkIdent s s)
-    (TkInt  w8 "")
-    (TkFloat s s)
-    (TkString s s)
-    (TkBool  w9 "")
-    (TkSymbol s s)
-    (TkKeyword s s)
-    (TkLParen "")
-    (TkRParen "")
-    (TkLBrace "")
-    (TkRBrace "")
-    (TkLBracket "")
-    (TkRBracket "")
-    (TkColon "")))
-
-; Integer payload of a token (0 when none).
-(defn tok-int (t)
-  (match t
-    (TkInt v v)
-    (TkEof 0)
-    (TkIdent  w10 0)
-    (TkFloat  w11 0)
-    (TkString  w12 0)
-    (TkBool  w13 0)
-    (TkSymbol  w14 0)
-    (TkKeyword  w15 0)
-    (TkLParen 0)
-    (TkRParen 0)
-    (TkLBrace 0)
-    (TkRBrace 0)
-    (TkLBracket 0)
-    (TkRBracket 0)
-    (TkColon 0)))
-
-; Bool payload of a token (false when none).
-(defn tok-bool (t)
-  (match t
-    (TkBool b b)
-    (TkEof false)
-    (TkIdent  w16 false)
-    (TkFloat  w17 false)
-    (TkString  w18 false)
-    (TkSymbol  w19 false)
-    (TkKeyword  w20 false)
-    (TkInt  w21 false)
+    (TkEof true)
+    (TkIdent d3 false)
+    (TkInt d4 false)
+    (TkFloat d5 false)
+    (TkString d6 false)
+    (TkBool d7 false)
+    (TkSymbol d8 false)
+    (TkKeyword d9 false)
     (TkLParen false)
     (TkRParen false)
     (TkLBrace false)
@@ -105,73 +52,12 @@
     (TkRBracket false)
     (TkColon false)))
 
-; ===========================================================================
-; AST DISCRIMINATION
-; ===========================================================================
-; Codes: 0 ident 1 int 2 float 3 string 4 bool 5 list
-
-(defn ast-code (a)
-  (match a
-    (AIdent  w22 0)
-    (AInt  w23 1)
-    (AFloat  w24 2)
-    (AString  w25 3)
-    (ABool  w26 4)
-    (AList  w27 5)))
-
-(defn ast-name (a)
-  (match a
-    (AIdent s s)
-    (AInt  w28 "")
-    (AFloat  w29 "")
-    (AString  w30 "")
-    (ABool  w31 "")
-    (AList  w32 "")))
-
-(defn ast-int (a)
-  (match a
-    (AInt v v)
-    (AIdent  w33 0)
-    (AFloat  w34 0)
-    (AString  w35 0)
-    (ABool  w36 0)
-    (AList  w37 0)))
-
-(defn ast-text (a)
-  (match a
-    (AFloat s s)
-    (AString s s)
-    (AIdent  w38 "")
-    (AInt  w39 "")
-    (ABool  w40 "")
-    (AList  w41 "")))
-
-(defn ast-bool (a)
-  (match a
-    (ABool b b)
-    (AIdent  w42 false)
-    (AInt  w43 false)
-    (AFloat  w44 false)
-    (AString  w45 false)
-    (AList  w46 false)))
-
-(defn ast-kids (a)
-  (match a
-    (AList k k)
-    (AIdent  w47 None)
-    (AInt  w48 None)
-    (AFloat  w49 None)
-    (AString  w50 None)
-    (ABool  w51 None)))
-
-; ===========================================================================
-; STREAM HELPERS
-; ===========================================================================
-
+; True when the stream is exhausted (empty or at TkEof).
+; Returns: Bool
 (defn toks-empty (toks)
-  (if (is-nil toks)
-    true
-    (if (= (tok-code (toks-head toks)) 0) true false)))
+  (match toks
+    (Cons t d10 (tok-is-eof t))
+    (None true)))
 
 ; ===========================================================================
 ; READER
@@ -180,66 +66,135 @@
 ; Read one form at the head of `toks`.
 ; Returns: AstTok
 (defn read-form (arena toks)
-  (let t (toks-head toks))
-  (let rest (toks-tail toks))
-  (let k (tok-code t))
-  (if (= k 8)
-    (read-forms arena rest None)                 ; '(' -> list form
-    (if (= k 12)
-      (read-forms-bracket arena rest None)       ; '['
-      (if (= k 10)
-        (read-forms-brace arena rest None)       ; '{'
-        (read-form-atom arena t rest k)))))
+  (let t (toks-head toks)
+    (let rest (toks-tail toks)
+      (read-dispatch arena t rest))))
 
-; Atoms (and closers): kinds 0-7,9,11,13,14.
-(defn read-form-atom (arena t rest k)
-  (if (= k 2)
-    (AstOf (AInt (tok-int t)) rest)
-    (if (= k 5)
-      (AstOf (ABool (tok-bool t)) rest)
-      (if (= k 3)
-        (AstOf (AFloat (tok-text t)) rest)
-        (read-form-ident arena t rest k)))))
+(defn read-dispatch (arena t rest)
+  (match t
+        (TkLParen (read-forms arena rest None))
+        (TkLBracket (read-forms-bracket arena rest None))
+        (TkLBrace (read-forms-brace arena rest None))
+        (TkRParen (read-form-atom arena t rest))
+        (TkRBrace (read-form-atom arena t rest))
+        (TkRBracket (read-form-atom arena t rest))
+        (TkColon (read-form-atom arena t rest))
+        (TkEof (read-form-atom arena t rest))
+        (TkInt d11 (read-form-atom arena t rest))
+        (TkFloat d12 (read-form-atom arena t rest))
+        (TkString d13 (read-form-atom arena t rest))
+        (TkBool d14 (read-form-atom arena t rest))
+        (TkIdent d15 (read-form-atom arena t rest))
+        (TkSymbol d16 (read-form-atom arena t rest))
+        (TkKeyword d17 (read-form-atom arena t rest))))
 
-(defn read-form-ident (arena t rest k)
-  (if (= k 4)
-    (AstOf (AString (tok-text t)) rest)
-    (if (= k 1)
-      (AstOf (AIdent (tok-text t)) rest)
-      (read-form-sym arena t rest k))))
+; Atoms and terminators: everything except openers.
+; Returns: AstTok
+(defn read-form-atom (arena t rest)
+  (match t
+    (TkInt v (AstOf (AInt v) rest))
+    (TkBool b (AstOf (ABool b) rest))
+    (TkFloat s (AstOf (AFloat s) rest))
+    (TkString s (AstOf (AString s) rest))
+    (TkIdent s (AstOf (AIdent s) rest))
+    (TkSymbol s (AstOf (AIdent s) rest))
+    (TkKeyword s (AstOf (AIdent s) rest))
+    ; closers / colon / eof in atom position: empty form
+    (TkEof (AstOf (AList None) rest))
+    (TkLParen (AstOf (AList None) rest))
+    (TkRParen (AstOf (AList None) rest))
+    (TkLBrace (AstOf (AList None) rest))
+    (TkRBrace (AstOf (AList None) rest))
+    (TkLBracket (AstOf (AList None) rest))
+    (TkRBracket (AstOf (AList None) rest))
+    (TkColon (AstOf (AList None) rest))))
 
-(defn read-form-sym (arena t rest k)
-  (if (= k 6)
-    (AstOf (AIdent (tok-text t)) rest)
-    (if (= k 7)
-      (AstOf (AIdent (tok-text t)) rest)
-      (AstOf (AList None) rest))))          ; closers/colon/eof: empty
-
-; Read forms until ')' (or EOF), accumulating into `acc`.
+; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
 (defn read-forms (arena toks acc)
   (if (toks-empty toks)
     (AstOf (AList (list-reverse acc)) toks)
-    (if (= (tok-code (toks-head toks)) 9)          ; ')'
-      (AstOf (AList (list-reverse acc)) (toks-tail toks))
-      (let r (read-form arena toks)
-        (read-forms arena (art-rest r) (Cons (art-ast r) acc))))))
+    (let t (toks-head toks)
+      (if (= (tok-is-rparen t) 1)
+        (AstOf (AList (list-reverse acc)) (toks-tail toks))
+        (let r (read-form arena toks)
+          (read-forms arena (art-rest r) (Cons (art-ast r) acc)))))))
 
+(defn tok-is-rparen (t)
+  (match t
+    (TkRParen true)
+    (TkEof false)
+    (TkIdent d18 false)
+    (TkInt d19 false)
+    (TkFloat d20 false)
+    (TkString d21 false)
+    (TkBool d22 false)
+    (TkSymbol d23 false)
+    (TkKeyword d24 false)
+    (TkLParen false)
+    (TkLBrace false)
+    (TkRBrace false)
+    (TkLBracket false)
+    (TkRBracket false)
+    (TkColon false)))
+
+; Read forms until '}' (or EOF).
+; Returns: AstTok wrapping (AList forms...)
 (defn read-forms-brace (arena toks acc)
   (if (toks-empty toks)
     (AstOf (AList (list-reverse acc)) toks)
-    (if (= (tok-code (toks-head toks)) 11)         ; '}'
-      (AstOf (AList (list-reverse acc)) (toks-tail toks))
-      (let r (read-form arena toks)
-        (read-forms-brace arena (art-rest r) (Cons (art-ast r) acc))))))
+    (let t (toks-head toks)
+      (if (= (tok-is-rbrace t) 1)
+        (AstOf (AList (list-reverse acc)) (toks-tail toks))
+        (let r (read-form arena toks)
+          (read-forms-brace arena (art-rest r) (Cons (art-ast r) acc)))))))
 
+(defn tok-is-rbrace (t)
+  (match t
+    (TkRBrace true)
+    (TkEof false)
+    (TkIdent d25 false)
+    (TkInt d26 false)
+    (TkFloat d27 false)
+    (TkString d28 false)
+    (TkBool d29 false)
+    (TkSymbol d30 false)
+    (TkKeyword d31 false)
+    (TkLParen false)
+    (TkRParen false)
+    (TkLBrace false)
+    (TkLBracket false)
+    (TkRBracket false)
+    (TkColon false)))
+
+; Read forms until ']' (or EOF).
+; Returns: AstTok wrapping (AList forms...)
 (defn read-forms-bracket (arena toks acc)
   (if (toks-empty toks)
     (AstOf (AList (list-reverse acc)) toks)
-    (if (= (tok-code (toks-head toks)) 13)         ; ']'
-      (AstOf (AList (list-reverse acc)) (toks-tail toks))
-      (let r (read-form arena toks)
-        (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc))))))
+    (let t (toks-head toks)
+      (if (= (tok-is-rbracket t) 1)
+        (AstOf (AList (list-reverse acc)) (toks-tail toks))
+        (let r (read-form arena toks)
+          (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc)))))))
+
+(defn tok-is-rbracket (t)
+  (match t
+    (TkRBracket true)
+    (TkEof false)
+    (TkIdent d32 false)
+    (TkInt d33 false)
+    (TkFloat d34 false)
+    (TkString d35 false)
+    (TkBool d36 false)
+    (TkSymbol d37 false)
+    (TkKeyword d38 false)
+    (TkLParen false)
+    (TkRParen false)
+    (TkLBrace false)
+    (TkRBrace false)
+    (TkLBracket false)
+    (TkColon false)))
 
 ; Parse a whole source token stream into a program: a List of top-level
 ; Ast forms in source order.

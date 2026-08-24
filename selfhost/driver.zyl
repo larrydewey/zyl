@@ -1,7 +1,33 @@
+; === Zyl Self-Hosting Boot Driver ===
+; Reads Zyl source, lowers it to ICNF, emits x86_64 assembly.
+; Boot input/output paths are fixed for stage1 determinism.
+
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)
 (use compiler/ast)
 (use compiler/icnf)
 (use compiler/codegen)
-(defn main () (let arena (arena-create 1048576) (let fd (file-open "/tmp/zyl_boot_in.zyl" "r") (if (> fd 0) (begin (let srcbuf (file-read fd 1048576) (begin (file-close fd) (let prog (zyl-parse arena srcbuf) (let fns (ic-program arena prog) (let cg (cg-new arena) (begin (cg-program cg fns) (let out (file-open "/tmp/zyl_boot_out.s" "w") (begin (file-write out (cg-buffer cg)) (file-close out) (print "boot: wrote /tmp/zyl_boot_out.s") 0))))))))) (begin (print "boot: cannot open input") 1)))))
+
+(defn main ()
+  (let arena (arena-create 1048576)
+    (let fd (file-open "/tmp/zyl_boot_in.zyl" "r")
+      (if (> fd 0)
+        (boot-run arena fd)
+        (begin (print "boot: cannot open input") 1)))))
+
+(defn boot-run (arena fd)
+  (let srcbuf (file-read fd 1048576)
+    (let d1 (file-close fd)
+      (let prog (zyl-parse arena srcbuf)
+        (let fns (ic-program arena prog)
+          (let st (cg-program (cg-new arena) fns)
+            (boot-write st)))))))
+
+(defn boot-write (st)
+  (let out (file-open "/tmp/zyl_boot_out.s" "w")
+    (let d2 (file-write out (cg-buffer st))
+      (let d3 (file-close out)
+        (begin
+          (print "boot: wrote /tmp/zyl_boot_out.s")
+          0)))))

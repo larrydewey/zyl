@@ -11,12 +11,22 @@
     (Cons a rest a)
     (None (AList None))))
 
-(defn pv-drop (xs n)
-  (if (is-nil xs)
-    xs
-    (if (<= n 0)
-      xs
-      (pv-drop (list-cdr xs) (- n 1)))))
+; nth element of an Ast list.
+(defn nth-ast (xs n)
+  (match xs
+    (Cons a rest
+      (if (<= n 0) a (nth-ast rest (- n 1))))
+    (None (AList None))))
+
+; Children of an AList node; empty otherwise.
+(defn kids-of (a)
+  (match a
+    (AList kids kids)
+    (AIdent d1 None)
+    (AInt d2 None)
+    (AFloat d3 None)
+    (AString d4 None)
+    (ABool d5 None)))
 
 (test "pv-min"
   (let arena (arena-create 0)
@@ -24,8 +34,22 @@
       (begin
         ; one form, head "defn", name "foo", one param
         (assert-equal (list-length prog) 1)
-        (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd prog)))) (str-intern arena "defn")))
-        (assert-equal (list-length (ast-kids (pv-hd (pv-drop (ast-kids (pv-hd prog)) 2)))) 1)
+        ; head identifier of the single form is "defn"
+        (match (nth-ast (kids-of (pv-hd prog)) 0)
+          (AIdent h (assert-true (> (str-eq h (str-intern arena "defn")) 0)))
+          (AInt d6 (assert-equal 1 2))
+          (AFloat d7 (assert-equal 1 2))
+          (AString d8 (assert-equal 1 2))
+          (ABool d9 (assert-equal 1 2))
+          (AList d10 (assert-equal 1 2)))
+        ; params form holds exactly 1 element
+        (match (nth-ast (kids-of (pv-hd prog)) 2)
+          (AList params (assert-equal (list-length params) 1))
+          (AIdent d11 (assert-equal 1 2))
+          (AInt d12 (assert-equal 1 2))
+          (AFloat d13 (assert-equal 1 2))
+          (AString d14 (assert-equal 1 2))
+          (ABool d15 (assert-equal 1 2)))
         0))))
 
 (run-tests)

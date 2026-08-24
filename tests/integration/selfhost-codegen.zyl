@@ -15,21 +15,22 @@
 (use compiler/codegen)
 (use testing/testing)
 
+(defn write-asm (st path)
+  (let out (file-open path "w")
+    (let nbytes (file-write out (cg-buffer st))
+      (let d1 (file-close out)
+        nbytes))))
+
 (test "selfhost-codegen"
-  (let arena (arena-create 0)
+  (let arena (arena-create 1048576)
     (let src "(defn main () (begin (print (+ 1 2)) (print (* 10 4)) (if true (print \"hello\") (print \"no\")) (print (+ 1.5 2.25)) (print (ffi-call \"strlen\" \"abc\" 1000)) 0))"
       (let prog (zyl-parse arena src)
-        (begin
-          ; one top-level defn
-          (assert-equal (list-length prog) 1)
-          (let fns (ic-program arena prog)
-            (begin
-              (assert-equal (list-length fns) 1)
-              (let cg (cg-new arena)
-                (begin
-                  (cg-program cg fns)
-                  (file-write (file-open "/tmp/zyl_selfhost.s" "w") (cg-buffer cg))
-                  (assert-true (> (alloc-strlen (cg-buffer cg)) 100))
-                  (print "selfhost: wrote /tmp/zyl_selfhost.s"))))))))))
+        (let fns (ic-program arena prog)
+          (begin
+            ; one top-level defn lowered
+            (assert-equal (list-length fns) 1)
+            (assert-true (> (write-asm (cg-program (cg-new arena) fns) "/tmp/zyl_selfhost.s") 100))
+            (print "selfhost: wrote /tmp/zyl_selfhost.s")
+            0))))))
 
 (run-tests)

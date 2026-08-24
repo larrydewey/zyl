@@ -1,6 +1,7 @@
 ; Parser verification — recursive Ast edition.
 ; Lexes and parses programs exercising the reader, then verifies the
-; structure via the ast.zyl discriminators (no pools, no indices).
+; structure via total helper functions that structurally match Ast
+; variants (all constructors enumerated, no wildcard catch-alls).
 
 (use allocator/allocator)
 (use compiler/lexer)
@@ -9,21 +10,67 @@
 (use testing/testing)
 
 ; First top-level form of a parsed program.
-(defn pv-hd (xs)
-  (match xs
-    (Cons a rest a)
-    (None (AList None))))
-
-(defn pv-drop (xs n)
-  (if (is-nil xs)
-    xs
-    (if (<= n 0)
-      xs
-      (pv-drop (list-cdr xs) (- n 1)))))
 (defn pv-first (prog)
   (match prog
     (Cons a rest a)
     (None (AList None))))
+
+; nth element of an Ast list.
+(defn nth-ast (xs n)
+  (match xs
+    (Cons a rest
+      (if (<= n 0) a (nth-ast rest (- n 1))))
+    (None (AList None))))
+
+; Number of children when `a` is an AList; 0 otherwise.
+(defn ast-list-len (a)
+  (match a
+    (AList kids (list-length kids))
+    (AIdent d1 0)
+    (AInt d2 0)
+    (AFloat d3 0)
+    (AString d4 0)
+    (ABool d5 0)))
+
+; Payload of an AInt node; 0 otherwise.
+(defn atom-int (a)
+  (match a
+    (AInt v v)
+    (AIdent d6 0)
+    (AFloat d7 0)
+    (AString d8 0)
+    (ABool d9 0)
+    (AList d10 0)))
+
+; True when `a` is an AIdent whose name equals `s`.
+(defn ident-eq (arena a s)
+  (match a
+    (AIdent n (> (str-eq n (str-intern arena s)) 0))
+    (AInt d11 0)
+    (AFloat d12 0)
+    (AString d13 0)
+    (ABool d14 0)
+    (AList d15 0)))
+
+; String payload of an AString node; "" otherwise.
+(defn atom-str (arena a)
+  (match a
+    (AString s s)
+    (AIdent d16 (str-intern arena ""))
+    (AInt d17 (str-intern arena ""))
+    (AFloat d18 (str-intern arena ""))
+    (ABool d19 (str-intern arena ""))
+    (AList d20 (str-intern arena ""))))
+
+; Float literal text of an AFloat node; "" otherwise.
+(defn atom-float (arena a)
+  (match a
+    (AFloat t t)
+    (AIdent d21 (str-intern arena ""))
+    (AInt d22 (str-intern arena ""))
+    (AString d23 (str-intern arena ""))
+    (ABool d24 (str-intern arena ""))
+    (AList d25 (str-intern arena ""))))
 
 (test "pv-defn-shape"
   (let arena (arena-create 0)
@@ -31,64 +78,70 @@
       (begin
         ; one top-level form: (defn foo (x y) (+ x y))
         (assert-equal (list-length prog) 1)
-        (let d (pv-first prog)
-          (let kids (ast-kids d)
-            (begin
-              ; head symbol is "defn"
-              (assert-true (str-eq (ast-name (pv-hd kids)) (str-intern arena "defn")))
-              ; name, params, body
-              (assert-true (str-eq (ast-name (pv-hd (list-cdr kids))) (str-intern arena "foo")))
-              (assert-equal (list-length (ast-kids (pv-hd (pv-drop kids 2)))) 2)
-              (let body (pv-hd (pv-drop kids 3))
-                (begin
-                  ; body is the list (+ x y): head "+", two ident args
-                  (assert-equal (ast-code body) 5)
-                  (assert-equal (list-length (ast-kids body)) 3)
-                  (assert-true (str-eq (ast-name (pv-hd (ast-kids body))) (str-intern arena "+")))
-                  0)))))))))
+        ; head symbol is "defn"
+        (assert-true (> (ident-eq arena (nth-ast (kids-of (pv-first prog)) 0) "defn") 0))
+        ; name is "foo"
+        (assert-true (> (ident-eq arena (nth-ast (kids-of (pv-first prog)) 1) "foo") 0))
+        ; params form holds two names
+        (assert-equal (ast-list-len (nth-ast (kids-of (pv-first prog)) 2)) 2)
+        ; body is the 3-element list (+ x y) headed by "+"
+        (let body (nth-ast (kids-of (pv-first prog)) 3)
+          (begin
+            (assert-equal (ast-list-len body) 3)
+            (assert-true (> (ident-eq arena (nth-ast (kids-of body) 0) "+") 0))
+            0))))))
+
+; Children of an AList node; empty list otherwise.
+(defn kids-of (a)
+  (match a
+    (AList kids kids)
+    (AIdent d26 None)
+    (AInt d27 None)
+    (AFloat d28 None)
+    (AString d29 None)
+    (ABool d30 None)))
 
 (test "pv-atoms"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn main () (begin (print 42) (print \"hi\") (print true) (print 1.5) 0))")
-      (let body-form (pv-hd (pv-drop (ast-kids (pv-first prog)) 3))
-        (let body-kids (ast-kids body-form)
-          (begin
-            ; begin form kids: head "begin" + 5 elements = 6
-            (assert-equal (list-length body-kids) 6)
-            ; element 1: (print 42) -> its arg atom 42
-            (let e42 (match (list-cdr body-kids) (Cons w1 rest w1) (None (AList None)))
-              (let a42 (match (list-cdr (ast-kids e42)) (Cons w2 rest w2) (None (AInt 0)))
-                (begin
-                  (assert-equal (ast-code a42) 1)
-                  (assert-equal (ast-int a42) 42)
-                  ; element 2: (print "hi") -> string literal
-                  (let ehi (match (list-cdr (list-cdr body-kids)) (Cons w3 rest w3) (None (AList None))))
-                    (begin
-                      (assert-true (str-eq (ast-text (match (list-cdr (ast-kids ehi)) (Cons w4 rest w4) (None (AString "")))) (str-intern arena "hi")))
-                      ; element 3: (print true) -> bool literal
-                      (let etr (match (list-cdr (list-cdr (list-cdr body-kids))) (Cons w5 rest w5) (None (AList None))))
-                        (begin
-                          (assert-true (ast-bool (match (list-cdr (ast-kids etr)) (Cons w6 rest w6) (None (ABool false)))))
-                          ; element 4: (print 1.5) -> float literal text
-                          (let efl (match (list-cdr (list-cdr (list-cdr (list-cdr body-kids)))) (Cons w7 rest w7) (None (AList None))))
-                            (begin
-                              (assert-true (str-eq (ast-text (match (list-cdr (ast-kids efl)) (Cons w8 rest w8) (None (AString "")))) (str-intern arena "1.5")))
-                              0))))))))))))
+      (let bkids (kids-of (nth-ast (kids-of (pv-first prog)) 3))
+        (begin
+          ; begin form: head "begin" + 5 elements = 6
+          (assert-equal (list-length bkids) 6)
+          ; element 1: (print 42) -> arg atom 42
+          (assert-equal (atom-int (nth-ast (kids-of (nth-ast bkids 1)) 1)) 42)
+          ; element 2: (print "hi") -> string literal
+          (assert-true (> (str-eq (atom-str arena (nth-ast (kids-of (nth-ast bkids 2)) 1)) (str-intern arena "hi")) 0))
+          ; element 3: (print true) -> bool literal
+          (assert-equal (atom-int-as-bool (nth-ast (kids-of (nth-ast bkids 3)) 1)) 1)
+          ; element 4: (print 1.5) -> float literal text
+          (assert-true (> (str-eq (atom-float arena (nth-ast (kids-of (nth-ast bkids 4)) 1)) (str-intern arena "1.5")) 0))
+          0)))))
+
+; 1 when the node is ABool true; 0 otherwise (including ABool false).
+(defn atom-int-as-bool (a)
+  (match a
+    (ABool b (if b 1 0))
+    (AIdent d31 0)
+    (AInt d32 0)
+    (AFloat d33 0)
+    (AString d34 0)
+    (AList d35 0)))
 
 (test "pv-nesting"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn f (x) (if (> x 0) (foo x) (bar (baz x))))")
-      (let ifform (pv-hd (pv-drop (ast-kids (pv-first prog)) 3))
+      (let ikids (kids-of (nth-ast (kids-of (pv-first prog)) 3))
         (begin
-          (assert-equal (ast-code ifform) 5)
-          (assert-equal (list-length (ast-kids ifform)) 4)
+          ; if form has 4 elements
+          (assert-equal (list-length ikids) 4)
           ; then-branch is a call to foo
-          (assert-true (str-eq (ast-name (pv-hd (ast-kids (pv-hd (pv-drop (ast-kids ifform) 2))))) (str-intern arena "foo")))
-          ; else-branch nests bar(baz(x))
-          (let else-call (pv-hd (pv-drop (ast-kids ifform) 3))
+          (assert-true (> (ident-eq arena (nth-ast (kids-of (nth-ast ikids 2)) 0) "foo") 0))
+          ; else-branch nests bar(baz(x)): bar with 2 elements
+          (let els (kids-of (nth-ast ikids 3))
             (begin
-              (assert-true (str-eq (ast-name (pv-hd (ast-kids else-call))) (str-intern arena "bar")))
-              (assert-equal (list-length (ast-kids else-call)) 2)
+              (assert-true (> (ident-eq arena (nth-ast els 0) "bar") 0))
+              (assert-equal (list-length els) 2)
               0)))))))
 
 (run-tests)

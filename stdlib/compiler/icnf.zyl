@@ -7,12 +7,14 @@
 ; recognised here by head-symbol name, per the no-dispatch architecture
 ; decision.
 ;
-; Everything is a recursive algebraic data type — no pools, no indices.
+; Every traversal is a structural `match` on Ast/Icnf/List variants.
+; There are no numeric node-kind tags, no projection accessors, and no
+; positional index surgery anywhere in this module.
 
 (use allocator/allocator)
 (use compiler/ast)
 
-; --- Instruction tree -----------------------------------------------------
+; --- Instruction tree -------------------------------------------------------
 
 (deftype Icnf
   (IConst Int)
@@ -35,22 +37,95 @@
 
 (deftype IFunc (IFn String (List String) Icnf))     ; name, params, body
 
-; Binop opcodes: 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
+; Binop opcodes (instruction payloads, not node kinds):
+; 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
 
 (defn ic-op-of (arena s)
-  (if (str-eq s (str-intern arena "+")) 0
-  (if (str-eq s (str-intern arena "-")) 1
-  (if (str-eq s (str-intern arena "*")) 2
-  (if (str-eq s (str-intern arena "/")) 3
-  (if (str-eq s (str-intern arena "%")) 4
-  (if (str-eq s (str-intern arena "<")) 5
-  (if (str-eq s (str-intern arena ">")) 6
-  (if (str-eq s (str-intern arena "<=")) 7
-  (if (str-eq s (str-intern arena ">=")) 8
-  (if (str-eq s (str-intern arena "==")) 9
-  (if (str-eq s (str-intern arena "=")) 9
-  (if (str-eq s (str-intern arena "!=")) 10
+  (if (> (str-eq s (str-intern arena "+")) 0) 0
+  (if (> (str-eq s (str-intern arena "-")) 0) 1
+  (if (> (str-eq s (str-intern arena "*")) 0) 2
+  (if (> (str-eq s (str-intern arena "/")) 0) 3
+  (if (> (str-eq s (str-intern arena "%")) 0) 4
+  (if (> (str-eq s (str-intern arena "<")) 0) 5
+  (if (> (str-eq s (str-intern arena ">")) 0) 6
+  (if (> (str-eq s (str-intern arena "<=")) 0) 7
+  (if (> (str-eq s (str-intern arena ">=")) 0) 8
+  (if (> (str-eq s (str-intern arena "==")) 0) 9
+  (if (> (str-eq s (str-intern arena "=")) 0) 9
+  (if (> (str-eq s (str-intern arena "!=")) 0) 10
   -1)))))))))))))
+
+; ===========================================================================
+; GENERIC STRUCTURAL LIST HELPERS (Ast-typed streams)
+; ===========================================================================
+
+; First element of an Ast list (AInt 0 placeholder when empty).
+(defn first-ast (xs)
+  (match xs
+    (Cons a d1 a)
+    (None (AInt 0))))
+
+; Tail of an Ast list (empty when empty).
+(defn rest-ast (xs)
+  (match xs
+    (Cons d2 r r)
+    (None None)))
+
+; Last element of an Ast list.
+(defn last-ast (xs)
+  (last-loop xs (AInt 0)))
+
+(defn last-loop (xs acc)
+  (match xs
+    (None acc)
+    (Cons h t (last-loop t h))))
+
+; All-but-last elements, in source order.
+(defn butlast (xs acc)
+  (if (is-nil xs)
+    (list-reverse acc)
+    (butlast-step (first-ast xs) (rest-ast xs) acc)))
+
+(defn butlast-step (h t acc)
+  (if (is-nil t)
+    (list-reverse acc)
+    (butlast t (Cons h acc))))
+
+; Payload string of an Ast atom ("" unless string/float literal).
+(defn atom-text (a fb)
+  (match a
+    (AString s s)
+    (AFloat s s)
+    (AIdent d5 fb)
+    (AInt d6 fb)
+    (ABool d7 fb)
+    (AList d8 fb)))
+
+; Ident payload of an Ast node (fallback when not an identifier).
+(defn ident-name (a fb)
+  (match a
+    (AIdent s s)
+    (AInt d9 fb)
+    (AFloat d10 fb)
+    (AString d11 fb)
+    (ABool d12 fb)
+    (AList d13 fb)))
+
+; Head identifier of a form list compared against `s`; 1 when equal.
+(defn head-name-is (arena kids s)
+  (match kids
+    (Cons head d14 (> (str-eq (ident-name head "") (str-intern arena s)) 0))
+    (None 0)))
+
+; Form-level test: parenthesised form whose head identifier equals `s`.
+(defn form-head-is (arena form s)
+  (match form
+    (AList kids (head-name-is arena kids s))
+    (AIdent d15 0)
+    (AInt d16 0)
+    (AFloat d17 0)
+    (AString d18 0)
+    (ABool d19 0)))
 
 ; ===========================================================================
 ; PROGRAM-LEVEL LOWERING
@@ -59,231 +134,332 @@
 ; Lower a whole program: collect deftype variant tables and defn bodies.
 ; Returns: List(IFunc)
 (defn ic-program (arena prog)
-  (let vt (ic-collect-vt arena prog None)
+  (let vt (ic-collect-vt arena prog VTNil)
     (list-reverse (ic-defns arena prog None vt))))
 
 ; Walk top-level forms; deftype forms extend the variant table.
 (defn ic-collect-vt (arena forms vt)
-  (if (is-nil forms)
-    vt
-    (let form (hd forms)
-      (let rest (list-cdr forms)
-        (if (= (ast-code form) 5)
-          (let kids (ast-kids form)
-            (if (> (list-length kids) 0)
-              (if (str-eq (ast-name (hd kids)) (str-intern arena "deftype"))
-                (ic-collect-vt arena rest (ic-vt-deftype arena kids vt 0))
-                (ic-collect-vt arena rest vt))
-              (ic-collect-vt arena rest vt)))
-          (ic-collect-vt arena rest vt))))))
+  (match forms
+    (None vt)
+    (Cons form rest
+      (if (= (form-head-is arena form "deftype") 1)
+        (ic-collect-vt arena rest (ic-vt-deftype arena form vt))
+        (ic-collect-vt arena rest vt)))))
 
-; Add one deftype's variants (kids = (deftype Name Variant...)).
-; Entries link through VTEntry.rest directly (NOT Cons cells): every walker
-; matches VTable variants against this chain.
-(defn ic-vt-deftype (arena kids vt tag)
-  (let rem (list-drop kids 2)
-    (if (is-nil rem)
-      vt
-      (let v (hd rem)
-        (let vname
-          (if (= (ast-code v) 5)
-            (ast-name (hd (ast-kids v)))
-            (ast-name v))
-          (let arity (- (list-length (ast-kids v)) 1)
-            (let tail (ic-vt-deftype arena (list-cdr rem) vt (+ tag 1)))
-              (VTEntry (str-intern arena vname) tag arity tail)))))))
+; Add one deftype's variants. Form shape: (deftype Name Variant...).
+; Entries link through VTable chains directly (NOT Cons cells).
+(defn ic-vt-deftype (arena form vt)
+  (match form
+    (AList kids (ic-vt-kids arena kids vt))
+    (AIdent d9 vt)
+    (AInt d10 vt)
+    (AFloat d11 vt)
+    (AString d12 vt)
+    (ABool d13 vt)))
+
+(defn ic-vt-kids (arena kids vt)
+  (if (> (list-length kids) 1)
+    (vt-from-variants arena (rest-ast (rest-ast kids)) vt 0)
+    vt))
+
+; Link one variant entry per remaining variant; tail = next entry chain.
+(defn vt-from-variants (arena variants vt tag)
+  (match variants
+    (None vt)
+    (Cons v rest
+      (let tail (vt-from-variants arena rest vt (+ tag 1))
+        (VTEntry (str-intern arena (variant-name v))
+                 tag
+                 (variant-arity v)
+                 tail)))))
+
+; Name of a variant spec: (Nil) | (Cons Int L) | bare Nil.
+(defn variant-name (v)
+  (match v
+    (AIdent s s)
+    (AList kids (ident-name (first-ast kids) ""))
+    (AInt d26 "")
+    (AFloat d27 "")
+    (AString d28 "")
+    (ABool d29 "")))
+
+; Field count of a variant spec: constructor name plus N fields.
+(defn variant-arity (v)
+  (match v
+    (AIdent d30 0)
+    (AList kids (- (list-length kids) 1))
+    (AInt d31 0)
+    (AFloat d32 0)
+    (AString d33 0)
+    (ABool d34 0)))
 
 ; Lower all top-level defn forms to IFn records (source order preserved).
 (defn ic-defns (arena forms acc vt)
-  (if (is-nil forms)
-    acc
-    (let form (hd forms)
-      (let rest (list-cdr forms)
-        (if (= (ast-code form) 5)
-          (let kids (ast-kids form)
-            (if (> (list-length kids) 1)
-              (if (str-eq (ast-name (hd kids)) (str-intern arena "defn"))
-                (ic-defns arena rest (Cons (ic-defn arena kids vt) acc) vt)
-                (ic-defns arena rest acc vt))
-              (ic-defns arena rest acc vt)))
-          (ic-defns arena rest acc vt))))))
+  (match forms
+    (None acc)
+    (Cons form rest
+      (if (= (form-head-is arena form "defn") 1)
+        (ic-defns arena rest (Cons (ic-defn arena form vt) acc) vt)
+        (ic-defns arena rest acc vt)))))
 
-; kids = (defn name (params...) body)
-(defn ic-defn (arena kids vt)
-  (let name (ast-name (hd (list-cdr kids)))
-    (let params-node (hd (list-drop kids 2))
-      (let body (hd (list-drop kids 3))
-        (IFn (str-intern arena name)
-             (list-reverse (ic-param-names params-node None))
-             (ic-expr arena body None vt))))))
+; One defn form: (defn name (params...) body).
+(defn ic-defn (arena form vt)
+  (match form
+    (AList kids (ic-defn-kids arena kids vt))
+    (AIdent d35 (ic-defn-none arena))
+    (AInt d36 (ic-defn-none arena))
+    (AFloat d37 (ic-defn-none arena))
+    (AString d38 (ic-defn-none arena))
+    (ABool d39 (ic-defn-none arena))))
+
+(defn ic-defn-none (arena)
+  (IFn (str-intern arena "?") None (IConst 0)))
+
+(defn ic-defn-kids (arena kids vt)
+  (if (> (list-length kids) 3)
+    (ic-defn-full arena kids vt)
+    (ic-defn-short arena kids vt)))
+
+(defn ic-defn-full (arena kids vt)
+  (let nm (first-ast (rest-ast kids))
+    (let params (first-ast (rest-ast (rest-ast kids)))
+      (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
+        (IFn (str-intern arena (ident-name nm ""))
+             (list-reverse (param-names params None))
+             (ic-expr arena body vt))))))
+
+(defn ic-defn-short (arena kids vt)
+  (let nm (first-ast (rest-ast kids))
+    (IFn (str-intern arena (ident-name nm "")) None (IConst 0))))
 
 ; Collect parameter names from a parenthesised param node. Typed params
-; (name Type) take the first element.
-(defn ic-param-names (node acc)
-  (if (not (= (ast-code node) 5))
-    acc
-    (ic-param-names-kids (ast-kids node) acc)))
+; ((name Type) ...) take the first element's name.
+(defn param-names (node acc)
+  (match node
+    (AList kids (param-names-loop kids acc))
+    (AIdent d40 acc)
+    (AInt d41 acc)
+    (AFloat d42 acc)
+    (AString d43 acc)
+    (ABool d44 acc)))
 
-; Walk one parameter per list element. Typed pairs ((name Type) ...) take
-; the first child's name.
-(defn ic-param-names-kids (kids acc)
-  (if (is-nil kids)
-    acc
-    (let p (hd kids)
-      (let pname
-        (if (= (ast-code p) 5)
-          (ast-name (hd (ast-kids p)))
-          (ast-name p))
-        (ic-param-names-kids (list-cdr kids) (Cons pname acc))))))
+(defn param-names-loop (kids acc)
+  (match kids
+    (None acc)
+    (Cons p rest (param-names-loop rest (Cons (param-name p) acc)))))
 
-; Drop the first n elements of a list.
-; Head of a list of Ast forms (empty AList when nil).
-(defn hd (xs)
-  (match xs
-    (Cons a rest a)
-    (None (AList None))))
-
-(defn list-drop (xs n)
-  (if (is-nil xs)
-    xs
-    (if (<= n 0)
-      xs
-      (list-drop (list-cdr xs) (- n 1)))))
+(defn param-name (p)
+  (match p
+    (AIdent s s)
+    (AList pkids (ident-name (first-ast pkids) ""))
+    (AInt d45 "")
+    (AFloat d46 "")
+    (AString d47 "")
+    (ABool d48 "")))
 
 ; ===========================================================================
 ; EXPRESSION LOWERING
 ; ===========================================================================
 
 ; Lower one Ast expression to Icnf. `vt` resolves ADT constructions/match.
-(defn ic-expr (arena ast env vt)
-  (let k (ast-code ast)
-    (if (= k 0)
-      (ic-ident arena (ast-name ast) env vt)
-      (if (= k 1)
-        (IConst (ast-int ast))
-        (if (= k 2)
-          (IFlt (ast-text ast))
-          (if (= k 3)
-            (IStr (ast-text ast))
-            (if (= k 4)
-              (IConst (if (ast-bool ast) 1 0))
-              (ic-form arena (ast-kids ast) env vt))))))))
+(defn ic-expr (arena ast vt)
+  (match ast
+    (AIdent n (ic-ident arena n vt))
+    (AInt v (IConst v))
+    (AFloat t (IFlt t))
+    (AString s (IStr s))
+    (ABool b (IConst (if b 1 0)))
+    (AList kids (ic-form arena kids vt))))
 
 ; Identifier: nullary variant construction or variable reference.
-(defn ic-ident (arena name env vt)
+(defn ic-ident (arena name vt)
   (let tag (vt-tag-of vt (str-intern arena name))
     (if (> tag -1)
       (IVariant (str-intern arena name) tag None)
       (ILoad (str-intern arena name)))))
 
-; A parenthesised form. kids is non-empty (empty -> Const 0).
-(defn ic-form (arena kids env vt)
-  (if (is-nil kids)
-    (IConst 0)
-    (let head (hd kids)
-      (let args (list-cdr kids)
-        (let hname (ast-name head)
-          (let op (ic-op-of arena hname)
-            (if (> op -1)
-              (ic-binop arena op args env vt)
-                                          (if (str-eq hname (str-intern arena "let"))
-                              (ic-let arena args env vt false)
-                              (if (str-eq hname (str-intern arena "let-mut"))
-                                (ic-let arena args env vt true)
-                            (if (str-eq hname (str-intern arena "if")) (IIf (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt) (ic-expr arena (hd (list-drop args 2)) env vt)) (if (str-eq hname (str-intern arena "while")) (IWhile (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "set!")) (ISet (str-intern arena (ast-name (hd args))) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "begin")) (ISeq (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-close")) (IFfi "zyl_file_close_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-write")) (IFfi "zyl_file_write_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-read")) (IFfi "zyl_file_read_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-open")) (IFfi "zyl_file_open_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "print")) (ic-print arena args env vt) (if (str-eq hname (str-intern arena "ffi-call")) (ic-ffi arena args env vt) (if (str-eq hname (str-intern arena "match")) (ic-match arena args env vt) (if (> (vt-tag-of vt (str-intern arena hname)) -1) (ic-variant arena hname args env vt) (ICall (str-intern arena hname) (ic-arg-list arena args env vt)))))))))))))))))))))))
+; A parenthesised form. kids may be empty (-> Const 0).
+(defn ic-form (arena kids vt)
+  (match kids
+    (None (IConst 0))
+    (Cons head args (ic-headed-form arena head args vt))))
+
+(defn ic-headed-form (arena head args vt)
+  (let hname (ident-name head "")
+    (let op (ic-op-of arena hname)
+      (if (> op -1)
+        (ic-binop arena op args vt)
+        (ic-special arena hname args vt)))))
+
+; Special-form / call routing by head-symbol name (no-dispatch arch:
+; recognition happens here, never in the reader).
+(defn ic-special (arena hname args vt)
+  (if (> (str-eq hname (str-intern arena "let")) 0)
+    (ic-let-form arena args vt)
+    (if (> (str-eq hname (str-intern arena "let-mut")) 0)
+      (ic-let-form arena args vt)
+      (if (> (str-eq hname (str-intern arena "if")) 0)
+        (ic-if-form arena args vt)
+        (if (> (str-eq hname (str-intern arena "while")) 0)
+          (ic-while-form arena args vt)
+          (if (> (str-eq hname (str-intern arena "set!")) 0)
+            (ic-set-form arena args vt)
+            (if (> (str-eq hname (str-intern arena "begin")) 0)
+              (ISeq (ic-arg-list arena args vt))
+              (if (> (str-eq hname (str-intern arena "file-close")) 0)
+                (IFfi "zyl_file_close_c" (ic-arg-list arena args vt))
+                (if (> (str-eq hname (str-intern arena "file-write")) 0)
+                  (IFfi "zyl_file_write_c" (ic-arg-list arena args vt))
+                  (if (> (str-eq hname (str-intern arena "file-read")) 0)
+                    (IFfi "zyl_file_read_c" (ic-arg-list arena args vt))
+                    (if (> (str-eq hname (str-intern arena "file-open")) 0)
+                      (IFfi "zyl_file_open_c" (ic-arg-list arena args vt))
+                      (if (> (str-eq hname (str-intern arena "print")) 0)
+                        (ic-print arena args vt)
+                        (if (> (str-eq hname (str-intern arena "ffi-call")) 0)
+                          (ic-ffi arena args vt)
+                          (if (> (str-eq hname (str-intern arena "match")) 0)
+                            (ic-match-form arena args vt)
+                            (ic-call-or-variant arena hname args vt)))))))))))))))
+
+(defn ic-call-or-variant (arena hname args vt)
+  (let tag (vt-tag-of vt (str-intern arena hname))
+    (if (> tag -1)
+      (IVariant (str-intern arena hname) tag (ic-arg-list arena args vt))
+      (ICall (str-intern arena hname) (ic-arg-list arena args vt)))))
 
 ; (let name val body...) — extra body expressions become an implicit ISeq.
-(defn ic-let (arena args env vt mutable)
-  (let name (ast-name (hd args))
-    (let val (ic-expr arena (hd (list-cdr args)) env vt)
-      (let rest (list-drop args 2)
-        (let body
-          (if (= (list-length rest) 1)
-            (ic-expr arena (hd rest) env vt)
-            (ISeq (ic-arg-list arena rest env vt))))
-          (ILet (str-intern arena name) val body)))))
+(defn ic-let-form (arena args vt)
+  (if (> (list-length args) 2)
+    (ic-let-full arena args vt)
+    (IConst 0)))
+
+(defn ic-let-full (arena args vt)
+  (let nm (first-ast args)
+    (let valexpr (first-ast (rest-ast args))
+      (ILet (str-intern arena (ident-name nm ""))
+            (ic-expr arena valexpr vt)
+            (ic-body-forms arena (rest-ast (rest-ast args)) vt)))))
+
+; One expression -> itself; several -> ISeq; none -> Const 0.
+(defn ic-body-forms (arena forms vt)
+  (if (= (list-length forms) 1)
+    (ic-expr arena (first-ast forms) vt)
+    (ISeq (ic-arg-list arena forms vt))))
+
+; (if c t e)
+(defn ic-if-form (arena args vt)
+  (if (> (list-length args) 2)
+    (IIf (ic-expr arena (first-ast args) vt)
+         (ic-expr arena (first-ast (rest-ast args)) vt)
+         (ic-expr arena (first-ast (rest-ast (rest-ast args))) vt))
+    (IConst 0)))
+
+; (while c body...)
+(defn ic-while-form (arena args vt)
+  (match args
+    (Cons c rest
+      (IWhile (ic-expr arena c vt) (ic-body-forms arena rest vt)))
+    (None (IConst 0))))
+
+; (set! name expr)
+(defn ic-set-form (arena args vt)
+  (if (> (list-length args) 1)
+    (ISet (str-intern arena (ident-name (first-ast args) ""))
+          (ic-expr arena (first-ast (rest-ast args)) vt))
+    (IConst 0)))
 
 ; Binary operator with exactly two arguments; unary minus (- x) supported.
-(defn ic-binop (arena op args env vt)
+(defn ic-binop (arena op args vt)
   (if (= (list-length args) 2)
     (IBinop op
-            (ic-expr arena (hd args) env vt)
-            (ic-expr arena (hd (list-cdr args)) env vt))
+            (ic-expr arena (first-ast args) vt)
+            (ic-expr arena (first-ast (rest-ast args)) vt))
     (if (= (list-length args) 1)
       (if (= op 1)
-        (IBinop 1 (IConst 0) (ic-expr arena (hd args) env vt))
+        (IBinop 1 (IConst 0) (ic-expr arena (first-ast args) vt))
         (IConst 0))
       (IConst 0))))
 
 ; print: multi-argument prints become a sequence of single prints.
-(defn ic-print (arena args env vt)
+(defn ic-print (arena args vt)
   (if (is-nil args)
     (IConst 0)
-    (if (is-nil (list-cdr args))
-      (IPrint (ic-expr arena (hd args) env vt))
-      (ISeq (Cons (IPrint (ic-expr arena (hd args)) env vt)
-                  (Cons (ic-print arena (list-cdr args) env vt) None))))))
+    (ic-print-step arena (first-ast args) (rest-ast args) vt)))
+
+(defn ic-print-step (arena a rest vt)
+  (if (is-nil rest)
+    (IPrint (ic-expr arena a vt))
+    (ISeq (Cons (IPrint (ic-expr arena a vt))
+                (Cons (ic-print arena rest vt) None)))))
 
 ; (ffi-call "sym" a b timeout): drop the trailing timeout literal.
-(defn ic-ffi (arena args env vt)
-  (let sym (ast-text (hd args))
-    (let real-args (list-cdr args)
-      (let call-args (if (<= (list-length real-args) 1)
-                        None
-                        (ic-arg-list arena (list-drop-last real-args) env vt)))
-      (IFfi (str-intern arena sym) call-args))))
+(defn ic-ffi (arena args vt)
+  (match args
+    (Cons sym rest
+      (let real (rest-ast rest)
+        (IFfi (str-intern arena (atom-text sym ""))
+              (if (<= (list-length real) 1)
+                None
+                (ic-arg-list arena (butlast real None) vt)))))
+    (None (IFfi "?" None))))
 
-(defn list-drop-last (xs)
-  (if (is-nil xs)
-    None
-    (if (is-nil (list-cdr xs))
-      None
-      (Cons (hd xs) (list-drop-last (tl xs))))))
 
-; (match scrutinee arm...): arm = ((Variant binds...) body) or (Variant body).
-(defn ic-match (arena args env vt)
-  (IMatch (ic-expr arena (hd args) env vt)
-          (list-reverse (ic-arms arena (list-cdr args) None env vt))))
+; (match scrutinee arm...): arm = (Variant pat* body).
+(defn ic-match-form (arena args vt)
+  (match args
+    (Cons scr arms
+      (IMatch (ic-expr arena scr vt)
+              (list-reverse (ic-arms arena arms None vt))))
+    (None (IConst 0))))
 
-; One arm per call: arm kids = (VariantName pat* body).
-(defn ic-arms (arena arms acc env vt)
-  (if (is-nil arms)
-    acc
-    (ic-arm-one arena (hd arms) (list-cdr arms) acc env vt)))
+(defn ic-arms (arena arms acc vt)
+  (match arms
+    (None acc)
+    (Cons arm rest (ic-arms arena rest (Cons (ic-arm arena arm vt) acc) vt))))
 
-(defn ic-arm-one (arena arm rest acc env vt)
-  (let parts (ast-kids arm)
-    (let vname (ast-name (hd parts))
-      (let pats (list-drop-last (list-cdr parts))
-        (let tag (vt-tag-of vt (str-intern arena vname))
-          (let binds (ic-arm-binds arena pats None)
-            (let body (ic-expr arena (hd (list-drop-last parts)) env vt)
-              (ic-arms arena rest
-                       (Cons (IArm (str-intern arena vname) tag binds body) acc)))))))))
+; One arm: (VariantName pat* body) — name first, body last, middle binds.
+(defn ic-arm (arena arm vt)
+  (match arm
+    (AList parts (ic-arm-parts arena parts vt))
+    (AIdent d49 (ic-arm-none arena))
+    (AInt d50 (ic-arm-none arena))
+    (AFloat d51 (ic-arm-none arena))
+    (AString d52 (ic-arm-none arena))
+    (ABool d53 (ic-arm-none arena))))
 
-; Variant construction with fields: (V a b ...).
-; Pattern binding names ("_" wildcards kept, skipped by codegen).
-(defn ic-arm-binds (arena pats acc)
+(defn ic-arm-none (arena)
+  (IArm (str-intern arena "?") -1 None (IConst 0)))
+
+(defn ic-arm-parts (arena parts vt)
+  (match parts
+    (Cons vname pats
+      (let iname (str-intern arena (ident-name vname ""))
+        (let tag (vt-tag-of vt iname)
+          (IArm iname
+                tag
+                (bind-names arena pats None)
+                (ic-expr arena (last-ast parts) vt)))))
+    (None (IArm (str-intern arena "?") -1 None (IConst 0)))))
+
+; Pattern binding names ("_" wildcards kept, skipped by codegen), in
+; source order: every element except the trailing body.
+(defn bind-names (arena pats acc)
   (if (is-nil pats)
     (list-reverse acc)
-    (ic-arm-binds arena (list-cdr pats) (Cons (str-intern arena (ast-name (hd pats))) acc))))
+    (bind-names-step arena (first-ast pats) (rest-ast pats) acc)))
 
-(defn ic-variant (arena vname args env vt)
-  (let tag (vt-tag-of vt (str-intern arena vname))
-    (IVariant (str-intern arena vname) tag (ic-arg-list arena args env vt))))
+(defn bind-names-step (arena h t acc)
+  (if (is-nil t)
+    (list-reverse acc)
+    (bind-names arena t (Cons (str-intern arena (ident-name h "")) acc))))
 
 ; Lower argument lists left-to-right.
-(defn ic-arg-list (arena args env vt)
-  (ic-arg-list-acc arena args env vt None))
+(defn ic-arg-list (arena args vt)
+  (ic-arg-list-acc arena args vt None))
 
-(defn ic-arg-list-acc (arena args env vt acc)
-  (if (is-nil args)
-    (list-reverse acc)
-    (ic-arg-list-acc arena (list-cdr args) env vt
-                     (Cons (ic-expr arena (hd args) env vt) acc))))
-
-; Tail of a list of Ast forms.
-(defn tl (xs)
-  (match xs
-    (Cons a rest rest)
-    (None None)))
+(defn ic-arg-list-acc (arena args vt acc)
+  (match args
+    (None (list-reverse acc))
+    (Cons a rest
+      (ic-arg-list-acc arena rest vt (Cons (ic-expr arena a vt) acc)))))

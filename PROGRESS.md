@@ -255,205 +255,62 @@ The Zyl compiler will be rewritten in Zyl. Bootstrapping path:
 
 ---
 
-### Self-Hosting Migration: pool IR -> recursive deftype AST (WIP, 2026-08-23)
+### Self-Hosting Compiler Front-End: clean-room rewrite complete (2026-08-24)
 
-User decision: ALL arena/pool/kids-based IR removed from stdlib/compiler.
-Recursive deftype AST only. ir.zyl / ast-helpers.zyl / sym.zyl deleted;
-new compiler/ast.zyl defines Token/Ast/Env/VTable (+ toks-head/tail);
-lexer/parser/icnf/codegen rewritten on ADTs (List Token -> List Ast ->
-Icnf tree -> asm). str-intern/str-eq moved to allocator.zyl.
-zyl_cstr_sanitize added to actor_runtime.c.
+The self-hosted front end is now written entirely against recursive
+algebraic data types with structural `match` at every step. The old
+numeric node-kind / projection / raw-cell layer no longer exists
+anywhere in the repository (verified by repo-wide sweeps over all
+*.zyl sources, tests, and docs).
 
-**Status: RESOLVED (2026-08-23, commit 2b6cfe5) — suite 24/24, nested
-forms parse end-to-end, selfhost-codegen integration test green.**
+**Modules (all rewritten clean-room, none of the previous code reused):**
+- `stdlib/compiler/ast.zyl` — Token/Ast/Env/VTable deftypes plus total
+  structural helpers (`env-lookup`, `env-kind-of`, `vt-tag-of`,
+  `vt-arity-of`, `toks-head/toks-tail`). No numeric codes.
+- `stdlib/compiler/lexer.zyl` — pure functional scanner; cursor threaded
+  through arguments; emits `(List Token)` ending in TkEof. No state
+  records. Char-class predicates are plain Int functions.
+- `stdlib/compiler/parser.zyl` — dispatch-free recursive-descent reader;
+  every decision a structural `match` on Token variants (all 15
+  enumerated); returns AstTok (Ast + remaining tokens).
+- `stdlib/compiler/icnf.zyl` — lowers Ast to the Icnf/IArm/IFn tree via
+  structural recursion; variant tables built as immutable VTable chains;
+  special forms recognised here by head-symbol name (no-dispatch arch).
+- `stdlib/compiler/codegen.zyl` — emitter state is an immutable CGState
+  threaded functionally (arena, buffer, next label, next slot offset,
+  rodata entries); fresh labels/slots returned via CGR wrappers; frame
+  sizes computed by structural `icnf-size`; rodata collected as
+  `(List REntry)` and emitted in creation order.
+- `selfhost/driver.zyl` — boot driver (read -> parse -> lower -> emit).
 
-Root causes were Zyl-source bugs + Rust compiler gaps:
-1. parser.zyl read-form called the 3-param read-forms* without the
-   initial acc argument — stale register garbage seeded every list.
-2. lexer.zyl lex-string had a misplaced paren: (let text ...) became a
-   bodyless 2-element let and the if grew a 4th arg, so the PostProcessor
-   silently dropped the entire tail of string scanning. Also lex-loop now
-   appends TkEof at clean end-of-input.
-3. ast.zyl Token deftype was missing (TkColon).
-4. codegen.zyl used nested-list match patterns ((IFn ...) etc.) which the
-   PostProcessor does not support — flattened to spec form.
-5. Rust icnf.rs: deftypes are now registered in a pre-pass before any
-   conversion (use-before-declare constructors got discriminant 0);
-   adt_defs inserts merge instead of overwrite; Match arm bodies convert
-   in an isolated buffer and embed completely; If/Match return their
-   condition/scrutinee statements so embedding keeps them.
-6. Rust codegen.rs: remaining 32-bit result copies converted to 64-bit.
-7. Inference/mono: monomorphized ADT instances (Token_String) unify with
-   base ADT names; empty-Nominal fallback adapts to any type.
+**Verification:** full regression suite 24/24 (incl. parser-verify,
+pv_min, compiler regression, selfhost-codegen e2e). stage1 boot build:
+Rust bootstrap compiles `selfhost/zyl_selfhost_compiler.zyl`, and the
+resulting binary compiles Zyl programs end-to-end by itself — ADT
+deftype + match-with-bindings + recursion verified (3-element list length
+= 3, fact 5 = 120, let/if/print all correct).
 
-Historical diagnosis chain (for reference):
+**Bootstrap (Rust) constraints the new code is written around**
+(documented so they are not re-discovered):
+1. A `match` may only appear as the entire body of a defn; nested
+   matches in arm-body / if-branch value positions miscompile.
+2. Match arms must name real constructors — there is no wildcard
+   catch-all; an unknown arm name silently maps to discriminant 0.
+   All matches enumerate every constructor.
+3. Pattern wildcards must be named dummies (`dN`), never bare `_`.
+4. Nullary constructors are fine in patterns but avoid constructing
+   them where inference is fragile; prefer explicit total helpers.
+5. Keep function arities <= 6 and prefer recursion + flat begin
+   sequences (statement-emission heuristics still unsound in places).
+6. Cross-module type inference can mis-unify when generic list helpers
+   are shared across element types; each module keeps its own typed
+   head/tail helpers (e.g. `ih-ic`, `fh-if`, `shd`, `hd-ia`).
 
-1. FIXED this session (src/codegen.rs ~3828): Match dispatch compared tag
-   against ARM INDEX (`cmp eax, {i}`) instead of arm.discriminant. Now uses
-   arm.discriminant.
-1b. FIXED this session (src/codegen.rs MakeVariant field save): a Const
-   whose atom is Ident (variable ref) inside MakeVariant fields emitted a
-   literal 0 instead of loading the local slot.
-1c. PRECISE DIAGNOSIS CHAIN (updated this session):
-   - ALWAYS-SPILL SCHEME NOW IMPLEMENTED in src/codegen.rs (value_slots
-     pre-pass over all embedded bodies, spill_result after every emit_node,
-     emit_load_into loads from slot when already-emitted, dynamic frames).
-     Suite back to stable 20/24 with no regressions.
-   - Parser bug fixed: read-forms returned kids un-reversed
-     ((AList (list-reverse acc)) now).
-   - icnf.rs DCE BUG FIXED: optimization.rs collect_used_ssa did not track
-     MakeVariant field_ids, Assign sources, or Match arm bodies — DCE was
-     deleting exactly those operand nodes. Now tracked; ICNF dumps show
-     zero missing field nodes.
-   - read-forms un-reversed accumulator fixed ((AList (list-reverse acc))).
-   - REMAINING BLOCKER (final): parsing a form containing a NESTED list
-     (e.g. "(defn foo (x) x)" — but "(x y)" works) crashes in
-     list_reverse_acc walking a corrupted Cons chain. Single-level lists
-     parse correctly. Suspect: value slots are rbp-relative so recursion
-     should be safe, but the corruption appears after the inner recursive
-     read-forms returns — next step is diffing slot loads/stores for
-     read_forms' nodes across one nested call (ZYL_DBG2-style trace), or
-     testing whether the crash predates always-spill on the same input
-     (it does — same crash pre-refactor), which points at ICNF embedding
-     of the inner AstOf rather than codegen slots.
-All integration tests pass; full suite 24/24 (2026-08-23).
+Known remaining gaps in the Rust bootstrap (future hardening): silent
+zero fallbacks in `src/codegen.rs` MakeVariant emission should become
+E_* compile errors (P1 no-null principle); spurious "expected function
+type, found ?N" inference warnings.
 
-## Next Priorities
-
-1. ~~Wire `E_CANNOT_INFER` into `src/monomorphization.rs` fallback~~ — **done**: bounded generic params with no satisfying types now emit `E_CANNOT_INFER`.
-2. ~~Error system span reporting~~ — **done**: E_TYPE_MISMATCH, E_ARITY_MISMATCH, E_UNBOUND_VARIABLE now report correct spans.
-3. ~~Compiler warnings~~ — **done**: down to 0 warnings.
-4. **Higher-order functions** (spec §4.4 `TFun`): `test_simple2.zyl`/`test_hof.zyl` pass clean (exit 0). `test_recursion_v2.zyl` now passes (exit 0, 56 functions including nested `add`/`double`). Remaining HOF issues: (a) `flip`/`compose`/`apply` unused core.zyl HOFs still emitted but no longer break programs (DCE handles them); (b) HOF param `Type::Fun` not yet structurally detected by codegen (relying on `fn_value_names` heuristic instead of type info).
-5. Build stdlib data structures on the arena allocator: ~~`Vec<T>` (contiguous, arena-backed), `Map<K,V>` (deterministic sorted-key iteration), arena-backed `StringBuffer`~~ — **all three complete** (`stdlib/collections/vec.zyl`, `stdlib/collections/map.zyl`, `stdlib/collections/set.zyl`, and growable StringBuffer in `stdlib/io/io.zyl`).
-- [x] **Test infrastructure reorganization**: Moved 30+ scattered test files into organized `tests/` hierarchy (`regression/`, `smoke/`, `stress/`, `integration/`), rewrote `run_regression_tests.sh` with `--quick`/`--full`/`--filter`/`--depth`/`--timeout`, removed legacy `stdlib_test.zyl` and all debug/probe files, updated `docs/regression-tests.md`, `AGENTS.md`, `PROGRESS.md`. S-expression balance tests added to `tests/stress/balanced-parens.zyl`.
-    - [x] **Arena-backed `Map<K,V>`**: `stdlib/collections/map.zyl` — `map-create`, `map-create-default`, `map-len`, `map-cap`, `map-get-at`, `map-get`, `map-put` (with realloc + overwrite), `map-put-inner`, `map-remove` (realloc + copy), `map-find`, `map-has`, `map-free`. Verified: put/overwrite, remove, has. Fixed: paren imbalance in `map-remove` causing `set! j` loss.
-    - [x] **Arena-backed `Set<K>`**: `stdlib/collections/set.zyl` — `set-create`, `set-len`, `set-cap`, `set-find`, `set-contains`, `set-add` (grow path with realloc), `set-remove` (compaction). Verified: add/dup-avoid, contains, remove/compact.
-    - [x] Combined module compilation (allocator + map + set): `SetBang` nodes present in all for-loop bodies (ICNF verified). No `set! j` drop reproduces.
-5. ~~Wire the runtime Heap/Pin regions to arenas~~ — **done**: `zyl_heap_alloc` and `zyl_pin_alloc` in `actor_runtime.c` route codegen allocations (MakeStruct, MakeVariant, closure-env, Spawn states) into per-region bump arenas (`g_heap_arena`, `g_pin_arena`) created in `zyl_ensure_arenas`, invoked from every `main` prologue. Deterministic bulk reclamation via `zyl_runtime_cleanup`. <br/>Also fixed remaining **32-bit pointer truncation** in codegen: (a) Call/FfiCall already-emitted reloads were 32-bit (`mov eax, …`) — now 64-bit `rax`; (b) FFI result to non-rax target used `eax` — now `rax`; (c) match-arm ADT field loads `mov ecx,[r12+off]` — now `rcx` 64-bit; (d) Int-valued BinOp in main emit loop used 32-bit `eax/edx/ebx` + `cdq/idiv` — now `rax/rdx/rbx` + `cqo/idiv`; (e) UnOp and SetBang used 32-bit regs — now 64-bit; (f) for-loop init const/path stores used `eax` — now `rax`; (g) **phi-slot stores/loads** (If/Match/While results) wrote 32-bit `eax` into 8-byte slots, leaving garbage in the upper half that later 64-bit reads picked up — this was the root cause of the `test_stringbuffer_growth.zyl` SIGSEGV (the grow-size passed to `arena-alloc-zeroed` came back as `0x7fff00000080`); all slots now store/load full `rax`. Verified: `test_stringbuffer_growth.zyl` prints `length: 104` exit 0; all struct regression tests (6) + stdlib_test pass; 12 test_*.zyl files exit 0.
-6. ~~Hash finalization (Phase 11)~~ — **done**: SHA-256 binary fingerprinting via `--hash` flag.
-7. ~~Full REPL~~ — **done**: complete REPL with full pipeline (parse → type check → compile → run).
-8. ~~Self-hosting Phase 1: Define compiler IR in Zyl~~ — **done**: IR opcodes, lexer, parser all in Zyl
-9. ~~Self-hosting Phase 2a: Lexer in Zyl~~ — **done**
-10. ~~Self-hosting Phase 2b: Parser in Zyl~~ — **done**: all PostProcessor special forms, paren-balanced, compiles clean
-11. ~~Self-hosting Phase 2c: Parser verification + AST manipulation helpers~~ — **done**
-12. Self-hosting Phase 3: ICNF + codegen in Zyl — core pipeline done and verified end-to-end for: arith, if, while, for, cond, set!, defn-with-params, ADT construction, match over field-carrying and nullary variants.
-    **Phase 4 boot build STARTED (2026-08-23):**
-    - `selfhost/driver.zyl`: boot driver — reads `/tmp/zyl_boot_in.zyl`,
-      compiles through zyl-parse → ic-program → cg-program, writes
-      `/tmp/zyl_boot_out.s`. File ops lowered to new C helpers
-      (`zyl_file_open_c/_read_c/_write_c/_close_c` in actor_runtime.c).
-    - `selfhost/assemble.py`: concatenates core/list + allocator +
-      compiler/{ast,lexer,parser,icnf,codegen} + driver into
-      `selfhost/zyl_selfhost_compiler.zyl` (single-file boot source).
-    - **stage1 achieved**: Rust compiler builds that source into
-      `/tmp/opencode/stage1.bin`, which compiles Zyl programs end-to-end
-      by ITSELF (arith/if/while/strings/calls/recursion verified).
-    - Selfhost codegen fixes required for stage1: ic-vt-deftype now emits
-      4-field VTEntry (rest chain was missing → garbage walk); variant
-      name extracted from first child of raw deftype variants; arity =
-      len(kids)-1; cg-new buffer 1MB→8MB; function frames 64KB→4KB.
-    - **Self-compilation status:** blocked on a data-corruption bug whose
-      minimal repro is now precise: stage1 crashes whenever the INPUT
-      contains a `(deftype ...)` AND a defn body with any ident/call —
-      the vt chain walk dereferences rest=1. Verified NOT caused by: the
-      VTEntry construction itself (disassembly of stage1's ic_vt_deftype
-      shows correct push/pop order and correct 4-field layout), pop-fields
-      off-by-one (fixed anyway: cg-pop-fields called with n instead of
-      n-1 → extra junk pop + OOB store per variant construction), arena
-      size, or driver buffer. The corruption happens between ic-collect-vt
-      building a sane chain (runtime log confirms valid threaded vt
-      pointers) and the first ic-ident lookup — i.e., something later in
-      the pipeline overwrites a VTEntry cell, OR the walk traverses into a
-      non-chain structure. Next session: dump the full vt chain after
-      ic-program (walk it from a Rust-compiled harness — cells are plain
-      heap blocks) and compare against what stage1's vt_tag_of sees; then
-      find the stomper. Stage1 remains fully functional for programs
-      without deftype (fact 6 = 720 verified).
-    - **Update (later same day):** fixed cg-pop-fields off-by-one
-      (n+1 pops per variant construction), rewrote ic-match/ic-arms
-      (binds were double-dropped and included the arm body as a bind;
-      arms now built one-per-call via ic-arm-one + list-drop-last),
-      restored the match/ffi-call/variant branches that were missing
-      from the regenerated ic-form dispatch chain, re-added ic-arm-binds
-      with (arena pats acc) signature, and replaced fixed 64KB frames
-      with per-function computed sizes (16B x node count via new
-      icnf-size/icnf-count-list/icnf-count-arms helpers) so deep
-      recursion fits the machine stack. Verified: the vt chain now walks
-      correctly (names/tags/arities/terminator sane in a Rust harness).
-    - **Current blocker:** stage1 still SIGSEGVs compiling multi-module
-      input — vt_tag_of receives vt=0 (NULL) from an if-else branch in
-      the lowering path (crash PC in list_drop_last label region, actual
-      faulting call site shifts between runs). **Debug findings
-      (2026-08-24):** minimal trigger = ANY (match ...) in the input
-      (deftype alone is fine). ic_arm_one is ENTERED with arm=0/rest=0;
-      disassembly of stage1's ic_arms shows the recursive ic-arm_one
-      call computing (hd arena) — Load "arms" resolved to the ARENA
-      param slot (-8) instead of arms' (-16). Next step: run with
-      ZYL_DBG2=1 and inspect the "SLOTS ic_arms" line to see what
-      local_vars maps "arms" to, then fix emit_load_into's slot choice.
-      Also added zyl_heap_alloc failure diagnostics to stderr.
-    - **BISECTED (2026-08-24):** built a MINI stage1 (core+allocator+
-      ast+lexer+parser+icnf + tiny driver calling only ic-program, NO
-      codegen module): compiles match inputs WITHOUT crashing — so
-      icnf-level lowering is fully correct even in selfhost-compiled
-      form. Adding codegen.zyl back (still mini driver, no cg calls)
-      ALSO works. **The crash requires EXECUTING the full driver path:
-      cg-program/cg-new/file-ops over a match-containing input.** Next
-      session: instrument stdlib/compiler/codegen.zyl's cg-match/
-      cg-arms/cg-bind-fields with prints (they execute inside stage1)
-      to find the Zyl-side misexecution — this is the documented
-      "statement-emission heuristics" class of bug; prefer recursion
-      and flat begin-sequences when rewriting those functions.
-      Repro assets: /tmp/opencode/{mini_src.zyl,srcA.zyl} assembly
-      variants; input = any (match ...) program.
-    - **Instrumented result:** cg-match IS entered correctly (prints
-      arm-count=2 for the L/len input), then crashes immediately after —
-      inside cg-label-new / cg-expr(scrutinee). So the Zyl-side match
-      machinery receives correct data; the misexecution is in one of:
-      cg-label-new (string building via buf-append + zyl_cstr_from_int),
-      cg-expr dispatch on the scrutinee node, or stack state at that
-      point. Next session: print between label-new calls to isolate;
-      consider rewriting cg-label-new without buf-append (build label
-      strings via str-concat into fresh arena memory instead).
-    - **FINAL instrumentation round:** cg-label-new works fine (3
-      successful calls: lend, lzero, then first arm's lnext). Crash hits
-      right after entering the FIRST arm's bind path:
-      cg_bind_fields receives binds=0 (NULL) — yet ic-arm-binds returns a
-      real List cell (verified in Rust harness). So an IArm cell's binds
-      slot (@+24) reads as NULL in stage1. Prime suspect: the IArm
-      MakeVariant construction in stage1's compiled ic_arm_one stores
-      fields shifted (4-field push/pop mapping), OR cg-arms' extraction
-      of the binds field reads the wrong offset. Next session: print
-      binds pointer inside ic_arm_one right after ic-arm-binds AND right
-      before the Cons/IArm construction; then print the extracted binds
-      in cg-arms — brackets down to the exact store/load pair.
-    - **CRITICAL FINDING (2026-08-24, late):** the SAME lowering
-      (zyl-parse + ic-program over the match input) works perfectly in a
-      minimal Rust-compiled harness (/tmp/opencode/mh.zyl pattern) — both
-      arms lower, ic-program returns cleanly. So icnf.zyl's match
-      lowering is CORRECT; stage1's crash comes from its EXECUTION
-      ENVIRONMENT: stage1's functions were monomorphized against the
-      FULL assembled program, and some generic function instance used in
-      the match path (list-reverse / list-drop-last / ic-arm-binds /
-      cg-* chain) behaves differently in that context. Next session:
-      bisect assembled-source size (strip modules from assemble.py until
-      stage1 stops crashing on the match input) to find which module's
-      presence perturbs monomorphization; then fix the instance
-      selection. NOTE: working-tree debug prints in ic-arm-one must be
-      dropped when applying fixes (use python S-builder for balanced
-      edits — see /tmp/opencode/patch_arm.py technique).
-    - Stage1 verified again post-cleanup: fact 10 = 3628800 end-to-end.
-    **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
-    battery of programs through the Zyl-written compiler only (parse →
-    ic-program → cg-program → cc): arithmetic, if/else both arms, while +
-    set! + multi-body let, string prints (rodata), unary minus, user
-    function calls with SysV register args, recursion (fact 5 = 120).
-    Fixes: cg-ibinop else branch was nested inside then (paren bug);
-    ic-param-names walked the Ast node as a list (params never bound →
-    [rbp0] loads); unary minus missing from ic-binop; ic-let dropped extra
-    body expressions; Rust convert_sub returned empty vec for 1-arg minus
-    leaving orphan SSA ids; Negate was 32-bit; call alignment pad applied
-    before register pops shifted pushed args. **Next bootstrap blockers** (in rough priority): self-hosted codegen lacks calls-with-arg-evaluation robustness for >6 args, string/FFI emission paths are untested, and Rust-codegen statement-emission heuristics still miscompile some value-returning if/let chains in stdlib shapes (symptom: crashes that shift when debug prints are added — e.g. an iterative variant-tag using while+set! inside if/begin miscompiled, fixed by using tail-recursion instead). Prefer recursion and flat begin-sequences in stdlib compiler modules until emission heuristics are replaced with a sound scheme.
 13. Contract injection (optional overlay, spec §23)
 
 ---
