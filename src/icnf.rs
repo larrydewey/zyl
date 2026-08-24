@@ -3420,11 +3420,22 @@ impl IcnfConverter {
     /// Convert a branch body expression: collect statements WITHOUT pushing to globals.
     /// Branch body nodes stay embedded in the ICNF If/While/For node, not interleaved in func.body.
     fn convert_branch_body(&mut self, expr: &Expr) -> Result<Vec<ICNFNode>, ZylError> {
-        // Use non-pushing mode — branch body nodes stay embedded in control flow nodes.
-        let saved = std::mem::replace(&mut self.push_to_globals, false);
+        // Convert the branch body into an isolated buffer (like a function
+        // body / Match arm): handlers that unconditionally push to
+        // global_stmts land in the throwaway buffer, and the complete,
+        // deduplicated statement sequence is embedded into the control-flow
+        // node. This keeps branch bodies self-contained — operand-supply
+        // statements never leak into the enclosing flat statement list.
+        let saved_globals = std::mem::take(&mut self.global_stmts);
+        let saved_push = std::mem::replace(&mut self.push_to_globals, true);
         let stmts = self.convert_expr_to_stmts(expr)?;
-        self.push_to_globals = saved;
-        Ok(stmts)
+        self.collect_body_into_globals(&stmts);
+        let mut full = std::mem::replace(&mut self.global_stmts, saved_globals);
+        self.push_to_globals = saved_push;
+        for s in full.iter_mut() {
+            s.is_branch_body = true;
+        }
+        Ok(full)
     }
 
     /// Convert binary operations (+ a b).
@@ -3524,14 +3535,14 @@ impl IcnfConverter {
     fn convert_sub(&mut self, args: &[Expr]) -> Result<Vec<ICNFNode>, ZylError> {
         let mut result = Vec::new();
 
-        if args.is_empty() || (args.len() == 1 && !is_expr_value(args)) {
-            return Ok(result);
-        }
-
-        // Unary - (negation): single non-value argument.
-        if args.len() == 1 && is_unary_minus_candidate(&args[0]) {
-            let arg_id = self.convert_expr_collect_id(&args[0])?;
+        // Unary - (negation): always negate the single argument. Returning an
+        // empty vec here would leave callers with an orphan placeholder SSA id
+        // that has no defining statement (silent miscompile).
+        if args.len() == 1 {
+            let mut stmts = self.convert_expr_collect(&args[0])?;
+            let arg_id = stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
             let ssa_id = self.next_ssa_id();
+            result.append(&mut stmts);
             result.push(ICNFNode {
                 id: ssa_id,
                 region: Region::Stack,
@@ -3539,7 +3550,14 @@ impl IcnfConverter {
                 is_branch_body: false,
                 node: ICNFInner::UnOp(UnOpKind::Negate, arg_id),
             });
-        } else if args.len() == 2 {
+            return Ok(result);
+        }
+
+        if args.is_empty() {
+            return Ok(result);
+        }
+
+        if args.len() == 2 {
             let mut left_stmts = self.convert_expr_collect(&args[0])?;
             let left_id = if !left_stmts.is_empty() {
                 left_stmts.last().unwrap().id

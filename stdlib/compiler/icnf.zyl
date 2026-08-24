@@ -116,15 +116,21 @@
 ; Collect parameter names from a parenthesised param node. Typed params
 ; (name Type) take the first element.
 (defn ic-param-names (node acc)
-  (if (is-nil node)
+  (if (not (= (ast-code node) 5))
     acc
-    (if (not (= (ast-code node) 5))
-      acc
-      (let kids (ast-kids node)
-        (if (is-nil kids)
-          acc
-          (let p (hd kids)
-            (ic-param-names (list-cdr node) (Cons (ast-name p) acc))))))))
+    (ic-param-names-kids (ast-kids node) acc)))
+
+; Walk one parameter per list element. Typed pairs ((name Type) ...) take
+; the first child's name.
+(defn ic-param-names-kids (kids acc)
+  (if (is-nil kids)
+    acc
+    (let p (hd kids)
+      (let pname
+        (if (= (ast-code p) 5)
+          (ast-name (hd (ast-kids p)))
+          (ast-name p))
+        (ic-param-names-kids (list-cdr kids) (Cons pname acc))))))
 
 ; Drop the first n elements of a list.
 ; Head of a list of Ast forms (empty AList when nil).
@@ -203,20 +209,28 @@
                                   (ICall (str-intern arena hname)
                                          (ic-arg-list arena args env vt)))))))))))))))))))
 
-; (let name val body)
+; (let name val body...) — extra body expressions become an implicit ISeq.
 (defn ic-let (arena args env vt mutable)
   (let name (ast-name (hd args))
     (let val (ic-expr arena (hd (list-cdr args)) env vt)
-      (let body (ic-expr arena (hd (list-drop args 2)) env vt)
-        (ILet (str-intern arena name) val body)))))
+      (let rest (list-drop args 2)
+        (let body
+          (if (= (list-length rest) 1)
+            (ic-expr arena (hd rest) env vt)
+            (ISeq (ic-arg-list arena rest env vt))))
+          (ILet (str-intern arena name) val body)))))
 
-; Binary operator with exactly two arguments (else Const 0 placeholder).
+; Binary operator with exactly two arguments; unary minus (- x) supported.
 (defn ic-binop (arena op args env vt)
-  (if (not (= (list-length args) 2))
-    (IConst 0)
+  (if (= (list-length args) 2)
     (IBinop op
             (ic-expr arena (hd args) env vt)
-            (ic-expr arena (hd (list-cdr args)) env vt))))
+            (ic-expr arena (hd (list-cdr args)) env vt))
+    (if (= (list-length args) 1)
+      (if (= op 1)
+        (IBinop 1 (IConst 0) (ic-expr arena (hd args) env vt))
+        (IConst 0))
+      (IConst 0))))
 
 ; print: multi-argument prints become a sequence of single prints.
 (defn ic-print (arena args env vt)

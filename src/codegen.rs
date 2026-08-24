@@ -3775,7 +3775,7 @@ impl CodeGen {
                 }
                 UnOpKind::Negate => {
                     self.asm_push_align();
-                    self.asm.push(format!("    neg {}", reg_to_32(target_reg)));
+                    self.asm.push(format!("    neg {}", reg_to_64(target_reg)));
                 }
             }
         }
