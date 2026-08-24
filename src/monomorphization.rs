@@ -1093,11 +1093,31 @@ impl MonoContext {
             (Type::Prim(PrimType::Int), Type::Prim(PrimType::Float))
             | (Type::Prim(PrimType::Float), Type::Prim(PrimType::Int)) => Ok(()),
 
-            _ => Err(ZylError::E_TYPE_MISMATCH(
-                span.clone(),
-                format!("{}", t1),
-                format!("{}", t2),
-            )),
+            // An empty Nominal is an unresolved-ADT fallback.
+            (Type::Nominal(a), _) if a.is_empty() => Ok(()),
+            (_, Type::Nominal(b)) if b.is_empty() => Ok(()),
+
+            // A monomorphized ADT instance (Token_String) adapts to its base
+            // ADT (Token) and vice versa — inference may record either name
+            // for the same value depending on which site it saw first.
+            (Type::Nominal(a), Type::Nominal(b))
+                if a.starts_with(b.as_str()) && a[b.len()..].starts_with('_') =>
+            {
+                Ok(())
+            }
+            (Type::Nominal(a), Type::Nominal(b))
+                if b.starts_with(a.as_str()) && b[a.len()..].starts_with('_') =>
+            {
+                Ok(())
+            }
+
+            _ => {
+                Err(ZylError::E_TYPE_MISMATCH(
+                    span.clone(),
+                    format!("{}", t1),
+                    format!("{}", t2),
+                ))
+            }
         }
     }
 

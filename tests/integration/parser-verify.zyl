@@ -50,21 +50,30 @@
 (test "pv-atoms"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn main () (begin (print 42) (print \"hi\") (print true) (print 1.5) 0))")
-      (let body-kids (ast-kids (pv-hd (pv-drop (ast-kids (pv-first prog)) 3)))
-        (begin
-          ; (begin ...) has 5 elements
-          (assert-equal (list-length body-kids) 5)
-          (let p1 (pv-hd (ast-kids (pv-hd body-kids)))
-            (begin
-              (assert-equal (ast-code p1) 1)
-              (assert-equal (ast-int p1) 42)
-              ; string literal
-              (assert-true (> (alloc-strlen (ast-text (pv-hd (ast-kids (pv-hd (list-cdr body-kids)))))) 0))
-              ; bool literal
-              (assert-true (ast-bool (pv-hd (ast-kids (pv-hd (pv-drop body-kids 2))))))
-              ; float literal text
-              (assert-true (str-eq (ast-text (pv-hd (ast-kids (pv-hd (pv-drop body-kids 3))))) (str-intern arena "1.5")))
-              0)))))))
+      (let body-form (pv-hd (pv-drop (ast-kids (pv-first prog)) 3))
+        (let body-kids (ast-kids body-form)
+          (begin
+            ; begin form kids: head "begin" + 5 elements = 6
+            (assert-equal (list-length body-kids) 6)
+            ; element 1: (print 42) -> its arg atom 42
+            (let e42 (match (list-cdr body-kids) (Cons w1 rest w1) (None (AList None)))
+              (let a42 (match (list-cdr (ast-kids e42)) (Cons w2 rest w2) (None (AInt 0)))
+                (begin
+                  (assert-equal (ast-code a42) 1)
+                  (assert-equal (ast-int a42) 42)
+                  ; element 2: (print "hi") -> string literal
+                  (let ehi (match (list-cdr (list-cdr body-kids)) (Cons w3 rest w3) (None (AList None))))
+                    (begin
+                      (assert-true (str-eq (ast-text (match (list-cdr (ast-kids ehi)) (Cons w4 rest w4) (None (AString "")))) (str-intern arena "hi")))
+                      ; element 3: (print true) -> bool literal
+                      (let etr (match (list-cdr (list-cdr (list-cdr body-kids))) (Cons w5 rest w5) (None (AList None))))
+                        (begin
+                          (assert-true (ast-bool (match (list-cdr (ast-kids etr)) (Cons w6 rest w6) (None (ABool false)))))
+                          ; element 4: (print 1.5) -> float literal text
+                          (let efl (match (list-cdr (list-cdr (list-cdr (list-cdr body-kids)))) (Cons w7 rest w7) (None (AList None))))
+                            (begin
+                              (assert-true (str-eq (ast-text (match (list-cdr (ast-kids efl)) (Cons w8 rest w8) (None (AString "")))) (str-intern arena "1.5")))
+                              0))))))))))))
 
 (test "pv-nesting"
   (let arena (arena-create 0)

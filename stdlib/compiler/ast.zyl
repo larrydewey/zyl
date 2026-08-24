@@ -29,7 +29,8 @@
   (TkLBrace)
   (TkRBrace)
   (TkLBracket)
-  (TkRBracket))
+  (TkRBracket)
+  (TkColon))
 
 ; A parsed s-expression: an atom or a parenthesised list of forms.
 (deftype Ast

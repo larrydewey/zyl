@@ -2497,7 +2497,7 @@ impl CodeGen {
                             .push(format!("    movsd {}, xmm0", target_reg));
                     } else {
                         self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                     }
                 } else {
                     self.emit_binop_direct(
@@ -2537,7 +2537,7 @@ impl CodeGen {
                             self.asm_push_align();
                             if target_reg != "eax" {
                                 self.asm
-                                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                             }
                         }
                     }
@@ -2601,7 +2601,7 @@ impl CodeGen {
                             .push(format!("    movsd {}, xmm0", target_reg));
                     } else {
                         self.asm
-                            .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                            .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                     }
                 } else {
                     self.emit_unop_direct(
@@ -2734,7 +2734,7 @@ impl CodeGen {
                 if target_reg != "rax" && target_reg != "eax" {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 }
             }
             Some(ICNFNode {
@@ -2767,7 +2767,7 @@ impl CodeGen {
                             if target_reg != "rax" && target_reg != "eax" {
                                 self.asm_push_align();
                                 self.asm
-                                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                             }
                         }
                     }
@@ -2813,7 +2813,7 @@ impl CodeGen {
                         self.asm.push(format!("    mov {}, [rbp-{}]", reg_to_64(target_reg), slot));
                     } else if target_reg != "rax" && target_reg != "eax" {
                         self.asm_push_align();
-                        self.asm.push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
                     }
                 } else {
                     // Emit the whole match inline; join leaves result in rax/xmm0.
@@ -2854,7 +2854,7 @@ impl CodeGen {
                 if already_emitted {
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                        .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                 } else if Self::node_looks_string(*left, lookup, stmts)
                     || Self::node_looks_string(*right, lookup, stmts)
                 {
@@ -3012,7 +3012,7 @@ impl CodeGen {
             None => {
                 self.asm_push_align();
                 self.asm
-                    .push(format!("    mov {}, eax", reg_to_32(target_reg)));
+                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
             }
         }
     }

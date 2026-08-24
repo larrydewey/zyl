@@ -470,7 +470,7 @@
     0
     (let arm (list-car arms)
       (match arm
-        ((IArm vname tag binds body)
+        (IArm vname tag binds body
          (let rest (list-cdr arms)
            (let lnext (if (is-nil rest) lzero (cg-label-new st))
              (begin
@@ -535,7 +535,7 @@
 
 (defn cg-function (st f)
   (match f
-    ((IFn name params body)
+    (IFn name params body
      (let env (cg-param-env params 0 None)
        (begin
          (cg-emit st "f_")
@@ -646,7 +646,7 @@
 (defn cg-rodata-emit (st rd)
   (match rd
     (RNil 0)
-    ((RStr lbl content rest)
+    (RStr lbl content rest
      (begin
        (cg-emit st lbl)
        (cg-emit st ":")
@@ -656,7 +656,7 @@
        (cg-emit st "\"")
        (cg-nl st)
        (cg-rodata-emit st rest)))
-    ((RFlt lbl text rest)
+    (RFlt lbl text rest
      (begin
        (cg-emit st lbl)
        (cg-emit st ":")

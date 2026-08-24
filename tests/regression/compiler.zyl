@@ -20,13 +20,14 @@
   (let arena (arena-create 0)
     (let toks (zyl-lex arena "(+ 1 2)")
       (begin
-        ; 4 tokens + EOF
-        (assert-equal (list-length toks) 5)
+        ; 5 tokens + EOF
+        (assert-equal (list-length toks) 6)
         (assert-true (str-eq (ast-name (AIdent "+")) (str-intern arena "+")))
         (assert-equal (tok-code (toks-head toks)) 8)          ; '('
         (assert-equal (tok-code (toks-head (tk-at toks 3))) 2) ; int
         (assert-equal (tok-int (toks-head (tk-at toks 3))) 2)
-        (assert-equal (tok-code (toks-head (tk-at toks 4))) 0) ; EOF
+        (assert-equal (tok-code (toks-head (tk-at toks 4))) 9) ; ')'
+        (assert-equal (tok-code (toks-head (tk-at toks 5))) 0) ; EOF
         0))))
 
 ; Reader builds nested Ast forms
@@ -36,8 +37,8 @@
       (let kids (ast-kids (ah prog))
         (begin
           (assert-equal (list-length prog) 1)
-          (assert-true (str-eq (ast-name (list-car kids)) (str-intern arena "defn")))
-          (let body (list-car (list-drop kids 3))
+          (assert-true (str-eq (ast-name (ah kids)) (str-intern arena "defn")))
+          (let body (ah (list-cdr (list-cdr (list-cdr kids))))
             (begin
               (assert-equal (ast-code body) 5)
               (assert-equal (list-length (ast-kids body)) 3)
