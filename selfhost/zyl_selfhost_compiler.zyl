@@ -1209,31 +1209,24 @@
 
 ; (match scrutinee arm...): arm = ((Variant binds...) body) or (Variant body).
 (defn ic-match (arena args env vt)
-  (let scrut (ic-expr arena (hd args) env vt)
-    (let arms (list-cdr args)
-      (IMatch scrut (ic-arms arena arms None env vt)))))
+  (IMatch (ic-expr arena (hd args) env vt)
+          (list-reverse (ic-arms arena (list-cdr args) None env vt))))
 
+; One arm per call: arm kids = (VariantName pat* body).
 (defn ic-arms (arena arms acc env vt)
   (if (is-nil arms)
     acc
-    (let arm (hd arms)
-      (let parts (ast-kids arm)
-        (let np (list-length parts)
-          (if (< np 2)
-            (ic-arms arena (list-cdr arms) acc env vt)
-            (let vname (ast-name (hd parts))
-              (let tag (vt-tag-of vt (str-intern arena vname))
-                (let body (ic-expr arena (hd (list-drop parts (- np 1))) env vt)
-                  (let binds (ic-arm-binds arena (list-drop (list-drop parts 1) 1) None)
+    (ic-arm-one arena (hd arms) (list-cdr arms) acc env vt)))
 
-                    (ic-arms arena (list-cdr arms)
-                             (Cons (IArm (str-intern arena vname) tag binds body) acc))))))))))))
-
-; Pattern binding names ("_" wildcards kept, skipped by codegen).
-(defn ic-arm-binds (arena pats acc)
-  (if (is-nil pats)
-    (list-reverse acc)
-    (ic-arm-binds arena (list-cdr pats) (Cons (str-intern arena (ast-name (hd pats))) acc))))
+(defn ic-arm-one (arena arm rest acc env vt)
+  (let parts (ast-kids arm)
+    (let vname (ast-name (hd parts))
+      (let pats (list-drop-last (list-cdr parts))
+        (let tag (vt-tag-of vt (str-intern arena vname))
+          (let binds (ic-arm-binds arena pats None)
+            (let body (ic-expr arena (hd (list-drop-last parts)) env vt)
+              (ic-arms arena rest
+                       (Cons (IArm (str-intern arena vname) tag binds body) acc)))))))))
 
 ; Variant construction with fields: (V a b ...).
 (defn ic-variant (arena vname args env vt)
@@ -1637,7 +1630,7 @@
           (cg-emit st "    add rsp, 8")
           (cg-nl st))
         0)
-      (cg-pop-fields st n)
+      (cg-pop-fields st (- n 1))
       (cg-emit st "    mov rax, rbx")
       (cg-nl st))))
 

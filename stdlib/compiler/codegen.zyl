@@ -379,7 +379,7 @@
           (cg-emit st "    add rsp, 8")
           (cg-nl st))
         0)
-      (cg-pop-fields st n)
+      (cg-pop-fields st (- n 1))
       (cg-emit st "    mov rax, rbx")
       (cg-nl st))))
 
