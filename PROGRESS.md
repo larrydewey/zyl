@@ -264,8 +264,29 @@ lexer/parser/icnf/codegen rewritten on ADTs (List Token -> List Ast ->
 Icnf tree -> asm). str-intern/str-eq moved to allocator.zyl.
 zyl_cstr_sanitize added to actor_runtime.c.
 
-**Status: compiles, end-to-end run BLOCKED by pre-existing Rust compiler
-bugs (not Zyl-source issues):**
+**Status: RESOLVED (2026-08-23, commit 2b6cfe5) — suite 24/24, nested
+forms parse end-to-end, selfhost-codegen integration test green.**
+
+Root causes were Zyl-source bugs + Rust compiler gaps:
+1. parser.zyl read-form called the 3-param read-forms* without the
+   initial acc argument — stale register garbage seeded every list.
+2. lexer.zyl lex-string had a misplaced paren: (let text ...) became a
+   bodyless 2-element let and the if grew a 4th arg, so the PostProcessor
+   silently dropped the entire tail of string scanning. Also lex-loop now
+   appends TkEof at clean end-of-input.
+3. ast.zyl Token deftype was missing (TkColon).
+4. codegen.zyl used nested-list match patterns ((IFn ...) etc.) which the
+   PostProcessor does not support — flattened to spec form.
+5. Rust icnf.rs: deftypes are now registered in a pre-pass before any
+   conversion (use-before-declare constructors got discriminant 0);
+   adt_defs inserts merge instead of overwrite; Match arm bodies convert
+   in an isolated buffer and embed completely; If/Match return their
+   condition/scrutinee statements so embedding keeps them.
+6. Rust codegen.rs: remaining 32-bit result copies converted to 64-bit.
+7. Inference/mono: monomorphized ADT instances (Token_String) unify with
+   base ADT names; empty-Nominal fallback adapts to any type.
+
+Historical diagnosis chain (for reference):
 
 1. FIXED this session (src/codegen.rs ~3828): Match dispatch compared tag
    against ARM INDEX (`cmp eax, {i}`) instead of arm.discriminant. Now uses
@@ -295,7 +316,7 @@ bugs (not Zyl-source issues):**
      testing whether the crash predates always-spill on the same input
      (it does — same crash pre-refactor), which points at ICNF embedding
      of the inner AstOf rather than codegen slots.
-Remaining integration tests fail on these; everything else green (20/24).
+All integration tests pass; full suite 24/24 (2026-08-23).
 
 ## Next Priorities
 
