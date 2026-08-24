@@ -235,23 +235,25 @@
     (cg-emit st "    pop rax")
     (cg-nl st)
     (if (< op 5)
-      (if (= op 0)
-        (cg-emit st "    add rax, rcx")
-        (if (= op 1)
-          (cg-emit st "    sub rax, rcx")
-          (if (= op 2)
-            (cg-emit st "    imul rax, rcx")
-            (begin
-              (cg-emit st "    cqo")
-              (cg-nl st)
-              (cg-emit st "    idiv rcx")
-              (cg-nl st)
-              (if (= op 4)
-                (begin
-                  ; remainder lives in rdx after idiv
-                  (cg-emit st "    mov rax, rdx")
-                  (cg-nl st))
-                0))))))
+      (begin
+        (if (= op 0)
+          (cg-emit st "    add rax, rcx")
+          (if (= op 1)
+            (cg-emit st "    sub rax, rcx")
+            (if (= op 2)
+              (cg-emit st "    imul rax, rcx")
+              (begin
+                (cg-emit st "    cqo")
+                (cg-nl st)
+                (cg-emit st "    idiv rcx")
+                (cg-nl st)
+                (if (= op 4)
+                  (begin
+                    ; remainder lives in rdx after idiv
+                    (cg-emit st "    mov rax, rdx")
+                    (cg-nl st))
+                  0)))))
+        (cg-nl st)))
       (begin
         (cg-emit st "    cmp rax, rcx")
         (cg-nl st)
