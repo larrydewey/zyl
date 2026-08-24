@@ -327,6 +327,25 @@ Findings from the stage2 attempt:
    and audit TCO-vs-Assign interaction (a tail call whose result is
    stored into an Assign slot skips that store on the jump path).
 
+Stage2 blocker update (same day, later):
+- FFI nanosleep "hang" SOLVED: it was zyl_actor_wait_all spinning on
+  uninitialized mailbox state; wait_all is now emitted only when the
+  program contains spawn.
+- HOF calls implemented in stage1's codegen: `(f v)` with f a function
+  parameter emits an indirect call through the param slot; references
+  to top-level fn names compile to `lea rax, [rip+f_<name>]` via a
+  known-fn-names list carried on CGState.
+- REMAINING crash: compiling option-map (match arm calls a parameter)
+  AFTER a deftype in the same input corrupts stage1's own execution
+  (~8MB-deep stack at the lexer dispatch). Isolated option-map compiles
+  fine. Next session: trace stage1's icnf/codegen on isolated vs
+  combined inputs; check whether match-arm binding of function-typed
+  params miscompiles inside stage1's own compiled cg-match.
+- A single-function self-tail lexer rewrite was attempted and REVERTED:
+  still crashed; the committed mutual-recursion lexer works for moderate
+  inputs. A general fix is bootstrap sibling-TCO with explicit
+  callee-saved register save/restore.
+
 Known remaining gaps in the Rust bootstrap (future hardening): silent
 zero fallbacks in `src/codegen.rs` MakeVariant emission should become
 E_* compile errors (P1 no-null principle); spurious "expected function
