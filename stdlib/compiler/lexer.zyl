@@ -167,6 +167,9 @@
             (if (= c 93) 1
               (if (= c 58) 1 (if (= c 126) 1 0)))))))))
 
+; Empty token stream (typed so `None` never unifies as Option).
+(defn no-tokens () None)
+
 ; ===========================================================================
 ; MAIN LEXER — cursor threaded functionally
 ; ===========================================================================
@@ -176,7 +179,7 @@
 ; Returns: List(Token)
 (defn zyl-lex (arena src)
   (let len (ffi-call "zyl_cstr_len" src 1000)
-    (list-reverse (lex-loop arena src len 0 None))))
+    (list-reverse (lex-loop arena src len 0 (no-tokens)))))
 
 ; Scanner loop: skip whitespace/comments, then produce one token per step.
 ; `acc` accumulates tokens in reverse source order.

@@ -64,7 +64,10 @@
 
 (defn cg-new (arena)
   (let buf (arena-alloc-zeroed arena 8388608)
-    (CGS arena buf 0 8 None)))   ; params occupy slots 1..n
+    (CGS arena buf 0 8 (no-rentries))))   ; params occupy slots 1..n
+
+; Empty rodata list.
+(defn no-rentries () None)
 
 (defn cg-buffer (st)
   (match st
@@ -217,11 +220,12 @@
       (cg-let-store st2 env n v body off))))
 
 (defn cg-let-store (st env n v body off)
-  (let st3 (cg-expr st env v)
-    (let st4 (cg-emit st3 "    mov [rbp")
-      (let st5 (cg-emit-int st4 off)
-        (let st6 (cg-nl (cg-emit st5 "], rax"))
-          (cg-expr st6 (EnvBind n off (kind-of env v) env) body))))))
+  (let k (kind-of env v)
+    (let st3 (cg-expr st env v)
+      (let st4 (cg-emit st3 "    mov [rbp")
+        (let st5 (cg-emit-int st4 off)
+          (let st6 (cg-nl (cg-emit st5 "], rax"))
+            (cg-expr st6 (EnvBind n off k env) body)))))))
 
 ; (if c t e): condition tested, then branch tails.
 (defn cg-if-parts (st env c t eb lelse lend)
@@ -591,7 +595,7 @@
 (defn cg-function (st f)
   (match f
     (IFn name params body
-     (let env (cg-param-env params 0 None)
+     (let env (cg-param-env params 0 (EnvNil))
        (let fsz (* 16 (+ 64 (icnf-size body)))
          (let st1 (cg-emit st "f_")
            (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
@@ -642,7 +646,7 @@
 
 ; Reverse the collected rodata list so entries emit in creation order.
 (defn cg-reverse-rodata (xs)
-  (cg-rev-acc xs None))
+  (cg-rev-acc xs (no-rentries)))
 
 (defn cg-rev-acc (xs acc)
   (match xs

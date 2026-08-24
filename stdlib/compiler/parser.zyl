@@ -21,6 +21,9 @@
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
 
+; Empty form list (typed so `None` never unifies as Option).
+(defn no-forms () None)
+
 (defn art-ast (r)
   (match r
     (AstOf a d1 a)))
@@ -72,9 +75,9 @@
 
 (defn read-dispatch (arena t rest)
   (match t
-        (TkLParen (read-forms arena rest None))
-        (TkLBracket (read-forms-bracket arena rest None))
-        (TkLBrace (read-forms-brace arena rest None))
+        (TkLParen (read-forms arena rest (no-forms)))
+        (TkLBracket (read-forms-bracket arena rest (no-forms)))
+        (TkLBrace (read-forms-brace arena rest (no-forms)))
         (TkRParen (read-form-atom arena t rest))
         (TkRBrace (read-form-atom arena t rest))
         (TkRBracket (read-form-atom arena t rest))
@@ -101,13 +104,13 @@
     (TkKeyword s (AstOf (AIdent s) rest))
     ; closers / colon / eof in atom position: empty form
     (TkEof (AstOf (AList None) rest))
-    (TkLParen (AstOf (AList None) rest))
-    (TkRParen (AstOf (AList None) rest))
-    (TkLBrace (AstOf (AList None) rest))
-    (TkRBrace (AstOf (AList None) rest))
-    (TkLBracket (AstOf (AList None) rest))
-    (TkRBracket (AstOf (AList None) rest))
-    (TkColon (AstOf (AList None) rest))))
+    (TkLParen (AstOf (AList (no-forms)) rest))
+    (TkRParen (AstOf (AList (no-forms)) rest))
+    (TkLBrace (AstOf (AList (no-forms)) rest))
+    (TkRBrace (AstOf (AList (no-forms)) rest))
+    (TkLBracket (AstOf (AList (no-forms)) rest))
+    (TkRBracket (AstOf (AList (no-forms)) rest))
+    (TkColon (AstOf (AList (no-forms)) rest))))
 
 ; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
@@ -200,7 +203,7 @@
 ; Ast forms in source order.
 ; Returns: List(Ast)
 (defn parse-program (arena toks)
-  (list-reverse (parse-program-loop arena toks None)))
+  (list-reverse (parse-program-loop arena toks (no-forms))))
 
 (defn parse-program-loop (arena toks acc)
   (if (toks-empty toks)
