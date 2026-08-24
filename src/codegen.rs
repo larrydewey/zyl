@@ -1349,8 +1349,11 @@ impl CodeGen {
                 );
             }
 
-            // End of user-defined function body — emit wait_all for main.
-            if func.name == "main" {
+            // End of user-defined function body — emit wait_all for main,
+            // but ONLY when the program can have live actors: the runtime
+            // loop spins forever on uninitialized/garbage mailbox state
+            // otherwise (P1: no phantom waits).
+            if func.name == "main" && self.spawn_wrappers.len() > 0 {
                 self.asm_push_align();
                 self.asm.push("    call zyl_actor_wait_all@plt".to_string());
             }
