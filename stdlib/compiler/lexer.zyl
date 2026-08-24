@@ -102,12 +102,17 @@
 ; Exponent tail: e/E [+-] digits. `i` points at e/E.
 ; Returns: Int (end, exclusive)
 (defn scan-exp (src len i)
-  (let j (+ i 1)
-    (if (>= j len)
-      j
-      (let b (byte-at src j)
-        (let j2 (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j))
-        (scan-exp-digits src len j2)))))
+  (scan-exp-j src len i (+ i 1)))
+
+; j = candidate exponent-digit start.
+(defn scan-exp-j (src len i j)
+  (if (>= j len)
+    i
+    (scan-exp-b src len i j (byte-at src j))))
+
+(defn scan-exp-b (src len i j b)
+  (scan-exp-digits src len
+                   (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j)))
 
 ; Full numeric literal end from `start` (sign included in caller).
 ; Returns: Int (end, exclusive)
@@ -280,13 +285,14 @@
       (lex-ident-done arena src len e acc text))))
 
 (defn lex-ident-done (arena src len i acc text)
-  (let is-true (str-eq text (str-intern arena "true")))
-  (if (> is-true 0)
+  (if (> (str-eq text (str-intern arena "true")) 0)
     (lex-continue arena src len i (Cons (TkBool true) acc))
-    (let is-false (str-eq text (str-intern arena "false"))
-      (if (> is-false 0)
-        (lex-continue arena src len i (Cons (TkBool false) acc))
-        (lex-continue arena src len i (Cons (TkIdent text) acc))))))
+    (lex-ident-done2 arena src len i acc text)))
+
+(defn lex-ident-done2 (arena src len i acc text)
+  (if (> (str-eq text (str-intern arena "false")) 0)
+    (lex-continue arena src len i (Cons (TkBool false) acc))
+    (lex-continue arena src len i (Cons (TkIdent text) acc))))
 
 ; Route the non-punctuator cases by leading character.
 ; Returns: List(Token) (reverse order)
