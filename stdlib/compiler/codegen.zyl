@@ -224,49 +224,7 @@
 
 ; Integer binary op: lhs -> rax (pushed), rhs -> rax, lhs restored to rax,
 ; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
-(defn cg-ibinop (st env op l r)
-  (begin
-    (cg-expr st env l)
-    (cg-emit st "    push rax")
-    (cg-nl st)
-    (cg-expr st env r)
-    (cg-emit st "    mov rcx, rax")
-    (cg-nl st)
-    (cg-emit st "    pop rax")
-    (cg-nl st)
-    (if (< op 5)
-      (begin
-        (if (= op 0)
-          (cg-emit st "    add rax, rcx")
-          (if (= op 1)
-            (cg-emit st "    sub rax, rcx")
-            (if (= op 2)
-              (cg-emit st "    imul rax, rcx")
-              (begin
-                (cg-emit st "    cqo")
-                (cg-nl st)
-                (cg-emit st "    idiv rcx")
-                (cg-nl st)
-                (if (= op 4)
-                  (begin
-                    ; remainder lives in rdx after idiv
-                    (cg-emit st "    mov rax, rdx")
-                    (cg-nl st))
-                  0)))))
-        (cg-nl st)))
-      (begin
-        (cg-emit st "    cmp rax, rcx")
-        (cg-nl st)
-        (cg-emit st "    set")
-        (if (= op 5) (cg-emit st "l al")
-          (if (= op 6) (cg-emit st "g al")
-            (if (= op 7) (cg-emit st "le al")
-              (if (= op 8) (cg-emit st "ge al")
-                (if (= op 9) (cg-emit st "e al")
-                  (cg-emit st "ne al"))))))
-        (cg-nl st)
-        (cg-emit st "    movzx rax, al")
-        (cg-nl st))))
+(defn cg-ibinop (st env op l r) (begin (cg-expr st env l) (cg-emit st "    push rax") (cg-nl st) (cg-expr st env r) (cg-emit st "    mov rcx, rax") (cg-nl st) (cg-emit st "    pop rax") (cg-nl st) (if (< op 5) (begin (let mnem (if (= op 0) "    add rax, rcx" (if (= op 1) "    sub rax, rcx" (if (= op 2) "    imul rax, rcx" "    idiv rcx"))) (begin (if (= op 3) (begin (cg-emit st "    cqo") (cg-nl st)) 0) (cg-emit st mnem) (cg-nl st) (if (= op 4) (begin (cg-emit st "    mov rax, rdx") (cg-nl st)) 0)))) (begin (cg-emit st "    cmp rax, rcx") (cg-nl st) (cg-emit st "    set") (if (= op 5) (cg-emit st "l al") (if (= op 6) (cg-emit st "g al") (if (= op 7) (cg-emit st "le al") (if (= op 8) (cg-emit st "ge al") (if (= op 9) (cg-emit st "e al") (cg-emit st "ne al")))))) (cg-nl st) (cg-emit st "    movzx rax, al") (cg-nl st)))))
 
 ; Float binary op: bits in rax; xmm0 = lhs, xmm1 = rhs.
 (defn cg-fbinop (st env op l r)
@@ -330,13 +288,17 @@
 
 (defn cg-call-fire (st env name mangle i)
   (let pad (if (= (% i 2) 1)
-             (begin
-               (cg-emit st "    sub rsp, 8")   ; keep rsp 16-aligned for calls
-               (cg-nl st)
-               1)
+             1
              0)
     (begin
       (cg-pop-regs st (- i 1))
+      ; alignment pad goes AFTER the pops so it cannot shift a pushed arg
+      ; out of place for the register pops.
+      (if (= pad 1)
+        (begin
+          (cg-emit st "    sub rsp, 8")
+          (cg-nl st))
+        0)
       (cg-emit st "    call ")
       (if mangle (cg-emit st "f_") 0)
       (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
