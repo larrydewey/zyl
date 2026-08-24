@@ -497,11 +497,34 @@
 ; FUNCTION / PROGRAM EMISSION
 ; ===========================================================================
 
+
+; ─── Frame sizing ──────────────────────────────────────────────────────
+; Upper bound on stack slots a function needs: total Icnf nodes in its
+; body (every node may own one 8-byte slot). Keeps frames small so deep
+; recursion in the compiler stays within the machine stack.
+(defn icnf-count-list (xs)
+  (if (is-nil xs)
+    0
+    (+ (icnf-size (hd xs)) (icnf-count-list (tl2 xs)))))
+
+(defn icnf-count-arms (xs)
+  (if (is-nil xs)
+    0
+    (+ 1 (icnf-size (alloc-read-int (+ (hd xs) 32))) (icnf-count-arms (tl2 xs)))))
+
+(defn icnf-size (e)
+  (if (is-nil e)
+    1
+    (let t (alloc-read-int e)
+      (if (= t 4) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 5) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 6) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 7) (+ 2 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 8) (+ 4 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 9) (+ 3 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16)))) (if (= t 10) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 11) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 12) (+ 1 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 13) (+ 2 (icnf-size (alloc-read-int (+ e 24)))) 1)))))))))))))
+
 (defn cg-function (st f)
   (match f
     (IFn name params body
      (let env (cg-param-env params 0 None)
+      (let fsz (* 16 (+ 64 (icnf-size body)))
        (begin
+
          (cg-emit st "f_")
          (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
          (cg-emit st ":")
@@ -510,17 +533,20 @@
          (cg-nl st)
          (cg-emit st "    mov rbp, rsp")
          (cg-nl st)
-         (cg-emit st "    sub rsp, 4096")
+         (cg-emit st "    sub rsp, ")
+         (cg-emit-int st fsz)
          (cg-nl st)
          (cg-param-spills st 0 (list-length params))
-         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params)))) ; locals start after params
+         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params))))
          (cg-expr st env body)
          (cg-emit st "    mov rsp, rbp")
          (cg-nl st)
          (cg-emit st "    pop rbp")
          (cg-nl st)
          (cg-emit st "    ret")
-         (cg-nl st))))))
+         (cg-nl st)
+))))))
+
 
 ; Immutable param environment: param i -> offset -(8*(i+1)).
 (defn cg-param-env (params i acc)

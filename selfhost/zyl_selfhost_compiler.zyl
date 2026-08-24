@@ -1046,6 +1046,8 @@
           (ic-collect-vt arena rest vt))))))
 
 ; Add one deftype's variants (kids = (deftype Name Variant...)).
+; Entries link through VTEntry.rest directly (NOT Cons cells): every walker
+; matches VTable variants against this chain.
 (defn ic-vt-deftype (arena kids vt tag)
   (let rem (list-drop kids 2)
     (if (is-nil rem)
@@ -1056,9 +1058,8 @@
             (ast-name (hd (ast-kids v)))
             (ast-name v))
           (let arity (- (list-length (ast-kids v)) 1)
-            (ic-vt-deftype arena (list-cdr rem)
-                           (Cons (VTEntry (str-intern arena vname) tag arity vt) vt)
-                           (+ tag 1))))))))
+            (let tail (ic-vt-deftype arena (list-cdr rem) vt (+ tag 1)))
+              (VTEntry (str-intern arena vname) tag arity tail)))))))
 
 ; Lower all top-level defn forms to IFn records (source order preserved).
 (defn ic-defns (arena forms acc vt)
@@ -1157,7 +1158,7 @@
                               (ic-let arena args env vt false)
                               (if (str-eq hname (str-intern arena "let-mut"))
                                 (ic-let arena args env vt true)
-                            (if (str-eq hname (str-intern arena "if")) (IIf (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt) (ic-expr arena (hd (list-drop args 2)) env vt)) (if (str-eq hname (str-intern arena "while")) (IWhile (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "set!")) (ISet (str-intern arena (ast-name (hd args))) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "begin")) (ISeq (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-close")) (IFfi "zyl_file_close_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-write")) (IFfi "zyl_file_write_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-read")) (IFfi "zyl_file_read_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-open")) (IFfi "zyl_file_open_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "print")) (ic-print arena args env vt) (ICall (str-intern arena hname) (ic-arg-list arena args env vt))))))))))))))))))))
+                            (if (str-eq hname (str-intern arena "if")) (IIf (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt) (ic-expr arena (hd (list-drop args 2)) env vt)) (if (str-eq hname (str-intern arena "while")) (IWhile (ic-expr arena (hd args) env vt) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "set!")) (ISet (str-intern arena (ast-name (hd args))) (ic-expr arena (hd (list-cdr args)) env vt)) (if (str-eq hname (str-intern arena "begin")) (ISeq (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-close")) (IFfi "zyl_file_close_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-write")) (IFfi "zyl_file_write_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-read")) (IFfi "zyl_file_read_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "file-open")) (IFfi "zyl_file_open_c" (ic-arg-list arena args env vt)) (if (str-eq hname (str-intern arena "print")) (ic-print arena args env vt) (if (str-eq hname (str-intern arena "ffi-call")) (ic-ffi arena args env vt) (if (str-eq hname (str-intern arena "match")) (ic-match arena args env vt) (if (> (vt-tag-of vt (str-intern arena hname)) -1) (ic-variant arena hname args env vt) (ICall (str-intern arena hname) (ic-arg-list arena args env vt)))))))))))))))))))))))
 
 ; (let name val body...) — extra body expressions become an implicit ISeq.
 (defn ic-let (arena args env vt mutable)
@@ -1223,12 +1224,18 @@
     (let vname (ast-name (hd parts))
       (let pats (list-drop-last (list-cdr parts))
         (let tag (vt-tag-of vt (str-intern arena vname))
-          (let binds (ic-arm-binds arena pats None)
+          (let binds (begin (print -555) (print (alloc-read-int (+ (list-car (list-cdr (list-cdr pats))) 0)) ) (ic-arm-binds arena pats None))
             (let body (ic-expr arena (hd (list-drop-last parts)) env vt)
               (ic-arms arena rest
                        (Cons (IArm (str-intern arena vname) tag binds body) acc)))))))))
 
 ; Variant construction with fields: (V a b ...).
+; Pattern binding names ("_" wildcards kept, skipped by codegen).
+(defn ic-arm-binds (arena pats acc)
+  (if (is-nil pats)
+    (list-reverse acc)
+    (ic-arm-binds arena (list-cdr pats) (Cons (str-intern arena (ast-name (hd pats))) acc))))
+
 (defn ic-variant (arena vname args env vt)
   (let tag (vt-tag-of vt (str-intern arena vname))
     (IVariant (str-intern arena vname) tag (ic-arg-list arena args env vt))))
@@ -1748,11 +1755,34 @@
 ; FUNCTION / PROGRAM EMISSION
 ; ===========================================================================
 
+
+; ─── Frame sizing ──────────────────────────────────────────────────────
+; Upper bound on stack slots a function needs: total Icnf nodes in its
+; body (every node may own one 8-byte slot). Keeps frames small so deep
+; recursion in the compiler stays within the machine stack.
+(defn icnf-count-list (xs)
+  (if (is-nil xs)
+    0
+    (+ (icnf-size (hd xs)) (icnf-count-list (tl2 xs)))))
+
+(defn icnf-count-arms (xs)
+  (if (is-nil xs)
+    0
+    (+ 1 (icnf-size (alloc-read-int (+ (hd xs) 32))) (icnf-count-arms (tl2 xs)))))
+
+(defn icnf-size (e)
+  (if (is-nil e)
+    1
+    (let t (alloc-read-int e)
+      (if (= t 4) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 5) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 6) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 7) (+ 2 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 8) (+ 4 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 9) (+ 3 (icnf-size (alloc-read-int (+ e 8))) (icnf-size (alloc-read-int (+ e 16)))) (if (= t 10) (+ 2 (icnf-size (alloc-read-int (+ e 16)))) (if (= t 11) (+ 3 (icnf-size (alloc-read-int (+ e 16))) (icnf-size (alloc-read-int (+ e 24)))) (if (= t 12) (+ 1 (icnf-size (alloc-read-int (+ e 8)))) (if (= t 13) (+ 2 (icnf-size (alloc-read-int (+ e 24)))) 1)))))))))))))
+
 (defn cg-function (st f)
   (match f
     (IFn name params body
      (let env (cg-param-env params 0 None)
+      (let fsz (* 16 (+ 64 (icnf-size body)))
        (begin
+
          (cg-emit st "f_")
          (cg-emit st (ffi-call "zyl_cstr_sanitize" (alloc-read-int st) name 1000))
          (cg-emit st ":")
@@ -1761,17 +1791,20 @@
          (cg-nl st)
          (cg-emit st "    mov rbp, rsp")
          (cg-nl st)
-         (cg-emit st "    sub rsp, 4096")
+         (cg-emit st "    sub rsp, ")
+         (cg-emit-int st fsz)
          (cg-nl st)
          (cg-param-spills st 0 (list-length params))
-         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params)))) ; locals start after params
+         (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params))))
          (cg-expr st env body)
          (cg-emit st "    mov rsp, rbp")
          (cg-nl st)
          (cg-emit st "    pop rbp")
          (cg-nl st)
          (cg-emit st "    ret")
-         (cg-nl st))))))
+         (cg-nl st)
+))))))
+
 
 ; Immutable param environment: param i -> offset -(8*(i+1)).
 (defn cg-param-env (params i acc)

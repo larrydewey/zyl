@@ -369,6 +369,27 @@ All integration tests pass; full suite 24/24 (2026-08-23).
       heap blocks) and compare against what stage1's vt_tag_of sees; then
       find the stomper. Stage1 remains fully functional for programs
       without deftype (fact 6 = 720 verified).
+    - **Update (later same day):** fixed cg-pop-fields off-by-one
+      (n+1 pops per variant construction), rewrote ic-match/ic-arms
+      (binds were double-dropped and included the arm body as a bind;
+      arms now built one-per-call via ic-arm-one + list-drop-last),
+      restored the match/ffi-call/variant branches that were missing
+      from the regenerated ic-form dispatch chain, re-added ic-arm-binds
+      with (arena pats acc) signature, and replaced fixed 64KB frames
+      with per-function computed sizes (16B x node count via new
+      icnf-size/icnf-count-list/icnf-count-arms helpers) so deep
+      recursion fits the machine stack. Verified: the vt chain now walks
+      correctly (names/tags/arities/terminator sane in a Rust harness).
+    - **Current blocker:** stage1 still SIGSEGVs compiling multi-module
+      input — vt_tag_of receives vt=0 (NULL) from an if-else branch in
+      the lowering path (crash PC in list_drop_last label region, actual
+      faulting call site shifts between runs). Debugging approach for
+      next session: insert Zyl-level debug prints into ic-defns/ic-form/
+      ic-ident in the ASSEMBLED source (they execute inside stage1) to
+      find exactly where the threaded vt becomes 0; suspect one of the
+      newly rewritten functions returns 0 instead of vt on some path, or
+      an ILet/If value-propagation miscompile in stage1's own Rust-
+      compiled code that only manifests on this input shape.
     **RESOLVED (2026-08-23, commit 744dee0):** full pipeline verified on a
     battery of programs through the Zyl-written compiler only (parse →
     ic-program → cg-program → cc): arithmetic, if/else both arms, while +
