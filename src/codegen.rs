@@ -2,14 +2,14 @@ use crate::ast::Atom;
 use crate::icnf::*;
 use crate::type_system::{PrimType, Type};
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 
 // ─── x86_64 Code Generation (spec §22 — Phase 9) ──────────────────────
 /// Generates Linux x86_64 System V ABI assembly from optimized ICNF.
 /// Uses a linear-scan register allocator over SSA values within each function body.
 /// Struct field layout: struct name → [(field_name, byte_offset)].
 /// All fields are 8 bytes (64-bit aligned) in the MVP.
-pub type StructLayout = HashMap<String, Vec<(String, usize, String)>>;
+pub type StructLayout = BTreeMap<String, Vec<(String, usize, String)>>;
 
 pub struct CodeGen {
     /// Collected assembly output lines.
@@ -17,6 +17,8 @@ pub struct CodeGen {
     /// P1: fatal emission problems (unresolvable values). Never silently
     /// fabricate zeros — record here; main() turns these into E_CODEGEN.
     pub fatal_errors: Vec<String>,
+    /// TCO: statement id of the current function's final value (tail position).
+    func_tail_id: usize,
     /// Label counter for unique jump targets and string literals.
     label_counter: usize,
     /// XMM register counter for SSE floating-point register allocation.
@@ -30,7 +32,7 @@ pub struct CodeGen {
     /// Struct field layouts for offset computation.
     struct_layouts: StructLayout,
     /// ADT definitions: type_name → list of (variant_name, field_count).
-    adt_defs: std::collections::HashMap<String, Vec<(String, usize)>>,
+    adt_defs: std::collections::BTreeMap<String, Vec<(String, usize)>>,
     /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
     closure_bodies: std::collections::HashMap<usize, Vec<ICNFNode>>,
     /// Closure metadata: closure_id → (name, captures).
@@ -76,6 +78,7 @@ impl CodeGen {
         Self {
             asm: Vec::new(),
             fatal_errors: Vec::new(),
+            func_tail_id: 0,
             label_counter: 0,
             xmm_counter: 0,
             spawn_counter: 0,
@@ -83,7 +86,7 @@ impl CodeGen {
             all_nodes: std::collections::HashMap::new(),
             sg_slots: std::collections::HashMap::new(),
             struct_layouts: StructLayout::new(),
-            adt_defs: std::collections::HashMap::new(),
+            adt_defs: std::collections::BTreeMap::new(),
             closure_bodies: std::collections::HashMap::new(),
             closures: std::collections::HashMap::new(),
             spawn_wrappers: Vec::new(),
@@ -129,7 +132,7 @@ impl CodeGen {
     }
 
     /// Set ADT definitions for codegen (built from AST deftype).
-    pub fn with_adt_defs(mut self, defs: std::collections::HashMap<String, Vec<(String, usize)>>) -> Self {
+    pub fn with_adt_defs(mut self, defs: std::collections::BTreeMap<String, Vec<(String, usize)>>) -> Self {
         self.adt_defs = defs;
         self
     }
@@ -832,6 +835,12 @@ impl CodeGen {
                 continue;
             }
             self.current_func = func.name.clone();
+            // Tail position exists only if the final statement is NOT inside
+            // an embedded branch/match-arm body (those run conditionally).
+            self.func_tail_id = match func.body.last() {
+                Some(st) if !program.emitted_branch_ids.contains(&st.id) => st.id,
+                _ => 0,
+            };
             let fn_name = format!("_ZYL_{}", func.name);
             self.asm_push_align();
             self.asm_push_align();
@@ -936,6 +945,12 @@ impl CodeGen {
                     ));
                 }
             }
+
+            // TCO re-entry point: self-tail-calls rewrite their arguments
+            // into the parameter slots and jump here (frame is reused).
+            self.asm_push_align();
+            self.asm
+                .push(format!(".__TCO_entry_{}:", sanitize_name(&func.name)));
 
             // Emit the function body statements inline.
             let mut local_vars: HashMap<String, usize> = HashMap::new();
@@ -3623,11 +3638,68 @@ impl CodeGen {
             }
         } else {
             // --- Direct call path ---
+            let num_args = args.len();
+            let arg_is_floats: Vec<bool> = args
+                .iter()
+                .map(|&arg_id| {
+                    let arg_node = lookup
+                        .get(&arg_id)
+                        .copied()
+                        .or_else(|| stmts.iter().find(|n| n.id == arg_id));
+                    arg_node
+                        .and_then(|n| n.typ.as_ref())
+                        .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)))
+                })
+                .collect();
+
+            // ── Tail-call optimization (sibling + self) ─────────────────
+            // A tail-position call with only register-class args becomes:
+            // evaluate each argument into a scratch slot, copy them into the
+            // CALLEE's parameter slots, pop the scratch, and jump to the
+            // callee's re-entry label. Safe because every frame is the same
+            // uniform size (global spill_frame) and parameter slots live at
+            // the same rbp-relative offsets in every frame — so replacing
+            // call+return-address with a jump reuses the caller's frame.
+            if name == sanitize_name(&self.current_func)
+                && node_id == self.func_tail_id
+                && target_reg == "rax"
+                && !is_float
+                && num_args <= 6
+                && !arg_is_floats.iter().any(|f| *f)
+            {
+                for (i, &arg_id) in args.iter().enumerate() {
+                    self.emit_load_into(
+                        arg_id, "r10", stmts, local_vars, lookup, emitted_ids,
+                        &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    );
+                    self.asm_push_align();
+                    self.asm.push("    sub rsp, 8".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    mov [rsp], r10".to_string());
+                }
+                // Copy scratch slots into this frame's param slots.
+                for i in 0..num_args {
+                    let off = 8 * (num_args - 1 - i);
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov r10, [rsp+{}]", off));
+                    self.asm_push_align();
+                    self.asm.push(format!(
+                        "    mov [rbp-{}], r10",
+                        (i + 1) * 8
+                    ));
+                }
+                self.asm_push_align();
+                self.asm.push(format!("    add rsp, {}", 8 * num_args));
+                self.asm_push_align();
+                self.asm
+                    .push(format!("    jmp .__TCO_entry_{}", sanitize_name(name)));
+                return;
+            }
+
             // Evaluate every argument once and spill it into an 8-byte
             // scratch slot on the stack. Then load register args into their
             // ABI registers and push args >= 6 onto the stack in reverse
             // order per System V ABI.
-            let num_args = args.len();
             let arg_is_floats: Vec<bool> = args
                 .iter()
                 .map(|&arg_id| {

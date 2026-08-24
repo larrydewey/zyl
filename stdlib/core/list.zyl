@@ -23,12 +23,12 @@
 (defn list-car (xs)
   (match xs
     (Cons v _ (Some v))
-    (Nil Nil)))
+    (Nil None)))
 
 (defn list-cdr (xs)
   (match xs
     (Cons _ rest rest)
-    (Nil Nil)))
+    (Nil None)))
 
 ; Length
 (defn list-length (xs)

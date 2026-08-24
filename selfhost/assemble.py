@@ -3,6 +3,7 @@
 import re
 
 files = [
+    'stdlib/core/option.zyl',
     'stdlib/core/list.zyl',
     'stdlib/allocator/allocator.zyl',
     'stdlib/compiler/ast.zyl',

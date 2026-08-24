@@ -2100,6 +2100,9 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
             (_, Type::Cap(_, inner))
                 if matches!(self.subst.resolve(inner_as_var(inner)), Ok(Type::Var(_))) => Ok(()),
             _ => {
+                if std::env::var("ZYL_DBG_UNIFY").is_ok() {
+                    eprintln!("[unify-fail] {} vs {} at {}", t1, t2, span);
+                }
                 Err(ZylError::E_TYPE_MISMATCH(
                     span.clone(),
                     format!("{}", t1),

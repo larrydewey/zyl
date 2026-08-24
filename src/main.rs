@@ -169,7 +169,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // All fields are 8 bytes (64-bit aligned) in the MVP.
     // Untyped fields use the type inferred from constructor call sites.
     let resolved_struct_defs = inferer.get_resolved_struct_defs();
-    let mut struct_layouts: codegen::StructLayout = std::collections::HashMap::new();
+    let mut struct_layouts: codegen::StructLayout = std::collections::BTreeMap::new();
     for expr in &regioned_for_mono {
         if let ast::ExprInner::StructDef(sd) | ast::ExprInner::StructDefPlus(sd) = &expr.inner {
             let inferred = resolved_struct_defs.get(&sd.name);
@@ -243,7 +243,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Phase 9: Code Generation → x86_64 assembly.
     println!("[Phase 9] Generating x86_64 assembly ...");
     // Build ADT definitions from AST for codegen.
-    let mut adt_defs: std::collections::HashMap<String, Vec<(String, usize)>> = std::collections::HashMap::new();
+    let mut adt_defs: std::collections::BTreeMap<String, Vec<(String, usize)>> = std::collections::BTreeMap::new();
     for expr in &regioned_for_mono {
         if let ast::ExprInner::Deftype(name, variants, _, _) = &expr.inner {
             let variant_info: Vec<(String, usize)> = variants
