@@ -2722,21 +2722,32 @@ impl IcnfConverter {
                     self.current_scope = saved_scope;
 
 
-                    // Look up discriminant for this arm's variant from adt_defs.
-                    // P1: an arm naming a constructor that does not exist is a
-                    // compile error — silently mapping it to discriminant 0
-                    // corrupts dispatch (it would make the arm match variant 0).
-                    let discriminant = self.adt_defs.iter().find_map(|(_, variants)| {
-                        variants.iter().position(|(vname, _)| vname == &arm.variant)
-                    }).ok_or_else(|| {
-                        ZylError::E_MATCH_NONEXHAUSTIVE(
-                            match_span.clone(),
-                            format!(
-                                "match arm names unknown variant `{}` (no such constructor in any deftype)",
-                                arm.variant
-                            ),
-                        )
-                    })?;
+                    // Look up the discriminant for this arm's variant in THE
+                    // MATCH'S RESOLVED TYPE only. Variant names are not globally
+                    // unique: core `deftype List (Cons T ...) None` puts `Cons`
+                    // at position 0, so a global find_map would silently give a
+                    // user type's `Cons` arm discriminant 0 and corrupt dispatch.
+                    // P1: an arm naming a constructor that the resolved type does
+                    // not have is a compile error — never map it to 0.
+                    let discriminant = self.adt_defs.get(&type_name)
+                        .and_then(|variants| variants.iter().position(|(vname, _)| vname == &arm.variant))
+                        .ok_or_else(|| {
+                            if std::env::var("ZYL_DBG_ADT").is_ok() {
+                                eprintln!(
+                                    "[adt] match arm `{}` not found; type_name=`{}`; adt_defs={:?}",
+                                    arm.variant,
+                                    type_name,
+                                    self.adt_defs.keys().collect::<Vec<_>>()
+                                );
+                            }
+                            ZylError::E_MATCH_NONEXHAUSTIVE(
+                                match_span.clone(),
+                                format!(
+                                    "match arm names unknown variant `{}` for type `{}`",
+                                    arm.variant, type_name
+                                ),
+                            )
+                        })?;
 
                     arm_with_disc.push((discriminant, MatchArmICNF {
                         variant_name: arm.variant.clone(),
@@ -3953,13 +3964,34 @@ impl IcnfConverter {
     /// Resolve the type name for a match expression.
     /// Tries to infer from the scrutinee expression by looking for struct/ADT bindings.
     fn resolve_match_type(&self, scrutinee: &Expr, arms: &[MatchArm]) -> String {
-        // Try to find type from the first arm's variant lookup.
-        if let Some(first_arm) = arms.first() {
-            // Look up the type that has this variant.
+        // Try to find the type whose variant set covers EVERY arm's variant.
+        // Variant names are not globally unique (`Cons` exists in both core
+        // List and any user list type), so matching on just the first arm can
+        // bind the match to an unrelated type and corrupt all discriminants.
+        if !arms.is_empty() {
+            let fits = |variants: &Vec<(String, Vec<String>)>| {
+                arms.iter().all(|a| variants.iter().any(|(v, _)| v == &a.variant))
+            };
+            // Candidates covering all arms. Prefer the canonical (shortest,
+            // non-monomorphized) name so e.g. `List` beats `List_?149`.
+            let mut best: Option<&String> = None;
             for (type_name, variants) in &self.adt_defs {
-                if variants.iter().any(|(v, _)| v == &first_arm.variant) {
-                    return type_name.clone();
+                if fits(variants) {
+                    let better = match best {
+                        None => true,
+                        Some(b) => {
+                            let n_mono = type_name.contains('?');
+                            let b_mono = b.contains('?');
+                            (n_mono == b_mono && type_name.len() < b.len()) || (b_mono && !n_mono)
+                        }
+                    };
+                    if better {
+                        best = Some(type_name);
+                    }
                 }
+            }
+            if let Some(t) = best {
+                return t.clone();
             }
         }
         // Fallback: try to get type name from the scrutinee's binding.
