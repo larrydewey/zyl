@@ -423,8 +423,21 @@ impl Optimizer {
                     Self::collect_used_ssa(&stmt.node, used_ids);
                 }
             }
-            ICNFInner::Match { scrutinee_ssa, .. } => {
+            ICNFInner::Match { scrutinee_ssa, arms, .. } => {
                 used_ids.insert(*scrutinee_ssa);
+                for arm in arms {
+                    for stmt in &arm.body {
+                        Self::collect_used_ssa(&stmt.node, used_ids);
+                    }
+                }
+            }
+            ICNFInner::MakeVariant { field_ids, .. } => {
+                for &fid in field_ids {
+                    used_ids.insert(fid);
+                }
+            }
+            ICNFInner::Assign(_, src) => {
+                used_ids.insert(*src);
             }
             ICNFInner::StructGet(val_id, _) => {
                 // First field is the struct value ID, second is the byte offset.
