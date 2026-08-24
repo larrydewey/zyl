@@ -1224,7 +1224,7 @@
     (let vname (ast-name (hd parts))
       (let pats (list-drop-last (list-cdr parts))
         (let tag (vt-tag-of vt (str-intern arena vname))
-          (let binds (begin (print -555) (print (alloc-read-int (+ (list-car (list-cdr (list-cdr pats))) 0)) ) (ic-arm-binds arena pats None))
+          (let binds (ic-arm-binds arena pats None)
             (let body (ic-expr arena (hd (list-drop-last parts)) env vt)
               (ic-arms arena rest
                        (Cons (IArm (str-intern arena vname) tag binds body) acc)))))))))

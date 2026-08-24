@@ -406,6 +406,15 @@ All integration tests pass; full suite 24/24 (2026-08-23).
       and flat begin-sequences when rewriting those functions.
       Repro assets: /tmp/opencode/{mini_src.zyl,srcA.zyl} assembly
       variants; input = any (match ...) program.
+    - **Instrumented result:** cg-match IS entered correctly (prints
+      arm-count=2 for the L/len input), then crashes immediately after —
+      inside cg-label-new / cg-expr(scrutinee). So the Zyl-side match
+      machinery receives correct data; the misexecution is in one of:
+      cg-label-new (string building via buf-append + zyl_cstr_from_int),
+      cg-expr dispatch on the scrutinee node, or stack state at that
+      point. Next session: print between label-new calls to isolate;
+      consider rewriting cg-label-new without buf-append (build label
+      strings via str-concat into fresh arena memory instead).
     - **CRITICAL FINDING (2026-08-24, late):** the SAME lowering
       (zyl-parse + ic-program over the match input) works perfectly in a
       minimal Rust-compiled harness (/tmp/opencode/mh.zyl pattern) — both
