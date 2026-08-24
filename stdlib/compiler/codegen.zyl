@@ -38,9 +38,13 @@
 ; One rodata entry: label, payload text, kind (0 string, 1 float).
 (deftype REntry (REntry String String Int))
 
-(deftype CGState (CGS Int Int Int Int (List REntry)))
+; Known top-level function names (for fn-value references).
+(deftype FnName (FN String) FNNil)
+
+(deftype CGState (CGS Int Int Int Int (List REntry) (List FnName)))
+; fields: arena, buffer, next-label, next-slot, rodata, fn names
 ; fields: arena, text buffer, next label number, next slot offset,
-; rodata entries (reverse collection order; emitted reversed at end)
+; known top-level function names
 
 (deftype CGR (CGR CGState Int String))
 
@@ -62,29 +66,53 @@
   (match (cg-label-new st1)
     (CGR st2 d2 lb (CGP st2 la lb))))
 
+(defn no-fnnames () None)
+
 (defn cg-new (arena)
   (let buf (arena-alloc-zeroed arena 8388608)
-    (CGS arena buf 0 8 (no-rentries))))   ; params occupy slots 1..n
+    (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
+
+(defn cg-with-fnname (st nm)
+  (match st
+    (CGS a b n s rd fns2
+      (CGS a b n s rd (Cons (FN nm) fns2)))))
+
+(defn cgg-fns (st)
+  (match st
+    (CGS d70 d71 d72 d73 d74 fns fns)))
+
+; True when `nm` is a known top-level function name.
+(defn cg-fn-known (st nm)
+  (cg-fn-search (cgg-fns st) nm))
+
+(defn cg-fn-search (fns nm)
+  (match fns
+    (Nil 0)
+    (Cons h t
+      (match h
+        (FN s (> (str-eq s nm) 0))
+        (FNNil (cg-fn-search t nm))))))
 
 ; Empty rodata list.
 (defn no-rentries () Nil)
 
 (defn cg-buffer (st)
   (match st
-    (CGS d1 buf d2 d3 d4 buf)))
+    (CGS d1 buf d2 d3 d4 d5 buf)))
 
 (defn cg-with-rodata (st entry)
   (match st
-    (CGS a b n s rd (CGS a b n s (Cons entry rd)))))
+    (CGS a b n s rd fns
+      (CGS a b n s (Cons entry rd) fns))))
 
 (defn cg-emit (st s)
   (match st
-    (CGS d6 buf d7 d8 d9
+    (CGS d6 buf d7 d8 d9 d10
       (begin (buf-append buf s) st))))
 
 (defn cg-emit-int (st n)
   (match st
-    (CGS arena buf d10 d11 d12
+    (CGS arena buf d10 d11 d12 d13
       (begin
         (buf-append buf (ffi-call "zyl_cstr_from_int" arena n 1000))
         st))))
@@ -97,19 +125,19 @@
 ; Returns: CGR (advanced state; string field carries the label text).
 (defn cg-label-new (st)
   (match st
-    (CGS arena buf n slot rd
+    (CGS arena buf n slot rd fns
       (let lblbuf (arena-alloc-zeroed arena 32)
         (begin
           (buf-append lblbuf (str-intern arena ".L"))
           (buf-append lblbuf (ffi-call "zyl_cstr_from_int" arena n 1000))
-          (CGR (CGS arena buf (+ n 1) slot rd) 0 lblbuf))))))
+          (CGR (CGS arena buf (+ n 1) slot rd fns) 0 lblbuf))))))
 
 ; Allocate one 8-byte local slot.
 ; Returns: CGR (advanced state; int field carries the rbp offset, negative).
 (defn cg-new-slot (st)
   (match st
-    (CGS a b n off rd
-      (CGR (CGS a b n (+ off 8) rd) (- off) ""))))
+    (CGS a b n off rd fns
+      (CGR (CGS a b n (+ off 8) rd fns) (- off) ""))))
 
 ; ===========================================================================
 ; RODATA INTERNING
@@ -136,7 +164,7 @@
 
 (defn cg-rodata-of (st)
   (match st
-    (CGS d15 d16 d17 d18 rd rd)))
+    (CGS d15 d16 d17 d18 rd d19 rd)))
 
 ; ===========================================================================
 ; KINDS (for print format + float detection): 0 int, 1 string, 2 float
@@ -177,10 +205,7 @@
          (cg-nl st3))))
     (IStr s (cg-string-const st s))
     (IFlt t (cg-float-const st t))
-    (ILoad n
-     (let st2 (cg-emit st "    mov rax, [rbp")
-       (let st3 (cg-emit-int st2 (env-lookup env n))
-         (cg-nl (cg-emit st3 "]")))))
+    (ILoad n (cg-load-value st env n))
     (IBinop op l r
      (if (> (if (= (kind-of env l) 2) 1 (if (= (kind-of env r) 2) 1 0)) 0)
        (cg-fbinop st env op l r)
@@ -199,6 +224,31 @@
     (ISeq es (cg-seq st env es))
     (IVariant d46 tag fields (cg-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms))))
+
+; Load a variable / function value into rax.
+(defn cg-load-value (st env n)
+  (if (= (env-lookup env n) 0)
+    (cg-load-nonslot st env n)
+    (cg-load-slot st n (env-lookup env n))))
+
+(defn cg-load-slot (st n off)
+  (let st2 (cg-emit st "    mov rax, [rbp")
+    (let st3 (cg-emit-int st2 off)
+      (cg-nl (cg-emit st3 "]")))))
+
+(defn cg-load-nonslot (st env n)
+  (cg-load-unresolved st))
+
+(defn cg-load-fnref (st n)
+  (let st2 (cg-emit st "    lea rax, [rip+f_")
+    (let st3 (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000)))
+      (cg-nl st3)))
+
+; P1 note: kept for parity with previous behavior; flagged for hardening.
+(defn cg-load-unresolved (st)
+  (let st2 (cg-emit st "    mov rax, [rbp")
+    (let st3 (cg-emit-int st2 0)
+      (cg-nl (cg-emit st3 "]")))))
 
 (defn cg-if-dispatch (st env c t eb)
   (cg-if-labels (cg-label-pair st) env c t eb))
@@ -349,26 +399,47 @@
 ; for user functions.
 (defn cg-call-args (st env name args mangle i)
   (if (is-nil args)
-    (cg-call-fire st name mangle i)
+    (cg-call-fire st env name mangle i)
     (let st2 (cg-expr st env (ih-ic args))
       (let st3 (cg-emit-line st2 "    push rax")
         (cg-call-args st3 env name (tl2 args) mangle (+ i 1))))))
 
-(defn cg-call-fire (st name mangle i)
+(defn cg-call-fire (st env name mangle i)
+  (cg-call-fire-direct st env name mangle i))
+
+(defn cg-call-fire-direct (st env name mangle i)
   (let pad (if (= (% i 2) 1) 1 0)
     (let st2 (cg-pop-regs st (- i 1))
       ; alignment pad goes AFTER the pops so it cannot shift a pushed arg
       ; out of place for the register pops.
-      (let st3 (if (= pad 1) (cg-emit-line st2 "    sub rsp, 8") st2)
+      (let st3 (if (= pad 1)
+                 (cg-emit-line st2 "    sub rsp, 8")
+                 st2)
         (let st4 (cg-emit st3 "    call ")
           (let st5 (if mangle (cg-emit st4 "f_") st4)
-            (let st6 (cg-emit st5 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
+            (let st6 (cg-emit st5 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000)))
               (let st7 (cg-nl st6)
                 (if (= pad 1)
                   (cg-emit-line st7 "    add rsp, 8")
-                  st7)))))))))
+                  st7))))))))
 
-; Pop j+1 pushed args into their registers (reverse order).
+(defn cg-call-fire-tail (st env name mangle i off)
+  (if (= off 0)
+    (cg-call-fire-direct st env name mangle i)
+    (cg-call-fire-indirect st env name i off)))
+
+(defn cg-call-fire-indirect (st env name i off)
+  (let pad (if (= (% i 2) 1) 1 0)
+    (let st2 (cg-pop-regs st (- i 1))
+      (let st3 (if (= pad 1)
+                 (cg-emit-line st2 "    sub rsp, 8")
+                 st2)
+        (let st4 (cg-load-slot st3 name off)
+          (let st5 (cg-emit-line st4 "    call rax")
+            (if (= pad 1)
+              (cg-emit-line st5 "    add rsp, 8")
+              st5)))))))
+
 (defn cg-pop-regs (st j)
   (if (< j 0)
     st
@@ -614,7 +685,7 @@
 
 (defn cg-reset-slots (st next-off)
   (match st
-    (CGS a b n d69 rd (CGS a b n next-off rd))))
+    (CGS a b n d69 rd fns (CGS a b n next-off rd fns))))
 
 ; Immutable param environment: param i -> offset -(8*(i+1)).
 (defn cg-param-env (params i acc)
@@ -637,7 +708,20 @@
 ; rodata. Functions are emitted in lowering order (source order); the
 ; entry stub calls f_main, which the lowering guarantees exists.
 ; Returns: final CGState (retrieve the buffer with cg-buffer).
+; Record every top-level defn name so function-value references
+; (higher-order arguments) resolve to addresses.
+(defn cg-collect-fnnames (st fns)
+  (match fns
+    (Nil st)
+    (Cons f rest
+      (match f
+        (IFn nm d74 d75 (cg-collect-fnnames (cg-with-fnname st nm) rest))))))
+
 (defn cg-program (st fns)
+  (let st0 (cg-collect-fnnames st fns)
+    (cg-program-run st0 fns)))
+
+(defn cg-program-run (st fns)
   (let st1 (cg-header st)
     (let st2 (cg-functions st1 fns)
       (let st3 (cg-entry-stub st2)
@@ -737,7 +821,7 @@
 
 (defn cg-arena-of (st)
   (match st
-    (CGS a d74 d75 d76 d77 a)))
+    (CGS a d74 d75 d76 d77 d78 a)))
 
 (defn tl2 (xs)
   (match xs
