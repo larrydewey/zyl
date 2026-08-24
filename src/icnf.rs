@@ -2663,6 +2663,7 @@ impl IcnfConverter {
 
             // Match on ADT: discriminant compare + branch selection.
             ExprInner::Match(scrutinee, arms) => {
+                let match_span = expr.span.clone();
                 // Resolve the type name from scrutinee expression (or use first arm's type).
                 let type_name = self.resolve_match_type(scrutinee, arms);
 
@@ -2722,9 +2723,20 @@ impl IcnfConverter {
 
 
                     // Look up discriminant for this arm's variant from adt_defs.
+                    // P1: an arm naming a constructor that does not exist is a
+                    // compile error — silently mapping it to discriminant 0
+                    // corrupts dispatch (it would make the arm match variant 0).
                     let discriminant = self.adt_defs.iter().find_map(|(_, variants)| {
                         variants.iter().position(|(vname, _)| vname == &arm.variant)
-                    }).unwrap_or(0);
+                    }).ok_or_else(|| {
+                        ZylError::E_MATCH_NONEXHAUSTIVE(
+                            match_span.clone(),
+                            format!(
+                                "match arm names unknown variant `{}` (no such constructor in any deftype)",
+                                arm.variant
+                            ),
+                        )
+                    })?;
 
                     arm_with_disc.push((discriminant, MatchArmICNF {
                         variant_name: arm.variant.clone(),
