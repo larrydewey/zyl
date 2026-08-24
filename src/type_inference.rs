@@ -273,7 +273,10 @@ impl TypeInferer {
                             self.function_returns.insert(name.clone(), ret_ty);
                         }
                         Err(e) => {
-                            self.note_body_error(e);
+                            self.note_body_error(ZylError::E_CODEGEN(format!(
+                                "in function `{}` body: {}",
+                                name, e
+                            )));
                             self.env = old_env;
                             let fresh = Type::Var(self.fresh_var());
                             let new_known: Vec<_> = params.iter()
@@ -1681,18 +1684,33 @@ impl TypeInferer {
                     }
                     Ok((*return_type).clone())
                 }
-                _ => Err(ZylError::E_TYPE_MISMATCH(
-                    expr.span.clone(),
-                    "function type".to_string(),
-                    format!("{}", ty),
-                )),
+                _ => {
+                    // A value whose type is not yet known to be a function
+                    // (typically an untyped higher-order parameter) must be
+                    // unified with a function type over the actual argument
+                    // types, not rejected — this is standard HM behaviour.
+                    let arg_types: Vec<Type> = args
+                        .iter()
+                        .map(|a| self.infer_expr(a))
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
+                    let ret = Type::Var(self.fresh_var());
+                    self.unify(
+                        &ty,
+                        &Type::Fun(arg_types, Box::new(ret.clone())),
+                        expr.span.clone(),
+                    )?;
+                    Ok(ret)
+                }
             }
         } else {
-            let arg_types: Vec<Type> = args
-                .iter()
-                .map(|a| self.infer_expr(a))
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            Ok(Type::Fun(arg_types, Box::new(Type::Var(self.fresh_var()))))
+            // Unknown/unregistered callee (e.g. a self-recursive call whose
+            // definition is still being inferred). The call's TYPE is its
+            // return type — a fresh variable to be resolved later — never
+            // the function type itself.
+            for a in args {
+                self.infer_expr(a)?;
+            }
+            Ok(Type::Var(self.fresh_var()))
         }
     }
 

@@ -55,6 +55,14 @@
   (if (> (str-eq s (str-intern arena "!=")) 0) 10
   -1)))))))))))))
 
+; Typed empty lists (bare `None` values unify ambiguously as Option vs
+; List depending on module load order — always name the element type).
+(defn no-strs () None)
+(defn no-icnfs () None)
+(defn no-asts () None)
+(defn no-ifuncs () None)
+(defn no-iarms () None)
+
 ; ===========================================================================
 ; GENERIC STRUCTURAL LIST HELPERS (Ast-typed streams)
 ; ===========================================================================
@@ -135,7 +143,7 @@
 ; Returns: List(IFunc)
 (defn ic-program (arena prog)
   (let vt (ic-collect-vt arena prog VTNil)
-    (list-reverse (ic-defns arena prog None vt))))
+    (list-reverse (ic-defns arena prog (no-ifuncs) vt))))
 
 ; Walk top-level forms; deftype forms extend the variant table.
 (defn ic-collect-vt (arena forms vt)
@@ -225,7 +233,7 @@
     (let params (first-ast (rest-ast (rest-ast kids)))
       (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
         (IFn (str-intern arena (ident-name nm ""))
-             (list-reverse (param-names params None))
+             (list-reverse (param-names params (no-strs)))
              (ic-expr arena body vt))))))
 
 (defn ic-defn-short (arena kids vt)
@@ -275,7 +283,7 @@
 (defn ic-ident (arena name vt)
   (let tag (vt-tag-of vt (str-intern arena name))
     (if (> tag -1)
-      (IVariant (str-intern arena name) tag None)
+      (IVariant (str-intern arena name) tag (no-icnfs))
       (ILoad (str-intern arena name)))))
 
 ; A parenthesised form. kids may be empty (-> Const 0).
@@ -391,17 +399,18 @@
   (if (is-nil rest)
     (IPrint (ic-expr arena a vt))
     (ISeq (Cons (IPrint (ic-expr arena a vt))
-                (Cons (ic-print arena rest vt) None)))))
+                (Cons (ic-print arena rest vt) (no-icnfs))))))
 
 ; (ffi-call "sym" a b timeout): drop the trailing timeout literal.
 (defn ic-ffi (arena args vt)
   (match args
-    (Cons sym rest
-      (let real (rest-ast rest)
-        (IFfi (str-intern arena (atom-text sym ""))
-              (if (<= (list-length real) 1)
-                None
-                (ic-arg-list arena (butlast real None) vt)))))
+    (Cons sym tail
+      ; tail = everything after the symbol: (arg* timeout).
+      ; Both branches lower through ic-arg-list so their types unify
+      ; (a bare None here would clash as Option vs List).
+      (if (> (list-length tail) 1)
+        (ic-arg-list arena (butlast tail (no-asts)) vt)
+        (ic-arg-list arena None vt)))
     (None (IFfi "?" None))))
 
 
@@ -410,7 +419,7 @@
   (match args
     (Cons scr arms
       (IMatch (ic-expr arena scr vt)
-              (list-reverse (ic-arms arena arms None vt))))
+              (list-reverse (ic-arms arena arms (no-iarms) vt))))
     (None (IConst 0))))
 
 (defn ic-arms (arena arms acc vt)
@@ -438,7 +447,7 @@
         (let tag (vt-tag-of vt iname)
           (IArm iname
                 tag
-                (bind-names arena pats None)
+                (bind-names arena pats (no-strs))
                 (ic-expr arena (last-ast parts) vt)))))
     (None (IArm (str-intern arena "?") -1 None (IConst 0)))))
 
@@ -456,7 +465,7 @@
 
 ; Lower argument lists left-to-right.
 (defn ic-arg-list (arena args vt)
-  (ic-arg-list-acc arena args vt None))
+  (ic-arg-list-acc arena args vt (no-icnfs)))
 
 (defn ic-arg-list-acc (arena args vt acc)
   (match args

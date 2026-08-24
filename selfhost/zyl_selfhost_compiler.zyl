@@ -492,6 +492,9 @@
             (if (= c 93) 1
               (if (= c 58) 1 (if (= c 126) 1 0)))))))))
 
+; Empty token stream (typed so `None` never unifies as Option).
+(defn no-tokens () None)
+
 ; ===========================================================================
 ; MAIN LEXER — cursor threaded functionally
 ; ===========================================================================
@@ -501,7 +504,7 @@
 ; Returns: List(Token)
 (defn zyl-lex (arena src)
   (let len (ffi-call "zyl_cstr_len" src 1000)
-    (list-reverse (lex-loop arena src len 0 None))))
+    (list-reverse (lex-loop arena src len 0 (no-tokens)))))
 
 ; Scanner loop: skip whitespace/comments, then produce one token per step.
 ; `acc` accumulates tokens in reverse source order.
@@ -659,6 +662,9 @@
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
 
+; Empty form list (typed so `None` never unifies as Option).
+(defn no-forms () None)
+
 (defn art-ast (r)
   (match r
     (AstOf a d1 a)))
@@ -710,9 +716,9 @@
 
 (defn read-dispatch (arena t rest)
   (match t
-        (TkLParen (read-forms arena rest None))
-        (TkLBracket (read-forms-bracket arena rest None))
-        (TkLBrace (read-forms-brace arena rest None))
+        (TkLParen (read-forms arena rest (no-forms)))
+        (TkLBracket (read-forms-bracket arena rest (no-forms)))
+        (TkLBrace (read-forms-brace arena rest (no-forms)))
         (TkRParen (read-form-atom arena t rest))
         (TkRBrace (read-form-atom arena t rest))
         (TkRBracket (read-form-atom arena t rest))
@@ -739,13 +745,13 @@
     (TkKeyword s (AstOf (AIdent s) rest))
     ; closers / colon / eof in atom position: empty form
     (TkEof (AstOf (AList None) rest))
-    (TkLParen (AstOf (AList None) rest))
-    (TkRParen (AstOf (AList None) rest))
-    (TkLBrace (AstOf (AList None) rest))
-    (TkRBrace (AstOf (AList None) rest))
-    (TkLBracket (AstOf (AList None) rest))
-    (TkRBracket (AstOf (AList None) rest))
-    (TkColon (AstOf (AList None) rest))))
+    (TkLParen (AstOf (AList (no-forms)) rest))
+    (TkRParen (AstOf (AList (no-forms)) rest))
+    (TkLBrace (AstOf (AList (no-forms)) rest))
+    (TkRBrace (AstOf (AList (no-forms)) rest))
+    (TkLBracket (AstOf (AList (no-forms)) rest))
+    (TkRBracket (AstOf (AList (no-forms)) rest))
+    (TkColon (AstOf (AList (no-forms)) rest))))
 
 ; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
@@ -838,7 +844,7 @@
 ; Ast forms in source order.
 ; Returns: List(Ast)
 (defn parse-program (arena toks)
-  (list-reverse (parse-program-loop arena toks None)))
+  (list-reverse (parse-program-loop arena toks (no-forms))))
 
 (defn parse-program-loop (arena toks acc)
   (if (toks-empty toks)
@@ -907,6 +913,14 @@
   (if (> (str-eq s (str-intern arena "=")) 0) 9
   (if (> (str-eq s (str-intern arena "!=")) 0) 10
   -1)))))))))))))
+
+; Typed empty lists (bare `None` values unify ambiguously as Option vs
+; List depending on module load order — always name the element type).
+(defn no-strs () None)
+(defn no-icnfs () None)
+(defn no-asts () None)
+(defn no-ifuncs () None)
+(defn no-iarms () None)
 
 ; ===========================================================================
 ; GENERIC STRUCTURAL LIST HELPERS (Ast-typed streams)
@@ -988,7 +1002,7 @@
 ; Returns: List(IFunc)
 (defn ic-program (arena prog)
   (let vt (ic-collect-vt arena prog VTNil)
-    (list-reverse (ic-defns arena prog None vt))))
+    (list-reverse (ic-defns arena prog (no-ifuncs) vt))))
 
 ; Walk top-level forms; deftype forms extend the variant table.
 (defn ic-collect-vt (arena forms vt)
@@ -1078,7 +1092,7 @@
     (let params (first-ast (rest-ast (rest-ast kids)))
       (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
         (IFn (str-intern arena (ident-name nm ""))
-             (list-reverse (param-names params None))
+             (list-reverse (param-names params (no-strs)))
              (ic-expr arena body vt))))))
 
 (defn ic-defn-short (arena kids vt)
@@ -1128,7 +1142,7 @@
 (defn ic-ident (arena name vt)
   (let tag (vt-tag-of vt (str-intern arena name))
     (if (> tag -1)
-      (IVariant (str-intern arena name) tag None)
+      (IVariant (str-intern arena name) tag (no-icnfs))
       (ILoad (str-intern arena name)))))
 
 ; A parenthesised form. kids may be empty (-> Const 0).
@@ -1244,17 +1258,18 @@
   (if (is-nil rest)
     (IPrint (ic-expr arena a vt))
     (ISeq (Cons (IPrint (ic-expr arena a vt))
-                (Cons (ic-print arena rest vt) None)))))
+                (Cons (ic-print arena rest vt) (no-icnfs))))))
 
 ; (ffi-call "sym" a b timeout): drop the trailing timeout literal.
 (defn ic-ffi (arena args vt)
   (match args
-    (Cons sym rest
-      (let real (rest-ast rest)
-        (IFfi (str-intern arena (atom-text sym ""))
-              (if (<= (list-length real) 1)
-                None
-                (ic-arg-list arena (butlast real None) vt)))))
+    (Cons sym tail
+      ; tail = everything after the symbol: (arg* timeout).
+      ; Both branches lower through ic-arg-list so their types unify
+      ; (a bare None here would clash as Option vs List).
+      (if (> (list-length tail) 1)
+        (ic-arg-list arena (butlast tail (no-asts)) vt)
+        (ic-arg-list arena None vt)))
     (None (IFfi "?" None))))
 
 
@@ -1263,7 +1278,7 @@
   (match args
     (Cons scr arms
       (IMatch (ic-expr arena scr vt)
-              (list-reverse (ic-arms arena arms None vt))))
+              (list-reverse (ic-arms arena arms (no-iarms) vt))))
     (None (IConst 0))))
 
 (defn ic-arms (arena arms acc vt)
@@ -1291,7 +1306,7 @@
         (let tag (vt-tag-of vt iname)
           (IArm iname
                 tag
-                (bind-names arena pats None)
+                (bind-names arena pats (no-strs))
                 (ic-expr arena (last-ast parts) vt)))))
     (None (IArm (str-intern arena "?") -1 None (IConst 0)))))
 
@@ -1309,7 +1324,7 @@
 
 ; Lower argument lists left-to-right.
 (defn ic-arg-list (arena args vt)
-  (ic-arg-list-acc arena args vt None))
+  (ic-arg-list-acc arena args vt (no-icnfs)))
 
 (defn ic-arg-list-acc (arena args vt acc)
   (match args
@@ -1383,7 +1398,10 @@
 
 (defn cg-new (arena)
   (let buf (arena-alloc-zeroed arena 8388608)
-    (CGS arena buf 0 8 None)))   ; params occupy slots 1..n
+    (CGS arena buf 0 8 (no-rentries))))   ; params occupy slots 1..n
+
+; Empty rodata list.
+(defn no-rentries () None)
 
 (defn cg-buffer (st)
   (match st
@@ -1536,11 +1554,12 @@
       (cg-let-store st2 env n v body off))))
 
 (defn cg-let-store (st env n v body off)
-  (let st3 (cg-expr st env v)
-    (let st4 (cg-emit st3 "    mov [rbp")
-      (let st5 (cg-emit-int st4 off)
-        (let st6 (cg-nl (cg-emit st5 "], rax"))
-          (cg-expr st6 (EnvBind n off (kind-of env v) env) body))))))
+  (let k (kind-of env v)
+    (let st3 (cg-expr st env v)
+      (let st4 (cg-emit st3 "    mov [rbp")
+        (let st5 (cg-emit-int st4 off)
+          (let st6 (cg-nl (cg-emit st5 "], rax"))
+            (cg-expr st6 (EnvBind n off k env) body)))))))
 
 ; (if c t e): condition tested, then branch tails.
 (defn cg-if-parts (st env c t eb lelse lend)
@@ -1910,7 +1929,7 @@
 (defn cg-function (st f)
   (match f
     (IFn name params body
-     (let env (cg-param-env params 0 None)
+     (let env (cg-param-env params 0 (EnvNil))
        (let fsz (* 16 (+ 64 (icnf-size body)))
          (let st1 (cg-emit st "f_")
            (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
@@ -1961,7 +1980,7 @@
 
 ; Reverse the collected rodata list so entries emit in creation order.
 (defn cg-reverse-rodata (xs)
-  (cg-rev-acc xs None))
+  (cg-rev-acc xs (no-rentries)))
 
 (defn cg-rev-acc (xs acc)
   (match xs
