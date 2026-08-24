@@ -12,7 +12,7 @@
 ; LIST ADT — Generic: List<T>
 ; ===========================================================================
 
-(deftype List (Cons T (List T)) None)
+(deftype List (Cons T (List T)) Nil)
 
 ; ===========================================================================
 ; LIST OPERATIONS
@@ -21,43 +21,43 @@
 (defn is-nil (xs)
   (match xs
     (Cons _ _ false)
-    (None true)))
+    (Nil true)))
 
 (defn list-car (xs)
   (match xs
     (Cons v _ (Some v))
-    (None None)))
+    (Nil Nil)))
 
 (defn list-cdr (xs)
   (match xs
     (Cons _ rest rest)
-    (None None)))
+    (Nil Nil)))
 
 ; Length
 (defn list-length (xs)
   (match xs
-    (None 0)
+    (Nil 0)
     (Cons _ rest (+ 1 (list-length rest)))))
 
 ; Append
 (defn list-append (xs ys)
   (match xs
-    (None ys)
+    (Nil ys)
     (Cons h t (Cons h (list-append t ys)))))
 
 ; Reverse
 (defn list-reverse (xs)
-  (list-reverse-acc xs None))
+  (list-reverse-acc xs Nil))
 
 (defn list-reverse-acc (xs acc)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (list-reverse-acc t (Cons h acc)))))
 
 ; Sum of list (Int only — monomorphized by use site)
 (defn list-sum (xs)
   (match xs
-    (None 0)
+    (Nil 0)
     (Cons h t (+ h (list-sum t)))))
 
 ; ---------- stdlib/allocator/allocator.zyl ----------
@@ -314,14 +314,14 @@
 (defn toks-head (toks)
   (match toks
     (Cons t d5 t)
-    (None (TkEof))))
+    (Nil (TkEof))))
 
 ; Tail of a token stream (empty when empty).
 ; Returns: List(Token)
 (defn toks-tail (toks)
   (match toks
     (Cons d6 rest rest)
-    (None None)))
+    (Nil Nil)))
 
 ; ---------- stdlib/compiler/lexer.zyl ----------
 ; === Zyl Standard Library — Compiler Lexer ===
@@ -492,8 +492,8 @@
             (if (= c 93) 1
               (if (= c 58) 1 (if (= c 126) 1 0)))))))))
 
-; Empty token stream (typed so `None` never unifies as Option).
-(defn no-tokens () None)
+; Empty token stream (typed so `Nil` never unifies as Option).
+(defn no-tokens () Nil)
 
 ; ===========================================================================
 ; MAIN LEXER — cursor threaded functionally
@@ -662,8 +662,8 @@
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
 
-; Empty form list (typed so `None` never unifies as Option).
-(defn no-forms () None)
+; Empty form list (typed so `Nil` never unifies as Option).
+(defn no-forms () Nil)
 
 (defn art-ast (r)
   (match r
@@ -701,7 +701,7 @@
 (defn toks-empty (toks)
   (match toks
     (Cons t d10 (tok-is-eof t))
-    (None true)))
+    (Nil true)))
 
 ; ===========================================================================
 ; READER
@@ -744,7 +744,7 @@
     (TkSymbol s (AstOf (AIdent s) rest))
     (TkKeyword s (AstOf (AIdent s) rest))
     ; closers / colon / eof in atom position: empty form
-    (TkEof (AstOf (AList None) rest))
+    (TkEof (AstOf (AList Nil) rest))
     (TkLParen (AstOf (AList (no-forms)) rest))
     (TkRParen (AstOf (AList (no-forms)) rest))
     (TkLBrace (AstOf (AList (no-forms)) rest))
@@ -914,13 +914,13 @@
   (if (> (str-eq s (str-intern arena "!=")) 0) 10
   -1)))))))))))))
 
-; Typed empty lists (bare `None` values unify ambiguously as Option vs
+; Typed empty lists (bare `Nil` values unify ambiguously as Option vs
 ; List depending on module load order — always name the element type).
-(defn no-strs () None)
-(defn no-icnfs () None)
-(defn no-asts () None)
-(defn no-ifuncs () None)
-(defn no-iarms () None)
+(defn no-strs () Nil)
+(defn no-icnfs () Nil)
+(defn no-asts () Nil)
+(defn no-ifuncs () Nil)
+(defn no-iarms () Nil)
 
 ; ===========================================================================
 ; GENERIC STRUCTURAL LIST HELPERS (Ast-typed streams)
@@ -930,13 +930,13 @@
 (defn first-ast (xs)
   (match xs
     (Cons a d1 a)
-    (None (AInt 0))))
+    (Nil (AInt 0))))
 
 ; Tail of an Ast list (empty when empty).
 (defn rest-ast (xs)
   (match xs
     (Cons d2 r r)
-    (None None)))
+    (Nil Nil)))
 
 ; Last element of an Ast list.
 (defn last-ast (xs)
@@ -944,7 +944,7 @@
 
 (defn last-loop (xs acc)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (last-loop t h))))
 
 ; All-but-last elements, in source order.
@@ -982,7 +982,7 @@
 (defn head-name-is (arena kids s)
   (match kids
     (Cons head d14 (> (str-eq (ident-name head "") (str-intern arena s)) 0))
-    (None 0)))
+    (Nil 0)))
 
 ; Form-level test: parenthesised form whose head identifier equals `s`.
 (defn form-head-is (arena form s)
@@ -1007,7 +1007,7 @@
 ; Walk top-level forms; deftype forms extend the variant table.
 (defn ic-collect-vt (arena forms vt)
   (match forms
-    (None vt)
+    (Nil vt)
     (Cons form rest
       (if (= (form-head-is arena form "deftype") 1)
         (ic-collect-vt arena rest (ic-vt-deftype arena form vt))
@@ -1032,7 +1032,7 @@
 ; Link one variant entry per remaining variant; tail = next entry chain.
 (defn vt-from-variants (arena variants vt tag)
   (match variants
-    (None vt)
+    (Nil vt)
     (Cons v rest
       (let tail (vt-from-variants arena rest vt (+ tag 1))
         (VTEntry (str-intern arena (variant-name v))
@@ -1063,7 +1063,7 @@
 ; Lower all top-level defn forms to IFn records (source order preserved).
 (defn ic-defns (arena forms acc vt)
   (match forms
-    (None acc)
+    (Nil acc)
     (Cons form rest
       (if (= (form-head-is arena form "defn") 1)
         (ic-defns arena rest (Cons (ic-defn arena form vt) acc) vt)
@@ -1080,7 +1080,7 @@
     (ABool d39 (ic-defn-none arena))))
 
 (defn ic-defn-none (arena)
-  (IFn (str-intern arena "?") None (IConst 0)))
+  (IFn (str-intern arena "?") Nil (IConst 0)))
 
 (defn ic-defn-kids (arena kids vt)
   (if (> (list-length kids) 3)
@@ -1097,7 +1097,7 @@
 
 (defn ic-defn-short (arena kids vt)
   (let nm (first-ast (rest-ast kids))
-    (IFn (str-intern arena (ident-name nm "")) None (IConst 0))))
+    (IFn (str-intern arena (ident-name nm "")) Nil (IConst 0))))
 
 ; Collect parameter names from a parenthesised param node. Typed params
 ; ((name Type) ...) take the first element's name.
@@ -1112,7 +1112,7 @@
 
 (defn param-names-loop (kids acc)
   (match kids
-    (None acc)
+    (Nil acc)
     (Cons p rest (param-names-loop rest (Cons (param-name p) acc)))))
 
 (defn param-name (p)
@@ -1148,7 +1148,7 @@
 ; A parenthesised form. kids may be empty (-> Const 0).
 (defn ic-form (arena kids vt)
   (match kids
-    (None (IConst 0))
+    (Nil (IConst 0))
     (Cons head args (ic-headed-form arena head args vt))))
 
 (defn ic-headed-form (arena head args vt)
@@ -1227,7 +1227,7 @@
   (match args
     (Cons c rest
       (IWhile (ic-expr arena c vt) (ic-body-forms arena rest vt)))
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 ; (set! name expr)
 (defn ic-set-form (arena args vt)
@@ -1266,11 +1266,11 @@
     (Cons sym tail
       ; tail = everything after the symbol: (arg* timeout).
       ; Both branches lower through ic-arg-list so their types unify
-      ; (a bare None here would clash as Option vs List).
+      ; (a bare Nil here would clash as Option vs List).
       (if (> (list-length tail) 1)
         (ic-arg-list arena (butlast tail (no-asts)) vt)
-        (ic-arg-list arena None vt)))
-    (None (IFfi "?" None))))
+        (ic-arg-list arena Nil vt)))
+    (Nil (IFfi "?" Nil))))
 
 
 ; (match scrutinee arm...): arm = (Variant pat* body).
@@ -1279,11 +1279,11 @@
     (Cons scr arms
       (IMatch (ic-expr arena scr vt)
               (list-reverse (ic-arms arena arms (no-iarms) vt))))
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 (defn ic-arms (arena arms acc vt)
   (match arms
-    (None acc)
+    (Nil acc)
     (Cons arm rest (ic-arms arena rest (Cons (ic-arm arena arm vt) acc) vt))))
 
 ; One arm: (VariantName pat* body) — name first, body last, middle binds.
@@ -1297,7 +1297,7 @@
     (ABool d53 (ic-arm-none arena))))
 
 (defn ic-arm-none (arena)
-  (IArm (str-intern arena "?") -1 None (IConst 0)))
+  (IArm (str-intern arena "?") -1 Nil (IConst 0)))
 
 (defn ic-arm-parts (arena parts vt)
   (match parts
@@ -1308,7 +1308,7 @@
                 tag
                 (bind-names arena pats (no-strs))
                 (ic-expr arena (last-ast parts) vt)))))
-    (None (IArm (str-intern arena "?") -1 None (IConst 0)))))
+    (Nil (IArm (str-intern arena "?") -1 Nil (IConst 0)))))
 
 ; Pattern binding names ("_" wildcards kept, skipped by codegen), in
 ; source order: every element except the trailing body.
@@ -1328,7 +1328,7 @@
 
 (defn ic-arg-list-acc (arena args vt acc)
   (match args
-    (None (list-reverse acc))
+    (Nil (list-reverse acc))
     (Cons a rest
       (ic-arg-list-acc arena rest vt (Cons (ic-expr arena a vt) acc)))))
 
@@ -1401,7 +1401,7 @@
     (CGS arena buf 0 8 (no-rentries))))   ; params occupy slots 1..n
 
 ; Empty rodata list.
-(defn no-rentries () None)
+(defn no-rentries () Nil)
 
 (defn cg-buffer (st)
   (match st
@@ -1914,7 +1914,7 @@
 
 (defn icnf-count-list (xs)
   (match xs
-    (None 0)
+    (Nil 0)
     (Cons h t (+ (icnf-size h) (icnf-count-list t)))))
 
 (defn icnf-count-arms (xs)
@@ -1984,7 +1984,7 @@
 
 (defn cg-rev-acc (xs acc)
   (match xs
-    (None acc)
+    (Nil acc)
     (Cons h t (cg-rev-acc t (Cons h acc)))))
 
 (defn cg-header (st)
@@ -2041,7 +2041,7 @@
 
 (defn cg-rodata-emit-list (st xs)
   (match xs
-    (None st)
+    (Nil st)
     (Cons e rest
       (let st2 (cg-rodata-entry st e)
         (cg-rodata-emit-list st2 rest)))))
@@ -2052,22 +2052,22 @@
 (defn ih-ic (xs)
   (match xs
     (Cons a d70 a)
-    (None (IConst 0))))
+    (Nil (IConst 0))))
 
 (defn fh-if (xs)
   (match xs
     (Cons f d71 f)
-    (None (IFn "" None (IConst 0)))))
+    (Nil (IFn "" Nil (IConst 0)))))
 
 (defn shd (xs)
   (match xs
     (Cons s d72 s)
-    (None "")))
+    (Nil "")))
 
 (defn hd-ia (xs)
   (match xs
     (Cons a d73 a)
-    (None (IArm "" -1 None (IConst 0)))))
+    (Nil (IArm "" -1 Nil (IConst 0)))))
 
 (defn cg-arena-of (st)
   (match st
@@ -2076,7 +2076,7 @@
 (defn tl2 (xs)
   (match xs
     (Cons a rest rest)
-    (None None)))
+    (Nil Nil)))
 
 ; ---------- selfhost/driver.zyl ----------
 ; === Zyl Self-Hosting Boot Driver ===

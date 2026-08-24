@@ -21,8 +21,8 @@
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
 
-; Empty form list (typed so `None` never unifies as Option).
-(defn no-forms () None)
+; Empty form list (typed so `Nil` never unifies as Option).
+(defn no-forms () Nil)
 
 (defn art-ast (r)
   (match r
@@ -60,7 +60,7 @@
 (defn toks-empty (toks)
   (match toks
     (Cons t d10 (tok-is-eof t))
-    (None true)))
+    (Nil true)))
 
 ; ===========================================================================
 ; READER
@@ -103,7 +103,7 @@
     (TkSymbol s (AstOf (AIdent s) rest))
     (TkKeyword s (AstOf (AIdent s) rest))
     ; closers / colon / eof in atom position: empty form
-    (TkEof (AstOf (AList None) rest))
+    (TkEof (AstOf (AList Nil) rest))
     (TkLParen (AstOf (AList (no-forms)) rest))
     (TkRParen (AstOf (AList (no-forms)) rest))
     (TkLBrace (AstOf (AList (no-forms)) rest))

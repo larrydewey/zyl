@@ -9,24 +9,24 @@
 (defn pv-hd (xs)
   (match xs
     (Cons a rest a)
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; nth element of an Ast list.
 (defn nth-ast (xs n)
   (match xs
     (Cons a rest
       (if (<= n 0) a (nth-ast rest (- n 1))))
-    (None (AList None))))
+    (Nil (AList Nil))))
 
 ; Children of an AList node; empty otherwise.
 (defn kids-of (a)
   (match a
     (AList kids kids)
-    (AIdent d1 None)
-    (AInt d2 None)
-    (AFloat d3 None)
-    (AString d4 None)
-    (ABool d5 None)))
+    (AIdent d1 Nil)
+    (AInt d2 Nil)
+    (AFloat d3 Nil)
+    (AString d4 Nil)
+    (ABool d5 Nil)))
 
 (test "pv-min"
   (let arena (arena-create 0)

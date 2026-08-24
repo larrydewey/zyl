@@ -408,10 +408,10 @@
       (assert-equal (assoc-size (assoc-put 1 "a" (assoc-put 2 "b" (assoc-empty)))) 2))
 
 (test "assoc-keys"
-      (assert-true (option-is-some (assoc-keys (assoc-put 1 "a" (assoc-empty))))))
+      (assert-true (> (list-length (assoc-keys (assoc-put 1 "a" (assoc-empty)))) 0)))
 
 (test "assoc-values"
-      (assert-true (option-is-some (assoc-values (assoc-put 1 "a" (assoc-empty))))))
+      (assert-true (> (list-length (assoc-values (assoc-put 1 "a" (assoc-empty)))) 0)))
 
 (test "assoc-map"
       (assert-equal (assoc-get 1 "" (assoc-map (fn (v) "y") (assoc-put 1 "x" (assoc-empty)))) "y"))

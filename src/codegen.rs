@@ -6719,7 +6719,17 @@ impl CodeGen {
                 self.asm.push("    push rbp".to_string());
                 self.asm_push_align();
                 for &field_id in field_ids.iter().rev() {
-                    match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
+                    // Resolve via the local lookup/statement list first, then
+                    // the program-wide node map (fields may live in another
+                    // function's or arm's statement list after embedding).
+                    let field_node = lookup
+                        .get(&field_id)
+                        .copied()
+                        .or_else(|| stmts.iter().find(|n| n.id == field_id))
+                        .cloned()
+                        .or_else(|| self.all_nodes.get(&field_id).cloned());
+                    let field_node = field_node.as_ref();
+                    match field_node {
                         Some(ICNFNode {
                             node: ICNFInner::Const(atom),
                             ..
@@ -6811,7 +6821,17 @@ impl CodeGen {
                 self.asm.push("    push rbp".to_string());
                 self.asm_push_align();
                 for &field_id in field_ids.iter().rev() {
-                    match lookup.get(&field_id).copied().or_else(|| stmts.iter().find(|n| n.id == field_id)) {
+                    // Resolve via the local lookup/statement list first, then
+                    // the program-wide node map (fields may live in another
+                    // function's or arm's statement list after embedding).
+                    let field_node = lookup
+                        .get(&field_id)
+                        .copied()
+                        .or_else(|| stmts.iter().find(|n| n.id == field_id))
+                        .cloned()
+                        .or_else(|| self.all_nodes.get(&field_id).cloned());
+                    let field_node = field_node.as_ref();
+                    match field_node {
                         Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
                             // A Const whose atom is an Ident is a variable
                             // reference (ICNF encodes idents this way): load

@@ -17,7 +17,7 @@
     (Inactive false))))
 
 ; Recursive ADT
-(deftype _ad_List (Cons Int _ad_List) None)
+(deftype _ad_List (Cons Int _ad_List) Nil)
 
 (test "adt-list-cons"
   (assert-true true))
