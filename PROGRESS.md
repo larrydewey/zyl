@@ -342,6 +342,12 @@ Stage2 blocker update (same day, later):
   combined inputs; check whether match-arm binding of function-typed
   params miscompiles inside stage1's own compiled cg-match.
 - A single-function self-tail lexer rewrite was attempted and REVERTED:
+- ROOT CAUSE of the applyit crash found: an auto paren-fixer had eaten
+  the closing paren of cg-call-fire-direct's inner branch, producing a
+  malformed call in stage1. Fixed; suite green with the HOF indirect
+  path gated behind (cg-hof-enabled)=0 until its runtime behavior
+  through stage1's own execution is verified (repro: applyit/dbl).
+
   still crashed; the committed mutual-recursion lexer works for moderate
   inputs. A general fix is bootstrap sibling-TCO with explicit
   callee-saved register save/restore.
