@@ -176,6 +176,9 @@ pub enum ZylError {
 
     #[error("module: circular dependency: {}", .0)]
     E_CIRCULAR_MODULE(String),
+
+    #[error("codegen: {}", .0)]
+    E_CODEGEN(String),
 }
 
 /// A result carrying a ZylError.

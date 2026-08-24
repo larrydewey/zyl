@@ -14,6 +14,9 @@ pub type StructLayout = HashMap<String, Vec<(String, usize, String)>>;
 pub struct CodeGen {
     /// Collected assembly output lines.
     pub asm: Vec<String>,
+    /// P1: fatal emission problems (unresolvable values). Never silently
+    /// fabricate zeros — record here; main() turns these into E_CODEGEN.
+    pub fatal_errors: Vec<String>,
     /// Label counter for unique jump targets and string literals.
     label_counter: usize,
     /// XMM register counter for SSE floating-point register allocation.
@@ -72,6 +75,7 @@ impl CodeGen {
     pub fn new() -> Self {
         Self {
             asm: Vec::new(),
+            fatal_errors: Vec::new(),
             label_counter: 0,
             xmm_counter: 0,
             spawn_counter: 0,
@@ -6832,6 +6836,12 @@ impl CodeGen {
                                 self.asm_push_align();
                                 self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                             } else {
+                                // P1: never fabricate a zero for an unresolvable
+                                // variable reference in a variant field.
+                                self.fatal_errors.push(format!(
+                                    "MakeVariant field load of `{}` (field ssa {}) has no local slot",
+                                    lvar, field_id
+                                ));
                                 self.asm_push_align();
                                 self.asm.push("    mov rax, 0".to_string());
                             }
@@ -6844,6 +6854,13 @@ impl CodeGen {
                             self.asm.push("    push rax".to_string());
                         }
                         None => {
+                            // P1: a field id that resolves to no node at all is
+                            // an ICNF integrity failure, not something to paper
+                            // over with whatever happens to be in rax.
+                            self.fatal_errors.push(format!(
+                                "MakeVariant field ssa {} not found in lookup or statement list",
+                                field_id
+                            ));
                             self.asm_push_align();
                             self.asm.push("    push rax".to_string());
                         }
