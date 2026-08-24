@@ -263,6 +263,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_closures(optimized_icnf.closures.iter().map(|(k, v)| (*k, v.clone())).collect());
     codegen.generate(&optimized_icnf);
 
+    // P1: any silent-fallback emission site (e.g. unresolvable MakeVariant
+    // fields) is a fatal compile error, never a fabricated zero.
+    if !codegen.fatal_errors.is_empty() {
+        return Err(Box::new(error::ZylError::E_CODEGEN(
+            codegen.fatal_errors.join("; "),
+        )));
+    }
+
     // Write assembly to a temporary file, then assemble and link.
     let asm_path = format!("{}.s", output_path.trim_end_matches(".bin"));
     let asm_content = if codegen.asm.is_empty() {
