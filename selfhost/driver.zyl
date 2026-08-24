@@ -1,0 +1,7 @@
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/ast)
+(use compiler/icnf)
+(use compiler/codegen)
+(defn main () (let arena (arena-create 1048576) (let fd (file-open "/tmp/zyl_boot_in.zyl" "r") (if (> fd 0) (begin (let srcbuf (file-read fd 1048576) (begin (file-close fd) (let prog (zyl-parse arena srcbuf) (let fns (ic-program arena prog) (let cg (cg-new arena) (begin (cg-program cg fns) (let out (file-open "/tmp/zyl_boot_out.s" "w") (begin (file-write out (cg-buffer cg)) (file-close out) (print "boot: wrote /tmp/zyl_boot_out.s") 0))))))))) (begin (print "boot: cannot open input") 1)))))

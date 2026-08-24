@@ -890,3 +890,27 @@ int zyl_run_tests(void) {
 
     return (failed > 0) ? 1 : 0;
 }
+
+/* ── Boot-build file helpers (used by the self-hosted driver) ───────── */
+#include <fcntl.h>
+long long zyl_file_open_c(long long path, long long mode) {
+    const char* m = (const char*)(size_t)mode;
+    if (m && m[0] == 'r') return (long long)open((const char*)(size_t)path, O_RDONLY);
+    return (long long)open((const char*)(size_t)path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+}
+long long zyl_file_read_c(long long fd, long long count) {
+    static _Thread_local char buf[1 << 20];
+    long long n = read((int)fd, buf, (size_t)count);
+    if (n < 0) n = 0;
+    if (n >= (long long)sizeof(buf) - 1) n = (long long)sizeof(buf) - 1;
+    buf[n] = 0;
+    return (long long)(size_t)buf;
+}
+long long zyl_file_write_c(long long fd, long long buf) {
+    if (!buf) return -1;
+    return (long long)write((int)fd, (const void*)(size_t)buf,
+                            strlen((const char*)(size_t)buf));
+}
+long long zyl_file_close_c(long long fd) {
+    return (long long)close((int)fd);
+}

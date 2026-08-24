@@ -28,7 +28,7 @@
 ;   [32]=rodata list (Rodata)
 (defn cg-new (arena)
   (let st (arena-alloc-zeroed arena 48)
-    (let buf (arena-alloc-zeroed arena 1048576)
+    (let buf (arena-alloc-zeroed arena 8388608)
       (begin
         (alloc-write-int st arena)
         (alloc-write-int (+ st 8) buf)
@@ -510,7 +510,7 @@
          (cg-nl st)
          (cg-emit st "    mov rbp, rsp")
          (cg-nl st)
-         (cg-emit st "    sub rsp, 65536")
+         (cg-emit st "    sub rsp, 4096")
          (cg-nl st)
          (cg-param-spills st 0 (list-length params))
          (alloc-write-int (+ st 24) (* 8 (+ 1 (list-length params)))) ; locals start after params
