@@ -194,8 +194,14 @@ How the last two gaps were closed:
       across element types (constraint forcing duplicated per-module
       helpers like `ih-ic`/`fh-if`). Improve unification or add explicit
       type annotations.
-- [ ] **Match-in-value-position**: lift "match only as entire body"
-      restriction incrementally with a regression test per unlocked shape.
+- [x] **Match-in-value-position** *(done 2026-08-25)*: the restriction
+      was already effectively lifted by earlier codegen fixes — verified
+      let bindings, binop args, if branches, call args, nested arm-body
+      matches, and multiple matches per defn through stage1 AND stage2
+      (all produce correct values). Codified with
+      tests/regression/match-value-position.zyl (7 shapes; runs in the
+      Rust suite; stage>=2 verified manually since run-tests is a
+      Rust-bootstrap special form). Constraint 2 lifted in the skill.
 - [ ] **Scale profiling**: O(n²) suspects in str-intern scans and arena
       fragmentation when compiling very large inputs.
 
@@ -212,7 +218,8 @@ How the last two gaps were closed:
 ## Bootstrap Constraints (for code written in Zyl — see skills/zyl/SKILL.md)
 
 1. ~~Keep function arities <=6~~ LIFTED (2026-08-25): stack-passed args work.
-2. A `match` may appear only as the entire body of a defn.
+2. ~~A `match` may appear only as the entire body of a defn~~ LIFTED
+   (2026-08-25): match works in value position; keep nesting moderate.
 3. Match arms must enumerate every constructor (no wildcard fallback;
    unknown arms map to discriminant 0).
 4. Pattern wildcards must be named dummies (`dN`), never bare `_`.
