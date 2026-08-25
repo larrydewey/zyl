@@ -808,10 +808,17 @@ impl CodeGen {
             }
         }
 
-        // If there's a user-defined main function, call it.
+        // If there's a user-defined main function, run it on a worker
+        // thread with a very large stack: deep recursion in self-hosted
+        // compiler runs cannot rely on the 8MB main-thread stack (growth
+        // is often blocked by adjacent mmaps).
         if program.functions.iter().any(|f| f.name == "main") {
             self.asm_push_align();
-            self.asm.push("    call _ZYL_main".to_string());
+            self.asm
+                .push("    lea rdi, [rip+_ZYL_main]".to_string());
+            self.asm_push_align();
+            self.asm
+                .push("    call zyl_call_on_big_stack@plt".to_string());
         }
 
         // Call exit(0).

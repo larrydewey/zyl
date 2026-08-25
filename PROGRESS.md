@@ -369,6 +369,18 @@ Stage2 blocker update (same day, later):
   alloc_strlen (str-intern path) at normal ~2MB stack depth while
   compiling the full source. Repro: ulimit -s unlimited; stage1.bin on
   zyl_selfhost_compiler.zyl. Next session: instrument str-intern callers
+- SMOKING GUN FOUND (end of session): stage2's generated asm compiles
+  EXCEPT every mangled call symbol is DOUBLED (f_str_eqf_str_eq,
+  f_cg_emitf_cg_emit, ...). 899/900 calls affected; the surrounding asm
+  text itself is NOT doubled - only call-target symbols built via the
+  fire pipeline. Pattern = "f_<sanitized>" emitted TWICE per call, so
+  the emit sequence inside cg-call-fire-direct's pipeline executes its
+  symbol-emitting statements twice. This matches the known Rust-
+  bootstrap statement-duplication / If-arm embedding bug class.
+  Next session: reduce cg-call-fire-direct to the smallest shape that
+  still doubles (binary-search the pipeline), then fix the bootstrap's
+  ICNF embedding duplication for that construct.
+
   (which string is NULL/garbage), likely tied to a specific construct in
 - UPDATE after Match-descent restriction: restricting collect_tail_calls
   to If-chains only did NOT fix the full-input crash. Current signature:

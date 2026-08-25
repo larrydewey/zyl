@@ -186,7 +186,6 @@
 ; Bootstrap constraints honored: named dummies (never bare _), arity <=6,
 ; flat if-chains (no nesting deeper than the proven ic-special shape).
 
-(defn no-tokens () Nil)
 
 (defn zyl-lex (arena src)
   (let len (ffi-call "zyl_cstr_len" src 1000)
