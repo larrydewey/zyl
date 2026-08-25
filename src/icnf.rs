@@ -349,6 +349,9 @@ pub struct MatchArmICNF {
     pub variant_name: String,
     pub discriminant: usize,
     pub field_names: Vec<String>,
+    /// Declared type name per bound field (parallel to `field_names`, best
+    /// effort; empty when unknown). Used by codegen for float detection.
+    pub field_types: Vec<String>,
     pub body: Vec<ICNFNode>,
 }
 
@@ -2729,9 +2732,20 @@ impl IcnfConverter {
                     // user type's `Cons` arm discriminant 0 and corrupt dispatch.
                     // P1: an arm naming a constructor that the resolved type does
                     // not have is a compile error — never map it to 0.
-                    let discriminant = self.adt_defs.get(&type_name)
-                        .and_then(|variants| variants.iter().position(|(vname, _)| vname == &arm.variant))
-                        .ok_or_else(|| {
+                    // EXCEPTION: catch-all (fallback) arms like `(d2 0)` are
+                    // not constructors; give them a sentinel discriminant so
+                    // they sort LAST and codegen's default path handles them.
+                    let all_known_here: crate::deterministic::HashSet<String> = self
+                        .adt_defs
+                        .values()
+                        .flat_map(|vs| vs.iter().map(|(vn, _)| vn.clone()))
+                        .collect();
+                    let position = self.adt_defs.get(&type_name)
+                        .and_then(|variants| variants.iter().position(|(vname, _)| vname == &arm.variant));
+                    let discriminant = match position {
+                        Some(pos) => pos,
+                        None if !all_known_here.contains(&arm.variant) => usize::MAX,
+                        None => {
                             if std::env::var("ZYL_DBG_ADT").is_ok() {
                                 eprintln!(
                                     "[adt] match arm `{}` not found; type_name=`{}`; adt_defs={:?}",
@@ -2744,7 +2758,7 @@ impl IcnfConverter {
                             // unresolved scrutinee type (`type_name` empty)
                             // is an inference limitation, not a bad arm.
                             if type_name.is_empty() {
-                                ZylError::E_MATCH_NONEXHAUSTIVE(
+                                return Err(ZylError::E_MATCH_NONEXHAUSTIVE(
                                     match_span.clone(),
                                     format!(
                                         "cannot determine the type of this match's scrutinee, so variant `{}` cannot be resolved. \
@@ -2752,25 +2766,46 @@ impl IcnfConverter {
                                          or construct it directly from a constructor of that deftype",
                                         arm.variant
                                     ),
-                                )
+                                ))
                             } else {
                                 let known = self.adt_defs.get(&type_name)
                                     .map(|vs| vs.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>())
                                     .unwrap_or_default();
-                                ZylError::E_MATCH_NONEXHAUSTIVE(
+                                return Err(ZylError::E_MATCH_NONEXHAUSTIVE(
                                     match_span.clone(),
                                     format!(
                                         "match arm names unknown variant `{}` for type `{}` (known variants: {})",
                                         arm.variant, type_name, known.join(", ")
                                     ),
-                                )
+                                ));
                             }
-                        })?;
+                        }
+                    };
 
+                    let field_types = self
+                        .adt_defs
+                        .get(&type_name)
+                        .and_then(|variants| {
+                            variants.iter().find(|(vn, _)| *vn == arm.variant)
+                        })
+                        // Monomorphized scrutinee names (e.g. `Shape_Float`)
+                        // are not adt_defs keys; fall back to any deftype
+                        // declaring this variant with a matching arity
+                        // (IndexMap iteration order is deterministic).
+                        .or_else(|| {
+                            self.adt_defs.values()
+                                .flat_map(|vs| vs.iter())
+                                .find(|(vn, fts)| {
+                                    *vn == arm.variant && fts.len() == field_names.len()
+                                })
+                        })
+                        .map(|(_, fts)| fts.clone())
+                        .unwrap_or_default();
                     arm_with_disc.push((discriminant, MatchArmICNF {
                         variant_name: arm.variant.clone(),
                         discriminant,
                         field_names,
+                        field_types,
                         body: full_body,
                     }));
                 }
@@ -3987,8 +4022,20 @@ impl IcnfConverter {
         // List and any user list type), so matching on just the first arm can
         // bind the match to an unrelated type and corrupt all discriminants.
         if !arms.is_empty() {
+            // Fallback (catch-all) arms like `(d2 0)` are NOT constructors:
+            // their names appear in no deftype. They must be ignored when
+            // identifying the scrutinee type — otherwise any match with a
+            // catch-all arm resolves to no type at all.
+            let all_known: crate::deterministic::HashSet<String> = self
+                .adt_defs
+                .values()
+                .flat_map(|vs| vs.iter().map(|(vn, _)| vn.clone()))
+                .collect();
             let fits = |variants: &Vec<(String, Vec<String>)>| {
-                arms.iter().all(|a| variants.iter().any(|(v, _)| v == &a.variant))
+                arms.iter().all(|a| {
+                    variants.iter().any(|(v, _)| v == &a.variant)
+                        || !all_known.contains(&a.variant)
+                })
             };
             // Candidates covering all arms. Prefer the canonical (shortest,
             // non-monomorphized) name so e.g. `List` beats `List_?149`.

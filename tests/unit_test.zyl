@@ -319,9 +319,9 @@
         (let add5 (outer 5)
           (assert-equal (add5 3) 8))))
 
-                                        ; (test "recursive closure"
-                                        ;   (let fact (fn (n) (if (<= n 1) 1 (* n (fact (- n 1)))))
-                                        ;     (assert-equal (fact 5) 120)))
+; (test "recursive closure"
+;   (let fact (fn (n) (if (<= n 1) 1 (* n (fact (- n 1)))))
+;     (assert-equal (fact 5) 120)))
 
 (test "list-car none"
       (assert-true (option-is-none (list-car (list-range 0 0)))))
