@@ -1,0 +1,89 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zyl",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#special-form" },
+    { "include": "#definition" },
+    { "include": "#deftype" },
+    { "include": "#builtin-function" },
+    { "include": "#ffi" },
+    { "include": "#capability" },
+    { "include": "#boolean" },
+    { "include": "#number" },
+    { "include": "#type-annotation" },
+    { "include": "#identifier" }
+  ],
+  "repository": {
+    "comment": {
+      "comment": "line comment",
+      "name": "comment.line.semicolon.zyl",
+      "match": ";.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.zyl",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.zyl", "match": "\\\\." }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.control.zyl",
+      "match": "(?<=\\()(if|when|unless|while|for|cond|match|and|or)\\b"
+    },
+    "special-form": {
+      "name": "keyword.control.zyl",
+      "match": "(?<=\\()(let|let-mut|set!|begin|defn|def|defstruct|defstruct\\+|deftype|defmacro|trait|impl|module|use|export|try|catch|with-resource|spawn|send|send-closure|fn|lambda|read-line|exit)\\b"
+    },
+    "definition": {
+      "comment": "function/variable name after defn/def",
+      "match": "(?<=\\(def(n|) )([a-zA-Z0-9!?*<>=+/-]+)",
+      "captures": {
+        "1": { "name": "keyword.control.zyl" },
+        "2": { "name": "entity.name.function.zyl" }
+      }
+    },
+    "deftype": {
+      "comment": "variant names inside deftype (capitalized)",
+      "match": "\\(([A-Z][A-Za-z0-9]*)\\b",
+      "captures": {
+        "1": { "name": "entity.name.type.constructor.zyl" }
+      }
+    },
+    "builtin-function": {
+      "name": "support.function.builtin.zyl",
+      "match": "(?<=\\()(print|print-string|struct-get|make-[a-zA-Z0-9-]+|str-intern|buf-append|str-len|str-eq|list-length|alloc-strlen|byte-at|sub-str|chr-[a-z-]+|scan-[a-z-]+|is-nil|first-ast|rest-ast|hd-[a-z0-9]+|tl[0-9]?|chd-[a-z0-9]+|shd|not|null\\?|assert-equal|assert-true|assert-false|test)\\b"
+    },
+    "ffi": {
+      "comment": "C symbol string inside ffi-call",
+      "name": "support.function.ffi.zyl",
+      "match": "(?<=\"zyl_)[a-zA-Z0-9_]+(?=\")"
+    },
+    "capability": {
+      "name": "storage.modifier.capability.zyl",
+      "match": "\\b(TCap|TMut|Stack|Heap|Global|Circular|Pin)\\b"
+    },
+    "boolean": {
+      "name": "constant.language.boolean.zyl",
+      "match": "\\b(true|false)\\b"
+    },
+    "number": {
+      "comment": "int and float literals, including negatives in value position",
+      "name": "constant.numeric.zyl",
+      "match": "(?<![a-zA-Z0-9_-])-?[0-9]+\\.[0-9]+([eE][-+]?[0-9]+)?|(?<![a-zA-Z0-9_-])[0-9]+\\b"
+    },
+    "type-annotation": {
+      "comment": "Capitalized type references: Int, String, Float, Bool, List, Option...",
+      "name": "entity.name.type.zyl",
+      "match": "\\b(Int|Float|Bool|String|Unit|List|Option|Result)\\b"
+    },
+    "identifier": {
+      "name": "variable.other.zyl",
+      "match": "[a-zA-Z0-9!?*<>=+/-]+"
+    }
+  },
+  "scopeName": "source.zyl"
+}
