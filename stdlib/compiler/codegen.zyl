@@ -69,8 +69,12 @@
 (defn no-fnnames () None)
 
 
+; Codegen text buffer: 64MB, zero-initialized (buf-append appends at
+; strlen, so the zero fill terminates every intermediate string). The
+; driver checks the final length against E_CODEGEN_BUFFER_LIMIT after
+; emission — overflow would otherwise corrupt the arena silently.
 (defn cg-new (arena)
-  (let buf (arena-alloc-zeroed arena 8388608)
+  (let buf (arena-alloc-zeroed arena 67108864)
     (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
 
 (defn cg-with-fnname (st nm)

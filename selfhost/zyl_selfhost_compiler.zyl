@@ -1527,8 +1527,12 @@
 (defn no-fnnames () None)
 
 
+; Codegen text buffer: 64MB, zero-initialized (buf-append appends at
+; strlen, so the zero fill terminates every intermediate string). The
+; driver checks the final length against E_CODEGEN_BUFFER_LIMIT after
+; emission — overflow would otherwise corrupt the arena silently.
 (defn cg-new (arena)
-  (let buf (arena-alloc-zeroed arena 8388608)
+  (let buf (arena-alloc-zeroed arena 67108864)
     (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
 
 (defn cg-with-fnname (st nm)
@@ -2468,10 +2472,15 @@
 (defn emit-out (arena fns)
   (let st (cg-program (cg-new arena) fns)
     (let buf (cg-buffer st)
-      (let out (file-open "/tmp/zyl_boot_out.s" "w")
-        (let n (file-write out buf)
-          (let d3 (file-close out)
-            n))))))
+      (let blen (alloc-strlen buf)
+        ; Guard: buffer capacity is 64MB; refuse to write anything that
+        ; came within 1MB of it (silent arena corruption otherwise).
+        (if (> blen 66060288)
+          (ffi-call "f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
+          (let out (file-open "/tmp/zyl_boot_out.s" "w")
+            (let n (file-write out buf)
+              (let d3 (file-close out)
+                n))))))))
 
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)

@@ -2740,13 +2740,31 @@ impl IcnfConverter {
                                     self.adt_defs.keys().collect::<Vec<_>>()
                                 );
                             }
-                            ZylError::E_MATCH_NONEXHAUSTIVE(
-                                match_span.clone(),
-                                format!(
-                                    "match arm names unknown variant `{}` for type `{}`",
-                                    arm.variant, type_name
-                                ),
-                            )
+                            // Distinguish the two failure modes: an
+                            // unresolved scrutinee type (`type_name` empty)
+                            // is an inference limitation, not a bad arm.
+                            if type_name.is_empty() {
+                                ZylError::E_MATCH_NONEXHAUSTIVE(
+                                    match_span.clone(),
+                                    format!(
+                                        "cannot determine the type of this match's scrutinee, so variant `{}` cannot be resolved. \
+                                         Help inference: define the scrutinee as a function parameter with a concrete deftype, \
+                                         or construct it directly from a constructor of that deftype",
+                                        arm.variant
+                                    ),
+                                )
+                            } else {
+                                let known = self.adt_defs.get(&type_name)
+                                    .map(|vs| vs.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>())
+                                    .unwrap_or_default();
+                                ZylError::E_MATCH_NONEXHAUSTIVE(
+                                    match_span.clone(),
+                                    format!(
+                                        "match arm names unknown variant `{}` for type `{}` (known variants: {})",
+                                        arm.variant, type_name, known.join(", ")
+                                    ),
+                                )
+                            }
                         })?;
 
                     arm_with_disc.push((discriminant, MatchArmICNF {
