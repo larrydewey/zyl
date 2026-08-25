@@ -367,6 +367,18 @@ Stage2 blocker update (same day, later):
   statement counts between the same functions compiled STANDALONE vs
   INSIDE the assembled program. The divergence point is the bootstrap
   embedding bug. Workaround option if time-boxed: restructure
+- CURRENT LIMIT (refined): stage1 compiles inputs up to ~1000 lines /
+  ~600 function definitions. Beyond that it segfaults. The limit is NOT
+  arena size (tested with 1GB), NOT stack depth (big-stack thread works),
+  NOT TCO (disabled TCO gives same crash). It is a scaling issue in
+  stage1's own compiled icnf/codegen functions when processing many
+  definitions — possibly arena fragmentation, an O(n^2) blowup causing
+  effective memory exhaustion, or a bootstrap miscompile that only
+  manifests at scale.
+- buf-append and error are now defined as proper Zyl FFI wrappers in
+  allocator.zyl (buf-append -> zyl_strcpy, error -> f_error). Both C
+  functions added to actor_runtime.c. This eliminates the undefined
+  symbol errors for these functions in stage2's output.
   cg-call-fire-direct's pipeline at the Zyl level until the doubled
   emission disappears (e.g., split the nested-let chain into separate
   top-level helper functions per emit step).

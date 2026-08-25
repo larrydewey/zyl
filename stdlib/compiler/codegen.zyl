@@ -48,6 +48,8 @@
 
 (deftype FnName (FN String) FNNil)
 
+(deftype FnName (FN String) FNNil)
+
 (deftype CGR (CGR CGState Int String))
 
 (deftype CGE (CGE CGState Env))
@@ -69,6 +71,7 @@
     (CGR st2 d2 lb (CGP st2 la lb))))
 
 (defn no-fnnames () None)
+
 
 (defn cg-new (arena)
   (let buf (arena-alloc-zeroed arena 8388608)
@@ -458,23 +461,65 @@
       (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
       buf)))
 
-(defn cg-call-fire (st env name mangle i) (if (= (% i 2) 1) (cg-call-fire-pad st env name mangle i) (cg-call-fire-nopad st env name mangle)))
+(defn cg-cat2 (arena a b)
+  (let buf (arena-alloc-zeroed arena (+ (alloc-strlen a) (alloc-strlen b) 1))
+    (begin
+      (buf-append buf a)
+      (buf-append buf b)
+      buf)))
 
-(defn cg-call-fire-nopad (st env name mangle) (let off (env-lookup env name) (if (= off 0) (cg-call-dir-nopad st env name mangle) (cg-call-ind-nopad st env name off))))
+(defn cg-cat3 (arena a b c)
+  (cg-cat2 arena (cg-cat2 arena a b) c))
 
-(defn cg-call-fire-pad (st env name mangle i) (let off (env-lookup env name) (if (= off 0) (cg-call-dir-pad st env name mangle i) (cg-call-ind-pad st env name i off))))
+(defn cg-call-fire (st env name mangle i)
+  ; Build the ENTIRE call instruction as one string, then single emit.
+  ; This avoids bootstrap double-emission bugs on multi-emit sequences.
+  (if (> mangle 0)
+    (cg-fire-user st env name i)
+    (cg-fire-ext st env name i)))
 
-(defn cg-call-dir (st env name mangle i) (if (> i 0) (cg-call-dir-pad st env name mangle i) (cg-call-dir-nopad st env name mangle)))
+; Build "call f_<sanitized>" as a single string.
+(defn cg-call-user-str (st env name)
+  (let sym (cg-sym-for (cg-arena-of st) name 1)
+    (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)))
 
-(defn cg-call-ind (st env name i off) (if (> i 0) (cg-call-ind-pad st env name i off) (cg-call-ind-nopad st env name off)))
+; ── mangled (user fn) paths ──
 
-(defn cg-call-dir-nopad (st env name mangle) (let st2 (cg-pop-regs st -1) (let st3 (cg-emit st "    call ") (let st4 (cg-emit st3 (cg-sym-for (cg-arena-of st) name mangle)) (cg-nl (cg-emit st3 (cg-sym-for (cg-arena-of st) name mangle)))))))
+(defn cg-fire-user (st env name i)
+  (if (= (% i 2) 1)
+    (cg-user-pad st env name i)
+    (cg-user-nopad st env name)))
 
-(defn cg-call-dir-pad (st env name mangle i) (let st2 (cg-emit-line st "    sub rsp, 8") (let st3 (cg-pop-regs st2 (- i 1)) (let st4 (cg-emit st3 "    call ") (let st5 (cg-emit st4 (cg-sym-for (cg-arena-of st) name mangle)) (let st6 (cg-nl (cg-emit st4 (cg-sym-for (cg-arena-of st) name mangle))) (cg-emit-line st6 "    add rsp, 8")))))))
+(defn cg-user-nopad (st env name)
+  ; args already pushed by cg-call-args; just emit call + cleanup
+  (let st2 (cg-pop-regs st -1)
+    (let st3 (cg-call-user-str st env name)
+      (cg-emit-line st2 st3))))
 
-(defn cg-call-ind-nopad (st env name off) (let st2 (cg-pop-regs st -1) (let st3 (cg-load-slot st2 name off) (cg-emit-line st3 "    call rax"))))
+(defn cg-user-pad (st env name i)
+  (let st2 (cg-emit-line st "    sub rsp, 8")
+    (let st3 (cg-pop-regs st2 (- i 1))
+      (let st4 (cg-call-user-str st env name)
+        (let st5 (cg-emit-line st3 st4)
+          (cg-emit-line st5 "    add rsp, 8"))))))
 
-(defn cg-call-ind-pad (st env name i off) (let st2 (cg-emit-line st "    sub rsp, 8") (let st3 (cg-pop-regs st2 (- i 1)) (let st4 (cg-load-slot st3 name off) (let st5 (cg-emit-line st4 "    call rax") (cg-emit-line st5 "    add rsp, 8"))))))
+; ── ext (FFI) paths ──
+
+(defn cg-fire-ext (st env name i)
+  (if (= (% i 2) 1)
+    (cg-ext-pad st env name i)
+    (cg-ext-nopad st env name)))
+
+(defn cg-ext-nopad (st env name)
+  (let st2 (cg-pop-regs st -1)
+    (let st3 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "    call ") (str-intern (cg-arena-of st) name))
+      (cg-emit-line st2 st3))))
+
+(defn cg-ext-pad (st env name i)
+  (let st2 (cg-emit-line st "    sub rsp, 8")
+    (let st3 (cg-pop-regs st2 (- i 1))
+      (let st4 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "    call ") (str-intern (cg-arena-of st) name))
+        (cg-emit-line st4 st4)))))
 
 ; Pop j+1 pushed args into their registers (reverse order).
 (defn cg-pop-regs (st j)
