@@ -7827,10 +7827,9 @@ fn collect_tail_calls(
     out: &mut std::collections::HashSet<usize>,
 ) {
     match node {
-        // Any tail-position user call qualifies (self OR sibling); the
-        // emitter enforces register-class/arity guards.
-        ICNFInner::Call { .. } if false => {}
-        ICNFInner::Call(..) => {
+        // Only SELF-calls qualify: sibling TCO causes systematic
+        // double-emission of symbols in deep mutual-recursion chains.
+        ICNFInner::Call(name, _) if name == func_name => {
             out.insert(id);
         }
         ICNFInner::If { then_body, else_body, .. } => {
