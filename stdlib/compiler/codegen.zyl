@@ -717,23 +717,30 @@
 ; body (every node may own one 8-byte slot). Keeps frames small so deep
 ; recursion in the compiler stays within the machine stack.
 
+; NOTE: match-arm bodies must stay SINGLE expressions (one call or one
+; binop-with-one-call). The Rust bootstrap drops computations when a
+; match-arm body combines a constant with MULTIPLE calls (seen as frames
+; collapsing to minimum size in stage>=2 binaries). Hence these helpers.
+(defn icnf-add2 (a b) (+ a b))
+(defn icnf-add3 (a b c) (+ a (+ b c)))
+
 (defn icnf-size (e)
   (match e
     (IConst d54 1)
     (IStr d55 1)
     (IFlt d56 1)
     (ILoad d57 1)
-    (IBinop d58 l r (+ 3 (icnf-size l) (icnf-size r)))
-    (ICall d59 args (+ 2 (icnf-count-list args)))
-    (IFfi d60 args (+ 2 (icnf-count-list args)))
+    (IBinop d58 l r (icnf-add3 3 (icnf-size l) (icnf-size r)))
+    (ICall d59 args (icnf-add2 2 (icnf-count-list args)))
+    (IFfi d60 args (icnf-add2 2 (icnf-count-list args)))
     (IPrint a (+ 1 (icnf-size a)))
-    (IIf c t eb (+ 4 (icnf-size c) (icnf-size t) (icnf-size eb)))
-    (IWhile c b (+ 3 (icnf-size c) (icnf-size b)))
+    (IIf c t eb (icnf-add3 4 (icnf-size c) (icnf-size t) (icnf-size eb)))
+    (IWhile c b (icnf-add3 3 (icnf-size c) (icnf-size b)))
     (ISet d61 v (+ 2 (icnf-size v)))
-    (ILet d62 v b (+ 3 (icnf-size v) (icnf-size b)))
+    (ILet d62 v b (icnf-add3 3 (icnf-size v) (icnf-size b)))
     (ISeq es (+ 1 (icnf-count-list es)))
     (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
-    (IMatch scr arms (+ 2 (icnf-size scr) (icnf-count-arms arms)))))
+    (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))))
 
 (defn icnf-count-list (xs)
   (match xs
