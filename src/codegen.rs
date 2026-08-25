@@ -2,7 +2,8 @@ use crate::ast::Atom;
 use crate::icnf::*;
 use crate::type_system::{PrimType, Type};
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet, BTreeMap};
+use crate::deterministic::{HashMap, HashSet};
+use std::collections::BTreeMap;
 
 // ─── x86_64 Code Generation (spec §22 — Phase 9) ──────────────────────
 /// Generates Linux x86_64 System V ABI assembly from optimized ICNF.
@@ -19,7 +20,7 @@ pub struct CodeGen {
     pub fatal_errors: Vec<String>,
     /// TCO: statement ids of true tail positions (self-calls eligible for
     /// frame-reuse), computed per function including through If/Match nests.
-    tail_call_ids: std::collections::HashSet<usize>,
+    tail_call_ids: crate::deterministic::HashSet<usize>,
     /// Label counter for unique jump targets and string literals.
     label_counter: usize,
     /// XMM register counter for SSE floating-point register allocation.
@@ -27,48 +28,48 @@ pub struct CodeGen {
     /// Counter for unique spawn wrapper function names.
     spawn_counter: usize,
     /// IDs of nodes already emitted as standalone statements.
-    standalone_emitted: std::collections::HashSet<usize>,
-    all_nodes: std::collections::HashMap<usize, ICNFNode>,
-    sg_slots: std::collections::HashMap<usize, usize>,
+    standalone_emitted: crate::deterministic::HashSet<usize>,
+    all_nodes: crate::deterministic::HashMap<usize, ICNFNode>,
+    sg_slots: crate::deterministic::HashMap<usize, usize>,
     /// Struct field layouts for offset computation.
     struct_layouts: StructLayout,
     /// ADT definitions: type_name → list of (variant_name, field_count).
     adt_defs: std::collections::BTreeMap<String, Vec<(String, usize)>>,
     /// Closure body stmts keyed by closure SSA ID (for inline fn/lambda bodies).
-    closure_bodies: std::collections::HashMap<usize, Vec<ICNFNode>>,
+    closure_bodies: crate::deterministic::HashMap<usize, Vec<ICNFNode>>,
     /// Closure metadata: closure_id → (name, captures).
-    closures: std::collections::HashMap<usize, (String, Vec<CaptureField>)>,
+    closures: crate::deterministic::HashMap<usize, (String, Vec<CaptureField>)>,
     /// Buffered wrapper functions for anonymous spawn closures.
     spawn_wrappers: Vec<String>,
     /// Function name → return type (from type inference), for print type detection.
-    func_returns: std::collections::HashMap<String, Type>,
+    func_returns: crate::deterministic::HashMap<String, Type>,
     /// Function name → resolved param (name, type) list (from type inference).
-    func_params: std::collections::HashMap<String, Vec<(String, Type)>>,
+    func_params: crate::deterministic::HashMap<String, Vec<(String, Type)>>,
     /// Names of parameters typed as String in the function currently being emitted.
-    string_params: std::collections::HashSet<String>,
+    string_params: crate::deterministic::HashSet<String>,
     /// Match-arm pattern variables bound to String fields (from type inference).
-    string_locals: std::collections::HashSet<String>,
+    string_locals: crate::deterministic::HashSet<String>,
     /// Temp stack slot counter for BinOp/UnOp temporaries. Separate from If result_var slots.
     temp_slot_counter: usize,
     /// All known function names (sanitized), used to distinguish direct calls
     /// from indirect calls through function-typed variables, and to materialize
     /// function-pointer values (`lea rax, _ZYL_<name>`).
-    function_names: std::collections::HashSet<String>,
+    function_names: crate::deterministic::HashSet<String>,
     /// Name (sanitized) of the function currently being emitted, for resolving
     /// function-typed parameter references. Empty at top level.
     current_func: String,
     /// Names that hold function-pointer values (inferred structurally, since the
     /// type records leave HOF parameter vars unresolved). Includes local/param
     /// names that are called indirectly and names assigned from a function ref.
-    fn_value_names: std::collections::HashSet<String>,
+    fn_value_names: crate::deterministic::HashSet<String>,
     /// Mapping from original closure name → unique closure name (with SSA ID suffix).
     /// Used to resolve Call instructions that reference the original name.
-    closure_name_map: std::collections::HashMap<String, String>,
+    closure_name_map: crate::deterministic::HashMap<String, String>,
     /// Always-spill scheme: stack slot index for every value-producing
     /// statement id. After a statement is emitted, its result (rax) is
     /// spilled to [rbp-8*(slot+1)]; operand loads read the slot instead of
     /// trusting registers that intervening calls may have clobbered.
-    value_slots: std::collections::HashMap<usize, usize>,
+    value_slots: crate::deterministic::HashMap<usize, usize>,
     /// Frame size (bytes) implied by value_slots; used by all prologues.
     spill_frame: usize,
 }
@@ -79,40 +80,40 @@ impl CodeGen {
         Self {
             asm: Vec::new(),
             fatal_errors: Vec::new(),
-            tail_call_ids: std::collections::HashSet::new(),
+            tail_call_ids: crate::deterministic::HashSet::default(),
             label_counter: 0,
             xmm_counter: 0,
             spawn_counter: 0,
-            standalone_emitted: std::collections::HashSet::new(),
-            all_nodes: std::collections::HashMap::new(),
-            sg_slots: std::collections::HashMap::new(),
+            standalone_emitted: crate::deterministic::HashSet::default(),
+            all_nodes: crate::deterministic::HashMap::default(),
+            sg_slots: crate::deterministic::HashMap::default(),
             struct_layouts: StructLayout::new(),
             adt_defs: std::collections::BTreeMap::new(),
-            closure_bodies: std::collections::HashMap::new(),
-            closures: std::collections::HashMap::new(),
+            closure_bodies: crate::deterministic::HashMap::default(),
+            closures: crate::deterministic::HashMap::default(),
             spawn_wrappers: Vec::new(),
-            func_returns: std::collections::HashMap::new(),
-            func_params: std::collections::HashMap::new(),
-            string_params: std::collections::HashSet::new(),
-            string_locals: std::collections::HashSet::new(),
+            func_returns: crate::deterministic::HashMap::default(),
+            func_params: crate::deterministic::HashMap::default(),
+            string_params: crate::deterministic::HashSet::default(),
+            string_locals: crate::deterministic::HashSet::default(),
             temp_slot_counter: 0,
-            function_names: std::collections::HashSet::new(),
+            function_names: crate::deterministic::HashSet::default(),
             current_func: String::new(),
-            fn_value_names: std::collections::HashSet::new(),
-            closure_name_map: std::collections::HashMap::new(),
-            value_slots: std::collections::HashMap::new(),
+            fn_value_names: crate::deterministic::HashSet::default(),
+            closure_name_map: crate::deterministic::HashMap::default(),
+            value_slots: crate::deterministic::HashMap::default(),
             spill_frame: 256,
         }
     }
 
     /// Set function return types for codegen (from type inference).
-    pub fn with_func_returns(mut self, returns: std::collections::HashMap<String, Type>) -> Self {
+    pub fn with_func_returns(mut self, returns: crate::deterministic::HashMap<String, Type>) -> Self {
         self.func_returns = returns;
         self
     }
 
     /// Set match-arm pattern variables that bind String fields.
-    pub fn with_string_locals(mut self, vars: std::collections::HashSet<String>) -> Self {
+    pub fn with_string_locals(mut self, vars: crate::deterministic::HashSet<String>) -> Self {
         self.string_locals = vars;
         self
     }
@@ -120,7 +121,7 @@ impl CodeGen {
     /// Set resolved function parameter types for codegen (from type inference).
     pub fn with_func_params(
         mut self,
-        params: std::collections::HashMap<String, Vec<(String, Type)>>,
+        params: crate::deterministic::HashMap<String, Vec<(String, Type)>>,
     ) -> Self {
         self.func_params = params;
         self
@@ -139,13 +140,13 @@ impl CodeGen {
     }
 
     /// Set closure body stmts for codegen (from ICNF closure conversion).
-    pub fn with_closure_bodies(mut self, bodies: std::collections::HashMap<usize, Vec<ICNFNode>>) -> Self {
+    pub fn with_closure_bodies(mut self, bodies: crate::deterministic::HashMap<usize, Vec<ICNFNode>>) -> Self {
         self.closure_bodies = bodies;
         self
     }
 
     /// Set closure metadata for codegen (from ICNF closure conversion).
-    pub fn with_closures(mut self, closures: std::collections::HashMap<usize, (String, Vec<CaptureField>)>) -> Self {
+    pub fn with_closures(mut self, closures: crate::deterministic::HashMap<usize, (String, Vec<CaptureField>)>) -> Self {
         self.closures = closures;
         self
     }
@@ -239,7 +240,7 @@ impl CodeGen {
         // Build a program-wide id -> node map so deeply nested nodes (e.g. an
         // If condition inside another If's else body) can always be resolved.
         {
-            fn walk<'a>(stmts: &'a [ICNFNode], map: &mut std::collections::HashMap<usize, ICNFNode>) {
+            fn walk<'a>(stmts: &'a [ICNFNode], map: &mut crate::deterministic::HashMap<usize, ICNFNode>) {
                 for st in stmts {
                     map.insert(st.id, st.clone());
                     let nested: Vec<&Vec<ICNFNode>> = match &st.node {
@@ -268,7 +269,7 @@ impl CodeGen {
         // statement (recursively through embedded bodies) so operand loads can
         // read memory instead of trusting clobber-prone registers.
         {
-            fn vwalk(stmts: &[ICNFNode], next: &mut usize, out: &mut std::collections::HashMap<usize, usize>) {
+            fn vwalk(stmts: &[ICNFNode], next: &mut usize, out: &mut crate::deterministic::HashMap<usize, usize>) {
                 for st in stmts {
                     let value_kind = matches!(
                         &st.node,
@@ -319,7 +320,7 @@ impl CodeGen {
         self.asm.push(".intel_syntax noprefix".to_string());
 
         // Collect all string literals and float constants upfront.
-        let mut strings = HashSet::new();
+        let mut strings = HashSet::default();
         let mut floats: Vec<(f64, String)> = Vec::new();
         Self::collect_strings(program, &mut strings);
         Self::collect_floats(program, &mut floats);
@@ -361,7 +362,7 @@ impl CodeGen {
         // because unresolved HOF param vars never surface Type::Fun to codegen.
         self.fn_value_names.clear();
         {
-            let mut callee_names: HashSet<String> = HashSet::new();
+            let mut callee_names: HashSet<String> = HashSet::default();
             for stmt in &program.statements {
                 collect_call_names(stmt, &program.closure_bodies, &mut callee_names);
             }
@@ -436,14 +437,14 @@ impl CodeGen {
         self.asm.push("    call zyl_ensure_arenas@plt".to_string());
 
         if !program.statements.is_empty() {
-            let mut local_vars: HashMap<String, usize> = HashMap::new();
+            let mut local_vars: HashMap<String, usize> = HashMap::default();
             // Track emitted IDs to avoid duplicate emission of branch body nodes.
-            let mut emitted_ids: std::collections::HashSet<usize> =
+            let mut emitted_ids: crate::deterministic::HashSet<usize> =
                 program.emitted_branch_ids.clone();
 
             // Collect all IDs that appear inside embedded branch bodies (If/While/etc).
-            let mut branch_body_ids: std::collections::HashSet<usize> =
-                std::collections::HashSet::new();
+            let mut branch_body_ids: crate::deterministic::HashSet<usize> =
+                crate::deterministic::HashSet::default();
             for stmt in &program.statements {
                 if let ICNFInner::If {
                         then_body,
@@ -481,7 +482,7 @@ impl CodeGen {
             }
 
             // Collect operand IDs for the main body to skip intermediate Load nodes.
-            let mut main_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut main_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
             for stmt in &program.statements {
                 match &stmt.node {
                     ICNFInner::BinOp(_, left, right) => {
@@ -558,16 +559,16 @@ impl CodeGen {
 
             // Capture phi slots for top-level If result variables before the emit loop.
             // Find the phi Assign node for each If and use its slot.
-            let mut empty_phi: std::collections::HashMap<String, String> = HashMap::new();
+            let mut empty_phi: crate::deterministic::HashMap<String, String> = HashMap::default();
             // Build slot map first: count Assign nodes to get correct slot indices.
             // Only pre-register If result_vars that have their phi Assign as a direct
             // child in program.statements (not nested Ifs — their assigns live inside
             // branch bodies and must compute slots dynamically).
             let mut assign_count: usize = 0;
-            let mut assign_slots: std::collections::HashMap<String, usize> = HashMap::new();
+            let mut assign_slots: crate::deterministic::HashMap<String, usize> = HashMap::default();
             // Collect result_vars whose phi Assign is a top-level program statement.
-            let mut top_level_result_vars: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
+            let mut top_level_result_vars: crate::deterministic::HashSet<String> =
+                crate::deterministic::HashSet::default();
             for stmt in &program.statements {
                 if let ICNFInner::If { result_var, .. } = &stmt.node {
                     // Check if there's a phi Assign for this result_var in program.statements.
@@ -666,8 +667,8 @@ impl CodeGen {
             // Pre-scan: assign slots to For loop variables before processing statements.
             // Also mark For-loop body/step/cond nodes as already emitted so they don't get emitted by the parent loop.
             let mut next_slot: usize = 0;
-            let mut for_loop_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let _for_body_ids: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut for_loop_vars: crate::deterministic::HashSet<String> = crate::deterministic::HashSet::default();
+            let _for_body_ids: crate::deterministic::HashSet<usize> = crate::deterministic::HashSet::default();
             for stmt in &program.statements {
                 if let ICNFInner::For { init_bindings, cond_nodes, body, result_var: _, } = &stmt.node {
                     for (name, _) in init_bindings {
@@ -731,7 +732,7 @@ impl CodeGen {
             self.temp_slot_counter = next_slot;
 
             // Build a full lookup map for the main program statements.
-            let mut main_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+            let mut main_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
             for stmt in &program.statements {
                 main_lookup.insert(stmt.id, stmt);
             }
@@ -739,7 +740,7 @@ impl CodeGen {
             // skipped in the main loop because the If handler emits them inline.
             // Must also collect from branch bodies (nested Ifs whose If-statement is
             // not in program.statements but whose condition BinOp was pushed to globals).
-            let mut if_condition_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut if_condition_ids: crate::deterministic::HashSet<usize> = HashSet::default();
             fn collect_if_cond_ids(node: &ICNFNode, ids: &mut HashSet<usize>) {
                 if let ICNFInner::If { cond_ssa, then_body, else_body, .. } = &node.node {
                     ids.insert(*cond_ssa);
@@ -851,7 +852,7 @@ impl CodeGen {
             // self-call nested inside if/match chains still qualifies.
             self.tail_call_ids.clear();
             if let Some(last) = func.body.last() {
-                let mut ids = std::collections::HashSet::new();
+                let mut ids = crate::deterministic::HashSet::default();
                 collect_tail_calls(&last.node, last.id, &func.name, &mut ids);
                 self.tail_call_ids = ids;
             }
@@ -970,7 +971,7 @@ impl CodeGen {
                 .push(format!(".__TCO_entry_{}:", sanitize_name(&func.name)));
 
             // Emit the function body statements inline.
-            let mut local_vars: HashMap<String, usize> = HashMap::new();
+            let mut local_vars: HashMap<String, usize> = HashMap::default();
 
             // Pre-populate local_vars with parameter names pointing to their stack slot indices.
             // The offset formula is (slot_idx + 1) * 8, so params use consecutive slots.
@@ -995,14 +996,14 @@ impl CodeGen {
 
             // Build a lookup for body nodes by ID so we can find operand values.
             let body_stmts: Vec<ICNFNode> = func.body.clone();
-            let mut func_emitted_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut func_emitted_ids: crate::deterministic::HashSet<usize> = HashSet::default();
 
             // First pass: assign stack slots to all local variable assignments
             // and collect operand IDs to skip intermediate Load nodes.
             let mut next_slot = func.params.len().max(6);
-            let mut operand_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
             // Capture phi slots for all If result variables.
-            let mut phi_slots: std::collections::HashMap<String, String> = HashMap::new();
+            let mut phi_slots: crate::deterministic::HashMap<String, String> = HashMap::default();
             for stmt in &func.body {
                 if let ICNFInner::Assign(name, _) = &stmt.node {
                     if !local_vars.contains_key(name) {
@@ -1206,7 +1207,7 @@ impl CodeGen {
             fn collect_func_phi_slots(
                 stmts: &[ICNFNode],
                 local_vars: &HashMap<String, usize>,
-                phi_slots: &mut std::collections::HashMap<String, String>,
+                phi_slots: &mut crate::deterministic::HashMap<String, String>,
             ) {
                 for stmt in stmts {
                     if let ICNFInner::If { result_var, then_body, else_body, .. } = &stmt.node {
@@ -1245,10 +1246,10 @@ impl CodeGen {
 
             // Second pass: emit code.
             // Collect condition IDs to skip them in the emit loop (they'll be emitted inline by If handler).
-            let mut condition_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut condition_ids: crate::deterministic::HashSet<usize> = HashSet::default();
             // Collect IDs of nodes embedded in If/While/Match branch bodies so the
             // flat emit loop skips them (their parent handler emits them exactly once).
-            let mut func_branch_body_ids: std::collections::HashSet<usize> = HashSet::new();
+            let mut func_branch_body_ids: crate::deterministic::HashSet<usize> = HashSet::default();
             for stmt in &func.body {
                 if let ICNFInner::If { then_body, else_body, .. } = &stmt.node {
                     for n in then_body.iter().chain(else_body.iter()) {
@@ -1279,7 +1280,7 @@ impl CodeGen {
                     collect_cond_ids(else_body, &mut condition_ids);
                 }
             }
-            let mut func_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+            let mut func_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
             for n in &body_stmts {
                 func_lookup.insert(n.id, n);
             }
@@ -1474,7 +1475,7 @@ impl CodeGen {
                 }
 
                 // Emit the function body.
-                let mut local_vars: HashMap<String, usize> = HashMap::new();
+                let mut local_vars: HashMap<String, usize> = HashMap::default();
                 // Pre-populate parameter slots.
                 for (i, param_name) in params.iter().enumerate() {
                     if !param_name.is_empty() {
@@ -1545,17 +1546,17 @@ impl CodeGen {
                 }
 
                 // Collect operand IDs for body statements.
-                let mut operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 for stmt in body {
                     Self::collect_operand_ids_in_node(&stmt.node, &mut operand_ids);
                 }
 
-                let mut body_emitted_ids: std::collections::HashSet<usize> = HashSet::new();
-                let mut func_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut body_emitted_ids: crate::deterministic::HashSet<usize> = HashSet::default();
+                let mut func_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in body {
                     func_lookup.insert(n.id, n);
                 }
-                let phi_slots: std::collections::HashMap<String, String> = HashMap::new();
+                let phi_slots: crate::deterministic::HashMap<String, String> = HashMap::default();
 
                 for stmt in body {
                     if operand_ids.contains(&stmt.id) {
@@ -1625,10 +1626,10 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
         if !self.sg_slots.contains_key(&src_ssa_id) {
             self.emit_load_into(
@@ -1659,8 +1660,8 @@ impl CodeGen {
     /// Count all ICNF nodes in a statement list, recursing into branch
     /// bodies and closure bodies. Used to size stack frames: every node
     /// may need at most one temp slot, so this bounds the frame size.
-    fn count_frame_nodes(stmts: &[ICNFNode], closure_bodies: &std::collections::HashMap<usize, Vec<ICNFNode>>) -> usize {
-        fn walk(stmts: &[ICNFNode], closure_bodies: &std::collections::HashMap<usize, Vec<ICNFNode>>, n: &mut usize) {
+    fn count_frame_nodes(stmts: &[ICNFNode], closure_bodies: &crate::deterministic::HashMap<usize, Vec<ICNFNode>>) -> usize {
+        fn walk(stmts: &[ICNFNode], closure_bodies: &crate::deterministic::HashMap<usize, Vec<ICNFNode>>, n: &mut usize) {
             for s in stmts {
                 *n += 1;
                 match &s.node {
@@ -1712,7 +1713,7 @@ impl CodeGen {
 
     fn node_is_primitive_const(
         id: usize,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
     ) -> bool {
         match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
@@ -1730,7 +1731,7 @@ impl CodeGen {
     fn node_looks_variant(
         &self,
         id: usize,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
         depth: usize,
     ) -> bool {
@@ -1774,20 +1775,20 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
     ) {
         // Evaluate both sides first (each side may involve calls whose arg
         // setup clobbers rdi/rsi), stashing the left result on the stack.
         self.emit_load_into(
             left, "rax", stmts, local_vars, lookup, emitted_ids,
-            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push("    push rax".to_string());
         self.emit_load_into(
             right, "rsi", stmts, local_vars, lookup, emitted_ids,
-            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push("    pop rdi".to_string());
@@ -1802,7 +1803,7 @@ impl CodeGen {
     /// literal or call to a known str-* builtin).
     fn node_looks_string(
         id: usize,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
     ) -> bool {
         match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
@@ -1851,7 +1852,7 @@ impl CodeGen {
 
     fn branch_bodies_look_string(
         body: &[ICNFNode],
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
     ) -> bool {
         body.iter().any(|n| match &n.node {
@@ -1868,18 +1869,18 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
     ) {
         self.emit_load_into(
             left, "rax", stmts, local_vars, lookup, emitted_ids,
-            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push("    push rax".to_string());
         self.emit_load_into(
             right, "rsi", stmts, local_vars, lookup, emitted_ids,
-            &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push("    pop rdi".to_string());
@@ -1895,7 +1896,7 @@ impl CodeGen {
     /// ICNF Eq/BinOp nodes often carry no type annotation.
     fn node_looks_float(
         id: usize,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
         depth: usize,
     ) -> bool {
@@ -2037,7 +2038,7 @@ impl CodeGen {
     }
 
     fn collect_floats(program: &ICNFProgram, out: &mut Vec<(f64, String)>) {
-        let mut seen: HashMap<u64, String> = HashMap::new();
+        let mut seen: HashMap<u64, String> = HashMap::default();
 
         fn collect_floats_from_node(node: &ICNFNode, seen: &mut HashMap<u64, String>, out: &mut Vec<(f64, String)>) {
             match &node.node {
@@ -2309,10 +2310,10 @@ impl CodeGen {
         node: &ICNFNode,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
         self.emit_node_inner(node, stmts, local_vars, emitted_ids, operand_ids, lookup, phi_slots);
         self.spill_result(node.id);
@@ -2334,10 +2335,10 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
         // Check if already emitted. Only skip if the node type stores its result in eax
         // AND we can safely assume eax still has that value.
@@ -3073,13 +3074,13 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
         if let Some(n) = self.all_nodes.get(&src_ssa_id) {
             let node = n.clone();
-            let lookup: HashMap<usize, &ICNFNode> = std::collections::HashMap::new();
-            let empty: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let lookup: HashMap<usize, &ICNFNode> = crate::deterministic::HashMap::default();
+            let empty: crate::deterministic::HashSet<usize> = crate::deterministic::HashSet::default();
             self.emit_node(
                 &node,
                 stmts,
@@ -3109,10 +3110,10 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
         node_id: usize,
     ) {
         // FFI call — pass arguments in registers per System V ABI, call external C function.
@@ -3180,8 +3181,8 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
         is_float: bool,
         node_id: usize,
     ) {
@@ -3193,11 +3194,11 @@ impl CodeGen {
 
             self.emit_float_load_into(
                 left_id, &xmm1, stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(),
+                &crate::deterministic::HashSet::default(),
             );
             self.emit_float_load_into(
                 right_id, &xmm2, stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(),
+                &crate::deterministic::HashSet::default(),
             );
             emitted_ids.insert(node_id);
 
@@ -3308,8 +3309,8 @@ impl CodeGen {
             local_vars,
             lookup,
             emitted_ids,
-            &std::collections::HashSet::new(),
-            &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(),
+            &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push(format!("    mov [rbp-{}], rax", temp_offset));
@@ -3320,8 +3321,8 @@ impl CodeGen {
             local_vars,
             lookup,
             emitted_ids,
-            &std::collections::HashSet::new(),
-            &std::collections::HashMap::new(),
+            &crate::deterministic::HashSet::default(),
+            &crate::deterministic::HashMap::default(),
         );
         self.asm_push_align();
         self.asm.push(format!("    mov rax, [rbp-{}]", temp_offset));
@@ -3413,8 +3414,8 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
         node_id: usize,
         is_float: bool,
     ) {
@@ -3427,7 +3428,7 @@ impl CodeGen {
             if let Some(&s_id) = args.first() {
                 self.emit_load_into(
                     s_id, "rdi", stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                 );
             } else {
                 self.asm_push_align();
@@ -3444,11 +3445,11 @@ impl CodeGen {
         if (name == "str-concat" || name == "str_concat") && args.len() == 2 {
             self.emit_load_into(
                 args[0], "rdi", stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.emit_load_into(
                 args[1], "rsi", stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.asm_push_align();
             self.asm.push("    call zyl_cstr_concat@plt".to_string());
@@ -3462,11 +3463,11 @@ impl CodeGen {
             if let (Some(&a_id), Some(&b_id)) = (args.first(), args.get(1)) {
                 self.emit_load_into(
                     a_id, "rdi", stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                 );
                 self.emit_load_into(
                     b_id, "rsi", stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                 );
             }
             self.asm_push_align();
@@ -3481,15 +3482,15 @@ impl CodeGen {
         if (name == "str-substring" || name == "str_substring") && args.len() == 3 {
             self.emit_load_into(
                 args[0], "rdi", stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.emit_load_into(
                 args[1], "rsi", stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.emit_load_into(
                 args[2], "rdx", stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.asm_push_align();
             self.asm.push("    call zyl_cstr_substr@plt".to_string());
@@ -3504,7 +3505,7 @@ impl CodeGen {
             if let Some(&msg_id) = args.first() {
                 self.emit_load_into(
                     msg_id, "rdi", stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                 );
             } else {
                 self.asm_push_align();
@@ -3576,7 +3577,7 @@ impl CodeGen {
                     let xmm_reg = abi_xmm[i];
                     self.emit_float_load_into(
                         arg_id, &xmm_reg, stmts, local_vars, lookup,
-                        emitted_ids, &std::collections::HashSet::new(),
+                        emitted_ids, &crate::deterministic::HashSet::default(),
                     );
                     // Save XMM result to stack slot
                     self.asm_push_align();
@@ -3589,8 +3590,8 @@ impl CodeGen {
                     let reg = abi_regs_64[i];
                     self.emit_load_into(
                         arg_id, reg, stmts, local_vars, lookup, emitted_ids,
-                        &std::collections::HashSet::new(),
-                        &std::collections::HashMap::new(),
+                        &crate::deterministic::HashSet::default(),
+                        &crate::deterministic::HashMap::default(),
                     );
                     // Save GPR result to a dedicated temp stack slot.
                     // We alloc *after* the load so the load's destination
@@ -3693,7 +3694,7 @@ impl CodeGen {
                 for (i, &arg_id) in args.iter().enumerate() {
                     self.emit_load_into(
                         arg_id, "r10", stmts, local_vars, lookup, emitted_ids,
-                        &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                        &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                     );
                     self.asm_push_align();
                     self.asm.push("    sub rsp, 8".to_string());
@@ -3745,15 +3746,15 @@ impl CodeGen {
                 if arg_is_float {
                     self.emit_float_load_into(
                         arg_id, "xmm0", stmts, local_vars, lookup,
-                        emitted_ids, &std::collections::HashSet::new(),
+                        emitted_ids, &crate::deterministic::HashSet::default(),
                     );
                     self.asm_push_align();
                     self.asm.push("    movq r10, xmm0".to_string());
                 } else {
                     self.emit_load_into(
                         arg_id, "r10", stmts, local_vars, lookup, emitted_ids,
-                        &std::collections::HashSet::new(),
-                        &std::collections::HashMap::new(),
+                        &crate::deterministic::HashSet::default(),
+                        &crate::deterministic::HashMap::default(),
                     );
                 }
                 self.asm_push_align();
@@ -3844,8 +3845,8 @@ impl CodeGen {
         target_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
         node_id: usize,
         is_float: bool,
     ) {
@@ -3853,7 +3854,7 @@ impl CodeGen {
             let xmm_src = format!("xmm{}", self.alloc_xmm());
             self.emit_float_load_into(
                 arg_id, &xmm_src, stmts, local_vars, lookup, emitted_ids,
-                &std::collections::HashSet::new(),
+                &crate::deterministic::HashSet::default(),
             );
             let xmm_dest = "xmm0".to_string();
             self.asm_push_align();
@@ -3871,8 +3872,8 @@ impl CodeGen {
                 local_vars,
                 lookup,
                 emitted_ids,
-                &std::collections::HashSet::new(),
-                &std::collections::HashMap::new(),
+                &crate::deterministic::HashSet::default(),
+                &crate::deterministic::HashMap::default(),
             );
 
             match op {
@@ -3985,10 +3986,10 @@ impl CodeGen {
         result_var: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
         operand_ids: &HashSet<usize>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
                 // Load scrutinee into rax (struct pointer).
                 // Read discriminant from [rax + 0].
@@ -4093,11 +4094,11 @@ impl CodeGen {
                     }
 
                     // Emit the arm body statements.
-                    let mut arm_operand_ids: HashSet<usize> = HashSet::new();
+                    let mut arm_operand_ids: HashSet<usize> = HashSet::default();
                     collect_body_operand_ids(&arm.body, &mut arm_operand_ids);
 
                     let arm_stmts: Vec<ICNFNode> = stmts.to_vec();
-                    let mut arm_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                    let mut arm_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                     for n in &arm_stmts {
                         arm_lookup.insert(n.id, n);
                     }
@@ -4185,9 +4186,9 @@ impl CodeGen {
         &mut self,
         cond_node: &ICNFInner,
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
         cond_id: usize,
     ) {
         // Check if the condition is a float comparison by inspecting operand types.
@@ -4205,15 +4206,15 @@ impl CodeGen {
             false
         };
 
-        let operand_ids: std::collections::HashSet<usize> = HashSet::new();
+        let operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
 
         if is_float {
             match cond_node {
                 ICNFInner::BinOp(op, left_id, right_id) => {
                     // Use emit_load_into to properly handle all operand types
                     // (Load, Const, StructGet, Call, BinOp results, etc.)
-                    self.emit_load_into(*left_id, "xmm1", stmts, local_vars, lookup, emitted_ids, &operand_ids, &std::collections::HashMap::new());
-                    self.emit_load_into(*right_id, "xmm2", stmts, local_vars, lookup, emitted_ids, &operand_ids, &std::collections::HashMap::new());
+                    self.emit_load_into(*left_id, "xmm1", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
+                    self.emit_load_into(*right_id, "xmm2", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
                     self.emit_cmp_float_set(op, "xmm1", "xmm2");
                 }
                 ICNFInner::Load(name) => {
@@ -4242,8 +4243,8 @@ impl CodeGen {
             ICNFInner::BinOp(op, left_id, right_id) => {
                 // Use emit_load_into to properly handle all operand types
                 // (Load, Const, StructGet, Call, BinOp results, etc.)
-                self.emit_load_into(*left_id, "ecx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &std::collections::HashMap::new());
-                self.emit_load_into(*right_id, "edx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &std::collections::HashMap::new());
+                self.emit_load_into(*left_id, "ecx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
+                self.emit_load_into(*right_id, "edx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
                 // Emit the comparison into eax.
                 self.emit_cmp_and_set(op, "ecx", "edx", "eax");
             }
@@ -4273,7 +4274,7 @@ impl CodeGen {
                 // Boolean negation of a value used directly as a condition.
                 self.emit_load_into(
                     *arg_id, "eax", stmts, local_vars, lookup, emitted_ids,
-                    &std::collections::HashSet::new(), &std::collections::HashMap::new(),
+                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
                 );
                 if matches!(op, crate::icnf::UnOpKind::Not) {
                     self.asm_push_align();
@@ -4352,8 +4353,8 @@ impl CodeGen {
         result_typ: &Option<Type>,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
     ) {
         emitted_ids.insert(*cond_ssa);
 
@@ -4403,12 +4404,12 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("{}:", then_start));
         let then_stmts: Vec<ICNFNode> = stmts.to_vec();
-        let mut then_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+        let mut then_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
         for n in &then_stmts { then_lookup.insert(n.id, n); }
         for n in then_body { then_lookup.insert(n.id, n); }
-        let mut then_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+        let mut then_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
         // Collect condition IDs to skip — emit_condition_inline handles them.
-        let mut then_cond_ids: std::collections::HashSet<usize> = HashSet::new();
+        let mut then_cond_ids: crate::deterministic::HashSet<usize> = HashSet::default();
         for stmt in then_body {
             match &stmt.node {
                 ICNFInner::BinOp(_, l, r) => { then_operand_ids.insert(*l); then_operand_ids.insert(*r); }
@@ -4449,8 +4450,8 @@ impl CodeGen {
                 ) {
                     self.emit_load_into(
                         stmt.id, "rax", &then_stmts, &then_local_vars, &then_lookup,
-                        emitted_ids, &std::collections::HashSet::new(),
-                        &std::collections::HashMap::new(),
+                        emitted_ids, &crate::deterministic::HashSet::default(),
+                        &crate::deterministic::HashMap::default(),
                     );
                     self.spill_result(stmt.id);
                     continue;
@@ -4465,7 +4466,7 @@ impl CodeGen {
             }
             self.emit_node(
                 stmt, &then_stmts, &then_local_vars, emitted_ids,
-                &then_operand_ids, &then_lookup, &std::collections::HashMap::new(),
+                &then_operand_ids, &then_lookup, &crate::deterministic::HashMap::default(),
             );
         }
         // Store then branch result to phi slot (same slot as Assign handler).
@@ -4488,12 +4489,12 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("{}:", else_start));
         let else_stmts: Vec<ICNFNode> = stmts.to_vec();
-        let mut else_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+        let mut else_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
         for n in &else_stmts { else_lookup.insert(n.id, n); }
         for n in else_body { else_lookup.insert(n.id, n); }
-        let mut else_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+        let mut else_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
         // Collect condition IDs to skip — emit_condition_inline handles them.
-        let mut else_cond_ids: std::collections::HashSet<usize> = HashSet::new();
+        let mut else_cond_ids: crate::deterministic::HashSet<usize> = HashSet::default();
         for stmt in else_body {
             match &stmt.node {
                 ICNFInner::BinOp(_, l, r) => { else_operand_ids.insert(*l); else_operand_ids.insert(*r); }
@@ -4525,7 +4526,7 @@ impl CodeGen {
             }
             self.emit_node(
                 stmt, &else_stmts, &else_local_vars, emitted_ids,
-                &else_operand_ids, &else_lookup, &std::collections::HashMap::new(),
+                &else_operand_ids, &else_lookup, &crate::deterministic::HashMap::default(),
             );
         }
 
@@ -4739,10 +4740,10 @@ impl CodeGen {
         node: &ICNFNode,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        phi_slots: &std::collections::HashMap<String, String>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        phi_slots: &crate::deterministic::HashMap<String, String>,
     ) {
         // Skip nodes already emitted by a parent handler (e.g. Eq inside Assert's emit_load_into).
         if emitted_ids.contains(&node.id) {
@@ -5257,7 +5258,7 @@ impl CodeGen {
                     then_body.iter().chain(else_body.iter()).collect();
 
                 // Build a lookup that includes func.body AND branch bodies.
-                let mut full_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut full_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in stmts {
                     full_lookup.insert(n.id, n);
                 }
@@ -5289,9 +5290,9 @@ impl CodeGen {
                 }
 
                 // Collect operand IDs for branch bodies to skip intermediate Load nodes.
-                let mut then_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut then_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 collect_body_operand_ids(then_body, &mut then_operand_ids);
-                let mut else_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut else_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 collect_body_operand_ids(else_body, &mut else_operand_ids);
 
                 // Check condition (result in eax).
@@ -5310,7 +5311,7 @@ impl CodeGen {
 
                 // Build combined lookup: branch body nodes take priority over func.body.
                 let then_stmts: Vec<ICNFNode> = stmts.to_vec();
-                let mut then_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut then_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in &then_stmts {
                     then_lookup.insert(n.id, n);
                 }
@@ -5349,7 +5350,7 @@ impl CodeGen {
                             &then_local_vars,
                             &then_lookup,
                             emitted_ids,
-                            &std::collections::HashSet::new(),
+                            &crate::deterministic::HashSet::default(),
                             &phi_slots,
                         );
                         emitted_ids.insert(stmt.id);
@@ -5415,7 +5416,7 @@ impl CodeGen {
 
                 // Build combined lookup for else branch.
                 let else_stmts: Vec<ICNFNode> = stmts.to_vec();
-                let mut else_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut else_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in &else_stmts {
                     else_lookup.insert(n.id, n);
                 }
@@ -5452,7 +5453,7 @@ impl CodeGen {
                             &else_local_vars,
                             &else_lookup,
                             emitted_ids,
-                            &std::collections::HashSet::new(),
+                            &crate::deterministic::HashSet::default(),
                             &phi_slots,
                         );
                         emitted_ids.insert(stmt.id);
@@ -5527,7 +5528,7 @@ impl CodeGen {
                 self.label_counter += 1;
 
                 // Collect operand IDs for cond_body to skip intermediate Load nodes.
-                let mut cond_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut cond_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 for stmt in cond_body {
                     match &stmt.node {
                         ICNFInner::BinOp(_, l, r) => {
@@ -5552,7 +5553,7 @@ impl CodeGen {
                 }
 
                 // Collect operand IDs for body to skip intermediate Load nodes.
-                let mut while_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut while_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 for stmt in body {
                     match &stmt.node {
                         ICNFInner::BinOp(_, l, r) => {
@@ -5584,7 +5585,7 @@ impl CodeGen {
 
                 // Build lookups for condition and body — inherit parent local_vars.
                 let local_vars = local_vars.clone();
-                let mut while_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut while_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in stmts {
                     while_lookup.insert(n.id, n);
                 }
@@ -5748,7 +5749,7 @@ impl CodeGen {
                 }
 
                 // Collect operand IDs.
-                let mut for_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut for_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 let all_nodes: Vec<&ICNFNode> = cond_nodes.iter()
                     .chain(body.iter())
                     .collect();
@@ -5782,7 +5783,7 @@ impl CodeGen {
                 self.asm.push(format!("{}:", loop_start));
 
                 // Build lookup for all nodes.
-                let mut for_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut for_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in stmts {
                     for_lookup.insert(n.id, n);
                 }
@@ -5884,8 +5885,8 @@ impl CodeGen {
                             // Check if this Load's variable name matches an Assign whose value_id
                             // points to a ReadLine result or a string constant.
                             // Build a var→Assign value_id map from lookup (all nodes by ID).
-                            let mut var_assigns: std::collections::HashMap<String, usize> =
-                                std::collections::HashMap::new();
+                            let mut var_assigns: crate::deterministic::HashMap<String, usize> =
+                                crate::deterministic::HashMap::default();
                             for &n in lookup.values() {
                                 if let ICNFInner::Assign(aname, avid) = &n.node {
                                     if !var_assigns.contains_key(aname) {
@@ -6263,10 +6264,10 @@ impl CodeGen {
                                          handle_id: usize,
                                          stmts: &[ICNFNode],
                                          local_vars: &HashMap<String, usize>,
-                                         lookup: &std::collections::HashMap<usize, &ICNFNode>,
-                                         emitted_ids: &mut std::collections::HashSet<usize>,
-                                         operand_ids: &std::collections::HashSet<usize>,
-                                         phi_slots: &std::collections::HashMap<String, String>| {
+                                         lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+                                         emitted_ids: &mut crate::deterministic::HashSet<usize>,
+                                         operand_ids: &crate::deterministic::HashSet<usize>,
+                                         phi_slots: &crate::deterministic::HashMap<String, String>| {
                     if let Some(ICNFNode {
                         node: ICNFInner::StructGet(sid, off),
                         ..
@@ -6772,8 +6773,8 @@ impl CodeGen {
             }
 
             ICNFInner::Begin(stmts) => {
-                let mut local_vars: HashMap<String, usize> = HashMap::new();
-                let mut begin_operand_ids: std::collections::HashSet<usize> = HashSet::new();
+                let mut local_vars: HashMap<String, usize> = HashMap::default();
+                let mut begin_operand_ids: crate::deterministic::HashSet<usize> = HashSet::default();
                 for stmt in stmts.iter() {
                     match &stmt.node {
                         ICNFInner::BinOp(_, l, r) => {
@@ -6800,7 +6801,7 @@ impl CodeGen {
                     }
                 }
                 // Build lookup from Begin's own stmts.
-                let mut begin_lookup: std::collections::HashMap<usize, &ICNFNode> = HashMap::new();
+                let mut begin_lookup: crate::deterministic::HashMap<usize, &ICNFNode> = HashMap::default();
                 for n in stmts {
                     begin_lookup.insert(n.id, n);
                 }
@@ -6811,8 +6812,8 @@ impl CodeGen {
                         &local_vars,
                         emitted_ids,
                         &begin_operand_ids,
-                        &std::collections::HashMap::new(),
-                        &std::collections::HashMap::new(),
+                        &crate::deterministic::HashMap::default(),
+                        &crate::deterministic::HashMap::default(),
                     );
                 }
             }
@@ -7131,8 +7132,8 @@ impl CodeGen {
                         // Build a wrapper-local variable map so captured vars use consistent
                         // offsets between the capture-loading code and the body's Load nodes.
                         // The Load handler uses (slot + 1) * 8, so we store using the same.
-                        let mut wrapper_local_vars: std::collections::HashMap<String, usize> =
-                            std::collections::HashMap::new();
+                        let mut wrapper_local_vars: crate::deterministic::HashMap<String, usize> =
+                            crate::deterministic::HashMap::default();
                         for (i, cap) in captures.iter().enumerate() {
                             let offset = i * 8;
                             let wslot = i; // slot index; actual offset = (wslot+1)*8
@@ -7407,9 +7408,9 @@ impl CodeGen {
         xmm_reg: &str,
         stmts: &[ICNFNode],
         local_vars: &HashMap<String, usize>,
-        lookup: &std::collections::HashMap<usize, &ICNFNode>,
-        emitted_ids: &mut std::collections::HashSet<usize>,
-        operand_ids: &std::collections::HashSet<usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+        operand_ids: &crate::deterministic::HashSet<usize>,
     ) {
         // Check if already emitted — but allow re-emission for BinOp/UnOp/Load
         // since xmm0 may have been clobbered by intervening calls (e.g., printf).
@@ -7842,7 +7843,7 @@ fn collect_tail_calls(
     node: &ICNFInner,
     id: usize,
     func_name: &str,
-    out: &mut std::collections::HashSet<usize>,
+    out: &mut crate::deterministic::HashSet<usize>,
 ) {
     match node {
         // Only SELF-calls qualify: sibling TCO causes systematic
@@ -8027,7 +8028,7 @@ fn collect_call_names(
     /// handlers, and closure bodies. Functions outside this set are dead and can be
     /// omitted to avoid emitting bodies with undefined-symbol references.
 fn reachable_functions(program: &ICNFProgram) -> HashSet<String> {
-    let mut reachable: HashSet<String> = HashSet::new();
+    let mut reachable: HashSet<String> = HashSet::default();
     let mut worklist: Vec<String> = Vec::new();
     for stmt in &program.statements {
         collect_func_refs(stmt, &program.statements, &program.closure_bodies, &mut worklist);

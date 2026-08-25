@@ -12,7 +12,7 @@ fn sanitize_name(name: &str) -> String {
 }
 
 /// Collect all variable names referenced in an expression (for closure capture analysis).
-fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) {
+fn collect_expr_vars(expr: &Expr, vars: &mut crate::deterministic::HashSet<String>) {
     match &expr.inner {
         ExprInner::Atom(Atom::Ident(name)) => {
             vars.insert(name.clone());
@@ -36,7 +36,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         ExprInner::Let(name, val, body) => {
             collect_expr_vars(val, vars);
             // name is bound in body, don't collect it from body
-            let mut body_vars = std::collections::HashSet::new();
+            let mut body_vars = crate::deterministic::HashSet::default();
             collect_expr_vars(body, &mut body_vars);
             body_vars.remove(name);
             vars.extend(body_vars);
@@ -57,7 +57,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
                 }
             }
             collect_expr_vars(cond, vars);
-            let mut body_vars = std::collections::HashSet::new();
+            let mut body_vars = crate::deterministic::HashSet::default();
             collect_expr_vars(body, &mut body_vars);
             for (name, _) in bindings {
                 body_vars.remove(name);
@@ -66,7 +66,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         }
         ExprInner::TryCatch(e, catch_var, h) => {
             collect_expr_vars(e, vars);
-            let mut h_vars = std::collections::HashSet::new();
+            let mut h_vars = crate::deterministic::HashSet::default();
             collect_expr_vars(h, &mut h_vars);
             h_vars.remove(catch_var);
             vars.extend(h_vars);
@@ -74,7 +74,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         ExprInner::Match(e, arms) => {
             collect_expr_vars(e, vars);
             for arm in arms {
-                let mut arm_vars = std::collections::HashSet::new();
+                let mut arm_vars = crate::deterministic::HashSet::default();
                 collect_expr_vars(&arm.body, &mut arm_vars);
                 // Remove pattern bindings from captures
                 // Simplified: just collect from body
@@ -94,7 +94,7 @@ fn collect_expr_vars(expr: &Expr, vars: &mut std::collections::HashSet<String>) 
         }
         ExprInner::Lambda(_, inner_params, body) | ExprInner::Fn(_, inner_params, body) => {
             // Nested lambda: collect captures from outer scope
-            let mut body_vars = std::collections::HashSet::new();
+            let mut body_vars = crate::deterministic::HashSet::default();
             collect_expr_vars(body, &mut body_vars);
             for p in inner_params {
                 body_vars.remove(&p.name);
@@ -419,7 +419,7 @@ pub struct ICNFProgram {
     pub closures: IndexMap<usize, (String, Vec<CaptureField>)>,
     /// IDs of nodes that are part of control flow branch bodies (for deduplication in codegen).
     #[serde(default)]
-    pub emitted_branch_ids: std::collections::HashSet<usize>,
+    pub emitted_branch_ids: crate::deterministic::HashSet<usize>,
 }
 
 // ─── ICNF Converter ──────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ pub struct IcnfConverter {
     global_stmts: Vec<ICNFNode>,
     current_scope: IndexMap<String, usize>,
     /// IDs of nodes that are part of control flow branch bodies (to avoid duplicate emission).
-    emitted_branch_ids: std::collections::HashSet<usize>,
+    emitted_branch_ids: crate::deterministic::HashSet<usize>,
     /// When false, convert_expr does not push results to global_stmts. Used for branch body conversion.
     push_to_globals: bool,
     /// Temporary buffer for intermediate nodes during function body conversion.
@@ -467,7 +467,7 @@ impl IcnfConverter {
             functions: Vec::new(),
             global_stmts: Vec::new(),
             current_scope: IndexMap::new(),
-            emitted_branch_ids: std::collections::HashSet::new(),
+            emitted_branch_ids: crate::deterministic::HashSet::default(),
             push_to_globals: true,
             body_intermediates: Vec::new(),
             struct_layouts: crate::codegen::StructLayout::new(),
@@ -505,7 +505,7 @@ impl IcnfConverter {
     /// Resolve deferred captures after a let binding has been established.
     fn resolve_deferred_captures(&mut self) {
         for (closure_id, body_expr, _orig_name, scope_snapshot, own_params) in std::mem::take(&mut self.deferred_captures) {
-            let mut captured_names = std::collections::HashSet::new();
+            let mut captured_names = crate::deterministic::HashSet::default();
             collect_expr_vars(&body_expr, &mut captured_names);
             // Own parameters are not captures.
             for p in &own_params {
@@ -617,7 +617,7 @@ impl IcnfConverter {
         body: Vec<ICNFNode>,
     ) -> Vec<ICNFNode> {
         let mut result: Vec<ICNFNode> = Vec::new();
-        let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        let mut used: crate::deterministic::HashSet<usize> = crate::deterministic::HashSet::default();
         let mut bi = 0usize;
         for t in &temp_nodes {
             if used.contains(&t.id) {
@@ -1166,7 +1166,7 @@ impl IcnfConverter {
                 }
                 ExprInner::Lambda(name, params, _body) => {
                     // Collect captures from outer scope (before entering lambda param scope).
-                    let mut captured_names = std::collections::HashSet::new();
+                    let mut captured_names = crate::deterministic::HashSet::default();
                     collect_expr_vars(_body, &mut captured_names);
                     for p in params {
                         captured_names.remove(&p.name);
@@ -1223,7 +1223,7 @@ impl IcnfConverter {
                 }
                 ExprInner::Fn(name, params, body) => {
                     // Module-level Fn: same as Lambda but with fn_ prefix name for potential closure reference.
-                    let mut captured_names = std::collections::HashSet::new();
+                    let mut captured_names = crate::deterministic::HashSet::default();
                     collect_expr_vars(body, &mut captured_names);
                     for p in params {
                         captured_names.remove(&p.name);
@@ -1433,7 +1433,7 @@ impl IcnfConverter {
     }
 
     /// Get the set of branch body IDs for deduplication in codegen.
-    pub fn get_emitted_branch_ids(&self) -> &std::collections::HashSet<usize> {
+    pub fn get_emitted_branch_ids(&self) -> &crate::deterministic::HashSet<usize> {
         &self.emitted_branch_ids
     }
 
@@ -2038,7 +2038,7 @@ impl IcnfConverter {
             // Lambda (nested).
             ExprInner::Lambda(name, params, _body) => {
                 // Collect captures from outer scope.
-                let mut captured_names = std::collections::HashSet::new();
+                let mut captured_names = crate::deterministic::HashSet::default();
                 collect_expr_vars(_body, &mut captured_names);
                 for p in params {
                     captured_names.remove(&p.name);
@@ -2095,7 +2095,7 @@ impl IcnfConverter {
 
             ExprInner::Fn(name, params, _body) => {
                 // Fn (named closure in expression context) also captures.
-                let mut captured_names = std::collections::HashSet::new();
+                let mut captured_names = crate::deterministic::HashSet::default();
                 collect_expr_vars(_body, &mut captured_names);
                 for p in params {
                     captured_names.remove(&p.name);
@@ -2226,7 +2226,7 @@ impl IcnfConverter {
                     inner: ExprInner::Atom(crate::ast::Atom::Ident("Unit".into())),
                 });
                 // Collect captures from body.
-                let mut captured_names = std::collections::HashSet::new();
+                let mut captured_names = crate::deterministic::HashSet::default();
                 collect_expr_vars(&body_expr, &mut captured_names);
                 for p in &params {
                     captured_names.remove(&p.name);
@@ -3882,7 +3882,7 @@ impl IcnfConverter {
     /// eager buffer, then re-append `body_stmts` in order. Only non-statement
     /// intermediates (operand supply nodes) keep their eager positions.
     fn collect_body_into_globals(&mut self, body_stmts: &[ICNFNode]) {
-        let body_ids: std::collections::HashSet<usize> =
+        let body_ids: crate::deterministic::HashSet<usize> =
             body_stmts.iter().map(|n| n.id).collect();
         self.global_stmts.retain(|n| !body_ids.contains(&n.id));
         for stmt in body_stmts {
@@ -4014,7 +4014,7 @@ impl IcnfConverter {
 
 /// Recursively collect all statement ids embedded in an ICNF node's
 /// nested control flow (If branches, Match arms).
-fn collect_embedded_ids(node: &ICNFNode, out: &mut std::collections::HashSet<usize>) {
+fn collect_embedded_ids(node: &ICNFNode, out: &mut crate::deterministic::HashSet<usize>) {
     out.insert(node.id);
     match &node.node {
         ICNFInner::If { then_body, else_body, .. } => {

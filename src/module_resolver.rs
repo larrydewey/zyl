@@ -121,7 +121,7 @@ impl ModuleResolver {
                 if syms.contains(&"*".into()) {
                     resolved_dep
                 } else {
-                    let syms_set: std::collections::HashSet<&str> = syms.iter().map(|s| s.as_str()).collect();
+                    let syms_set: crate::deterministic::HashSet<&str> = syms.iter().map(|s| s.as_str()).collect();
                     let filtered: Vec<Expr> = resolved_dep
                         .into_iter()
                         .filter(|e| self.matches_symbol(e, &syms_set))
@@ -143,7 +143,7 @@ impl ModuleResolver {
         // Auto-linked core definitions that the root program re-defines are
         // dropped — user definitions shadow stdlib defaults (otherwise the
         // same function would be emitted twice and fail linking).
-        let root_defined: std::collections::HashSet<String> = body_exprs
+        let root_defined: crate::deterministic::HashSet<String> = body_exprs
             .iter()
             .filter_map(|e| match &e.inner {
                 ExprInner::Defn(name, _, _) | ExprInner::Def(name, _) => Some(name.clone()),
@@ -213,7 +213,7 @@ impl ModuleResolver {
                 if syms.contains(&"*".into()) {
                     resolved_dep
                 } else {
-                    let syms_set: std::collections::HashSet<&str> = syms.iter().map(|s| s.as_str()).collect();
+                    let syms_set: crate::deterministic::HashSet<&str> = syms.iter().map(|s| s.as_str()).collect();
                     let filtered: Vec<Expr> = resolved_dep
                         .into_iter()
                         .filter(|e| self.matches_symbol(e, &syms_set))
@@ -372,7 +372,7 @@ impl ModuleResolver {
     }
 
     /// Check if an expression matches a symbol name.
-    fn matches_symbol(&self, expr: &Expr, syms: &std::collections::HashSet<&str>) -> bool {
+    fn matches_symbol(&self, expr: &Expr, syms: &crate::deterministic::HashSet<&str>) -> bool {
         match &expr.inner {
             ExprInner::Defn(name, _, _) | ExprInner::Def(name, _) => {
                 syms.contains(name.as_str())

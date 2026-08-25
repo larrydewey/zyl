@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use crate::deterministic::HashMap;
 
 use indexmap::IndexMap;
 
@@ -868,7 +868,7 @@ pub struct MacroExpander {
 impl MacroExpander {
     pub fn new() -> Self {
         Self {
-            macros: HashMap::new(),
+            macros: HashMap::default(),
             gensyms: GensymRegistry::new(),
         }
     }

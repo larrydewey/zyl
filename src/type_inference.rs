@@ -14,9 +14,9 @@ pub struct TypeInferer {
     /// Stores body expressions for functions with untyped params, used to re-infer return types.
     function_bodies: IndexMap<String, Expr>,
     /// Tracks functions currently being inferred to avoid infinite recursion.
-    inferring_functions: RefCell<std::collections::HashSet<String>>,
+    inferring_functions: RefCell<crate::deterministic::HashSet<String>>,
     struct_defs: IndexMap<String, Vec<(String, Option<Type>)>>,
-    generics_in_scope: RefCell<std::collections::HashSet<String>>,
+    generics_in_scope: RefCell<crate::deterministic::HashSet<String>>,
     var_gen_counter: Cell<usize>,
     subst: Subst,
     /// ADT definitions for variant field type lookups.
@@ -29,9 +29,9 @@ pub struct TypeInferer {
     first_body_error: Option<ZylError>,
     /// Names of generic functions already monomorphized — skip re-processing originals
     /// in collect_definitions so their resolved types aren't overwritten by fresh type vars.
-    skip_generic_def_names: RefCell<std::collections::HashSet<String>>,
+    skip_generic_def_names: RefCell<crate::deterministic::HashSet<String>>,
     /// Match-arm pattern variables bound to String fields (for codegen print detection).
-    string_match_vars: RefCell<std::collections::HashSet<String>>,
+    string_match_vars: RefCell<crate::deterministic::HashSet<String>>,
 }
 
 impl TypeInferer {
@@ -50,17 +50,17 @@ impl TypeInferer {
             known_functions: IndexMap::new(),
             function_returns: IndexMap::new(),
             function_bodies: IndexMap::new(),
-            inferring_functions: RefCell::new(std::collections::HashSet::new()),
+            inferring_functions: RefCell::new(crate::deterministic::HashSet::default()),
             struct_defs: IndexMap::new(),
-            generics_in_scope: RefCell::new(std::collections::HashSet::new()),
+            generics_in_scope: RefCell::new(crate::deterministic::HashSet::default()),
             var_gen_counter: Cell::new(0),
             subst: Subst::new(),
             adt_defs: IndexMap::new(),
             adt_instantiations: IndexMap::new(),
             body_infer_cache: RefCell::new(IndexMap::new()),
             first_body_error: None,
-            skip_generic_def_names: RefCell::new(std::collections::HashSet::new()),
-            string_match_vars: RefCell::new(std::collections::HashSet::new()),
+            skip_generic_def_names: RefCell::new(crate::deterministic::HashSet::default()),
+            string_match_vars: RefCell::new(crate::deterministic::HashSet::default()),
         }
     }
 
@@ -2155,7 +2155,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     }
 
     /// Expose match-arm pattern variables that bind String fields.
-    pub fn get_string_match_vars(&self) -> std::collections::HashSet<String> {
+    pub fn get_string_match_vars(&self) -> crate::deterministic::HashSet<String> {
         self.string_match_vars.borrow().clone()
     }
 
@@ -2184,7 +2184,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
 
     /// Mark generic function names to skip during collect_definitions (after monomorphization).
     /// Prevents overwriting resolved types with fresh type vars from original generic defs.
-    pub fn mark_skipped_generic_defs(&self, names: std::collections::HashSet<String>) {
+    pub fn mark_skipped_generic_defs(&self, names: crate::deterministic::HashSet<String>) {
         *self.skip_generic_def_names.borrow_mut() = names;
     }
 

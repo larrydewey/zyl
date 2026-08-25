@@ -1,4 +1,5 @@
 mod ast;
+mod deterministic;
 mod codegen;
 mod error;
 mod icnf;
@@ -149,7 +150,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Mark generic function names to skip in collect_definitions so their resolved
     // types aren't overwritten by fresh type vars from original generic defs.
-    let generic_names: std::collections::HashSet<String> = mono_ctx.get_generic_names().into_iter().cloned().collect();
+    let generic_names: crate::deterministic::HashSet<String> = mono_ctx.get_generic_names().into_iter().cloned().collect();
     inferer.mark_skipped_generic_defs(generic_names);
 
     // Now run full type inference on the monomorphized AST.

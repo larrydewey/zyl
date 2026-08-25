@@ -122,7 +122,7 @@ impl Subst {
     /// (which would recurse forever).
     pub fn resolve(&self, n: usize) -> Result<Type, ()> {
         let mut cur = n;
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::deterministic::HashSet::default();
         loop {
             if !seen.insert(cur) {
                 return Err(()); // Cyclic binding: ?a -> ?b -> ... -> ?a
@@ -141,7 +141,7 @@ impl Subst {
                 // Fully resolve variable chains (?a -> ?b -> concrete).
                 // Cycle-safe: stop if we revisit a variable.
                 let mut cur = *n;
-                let mut seen = std::collections::HashSet::new();
+                let mut seen = crate::deterministic::HashSet::default();
                 loop {
                     if !seen.insert(cur) {
                         break; // Cyclic chain — leave as-is rather than loop forever.
@@ -386,12 +386,12 @@ pub struct TraitContext {
     /// Implementations indexed by (trait_name, type).
     pub impls: Vec<ImplInfo>,
     /// Derivable traits for a given type.
-    pub derivable_traits: std::collections::HashSet<String>, // Eq, Ord, Debug, Clone, Hash
+    pub derivable_traits: crate::deterministic::HashSet<String>, // Eq, Ord, Debug, Clone, Hash
 }
 
 impl TraitContext {
     pub fn new() -> Self {
-        let mut d = std::collections::HashSet::new();
+        let mut d = crate::deterministic::HashSet::default();
         d.insert("Eq".to_string());
         d.insert("Ord".to_string());
         d.insert("Debug".to_string());
