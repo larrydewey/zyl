@@ -69,8 +69,9 @@ The self-hosted codegen (stdlib/compiler/codegen.zyl) has restrictions the
 Rust compiler does not. Code that must compile through stage>=2 MUST follow
 these. Violations miscompile SILENTLY.
 
-1. **Function arity <= 6.** SysV register args only; no stack-passed args.
-   Need more? Bundle into a deftype/record or split the function.
+1. **(LIFTED 2026-08-25) Function arity.** Stack-passed args >6 now work
+   end-to-end (`cg-call-args` scratch-slot staging + `cg-param-spills`
+   stack loads). Prefer <=6 params anyway for readability.
 2. **A `match` may appear only as the ENTIRE BODY of its defn.** Nested
    matches in arm bodies or if branches miscompile. Extract inner matches
    to helper functions:
@@ -98,12 +99,15 @@ these. Violations miscompile SILENTLY.
 7. **buf-append appends at strlen(dst)** (true append). Fresh zeroed
    buffers only — appending to a non-empty buffer accumulates (this is
    what you want for output buffers; NOT copy semantics).
-8. **A match-arm body contains at most ONE call.** An arm body like
-   `(+ 3 (f x) (g y))` silently computes 0 in stage>=2 binaries (the
-   Zyl lowering's binop handler only folded 1-2 args; nary fold now
-   exists but keep arms simple). Nest through helpers:
-   `(icnf-add2 1 (icnf-add2 (f x) (g y)))`. The Rust-side compiler
-   rejects violating shapes with E_MATCH_ARM_COMPLEX.
+8. **No binop may directly combine TWO calls.** `(+ (f x) (g y))` — even
+   outside match arms — silently computes 0 in stage>=2 binaries. Bind
+   each call to a `let`, then combine the bindings:
+   `(let a (f x) (let b (g y) (+ a b)))`. In match arms keep it to ONE
+   call total and nest sums through helpers: `(icnf-add2 1 (icnf-add2
+   (f x) (g y)))`. Both compilers reject the arm-level shape with
+   E_MATCH_ARM_COMPLEX; the general shape is NOT caught — it just
+   miscompiles. N-ary binops fold left-associatively (`ic-binop-fold`),
+   matching Rust.
 9. **';' inside strings is safe** (lexer is string-aware as of
    2026-08-25), but older stage binaries truncate there.
 10. Keep function arities/bodies moderate; frame size scales with

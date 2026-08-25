@@ -62,11 +62,21 @@ How the last two gaps were closed:
       corrupting boot sources that used ';' in message strings.
 - [x] **Rust bootstrap nondeterminism FIXED**: src/deterministic.rs
       FNV-1a HashMap/HashSet across all of src/.
-- [ ] **Enforce the one-call rule in the compiler**: extend
-      E_TOO_MANY_PARAMS-style guards to detect match-arm bodies with >1
-      call at lowering time, so future sources cannot silently trip this.
-- [ ] **Wire fixed-point check into default regressions**: currently
-      opt-in via `--boot`; flip on once CI time budget allows.
+- [x] **Enforce the one-call rule in the compiler** *(done 2026-08-25)*:
+      the self-hosted lowering now rejects the confirmed-failing shape at
+      AST level (`ic-arm-guard` in icnf.zyl: arm-body binop combining a
+      constant with 2+ calls -> E_MATCH_ARM_COMPLEX), mirroring the Rust
+      ICNF-level guard. Also added `ic-binop-fold` (left-associative n-ary
+      binop lowering) so 3+-argument binops no longer silently become
+      `(IConst 0)`; verified `(- 10 2 3)` = 5 through stage2.
+      Generalisation discovered while landing stack args: ANY binop whose
+      direct operands are TWO calls miscompiles in stage>=2, not just
+      match arms — code must bind calls to lets before combining. Documented
+      in skills/zyl/SKILL.md constraint 8.
+- [x] **Wire fixed-point check into default regressions** *(done
+      2026-08-25)*: `run_regression_tests.sh --full` now runs the boot
+      fixed-point check by default; opt out with `--no-boot`, force in any
+      mode with `--boot`. Suite: 25/25.
 - [x] **Compile errors for known-fragile shapes** instead of silent
       miscompiles *(done 2026-08-25, commit c9b5c69)*:
     - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
@@ -168,9 +178,15 @@ How the last two gaps were closed:
 - [ ] **Remaining known gaps**: TCO tail-call path does not handle float
       args; catch-all (wildcard) arms work — Int discriminants verified,
       float-arm + catch-all combinations now work end-to-end.
-- [ ] **Stack-passed args >6 params** in selfhost codegen (mirror the Rust
-      fix: spill slots + reverse push + alignment), lifting the arity≤6
-      restriction; keep the compile error until this lands.
+- [x] **Stack-passed args >6 params** in selfhost codegen *(done
+      2026-08-25)*: the arity<=6 restriction is LIFTED. `cg-call-args`
+      now stages every argument in an 8-byte scratch slot, copy-pushes
+      args >=6 in reverse (SysV stack args), loads register args from
+      scratch, and cleans up pad+scratch+copies; `cg-param-spills` loads
+      callee stack args from `[rbp+16+8*(i-6)]`. The E_TOO_MANY_PARAMS
+      guard was removed from icnf.zyl. Verified end-to-end through
+      stage2 (id8 -> 7, sum8 -> 36); boot fixed point holds; 25/25.
+      Bootstrap constraint 1 lifted in skills/zyl/SKILL.md.
 - [ ] **Frame sizing**: uniform ~16KB frames (`16*(64+icnf-size)`) waste
       stack; size frames from actual slot counts. Enables revisiting
       sibling TCO safely.
@@ -195,7 +211,7 @@ How the last two gaps were closed:
 
 ## Bootstrap Constraints (for code written in Zyl — see skills/zyl/SKILL.md)
 
-1. Keep function arities ≤6 (no stack-passed args yet).
+1. ~~Keep function arities <=6~~ LIFTED (2026-08-25): stack-passed args work.
 2. A `match` may appear only as the entire body of a defn.
 3. Match arms must enumerate every constructor (no wildcard fallback;
    unknown arms map to discriminant 0).
@@ -204,6 +220,9 @@ How the last two gaps were closed:
 6. `buf-append` appends at strlen(dst) (true append); fresh buffers only.
 7. Parens must balance per top-level form — a missing closer silently
    nests subsequent defns inside the broken form.
+8. No binop may directly combine TWO call operands — anywhere, not just
+   match arms (stage>=2 miscompile: computes 0). Bind calls to `let`s
+   first; in arm bodies keep ONE call and nest via icnf-add2.
 
 ---
 
