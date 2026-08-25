@@ -98,7 +98,10 @@ these. Violations miscompile SILENTLY.
 7. **buf-append appends at strlen(dst)** (true append). Fresh zeroed
    buffers only — appending to a non-empty buffer accumulates (this is
    what you want for output buffers; NOT copy semantics).
-8. Keep function arities/bodies moderate; frame size scales with
+8. **A match-arm body contains at most ONE call.** An arm body like
+   `(+ 1 (f x) (g y))` silently computes 0 in stage>=2 binaries. Nest
+   through helper functions: `(icnf-add2 1 (icnf-add2 (f x) (g y)))`.
+9. Keep function arities/bodies moderate; frame size scales with
    `16*(64+icnf-size)` bytes (~11KB typical) so deep recursion needs the
    big-stack worker (generated entry stubs already route main through it).
 
@@ -152,6 +155,8 @@ pop into SysV regs in reverse; cleanup pad after the call.
 - **Symptom: garbage where a variable should be.** Slot aliasing — look
   for a constructor reconstruction with fields out of order, or a call
   whose pad/pops disagree.
+- **Symptom: a computed count/sum is 0 or too small in stage>=2 output.**
+   Match-arm body with constant + multiple calls — see constraint 8.
 - **Symptom: SIGFPE in compiled binaries.** `%` or `/` without cqo before
   idiv (stale rdx).
 - **Symptom: output truncated to the last emitted line.** Something used
