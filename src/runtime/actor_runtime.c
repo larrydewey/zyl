@@ -11,7 +11,56 @@ static ZylActorSystem g_system;
 static void* g_heap_arena = NULL;
 static void* g_pin_arena = NULL;
 
+#include <sys/resource.h>
+#include <pthread.h>
+
+/* Run `fn` on a worker thread with a very large stack (512MB) and return
+   its integer result. Used by generated main so deep recursion in
+   self-hosted compiler runs cannot exhaust the 8MB main-thread stack
+   (which is frequently capped by adjacent mmaps). */
+static long long (*g_bigstack_fn)(void) = 0;
+static long long g_bigstack_result = 0;
+
+static void* zyl_bigstack_tramp(void* arg) {
+    (void)arg;
+    g_bigstack_result = g_bigstack_fn();
+    return 0;
+}
+
+long long zyl_call_on_big_stack(long long (*fn)(void)) {
+    pthread_attr_t attr;
+    pthread_t t;
+    g_bigstack_fn = fn;
+    g_bigstack_result = 0;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, (size_t)512 * 1024 * 1024);
+    if (pthread_create(&t, &attr, zyl_bigstack_tramp, 0) != 0) {
+        /* fallback: run inline */
+        return fn();
+    }
+    pthread_join(t, 0);
+    pthread_attr_destroy(&attr);
+    return g_bigstack_result;
+}
+
+
+
+/* Raise the main-thread stack soft limit to the hard limit so deep
+   recursion in self-hosted compiler runs can grow beyond 8MB. Must run
+   before deep recursion starts; called from zyl_ensure_arenas (invoked
+   in every generated main prologue). Idempotent and harmless when the
+   hard limit is already reached. */
+static void zyl_raise_stack_limit(void) {
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) == 0 && rl.rlim_cur < rl.rlim_max) {
+        rl.rlim_cur = rl.rlim_max;
+        setrlimit(RLIMIT_STACK, &rl);
+    }
+}
+
 void zyl_ensure_arenas(void) {
+    static int stack_raised = 0;
+    if (!stack_raised) { stack_raised = 1; zyl_raise_stack_limit(); }
     if (!g_heap_arena) {
         g_heap_arena = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
     }

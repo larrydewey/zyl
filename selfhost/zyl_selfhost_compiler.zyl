@@ -591,7 +591,6 @@
 ; Bootstrap constraints honored: named dummies (never bare _), arity <=6,
 ; flat if-chains (no nesting deeper than the proven ic-special shape).
 
-(defn no-tokens () Nil)
 
 (defn zyl-lex (arena src)
   (let len (ffi-call "zyl_cstr_len" src 1000)
@@ -1850,46 +1849,38 @@
 ; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
 (defn cg-hof-enabled () 1)
 
-(defn cg-call-fire (st env name mangle i)
-  (let off (env-lookup env name)
-    (if (= off 0)
-      (cg-call-fire-direct st env name mangle i)
-      (if (= (cg-hof-enabled) 1)
-        (cg-call-fire-indirect st env name i off
-        (cg-call-fire-unresolved st name))))))
+; Full call-target symbol: f_<name> for user fns, <name> otherwise.
+(defn cg-sym-for (arena name mangle)
+  (if (> mangle 0)
+    (cg-sym-mangled arena name)
+    (ffi-call "zyl_cstr_sanitize" arena name 1000)))
 
-; P1: an unresolved fn-name call must be visible, never silent.
-(defn cg-call-fire-unresolved (st name)
-  (let st2 (cg-emit st "    call ")
-    (let st3 (cg-emit st2 "f_")
-      (cg-nl (cg-emit st3 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))))))
+(defn cg-sym-mangled (arena name)
+  (let buf (arena-alloc-zeroed arena 512)
+    (begin
+      (buf-append buf (str-intern arena "f_"))
+      (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
+      buf)))
 
-(defn cg-call-fire-direct (st env name mangle i)
-  (let pad (if (= (% i 2) 1) 1 0)
-    (let st2 (cg-pop-regs st (- i 1))
-      (let st3 (if (= pad 1)
-                 (cg-emit-line st2 "    sub rsp, 8")
-                 st2)
-        (let st4 (cg-emit st3 "    call ")
-          (let st5 (cg-nl (cg-emit
-                            (if mangle (cg-emit st4 "f_") st4)
-                            (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))))
-            (if (= pad 1)
-              (cg-emit-line st5 "    add rsp, 8"
-              st5)))))))
+(defn cg-call-fire (st env name mangle i) (if (= (% i 2) 1) (cg-call-fire-pad st env name mangle i) (cg-call-fire-nopad st env name mangle)))
 
-(defn cg-call-fire-indirect (st env name i off)
-  (let pad (if (= (% i 2) 1) 1 0)
-    (let st2 (cg-pop-regs st (- i 1))
-      (let st3 (if (= pad 1)
-                 (cg-emit-line st2 "    sub rsp, 8")
-                 st2)
-        (let st4 (cg-load-slot st3 name off)
-          (let st5 (cg-emit-line st4 "    call rax")
-            (if (= pad 1)
-              (cg-emit-line st5 "    add rsp, 8")
-              st5)))))))
+(defn cg-call-fire-nopad (st env name mangle) (let off (env-lookup env name) (if (= off 0) (cg-call-dir-nopad st env name mangle) (cg-call-ind-nopad st env name off))))
 
+(defn cg-call-fire-pad (st env name mangle i) (let off (env-lookup env name) (if (= off 0) (cg-call-dir-pad st env name mangle i) (cg-call-ind-pad st env name i off))))
+
+(defn cg-call-dir (st env name mangle i) (if (> i 0) (cg-call-dir-pad st env name mangle i) (cg-call-dir-nopad st env name mangle)))
+
+(defn cg-call-ind (st env name i off) (if (> i 0) (cg-call-ind-pad st env name i off) (cg-call-ind-nopad st env name off)))
+
+(defn cg-call-dir-nopad (st env name mangle) (let st2 (cg-pop-regs st -1) (let st3 (cg-emit st "    call ") (let st4 (cg-emit st3 (cg-sym-for (cg-arena-of st) name mangle)) (cg-nl (cg-emit st3 (cg-sym-for (cg-arena-of st) name mangle)))))))
+
+(defn cg-call-dir-pad (st env name mangle i) (let st2 (cg-emit-line st "    sub rsp, 8") (let st3 (cg-pop-regs st2 (- i 1)) (let st4 (cg-emit st3 "    call ") (let st5 (cg-emit st4 (cg-sym-for (cg-arena-of st) name mangle)) (let st6 (cg-nl (cg-emit st4 (cg-sym-for (cg-arena-of st) name mangle))) (cg-emit-line st6 "    add rsp, 8")))))))
+
+(defn cg-call-ind-nopad (st env name off) (let st2 (cg-pop-regs st -1) (let st3 (cg-load-slot st2 name off) (cg-emit-line st3 "    call rax"))))
+
+(defn cg-call-ind-pad (st env name i off) (let st2 (cg-emit-line st "    sub rsp, 8") (let st3 (cg-pop-regs st2 (- i 1)) (let st4 (cg-load-slot st3 name off) (let st5 (cg-emit-line st4 "    call rax") (cg-emit-line st5 "    add rsp, 8"))))))
+
+; Pop j+1 pushed args into their registers (reverse order).
 (defn cg-pop-regs (st j)
   (if (< j 0)
     st
@@ -2162,7 +2153,7 @@
 ; (higher-order arguments) resolve to addresses.
 (defn cg-collect-fnnames (st fns)
   (if (is-nil fns)
-    st
+    (begin (cg-dbg "collect-done|") st)
     (cg-collect-one st (fnhead-if fns) (tl2 fns))))
 
 ; Head of a List(IFunc); empty placeholder when exhausted.
@@ -2218,11 +2209,26 @@
             (let st6 (cg-emit-line st5 ".Lfmts:")
               (cg-emit-line st6 "    .string \"%s\\n\""))))))))
 
+(defn cg-dbg (msg)
+  (let f (file-open "/tmp/dbg2" "a")
+    (let d1 (file-write f msg)
+      (file-close f))))
+
 (defn cg-functions (st fns)
   (if (is-nil fns)
     st
-    (let st2 (cg-function st (fh-if fns))
-      (cg-functions st2 (tl2 fns)))))
+    (cg-functions-step st (fh-if fns) (tl2 fns))))
+
+(defn cg-functions-step (st f rest)
+  (match f
+    (IFn nm params body
+      (cg-functions-go st nm f rest))))
+
+(defn cg-functions-go (st nm f rest)
+  (begin
+    (cg-dbg nm)
+    (cg-dbg "|")
+    (cg-functions (cg-function st f) rest)))
 
 ; Emit one rodata entry.
 (defn cg-rodata-entry (st e)
