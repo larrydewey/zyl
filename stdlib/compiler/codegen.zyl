@@ -86,12 +86,26 @@
   (cg-fn-search (cgg-fns st) nm))
 
 (defn cg-fn-search (fns nm)
-  (match fns
-    (Nil 0)
-    (Cons h t
-      (match h
-        (FN s (> (str-eq s nm) 0))
-        (FNNil (cg-fn-search t nm))))))
+  (if (is-nil fns)
+    0
+    (cg-fn-check-head (fnhead fns) (fntail fns) nm)))
+
+; Head of a List(FnName); FNNil when empty.
+(defn fnhead (xs)
+  (match xs
+    (Cons h d h)
+    (Nil (FNNil))))
+
+; Tail of a List(FnName); empty when empty.
+(defn fntail (xs)
+  (match xs
+    (Cons h d d)
+    (Nil None)))
+
+(defn cg-fn-check-head (h t nm)
+  (match h
+    (FN s (> (str-eq s nm) 0))
+    (FNNil (cg-fn-search t nm))))
 
 ; Empty rodata list.
 (defn no-rentries () Nil)
@@ -427,7 +441,7 @@
 
 ; HOF indirect calls are implemented but gated OFF: the path crashes
 ; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
-(defn cg-hof-enabled () 0)
+(defn cg-hof-enabled () 1)
 
 (defn cg-call-fire (st env name mangle i)
   (let off (env-lookup env name)
@@ -740,11 +754,19 @@
 ; Record every top-level defn name so function-value references
 ; (higher-order arguments) resolve to addresses.
 (defn cg-collect-fnnames (st fns)
-  (match fns
-    (Nil st)
-    (Cons f rest
-      (match f
-        (IFn nm d74 d75 (cg-collect-fnnames (cg-with-fnname st nm) rest))))))
+  (if (is-nil fns)
+    st
+    (cg-collect-one st (fnhead-if fns) (tl2 fns))))
+
+; Head of a List(IFunc); empty placeholder when exhausted.
+(defn fnhead-if (xs)
+  (match xs
+    (Cons f d77 f)
+    (Nil (IFn "" Nil (IConst 0)))))
+
+(defn cg-collect-one (st f rest)
+  (match f
+    (IFn nm d78 d79 (cg-collect-fnnames (cg-with-fnname st nm) rest))))
 
 (defn cg-program (st fns)
   (let st0 (cg-collect-fnnames st fns)

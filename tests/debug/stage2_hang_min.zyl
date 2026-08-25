@@ -1,25 +1,31 @@
-; MINIMAL stage2 blocker repro (2026-08-24).
-; stage1 (self-hosted compiler) SEGFAULTS while compiling this input,
-; while each function compiles fine alone or in smaller combinations.
+; MINIMAL stage2 blocker repro (2026-08-24, refined).
+;
+; stage1 SIGSEGVs while compiling THIS EXACT input (all four functions
+; together). Any three compile fine. The crash surfaces inside the lexer
+; (lex_loop TCO region) but is believed to be state corruption from an
+; earlier phase (ic-program/cg-program process 4 matches / 8 arms).
+;
 ; Repro:
-;   ./stage1.bin < this-file   -> SIGSEGV during cg phase (~8MB stack)
-; Suspect: latent state corruption in stage1's own compiled cg-expr/
-; cg-match when processing >=4 functions whose matches mix wildcard
-; patterns, param-returning arms, and HOF calls.
-(deftype Option (Some T) None)
+;   cp tests/debug/stage2_hang_min.zyl /tmp/zyl_boot_in.zyl
+;   ./stage1.bin          -> SIGSEGV (ulimit -s unlimited also fails)
+;
+; Next session: instrument stage1's own compiled ic-collect-vt /
+; cg-param-env / env-lookup with dbg-log writes to find which structure
+; gets corrupted between function 3 and function 4.
+(deftype Option (Some T) Nil)
 
 (defn option-unwrap (opt default)
   (match opt
     (Some v v)
-    (None default)))
+    (Nil default)))
 
-(defn is-some (opt) (match opt (Some _ true) (None false)))
+(defn is-some (opt) (match opt (Some _ true) (Nil false)))
 
-(defn is-none (opt) (match opt (Some _ false) (None true)))
+(defn is-none (opt) (match opt (Some _ false) (Nil true)))
 
 (defn omap (opt f)
   (match opt
     (Some v (Some (f v)))
-    (None None)))
+    (Nil Nil)))
 
 (defn main () 0)

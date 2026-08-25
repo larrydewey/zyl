@@ -22,12 +22,12 @@
 
 (defn option-is-some (opt)
   (match opt
-    (Some _ true)
+    (Some w1x true)
     (None false)))
 
 (defn option-is-none (opt)
   (match opt
-    (Some _ false)
+    (Some w2x false)
     (None true)))
 
 (defn option-map (opt f)
@@ -37,12 +37,12 @@
 
 (defn option-and (opt other)
   (match opt
-    (Some _ other)
+    (Some w3x other)
     (None None)))
 
 (defn option-or (opt other)
   (match opt
-    (Some _ opt)
+    (Some w4x opt)
     (None other)))
 
 (defn option-expect (opt msg)

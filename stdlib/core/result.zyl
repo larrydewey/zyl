@@ -18,17 +18,17 @@
 (defn result-unwrap (res default)
   (match res
     (Ok v v)
-    (Err _ default)))
+    (Err w1x default)))
 
 (defn result-is-ok (res)
   (match res
-    (Ok _ true)
-    (Err _ false)))
+    (Ok w2x true)
+    (Err w3x false)))
 
 (defn result-is-err (res)
   (match res
-    (Ok _ false)
-    (Err _ true)))
+    (Ok w4x false)
+    (Err w5x true)))
 
 (defn result-map (res f)
   (match res
@@ -37,23 +37,23 @@
 
 (defn result-and (res other)
   (match res
-    (Ok _ other)
-    (Err _ res)))
+    (Ok w6x other)
+    (Err w7x res)))
 
 (defn result-or (res other)
   (match res
-    (Ok _ res)
-    (Err _ other)))
+    (Ok w8x res)
+    (Err w9x other)))
 
 (defn result-expect (res msg)
   (match res
     (Ok v v)
-    (Err _ (error msg))))
+    (Err w10x (error msg))))
 
 (defn result-unwrap-or (res default)
   (match res
     (Ok v v)
-    (Err _ default)))
+    (Err w11x default)))
 
 ; ===========================================================================
 ; RESULT CONSTRUCTORS

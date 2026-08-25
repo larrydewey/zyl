@@ -176,146 +176,133 @@
 (defn no-tokens () Nil)
 
 ; ===========================================================================
-; MAIN LEXER — cursor threaded functionally
+; MAIN LEXER — one function, one self-tail-recursion site
 ; ===========================================================================
+; ALL routing and token production live inside lex-loop: every
+; continuation is a DIRECT self-call, so the bootstrap's self-tail-call
+; optimization keeps scanning O(1) stack. Any helper hop here would leak
+; a frame per token and exhaust the stack on large inputs.
+;
+; Bootstrap constraints honored: named dummies (never bare _), arity <=6,
+; flat if-chains (no nesting deeper than the proven ic-special shape).
 
-; Lex `src` (NUL-terminated) into a (List Token) in source order,
-; terminated by a single TkEof.
-; Returns: List(Token)
+(defn no-tokens () Nil)
+
 (defn zyl-lex (arena src)
   (let len (ffi-call "zyl_cstr_len" src 1000)
-    (list-reverse (lex-loop arena src len 0 (no-tokens)))))
+    (list-reverse (lex-loop arena src len 0 Nil))))
 
-; Scanner loop: skip whitespace/comments, then produce one token per step.
-; `acc` accumulates tokens in reverse source order.
-; Returns: List(Token) (reverse order, TkEof at head when done)
 (defn lex-loop (arena src len i acc)
   (if (>= i len)
     (Cons (TkEof) acc)
-    (let c (byte-at src i)
-      (if (= (chr-ws-p c) 1)
-        (lex-loop arena src len (+ i 1) acc)
-        (if (= (chr-semicolon-p c) 1)
-          (lex-loop arena src len (comment-end src len (+ i 1)) acc)
-          (lex-token arena src len i acc c))))))
+    (lex-c1 arena src len i acc (byte-at src i))))
 
-; Produce one token starting at `i`, then continue scanning.
-; Returns: List(Token) (reverse order)
-(defn lex-token (arena src len i acc c)
-  (if (= c 40)
-    (lex-continue arena src len (+ i 1) (Cons (TkLParen) acc))
-    (if (= c 41)
-      (lex-continue arena src len (+ i 1) (Cons (TkRParen) acc))
-      (if (= c 123)
-        (lex-continue arena src len (+ i 1) (Cons (TkLBrace) acc))
-        (if (= c 125)
-          (lex-continue arena src len (+ i 1) (Cons (TkRBrace) acc))
-          (if (= c 91)
-            (lex-continue arena src len (+ i 1) (Cons (TkLBracket) acc))
-            (if (= c 93)
-              (lex-continue arena src len (+ i 1) (Cons (TkRBracket) acc))
-              (lex-wordy arena src len i acc c))))))))
+(defn lex-c1 (arena src len i acc c)
+  (if (= (chr-ws-p c) 1)
+    (lex-loop arena src len (+ i 1) acc)
+    (if (= (chr-semicolon-p c) 1)
+      (lex-loop arena src len (comment-end src len (+ i 1)) acc)
+      (if (= c 40)
+        (lex-loop arena src len (+ i 1) (Cons (TkLParen) acc))
+        (if (= c 41)
+          (lex-loop arena src len (+ i 1) (Cons (TkRParen) acc))
+          (if (= c 123)
+            (lex-loop arena src len (+ i 1) (Cons (TkLBrace) acc))
+            (if (= c 125)
+              (lex-loop arena src len (+ i 1) (Cons (TkRBrace) acc))
+              (if (= c 91)
+                (lex-loop arena src len (+ i 1) (Cons (TkLBracket) acc))
+                (if (= c 93)
+                  (lex-loop arena src len (+ i 1) (Cons (TkRBracket) acc))
+                  (lex-c2 arena src len i acc c))))))))))
 
-; Continue scanning after a produced token.
-; Returns: List(Token) (reverse order)
-(defn lex-continue (arena src len i acc)
-  (lex-loop arena src len i acc))
+(defn lex-c2 (arena src len i acc c)
+  (if (= c 34)
+    (lex-str-e arena src len i acc (scan-str-end src len (+ i 1)))
+    (if (= c 58)
+      (lex-sym-probe arena src len i acc 58)
+      (if (= c 126)
+        (lex-sym-probe arena src len i acc 126)
+        (if (= (chr-digit-p c) 1)
+          (lex-num-e arena src len i acc (scan-number-end src len i))
+          (if (= c 45)
+            (lex-minus-e arena src len i acc)
+            (if (= (chr-ident-start-p c) 1)
+              (lex-ident-e arena src len i acc (scan-ident-end src len i))
+              ; unrecognized character: terminate the stream
+              (Cons (TkEof) acc))))))))
 
-; ':' / '~' followed by an identifier char -> keyword/symbol; bare otherwise.
-; Returns: List(Token) (reverse order)
-(defn lex-colonish (arena src len i acc c)
-  (let probe (+ i 1)
-    (let pk (next-nonws src len probe)
-      (if (< pk 0)
-        (lex-bare-colon arena src len i acc c)
-        (if (= (chr-ident-start-p (byte-at src pk)) 0)
-          (lex-bare-colon arena src len i acc c)
-          (if (= (chr-punctuator-p (byte-at src pk)) 1)
-            (lex-bare-colon arena src len i acc c)
-            (lex-keyword-symbol arena src len i acc c pk)))))))
+(defn lex-minus-e (arena src len i acc)
+  (if (= (chr-digit-p (byte-at src (+ i 1))) 1)
+    (lex-num-e arena src len i acc (scan-number-end src len i))
+    (lex-ident-e arena src len i acc (scan-ident-end src len i))))
 
-(defn next-nonws (src len i)
-  (if (>= i len)
-    -1
-    (if (= (chr-ws-p (byte-at src i)) 1)
-      (next-nonws src len (+ i 1))
-      i)))
+; String literal: e = index of closing quote (-1 unterminated).
+(defn lex-str-e (arena src len i acc e)
+  (if (< e 0)
+    (Cons (TkEof) acc)
+    (lex-loop arena src len (+ e 1)
+              (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)) acc))))
 
-(defn lex-bare-colon (arena src len i acc c)
+; Numeric literal: i..e; float when the text carries '.' or exponent.
+(defn lex-num-e (arena src len i acc e)
+  (lex-num-text arena src len i acc e (sub-str arena src i (- e i))))
+
+(defn lex-num-text (arena src len i acc e text)
+  (if (= (text-float-marker-p text) 1)
+    (lex-loop arena src len e (Cons (TkFloat text) acc))
+    (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))
+
+; Identifier / boolean literal: i..e with text.
+(defn lex-ident-e (arena src len i acc e)
+  (lex-ident-text arena src len i acc e (sub-str arena src i (- e i))))
+
+(defn lex-ident-text (arena src len i acc e text)
+  (if (> (str-eq text (str-intern arena "true")) 0)
+    (lex-loop arena src len e (Cons (TkBool true) acc))
+    (if (> (str-eq text (str-intern arena "false")) 0)
+      (lex-loop arena src len e (Cons (TkBool false) acc))
+      (lex-loop arena src len e (Cons (TkIdent text) acc)))))
+
+; ':' / '~' prefixed keyword or symbol: probe the next non-ws char.
+(defn lex-sym-probe (arena src len i acc c)
+  (lex-sym-pk arena src len i acc c (next-nonws src len (+ i 1))))
+
+(defn lex-sym-pk (arena src len i acc c pk)
+  (if (< pk 0)
+    (lex-sym-bare arena src len i acc c)
+    (if (= (chr-ident-start-p (byte-at src pk)) 0)
+      (lex-sym-bare arena src len i acc c)
+      (if (= (chr-punctuator-p (byte-at src pk)) 1)
+        (lex-sym-bare arena src len i acc c)
+        (lex-sym-e arena src len i acc c (scan-ident-end src len pk))))))
+
+(defn lex-sym-e (arena src len i acc c end)
+  (lex-sym-tok arena src len i acc c end (sub-str arena src (+ i 1) (- end (+ i 1)))))
+
+(defn lex-sym-tok (arena src len i acc c end text)
   (if (= c 58)
-    (lex-continue arena src len (+ i 1) (Cons (TkColon) acc))
-    (lex-continue arena src len (+ i 1) (Cons (TkSymbol (sub-str arena src i 1)) acc))))
+    (lex-loop arena src len end (Cons (TkKeyword text) acc))
+    (lex-loop arena src len end (Cons (TkSymbol text) acc))))
 
-(defn lex-keyword-symbol (arena src len i acc c pk)
-  (let end (scan-ident-end src len pk)
-    (let text (sub-str arena src pk (- end pk))
-      (let tok (if (= c 58) (TkKeyword text) (TkSymbol text))
-        (lex-continue arena src len end (Cons tok acc))))))
+(defn lex-sym-bare (arena src len i acc c)
+  (if (= c 58)
+    (lex-loop arena src len (+ i 1) (Cons (TkColon) acc))
+    (lex-loop arena src len (+ i 1) (Cons (TkSymbol (sub-str arena src i 1)) acc))))
+
+; ===========================================================================
+; SCAN UTILITIES
+; ===========================================================================
 
 ; Extract a substring of `src` as a fresh NUL-terminated buffer.
 ; Returns: Int (pointer)
 (defn sub-str (arena src start n)
   (ffi-call "zyl_cstr_sub" arena src start n 1000))
 
-; String literal at the cursor.
-; Returns: List(Token) (reverse order)
-(defn lex-string-lit (arena src len i acc)
-  (let e (scan-str-end src len (+ i 1))
-    (if (< e 0)
-      (Cons (TkEof) acc)   ; unterminated -> EOF
-      ; zyl_cstr_decode takes (arena, src, start, end)
-      (let text (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)
-        (lex-continue arena src len (+ e 1) (Cons (TkString text) acc))))))
-
-; Numeric literal at the cursor. TkInt carries the value; TkFloat the text.
-; Returns: List(Token) (reverse order)
-(defn lex-number-lit (arena src len i acc)
-  (let e (scan-number-end src len i)
-    (let text (sub-str arena src i (- e i))
-      (if (= (text-float-marker-p text) 1)
-        (lex-continue arena src len e (Cons (TkFloat text) acc))
-        (lex-continue arena src len e
-                      (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))))
-
-; Identifier or boolean literal at the cursor.
-; Returns: List(Token) (reverse order)
-(defn lex-ident-lit (arena src len i acc)
-  (let e (scan-ident-end src len i)
-    (let text (sub-str arena src i (- e i))
-      (lex-ident-done arena src len e acc text))))
-
-(defn lex-ident-done (arena src len i acc text)
-  (if (> (str-eq text (str-intern arena "true")) 0)
-    (lex-continue arena src len i (Cons (TkBool true) acc))
-    (lex-ident-done2 arena src len i acc text)))
-
-(defn lex-ident-done2 (arena src len i acc text)
-  (if (> (str-eq text (str-intern arena "false")) 0)
-    (lex-continue arena src len i (Cons (TkBool false) acc))
-    (lex-continue arena src len i (Cons (TkIdent text) acc))))
-
-; Route the non-punctuator cases by leading character.
-; Returns: List(Token) (reverse order)
-(defn lex-wordy (arena src len i acc c)
-  (if (= c 34)
-    (lex-string-lit arena src len i acc)
-    (if (= c 58)
-      (lex-colonish arena src len i acc c)
-      (if (= c 126)
-        (lex-colonish arena src len i acc c)
-        (if (= (chr-digit-p c) 1)
-          (lex-number-lit arena src len i acc)
-          (if (= c 45)
-            (lex-minus arena src len i acc)
-            (if (= (chr-ident-start-p c) 1)
-              (lex-ident-lit arena src len i acc)
-              (Cons (TkEof) acc))))))))   ; unrecognized char -> terminate
-
-; '-' starts a negative number only when a digit follows; else it is an
-; identifier character (handled here since '-' is not ident-start alone
-; in this routing path... it IS ident-start, so this branch only fires
-; via the digit-check ordering above; kept total for safety).
-(defn lex-minus (arena src len i acc)
-  (if (= (chr-digit-p (byte-at src (+ i 1))) 1)
-    (lex-number-lit arena src len i acc)
-    (lex-ident-lit arena src len i acc)))
+; Index of the next non-whitespace character at or after `i`; -1 at end.
+(defn next-nonws (src len i)
+  (if (>= i len)
+    -1
+    (if (= (chr-ws-p (byte-at src i)) 1)
+      (next-nonws src len (+ i 1))
+      i)))
