@@ -966,3 +966,22 @@ long long zyl_file_write_c(long long fd, long long buf) {
 long long zyl_file_close_c(long long fd) {
     return (long long)close((int)fd);
 }
+
+/* Stub: Zyl-level (error msg) — print and exit(1). */
+long long f_error(long long msg) {
+    if (msg) fprintf(stderr, "error: %s\n", (const char*)(size_t)msg);
+    else fprintf(stderr, "error\n");
+    exit(1);
+}
+
+/* Copy a NUL-terminated string from src to dst (dst must be pre-allocated).
+   Returns dst. Used by the Zyl-level buf-append wrapper. */
+long long zyl_strcpy(long long dst, long long src) {
+    if (!dst || !src) return dst;
+    const char* s = (const char*)(size_t)src;
+    char* d = (char*)(size_t)dst;
+    while (*s) { *d++ = *s++; }
+    *d = 0;
+    return dst;
+}
+

@@ -137,6 +137,15 @@
 ; Intern a String into `arena`: copy its bytes (including terminator) into a
 ; fresh zeroed buffer. Returns the buffer pointer.
 ; Returns: Int (pointer)
+; Copy a NUL-terminated string from src into the pre-allocated buffer dst.
+; Returns: dst
+(defn buf-append (dst src)
+  (ffi-call "zyl_strcpy" dst src 1000))
+
+; Zyl-level error: print and exit.
+(defn error (msg)
+  (ffi-call "f_error" msg 1000))
+
 (defn str-intern (arena s)
   (let n (alloc-strlen s)
     (let p (arena-alloc-zeroed arena (+ n 1))
