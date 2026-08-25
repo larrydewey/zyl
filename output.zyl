@@ -1,0 +1,1307 @@
+(defn result_unwrap (?0 ?0)
+(begin (let t0 res) (let ___match_result_7 (match Result t0 (Ok (v) v) (Err (w1x) default))))
+)
+
+(defn result_is_ok (?0)
+(begin (let t0 res) (let ___match_result_14 (match Result t0 (Ok (w2x) true) (Err (w3x) false))))
+)
+
+(defn result_is_err (?0)
+(begin (let t0 res) (let ___match_result_21 (match Result t0 (Ok (w4x) false) (Err (w5x) true))))
+)
+
+(defn result_map (?0 ?0)
+(begin (let t0 res) (let ___match_result_32 (match Result t0 (Ok (v) unit) (Err (e) unit))))
+)
+
+(defn result_and (?0 ?0)
+(begin (let t0 res) (let ___match_result_40 (match Result t0 (Ok (w6x) other) (Err (w7x) res))))
+)
+
+(defn result_or (?0 ?0)
+(begin (let t0 res) (let ___match_result_48 (match Result t0 (Ok (w8x) res) (Err (w9x) other))))
+)
+
+(defn result_expect (?0 ?0)
+(begin (let t0 res) (let ___match_result_57 (match Result t0 (Ok (v) v) (Err (w10x) (error msg)))))
+)
+
+(defn result_unwrap_or (?0 ?0)
+(begin (let t0 res) (let ___match_result_65 (match Result t0 (Ok (v) v) (Err (w11x) default))))
+)
+
+(defn result_ok (?0)
+(begin (let t0 v) (let t1 (make-variant Result_?19 Ok t0)))
+)
+
+(defn result_err (?0)
+(begin (let t0 e) (let t1 (make-variant Result_?19 Err t0)))
+)
+
+(defn result_flatmap (?0 ?0)
+(begin (let t0 res) (let ___match_result_81 (match Result t0 (Ok (v) (f v)) (Err (e) unit))))
+)
+
+(defn result_inspect (?0 ?0)
+(begin (let t0 res) (let ___match_result_93 (match Result t0 (Ok (v) res) (Err (e) res))))
+)
+
+(defn result_and_then (?0 ?0)
+(begin (let t0 res) (let t1 f) (let t2 (result_flatmap t0 t1)))
+)
+
+(defn result_or_else (?0 ?0)
+(begin (let t0 res) (let ___match_result_108 (match Result t0 (Ok (v) unit) (Err (e) (f e)))))
+)
+
+(defn option_to_result (?0 ?0)
+(begin (let t0 opt) (let ___match_result_117 (match Option t0 (Some (v) unit) (None () unit))))
+)
+
+(defn option_from_result (?0 ?0)
+(begin (let t0 res) (let ___match_result_127 (match Result t0 (Ok (v) unit) (Err (w1x) unit))))
+)
+
+(defn result_to_option (?0)
+(begin (let t0 res) (let ___match_result_135 (match Result t0 (Ok (v) unit) (Err (w2x) unit))))
+)
+
+(defn result_from_option (?0 ?0)
+(begin (let t0 opt) (let ___match_result_144 (match Option t0 (Some (v) unit) (None () unit))))
+)
+
+(defn identity (?0)
+(begin (let t0 x))
+)
+
+(defn const (?0 ?0)
+(begin (let t0 a))
+)
+
+(defn flip (?0 ?0 ?0)
+(begin (let t0 b) (let t1 a) (let t2 (f t0 t1)))
+)
+
+(defn compose (?0 ?0)
+(begin (let fn_158 (closure fn_158 none)))
+)
+
+(defn apply (?0 ?0)
+(begin (let t0 x) (let t1 (f t0)))
+)
+
+(defn abs (?0)
+(begin (let t0 x) (let t1 0) (let t2 (< t0 t1)) (let ___if_result_177 (if t2 (- 0 x) x)))
+)
+
+(defn max (?0 ?0)
+(begin (let t0 a) (let t1 b) (let t2 (> t0 t1)) (let ___if_result_185 (if t2 a b)))
+)
+
+(defn min (?0 ?0)
+(begin (let t0 a) (let t1 b) (let t2 (< t0 t1)) (let ___if_result_193 (if t2 a b)))
+)
+
+(defn clamp (?0 ?0 ?0)
+(begin (let t0 x) (let t1 lo) (let t2 (< t0 t1)) (let ___if_result_207 (if t2 lo (if (> x hi) hi x))))
+)
+
+(defn signum (?0)
+(begin (let t0 x) (let t1 0) (let t2 (== t0 t1)) (let ___if_result_219 (if t2 0 (if (> x 0) 1 -1))))
+)
+
+(defn square (?0)
+(begin (let t0 x) (let t1 x) (let t2 (* t0 t1)))
+)
+
+(defn cube (?0)
+(begin (let t0 x) (let t1 x) (let t2 (* t0 t1)) (let t3 x) (let t4 (* t2 t3)))
+)
+
+(defn xor (?0 ?0)
+(begin (let t0 a) (let ___if_result_241 (if t0 (if b false true) (if b true false))))
+)
+
+(defn nand (?0 ?0)
+(begin (let t0 a) (let t1 b) (let ___and_result_248 (if t0 (if ? unit false) false)) (let t3 (not t2)))
+)
+
+(defn nor (?0 ?0)
+(begin (let t0 a) (let t1 b) (let ___or_result_256 (if t0 unit (if ? unit unit))) (let t3 (not t2)))
+)
+
+(defn implies (?0 ?0)
+(begin (let t0 a) (let ___if_result_263 (if t0 b true)))
+)
+
+(defn when (?0 ?0)
+(begin (let t0 pred) (let ___if_result_269 (if t0 body unit)))
+)
+
+(defn unless (?0 ?0)
+(begin (let t0 pred) (let t1 (not t0)) (let ___if_result_276 (if t1 body unit)))
+)
+
+(defn is_bool (?0)
+(begin (let t0 x) (let t1 true) (let t2 (== t0 t1)) (let ___if_result_288 (if t2 true (if (== x false) true false))))
+)
+
+(defn is_zero (?0)
+(begin (let t0 x) (let t1 0) (let t2 (== t0 t1)))
+)
+
+(defn is_even (?0)
+(begin (let t0 0) (let t1 n) (let t2 2) (let t3 (% t1 t2)) (let t4 (== t0 t3)))
+)
+
+(defn is_odd (?0)
+(begin (let t0 0) (let t1 n) (let t2 2) (let t3 (% t1 t2)) (let t4 (!= t0 t3)))
+)
+
+(defn print_int (Int)
+(begin (let t0 n) (print t0))
+)
+
+(defn print_float (Float)
+(begin (let t0 f) (print t0))
+)
+
+(defn print_string (String)
+(begin (let t0 s) (print t0))
+)
+
+(defn print_bool (Bool)
+(begin (let t0 b) (print t0))
+)
+
+(defn option_unwrap (?0 ?0)
+(begin (let t0 opt) (let ___match_result_327 (match Option t0 (Some (v) v) (None () default))))
+)
+
+(defn option_is_some (?0)
+(begin (let t0 opt) (let ___match_result_333 (match Option t0 (Some (w1x) true) (None () false))))
+)
+
+(defn option_is_none (?0)
+(begin (let t0 opt) (let ___match_result_339 (match Option t0 (Some (w2x) false) (None () true))))
+)
+
+(defn option_map (?0 ?0)
+(begin (let t0 opt) (let ___match_result_348 (match Option t0 (Some (v) unit) (None () unit))))
+)
+
+(defn option_and (?0 ?0)
+(begin (let t0 opt) (let ___match_result_355 (match Option t0 (Some (w3x) other) (None () unit))))
+)
+
+(defn option_or (?0 ?0)
+(begin (let t0 opt) (let ___match_result_362 (match Option t0 (Some (w4x) opt) (None () other))))
+)
+
+(defn option_expect (?0 ?0)
+(begin (let t0 opt) (let ___match_result_370 (match Option t0 (Some (v) v) (None () (error msg)))))
+)
+
+(defn option_unwrap_or (?0 ?0)
+(begin (let t0 opt) (let ___match_result_377 (match Option t0 (Some (v) v) (None () default))))
+)
+
+(defn option_none ()
+(begin (let t0 (make-variant Option_?89 None)))
+)
+
+(defn option_some (?0)
+(begin (let t0 x) (let t1 (make-variant Option_?89 Some t0)))
+)
+
+(defn option_flatmap (?0 ?0)
+(begin (let t0 opt) (let ___match_result_389 (match Option t0 (Some (v) (f v)) (None () unit))))
+)
+
+(defn option_inspect (?0 ?0)
+(begin (let t0 opt) (let ___match_result_398 (match Option t0 (Some (v) opt) (None () opt))))
+)
+
+(defn is_nil (?0)
+(begin (let t0 xs) (let ___match_result_405 (match List t0 (Cons (w1x w2x) false) (Nil () true))))
+)
+
+(defn list_car (?0)
+(begin (let t0 xs) (let ___match_result_413 (match List t0 (Cons (v w3x) unit) (Nil () unit))))
+)
+
+(defn list_cdr (?0)
+(begin (let t0 xs) (let ___match_result_420 (match List t0 (Cons (w4x rest) rest) (Nil () unit))))
+)
+
+(defn list_length (?0)
+(begin (let t0 xs) (let ___match_result_430 (match List t0 (Cons (w5x rest) (+ 1 (list_length rest))) (Nil () 0))))
+)
+
+(defn list_append (?0 ?0)
+(begin (let t0 xs) (let ___match_result_442 (match List t0 (Cons (h t) unit) (Nil () ys))))
+)
+
+(defn list_reverse (?0)
+(begin (let t0 xs) (let t1 (make-variant List_?261 Nil)) (let t2 (list_reverse_acc t0 t1)))
+)
+
+(defn list_reverse_acc (?0 ?0)
+(begin (let t0 xs) (let ___match_result_458 (match List t0 (Cons (h t) (list_reverse_acc t unit)) (Nil () acc))))
+)
+
+(defn list_sum (?0)
+(begin (let t0 xs) (let ___match_result_468 (match List t0 (Cons (h t) (+ h (list_sum t))) (Nil () 0))))
+)
+
+(defn alloc_malloc (?0)
+(begin (let t0 size) (let t1 (ffi-call zyl_mem_alloc t0 1000)))
+)
+
+(defn alloc_free (?0)
+(begin (let t0 ptr) (let t1 (ffi-call zyl_mem_free t0 1000)))
+)
+
+(defn alloc_read_int (?0)
+(begin (let t0 addr) (let t1 (ffi-call zyl_mem_read t0 1000)))
+)
+
+(defn alloc_write_int (?0 ?0)
+(begin (let t0 addr) (let t1 value) (let t2 (ffi-call zyl_mem_write t0 t1 1000)))
+)
+
+(defn alloc_int (?0)
+(begin (let t0 8) (let t1 (alloc_malloc t0)) (let p t1) (let t3 p) (let t4 value) (let t5 (alloc_write_int t3 t4)) (let t6 p))
+)
+
+(defn alloc_strlen (?0)
+(begin (let t0 ptr) (let t1 (ffi-call zyl_cstr_len t0 1000)))
+)
+
+(defn alloc_incr (?0)
+(begin (let t0 addr) (let t1 addr) (let t2 (alloc_read_int t1)) (let t3 1) (let t4 (+ t2 t3)) (let t5 (alloc_write_int t0 t4)))
+)
+
+(defn alloc_decr (?0)
+(begin (let t0 addr) (let t1 addr) (let t2 (alloc_read_int t1)) (let t3 1) (let t4 (- t2 t3)) (let t5 (alloc_write_int t0 t4)))
+)
+
+(defn arena_create (?0)
+(begin (let t0 block-size) (let t1 (ffi-call zyl_arena_create t0 1000)))
+)
+
+(defn arena_alloc (?0 ?0)
+(begin (let t0 arena) (let t1 size) (let t2 (ffi-call zyl_arena_alloc t0 t1 1000)))
+)
+
+(defn arena_alloc_zeroed (?0 ?0)
+(begin (let t0 arena) (let t1 size) (let t2 (ffi-call zyl_arena_alloc_zeroed t0 t1 1000)))
+)
+
+(defn arena_reset (?0)
+(begin (let t0 arena) (let t1 (ffi-call zyl_arena_reset t0 1000)))
+)
+
+(defn arena_destroy (?0)
+(begin (let t0 arena) (let t1 (ffi-call zyl_arena_destroy t0 1000)))
+)
+
+(defn arena_used (?0)
+(begin (let t0 arena) (let t1 (ffi-call zyl_arena_used t0 1000)))
+)
+
+(defn arena_capacity (?0)
+(begin (let t0 arena) (let t1 (ffi-call zyl_arena_capacity t0 1000)))
+)
+
+(defn str_len (?0)
+(begin (let t0 ptr) (let t1 (alloc_strlen t0)))
+)
+
+(defn str_intern (?0 ?0)
+(begin (let t0 s) (let t1 (alloc_strlen t0)) (let n t1) (let t3 arena) (let t4 n) (let t5 1) (let t6 (+ t4 t5)) (let t7 (arena_alloc_zeroed t3 t6)) (let p t7) (let t9 p) (let t10 s) (let t11 (buf-append t9 t10)) (let t12 p))
+)
+
+(defn str_eq (?0 ?0)
+(begin (let t0 p1) (let t1 p2) (let t2 (ffi-call zyl_cstr_eq t0 t1 1000)))
+)
+
+(defn env_lookup (?0 ?0)
+(begin (let t0 env) (let ___match_result_594 (match Env t0 (EnvBind (n off d1 rest) (if (str_eq n name) off (env_lookup rest name))) (EnvNil () 0))))
+)
+
+(defn env_kind_of (?0 ?0)
+(begin (let t0 env) (let ___match_result_611 (match Env t0 (EnvBind (n d2 k rest) (if (str_eq n name) k (env_kind_of rest name))) (EnvNil () 0))))
+)
+
+(defn vt_tag_of (?0 ?0)
+(begin (let t0 vt) (let ___match_result_628 (match VTable t0 (VTEntry (n tag d3 rest) (if (str_eq n name) tag (vt_tag_of rest name))) (VTNil () -1))))
+)
+
+(defn vt_arity_of (?0 ?0)
+(begin (let t0 vt) (let ___match_result_645 (match VTable t0 (VTEntry (n d4 ar rest) (if (str_eq n name) ar (vt_arity_of rest name))) (VTNil () -1))))
+)
+
+(defn toks_head (?0)
+(begin (let t0 toks) (let ___match_result_652 (match List t0 (Cons (t d5) t) (Nil () unit))))
+)
+
+(defn toks_tail (?0)
+(begin (let t0 toks) (let ___match_result_659 (match List t0 (Cons (d6 rest) rest) (Nil () unit))))
+)
+
+(defn chr_ws_p (?0)
+(begin (let t0 c) (let t1 32) (let t2 (== t0 t1)) (let ___if_result_681 (if t2 1 (if (== c 9) 1 (if (== c 13) 1 (if (== c 10) 1 0))))))
+)
+
+(defn chr_digit_p (?0)
+(begin (let t0 c) (let t1 48) (let t2 (>= t0 t1)) (let ___if_result_693 (if t2 (if (<= c 57) 1 0) 0)))
+)
+
+(defn chr_alpha_p (?0)
+(begin (let t0 c) (let t1 65) (let t2 (>= t0 t1)) (let ___if_result_725 (if t2 (if (<= c 90) 1 (if (>= c 97) (if (<= c 122) 1 0) 0)) (if (>= c 97) (if (<= c 122) 1 0) 0))))
+)
+
+(defn chr_ident_start_p (?0)
+(begin (let t0 c) (let t1 (chr_alpha_p t0)) (let t2 1) (let t3 (== t1 t2)) (let ___if_result_788 (if t3 1 (if (== c 95) 1 (if (== c 45) 1 (if (== c 63) 1 (if (== c 33) 1 (if (== c 43) 1 (if (== c 47) 1 (if (== c 61) 1 (if (== c 60) 1 (if (== c 62) 1 (if (== c 42) 1 (if (== c 37) 1 0))))))))))))))
+)
+
+(defn chr_ident_cont_p (?0)
+(begin (let t0 c) (let t1 (chr_digit_p t0)) (let t2 1) (let t3 (== t1 t2)) (let ___if_result_797 (if t3 1 (chr_ident_start_2 c))))
+)
+
+(defn chr_ident_start_2 (?0)
+(begin (let t0 c) (let t1 46) (let t2 (== t0 t1)) (let ___if_result_805 (if t2 1 (chr_ident_start_p c))))
+)
+
+(defn chr_semicolon_p (?0)
+(begin (let t0 c) (let t1 59) (let t2 (== t0 t1)) (let ___if_result_812 (if t2 1 0)))
+)
+
+(defn either (?0 ?0)
+(begin (let t0 a) (let t1 0) (let t2 (== t0 t1)) (let ___if_result_825 (if t2 (if (== b 0) 0 1) 1)))
+)
+
+(defn byte_at (?0 ?0)
+(begin (let t0 src) (let t1 i) (let t2 (ffi-call zyl_cstr_byte_at t0 t1 1000)))
+)
+
+(defn scan_ident_end (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_854 (if t2 i (if (== (chr_ident_cont_p (byte_at src i)) 1) (scan_ident_end src len (+ i 1)) i))))
+)
+
+(defn scan_num_body (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_889 (if t2 i (if (== (chr_digit_p c) 1) (scan_num_body src len (+ i 1)) (if (== c 46) (scan_num_body src len (+ i 1)) i)))))
+)
+
+(defn scan_exp_digits (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_911 (if t2 i (if (== (chr_digit_p (byte_at src i)) 1) (scan_exp_digits src len (+ i 1)) i))))
+)
+
+(defn scan_exp (?0 ?0 ?0)
+(begin (let t0 src) (let t1 len) (let t2 i) (let t3 i) (let t4 1) (let t5 (+ t3 t4)) (let t6 (scan_exp_j t0 t1 t2 t5)))
+)
+
+(defn scan_exp_j (?0 ?0 ?0 ?0)
+(begin (let t0 j) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_938 (if t2 i (scan_exp_b src len i j (byte_at src j)))))
+)
+
+(defn scan_exp_b (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 src) (let t1 len) (let t2 b) (let t3 43) (let t4 (== t2 t3)) (let t5 b) (let t6 45) (let t7 (== t5 t6)) (let t8 (either t4 t7)) (let t9 1) (let t10 (== t8 t9)) (let ___if_result_959 (if t10 (+ j 1) j)) (let t12 (scan_exp_digits t0 t1 t11)))
+)
+
+(defn scan_number_end (?0 ?0 ?0)
+(begin (let t0 src) (let t1 start) (let t2 (byte_at t0 t1)) (let t3 45) (let t4 (== t2 t3)) (let ___if_result_973 (if t4 (+ start 1) start)) (let i t5) (let t7 src) (let t8 len) (let t9 i) (let t10 (scan_num_body t7 t8 t9)) (let mid t10) (let t12 mid) (let t13 len) (let t14 (>= t12 t13)) (let ___if_result_1006 (if t14 mid (if (== (either (== c 101) (== c 69)) 1) (scan_exp src len mid) mid))))
+)
+
+(defn scan_str_end (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_1049 (if t2 -1 (if (== b 92) (if (<= (+ i 1) (- len 1)) (scan_str_end src len (+ i 2)) -1) (if (== b 34) i (scan_str_end src len (+ i 1)))))))
+)
+
+(defn text_float_marker_p (?0)
+(begin (let t0 text) (let t1 text) (let t2 (ffi-call zyl_cstr_len t1 1000)) (let t3 0) (let t4 (marker_loop t0 t2 t3)))
+)
+
+(defn marker_loop (?0 ?0 ?0)
+(begin (let t0 i) (let t1 n) (let t2 (>= t0 t1)) (let ___if_result_1090 (if t2 0 (if (== (either (== c 46) (either (== c 101) (== c 69))) 1) 1 (marker_loop text n (+ i 1))))))
+)
+
+(defn comment_end (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_1111 (if t2 len (if (== (byte_at src i) 10) i (comment_end src len (+ i 1))))))
+)
+
+(defn chr_punctuator_p (?0)
+(begin (let t0 c) (let t1 40) (let t2 (== t0 t1)) (let ___if_result_1153 (if t2 1 (if (== c 41) 1 (if (== c 123) 1 (if (== c 125) 1 (if (== c 91) 1 (if (== c 93) 1 (if (== c 58) 1 (if (== c 126) 1 0))))))))))
+)
+
+(defn no_tokens ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn no_tokens ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn zyl_lex (?0 ?0)
+(begin (let t0 src) (let t1 (ffi-call zyl_cstr_len t0 1000)) (let len t1) (let t3 arena) (let t4 src) (let t5 len) (let t6 0) (let t7 (make-variant List_?261 Nil)) (let t8 (lex_loop t3 t4 t5 t6 t7)) (let t9 (list_reverse t8)))
+)
+
+(defn lex_loop (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_1190 (if t2 unit (lex_c1 arena src len i acc (byte_at src i)))))
+)
+
+(defn lex_c1 (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 c) (let t1 (chr_ws_p t0)) (let t2 1) (let t3 (== t1 t2)) (let ___if_result_1316 (if t3 (lex_loop arena src len (+ i 1) acc) (if (== (chr_semicolon_p c) 1) (lex_loop arena src len (comment_end src len (+ i 1)) acc) (if (== c 40) (lex_loop arena src len (+ i 1) unit) (if (== c 41) (lex_loop arena src len (+ i 1) unit) (if (== c 123) (lex_loop arena src len (+ i 1) unit) (if (== c 125) (lex_loop arena src len (+ i 1) unit) (if (== c 91) (lex_loop arena src len (+ i 1) unit) (if (== c 93) (lex_loop arena src len (+ i 1) unit) (lex_c2 arena src len i acc c)))))))))))
+)
+
+(defn lex_c2 (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 c) (let t1 34) (let t2 (== t0 t1)) (let ___if_result_1403 (if t2 (lex_str_e arena src len i acc (scan_str_end src len (+ i 1))) (if (== c 58) (lex_sym_probe arena src len i acc 58) (if (== c 126) (lex_sym_probe arena src len i acc 126) (if (== (chr_digit_p c) 1) (lex_num_e arena src len i acc (scan_number_end src len i)) (if (== c 45) (lex_minus_e arena src len i acc) (if (== (chr_ident_start_p c) 1) (lex_ident_e arena src len i acc (scan_ident_end src len i)) unit))))))))
+)
+
+(defn lex_minus_e (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 src) (let t1 i) (let t2 1) (let t3 (+ t1 t2)) (let t4 (byte_at t0 t3)) (let t5 (chr_digit_p t4)) (let t6 1) (let t7 (== t5 t6)) (let ___if_result_1437 (if t7 (lex_num_e arena src len i acc (scan_number_end src len i)) (lex_ident_e arena src len i acc (scan_ident_end src len i)))))
+)
+
+(defn lex_str_e (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 e) (let t1 0) (let t2 (< t0 t1)) (let ___if_result_1471 (if t2 unit (lex_loop arena src len (+ e 1) unit))))
+)
+
+(defn lex_num_e (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arena) (let t1 src) (let t2 len) (let t3 i) (let t4 acc) (let t5 e) (let t6 arena) (let t7 src) (let t8 i) (let t9 e) (let t10 i) (let t11 (- t9 t10)) (let t12 (sub_str t6 t7 t8 t11)) (let t13 (lex_num_text t0 t1 t2 t3 t4 t5 t12)))
+)
+
+(defn lex_num_text (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 text) (let t1 (text_float_marker_p t0)) (let t2 1) (let t3 (== t1 t2)) (let ___if_result_1523 (if t3 (lex_loop arena src len e unit) (lex_loop arena src len e unit))))
+)
+
+(defn lex_ident_e (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arena) (let t1 src) (let t2 len) (let t3 i) (let t4 acc) (let t5 e) (let t6 arena) (let t7 src) (let t8 i) (let t9 e) (let t10 i) (let t11 (- t9 t10)) (let t12 (sub_str t6 t7 t8 t11)) (let t13 (lex_ident_text t0 t1 t2 t3 t4 t5 t12)))
+)
+
+(defn lex_ident_text (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 text) (let t1 arena) (let t2 "true") (let t3 (str_intern t1 t2)) (let t4 (str_eq t0 t3)) (let t5 0) (let t6 (> t4 t5)) (let ___if_result_1593 (if t6 (lex_loop arena src len e unit) (if (> (str_eq text (str_intern arena "false")) 0) (lex_loop arena src len e unit) (lex_loop arena src len e unit)))))
+)
+
+(defn lex_sym_probe (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arena) (let t1 src) (let t2 len) (let t3 i) (let t4 acc) (let t5 c) (let t6 src) (let t7 len) (let t8 i) (let t9 1) (let t10 (+ t8 t9)) (let t11 (next_nonws t6 t7 t10)) (let t12 (lex_sym_pk t0 t1 t2 t3 t4 t5 t11)))
+)
+
+(defn lex_sym_pk (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 pk) (let t1 0) (let t2 (< t0 t1)) (let ___if_result_1669 (if t2 (lex_sym_bare arena src len i acc c) (if (== (chr_ident_start_p (byte_at src pk)) 0) (lex_sym_bare arena src len i acc c) (if (== (chr_punctuator_p (byte_at src pk)) 1) (lex_sym_bare arena src len i acc c) (lex_sym_e arena src len i acc c (scan_ident_end src len pk)))))))
+)
+
+(defn lex_sym_e (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arena) (let t1 src) (let t2 len) (let t3 i) (let t4 acc) (let t5 c) (let t6 end) (let t7 arena) (let t8 src) (let t9 i) (let t10 1) (let t11 (+ t9 t10)) (let t12 end) (let t13 i) (let t14 1) (let t15 (+ t13 t14)) (let t16 (- t12 t15)) (let t17 (sub_str t7 t8 t11 t16)) (let t18 (lex_sym_tok t0 t1 t2 t3 t4 t5 t6 t17)))
+)
+
+(defn lex_sym_tok (?0 ?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 c) (let t1 58) (let t2 (== t0 t1)) (let ___if_result_1725 (if t2 (lex_loop arena src len end unit) (lex_loop arena src len end unit))))
+)
+
+(defn lex_sym_bare (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 c) (let t1 58) (let t2 (== t0 t1)) (let ___if_result_1760 (if t2 (lex_loop arena src len (+ i 1) unit) (lex_loop arena src len (+ i 1) unit))))
+)
+
+(defn sub_str (?0 ?0 ?0 ?0)
+(begin (let t0 arena) (let t1 src) (let t2 start) (let t3 n) (let t4 (ffi-call zyl_cstr_sub t0 t1 t2 t3 1000)))
+)
+
+(defn next_nonws (?0 ?0 ?0)
+(begin (let t0 i) (let t1 len) (let t2 (>= t0 t1)) (let ___if_result_1795 (if t2 -1 (if (== (chr_ws_p (byte_at src i)) 1) (next_nonws src len (+ i 1)) i))))
+)
+
+(defn no_forms ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn art_ast (?0)
+(begin (let t0 r) (let ___match_result_1802 (match AstTok t0 (AstOf (a d1) a))))
+)
+
+(defn art_rest (?0)
+(begin (let t0 r) (let ___match_result_1808 (match AstTok t0 (AstOf (d2 rest) rest))))
+)
+
+(defn tok_is_eof (?0)
+(begin (let t0 t) (let ___match_result_1833 (match Token t0 (TkEof () true) (TkIdent (d3) false) (TkInt (d4) false) (TkFloat (d5) false) (TkString (d6) false) (TkBool (d7) false) (TkSymbol (d8) false) (TkKeyword (d9) false) (TkLParen () false) (TkRParen () false) (TkLBrace () false) (TkRBrace () false) (TkLBracket () false) (TkRBracket () false) (TkColon () false))))
+)
+
+(defn toks_empty (?0)
+(begin (let t0 toks) (let ___match_result_1841 (match List t0 (Cons (t d10) (tok_is_eof t)) (Nil () true))))
+)
+
+(defn read_form (?0 ?0)
+(begin (let t0 toks) (let t1 (toks_head t0)) (let t t1) (let t3 toks) (let t4 (toks_tail t3)) (let rest t4) (let t6 arena) (let t7 t) (let t8 rest) (let t9 (read_dispatch t6 t7 t8)))
+)
+
+(defn read_dispatch (?0 ?0 ?0)
+(begin (let t0 t) (let ___match_result_1927 (match Token t0 (TkEof () (read_form_atom arena t rest)) (TkIdent (d15) (read_form_atom arena t rest)) (TkInt (d11) (read_form_atom arena t rest)) (TkFloat (d12) (read_form_atom arena t rest)) (TkString (d13) (read_form_atom arena t rest)) (TkBool (d14) (read_form_atom arena t rest)) (TkSymbol (d16) (read_form_atom arena t rest)) (TkKeyword (d17) (read_form_atom arena t rest)) (TkLParen () (read_forms arena rest (no_forms))) (TkRParen () (read_form_atom arena t rest)) (TkLBrace () (read_forms_brace arena rest (no_forms))) (TkRBrace () (read_form_atom arena t rest)) (TkLBracket () (read_forms_bracket arena rest (no_forms))) (TkRBracket () (read_form_atom arena t rest)) (TkColon () (read_form_atom arena t rest)))))
+)
+
+(defn read_form_atom (?0 ?0 ?0)
+(begin (let t0 t) (let ___match_result_1999 (match Token t0 (TkEof () unit) (TkIdent (s) unit) (TkInt (v) unit) (TkFloat (s) unit) (TkString (s) unit) (TkBool (b) unit) (TkSymbol (s) unit) (TkKeyword (s) unit) (TkLParen () unit) (TkRParen () unit) (TkLBrace () unit) (TkRBrace () unit) (TkLBracket () unit) (TkRBracket () unit) (TkColon () unit))))
+)
+
+(defn read_forms (?0 ?0 ?0)
+(begin (let t0 toks) (let t1 (toks_empty t0)) (let ___if_result_2038 (if t1 unit (if (== (tok_is_rparen t) 1) unit (read_forms arena (art_rest r) unit)))))
+)
+
+(defn tok_is_rparen (?0)
+(begin (let t0 t) (let ___match_result_2063 (match Token t0 (TkEof () false) (TkIdent (d18) false) (TkInt (d19) false) (TkFloat (d20) false) (TkString (d21) false) (TkBool (d22) false) (TkSymbol (d23) false) (TkKeyword (d24) false) (TkLParen () false) (TkRParen () true) (TkLBrace () false) (TkRBrace () false) (TkLBracket () false) (TkRBracket () false) (TkColon () false))))
+)
+
+(defn read_forms_brace (?0 ?0 ?0)
+(begin (let t0 toks) (let t1 (toks_empty t0)) (let ___if_result_2102 (if t1 unit (if (== (tok_is_rbrace t) 1) unit (read_forms_brace arena (art_rest r) unit)))))
+)
+
+(defn tok_is_rbrace (?0)
+(begin (let t0 t) (let ___match_result_2127 (match Token t0 (TkEof () false) (TkIdent (d25) false) (TkInt (d26) false) (TkFloat (d27) false) (TkString (d28) false) (TkBool (d29) false) (TkSymbol (d30) false) (TkKeyword (d31) false) (TkLParen () false) (TkRParen () false) (TkLBrace () false) (TkRBrace () true) (TkLBracket () false) (TkRBracket () false) (TkColon () false))))
+)
+
+(defn read_forms_bracket (?0 ?0 ?0)
+(begin (let t0 toks) (let t1 (toks_empty t0)) (let ___if_result_2166 (if t1 unit (if (== (tok_is_rbracket t) 1) unit (read_forms_bracket arena (art_rest r) unit)))))
+)
+
+(defn tok_is_rbracket (?0)
+(begin (let t0 t) (let ___match_result_2191 (match Token t0 (TkEof () false) (TkIdent (d32) false) (TkInt (d33) false) (TkFloat (d34) false) (TkString (d35) false) (TkBool (d36) false) (TkSymbol (d37) false) (TkKeyword (d38) false) (TkLParen () false) (TkRParen () false) (TkLBrace () false) (TkRBrace () false) (TkLBracket () false) (TkRBracket () true) (TkColon () false))))
+)
+
+(defn parse_program (?0 ?0)
+(begin (let t0 arena) (let t1 toks) (let t2 (no_forms)) (let t3 (parse_program_loop t0 t1 t2)) (let t4 (list_reverse t3)))
+)
+
+(defn parse_program_loop (?0 ?0 ?0)
+(begin (let t0 toks) (let t1 (toks_empty t0)) (let ___if_result_2218 (if t1 acc (parse_program_loop arena (art_rest r) unit))))
+)
+
+(defn zyl_parse (?0 ?0)
+(begin (let t0 arena) (let t1 arena) (let t2 src) (let t3 (zyl_lex t1 t2)) (let t4 (parse_program t0 t3)))
+)
+
+(defn ic_op_of (?0 ?0)
+(begin (let t0 s) (let t1 arena) (let t2 "+") (let t3 (str_intern t1 t2)) (let t4 (str_eq t0 t3)) (let t5 0) (let t6 (> t4 t5)) (let ___if_result_2336 (if t6 0 (if (> (str_eq s (str_intern arena "-")) 0) 1 (if (> (str_eq s (str_intern arena "*")) 0) 2 (if (> (str_eq s (str_intern arena "/")) 0) 3 (if (> (str_eq s (str_intern arena "%")) 0) 4 (if (> (str_eq s (str_intern arena "<")) 0) 5 (if (> (str_eq s (str_intern arena ">")) 0) 6 (if (> (str_eq s (str_intern arena "<=")) 0) 7 (if (> (str_eq s (str_intern arena ">=")) 0) 8 (if (> (str_eq s (str_intern arena "==")) 0) 9 (if (> (str_eq s (str_intern arena "=")) 0) 9 (if (> (str_eq s (str_intern arena "!=")) 0) 10 -1))))))))))))))
+)
+
+(defn no_strs ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn no_icnfs ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn no_asts ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn no_ifuncs ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn no_iarms ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn first_ast (?0)
+(begin (let t0 xs) (let ___match_result_2349 (match List t0 (Cons (a d1) a) (Nil () unit))))
+)
+
+(defn rest_ast (?0)
+(begin (let t0 xs) (let ___match_result_2356 (match List t0 (Cons (d2 r) r) (Nil () unit))))
+)
+
+(defn last_ast (?0)
+(begin (let t0 xs) (let t1 0) (let t2 (make-variant Ast_Int AInt t1)) (let t3 (last_loop t0 t2)))
+)
+
+(defn last_loop (?0 ?0)
+(begin (let t0 xs) (let ___match_result_2371 (match List t0 (Cons (h t) (last_loop t h)) (Nil () acc))))
+)
+
+(defn butlast (?0 ?0)
+(begin (let t0 xs) (let t1 (is_nil t0)) (let ___if_result_2384 (if t1 (list_reverse acc) (butlast_step (first_ast xs) (rest_ast xs) acc))))
+)
+
+(defn butlast_step (?0 ?0 ?0)
+(begin (let t0 t) (let t1 (is_nil t0)) (let ___if_result_2397 (if t1 (list_reverse acc) (butlast t unit))))
+)
+
+(defn atom_text (?0 ?0)
+(begin (let t0 a) (let ___match_result_2413 (match Ast t0 (AIdent (d5) fb) (AInt (d6) fb) (AFloat (s) s) (AString (s) s) (ABool (d7) fb) (AList (d8) fb))))
+)
+
+(defn ident_name (?0 ?0)
+(begin (let t0 a) (let ___match_result_2429 (match Ast t0 (AIdent (s) s) (AInt (d9) fb) (AFloat (d10) fb) (AString (d11) fb) (ABool (d12) fb) (AList (d13) fb))))
+)
+
+(defn head_name_is (?0 ?0 ?0)
+(begin (let t0 kids) (let ___match_result_2446 (match List t0 (Cons (head d14) (> (str_eq (ident_name head "") (str_intern arena s)) 0)) (Nil () 0))))
+)
+
+(defn form_head_is (?0 ?0 ?0)
+(begin (let t0 form) (let ___match_result_2466 (match Ast t0 (AIdent (d15) 0) (AInt (d16) 0) (AFloat (d17) 0) (AString (d18) 0) (ABool (d19) 0) (AList (kids) (head_name_is arena kids s)))))
+)
+
+(defn ic_program (?0 ?0)
+(begin (let t0 arena) (let t1 prog) (let t2 (make-variant VTable VTNil)) (let t3 (ic_collect_vt t0 t1 t2)) (let vt t3) (let t5 arena) (let t6 prog) (let t7 (no_ifuncs)) (let t8 vt) (let t9 (ic_defns t5 t6 t7 t8)) (let t10 (list_reverse t9)))
+)
+
+(defn ic_collect_vt (?0 ?0 ?0)
+(begin (let t0 forms) (let ___match_result_2506 (match List t0 (Cons (form rest) (if (== (form_head_is arena form "deftype") 1) (ic_collect_vt arena rest (ic_vt_deftype arena form vt)) (ic_collect_vt arena rest vt))) (Nil () vt))))
+)
+
+(defn ic_vt_deftype (?0 ?0 ?0)
+(begin (let t0 form) (let ___match_result_2526 (match Ast t0 (AIdent (d9) vt) (AInt (d10) vt) (AFloat (d11) vt) (AString (d12) vt) (ABool (d13) vt) (AList (kids) (ic_vt_kids arena kids vt)))))
+)
+
+(defn ic_vt_kids (?0 ?0 ?0)
+(begin (let t0 kids) (let t1 (list_length t0)) (let t2 1) (let t3 (> t1 t2)) (let ___if_result_2542 (if t3 (vt_from_variants arena (rest_ast (rest_ast kids)) vt 0) vt)))
+)
+
+(defn vt_from_variants (?0 ?0 ?0 ?0)
+(begin (let t0 variants) (let ___match_result_2569 (match List t0 (Cons (v rest) unit) (Nil () vt))))
+)
+
+(defn variant_name (?0)
+(begin (let t0 v) (let ___match_result_2587 (match Ast t0 (AIdent (s) s) (AInt (d26) "") (AFloat (d27) "") (AString (d28) "") (ABool (d29) "") (AList (kids) (ident_name (first_ast kids) "")))))
+)
+
+(defn variant_arity (?0)
+(begin (let t0 v) (let ___match_result_2605 (match Ast t0 (AIdent (d30) 0) (AInt (d31) 0) (AFloat (d32) 0) (AString (d33) 0) (ABool (d34) 0) (AList (kids) (- (list_length kids) 1)))))
+)
+
+(defn ic_defns (?0 ?0 ?0 ?0)
+(begin (let t0 forms) (let ___match_result_2636 (match List t0 (Cons (form rest) (if (== (form_head_is arena form "defn") 1) (ic_defns arena rest unit vt) (ic_defns arena rest acc vt))) (Nil () acc))))
+)
+
+(defn ic_defn (?0 ?0 ?0)
+(begin (let t0 form) (let ___match_result_2661 (match Ast t0 (AIdent (d35) (ic_defn_none arena)) (AInt (d36) (ic_defn_none arena)) (AFloat (d37) (ic_defn_none arena)) (AString (d38) (ic_defn_none arena)) (ABool (d39) (ic_defn_none arena)) (AList (kids) (ic_defn_kids arena kids vt)))))
+)
+
+(defn ic_defn_none (?0)
+(begin (let t0 arena) (let t1 "?") (let t2 (str_intern t0 t1)) (let t3 (make-variant List_?261 Nil)) (let t4 0) (let t5 (make-variant Icnf_Int IConst t4)) (let t6 (make-variant IFunc_String IFn t2 t3 t5)))
+)
+
+(defn ic_defn_kids (?0 ?0 ?0)
+(begin (let t0 kids) (let t1 (list_length t0)) (let t2 3) (let t3 (> t1 t2)) (let ___if_result_2685 (if t3 (ic_defn_full arena kids vt) (ic_defn_short arena kids vt))))
+)
+
+(defn ic_defn_full (?0 ?0 ?0)
+(begin (let t0 kids) (let t1 (rest_ast t0)) (let t2 (first_ast t1)) (let nm t2) (let t4 kids) (let t5 (rest_ast t4)) (let t6 (rest_ast t5)) (let t7 (first_ast t6)) (let params t7) (let t9 kids) (let t10 (rest_ast t9)) (let t11 (rest_ast t10)) (let t12 (rest_ast t11)) (let t13 (first_ast t12)) (let body t13) (let t15 arena) (let t16 nm) (let t17 "") (let t18 (ident_name t16 t17)) (let t19 (str_intern t15 t18)) (let t20 params) (let t21 (no_strs)) (let t22 (param_names t20 t21)) (let t23 (list_reverse t22)) (let t24 arena) (let t25 body) (let t26 vt) (let t27 (ic_expr t24 t25 t26)) (let t28 (make-variant IFunc_String IFn t19 t23 t27)))
+)
+
+(defn ic_defn_short (?0 ?0 ?0)
+(begin (let t0 kids) (let t1 (rest_ast t0)) (let t2 (first_ast t1)) (let nm t2) (let t4 arena) (let t5 nm) (let t6 "") (let t7 (ident_name t5 t6)) (let t8 (str_intern t4 t7)) (let t9 (make-variant List_?261 Nil)) (let t10 0) (let t11 (make-variant Icnf_Int IConst t10)) (let t12 (make-variant IFunc_String IFn t8 t9 t11)))
+)
+
+(defn param_names (?0 ?0)
+(begin (let t0 node) (let ___match_result_2755 (match Ast t0 (AIdent (d40) acc) (AInt (d41) acc) (AFloat (d42) acc) (AString (d43) acc) (ABool (d44) acc) (AList (kids) (param_names_loop kids acc)))))
+)
+
+(defn param_names_loop (?0 ?0)
+(begin (let t0 kids) (let ___match_result_2768 (match List t0 (Cons (p rest) (param_names_loop rest unit)) (Nil () acc))))
+)
+
+(defn param_name (?0)
+(begin (let t0 p) (let ___match_result_2786 (match Ast t0 (AIdent (s) s) (AInt (d45) "") (AFloat (d46) "") (AString (d47) "") (ABool (d48) "") (AList (pkids) (ident_name (first_ast pkids) "")))))
+)
+
+(defn ic_expr (?0 ?0 ?0)
+(begin (let t0 ast) (let ___match_result_2816 (match Ast t0 (AIdent (n) (ic_ident arena n vt)) (AInt (v) unit) (AFloat (t) unit) (AString (s) unit) (ABool (b) unit) (AList (kids) (ic_form arena kids vt)))))
+)
+
+(defn ic_ident (?0 ?0 ?0)
+(begin (let t0 vt) (let t1 arena) (let t2 name) (let t3 (str_intern t1 t2)) (let t4 (vt_tag_of t0 t3)) (let tag t4) (let t6 tag) (let t7 -1) (let t8 (> t6 t7)) (let ___if_result_2840 (if t8 unit unit)))
+)
+
+(defn ic_form (?0 ?0 ?0)
+(begin (let t0 kids) (let ___match_result_2854 (match List t0 (Cons (head args) (ic_headed_form arena head args vt)) (Nil () unit))))
+)
+
+(defn ic_headed_form (?0 ?0 ?0 ?0)
+(begin (let t0 head) (let t1 "") (let t2 (ident_name t0 t1)) (let hname t2) (let t4 arena) (let t5 hname) (let t6 (ic_op_of t4 t5)) (let op t6) (let t8 op) (let t9 -1) (let t10 (> t8 t9)) (let ___if_result_2882 (if t10 (ic_binop arena op args vt) (ic_special arena hname args vt))))
+)
+
+(defn ic_special (?0 ?0 ?0 ?0)
+(begin (let t0 hname) (let t1 arena) (let t2 "let") (let t3 (str_intern t1 t2)) (let t4 (str_eq t0 t3)) (let t5 0) (let t6 (> t4 t5)) (let ___if_result_3056 (if t6 (ic_let_form arena args vt) (if (> (str_eq hname (str_intern arena "let-mut")) 0) (ic_let_form arena args vt) (if (> (str_eq hname (str_intern arena "if")) 0) (ic_if_form arena args vt) (if (> (str_eq hname (str_intern arena "while")) 0) (ic_while_form arena args vt) (if (> (str_eq hname (str_intern arena "set!")) 0) (ic_set_form arena args vt) (if (> (str_eq hname (str_intern arena "begin")) 0) unit (if (> (str_eq hname (str_intern arena "file-close")) 0) unit (if (> (str_eq hname (str_intern arena "file-write")) 0) unit (if (> (str_eq hname (str_intern arena "file-read")) 0) unit (if (> (str_eq hname (str_intern arena "file-open")) 0) unit (if (> (str_eq hname (str_intern arena "print")) 0) (ic_print arena args vt) (if (> (str_eq hname (str_intern arena "ffi-call")) 0) (ic_ffi arena args vt) (if (> (str_eq hname (str_intern arena "match")) 0) (ic_match_form arena args vt) (ic_call_or_variant arena hname args vt))))))))))))))))
+)
+
+(defn ic_call_or_variant (?0 ?0 ?0 ?0)
+(begin (let t0 vt) (let t1 arena) (let t2 hname) (let t3 (str_intern t1 t2)) (let t4 (vt_tag_of t0 t3)) (let tag t4) (let t6 tag) (let t7 -1) (let t8 (> t6 t7)) (let ___if_result_3088 (if t8 unit unit)))
+)
+
+(defn ic_let_form (?0 ?0 ?0)
+(begin (let t0 args) (let t1 (list_length t0)) (let t2 2) (let t3 (> t1 t2)) (let ___if_result_3102 (if t3 (ic_let_full arena args vt) unit)))
+)
+
+(defn ic_let_full (?0 ?0 ?0)
+(begin (let t0 args) (let t1 (first_ast t0)) (let nm t1) (let t3 args) (let t4 (rest_ast t3)) (let t5 (first_ast t4)) (let valexpr t5) (let t7 arena) (let t8 nm) (let t9 "") (let t10 (ident_name t8 t9)) (let t11 (str_intern t7 t10)) (let t12 arena) (let t13 valexpr) (let t14 vt) (let t15 (ic_expr t12 t13 t14)) (let t16 arena) (let t17 args) (let t18 (rest_ast t17)) (let t19 (rest_ast t18)) (let t20 vt) (let t21 (ic_body_forms t16 t19 t20)) (let t22 (make-variant Icnf_Int ILet t11 t15 t21)))
+)
+
+(defn ic_body_forms (?0 ?0 ?0)
+(begin (let t0 forms) (let t1 (list_length t0)) (let t2 1) (let t3 (== t1 t2)) (let ___if_result_3148 (if t3 (ic_expr arena (first_ast forms) vt) unit)))
+)
+
+(defn ic_if_form (?0 ?0 ?0)
+(begin (let t0 args) (let t1 (list_length t0)) (let t2 2) (let t3 (> t1 t2)) (let ___if_result_3177 (if t3 unit unit)))
+)
+
+(defn ic_while_form (?0 ?0 ?0)
+(begin (let t0 args) (let ___match_result_3195 (match List t0 (Cons (c rest) unit) (Nil () unit))))
+)
+
+(defn ic_set_form (?0 ?0 ?0)
+(begin (let t0 args) (let t1 (list_length t0)) (let t2 1) (let t3 (> t1 t2)) (let ___if_result_3218 (if t3 unit unit)))
+)
+
+(defn ic_binop (?0 ?0 ?0 ?0)
+(begin (let t0 args) (let t1 (list_length t0)) (let t2 2) (let t3 (== t1 t2)) (let ___if_result_3262 (if t3 unit (if (== (list_length args) 1) (if (== op 1) unit unit) unit))))
+)
+
+(defn ic_print (?0 ?0 ?0)
+(begin (let t0 args) (let t1 (is_nil t0)) (let ___if_result_3277 (if t1 unit (ic_print_step arena (first_ast args) (rest_ast args) vt))))
+)
+
+(defn ic_print_step (?0 ?0 ?0 ?0)
+(begin (let t0 rest) (let t1 (is_nil t0)) (let ___if_result_3302 (if t1 unit unit)))
+)
+
+(defn ic_ffi (?0 ?0 ?0)
+(begin (let t0 args) (let ___match_result_3327 (match List t0 (Cons (sym tail) (if (> (list_length tail) 1) (ic_arg_list arena (butlast tail (no_asts)) vt) (ic_arg_list arena unit vt))) (Nil () unit))))
+)
+
+(defn ic_match_form (?0 ?0 ?0)
+(begin (let t0 args) (let ___match_result_3347 (match List t0 (Cons (scr arms) unit) (Nil () unit))))
+)
+
+(defn ic_arms (?0 ?0 ?0 ?0)
+(begin (let t0 arms) (let ___match_result_3366 (match List t0 (Cons (arm rest) (ic_arms arena rest unit vt)) (Nil () acc))))
+)
+
+(defn ic_arm (?0 ?0 ?0)
+(begin (let t0 arm) (let ___match_result_3391 (match Ast t0 (AIdent (d49) (ic_arm_none arena)) (AInt (d50) (ic_arm_none arena)) (AFloat (d51) (ic_arm_none arena)) (AString (d52) (ic_arm_none arena)) (ABool (d53) (ic_arm_none arena)) (AList (parts) (ic_arm_parts arena parts vt)))))
+)
+
+(defn ic_arm_none (?0)
+(begin (let t0 arena) (let t1 "?") (let t2 (str_intern t0 t1)) (let t3 -1) (let t4 (make-variant List_?261 Nil)) (let t5 0) (let t6 (make-variant Icnf_Int IConst t5)) (let t7 (make-variant IArm_String IArm t2 t3 t4 t6)))
+)
+
+(defn ic_arm_parts (?0 ?0 ?0)
+(begin (let t0 parts) (let ___match_result_3439 (match List t0 (Cons (vname pats) unit) (Nil () unit))))
+)
+
+(defn bind_names (?0 ?0 ?0)
+(begin (let t0 pats) (let t1 (is_nil t0)) (let ___if_result_3454 (if t1 (list_reverse acc) (bind_names_step arena (first_ast pats) (rest_ast pats) acc))))
+)
+
+(defn bind_names_step (?0 ?0 ?0 ?0)
+(begin (let t0 t) (let t1 (is_nil t0)) (let ___if_result_3473 (if t1 (list_reverse acc) (bind_names arena t unit))))
+)
+
+(defn ic_arg_list (?0 ?0 ?0)
+(begin (let t0 arena) (let t1 args) (let t2 vt) (let t3 (no_icnfs)) (let t4 (ic_arg_list_acc t0 t1 t2 t3)))
+)
+
+(defn ic_arg_list_acc (?0 ?0 ?0 ?0)
+(begin (let t0 args) (let ___match_result_3501 (match List t0 (Cons (a rest) (ic_arg_list_acc arena rest vt unit)) (Nil () (list_reverse acc)))))
+)
+
+(defn cg_label_pair (?0)
+(begin (let t0 st) (let t1 (cg_label_new t0)) (let t2 (cg_label_pair_2 t1)))
+)
+
+(defn cg_label_pair_2 (?0)
+(begin (let t0 r1) (let ___match_result_3514 (match CGR t0 (CGR (st1 d1 la) (cg_label_second st1 la)))))
+)
+
+(defn cg_label_second (?0 ?0)
+(begin (let t0 st1) (let t1 (cg_label_new t0)) (let ___match_result_3526 (match CGR t1 (CGR (st2 d2 lb) unit))))
+)
+
+(defn no_fnnames ()
+(begin (let t0 (make-variant Option_?89 None)))
+)
+
+(defn cg_new (?0)
+(begin (let t0 arena) (let t1 8388608) (let t2 (arena_alloc_zeroed t0 t1)) (let buf t2) (let t4 arena) (let t5 buf) (let t6 0) (let t7 8) (let t8 (no_rentries)) (let t9 (no_fnnames)) (let t10 (make-variant CGState_Int CGS t4 t5 t6 t7 t8 t9)))
+)
+
+(defn cg_with_fnname (?0 ?0)
+(begin (let t0 st) (let ___match_result_3560 (match CGState t0 (CGS (a b n s rd fns2) unit))))
+)
+
+(defn cgg_fns (?0)
+(begin (let t0 st) (let ___match_result_3570 (match CGState t0 (CGS (d70 d71 d72 d73 d74 fns) fns))))
+)
+
+(defn cg_fn_known (?0 ?0)
+(begin (let t0 st) (let t1 (cgg_fns t0)) (let t2 nm) (let t3 (cg_fn_search t1 t2)))
+)
+
+(defn cg_fn_search (?0 ?0)
+(begin (let t0 fns) (let t1 (is_nil t0)) (let ___if_result_3588 (if t1 0 (cg_fn_check_head (fnhead fns) (fntail fns) nm))))
+)
+
+(defn fnhead (?0)
+(begin (let t0 xs) (let ___match_result_3595 (match List t0 (Cons (h d) h) (Nil () unit))))
+)
+
+(defn fntail (?0)
+(begin (let t0 xs) (let ___match_result_3602 (match List t0 (Cons (h d) d) (Nil () unit))))
+)
+
+(defn cg_fn_check_head (?0 ?0 ?0)
+(begin (let t0 h) (let ___match_result_3616 (match FnName t0 (FN (s) (> (str_eq s nm) 0)) (FNNil () (cg_fn_search t nm)))))
+)
+
+(defn no_rentries ()
+(begin (let t0 (make-variant List_?261 Nil)))
+)
+
+(defn cg_buffer (?0)
+(begin (let t0 st) (let ___match_result_3627 (match CGState t0 (CGS (d1 buf d2 d3 d4 d5) buf))))
+)
+
+(defn cg_with_rodata (?0 ?0)
+(begin (let t0 st) (let ___match_result_3646 (match CGState t0 (CGS (a b n s rd fns) unit))))
+)
+
+(defn cg_emit (?0 ?0)
+(begin (let t0 st) (let ___match_result_3662 (match CGState t0 (CGS (d6 buf d7 d8 d9 d10) st))))
+)
+
+(defn cg_emit_int (?0 ?0)
+(begin (let t0 st) (let ___match_result_3682 (match CGState t0 (CGS (arena buf d10 d11 d12 d13) st))))
+)
+
+(defn cg_nl (?0)
+(begin (let t0 st) (let t1 "
+") (let t2 (cg_emit t0 t1)))
+)
+
+(defn cg_label_new (?0)
+(begin (let t0 st) (let ___match_result_3728 (match CGState t0 (CGS (arena buf n slot rd fns) unit))))
+)
+
+(defn cg_new_slot (?0)
+(begin (let t0 st) (let ___match_result_3750 (match CGState t0 (CGS (a b n off rd fns) unit))))
+)
+
+(defn cg_string_const (?0 ?0)
+(begin (let t0 st) (let t1 (cg_label_new t0)) (let ___match_result_3780 (match CGR t1 (CGR (st2 d13 lbl) (cg_nl (cg_emit st5 "]"))))))
+)
+
+(defn cg_float_const (?0 ?0)
+(begin (let t0 st) (let t1 (cg_label_new t0)) (let ___match_result_3816 (match CGR t1 (CGR (st2 d14 lbl) (cg_nl (cg_emit st6 "    movq rax, xmm0"))))))
+)
+
+(defn cg_rodata_of (?0)
+(begin (let t0 st) (let ___match_result_3826 (match CGState t0 (CGS (d15 d16 d17 d18 rd d19) rd))))
+)
+
+(defn kind_of (?0 ?0)
+(begin (let t0 e) (let ___match_result_3895 (match Icnf t0 (IConst () 0) (IStr (d19) 1) (IFlt (d20) 2) (ILoad (n) (env_kind_of env n)) (IBinop (op l r) (if (> op 4) 0 (if (== (kind_of env l) 2) 2 (if (== (kind_of env r) 2) 2 0)))) (ICall (d23 d24) 0) (IFfi (d25 d26) 0) (IPrint (d27) 0) (IIf (d21 t d22) (kind_of env t)) (IWhile (d28 d29) 0) (ISet (d30 d31) 0) (ILet (d32 d33 d34) 0) (ISeq (d35) 0) (IVariant (d36 d37 d38) 0) (IMatch (d39 d40) 0))))
+)
+
+(defn cg_expr (?0 ?0 ?0)
+(begin (let t0 e) (let ___match_result_4051 (match Icnf t0 (IConst (v) (cg_nl st3)) (IStr (s) (cg_string_const st s)) (IFlt (t) (cg_float_const st t)) (ILoad (n) (cg_load_value st env n)) (IBinop (op l r) (if (> (if (== (kind_of env l) 2) 1 (if (== (kind_of env r) 2) 1 0)) 0) (cg_fbinop st env op l r) (cg_ibinop st env op l r))) (ICall (name args) (cg_call_args st env name args true 0)) (IFfi (sym args) (cg_call_args st env sym args false 0)) (IPrint (a) (cg_print st env a)) (IIf (c t eb) (cg_if_dispatch st env c t eb)) (IWhile (c body) (cg_while_dispatch st env c body)) (ISet (n v) (cg_nl (cg_emit st4 "], rax"))) (ILet (n v body) (cg_let_dispatch st env n v body)) (ISeq (es) (cg_seq st env es)) (IVariant (d46 tag fields) (cg_variant st env tag fields)) (IMatch (scr arms) (cg_match st env scr arms)))))
+)
+
+(defn cg_load_value (?0 ?0 ?0)
+(begin (let t0 env) (let t1 n) (let t2 (env_lookup t0 t1)) (let t3 0) (let t4 (== t2 t3)) (let ___if_result_4070 (if t4 (cg_load_nonslot st env n) (cg_load_slot st n (env_lookup env n)))))
+)
+
+(defn cg_load_slot (?0 ?0 ?0)
+(begin (let t0 st) (let t1 "    mov rax, [rbp") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 st2) (let t5 off) (let t6 (cg_emit_int t4 t5)) (let st3 t6) (let t8 st3) (let t9 "]") (let t10 (cg_emit t8 t9)) (let t11 (cg_nl t10)))
+)
+
+(defn cg_load_nonslot (?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_load_unresolved t0)))
+)
+
+(defn cg_load_fnref (?0 ?0)
+(begin (let t0 st) (let t1 "    lea rax, [rip+f_") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 st2) (let t5 st) (let t6 (cg_arena_of t5)) (let t7 n) (let t8 (ffi-call zyl_cstr_sanitize t6 t7 1000)) (let t9 (cg_emit t4 t8)) (let t10 (cg_nl t9)))
+)
+
+(defn cg_load_unresolved (?0)
+(begin (let t0 st) (let t1 "    mov rax, [rbp") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 st2) (let t5 0) (let t6 (cg_emit_int t4 t5)) (let st3 t6) (let t8 st3) (let t9 "]") (let t10 (cg_emit t8 t9)) (let t11 (cg_nl t10)))
+)
+
+(defn cg_if_dispatch (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_label_pair t0)) (let t2 env) (let t3 c) (let t4 t) (let t5 eb) (let t6 (cg_if_labels t1 t2 t3 t4 t5)))
+)
+
+(defn cg_if_labels (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 p) (let ___match_result_4153 (match CGP t0 (CGP (st lelse lend) (cg_if_parts st env c t eb lelse lend)))))
+)
+
+(defn cg_while_dispatch (?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_label_pair t0)) (let t2 env) (let t3 c) (let t4 body) (let t5 (cg_while_labels t1 t2 t3 t4)))
+)
+
+(defn cg_while_labels (?0 ?0 ?0 ?0)
+(begin (let t0 p) (let ___match_result_4179 (match CGP t0 (CGP (st lstart lend) (cg_while_parts st env c body lstart lend)))))
+)
+
+(defn cg_let_dispatch (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_new_slot t0)) (let ___match_result_4197 (match CGR t1 (CGR (st2 off d45) (cg_let_store st2 env n v body off)))))
+)
+
+(defn cg_let_store (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 env) (let t1 v) (let t2 (kind_of t0 t1)) (let k t2) (let t4 st) (let t5 env) (let t6 v) (let t7 (cg_expr t4 t5 t6)) (let st3 t7) (let t9 st3) (let t10 "    mov [rbp") (let t11 (cg_emit t9 t10)) (let st4 t11) (let t13 st4) (let t14 off) (let t15 (cg_emit_int t13 t14)) (let st5 t15) (let t17 st5) (let t18 "], rax") (let t19 (cg_emit t17 t18)) (let t20 (cg_nl t19)) (let st6 t20) (let t22 st6) (let t23 n) (let t24 off) (let t25 k) (let t26 env) (let t27 (make-variant Env_String EnvBind t23 t24 t25 t26)) (let t28 body) (let t29 (cg_expr t22 t27 t28)))
+)
+
+(defn cg_if_parts (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 c) (let t3 (cg_expr t0 t1 t2)) (let st2 t3) (let t5 st2) (let t6 "    test rax, rax") (let t7 (cg_emit t5 t6)) (let st3 t7) (let t9 st3) (let t10 (cg_nl t9)) (let st4 t10) (let t12 st4) (let t13 "    je ") (let t14 (cg_emit t12 t13)) (let st5 t14) (let t16 st5) (let t17 lelse) (let t18 (cg_emit t16 t17)) (let t19 (cg_nl t18)) (let st6 t19) (let t21 st6) (let t22 env) (let t23 t) (let t24 (cg_expr t21 t22 t23)) (let st7 t24) (let t26 st7) (let t27 "    jmp ") (let t28 (cg_emit t26 t27)) (let st8 t28) (let t30 st8) (let t31 lend) (let t32 (cg_emit t30 t31)) (let t33 (cg_nl t32)) (let st9 t33) (let t35 st9) (let t36 lelse) (let t37 (cg_emit_label t35 t36)) (let st10 t37) (let t39 st10) (let t40 env) (let t41 eb) (let t42 (cg_expr t39 t40 t41)) (let st11 t42) (let t44 st11) (let t45 lend) (let t46 (cg_emit_label t44 t45)))
+)
+
+(defn cg_while_parts (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 lstart) (let t2 (cg_emit_label t0 t1)) (let st2 t2) (let t4 st2) (let t5 env) (let t6 c) (let t7 (cg_expr t4 t5 t6)) (let st3 t7) (let t9 st3) (let t10 "    test rax, rax") (let t11 (cg_emit t9 t10)) (let st4 t11) (let t13 st4) (let t14 (cg_nl t13)) (let st5 t14) (let t16 st5) (let t17 "    je ") (let t18 (cg_emit t16 t17)) (let st6 t18) (let t20 st6) (let t21 lend) (let t22 (cg_emit t20 t21)) (let t23 (cg_nl t22)) (let st7 t23) (let t25 st7) (let t26 env) (let t27 body) (let t28 (cg_expr t25 t26 t27)) (let st8 t28) (let t30 st8) (let t31 "    jmp ") (let t32 (cg_emit t30 t31)) (let st9 t32) (let t34 st9) (let t35 lstart) (let t36 (cg_emit t34 t35)) (let t37 (cg_nl t36)) (let st10 t37) (let t39 st10) (let t40 lend) (let t41 (cg_emit_label t39 t40)) (let st11 t41) (let t43 st11) (let t44 "    xor eax, eax") (let t45 (cg_emit_line t43 t44)))
+)
+
+(defn cg_emit_line (?0 ?0)
+(begin (let t0 st) (let t1 s) (let t2 (cg_emit t0 t1)) (let t3 (cg_nl t2)))
+)
+
+(defn cg_seq (?0 ?0 ?0)
+(begin (let t0 es) (let t1 (is_nil t0)) (let ___if_result_4400 (if t1 (cg_emit_line st "    xor eax, eax") (if (is_nil (tl2 es)) (cg_expr st env (ih_ic es)) (cg_seq st2 env (tl2 es))))))
+)
+
+(defn cg_ibinop (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 l) (let t3 (cg_expr t0 t1 t2)) (let st2 t3) (let t5 st2) (let t6 "    push rax") (let t7 (cg_emit_line t5 t6)) (let st3 t7) (let t9 st3) (let t10 env) (let t11 r) (let t12 (cg_expr t9 t10 t11)) (let st4 t12) (let t14 st4) (let t15 "    mov rcx, rax") (let t16 (cg_emit_line t14 t15)) (let st5 t16) (let t18 st5) (let t19 "    pop rax") (let t20 (cg_emit_line t18 t19)) (let st6 t20) (let t22 op) (let t23 5) (let t24 (< t22 t23)) (let ___if_result_4442 (if t24 (cg_arith_mnem st6 op) (cg_cmp_set st6 op))))
+)
+
+(defn cg_arith_mnem (?0 ?0)
+(begin (let t0 op) (let t1 3) (let t2 (== t0 t1)) (let ___if_result_4452 (if t2 (cg_emit_line st "    cqo") st)) (let st2 t3) (let t5 op) (let t6 0) (let t7 (== t5 t6)) (let ___if_result_4470 (if t7 "    add rax, rcx" (if (== op 1) "    sub rax, rcx" (if (== op 2) "    imul rax, rcx" "    idiv rcx")))) (let mnem t8) (let t10 st2) (let t11 mnem) (let t12 (cg_emit_line t10 t11)) (let st3 t12) (let t14 op) (let t15 4) (let t16 (== t14 t15)) (let ___if_result_4485 (if t16 (cg_emit_line st3 "    mov rax, rdx") st3)))
+)
+
+(defn cg_cmp_set (?0 ?0)
+(begin (let t0 st) (let t1 "    cmp rax, rcx") (let t2 (cg_emit_line t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    set") (let t6 (cg_emit t4 t5)) (let st3 t6) (let t8 op) (let t9 5) (let t10 (== t8 t9)) (let ___if_result_4534 (if t10 (cg_setcc st3 "l al") (if (== op 6) (cg_setcc st3 "g al") (if (== op 7) (cg_setcc st3 "le al") (if (== op 8) (cg_setcc st3 "ge al") (if (== op 9) (cg_setcc st3 "e al") (cg_setcc_ne st3))))))))
+)
+
+(defn cg_setcc (?0 ?0)
+(begin (let t0 st) (let t1 s) (let t2 (cg_emit t0 t1)) (let t3 (cg_nl t2)) (let st4 t3) (let t5 st4) (let t6 "    movzx rax, al") (let t7 (cg_emit_line t5 t6)))
+)
+
+(defn cg_setcc_ne (?0)
+(begin (let t0 st) (let t1 "ne al") (let t2 (cg_emit t0 t1)) (let t3 (cg_nl t2)) (let st4 t3) (let t5 st4) (let t6 "    movzx rax, al") (let t7 (cg_emit_line t5 t6)))
+)
+
+(defn cg_fbinop (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 l) (let t3 (cg_expr t0 t1 t2)) (let st2 t3) (let t5 st2) (let t6 "    push rax") (let t7 (cg_emit_line t5 t6)) (let st3 t7) (let t9 st3) (let t10 env) (let t11 r) (let t12 (cg_expr t9 t10 t11)) (let st4 t12) (let t14 st4) (let t15 "    movq xmm1, rax") (let t16 (cg_emit_line t14 t15)) (let st5 t16) (let t18 st5) (let t19 "    pop rax") (let t20 (cg_emit_line t18 t19)) (let st6 t20) (let t22 st6) (let t23 "    movq xmm0, rax") (let t24 (cg_emit_line t22 t23)) (let st7 t24) (let t26 op) (let t27 5) (let t28 (< t26 t27)) (let ___if_result_4602 (if t28 (cg_farith st7 op) (cg_fcmp st7 op))))
+)
+
+(defn cg_farith (?0 ?0)
+(begin (let t0 st) (let t1 "    ") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 op) (let t5 0) (let t6 (== t4 t5)) (let ___if_result_4633 (if t6 (cg_emit st2 "addsd") (if (== op 1) (cg_emit st2 "subsd") (if (== op 2) (cg_emit st2 "mulsd") (cg_emit st2 "divsd"))))) (let st3 t7) (let t9 st3) (let t10 " xmm0, xmm1") (let t11 (cg_emit_line t9 t10)) (let st4 t11) (let t13 st4) (let t14 "    movq rax, xmm0") (let t15 (cg_emit_line t13 t14)))
+)
+
+(defn cg_fcmp (?0 ?0)
+(begin (let t0 st) (let t1 "    comisd xmm0, xmm1") (let t2 (cg_emit_line t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    set") (let t6 (cg_emit t4 t5)) (let st3 t6) (let t8 op) (let t9 5) (let t10 (== t8 t9)) (let ___if_result_4692 (if t10 (cg_fsetcc st3 "b al") (if (== op 6) (cg_fsetcc st3 "a al") (if (== op 7) (cg_fsetcc st3 "be al") (if (== op 8) (cg_fsetcc st3 "ae al") (if (== op 9) (cg_fsetcc st3 "e al") (cg_fsetcc_ne st3))))))))
+)
+
+(defn cg_fsetcc (?0 ?0)
+(begin (let t0 st) (let t1 s) (let t2 (cg_emit t0 t1)) (let t3 (cg_nl t2)) (let st4 t3) (let t5 st4) (let t6 "    movzx rax, al") (let t7 (cg_emit_line t5 t6)))
+)
+
+(defn cg_fsetcc_ne (?0)
+(begin (let t0 st) (let t1 "ne al") (let t2 (cg_emit t0 t1)) (let t3 (cg_nl t2)) (let st4 t3) (let t5 st4) (let t6 "    movzx rax, al") (let t7 (cg_emit_line t5 t6)))
+)
+
+(defn cg_reg_of (?0)
+(begin (let t0 i) (let t1 0) (let t2 (== t0 t1)) (let ___if_result_4740 (if t2 "rdi" (if (== i 1) "rsi" (if (== i 2) "rdx" (if (== i 3) "rcx" (if (== i 4) "r8" "r9")))))))
+)
+
+(defn cg_call_args (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 args) (let t1 (is_nil t0)) (let ___if_result_4777 (if t1 (cg_call_fire st env name mangle i) (cg_call_args st3 env name (tl2 args) mangle (+ i 1)))))
+)
+
+(defn cg_hof_enabled ()
+(begin (let t0 1))
+)
+
+(defn cg_call_fire (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 env) (let t1 name) (let t2 (env_lookup t0 t1)) (let off t2) (let t4 off) (let t5 0) (let t6 (== t4 t5)) (let ___if_result_4812 (if t6 (cg_call_fire_direct st env name mangle i) (if (== (cg_hof_enabled) 1) (cg_call_fire_indirect st env name i off (cg_call_fire_unresolved st name)) unit))))
+)
+
+(defn cg_call_fire_unresolved (?0 ?0)
+(begin (let t0 st) (let t1 "    call ") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 st2) (let t5 "f_") (let t6 (cg_emit t4 t5)) (let st3 t6) (let t8 st3) (let t9 st) (let t10 (cg_arena_of t9)) (let t11 name) (let t12 (ffi-call zyl_cstr_sanitize t10 t11 1000)) (let t13 (cg_emit t8 t12)) (let t14 (cg_nl t13)))
+)
+
+(defn cg_call_fire_direct (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 i) (let t1 2) (let t2 (% t0 t1)) (let t3 1) (let t4 (== t2 t3)) (let ___if_result_4846 (if t4 1 0)) (let pad t5) (let t7 st) (let t8 i) (let t9 1) (let t10 (- t8 t9)) (let t11 (cg_pop_regs t7 t10)) (let st2 t11) (let t13 pad) (let t14 1) (let t15 (== t13 t14)) (let ___if_result_4863 (if t15 (cg_emit_line st2 "    sub rsp, 8") st2)) (let st3 t16) (let t18 st3) (let t19 "    call ") (let t20 (cg_emit t18 t19)) (let st4 t20) (let t22 mangle) (let ___if_result_4876 (if t22 (cg_emit st4 "f_") st4)) (let t24 st) (let t25 (cg_arena_of t24)) (let t26 name) (let t27 (ffi-call zyl_cstr_sanitize t25 t26 1000)) (let t28 (cg_emit t23 t27)) (let t29 (cg_nl t28)) (let st5 t29) (let t31 pad) (let t32 1) (let t33 (== t31 t32)) (let ___if_result_4896 (if t33 (cg_emit_line st5 "    add rsp, 8" st5) unit)))
+)
+
+(defn cg_call_fire_indirect (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 i) (let t1 2) (let t2 (% t0 t1)) (let t3 1) (let t4 (== t2 t3)) (let ___if_result_4909 (if t4 1 0)) (let pad t5) (let t7 st) (let t8 i) (let t9 1) (let t10 (- t8 t9)) (let t11 (cg_pop_regs t7 t10)) (let st2 t11) (let t13 pad) (let t14 1) (let t15 (== t13 t14)) (let ___if_result_4926 (if t15 (cg_emit_line st2 "    sub rsp, 8") st2)) (let st3 t16) (let t18 st3) (let t19 name) (let t20 off) (let t21 (cg_load_slot t18 t19 t20)) (let st4 t21) (let t23 st4) (let t24 "    call rax") (let t25 (cg_emit_line t23 t24)) (let st5 t25) (let t27 pad) (let t28 1) (let t29 (== t27 t28)) (let ___if_result_4947 (if t29 (cg_emit_line st5 "    add rsp, 8") st5)))
+)
+
+(defn cg_pop_regs (?0 ?0)
+(begin (let t0 j) (let t1 0) (let t2 (< t0 t1)) (let ___if_result_4971 (if t2 st (cg_pop_regs (cg_nl st3) (- j 1)))))
+)
+
+(defn cg_print (?0 ?0 ?0)
+(begin (let t0 env) (let t1 a) (let t2 (kind_of t0 t1)) (let k t2) (let t4 st) (let t5 env) (let t6 a) (let t7 (cg_expr t4 t5 t6)) (let st2 t7) (let t9 k) (let t10 2) (let t11 (== t9 t10)) (let ___if_result_5047 (if t11 (cg_emit_line st5 "    call printf") (if (== k 1) (cg_emit_line st5 "    call printf") (cg_emit_line st5 "    call printf")))))
+)
+
+(defn cg_variant (?0 ?0 ?0 ?0)
+(begin (let t0 fields) (let t1 (list_length t0)) (let n t1) (let t3 st) (let t4 env) (let t5 fields) (let t6 (cg_push_fields t3 t4 t5)) (let st2 t6) (let t8 n) (let t9 2) (let t10 (% t8 t9)) (let t11 1) (let t12 (== t10 t11)) (let ___if_result_5071 (if t12 (cg_emit_line st2 "    sub rsp, 8") st2)) (let st3 t13) (let t15 st3) (let t16 "    mov rdi, ") (let t17 (cg_emit t15 t16)) (let t18 8) (let t19 n) (let t20 1) (let t21 (+ t19 t20)) (let t22 (* t18 t21)) (let t23 (cg_emit_int t17 t22)) (let t24 (cg_nl t23)) (let st4 t24) (let t26 st4) (let t27 "    call malloc") (let t28 (cg_emit_line t26 t27)) (let st5 t28) (let t30 st5) (let t31 "    mov rbx, rax") (let t32 (cg_emit_line t30 t31)) (let st6 t32) (let t34 st6) (let t35 "    mov qword ptr [rbx], ") (let t36 (cg_emit t34 t35)) (let t37 tag) (let t38 (cg_emit_int t36 t37)) (let st7 t38) (let t40 st7) (let t41 (cg_nl t40)) (let st8 t41) (let t43 n) (let t44 2) (let t45 (% t43 t44)) (let t46 1) (let t47 (== t45 t46)) (let ___if_result_5116 (if t47 (cg_emit_line st8 "    add rsp, 8") st8)) (let st9 t48) (let t50 st9) (let t51 n) (let t52 1) (let t53 (- t51 t52)) (let t54 (cg_pop_fields t50 t53)) (let st10 t54) (let t56 st10) (let t57 "    mov rax, rbx") (let t58 (cg_emit_line t56 t57)))
+)
+
+(defn cg_push_fields (?0 ?0 ?0)
+(begin (let t0 fields) (let t1 (is_nil t0)) (let ___if_result_5149 (if t1 st (cg_push_fields (cg_emit_line st2 "    push rax") env (tl2 fields)))))
+)
+
+(defn cg_pop_fields (?0 ?0)
+(begin (let t0 j) (let t1 0) (let t2 (< t0 t1)) (let ___if_result_5186 (if t2 st (cg_pop_fields st5 (- j 1)))))
+)
+
+(defn cg_match (?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_label_pair t0)) (let t2 env) (let t3 scr) (let t4 arms) (let t5 (cg_match_labels t1 t2 t3 t4)))
+)
+
+(defn cg_match_labels (?0 ?0 ?0 ?0)
+(begin (let t0 p) (let ___match_result_5212 (match CGP t0 (CGP (st lend lzero) (cg_match_scrutinee st env scr arms lend lzero)))))
+)
+
+(defn cg_match_scrutinee (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 scr) (let t3 (cg_expr t0 t1 t2)) (let st3 t3) (let t5 st3) (let t6 "    push rax") (let t7 (cg_emit_line t5 t6)) (let st4 t7) (let t9 st4) (let t10 env) (let t11 arms) (let t12 lend) (let t13 lzero) (let t14 (cg_match_arms t9 t10 t11 t12 t13)))
+)
+
+(defn cg_match_arms (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 arms) (let t3 lend) (let t4 lzero) (let t5 (cg_arms t0 t1 t2 t3 t4)) (let st5 t5) (let t7 st5) (let t8 lzero) (let t9 (cg_emit_label t7 t8)) (let st6 t9) (let t11 st6) (let t12 "    mov qword ptr [rsp], 0") (let t13 (cg_emit_line t11 t12)) (let st7 t13) (let t15 st7) (let t16 lend) (let t17 (cg_emit_label t15 t16)) (let st8 t17) (let t19 st8) (let t20 "    pop rax") (let t21 (cg_emit_line t19 t20)))
+)
+
+(defn cg_arms (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arms) (let t1 (is_nil t0)) (let ___if_result_5284 (if t1 st (cg_arm_one st env (hd_ia arms) (tl2 arms) lend lzero))))
+)
+
+(defn cg_arm_one (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 arm) (let ___match_result_5305 (match IArm t0 (IArm (vname tag binds body) (cg_arm_tail st env tag binds body rest lend lzero)))))
+)
+
+(defn cg_arm_next (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 rest) (let t1 (is_nil t0)) (let ___if_result_5324 (if t1 st-after (cg_arms (cg_emit_label st-after lnext) env rest lend lzero))))
+)
+
+(defn cg_arm_tail (?0 ?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 rest) (let t2 lzero) (let t3 (cg_pick_label t0 t1 t2)) (let picked t3) (let t5 picked) (let t6 (cgr_str t5)) (let lnext t6) (let t8 picked) (let t9 (cgr_st t8)) (let st2 t9) (let t11 st2) (let t12 tag) (let t13 (cg_tag_check t11 t12)) (let st3 t13) (let t15 st3) (let t16 "    jne ") (let t17 (cg_emit t15 t16)) (let st4 t17) (let t19 st4) (let t20 lnext) (let t21 (cg_emit t19 t20)) (let t22 (cg_nl t21)) (let st5 t22) (let t24 st5) (let t25 env) (let t26 binds) (let t27 body) (let t28 rest) (let t29 lend) (let t30 lzero) (let t31 lnext) (let t32 (cg_arm_body t24 t25 t26 t27 t28 t29 t30 t31)))
+)
+
+(defn cg_pick_label (?0 ?0 ?0)
+(begin (let t0 rest) (let t1 (is_nil t0)) (let ___if_result_5383 (if t1 unit (cg_label_new st))))
+)
+
+(defn cg_arm_body (?0 ?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 binds) (let t3 0) (let t4 (cg_bind_fields t0 t1 t2 t3)) (let ___match_result_5407 (match CGE t4 (CGE (st6 arm-env) (cg_arm_finish st6 arm-env body rest lend lzero lnext)))))
+)
+
+(defn cg_arm_finish (?0 ?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 env) (let t2 body) (let t3 (cg_expr t0 t1 t2)) (let st7 t3) (let t5 st7) (let t6 "    mov [rsp], rax") (let t7 (cg_emit_line t5 t6)) (let st8 t7) (let t9 st8) (let t10 "    jmp ") (let t11 (cg_emit t9 t10)) (let st9 t11) (let t13 st9) (let t14 lend) (let t15 (cg_emit t13 t14)) (let t16 (cg_nl t15)) (let st10 t16) (let t18 st) (let t19 env) (let t20 rest) (let t21 lend) (let t22 lzero) (let t23 lnext) (let t24 st10) (let t25 (cg_arm_next t18 t19 t20 t21 t22 t23 t24)))
+)
+
+(defn cgr_st (?0)
+(begin (let t0 r) (let ___match_result_5451 (match CGR t0 (CGR (s d49 d50) s))))
+)
+
+(defn cgr_str (?0)
+(begin (let t0 r) (let ___match_result_5458 (match CGR t0 (CGR (d51 d52 s) s))))
+)
+
+(defn cg_tag_check (?0 ?0)
+(begin (let t0 st) (let t1 "    mov rax, [rsp]") (let t2 (cg_emit_line t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    mov rax, [rax]") (let t6 (cg_emit_line t4 t5)) (let st3 t6) (let t8 st3) (let t9 "    cmp rax, ") (let t10 (cg_emit t8 t9)) (let st4 t10) (let t12 st4) (let t13 tag) (let t14 (cg_emit_int t12 t13)) (let t15 (cg_nl t14)))
+)
+
+(defn cg_bind_fields (?0 ?0 ?0 ?0)
+(begin (let t0 binds) (let t1 (is_nil t0)) (let ___if_result_5494 (if t1 unit (cg_bind_one st env binds j))))
+)
+
+(defn cg_bind_one (?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 j) (let t2 (cg_load_field t0 t1)) (let st2 t2) (let t4 binds) (let t5 (shd t4)) (let b t5) (let t7 b) (let t8 st) (let t9 (cg_arena_of t8)) (let t10 "_") (let t11 (str_intern t9 t10)) (let t12 (str_eq t7 t11)) (let t13 0) (let t14 (> t12 t13)) (let ___if_result_5530 (if t14 (cg_bind_fields st2 env (tl2 binds) (+ j 1)) (cg_bind_slot st2 env binds j b))))
+)
+
+(defn cg_bind_slot (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 (cg_new_slot t0)) (let ___match_result_5548 (match CGR t1 (CGR (st3 off d53) (cg_bind_store st3 env binds j b off)))))
+)
+
+(defn cg_bind_store (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 st) (let t1 off) (let t2 (cg_store_rax_slot t0 t1)) (let st4 t2) (let t4 st4) (let t5 b) (let t6 off) (let t7 0) (let t8 env) (let t9 (make-variant Env_String EnvBind t5 t6 t7 t8)) (let t10 binds) (let t11 (tl2 t10)) (let t12 j) (let t13 1) (let t14 (+ t12 t13)) (let t15 (cg_bind_fields t4 t9 t11 t14)))
+)
+
+(defn cg_load_field (?0 ?0)
+(begin (let t0 st) (let t1 "    mov rax, [rsp]") (let t2 (cg_emit_line t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    mov rax, [rax+") (let t6 (cg_emit t4 t5)) (let st3 t6) (let t8 st3) (let t9 8) (let t10 j) (let t11 1) (let t12 (+ t10 t11)) (let t13 (* t9 t12)) (let t14 (cg_emit_int t8 t13)) (let st4 t14) (let t16 st4) (let t17 "]") (let t18 (cg_emit t16 t17)) (let t19 (cg_nl t18)))
+)
+
+(defn cg_store_rax_slot (?0 ?0)
+(begin (let t0 st) (let t1 "    mov [rbp") (let t2 (cg_emit t0 t1)) (let st2 t2) (let t4 st2) (let t5 off) (let t6 (cg_emit_int t4 t5)) (let st3 t6) (let t8 st3) (let t9 "], rax") (let t10 (cg_emit t8 t9)) (let t11 (cg_nl t10)))
+)
+
+(defn cg_emit_label (?0 ?0)
+(begin (let t0 st) (let t1 lbl) (let t2 (cg_emit t0 t1)) (let t3 ":") (let t4 (cg_emit t2 t3)) (let t5 (cg_nl t4)))
+)
+
+(defn icnf_size (?0)
+(begin (let t0 e) (let ___match_result_5717 (match Icnf t0 (IConst (d54) 1) (IStr (d55) 1) (IFlt (d56) 1) (ILoad (d57) 1) (IBinop (d58 l r) (+ (+ 3 (icnf_size l)) (icnf_size r))) (ICall (d59 args) (+ 2 (icnf_count_list args))) (IFfi (d60 args) (+ 2 (icnf_count_list args))) (IPrint (a) (+ 1 (icnf_size a))) (IIf (c t eb) (+ (+ (+ 4 (icnf_size c)) (icnf_size t)) (icnf_size eb))) (IWhile (c b) (+ (+ 3 (icnf_size c)) (icnf_size b))) (ISet (d61 v) (+ 2 (icnf_size v))) (ILet (d62 v b) (+ (+ 3 (icnf_size v)) (icnf_size b))) (ISeq (es) (+ 1 (icnf_count_list es))) (IVariant (d63 d64 fields) (+ 1 (icnf_count_list fields))) (IMatch (scr arms) (+ (+ 2 (icnf_size scr)) (icnf_count_arms arms))))))
+)
+
+(defn icnf_count_list (?0)
+(begin (let t0 xs) (let ___match_result_5728 (match List t0 (Cons (h t) (+ (icnf_size h) (icnf_count_list t))) (Nil () 0))))
+)
+
+(defn icnf_count_arms (?0)
+(begin (let t0 xs) (let t1 (is_nil t0)) (let ___if_result_5738 (if t1 0 (icnf_arm_size (hd_ia xs) (tl2 xs)))))
+)
+
+(defn icnf_arm_size (?0 ?0)
+(begin (let t0 arm) (let ___match_result_5753 (match IArm t0 (IArm (d65 d66 d67 body) (+ (+ 1 (icnf_size body)) (icnf_count_arms rest))))))
+)
+
+(defn cg_reset_slots (?0 ?0)
+(begin (let t0 st) (let ___match_result_5868 (match CGState t0 (CGS (a b n d69 rd fns) unit))))
+)
+
+(defn cg_param_env (?0 ?0 ?0)
+(begin (let t0 params) (let t1 (is_nil t0)) (let ___if_result_5892 (if t1 acc (cg_param_env (tl2 params) (+ i 1) unit))))
+)
+
+(defn cg_param_spills (?0 ?0 ?0)
+(begin (let t0 i) (let t1 n) (let t2 (>= t0 t1)) (let ___if_result_5933 (if t2 st (cg_param_spills (cg_nl st5) (+ i 1) n))))
+)
+
+(defn cg_collect_fnnames (?0 ?0)
+(begin (let t0 fns) (let t1 (is_nil t0)) (let ___if_result_5945 (if t1 st (cg_collect_one st (fnhead_if fns) (tl2 fns)))))
+)
+
+(defn fnhead_if (?0)
+(begin (let t0 xs) (let ___match_result_5956 (match List t0 (Cons (f d77) f) (Nil () unit))))
+)
+
+(defn cg_collect_one (?0 ?0 ?0)
+(begin (let t0 f) (let ___match_result_5969 (match IFunc t0 (IFn (nm d78 d79) (cg_collect_fnnames (cg_with_fnname st nm) rest)))))
+)
+
+(defn cg_program (?0 ?0)
+(begin (let t0 st) (let t1 fns) (let t2 (cg_collect_fnnames t0 t1)) (let st0 t2) (let t4 st0) (let t5 fns) (let t6 (cg_program_run t4 t5)))
+)
+
+(defn cg_program_run (?0 ?0)
+(begin (let t0 st) (let t1 (cg_header t0)) (let st1 t1) (let t3 st1) (let t4 fns) (let t5 (cg_functions t3 t4)) (let st2 t5) (let t7 st2) (let t8 (cg_entry_stub t7)) (let st3 t8) (let t10 st3) (let t11 (cg_format_strings t10)) (let st4 t11) (let t13 st4) (let t14 st4) (let t15 (cg_rodata_of t14)) (let t16 (cg_reverse_rodata t15)) (let t17 (cg_rodata_emit_list t13 t16)))
+)
+
+(defn cg_reverse_rodata (?0)
+(begin (let t0 xs) (let t1 (no_rentries)) (let t2 (cg_rev_acc t0 t1)))
+)
+
+(defn cg_rev_acc (?0 ?0)
+(begin (let t0 xs) (let ___match_result_6019 (match List t0 (Cons (h t) (cg_rev_acc t unit)) (Nil () acc))))
+)
+
+(defn cg_header (?0)
+(begin (let t0 st) (let t1 ".intel_syntax noprefix") (let t2 (cg_emit_line t0 t1)) (let st1 t2) (let t4 st1) (let t5 ".text") (let t6 (cg_emit_line t4 t5)) (let st2 t6) (let t8 st2) (let t9 ".globl main") (let t10 (cg_emit_line t8 t9)))
+)
+
+(defn cg_entry_stub (?0)
+(begin (let t0 st) (let t1 "main:") (let t2 (cg_emit_line t0 t1)) (let st1 t2) (let t4 st1) (let t5 "    push rbp") (let t6 (cg_emit_line t4 t5)) (let st2 t6) (let t8 st2) (let t9 "    mov rbp, rsp") (let t10 (cg_emit_line t8 t9)) (let st3 t10) (let t12 st3) (let t13 "    call f_main") (let t14 (cg_emit_line t12 t13)) (let st4 t14) (let t16 st4) (let t17 "    xor eax, eax") (let t18 (cg_emit_line t16 t17)) (let st5 t18) (let t20 st5) (let t21 "    pop rbp") (let t22 (cg_emit_line t20 t21)) (let st6 t22) (let t24 st6) (let t25 "    ret") (let t26 (cg_emit_line t24 t25)))
+)
+
+(defn cg_function (?0 ?0)
+(begin (let t0 f) (let ___match_result_5851 (match IFunc t0 (IFn (name params body) (cg_emit_line st12 "    ret")))))
+)
+
+(defn cg_format_strings (?0)
+(begin (let t0 st) (let t1 ".section .rodata") (let t2 (cg_emit_line t0 t1)) (let st1 t2) (let t4 st1) (let t5 ".Lfmtd:") (let t6 (cg_emit_line t4 t5)) (let st2 t6) (let t8 st2) (let t9 "    .string \"%d\\n\"") (let t10 (cg_emit_line t8 t9)) (let st3 t10) (let t12 st3) (let t13 ".Lfmtf:") (let t14 (cg_emit_line t12 t13)) (let st4 t14) (let t16 st4) (let t17 "    .string \"%f\\n\"") (let t18 (cg_emit_line t16 t17)) (let st5 t18) (let t20 st5) (let t21 ".Lfmts:") (let t22 (cg_emit_line t20 t21)) (let st6 t22) (let t24 st6) (let t25 "    .string \"%s\\n\"") (let t26 (cg_emit_line t24 t25)))
+)
+
+(defn cg_functions (?0 ?0)
+(begin (let t0 fns) (let t1 (is_nil t0)) (let ___if_result_6117 (if t1 st (cg_functions st2 (tl2 fns)))))
+)
+
+(defn cg_rodata_entry (?0 ?0)
+(begin (let t0 e) (let ___match_result_6136 (match REntry t0 (REntry (lbl text kind) (if (== kind 0) (cg_str_entry st lbl text) (cg_flt_entry st lbl text))))))
+)
+
+(defn cg_escape (?0 ?0)
+(begin (let t0 s) (let t1 (alloc_strlen t0)) (let n t1) (let t3 arena) (let t4 s) (let t5 n) (let t6 0) (let t7 arena) (let t8 2) (let t9 n) (let t10 (* t8 t9)) (let t11 1) (let t12 (+ t10 t11)) (let t13 (arena_alloc_zeroed t7 t12)) (let t14 (cg_esc_loop t3 t4 t5 t6 t13)))
+)
+
+(defn cg_esc_loop (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 i) (let t1 n) (let t2 (>= t0 t1)) (let ___if_result_6173 (if t2 out (cg_esc_ch arena s n i out (byte_at s i)))))
+)
+
+(defn cg_esc_ch (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 c) (let t1 92) (let t2 (== t0 t1)) (let ___if_result_6218 (if t2 (cg_esc_both arena s n i out c) (if (== c 34) (cg_esc_quote arena s n i out c) (if (== c 10) (cg_esc_newline arena s n i out) (cg_esc_one arena s n i out c))))))
+)
+
+(defn cg_esc_one (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 out) (let t1 arena) (let t2 s) (let t3 i) (let t4 1) (let t5 (sub_str t1 t2 t3 t4)) (let t6 (buf-append t0 t5)) (let t7 arena) (let t8 s) (let t9 n) (let t10 i) (let t11 1) (let t12 (+ t10 t11)) (let t13 out) (let t14 (cg_esc_loop t7 t8 t9 t12 t13)))
+)
+
+(defn cg_esc_both (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 out) (let t1 arena) (let t2 s) (let t3 i) (let t4 1) (let t5 (sub_str t1 t2 t3 t4)) (let t6 (buf-append t0 t5)) (let t7 out) (let t8 arena) (let t9 s) (let t10 i) (let t11 1) (let t12 (sub_str t8 t9 t10 t11)) (let t13 (buf-append t7 t12)) (let t14 arena) (let t15 s) (let t16 n) (let t17 i) (let t18 1) (let t19 (+ t17 t18)) (let t20 out) (let t21 (cg_esc_loop t14 t15 t16 t19 t20)))
+)
+
+(defn cg_esc_quote (?0 ?0 ?0 ?0 ?0 ?0)
+(begin (let t0 out) (let t1 arena) (let t2 "\\") (let t3 (str_intern t1 t2)) (let t4 (buf-append t0 t3)) (let t5 out) (let t6 arena) (let t7 s) (let t8 i) (let t9 1) (let t10 (sub_str t6 t7 t8 t9)) (let t11 (buf-append t5 t10)) (let t12 arena) (let t13 s) (let t14 n) (let t15 i) (let t16 1) (let t17 (+ t15 t16)) (let t18 out) (let t19 (cg_esc_loop t12 t13 t14 t17 t18)))
+)
+
+(defn cg_esc_newline (?0 ?0 ?0 ?0 ?0)
+(begin (let t0 out) (let t1 arena) (let t2 "\\") (let t3 (str_intern t1 t2)) (let t4 (buf-append t0 t3)) (let t5 out) (let t6 arena) (let t7 "n") (let t8 (str_intern t6 t7)) (let t9 (buf-append t5 t8)) (let t10 arena) (let t11 s) (let t12 n) (let t13 i) (let t14 1) (let t15 (+ t13 t14)) (let t16 out) (let t17 (cg_esc_loop t10 t11 t12 t15 t16)))
+)
+
+(defn cg_str_entry (?0 ?0 ?0)
+(begin (let t0 st) (let t1 lbl) (let t2 (cg_label_def t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    .string \"") (let t6 (cg_emit t4 t5)) (let st4 t6) (let t8 st4) (let t9 st) (let t10 (cg_arena_of t9)) (let t11 content) (let t12 (cg_escape t10 t11)) (let t13 (cg_emit t8 t12)) (let st5 t13) (let t15 st5) (let t16 "\"") (let t17 (cg_emit t15 t16)) (let t18 (cg_nl t17)))
+)
+
+(defn cg_label_def (?0 ?0)
+(begin (let t0 st) (let t1 lbl) (let t2 (cg_emit t0 t1)) (let t3 ":") (let t4 (cg_emit t2 t3)) (let t5 (cg_nl t4)))
+)
+
+(defn cg_flt_entry (?0 ?0 ?0)
+(begin (let t0 st) (let t1 lbl) (let t2 (cg_label_def t0 t1)) (let st2 t2) (let t4 st2) (let t5 "    .double ") (let t6 (cg_emit t4 t5)) (let st4 t6) (let t8 st4) (let t9 text) (let t10 (cg_emit t8 t9)) (let t11 (cg_nl t10)))
+)
+
+(defn cg_rodata_emit_list (?0 ?0)
+(begin (let t0 xs) (let ___match_result_6395 (match List t0 (Cons (e rest) (cg_rodata_emit_list st2 rest)) (Nil () st))))
+)
+
+(defn ih_ic (?0)
+(begin (let t0 xs) (let ___match_result_6403 (match List t0 (Cons (a d70) a) (Nil () unit))))
+)
+
+(defn fh_if (?0)
+(begin (let t0 xs) (let ___match_result_6414 (match List t0 (Cons (f d71) f) (Nil () unit))))
+)
+
+(defn shd (?0)
+(begin (let t0 xs) (let ___match_result_6421 (match List t0 (Cons (s d72) s) (Nil () ""))))
+)
+
+(defn hd_ia (?0)
+(begin (let t0 xs) (let ___match_result_6433 (match List t0 (Cons (a d73) a) (Nil () unit))))
+)
+
+(defn cg_arena_of (?0)
+(begin (let t0 st) (let ___match_result_6443 (match CGState t0 (CGS (a d74 d75 d76 d77 d78) a))))
+)
+
+(defn tl2 (?0)
+(begin (let t0 xs) (let ___match_result_6450 (match List t0 (Cons (a rest) rest) (Nil () unit))))
+)
+
+(defn dbg_log (?0)
+(begin (let t0 "/tmp/dbg") (let t1 "a") (let t2 (file-open t0 t1)) (let f t2) (let t4 f) (let t5 msg) (let t6 (file-write t4 t5)) (let d1 t6) (let t8 f) (let t9 (file-close t8)))
+)
+
+(defn emit_out (?0 ?0)
+(begin (let t0 arena) (let t1 (cg_new t0)) (let t2 fns) (let t3 (cg_program t1 t2)) (let st t3) (let t5 "/tmp/zyl_boot_out.s") (let t6 "w") (let t7 (file-open t5 t6)) (let out t7) (let t9 out) (let t10 st) (let t11 (cg_buffer t10)) (let t12 (file-write t9 t11)) (let n t12) (let t14 out) (let t15 (file-close t14)) (let d3 t15) (let t17 n))
+)
+
+(defn boot_run (?0 ?0)
+(begin (let t0 fd) (let t1 1048576) (let t2 (file-read t0 t1)) (let srcbuf t2) (let t4 fd) (let t5 (file-close t4)) (let d2 t5) (let t7 "parse
+") (let t8 (dbg_log t7)) (let t9 arena) (let t10 srcbuf) (let t11 (zyl_parse t9 t10)) (let prog t11) (let t13 "lower
+") (let t14 (dbg_log t13)) (let t15 arena) (let t16 prog) (let t17 (ic_program t15 t16)) (let fns t17) (let t19 "codegen
+") (let t20 (dbg_log t19)) (let t21 arena) (let t22 fns) (let t23 (emit_out t21 t22)))
+)
+
+(defn main ()
+(begin (let t0 1048576) (let t1 (arena_create t0)) (let arena t1) (let t3 "/tmp/zyl_boot_in.zyl") (let t4 "r") (let t5 (file-open t3 t4)) (let fd t5) (let t7 fd) (let t8 0) (let t9 (> t7 t8)) (let ___if_result_6551 (if t9 (boot_run arena fd) 1)))
+)

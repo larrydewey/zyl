@@ -356,6 +356,21 @@ Stage2 blocker update (same day, later):
   bootstrap's compilation OF stage1's own cg-expr/cg-match/IVariant
   handling miscompiles some pattern that only executes on this input
   shape. Next session: compile a debug stage1 (--emit-zyl or ZYL_DBG2)
+- BREAKTHROUGH (same day): implemented SIBLING+self tail-call optimization.
+  Root cause of non-TCO was twofold: (a) collect_tail_calls only recorded
+  SELF-calls while emission allowed siblings; (b) earlier eligibility
+  required exact last-statement position which if/match nesting hid.
+  Now: collect_tail_calls walks the final-statement chain through
+  If/Match/arms recording EVERY tail-position call id; emit_call_direct
+  fires for any of them (uniform frames make sibling jumps safe).
+  Result: 246 TCO jumps across the compiler; lexing is O(1) stack;
+  full self-compile gets PAST lexing/parsing/lowering deep into codegen.
+- REMAINING stage2 crash (new signature, NOT stack-related): segv inside
+  alloc_strlen (str-intern path) at normal ~2MB stack depth while
+  compiling the full source. Repro: ulimit -s unlimited; stage1.bin on
+  zyl_selfhost_compiler.zyl. Next session: instrument str-intern callers
+  (which string is NULL/garbage), likely tied to a specific construct in
+  the allocator/compiler modules.
   and trace which cg function diverges between isolated-vs-combined
   inputs.
 
