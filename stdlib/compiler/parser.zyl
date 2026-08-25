@@ -213,5 +213,37 @@
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)
+; Whole-token-stream paren balance. The reader consumes to EOF on an
+; unclosed form, so imbalance must be checked on the token stream itself.
+; All 15 variants enumerated: partial enumerations fail inference here.
+(defn bal-walk (toks depth)
+  (match toks
+    (Nil depth)
+    (Cons t rest
+      (match t
+        (TkLParen d50 (bal-walk rest (+ depth 1)))
+        (TkRParen d51 (bal-walk rest (- depth 1)))
+        (TkEof d52 (bal-walk rest depth))
+        (TkIdent d53 (bal-walk rest depth))
+        (TkInt d54 (bal-walk rest depth))
+        (TkFloat d55 (bal-walk rest depth))
+        (TkString d56 (bal-walk rest depth))
+        (TkBool d57 (bal-walk rest depth))
+        (TkSymbol d58 (bal-walk rest depth))
+        (TkKeyword d59 (bal-walk rest depth))
+        (TkLBrace d60 (bal-walk rest depth))
+        (TkRBrace d61 (bal-walk rest depth))
+        (TkLBracket d62 (bal-walk rest depth))
+        (TkRBracket d63 (bal-walk rest depth))
+        (TkColon d64 (bal-walk rest depth))))))
+
+(defn check-balanced (toks)
+  (if (= (bal-walk toks 0) 0)
+    0
+    (ffi-call "f_error" "E_UNBALANCED_PARENS: '(' and ')' counts differ" 1000)))
+
 (defn zyl-parse (arena src)
-  (parse-program arena (zyl-lex arena src)))
+  (let toks (zyl-lex arena src)
+    (begin
+      (check-balanced toks)
+      (parse-program arena toks))))
