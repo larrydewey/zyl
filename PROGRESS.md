@@ -2,30 +2,49 @@
 
 ## Current State (2026-08-25)
 
-**Self-hosting: COMPLETE and deterministic.** The Zyl compiler written in Zyl
-compiles itself end-to-end with a byte-identical fixed point:
+**Self-hosting: functionally complete.** The Zyl compiler written in Zyl
+compiles itself end-to-end: stage1 (Rust bootstrap) → stage2 → stage3, and
+programs compiled by stage2/stage3 run correctly (ADTs + match, HOF calls,
+FFI, recursion, arithmetic, floats verified). Regression suite 24/24.
 
-```
-stage1 (Rust bootstrap compiles selfhost/zyl_selfhost_compiler.zyl)
-  -> stage2 (compiles itself -> stage3, output == stage2's, byte-for-byte)
-```
+**Byte-determinism (strict fixed point): NOT yet achieved.** An earlier
+claim of byte-identical stage2/stage3 output was a false positive — the
+verification accidentally compared stage2's output against itself.
+`boot.sh` now performs the check correctly and honestly reports the gap:
+stage1's and stage2's outputs differ ONLY in stack frame sizes for ~100 of
+289 functions (`icnf-size` computes smaller values under stage≥2 binaries).
+Generated code aside from frame sizes is identical, and correctness is
+unaffected (the `+64-slot` base padding absorbs the difference), but strict
+same-input→same-bytes requires closing this gap.
 
-Programs compiled by stage2/stage3 run correctly (ADTs + match, HOF calls,
-FFI, recursion, arithmetic, floats verified). All 9 core compilation phases
-plus linking are complete and tested; full regression suite 24/24.
+Root cause identified: the Rust bootstrap drops match-arm computations when
+an arm's body combines a constant with MULTIPLE calls — e.g. icnf-size's
+`(ILet v b (+ 3 (icnf-size v) (icnf-size b)))` compiled to "bind fields;
+store 0". A partial workaround (helper functions `icnf-add2/add3`) shrank
+divergence from 246 to 102 functions; the remaining shapes still need the
+bootstrap codegen fix itself (P0 item below).
 
-**Details:** `docs/implementation-status.md`, `docs/self-hosting-phase1.md`
-(historical), `docs/regression-tests.md`.
+**Details:** `docs/implementation-status.md`, `docs/regression-tests.md`.
 
 ---
 
 ## Roadmap (prioritized)
 
 ### P0 — Consolidate the self-hosted toolchain
-- [ ] **Boot build automation**: `boot.sh` / make target running the full
-      loop (Rust `zyl` → stage1 → stage2) and installing stage2 as the
-      canonical binary; triple-compile + diff fixed-point check added to
-      `run_regression_tests.sh` so self-compile regressions fail loudly.
+- [x] **Boot build automation**: `boot.sh` runs the full loop (Rust `zyl`
+      → stage1 → stage2 → stage3) and verifies the fixed point. *(done
+      2026-08-25 — it immediately exposed that the earlier determinism
+      check was vacuous; see Current State.)* Still to do: wire it into
+      `run_regression_tests.sh --full`.
+- [ ] **Fix Rust-bootstrap match-arm miscompilation** (blocks strict
+      determinism): a match arm whose body combines a constant with
+      multiple calls loses its computation ("bind fields; store 0").
+      Repro: icnf-size's ILet arm returns 0 in stage≥2 binaries while the
+      same source compiles correctly under the Rust compiler. Partial
+      workaround shipped (`icnf-add2/add3` helpers cut divergent functions
+      from 246 to 102); remaining shapes need either the codegen fix in
+      src/codegen.rs or full elimination of multi-call arm bodies.
+- [ ] **Wire fixed-point check into CI/regressions** once green.
 - [x] **Compile errors for known-fragile shapes** instead of silent
       miscompiles *(done 2026-08-25, commit c9b5c69)*:
     - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
