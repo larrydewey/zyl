@@ -356,6 +356,20 @@ Stage2 blocker update (same day, later):
   bootstrap's compilation OF stage1's own cg-expr/cg-match/IVariant
   handling miscompiles some pattern that only executes on this input
   shape. Next session: compile a debug stage1 (--emit-zyl or ZYL_DBG2)
+- ISOLATION RESULT: minimal Rust-compiled repros of the fire pipeline
+  (nested lets + ffi-call-as-argument + side-effecting steps) work
+  CORRECTLY - no doubling. The duplication manifests ONLY inside stage1
+  itself (the full 2113-line assembled program). => Bootstrap ICNF
+  embedding/statement-duplication triggered by PROGRAM-SCALE structure,
+  not by any local construct shape.
+- Next session entry point: compile the full selfhost source and dump
+  the ICNF for cg-fire-mangled / cg-emit (ZYL_DBG2-style), then diff
+  statement counts between the same functions compiled STANDALONE vs
+  INSIDE the assembled program. The divergence point is the bootstrap
+  embedding bug. Workaround option if time-boxed: restructure
+  cg-call-fire-direct's pipeline at the Zyl level until the doubled
+  emission disappears (e.g., split the nested-let chain into separate
+  top-level helper functions per emit step).
 - BREAKTHROUGH (same day): implemented SIBLING+self tail-call optimization.
   Root cause of non-TCO was twofold: (a) collect_tail_calls only recorded
   SELF-calls while emission allowed siblings; (b) earlier eligibility
