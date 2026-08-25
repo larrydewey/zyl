@@ -1,4 +1,5 @@
 mod ast;
+mod deterministic;
 mod lexer;
 mod parser;
 mod macro_expander;
@@ -74,8 +75,8 @@ fn compile_and_run(source: &str) -> Result<Option<String>, String> {
     let mut optimizer = optimization::Optimizer::new();
     let optimized = optimizer.optimize(icnf_prog).map_err(|e| format!("{}", e))?;
 
-    let func_params: std::collections::HashMap<_, _> = resolved_params.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-    let func_returns: std::collections::HashMap<_, _> = resolved_returns.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let func_params: crate::deterministic::HashMap<_, _> = resolved_params.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let func_returns: crate::deterministic::HashMap<_, _> = resolved_returns.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     let mut cg = codegen::CodeGen::new()
         .with_struct_layouts(struct_layouts)

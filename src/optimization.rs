@@ -326,11 +326,11 @@ impl Optimizer {
 
     fn dead_code_elimination_pass(&mut self, stmts: &mut Vec<ICNFNode>) -> usize {
         // Build a map from SSA ID to node for quick lookup.
-        let id_to_node: std::collections::HashMap<usize, ICNFInner> =
+        let id_to_node: crate::deterministic::HashMap<usize, ICNFInner> =
             stmts.iter().map(|n| (n.id, n.node.clone())).collect();
 
         // Collect all operand references across ALL nodes.
-        let mut referenced_ids = std::collections::HashSet::new();
+        let mut referenced_ids = crate::deterministic::HashSet::default();
         for node in stmts.iter() {
             Self::collect_used_ssa(&node.node, &mut referenced_ids);
         }
@@ -339,7 +339,7 @@ impl Optimizer {
         }
 
         // Root-live: has side effects OR its result is used by another node's operands.
-        let mut live_set: std::collections::HashSet<usize> = stmts
+        let mut live_set: crate::deterministic::HashSet<usize> = stmts
             .iter()
             .filter(|n| Self::has_side_effect(&n.node) || referenced_ids.contains(&n.id))
             .map(|n| n.id)
@@ -348,7 +348,7 @@ impl Optimizer {
         let mut queue: Vec<usize> = live_set.clone().into_iter().collect();
         while let Some(id) = queue.pop() {
             if let Some(inner) = id_to_node.get(&id) {
-                let mut deps = std::collections::HashSet::new();
+                let mut deps = crate::deterministic::HashSet::default();
                 Self::collect_used_ssa(inner, &mut deps);
                 for dep in deps {
                     // Only add to queue if not already live (prevents infinite loops).
@@ -373,7 +373,7 @@ impl Optimizer {
         original_len - stmts.len()
     }
 
-    fn collect_used_ssa(inner: &ICNFInner, used_ids: &mut std::collections::HashSet<usize>) {
+    fn collect_used_ssa(inner: &ICNFInner, used_ids: &mut crate::deterministic::HashSet<usize>) {
         match inner {
             ICNFInner::BinOp(_, left, right) => {
                 used_ids.insert(*left);

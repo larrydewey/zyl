@@ -651,7 +651,7 @@ impl MonoContext {
             .collect();
 
         // Deduplicate — if multiple generic params map to the same concrete type, only include once.
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::deterministic::HashSet::default();
         let unique_names: Vec<String> = type_names
             .iter()
             .filter(|n| seen.insert(n.as_str()))
@@ -779,7 +779,7 @@ impl MonoContext {
             let mut sorted_types: Vec<(&String, &Type)> = type_map.iter().collect();
             sorted_types.sort_by(|a, b| a.0.cmp(b.0));
 
-            let unique_names: std::collections::HashSet<String> = sorted_types
+            let unique_names: crate::deterministic::HashSet<String> = sorted_types
                 .iter()
                 .map(|(_, ty)| format!("{}", ty))
                 .filter(|_n| {
@@ -1448,7 +1448,7 @@ impl MonoContext {
             .get(adt_name)
             .cloned()
             .unwrap_or_default();
-        let mut seen_types = std::collections::HashSet::new();
+        let mut seen_types = crate::deterministic::HashSet::default();
         let unique_types: Vec<String> = concrete_types
             .into_iter()
             .filter(|t| seen_types.insert(t.clone()))
@@ -1496,7 +1496,7 @@ impl MonoContext {
             .unwrap_or_default();
 
         // Deduplicate concrete types (preserve order).
-        let mut seen_types = std::collections::HashSet::new();
+        let mut seen_types = crate::deterministic::HashSet::default();
         let unique_types: Vec<String> = concrete_types
             .into_iter()
             .filter(|t| seen_types.insert(t.clone()))

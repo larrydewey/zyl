@@ -14,7 +14,7 @@ pub struct ZylSourceGen {
     /// Current function name (for context in error messages).
     current_func: String,
     /// Track which SSA IDs have been emitted as standalone statements.
-    emitted: std::collections::HashSet<usize>,
+    emitted: crate::deterministic::HashSet<usize>,
 }
 
 impl ZylSourceGen {
@@ -24,7 +24,7 @@ impl ZylSourceGen {
             ssa_to_name: IndexMap::new(),
             name_counter: 0,
             current_func: "main".to_string(),
-            emitted: std::collections::HashSet::new(),
+            emitted: crate::deterministic::HashSet::default(),
         }
     }
 
