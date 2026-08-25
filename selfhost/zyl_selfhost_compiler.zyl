@@ -233,40 +233,40 @@
 ; on failure.
 ; Returns: Int (handle)
 (defn arena-create (block-size)
-  (ffi-call "zyl_arena_create" block-size 1000))
+  (let h (ffi-call "zyl_arena_create" block-size 1000) h))
 
 ; Allocate `size` bytes from `arena`, 16-byte aligned. Returns an address
 ; (Int), or 0 on failure.
 ; Returns: Int (address)
 (defn arena-alloc (arena size)
-  (ffi-call "zyl_arena_alloc" arena size 1000))
+  (let h (ffi-call "zyl_arena_alloc" arena size 1000) h))
 
 ; Allocate `size` zero-initialized bytes from `arena`. Returns an address
 ; (Int), or 0 on failure.
 ; Returns: Int (address)
 (defn arena-alloc-zeroed (arena size)
-  (ffi-call "zyl_arena_alloc_zeroed" arena size 1000))
+  (let h (ffi-call "zyl_arena_alloc_zeroed" arena size 1000) h))
 
 ; Free every block in `arena` at once. The handle stays valid and the arena
 ; can be reused immediately.
 ; Returns: Unit
 (defn arena-reset (arena)
-  (ffi-call "zyl_arena_reset" arena 1000))
+  (let h (ffi-call "zyl_arena_reset" arena 1000) h))
 
 ; Free every block in `arena` and invalidate the handle.
 ; Returns: Unit
 (defn arena-destroy (arena)
-  (ffi-call "zyl_arena_destroy" arena 1000))
+  (let h (ffi-call "zyl_arena_destroy" arena 1000) h))
 
 ; Bytes currently allocated from `arena`.
 ; Returns: Int
 (defn arena-used (arena)
-  (ffi-call "zyl_arena_used" arena 1000))
+  (let h (ffi-call "zyl_arena_used" arena 1000) h))
 
 ; Total block capacity backing `arena`.
 ; Returns: Int
 (defn arena-capacity (arena)
-  (ffi-call "zyl_arena_capacity" arena 1000))
+  (let h (ffi-call "zyl_arena_capacity" arena 1000) h))
 
 ; ===========================================================================
 ; STRING HELPERS
@@ -280,10 +280,12 @@
 ; Intern a String into `arena`: copy its bytes (including terminator) into a
 ; fresh zeroed buffer. Returns the buffer pointer.
 ; Returns: Int (pointer)
-; Copy a NUL-terminated string from src into the pre-allocated buffer dst.
+; Append src at the end of the NUL-terminated string in dst (true append,
+; NOT overwrite). Matches the Rust bootstrap's StringBuffer backend so
+; stage>=2 codegen output accumulates across emits.
 ; Returns: dst
 (defn buf-append (dst src)
-  (ffi-call "zyl_strcpy" dst src 1000))
+  (ffi-call "zyl_str_append" dst src 1000))
 
 ; Zyl-level error: print and exit.
 (defn error (msg)
@@ -633,9 +635,9 @@
   (if (= c 34)
     (lex-str-e arena src len i acc (scan-str-end src len (+ i 1)))
     (if (= c 58)
-      (lex-sym-probe arena src len i acc 58)
+      (lex-sym-probe arena src len i acc)
       (if (= c 126)
-        (lex-sym-probe arena src len i acc 126)
+        (lex-sym-probe arena src len i acc)
         (if (= (chr-digit-p c) 1)
           (lex-num-e arena src len i acc (scan-number-end src len i))
           (if (= c 45)
@@ -659,44 +661,43 @@
 
 ; Numeric literal: i..e; float when the text carries '.' or exponent.
 (defn lex-num-e (arena src len i acc e)
-  (lex-num-text arena src len i acc e (sub-str arena src i (- e i))))
-
-(defn lex-num-text (arena src len i acc e text)
-  (if (= (text-float-marker-p text) 1)
-    (lex-loop arena src len e (Cons (TkFloat text) acc))
-    (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))
+  (let text (sub-str arena src i (- e i))
+    (if (= (text-float-marker-p text) 1)
+      (lex-loop arena src len e (Cons (TkFloat text) acc))
+      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc)))))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)
-  (lex-ident-text arena src len i acc e (sub-str arena src i (- e i))))
-
-(defn lex-ident-text (arena src len i acc e text)
-  (if (> (str-eq text (str-intern arena "true")) 0)
-    (lex-loop arena src len e (Cons (TkBool true) acc))
-    (if (> (str-eq text (str-intern arena "false")) 0)
-      (lex-loop arena src len e (Cons (TkBool false) acc))
-      (lex-loop arena src len e (Cons (TkIdent text) acc)))))
+  (let text (sub-str arena src i (- e i))
+    (if (> (str-eq text (str-intern arena "true")) 0)
+      (lex-loop arena src len e (Cons (TkBool true) acc))
+      (if (> (str-eq text (str-intern arena "false")) 0)
+        (lex-loop arena src len e (Cons (TkBool false) acc))
+        (lex-loop arena src len e (Cons (TkIdent text) acc))))))
 
 ; ':' / '~' prefixed keyword or symbol: probe the next non-ws char.
-(defn lex-sym-probe (arena src len i acc c)
-  (lex-sym-pk arena src len i acc c (next-nonws src len (+ i 1))))
+(defn lex-sym-probe (arena src len i acc)
+  (lex-sym-pk arena src len i acc (next-nonws src len (+ i 1))))
 
-(defn lex-sym-pk (arena src len i acc c pk)
-  (if (< pk 0)
-    (lex-sym-bare arena src len i acc c)
-    (if (= (chr-ident-start-p (byte-at src pk)) 0)
+; c is the character at i, recovered with byte-at so the arity stays <= 6.
+(defn lex-sym-pk (arena src len i acc pk)
+  (let c (byte-at src i)
+    (if (< pk 0)
       (lex-sym-bare arena src len i acc c)
-      (if (= (chr-punctuator-p (byte-at src pk)) 1)
+      (if (= (chr-ident-start-p (byte-at src pk)) 0)
         (lex-sym-bare arena src len i acc c)
-        (lex-sym-e arena src len i acc c (scan-ident-end src len pk))))))
+        (if (= (chr-punctuator-p (byte-at src pk)) 1)
+          (lex-sym-bare arena src len i acc c)
+          (lex-sym-tok arena src len i acc (scan-ident-end src len pk)))))))
 
-(defn lex-sym-e (arena src len i acc c end)
-  (lex-sym-tok arena src len i acc c end (sub-str arena src (+ i 1) (- end (+ i 1)))))
-
-(defn lex-sym-tok (arena src len i acc c end text)
-  (if (= c 58)
-    (lex-loop arena src len end (Cons (TkKeyword text) acc))
-    (lex-loop arena src len end (Cons (TkSymbol text) acc))))
+; end = index one past the symbol text; token kind depends on the
+; introducing character c (58 = ':').
+(defn lex-sym-tok (arena src len i acc end)
+  (let c (byte-at src i)
+    (let text (sub-str arena src (+ i 1) (- end (+ i 1)))
+      (if (= c 58)
+        (lex-loop arena src len end (Cons (TkKeyword text) acc))
+        (lex-loop arena src len end (Cons (TkSymbol text) acc))))))
 
 (defn lex-sym-bare (arena src len i acc c)
   (if (= c 58)
@@ -1348,9 +1349,11 @@
       ; tail = everything after the symbol: (arg* timeout).
       ; Both branches lower through ic-arg-list so their types unify
       ; (a bare Nil here would clash as Option vs List).
+      ; NOTE: the symbol is a string literal -> use atom-text, NOT
+      ; ident-name (which only extracts identifiers).
       (if (> (list-length tail) 1)
-        (ic-arg-list arena (butlast tail (no-asts)) vt)
-        (ic-arg-list arena Nil vt)))
+        (IFfi (atom-text sym "") (ic-arg-list arena (butlast tail (no-asts)) vt))
+        (IFfi (atom-text sym "") Nil)))
     (Nil (IFfi "?" Nil))))
 
 
@@ -1461,10 +1464,6 @@
 ; fields: arena, text buffer, next label number, next slot offset,
 ; known top-level function names
 
-(deftype FnName (FN String) FNNil)
-
-(deftype FnName (FN String) FNNil)
-
 (deftype CGR (CGR CGState Int String))
 
 (deftype CGE (CGE CGState Env))
@@ -1524,7 +1523,7 @@
 
 (defn cg-fn-check-head (h t nm)
   (match h
-    (FN s (> (str-eq s nm) 0))
+    (FN s (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
     (FNNil (cg-fn-search t nm))))
 
 ; Empty rodata list.
@@ -1671,11 +1670,17 @@
       (cg-nl (cg-emit st3 "]")))))
 
 (defn cg-load-nonslot (st env n)
-  (cg-load-unresolved st))
+  ; Function value reference: load the function's address so it can be
+  ; passed as an argument and called indirectly (HOF support).
+  (if (= (cg-fn-known st n) 1)
+    (cg-load-fnref st n)
+    (cg-load-unresolved st)))
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+f_")
-    (cg-nl (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000)))))
+    (let st3 (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000))
+      (let st4 (cg-emit st3 "]")
+        (cg-nl st4)))))
 
 ; P1 note: kept for parity with previous behavior; flagged for hardening.
 (defn cg-load-unresolved (st)
@@ -1687,8 +1692,7 @@
   (cg-if-labels (cg-label-pair st) env c t eb))
 
 (defn cg-if-labels (p env c t eb)
-  (match p
-    (CGP st lelse lend (cg-if-parts st env c t eb lelse lend))))
+  (cg-if-parts p env c t eb))
 
 (defn cg-while-dispatch (st env c body)
   (cg-while-labels (cg-label-pair st) env c body))
@@ -1710,19 +1714,22 @@
           (let st6 (cg-nl (cg-emit st5 "], rax"))
             (cg-expr st6 (EnvBind n off k env) body)))))))
 
-; (if c t e): condition tested, then branch tails.
-(defn cg-if-parts (st env c t eb lelse lend)
-  (let st2 (cg-expr st env c)
-    (let st3 (cg-emit st2 "    test rax, rax")
-      (let st4 (cg-nl st3)
-        (let st5 (cg-emit st4 "    je ")
-          (let st6 (cg-nl (cg-emit st5 lelse))
-            (let st7 (cg-expr st6 env t)
-              (let st8 (cg-emit st7 "    jmp ")
-                (let st9 (cg-nl (cg-emit st8 lend))
-                  (let st10 (cg-emit-label st9 lelse)
-                    (let st11 (cg-expr st10 env eb)
-                      (cg-emit-label st11 lend))))))))))))
+; (if c t e): condition tested, then branch tails. p carries the state
+; plus the else/join labels.
+(defn cg-if-parts (p env c t eb)
+  (match p
+    (CGP st lelse lend
+      (let st2 (cg-expr st env c)
+        (let st3 (cg-emit st2 "    test rax, rax")
+          (let st4 (cg-nl st3)
+            (let st5 (cg-emit st4 "    je ")
+              (let st6 (cg-nl (cg-emit st5 lelse))
+                (let st7 (cg-expr st6 env t)
+                  (let st8 (cg-emit st7 "    jmp ")
+                    (let st9 (cg-nl (cg-emit st8 lend))
+                      (let st10 (cg-emit-label st9 lelse)
+                        (let st11 (cg-expr st10 env eb)
+                          (cg-emit-label st11 lend))))))))))))))
 
 ; (while c body...)
 (defn cg-while-parts (st env c body lstart lend)
@@ -1762,7 +1769,9 @@
               (cg-cmp-set st6 op))))))))
 
 (defn cg-arith-mnem (st op)
-  (let st2 (if (= op 3) (cg-emit-line st "    cqo") st)
+  ; Div (3) and Rem (4) both sign-extend rax into rdx via cqo before idiv,
+  ; otherwise a stale rdx makes the 128-bit quotient overflow (SIGFPE).
+  (let st2 (if (> op 2) (cg-emit-line st "    cqo") st)
     (let mnem (if (= op 0) "    add rax, rcx"
               (if (= op 1) "    sub rax, rcx"
                 (if (= op 2) "    imul rax, rcx"
@@ -1849,15 +1858,25 @@
           (if (= i 4) "r8"
             "r9"))))))
 
-; Call: evaluate args left-to-right, pushing each result; then pop into
-; registers in reverse; call; clean up any pad. `mangle` adds the f_ prefix
-; for user functions.
+; Call: pre-align rsp (odd arg count gets 8 bytes of pad BEFORE pushes so
+; every pop lands on its pushed value), evaluate args left-to-right pushing
+; each result, pop into registers in reverse, call, clean up pad.
+; `mangle` adds the f_ prefix for user functions.
 (defn cg-call-args (st env name args mangle i)
+  (let st2 (if (= (% (list-length args) 2) 1)
+             (cg-emit-line st "    sub rsp, 8")
+             st)
+    (let st3 (cg-push-all st2 env args)
+      (if (> mangle 0)
+        (cg-fire-user st3 env name (list-length args))
+        (cg-fire-ext st3 env name (list-length args))))))
+
+; Push all call arguments left-to-right.
+(defn cg-push-all (st env args)
   (if (is-nil args)
-    (cg-call-fire st env name mangle i)
+    st
     (let st2 (cg-expr st env (ih-ic args))
-      (let st3 (cg-emit-line st2 "    push rax")
-        (cg-call-args st3 env name (tl2 args) mangle (+ i 1))))))
+      (cg-push-all (cg-emit-line st2 "    push rax") env (tl2 args)))))
 
 ; HOF indirect calls are implemented but gated OFF: the path crashes
 ; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
@@ -1886,55 +1905,50 @@
 (defn cg-cat3 (arena a b c)
   (cg-cat2 arena (cg-cat2 arena a b) c))
 
-(defn cg-call-fire (st env name mangle i)
-  ; Build the ENTIRE call instruction as one string, then single emit.
-  ; This avoids bootstrap double-emission bugs on multi-emit sequences.
-  (if (> mangle 0)
-    (cg-fire-user st env name i)
-    (cg-fire-ext st env name i)))
-
 ; Build "call f_<sanitized>" as a single string.
 (defn cg-call-user-str (st env name)
   (let sym (cg-sym-for (cg-arena-of st) name 1)
     (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)))
 
-; ── mangled (user fn) paths ──
+; ── mangled (user fn) path: n args already pushed, rsp pre-aligned ──
 
-(defn cg-fire-user (st env name i)
-  (if (= (% i 2) 1)
-    (cg-user-pad st env name i)
-    (cg-user-nopad st env name)))
+(defn cg-fire-user (st env name n)
+  ; If `name` is a local binding it holds a function value: indirect call.
+  (if (= (env-lookup env name) 0)
+    (cg-user-direct st env name n)
+    (cg-user-indirect st env name n)))
 
-(defn cg-user-nopad (st env name)
-  ; args already pushed by cg-call-args; just emit call + cleanup
-  (let st2 (cg-pop-regs st -1)
-    (let st3 (cg-call-user-str st env name)
-      (cg-emit-line st2 st3))))
+(defn cg-call-cleanup (st n)
+  (if (= (% n 2) 1)
+    (cg-emit-line st "    add rsp, 8")
+    st))
 
-(defn cg-user-pad (st env name i)
-  (let st2 (cg-emit-line st "    sub rsp, 8")
-    (let st3 (cg-pop-regs st2 (- i 1))
-      (let st4 (cg-call-user-str st env name)
-        (let st5 (cg-emit-line st3 st4)
-          (cg-emit-line st5 "    add rsp, 8"))))))
+(defn cg-user-direct (st env name n)
+  (let st2 (cg-pop-regs st (- n 1))
+    (let st3 (cg-emit-line st2 (cg-call-user-str st env name))
+      (cg-call-cleanup st3 n))))
 
-; ── ext (FFI) paths ──
+; Indirect (HOF): target address is in the local's stack slot. Load it
+; into r10 AFTER the pops so the arg pops cannot clobber it.
+(defn cg-indirect-target (st off)
+  (let st2 (cg-emit st "    mov r10, [rbp")
+    (let st3 (cg-emit-int st2 off)
+      (let st4 (cg-emit st3 "]")
+        (let st5 (cg-nl st4)
+          (cg-emit-line st5 "    call r10"))))))
 
-(defn cg-fire-ext (st env name i)
-  (if (= (% i 2) 1)
-    (cg-ext-pad st env name i)
-    (cg-ext-nopad st env name)))
+(defn cg-user-indirect (st env name n)
+  (let st2 (cg-pop-regs st (- n 1))
+    (let st3 (cg-indirect-target st2 (env-lookup env name))
+      (cg-call-cleanup st3 n))))
 
-(defn cg-ext-nopad (st env name)
-  (let st2 (cg-pop-regs st -1)
-    (let st3 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "    call ") (str-intern (cg-arena-of st) name))
-      (cg-emit-line st2 st3))))
+; ── ext (FFI) path ──
 
-(defn cg-ext-pad (st env name i)
-  (let st2 (cg-emit-line st "    sub rsp, 8")
-    (let st3 (cg-pop-regs st2 (- i 1))
-      (let st4 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "    call ") (str-intern (cg-arena-of st) name))
-        (cg-emit-line st4 st4)))))
+(defn cg-fire-ext (st env name n)
+  (let st2 (cg-pop-regs st (- n 1))
+    (let st3 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") (str-intern (cg-arena-of st) name))
+      (let st4 (cg-emit-line st2 st3)
+        (cg-call-cleanup st4 n)))))
 
 ; Pop j+1 pushed args into their registers (reverse order).
 (defn cg-pop-regs (st j)
@@ -2028,43 +2042,36 @@
 (defn cg-arms (st env arms lend lzero)
   (if (is-nil arms)
     st
-    (cg-arm-one st env (hd-ia arms) (tl2 arms) lend lzero)))
+    (cg-arm-one (CGP st lend lzero) (hd-ia arms) (tl2 arms) env)))
 
-(defn cg-arm-one (st env arm rest lend lzero)
-  (match arm
-    (IArm vname tag binds body
-      (cg-arm-tail st env tag binds body rest lend lzero))))
+(defn cg-arm-one (p arm rest env)
+  (match p
+    (CGP st lend lzero
+      (match arm
+        (IArm vname tag binds body
+          (if (is-nil rest)
+            ; last arm: failed tag check falls through to the zero label
+            (cg-arm-match (CGP st lzero lend) env tag binds body)
+            ; more arms follow: failures jump to a fresh next-arm label
+            (let picked (cg-label-new st)
+              (let lnext (cgr-str picked)
+                (let st-after (cg-arm-match (CGP (cgr-st picked) lnext lend) env tag binds body)
+                  (cg-arms (cg-emit-label st-after lnext) env rest lend lzero))))))))))
 
-(defn cg-arm-next (st env rest lend lzero lnext st-after)
-  (if (is-nil rest)
-    st-after
-    (cg-arms (cg-emit-label st-after lnext) env rest lend lzero)))
-
-(defn cg-arm-tail (st env tag binds body rest lend lzero)
-  (let picked (cg-pick-label st rest lzero)
-    (let lnext (cgr-str picked)
-      (let st2 (cgr-st picked)
-        (let st3 (cg-tag-check st2 tag)
-          (let st4 (cg-emit st3 "    jne ")
-            (let st5 (cg-nl (cg-emit st4 lnext))
-              (cg-arm-body st5 env binds body rest lend lzero lnext))))))))
-
-(defn cg-pick-label (st rest lzero)
-  (if (is-nil rest)
-    (CGR st 0 lzero)
-    (cg-label-new st)))
-
-(defn cg-arm-body (st env binds body rest lend lzero lnext)
-  (match (cg-bind-fields st env binds 0)
-    (CGE st6 arm-env
-      (cg-arm-finish st6 arm-env body rest lend lzero lnext))))
-
-(defn cg-arm-finish (st env body rest lend lzero lnext)
-  (let st7 (cg-expr st env body)
-    (let st8 (cg-emit-line st7 "    mov [rsp], rax")
-      (let st9 (cg-emit st8 "    jmp ")
-        (let st10 (cg-nl (cg-emit st9 lend))
-          (cg-arm-next st env rest lend lzero lnext st10))))))
+; Emit one arm's tag check, bindings, body and exit jump. flabel (carried
+; in p) is where a failed tag check goes; lend is the match join label.
+(defn cg-arm-match (p env tag binds body)
+  (match p
+    (CGP st flabel lend
+      (let st3 (cg-tag-check st tag)
+        (let st4 (cg-emit st3 "    jne ")
+          (let st5 (cg-nl (cg-emit st4 flabel))
+            (match (cg-bind-fields st5 env binds 0)
+              (CGE st6 arm-env
+                (let st7 (cg-expr st6 arm-env body)
+                  (let st8 (cg-emit-line st7 "    mov [rsp], rax")
+                    (let st9 (cg-emit st8 "    jmp ")
+                      (cg-nl (cg-emit st9 lend)))))))))))))
 
 (defn cgr-st (r)
   (match r
@@ -2178,7 +2185,7 @@
                            (let st10 (cg-expr st9 env body)
                              (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                (let st12 (cg-emit-line st11 "    pop rbp")
-                                 (cg-emit-line st12 "    ret")))))))))))))))))
+                                 (cg-emit-line st12 "    ret"))))))))))))))))))
 
 (defn cg-reset-slots (st next-off)
   (match st
@@ -2209,7 +2216,7 @@
 ; (higher-order arguments) resolve to addresses.
 (defn cg-collect-fnnames (st fns)
   (if (is-nil fns)
-    (begin (cg-dbg "collect-done|") st)
+    st
     (cg-collect-one st (fnhead-if fns) (tl2 fns))))
 
 ; Head of a List(IFunc); empty placeholder when exhausted.
@@ -2248,13 +2255,17 @@
       (cg-emit-line st2 ".globl main"))))
 
 (defn cg-entry-stub (st)
+  ; Run user main on a big-stack worker thread (C runtime helper): the
+  ; self-hosted compiler recurses deeply while parsing large inputs.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
-        (let st4 (cg-emit-line st3 "    call f_main")
-          (let st5 (cg-emit-line st4 "    xor eax, eax")
-            (let st6 (cg-emit-line st5 "    pop rbp")
-              (cg-emit-line st6 "    ret")))))))))
+        (let st4 (cg-emit-line st3 "    lea rdi, [rip+f_main]")
+          (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
+            (let st6 (cg-emit-line st5 "    xor eax, eax")
+              (let st7 (cg-emit-line st6 "    pop rbp")
+                (let st8 (cg-emit-line st7 "    ret")
+                  st8)))))))))
 
 (defn cg-format-strings (st)
   (let st1 (cg-emit-line st ".section .rodata")
@@ -2281,10 +2292,7 @@
       (cg-functions-go st nm f rest))))
 
 (defn cg-functions-go (st nm f rest)
-  (begin
-    (cg-dbg nm)
-    (cg-dbg "|")
-    (cg-functions (cg-function st f) rest)))
+  (cg-functions (cg-function st f) rest))
 
 ; Emit one rodata entry.
 (defn cg-rodata-entry (st e)
@@ -2409,10 +2417,11 @@
 
 (defn emit-out (arena fns)
   (let st (cg-program (cg-new arena) fns)
-    (let out (file-open "/tmp/zyl_boot_out.s" "w")
-      (let n (file-write out (cg-buffer st))
-        (let d3 (file-close out)
-          n)))))
+    (let buf (cg-buffer st)
+      (let out (file-open "/tmp/zyl_boot_out.s" "w")
+        (let n (file-write out buf)
+          (let d3 (file-close out)
+            n))))))
 
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)
@@ -2432,3 +2441,4 @@
         (begin
           (dbg-log "no input\n")
           1)))))
+
