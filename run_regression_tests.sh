@@ -8,6 +8,8 @@
 #   --verbose    Print compiler output
 #   --depth N    Set nesting depth for stress tests (default: 100)
 #   --timeout N  Per-test timeout in seconds (default: 10)
+#   --boot       Also run the self-hosting fixed-point verification
+#                (./boot.sh --skip-rust; takes several minutes)
 
 set -euo pipefail
 
@@ -22,6 +24,7 @@ VERBOSE=0
 DEPTH=100
 TIMEOUT=10
 DRY_RUN=0
+BOOT=0
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -29,6 +32,7 @@ while [[ $# -gt 0 ]]; do
         --quick) MODE="quick"; shift ;;
         --full) MODE="full"; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --boot) BOOT=1; shift ;;
         --filter) FILTER="$2"; shift 2 ;;
         --verbose) VERBOSE=1; shift ;;
         --depth) DEPTH="$2"; shift 2 ;;
@@ -171,6 +175,20 @@ if [ "$MODE" = "full" ]; then
             run_test "integration/${local_name}" "$f"
         fi
     done
+fi
+
+# Self-hosting fixed-point verification (opt-in: slow, several minutes)
+if [ "$BOOT" -eq 1 ]; then
+    TOTAL=$((TOTAL + 1))
+    echo ""
+    echo "=== Self-hosting fixed point (boot.sh) ==="
+    if "${SCRIPT_DIR}/boot.sh" --skip-rust > /tmp/zyl_boot_check.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} boot/fixed-point"
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} boot/fixed-point (see /tmp/zyl_boot_check.log)"
+    fi
 fi
 
 END_TIME=$(date +%s)
