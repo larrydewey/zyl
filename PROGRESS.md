@@ -370,6 +370,18 @@ Stage2 blocker update (same day, later):
   compiling the full source. Repro: ulimit -s unlimited; stage1.bin on
   zyl_selfhost_compiler.zyl. Next session: instrument str-intern callers
   (which string is NULL/garbage), likely tied to a specific construct in
+- UPDATE after Match-descent restriction: restricting collect_tail_calls
+  to If-chains only did NOT fix the full-input crash. Current signature:
+  codegen phase spins/crashes inside alloc_strlen (str-intern path)
+  receiving a bad pointer after ~979 successful interns (mostly
+  true/false from fn-known name checks against CGState's fn list).
+  Phase marker confirms crash is INSIDE cg-program. Working theory:
+  either (a) a TCO'd call still skips essential post-stores in some
+  protocol (candidate: If phi-slot stores), or (b) the CGState fn-names
+  list built by cg-collect-fnnames gets corrupted when walked with
+  str-eq per ILoad. Next session: bisect the INPUT at function
+  granularity inside cg-program (log each emitted fn name via dbg-log),
+  then dump the exact bad pointer's origin.
   the allocator/compiler modules.
   and trace which cg function diverges between isolated-vs-combined
   inputs.
