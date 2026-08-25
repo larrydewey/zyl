@@ -348,6 +348,17 @@ Stage2 blocker update (same day, later):
   path gated behind (cg-hof-enabled)=0 until its runtime behavior
   through stage1's own execution is verified (repro: applyit/dbl).
 
+- STAGE2 PRECISE BLOCKER (current): stage1 segfaults while compiling
+  option-map (`(match opt (Some v (Some (f v))) (None None))`) — even
+  with unlimited stack and the O(1) lexer, so it is NOT stack exhaustion
+  and NOT lexing. Isolated option-map compiles fine; it crashes after
+  the preceding option.zyl functions are processed. Suspect: the Rust
+  bootstrap's compilation OF stage1's own cg-expr/cg-match/IVariant
+  handling miscompiles some pattern that only executes on this input
+  shape. Next session: compile a debug stage1 (--emit-zyl or ZYL_DBG2)
+  and trace which cg function diverges between isolated-vs-combined
+  inputs.
+
   still crashed; the committed mutual-recursion lexer works for moderate
   inputs. A general fix is bootstrap sibling-TCO with explicit
   callee-saved register save/restore.
