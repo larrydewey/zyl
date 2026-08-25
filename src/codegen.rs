@@ -7834,13 +7834,10 @@ fn collect_tail_calls(
                 collect_tail_calls(&e.node, e.id, func_name, out);
             }
         }
-        ICNFInner::Match { arms, .. } => {
-            for arm in arms {
-                if let Some(a) = arm.body.last() {
-                    collect_tail_calls(&a.node, a.id, func_name, out);
-                }
-            }
-        }
+        // NOTE: Match arms are intentionally NOT descended into: the match
+        // protocol stores each arm's result to [rsp] and jumps to the join
+        // label AFTER the arm body — a tail call there would skip both,
+        // corrupting control flow (this bit us during stage2).
         _ => {}
     }
 }
