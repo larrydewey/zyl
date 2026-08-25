@@ -385,7 +385,11 @@
           (ic-expr arena (first-ast (rest-ast args)) vt))
     (IConst 0)))
 
-; Binary operator with exactly two arguments; unary minus (- x) supported.
+; Binary operator: exactly two arguments lowers directly, unary minus
+; (- x) supported, three or more arguments fold left-associatively
+; (matching the Rust bootstrap's convert_nary_fold). Anything else was
+; previously lowered to (IConst 0) SILENTLY — the source of the
+; "computed count is 0 in stage>=2 binaries" miscompile class.
 (defn ic-binop (arena op args vt)
   (if (= (list-length args) 2)
     (IBinop op
@@ -395,7 +399,19 @@
       (if (= op 1)
         (IBinop 1 (IConst 0) (ic-expr arena (first-ast args) vt))
         (IConst 0))
-      (IConst 0))))
+      (if (> (list-length args) 2)
+        (ic-binop-fold arena op args vt)
+        (IConst 0)))))
+
+; Left-associative n-ary fold: (op a b c) -> (op a (op b c)).
+(defn ic-binop-fold (arena op args vt)
+  (if (= (list-length args) 2)
+    (IBinop op
+            (ic-expr arena (first-ast args) vt)
+            (ic-expr arena (first-ast (rest-ast args)) vt))
+    (IBinop op
+            (ic-expr arena (first-ast args) vt)
+            (ic-binop-fold arena op (rest-ast args) vt))))
 
 ; print: multi-argument prints become a sequence of single prints.
 (defn ic-print (arena args vt)
@@ -455,11 +471,80 @@
     (Cons vname pats
       (let iname (str-intern arena (ident-name vname ""))
         (let tag (vt-tag-of vt iname)
-          (IArm iname
-                tag
-                (bind-names arena pats (no-strs))
-                (ic-expr arena (last-ast parts) vt)))))
+          ; E_MATCH_ARM_COMPLEX guard: reject the confirmed-failing shape
+          ; before lowering (see ic-arm-guard below).
+          (let armguard (ic-arm-guard arena (last-ast parts) vt)
+            (IArm iname
+                  tag
+                  (bind-names arena pats (no-strs))
+                  (ic-expr arena (last-ast parts) vt))))))
     (Nil (IArm (str-intern arena "?") -1 Nil (IConst 0)))))
+
+; ─── E_MATCH_ARM_COMPLEX guard ────────────────────────────────────────────
+; A match-arm body whose TOP-LEVEL binop combines a constant with two or
+; more calls silently computes 0 in stage>=2 binaries ("bind fields;
+; store 0"). Nest sums through helper functions so each arm body has a
+; single call. This check mirrors the Rust bootstrap's
+; validate_match_arm_complexity but runs at lowering time in the
+; self-hosted compiler too.
+(defn ic-arm-guard (arena body vt)
+  (match body
+    (AList kids (ic-arm-guard-kids arena kids vt))
+    (AIdent d100 0)
+    (AInt d101 0)
+    (AFloat d102 0)
+    (AString d103 0)
+    (ABool d104 0)))
+
+(defn ic-arm-guard-kids (arena kids vt)
+  (if (> (list-length kids) 2)
+    (ic-arm-guard-head arena (first-ast kids) (rest-ast kids) vt)
+    0))
+
+(defn ic-arm-guard-head (arena head args vt)
+  (let op (ic-op-of arena (ident-name head ""))
+    (if (> op -1)
+      (ic-arm-guard-count arena args vt 0 0)
+      0)))
+
+; Count constant and call-like operands; error on const>=1 && calls>=2.
+(defn ic-arm-guard-count (arena args vt consts calls)
+  (if (is-nil args)
+    (if (> consts 0)
+      (if (> calls 1)
+        (ffi-call "f_error" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
+        0)
+      0)
+    (ic-arm-guard-count arena (rest-ast args) vt
+                        (+ consts (ic-arm-guard-is-const (first-ast args)))
+                        (+ calls (ic-arm-guard-is-call arena (first-ast args) vt)))))
+
+(defn ic-arm-guard-is-const (a)
+  (match a
+    (AList dkids 0)
+    (AIdent d105 0)
+    (AInt d106 1)
+    (AFloat d107 1)
+    (AString d108 0)
+    (ABool d109 1)))
+
+; A call-like operand: a parenthesised form whose head is NOT a known
+; variant constructor (special forms inside binop args are rejected too —
+; they violate the one-call rule regardless).
+(defn ic-arm-guard-is-call (arena a vt)
+  (match a
+    (AList kids (if (> (list-length kids) 0)
+                  (ic-arm-guard-call-head arena (first-ast kids) vt)
+                  0))
+    (AIdent d110 0)
+    (AInt d111 0)
+    (AFloat d112 0)
+    (AString d113 0)
+    (ABool d114 0)))
+
+(defn ic-arm-guard-call-head (arena head vt)
+  (let tag (vt-tag-of vt (str-intern arena (ident-name head "")))
+    (if (> tag -1) 0 1)))
 
 ; Pattern binding names ("_" wildcards kept, skipped by codegen), in
 ; source order: every element except the trailing body.
