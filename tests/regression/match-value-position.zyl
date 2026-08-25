@@ -1,0 +1,54 @@
+; Match-in-value-position regression tests
+; Verifies `match` works outside whole-body position: let bindings,
+; binop arguments, if branches, call arguments, nested in arm bodies,
+; and multiple matches per function. These shapes run through both the
+; Rust bootstrap and stage>=1 self-hosted binaries.
+
+(deftype _mvp_Shape (MvpSq Int) (MvpCi Int))
+(deftype _mvp_Wrap (MvpW _mvp_Shape))
+
+(test "match-in-let"
+  (assert-equal (let a (match (MvpSq 4)
+                        (MvpSq x (* x x))
+                        (MvpCi r (* 3 r r)))
+                  a)
+                16))
+
+(test "match-in-binop"
+  (assert-equal (+ 1 (match (MvpCi 2)
+                       (MvpSq x (* x x))
+                       (MvpCi r (* 3 r r))))
+                13))
+
+(test "match-in-if"
+  (assert-equal (if (> 1 0) (match (MvpSq 5)
+                        (MvpSq x (* x x))
+                        (MvpCi r (* 3 r r)))
+                  0)
+                25))
+
+(test "match-as-call-arg"
+  (assert-equal (+ 0 (match (MvpCi 3)
+                       (MvpSq x (* x x))
+                       (MvpCi r (* 3 r r))))
+                27))
+
+(test "match-nested-in-arm"
+  (assert-equal (match (MvpW (MvpSq 4))
+                  (MvpW s (match s
+                            (MvpSq x (* x x))
+                            (MvpCi r (* 3 r r)))))
+                16))
+
+(test "two-matches-one-begin"
+  (assert-equal (begin
+                  (match (MvpSq 2) (MvpSq x x) (MvpCi r r))
+                  (match (MvpCi 5) (MvpSq x x) (MvpCi r r)))
+                5))
+
+(test "match-result-reused"
+  (assert-equal (let m (match (MvpCi 1)
+                        (MvpSq x x)
+                        (MvpCi r (* r 10)))
+                  (+ m m))
+                20))

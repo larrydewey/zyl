@@ -72,15 +72,11 @@ these. Violations miscompile SILENTLY.
 1. **(LIFTED 2026-08-25) Function arity.** Stack-passed args >6 now work
    end-to-end (`cg-call-args` scratch-slot staging + `cg-param-spills`
    stack loads). Prefer <=6 params anyway for readability.
-2. **A `match` may appear only as the ENTIRE BODY of its defn.** Nested
-   matches in arm bodies or if branches miscompile. Extract inner matches
-   to helper functions:
-   ```lisp
-   ; WRONG: (if c (match x ...) y)
-   ; RIGHT:
-   (defn inner (x) (match x ...))
-   (defn outer (...) (if c (inner x) y))
-   ```
+2. **(LIFTED 2026-08-25) Match in value position works**: let bindings,
+   binop args, if branches, call args, nested arm-body matches, multiple
+   matches per defn — all verified through stage>=2
+   (tests/regression/match-value-position.zyl). Prefer flat code anyway;
+   deep nesting is where residual codegen bugs live.
 3. **Enumerate every constructor** in every match. Unknown arm names map
    to discriminant 0 silently. Wildcards must be NAMED dummies (`d1`,
    `d2`, ...), never bare `_`.
