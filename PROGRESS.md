@@ -122,6 +122,52 @@ How the last two gaps were closed:
       then a Zyl-written LSP once the self-hosted one is trusted.
 
 ### P3 — Bootstrap correctness & performance
+- [x] **Float ABI fixes (Rust bootstrap, 2026-08-25)**: several
+      pre-existing codegen bugs fixed and verified end-to-end:
+    - rodata collectors did not recurse into `Match` arm bodies —
+      float/string literals inside arms referenced labels that were never
+      emitted (undefined `.flt_N` at link time). Both collectors now walk
+      arm bodies.
+    - `(print <float>)` printed garbage ints: Print's type detection
+      relied on ICNF `typ`, which is almost always `None`.
+      `node_looks_float` is now a method that follows Assign/Load chains,
+      recognizes Float-typed params (`float_params`) and Float-returning
+      calls (`func_returns`); the Print handler uses it as a fallback.
+    - printf with `al != 0` spills xmm args via aligned SSE stores →
+      segfault on this codegen's unaligned frames. The float print path
+      now dynamically aligns rsp to 16 around printf and restores it via
+      `lea rsp, [rbp-frame]`.
+    - Float arguments across calls silently arrived as 0: caller passed
+      64-bit bit patterns in GPRs but the callee prologue read xmm regs.
+      Convention is now uniform: floats travel as GPR bit patterns
+      end-to-end (prologue stores the GPR directly).
+    - Verified: constant/bound/param/call-result floats print correctly;
+      24/24 regression + boot fixed point still hold.
+- [x] **Float/match codegen sweep, round 2 (2026-08-25)**: match-in-value-
+      position as a call argument no longer crashes; a cluster of related
+      float bugs fixed:
+    - `emit_float_load_into` gained Call/UnOp cases (GPR bit-pattern
+      convention); its stale xmm-args call convention removed.
+    - `MatchArmICNF.field_types` (from adt_defs, with monomorphized-name
+      fallback) feeds a new `float_locals` set so BinOp/UnOp inside match
+      arms pick SSE paths (`(* side side)` was an integer `imul`).
+    - Float BinOp/UnOp results now land in **both** xmm0 and rax (bit
+      pattern): downstream consumers (match joins, result slots) read
+      GPRs. `emit_binop_direct` and `emit_node_inner` both fixed.
+    - Float negation: `neg` on xmm registers (assembler error) replaced
+      with `0 - x`; xmm0/xmm-src register collision guarded.
+    - **Float comparisons were vacuous**: emit_binop_direct's float Eq/
+      Lt/Gt... arms had `xor eax,eax` between `ucomisd` and `setcc`,
+      clobbering the flags so every comparison returned true. Fixed.
+      This had been masking that `(/ 1.0 2.0 3.0)` ≠ `0.166667`
+      bit-exactly.
+    - assert-equal on floats is now approximate (|a-b| ≤ 1e-5 via new
+      `.flt_abs_mask`/`.flt_epsilon` rodata), matching %.6f printing
+      precision. Exact `==` remains exact.
+    - Verified: 24/24 regression + boot fixed point hold.
+- [ ] **Remaining known gaps**: TCO tail-call path does not handle float
+      args; catch-all (wildcard) arms work — Int discriminants verified,
+      float-arm + catch-all combinations now work end-to-end.
 - [ ] **Stack-passed args >6 params** in selfhost codegen (mirror the Rust
       fix: spill slots + reverse push + alignment), lifting the arity≤6
       restriction; keep the compile error until this lands.
