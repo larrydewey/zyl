@@ -26,22 +26,22 @@ plus linking are complete and tested; full regression suite 24/24.
       loop (Rust `zyl` → stage1 → stage2) and installing stage2 as the
       canonical binary; triple-compile + diff fixed-point check added to
       `run_regression_tests.sh` so self-compile regressions fail loudly.
-- [ ] **Compile errors for known-fragile shapes** instead of silent
-      miscompiles:
-    - `defn` with >6 params (selfhost codegen has no stack-passed args).
-    - Duplicate `deftype` names (duplicate constructor identities silently
-      break `match` — bit us twice: `FnName`, and pre-assembled sources).
-    - Unbalanced top-level forms (paren drift nested 12 defns inside one
-      function; only caught by luck).
+- [x] **Compile errors for known-fragile shapes** instead of silent
+      miscompiles *(done 2026-08-25, commit c9b5c69)*:
+    - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
+      `zyl-parse` (parser.zyl).
+    - `E_TOO_MANY_PARAMS` — defns with >6 params rejected at lowering.
+    - `E_DUPLICATE_VARIANT` — variant names shared across deftypes
+      rejected in `vt-from-variants` (icnf.zyl).
 - [ ] **Growable codegen buffer**: replace the fixed 8MB buffer in `cg-new`
       with arena growth sized from `icnf-size`.
-- [ ] **AI language skill** (`skills/zyl/SKILL.md`): expert-level Zyl
+- [x] **AI language skill** (`skills/zyl/SKILL.md`): expert-level Zyl
       knowledge for AI agents — syntax, the bootstrap constraint list
       (arity≤6, match-as-body, paren discipline, buf-append append
       semantics, FFI patterns, tag/match pitfalls), idioms, debugging
       recipes. Higher priority than most items: a robust skill file
       multiplies the effectiveness of every subsequent AI-assisted task.
-      *(created this session; keep updated as constraints are lifted)*
+      **(created 2026-08-25; keep updated as constraints are lifted)**
 
 ### P1 — Developer experience: diagnostics & editing
 - [ ] **Compiler error system overhaul** — target Rust-class diagnostics:
