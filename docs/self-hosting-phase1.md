@@ -2,7 +2,15 @@
 
 **Status:** Design RFC
 **Date:** 2026-08-04
-**Author:** Zyl compiler bootstrap effort
+> **STATUS (2026-08-25): HISTORICAL.** This document describes the original
+> pool-based IR design for Phase 1 of self-hosting. That design was replaced
+> by the clean-room recursive-ADT rewrite (`stdlib/compiler/{ast,lexer,
+> parser,icnf,codegen}.zyl` + `selfhost/driver.zyl`). The full bootstrap is
+> now COMPLETE and deterministic: stage1 -> stage2 -> stage3 with
+> byte-identical output at the fixed point. See `PROGRESS.md`
+> ("SELF-HOSTING COMPLETE") for the current architecture and the bug sweep
+> that got it working.
+
 
 ## 1. Goal
 
