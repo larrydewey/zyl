@@ -17,24 +17,24 @@
 
 (defn is-nil (xs)
   (match xs
-    (Cons _ _ false)
+    (Cons w1x w2x false)
     (Nil true)))
 
 (defn list-car (xs)
   (match xs
-    (Cons v _ (Some v))
+    (Cons v w3x (Some v))
     (Nil None)))
 
 (defn list-cdr (xs)
   (match xs
-    (Cons _ rest rest)
+    (Cons w4x rest rest)
     (Nil None)))
 
 ; Length
 (defn list-length (xs)
   (match xs
     (Nil 0)
-    (Cons _ rest (+ 1 (list-length rest)))))
+    (Cons w5x rest (+ 1 (list-length rest)))))
 
 ; Append
 (defn list-append (xs ys)

@@ -56,21 +56,21 @@
 (defn assoc-size (m)
   (match m
     (Empty 0)
-    (AssocNode _ _ rest (+ 1 (assoc-size rest)))))
+    (AssocNode w1x w2x rest (+ 1 (assoc-size rest)))))
 
 ; All keys, in insertion order (most recent first).
 ; Returns: List<K>
 (defn assoc-keys (m)
   (match m
     (Empty (Nil))
-    (AssocNode kk _ rest (Cons kk (assoc-keys rest)))))
+    (AssocNode kk w3x rest (Cons kk (assoc-keys rest)))))
 
 ; All values, in insertion order (most recent first).
 ; Returns: List<V>
 (defn assoc-values (m)
   (match m
     (Empty (Nil))
-    (AssocNode _ vv rest (Cons vv (assoc-values rest)))))
+    (AssocNode w4x vv rest (Cons vv (assoc-values rest)))))
 
 ; Map a function over values.
 ; Returns: Assoc<K, V2>

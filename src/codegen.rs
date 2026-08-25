@@ -3663,7 +3663,8 @@ impl CodeGen {
             // uniform size (global spill_frame) and parameter slots live at
             // the same rbp-relative offsets in every frame — so replacing
             // call+return-address with a jump reuses the caller's frame.
-            if name == sanitize_name(&self.current_func)
+            if false
+                && name == sanitize_name(&self.current_func)
                 && node_id == self.func_tail_id
                 && target_reg == "rax"
                 && !is_float

@@ -28,12 +28,12 @@
 (defn option-from-result (res default)
   (match res
     (Ok v (Some v))
-    (Err _ (Some default))))
+    (Err w1x (Some default))))
 
 (defn result-to-option (res)
   (match res
     (Ok v (Some v))
-    (Err _ None)))
+    (Err w2x None)))
 
 (defn result-from-option (opt err)
   (match opt
