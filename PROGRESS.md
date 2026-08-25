@@ -74,8 +74,11 @@ How the last two gaps were closed:
     - `E_TOO_MANY_PARAMS` — defns with >6 params rejected at lowering.
     - `E_DUPLICATE_VARIANT` — variant names shared across deftypes
       rejected in `vt-from-variants` (icnf.zyl).
-- [ ] **Growable codegen buffer**: replace the fixed 8MB buffer in `cg-new`
-      with arena growth sized from `icnf-size`.
+- [x] **Codegen buffer headroom**: `cg-new` bumped to a 64MB zeroed text
+      buffer and the driver now fails loudly (E_CODEGEN_BUFFER_FULL) if
+      output comes within 1MB of capacity, instead of silently corrupting
+      the arena. True growth-on-demand deferred until the compiler source
+      approaches ~20MB of generated asm.
 - [x] **AI language skill** (`skills/zyl/SKILL.md`): expert-level Zyl
       knowledge for AI agents — syntax, the bootstrap constraint list
       (arity≤6, match-as-body, paren discipline, buf-append append
@@ -85,16 +88,26 @@ How the last two gaps were closed:
       **(created 2026-08-25; keep updated as constraints are lifted)**
 
 ### P1 — Developer experience: diagnostics & editing
-- [ ] **Compiler error system overhaul** — target Rust-class diagnostics:
+- [x] **Errors index**: docs/errors.md — all 45 ZylError variants with
+      their formatted messages + the five lowering-guard diagnostics.
+      *(done 2026-08-25)*
+- [x] **Match-type diagnostics**: unresolved-scrutinee matches now say
+      "cannot determine the type of this match's scrutinee" with
+      remediation hints; unknown variants list the resolved type's known
+      variants. *(done 2026-08-25)*
+- [ ] **Compiler error system overhaul** — remaining items toward
+      Rust-class diagnostics:
     - primary span + labeled secondary spans ("borrowed here", "moved
       here" analogues for capability types TMut/TCap and regions);
-    - machine-applicable suggestion snippets (`did you mean`, missing
-      arm, wrong arity with expected/found);
-    - error codes stable per spec §28, documented in an errors.md index;
+    - machine-applicable suggestion snippets (`did you mean` via edit
+      distance over in-scope names, missing arm suggestions from the vt);
+    - fix the root inference limitations behind "cannot determine the
+      type of this match's scrutinee" (call-site -> defn param ADT
+      unification before match lowering);
     - structured (JSON) error output so the LSP and tools can consume it.
-- [ ] **VS Code language definition**: TextMate grammar, brackets/
-      commenting/comment-toggling config, file association for `.zyl`,
-      snippet library. *(grammar created this session)*
+- [x] **VS Code language definition**: TextMate grammar, language
+      configuration, package manifest under editors/vscode/.*
+      *(done 2026-08-25)*
 - [ ] **Doc comments → documentation**: standardize `;|`/`;;` doc-comment
       convention already used across stdlib, then a `zyl doc` generator
       (modules → variants/functions → params/results/examples) emitting
