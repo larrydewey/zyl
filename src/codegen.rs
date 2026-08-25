@@ -840,6 +840,9 @@ impl CodeGen {
             // Exception: test functions (_test_*) are always emitted since they're
             // referenced via FnPtrImm which isn't tracked by reachability analysis.
             if !reachable.contains(&func.name) && !func.name.starts_with("_test_") {
+                if std::env::var("ZYL_DBG_DCE").is_ok() {
+                    eprintln!("[dce] SKIP {}", func.name);
+                }
                 continue;
             }
             self.current_func = func.name.clone();

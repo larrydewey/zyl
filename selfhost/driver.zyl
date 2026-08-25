@@ -32,7 +32,7 @@
           (emit-out arena fns))))))
 
 (defn main ()
-  (let arena (arena-create 1048576)
+  (let arena (arena-create 1073741824)
     (let fd (file-open "/tmp/zyl_boot_in.zyl" "r")
       (if (> fd 0)
         (boot-run arena fd)
