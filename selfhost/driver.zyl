@@ -16,10 +16,11 @@
 
 (defn emit-out (arena fns)
   (let st (cg-program (cg-new arena) fns)
-    (let out (file-open "/tmp/zyl_boot_out.s" "w")
-      (let n (file-write out (cg-buffer st))
-        (let d3 (file-close out)
-          n)))))
+    (let buf (cg-buffer st)
+      (let out (file-open "/tmp/zyl_boot_out.s" "w")
+        (let n (file-write out buf)
+          (let d3 (file-close out)
+            n))))))
 
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)
@@ -39,3 +40,4 @@
         (begin
           (dbg-log "no input\n")
           1)))))
+
