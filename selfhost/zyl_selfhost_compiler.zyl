@@ -1211,11 +1211,9 @@
     (let params (first-ast (rest-ast (rest-ast kids)))
       (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
         (let ps (list-reverse (param-names params (no-strs)))
-          ; The self-hosted codegen passes args in SysV registers only;
-          ; more than 6 params silently miscompiles.
-          (if (> (list-length ps) 6)
-            (ffi-call "f_error" "E_TOO_MANY_PARAMS: defn has more than 6 parameters" 1000)
-            (IFn (str-intern arena (ident-name nm "")) ps (ic-expr arena body vt))))))))
+          ; Params beyond the sixth are passed on the stack (SysV);
+          ; cg-call-args/cg-param-spills handle both sides.
+          (IFn (str-intern arena (ident-name nm "")) ps (ic-expr arena body vt)))))))
 
 (defn ic-defn-short (arena kids vt)
   (let nm (first-ast (rest-ast kids))
@@ -1376,15 +1374,16 @@
         (ic-binop-fold arena op args vt)
         (IConst 0)))))
 
-; Left-associative n-ary fold: (op a b c) -> (op a (op b c)).
+; Left-associative n-ary fold: (op a b c) -> (op (op a b) c).
+; The tree must nest LEFT so subtraction/division evaluate in source
+; order: 10-(2-3) != (10-2)-3.
 (defn ic-binop-fold (arena op args vt)
   (if (= (list-length args) 2)
     (IBinop op
             (ic-expr arena (first-ast args) vt)
-            (ic-expr arena (first-ast (rest-ast args)) vt))
-    (IBinop op
-            (ic-expr arena (first-ast args) vt)
-            (ic-binop-fold arena op (rest-ast args) vt))))
+            (ic-expr arena (last-ast args) vt))
+    (let l (ic-binop-fold arena op (butlast args (no-asts)) vt)
+      (IBinop op l (ic-expr arena (last-ast args) vt)))))
 
 ; print: multi-argument prints become a sequence of single prints.
 (defn ic-print (arena args vt)
@@ -1987,25 +1986,79 @@
           (if (= i 4) "r8"
             "r9"))))))
 
-; Call: pre-align rsp (odd arg count gets 8 bytes of pad BEFORE pushes so
-; every pop lands on its pushed value), evaluate args left-to-right pushing
-; each result, pop into registers in reverse, call, clean up pad.
+; Call: arguments are staged through scratch slots so that more than six
+; parameters work (SysV stack args):
+;   phase 0: 8-byte alignment pad if N+S is odd (S = stack args)
+;   phase 1: evaluate every argument left-to-right into an 8-byte
+;            scratch slot (`sub rsp, 8` / `mov [rsp], rax`)
+;   phase 2: copy-push stack args (index >= 6) in reverse order so arg 6
+;            sits at [rsp] at the call
+;   phase 3: load register args from their scratch slots ([rsp+off],
+;            offsets account for the copy-pushes)
+;   phase 4: call; cleanup removes pad + scratch + copy-pushes.
 ; `mangle` adds the f_ prefix for user functions.
 (defn cg-call-args (st env name args mangle i)
-  (let st2 (if (= (% (list-length args) 2) 1)
-             (cg-emit-line st "    sub rsp, 8")
-             st)
-    (let st3 (cg-push-all st2 env args)
-      (if (> mangle 0)
-        (cg-fire-user st3 env name (list-length args))
-        (cg-fire-ext st3 env name (list-length args))))))
+  (let n (list-length args)
+    (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
+               (cg-emit-line st "    sub rsp, 8")
+               st)
+      (let st3 (cg-scratch-all st2 env args)
+        (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
+          (let st5 (cg-load-reg-args st4 n (- (cg-min-int n 6) 1))
+            (if (> mangle 0)
+              (cg-fire-user st5 env name n)
+              (cg-fire-ext st5 env name n))))))))
 
-; Push all call arguments left-to-right.
-(defn cg-push-all (st env args)
+; Number of stack-passed (SysV) arguments for a call of arity n.
+(defn cg-stack-count (n)
+  (if (> n 6) (- n 6) 0))
+
+(defn cg-min-int (a b)
+  (if (< a b) a b))
+
+; Phase 1: evaluate each argument once and spill it into a scratch slot.
+(defn cg-scratch-all (st env args)
   (if (is-nil args)
     st
     (let st2 (cg-expr st env (ih-ic args))
-      (cg-push-all (cg-emit-line st2 "    push rax") env (tl2 args)))))
+      (let st3 (cg-emit-line st2 "    sub rsp, 8")
+        (let st4 (cg-emit-line st3 "    mov [rsp], rax")
+          (cg-scratch-all st4 env (tl2 args)))))))
+
+; Phase 2: copy-push args i = n-1 down to 6 from their scratch slots
+; (no-op for arity <= 6); `pushed` counts bytes already copy-pushed.
+(defn cg-copy-stack-args (st n i pushed)
+  (if (< i 6)
+    st
+    (let st2 (cg-copy-one st (+ (* 8 (- n 1 i)) pushed))
+      (cg-copy-stack-args st2 n (- i 1) (+ pushed 8)))))
+
+(defn cg-copy-one (st off)
+  (let st2 (cg-emit st "    mov r10, [rsp+")
+    (let st3 (cg-emit-int st2 off)
+      (let st4 (cg-emit st3 "]")
+        (let st5 (cg-nl st4)
+          (cg-emit-line st5 "    push r10"))))))
+
+; Phase 3: load register args i = min(n,6)-1 down to 0 from scratch;
+; offsets skip over the S copy-pushed stack args.
+(defn cg-load-reg-args (st n i)
+  ; NOTE: the offset must be built through lets — a binop whose direct
+  ; operands are BOTH calls silently computes 0 in stage>=2 binaries
+  ; (generalisation of the match-arm one-call rule).
+  (if (< i 0)
+    st
+    (let a (* 8 (- n 1 i))
+      (let b (* 8 (cg-stack-count n))
+        (let st2 (cg-load-reg-one st (cg-reg-of i) (+ a b))
+          (cg-load-reg-args st2 n (- i 1)))))))
+
+(defn cg-load-reg-one (st reg off)
+  (let st2 (cg-emit st "    mov ")
+    (let st3 (cg-emit st2 reg)
+      (let st4 (cg-emit st3 ", [rsp+")
+        (let st5 (cg-emit-int st4 off)
+          (cg-nl (cg-emit st5 "]")))))))
 
 ; HOF indirect calls are implemented but gated OFF: the path crashes
 ; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
@@ -2048,17 +2101,18 @@
     (cg-user-indirect st env name n)))
 
 (defn cg-call-cleanup (st n)
-  (if (= (% n 2) 1)
-    (cg-emit-line st "    add rsp, 8")
-    st))
+  ; Built through lets: no binop may directly combine two calls.
+  (let ns (+ n (cg-stack-count n))
+    (let tot (* 8 (+ ns (% ns 2)))
+      (let st2 (cg-emit st "    add rsp, ")
+        (cg-nl (cg-emit-int st2 tot))))))
 
 (defn cg-user-direct (st env name n)
-  (let st2 (cg-pop-regs st (- n 1))
-    (let st3 (cg-emit-line st2 (cg-call-user-str st env name))
-      (cg-call-cleanup st3 n))))
+  (let st2 (cg-emit-line st (cg-call-user-str st env name))
+    (cg-call-cleanup st2 n)))
 
 ; Indirect (HOF): target address is in the local's stack slot. Load it
-; into r10 AFTER the pops so the arg pops cannot clobber it.
+; into r10 AFTER the register args are staged so nothing clobbers them.
 (defn cg-indirect-target (st off)
   (let st2 (cg-emit st "    mov r10, [rbp")
     (let st3 (cg-emit-int st2 off)
@@ -2067,25 +2121,15 @@
           (cg-emit-line st5 "    call r10"))))))
 
 (defn cg-user-indirect (st env name n)
-  (let st2 (cg-pop-regs st (- n 1))
-    (let st3 (cg-indirect-target st2 (env-lookup env name))
-      (cg-call-cleanup st3 n))))
+  (let st2 (cg-indirect-target st (env-lookup env name))
+    (cg-call-cleanup st2 n)))
 
 ; ── ext (FFI) path ──
 
 (defn cg-fire-ext (st env name n)
-  (let st2 (cg-pop-regs st (- n 1))
-    (let st3 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") (str-intern (cg-arena-of st) name))
-      (let st4 (cg-emit-line st2 st3)
-        (cg-call-cleanup st4 n)))))
-
-; Pop j+1 pushed args into their registers (reverse order).
-(defn cg-pop-regs (st j)
-  (if (< j 0)
-    st
-    (let st2 (cg-emit st "    pop ")
-      (let st3 (cg-emit st2 (cg-reg-of j))
-        (cg-pop-regs (cg-nl st3) (- j 1))))))
+  (let st2 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") (str-intern (cg-arena-of st) name))
+    (let st3 (cg-emit-line st st2)
+      (cg-call-cleanup st3 n))))
 
 ; print: pick the format by the argument's kind.
 (defn cg-print (st env a)
@@ -2337,15 +2381,31 @@
     (cg-param-env (tl2 params) (+ i 1)
                   (EnvBind (shd params) (- (* 8 (+ i 1))) 0 acc))))
 
-; Spill incoming SysV registers to param slots.
+; Spill incoming args to param slots: indices 0..5 from SysV registers,
+; indices >= 6 from the caller's stack frame ([rbp+16] is stack arg 6).
 (defn cg-param-spills (st i n)
   (if (>= i n)
     st
-    (let st2 (cg-emit st "    mov [rbp")
-      (let st3 (cg-emit-int st2 (- (* 8 (+ i 1))))
-        (let st4 (cg-emit st3 "], ")
-          (let st5 (cg-emit st4 (cg-reg-of i))
-            (cg-param-spills (cg-nl st5) (+ i 1) n)))))))
+    (if (< i 6)
+      (cg-param-spill-reg st i n)
+      (cg-param-spill-stack st i n))))
+
+(defn cg-param-spill-reg (st i n)
+  (let st2 (cg-emit st "    mov [rbp")
+    (let st3 (cg-emit-int st2 (- (* 8 (+ i 1))))
+      (let st4 (cg-emit st3 "], ")
+        (let st5 (cg-emit st4 (cg-reg-of i))
+          (cg-param-spills (cg-nl st5) (+ i 1) n))))))
+
+(defn cg-param-spill-stack (st i n)
+  (let st2 (cg-emit st "    mov r10, [rbp+")
+    (let st3 (cg-emit-int st2 (+ 16 (* 8 (- i 6))))
+      (let st4 (cg-emit st3 "]")
+        (let st5 (cg-nl st4)
+          (let st6 (cg-emit st5 "    mov [rbp")
+            (let st7 (cg-emit-int st6 (- (* 8 (+ i 1))))
+              (let st8 (cg-emit st7 "], r10")
+                (cg-param-spills (cg-nl st8) (+ i 1) n)))))))))
 
 ; Emit the whole program: header, functions, entry stub, format strings,
 ; rodata. Functions are emitted in lowering order (source order); the

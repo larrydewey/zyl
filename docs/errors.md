@@ -57,9 +57,8 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
 
 - `E_MATCH_ARM_COMPLEX` — a match arm combines a constant with 2+ calls in
   one binop, or nests binop chains. Arm bodies must hold a single call or
-  a single simple binop; nest sums through helper functions.
-- `E_TOO_MANY_PARAMS` — more than 6 parameters (self-hosted codegen passes
-  arguments in SysV registers only).
+  a single simple binop; nest sums through helper functions. Raised by the
+  Rust bootstrap (ICNF level) and the self-hosted lowering (AST level).
 - `E_DUPLICATE_VARIANT` — a variant name is defined by more than one
   deftype; constructor identities would silently break `match`.
 - `E_UNBALANCED_PARENS` — paren counts differ across the token stream.
