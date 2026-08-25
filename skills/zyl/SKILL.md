@@ -106,9 +106,7 @@ these. Violations miscompile SILENTLY.
    rejects violating shapes with E_MATCH_ARM_COMPLEX.
 9. **';' inside strings is safe** (lexer is string-aware as of
    2026-08-25), but older stage binaries truncate there.
-10. **';' inside strings is safe** (lexer is string-aware as of
-   2026-08-25), but older stage binaries truncate there.
-9. Keep function arities/bodies moderate; frame size scales with
+10. Keep function arities/bodies moderate; frame size scales with
    `16*(64+icnf-size)` bytes (~11KB typical) so deep recursion needs the
    big-stack worker (generated entry stubs already route main through it).
 
