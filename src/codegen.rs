@@ -47,8 +47,12 @@ pub struct CodeGen {
     func_params: crate::deterministic::HashMap<String, Vec<(String, Type)>>,
     /// Names of parameters typed as String in the function currently being emitted.
     string_params: crate::deterministic::HashSet<String>,
+    /// Names of parameters typed as Float in the function currently being emitted.
+    float_params: crate::deterministic::HashSet<String>,
     /// Match-arm pattern variables bound to String fields (from type inference).
     string_locals: crate::deterministic::HashSet<String>,
+    /// Match-arm pattern variables bound to Float fields (from deftype decls).
+    float_locals: crate::deterministic::HashSet<String>,
     /// Temp stack slot counter for BinOp/UnOp temporaries. Separate from If result_var slots.
     temp_slot_counter: usize,
     /// All known function names (sanitized), used to distinguish direct calls
@@ -95,7 +99,9 @@ impl CodeGen {
             func_returns: crate::deterministic::HashMap::default(),
             func_params: crate::deterministic::HashMap::default(),
             string_params: crate::deterministic::HashSet::default(),
+            float_params: crate::deterministic::HashSet::default(),
             string_locals: crate::deterministic::HashSet::default(),
+            float_locals: crate::deterministic::HashSet::default(),
             temp_slot_counter: 0,
             function_names: crate::deterministic::HashSet::default(),
             current_func: String::new(),
@@ -891,16 +897,11 @@ impl CodeGen {
                 if i < 6 && !param_name.is_empty() {
                     let offset = (i + 1) * 8;
                     if matches!(resolved_type, Type::Prim(PrimType::Float)) {
-                        // Float param: load from XMM register as bit pattern.
-                        let xmm_reg = abi_xmm_regs[i];
+                        // Float params travel as 64-bit IEEE bit patterns in
+                        // GPRs (matching the caller's arg-spill path); store
+                        // the GPR directly. 64-bit store (don't truncate).
                         let gpr_reg = abi_regs_64[i];
                         self.asm_push_align();
-                        self.asm.push(format!(
-                            "    movq {}, {}",
-                            gpr_reg, xmm_reg
-                        ));
-                        self.asm_push_align();
-                        // 64-bit store for float (don't truncate to 32-bit).
                         self.asm.push(format!(
                             "    mov [rbp-{}], {}",
                             offset,
@@ -983,6 +984,8 @@ impl CodeGen {
 
             // Track String-typed parameters for print type detection.
             self.string_params.clear();
+            self.float_params.clear();
+            self.float_locals.clear();
             let resolved_params = self
                 .func_params
                 .get(&func.name)
@@ -991,6 +994,9 @@ impl CodeGen {
             for param in resolved_params.iter() {
                 if matches!(param.1, Type::Prim(PrimType::String)) {
                     self.string_params.insert(param.0.clone());
+                }
+                if matches!(param.1, Type::Prim(PrimType::Float)) {
+                    self.float_params.insert(param.0.clone());
                 }
             }
 
@@ -1891,10 +1897,10 @@ impl CodeGen {
             .push(format!("    mov {}, rax", reg_to_64(target_reg)));
     }
 
-    /// Best-effort static float detection for Eq operands: follows one level
-    /// of arithmetic nesting and recognizes Float constants. Used because
+    /// Best-effort static float detection for Eq operands: follows one level/// of arithmetic nesting and recognizes Float constants. Used because
     /// ICNF Eq/BinOp nodes often carry no type annotation.
     fn node_looks_float(
+        &self,
         id: usize,
         lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
@@ -1907,6 +1913,11 @@ impl CodeGen {
             Some(n) => n,
             None => return false,
         };
+        if let ICNFInner::Load(name) = &node.node {
+            if self.float_params.contains(name) || self.float_locals.contains(name) {
+                return true;
+            }
+        }
         if matches!(
             node.typ.as_ref(),
             Some(t) if matches!(t, Type::Prim(PrimType::Float))
@@ -1916,10 +1927,36 @@ impl CodeGen {
         match &node.node {
             ICNFInner::Const(crate::ast::Atom::Float(_)) => true,
             ICNFInner::BinOp(_, l, r) => {
-                Self::node_looks_float(*l, lookup, stmts, depth + 1)
-                    || Self::node_looks_float(*r, lookup, stmts, depth + 1)
+                self.node_looks_float(*l, lookup, stmts, depth + 1)
+                    || self.node_looks_float(*r, lookup, stmts, depth + 1)
             }
-            ICNFInner::UnOp(_, a) => Self::node_looks_float(*a, lookup, stmts, depth + 1),
+            ICNFInner::UnOp(_, a) => self.node_looks_float(*a, lookup, stmts, depth + 1),
+            ICNFInner::Assign(_, v) => self.node_looks_float(*v, lookup, stmts, depth + 1),
+            ICNFInner::Call(name, _) => matches!(
+                self.func_returns.get(&sanitize_name(name)),
+                Some(Type::Prim(PrimType::Float))
+            ),
+            ICNFInner::UnOp(op, a) if *op == crate::icnf::UnOpKind::Negate => {
+                // Float negation result (integer Negate on floats is invalid).
+                self.node_looks_float(*a, lookup, stmts, depth + 1)
+            }
+            ICNFInner::Load(name) => {
+                // Follow the most recent assignment of this local in the
+                // enclosing statement list.
+                let mut found = None;
+                for n in stmts.iter().rev() {
+                    if let ICNFInner::Assign(an, avid) = &n.node {
+                        if an == name {
+                            found = Some(*avid);
+                            break;
+                        }
+                    }
+                }
+                match found {
+                    Some(vid) => self.node_looks_float(vid, lookup, stmts, depth + 1),
+                    None => false,
+                }
+            }
             _ => false,
         }
     }
@@ -2075,6 +2112,13 @@ impl CodeGen {
                         collect_floats_from_node(n, seen, out);
                     }
                 }
+                ICNFInner::Match { arms, .. } => {
+                    for arm in arms {
+                        for n in &arm.body {
+                            collect_floats_from_node(n, seen, out);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -2181,6 +2225,13 @@ impl CodeGen {
                     Self::collect_from_node(n, out);
                 }
             }
+            ICNFInner::Match { arms, .. } => {
+                for arm in arms {
+                    for n in &arm.body {
+                        Self::collect_from_node(n, out);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -2284,6 +2335,16 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push(format!("{}:", zero_label));
         self.asm.push("    .quad 0".to_string());
+
+        // Absolute-value bit mask (clears the sign bit) for float |a-b|.
+        self.asm_push_align();
+        self.asm.push(".flt_abs_mask:".to_string());
+        self.asm.push("    .quad 0x7fffffffffffffff".to_string());
+
+        // Epsilon for approximate float equality (assert-equal): 1e-5.
+        self.asm_push_align();
+        self.asm.push(".flt_epsilon:".to_string());
+        self.asm.push("    .quad 4532020583610935537".to_string());
 
         // Switch back to text section.
         self.asm_push_align();
@@ -2517,20 +2578,16 @@ impl CodeGen {
                 typ,
                 ..
             }) => {
+                let is_cmp = matches!(op, BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge);
                 let is_float = matches!(typ.as_ref(), Some(t) if matches!(t, Type::Prim(PrimType::Float)))
+                    || (!is_cmp
+                        && (self.node_looks_float(*left_id, lookup, stmts, 0)
+                            || self.node_looks_float(*right_id, lookup, stmts, 0)))
                     || {
-                        let is_cmp = matches!(op, BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge);
                         if !is_cmp { false }
                         else {
-                            let find_node = |id: usize| -> Option<&ICNFNode> {
-                                lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id))
-                            };
-                            let left_is_float = find_node(*left_id)
-                                .and_then(|n| n.typ.as_ref())
-                                .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                            let right_is_float = find_node(*right_id)
-                                .and_then(|n| n.typ.as_ref())
-                                .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
+                            let left_is_float = self.node_looks_float(*left_id, lookup, stmts, 0);
+                            let right_is_float = self.node_looks_float(*right_id, lookup, stmts, 0);
                             left_is_float || right_is_float
                         }
                     };
@@ -2640,7 +2697,8 @@ impl CodeGen {
                 typ,
                 ..
             }) => {
-                let is_float = matches!(typ.as_ref(), Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                let is_float = matches!(typ.as_ref(), Some(t) if matches!(t, Type::Prim(PrimType::Float)))
+                    || self.node_looks_float(*arg_id, lookup, stmts, 0);
                 // Pure value: always re-emit (see BinOp arm note).
                 let already_emitted = false;
                 if already_emitted {
@@ -2920,8 +2978,8 @@ impl CodeGen {
                     emitted_ids.insert(src_ssa_id);
                 } else {
                     // Floats compare via UCOMISD, not integer cmp.
-                    let eq_is_float = Self::node_looks_float(*left, lookup, stmts, 0)
-                        || Self::node_looks_float(*right, lookup, stmts, 0);
+                    let eq_is_float = self.node_looks_float(*left, lookup, stmts, 0)
+                        || self.node_looks_float(*right, lookup, stmts, 0);
                     self.emit_binop_direct(
                         &BinOpKind::Eq,
                         *left,
@@ -3208,30 +3266,45 @@ impl CodeGen {
                     self.asm.push(format!("    movsd {}, {}", xmm_dest, xmm1));
                     self.asm_push_align();
                     self.asm.push(format!("    addsd {}, {}", xmm_dest, xmm2));
+                    // Result must also land in rax as a 64-bit bit pattern;
+                    // downstream consumers read GPRs, never xmm0.
+                    self.asm_push_align();
+                    self.asm.push("    movq rax, xmm0".to_string());
                 }
                 BinOpKind::Sub => {
                     self.asm_push_align();
                     self.asm.push(format!("    movsd {}, {}", xmm_dest, xmm1));
                     self.asm_push_align();
                     self.asm.push(format!("    subsd {}, {}", xmm_dest, xmm2));
+                    // Result must also land in rax as a 64-bit bit pattern;
+                    // downstream consumers read GPRs, never xmm0.
+                    self.asm_push_align();
+                    self.asm.push("    movq rax, xmm0".to_string());
                 }
                 BinOpKind::Mul => {
                     self.asm_push_align();
                     self.asm.push(format!("    movsd {}, {}", xmm_dest, xmm1));
                     self.asm_push_align();
                     self.asm.push(format!("    mulsd {}, {}", xmm_dest, xmm2));
+                    // Result must also land in rax as a 64-bit bit pattern;
+                    // downstream consumers read GPRs, never xmm0.
+                    self.asm_push_align();
+                    self.asm.push("    movq rax, xmm0".to_string());
                 }
                 BinOpKind::Div => {
                     self.asm_push_align();
                     self.asm.push(format!("    movsd {}, {}", xmm_dest, xmm1));
                     self.asm_push_align();
                     self.asm.push(format!("    divsd {}, {}", xmm_dest, xmm2));
+                    // Result must also land in rax as a 64-bit bit pattern;
+                    // downstream consumers read GPRs, never xmm0.
+                    self.asm_push_align();
+                    self.asm.push("    movq rax, xmm0".to_string());
                 }
                 BinOpKind::Eq => {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    sete al".to_string());
                     self.asm_push_align();
@@ -3241,7 +3314,6 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    setnz al".to_string());
                     self.asm_push_align();
@@ -3251,7 +3323,6 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    setb al".to_string());
                     self.asm_push_align();
@@ -3261,7 +3332,6 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    seta al".to_string());
                     self.asm_push_align();
@@ -3271,7 +3341,6 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    setbe al".to_string());
                     self.asm_push_align();
@@ -3281,7 +3350,6 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    ucomisd {}, {}", xmm1, xmm2));
                     self.asm_push_align();
-                    self.asm.push("    xor eax, eax".to_string());
                     self.asm_push_align();
                     self.asm.push("    setae al".to_string());
                     self.asm_push_align();
@@ -3851,19 +3919,32 @@ impl CodeGen {
         is_float: bool,
     ) {
         if is_float {
-            let xmm_src = format!("xmm{}", self.alloc_xmm());
+            let mut xmm_src = format!("xmm{}", self.alloc_xmm());
+            // xmm0 is the negation destination; never use it for the source.
+            if xmm_src == "xmm0" {
+                xmm_src = "xmm7".to_string();
+            }
             self.emit_float_load_into(
                 arg_id, &xmm_src, stmts, local_vars, lookup, emitted_ids,
                 &crate::deterministic::HashSet::default(),
             );
             let xmm_dest = "xmm0".to_string();
+            // Float negation: 0 - x (never `neg`, which is integer-only).
             self.asm_push_align();
-            self.asm.push(format!("    movsd {}, {}", xmm_dest, xmm_src));
+            self.asm.push("    movsd xmm0, [.zero_sd]".to_string());
             self.asm_push_align();
-            self.asm.push(format!("    subsd {}, .zero_sd", xmm_dest));
+            self.asm.push(format!("    subsd {}, {}", xmm_dest, xmm_src));
+            // Result must also land in rax as a 64-bit bit pattern.
             self.asm_push_align();
-            self.asm
-                .push(format!("    movsd {}, {}", target_reg, xmm_dest));
+            self.asm.push("    movq rax, xmm0".to_string());
+            if target_reg.starts_with("xmm") {
+                self.asm_push_align();
+                self.asm.push(format!("    movsd {}, xmm0", target_reg));
+            } else {
+                self.asm_push_align();
+                self.asm
+                    .push(format!("    mov {}, rax", reg_to_64(target_reg)));
+            }
         } else {
             self.emit_load_into(
                 arg_id,
@@ -4060,6 +4141,11 @@ impl CodeGen {
                     // Clone local_vars for this arm scope since we need to add pattern bindings.
                     let mut arm_local_vars = local_vars.clone();
                     for (j, field_name) in arm.field_names.iter().enumerate() {
+                        // Track Float-typed pattern bindings so downstream
+                        // BinOp/print emission can pick SSE paths.
+                        if arm.field_types.get(j).map(|t| t == "Float").unwrap_or(false) {
+                            self.float_locals.insert(field_name.clone());
+                        }
                         let field_offset = (j + 1) * 8;
                         self.asm_push_align();
                         self.asm.push(format!("    mov rcx, [r12 + {}]", field_offset)); // Load field as 64-bit (can be pointer)
@@ -4934,23 +5020,10 @@ impl CodeGen {
             }
 
                 ICNFInner::BinOp(op, left_id, right_id) => {
+                    let is_cmp = matches!(op, BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge);
                     let is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)))
-                        || {
-                            let is_cmp = matches!(op, BinOpKind::Eq | BinOpKind::Neq | BinOpKind::Lt | BinOpKind::Gt | BinOpKind::Le | BinOpKind::Ge);
-                            if !is_cmp { false }
-                            else {
-                                let find_node = |id: usize| -> Option<&ICNFNode> {
-                                    lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id))
-                                };
-                                let left_is_float = find_node(*left_id)
-                                    .and_then(|n| n.typ.as_ref())
-                                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                                let right_is_float = find_node(*right_id)
-                                    .and_then(|n| n.typ.as_ref())
-                                    .is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
-                                left_is_float || right_is_float
-                            }
-                        };
+                        || (self.node_looks_float(*left_id, lookup, stmts, 0)
+                            || self.node_looks_float(*right_id, lookup, stmts, 0));
 
                     if is_float {
                        let xmm1 = format!("xmm{}", self.alloc_xmm());
@@ -4973,6 +5046,11 @@ impl CodeGen {
                               self.asm_push_align();
                               self.asm
                                   .push(format!("    addsd {}, {}", xmm_dest, xmm2));
+                              // Result must also land in rax as a 64-bit bit
+                              // pattern: downstream consumers (match joins,
+                              // result slots) read GPRs, never xmm0.
+                              self.asm_push_align();
+                              self.asm.push("    movq rax, xmm0".to_string());
                           }
                           BinOpKind::Sub => {
                               self.asm_push_align();
@@ -4981,6 +5059,11 @@ impl CodeGen {
                               self.asm_push_align();
                               self.asm
                                   .push(format!("    subsd {}, {}", xmm_dest, xmm2));
+                              // Result must also land in rax as a 64-bit bit
+                              // pattern: downstream consumers (match joins,
+                              // result slots) read GPRs, never xmm0.
+                              self.asm_push_align();
+                              self.asm.push("    movq rax, xmm0".to_string());
                           }
                           BinOpKind::Mul => {
                               self.asm_push_align();
@@ -4989,6 +5072,11 @@ impl CodeGen {
                               self.asm_push_align();
                               self.asm
                                   .push(format!("    mulsd {}, {}", xmm_dest, xmm2));
+                              // Result must also land in rax as a 64-bit bit
+                              // pattern: downstream consumers (match joins,
+                              // result slots) read GPRs, never xmm0.
+                              self.asm_push_align();
+                              self.asm.push("    movq rax, xmm0".to_string());
                           }
                           BinOpKind::Div => {
                               self.asm_push_align();
@@ -4997,6 +5085,11 @@ impl CodeGen {
                               self.asm_push_align();
                               self.asm
                                   .push(format!("    divsd {}, {}", xmm_dest, xmm2));
+                              // Result must also land in rax as a 64-bit bit
+                              // pattern: downstream consumers (match joins,
+                              // result slots) read GPRs, never xmm0.
+                              self.asm_push_align();
+                              self.asm.push("    movq rax, xmm0".to_string());
                           }
                            BinOpKind::Eq => {
                                self.asm_push_align();
@@ -5181,6 +5274,11 @@ impl CodeGen {
                     let slot_idx = (hash % 32) + 1;
                     self.asm_push_align();
                     self.asm.push(format!("    movsd [rbp-{}], {}", slot_idx * 8, xmm_result));
+                    // Result must also land in rax as a 64-bit bit pattern;
+                    // downstream consumers read GPRs, never xmm0.
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movq rax, {}", xmm_result));
                 } else {
                     // Evaluate the operand on demand — it may be any value
                     // node (If/Call/BinOp result); hashing to a stack slot
@@ -5940,6 +6038,11 @@ impl CodeGen {
                             matches!(value_node.and_then(|n| n.typ.as_ref()), Some(Type::Prim(PrimType::Float)))
                         } else { false }
                     } else { is_float };
+                    // Structural fallback: type info is often absent on ICNF
+                    // nodes, so also detect float-shaped values (float
+                    // constants, binops over floats, loads of float locals).
+                    let is_float = is_float
+                        || (!is_string && self.node_looks_float(arg_id, lookup, stmts, 0));
 
                      if is_string {
                      match find_node(arg_id) {
@@ -6020,10 +6123,21 @@ impl CodeGen {
                         }
                         self.asm_push_align();
                         self.asm.push("    lea rdi, [.fmt_float]".to_string());
+                        // printf spills xmm args with aligned SSE stores when
+                        // al != 0, so dynamically align rsp to 16 here.
                         self.asm_push_align();
-                        self.asm.push("    xor eax, 1           # 1 xmm arg for printf".to_string());
+                        self.asm.push("    mov rax, rsp".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    and rsp, -16".to_string());
+                        self.asm_push_align();
+                        self.asm.push("    mov eax, 1".to_string());
                         self.asm_push_align();
                         self.asm.push("    call printf@plt".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!(
+                            "    lea rsp, [rbp-{}]",
+                            self.spill_frame.max(256)
+                        ));
                     } else {
                         self.emit_load_into(
                             arg_id,
@@ -6556,8 +6670,8 @@ impl CodeGen {
                     emitted_ids.insert(node.id);
                 } else {
                 // Detect float comparisons from operand shapes.
-                let eq_is_float = Self::node_looks_float(*left, lookup, stmts, 0)
-                    || Self::node_looks_float(*right, lookup, stmts, 0);
+                let eq_is_float = self.node_looks_float(*left, lookup, stmts, 0)
+                    || self.node_looks_float(*right, lookup, stmts, 0);
                 self.emit_binop_direct(
                     &BinOpKind::Eq,
                     *left,
@@ -6574,10 +6688,45 @@ impl CodeGen {
             }
 
             ICNFInner::Assert { cond_ssa, msg } => {
-                // Load condition into eax. If zero (false), call zyl_panic.
-                self.emit_load_into(
-                    *cond_ssa, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
-                );
+                // Float equality is approximate: assert-equal literals are
+                // written to %.6f precision and rarely match computed doubles
+                // bit-for-bit (e.g. (/ 1.0 2.0 3.0) vs 0.166667). When the
+                // condition is a float Eq, compare |a - b| <= 1e-5 instead.
+                let float_eq_operands = match lookup.get(cond_ssa).map(|n| &n.node) {
+                    Some(ICNFInner::Eq { left, right }) if self.node_looks_float(*left, lookup, stmts, 0)
+                        || self.node_looks_float(*right, lookup, stmts, 0) =>
+                    {
+                        Some((*left, *right))
+                    }
+                    _ => None,
+                };
+                if let Some((l, r)) = float_eq_operands {
+                    self.emit_float_load_into(
+                        l, "xmm1", stmts, local_vars, lookup, emitted_ids, operand_ids,
+                    );
+                    self.asm_push_align();
+                    self.emit_float_load_into(
+                        r, "xmm2", stmts, local_vars, lookup, emitted_ids, operand_ids,
+                    );
+                    // eax = (|a - b| <= epsilon)
+                    self.asm_push_align();
+                    self.asm.push("    movsd xmm0, xmm1".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    subsd xmm0, xmm2".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    andpd xmm0, [.flt_abs_mask]".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    comisd xmm0, [.flt_epsilon]".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    setbe al".to_string());
+                    self.asm_push_align();
+                    self.asm.push("    movzx eax, al".to_string());
+                } else {
+                    // Load condition into eax.
+                    self.emit_load_into(
+                        *cond_ssa, "eax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    );
+                }
                 let msg = msg.as_deref().unwrap_or("assertion failed");
                 let label = format!(".assert_fail_{}", self.label_counter);
                 self.label_counter += 1;
@@ -7518,24 +7667,35 @@ impl CodeGen {
                     self.asm
                         .push(format!("    movsd {}, {}", xmm_reg, xmm_tmp));
                 }
-                ICNFInner::Call(name, args) => {
-                    // Float function call — pass args in XMM registers, result in xmm0.
-                    let abi_xmm = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
-                    for (i, &arg_id) in args.iter().enumerate() {
-                        if i < 6 {
-                            let arg_xmm = abi_xmm[i];
-                            self.emit_float_load_into(
-                                arg_id, arg_xmm, stmts, local_vars, lookup, emitted_ids, operand_ids,
-                            );
-                        }
-                    }
-                    let fn_name = format!("_ZYL_{}", name);
-                    self.asm_push_align();
-                    self.asm.push(format!("    call {}", fn_name));
-                    // Copy result from xmm0 to target register.
+                ICNFInner::UnOp(op, arg_id) => {
+                    // Re-emit the float unary op; its result lands in rax as
+                    // a bit pattern under the GPR convention.
+                    self.emit_unop_direct(
+                        op, *arg_id, "rax", stmts, local_vars, lookup, emitted_ids,
+                        id, true,
+                    );
                     self.asm_push_align();
                     self.asm
-                        .push(format!("    movsd {}, xmm0", xmm_reg));
+                        .push(format!("    movq {}, rax", xmm_reg));
+                }
+                ICNFInner::Call(name, args) => {
+                    // Float-valued call under the GPR bit-pattern convention:
+                    // emit the call normally (result bits in rax) and move
+                    // the pattern into the target XMM register.
+                    self.emit_call_direct(
+                        name,
+                        args,
+                        "rax",
+                        stmts,
+                        local_vars,
+                        lookup,
+                        emitted_ids,
+                        id,
+                        false,
+                    );
+                    self.asm_push_align();
+                    self.asm
+                        .push(format!("    movq {}, rax", xmm_reg));
                 }
                 _ => {
                     // Fallback: zero the XMM register.
