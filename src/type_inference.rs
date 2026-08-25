@@ -1279,7 +1279,11 @@ impl TypeInferer {
                     let abt = self.infer_expr(&arm.body)?;
                     {
                         if let Some(ref t) = first {
-                            drop(self.unify(t, &abt, expr.span.clone()));
+                            // All arms must agree — a mismatch here is the
+                            // classic cross-element-type mis-unification
+                            // (e.g. one call site Int, another String);
+                            // failing loudly beats computing garbage.
+                            self.unify(t, &abt, expr.span.clone())?;
                         } else {
                             first = Some(abt);
                         }
@@ -1668,10 +1672,20 @@ impl TypeInferer {
                 };
                 self.inferring_functions.borrow_mut().remove(name);
                 self.env = old_env;
-                if let Ok(ref ret_ty) = inferred_ret {
-                    self.body_infer_cache.borrow_mut().insert(name.to_string(), ret_ty.clone());
-                    self.function_returns.insert(name.to_string(), ret_ty.clone());
-                    return Ok(ret_ty.clone());
+                match inferred_ret {
+                    Ok(ret_ty) => {
+                        self.body_infer_cache.borrow_mut().insert(name.to_string(), ret_ty.clone());
+                        self.function_returns.insert(name.to_string(), ret_ty.clone());
+                        return Ok(ret_ty.clone());
+                    }
+                    Err(e) => {
+                        // Do NOT swallow: a body-inference failure here means
+                        // some call site's concrete types conflict with the
+                        // shared (monomorphic) parameter scheme — exactly the
+                        // silent cross-module mis-unification class. Fail the
+                        // compile so the caller sees the real mismatch.
+                        return Err(e);
+                    }
                 }
             }
             // If the stored return type is a type variable, unify it with a fresh var

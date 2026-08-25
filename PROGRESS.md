@@ -192,8 +192,21 @@ How the last two gaps were closed:
       sibling TCO safely.
 - [ ] **Cross-module inference fragility**: generic list helpers mis-unify
       across element types (constraint forcing duplicated per-module
-      helpers like `ih-ic`/`fh-if`). Improve unification or add explicit
-      type annotations.
+      helpers like `ih-ic`/`fh-if`). ROOT CAUSE IDENTIFIED (2026-08-25):
+      (1) untyped params are implicitly MONOMORPHIC — the first call site
+      fixes known_functions param types for all sites
+      (type_inference.rs handle_apply mutates the shared scheme);
+      (2) ADT constructor calls lose their type-parameter instantiation —
+      `(Some 42)` and `(Some "hi")` both infer as base `Opt`, so call-site
+      unification never sees Opt_Int vs Opt_String; (3) body inference is
+      best-effort: errors surface only as warnings (main.rs Phase 5),
+      because legacy sources have spurious artifacts (e.g. cg-if-parts
+      "expected String, found Icnf"), so blanket escalation breaks boot.
+      Landed as part of this item: match-arm result mismatches are now
+      HARD errors (was silently swallowed), which catches one class.
+      Proper fix = per-call-site instantiation (fresh param scheme per
+      site + ADT params carried in Nominal types) — a dedicated project;
+      until then keep per-element-type helper duplicates.
 - [x] **Match-in-value-position** *(done 2026-08-25)*: the restriction
       was already effectively lifted by earlier codegen fixes — verified
       let bindings, binop args, if branches, call args, nested arm-body
