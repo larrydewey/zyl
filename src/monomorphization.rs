@@ -56,8 +56,9 @@ pub struct MonoContext {
     /// ADT definitions (variant names + field type names).
     adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
 
-    /// ADT instantiation info from type inference.
-    adt_instantiations: IndexMap<String, Vec<String>>,
+    /// ADT instantiation info from type inference: distinct
+    /// {generic param -> concrete type} mappings per generic ADT.
+    adt_instantiations: IndexMap<String, Vec<crate::type_inference::AdtInstantiation>>,
 
     /// Span used for generated expressions.
     span: Span,
@@ -1429,6 +1430,12 @@ impl MonoContext {
     }
 
     /// Resolve a MakeVariant to its concrete ADT instantiation name.
+    ///
+    /// Uses the instantiations recorded by type inference (one {param ->
+    /// concrete} mapping per distinct use). A record matches this call site
+    /// when every generic field's argument literal shape agrees with the
+    /// concrete type bound to that field's param. Falls back to the first
+    /// recorded instantiation, then to no rewrite.
     fn resolve_make_variant_adt(
         &self,
         adt_name: &str,
@@ -1443,37 +1450,44 @@ impl MonoContext {
             .get(adt_name)
             .cloned()
             .unwrap_or_default();
-        let concrete_types: Vec<String> = self
+        let records: Vec<crate::type_inference::AdtInstantiation> = self
             .adt_instantiations
             .get(adt_name)
             .cloned()
             .unwrap_or_default();
-        let mut seen_types = crate::deterministic::HashSet::default();
-        let unique_types: Vec<String> = concrete_types
-            .into_iter()
-            .filter(|t| seen_types.insert(t.clone()))
-            .collect();
         let variant_info = variant_field_types
             .iter()
             .find(|(vname, _)| vname == variant_name)
             .map(|(_, fields)| fields.clone());
-        for concrete_ty in &unique_types {
-            if let Some(ref fields) = variant_info {
-                let is_match = args.iter().zip(fields.iter()).all(|(arg, field_type)| {
-                    is_generic_param(field_type) && arg_type_matches(&arg.inner, concrete_ty)
-                });
-                if is_match {
-                    return Some(format!("{}_{}", adt_name, concrete_ty));
+        let variant_info = variant_info?;
+        for inst in &records {
+            let is_match = args.iter().zip(variant_info.iter()).all(|(arg, field_type)| {
+                if is_generic_param(field_type) {
+                    match inst.get(field_type) {
+                        Some(concrete) => arg_type_matches(&arg.inner, concrete),
+                        None => true, // Unconstrained param — accept.
+                    }
+                } else {
+                    true // Concrete field — always compatible.
+                }
+            });
+            if is_match {
+                if let Some(mono_name) = inst.canonical_name(adt_name) {
+                    return Some(mono_name);
                 }
             }
         }
-        if !unique_types.is_empty() {
-            return Some(format!("{}_{}", adt_name, unique_types[0]));
-        }
-        None
+        records
+            .first()
+            .and_then(|inst| inst.canonical_name(adt_name))
     }
 
     /// Collect ADT instantiations for a generic type.
+    ///
+    /// Each recorded instantiation maps generic param names to concrete types;
+    /// every variant field holding that param is substituted with its bound
+    /// concrete type. Emission order follows the (deduplicated, insertion-
+    /// ordered) instantiation records — deterministic by construction.
     fn collect_adt_instantiations(
         &self,
         name: &str,
@@ -1488,54 +1502,75 @@ impl MonoContext {
             .cloned()
             .unwrap_or_default();
 
-        // Get concrete type instantiations from type inference.
-        let concrete_types: Vec<String> = self
+        // Distinct instantiations recorded at constructor call sites, MERGED:
+        // a multi-parameter ADT (Result<T,E>) constrains different params at
+        // different constructor sites ((Ok v) sees only T, (Err e) only E).
+        // Records whose param bindings do not conflict describe the same
+        // instance and are unioned; conflicting bindings stay separate.
+        let raw_records: Vec<crate::type_inference::AdtInstantiation> = self
             .adt_instantiations
             .get(name)
             .cloned()
             .unwrap_or_default();
-
-        // Deduplicate concrete types (preserve order).
-        let mut seen_types = crate::deterministic::HashSet::default();
-        let unique_types: Vec<String> = concrete_types
-            .into_iter()
-            .filter(|t| seen_types.insert(t.clone()))
-            .collect();
-
-        // If we have concrete instantiations, create one per type.
-        if !unique_types.is_empty() {
-            for concrete_ty in &unique_types {
-                let inst_name = format!("{}_{}", name, concrete_ty);
-                let mono_variants: Vec<ADTVariant> = variants
-                    .iter()
-                    .map(|v| {
-                        // Find the matching variant in variant_field_types.
-                        let fields: Vec<String> = variant_field_types
-                            .iter()
-                            .find(|(vname, _)| vname == &v.name)
-                            .map(|(_, fields)| {
-                                fields
-                                    .iter()
-                                    .map(|f| {
-                                        if is_generic_param(f) {
-                                            concrete_ty.clone()
-                                        } else {
-                                            f.clone()
-                                        }
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        ADTVariant {
-                            name: v.name.clone(),
-                            fields,
-                        }
-                    })
-                    .collect();
-
-                instantiations.insert(inst_name, mono_variants);
+        let mut records: Vec<crate::type_inference::AdtInstantiation> = Vec::new();
+        for rec in raw_records {
+            let mut merged_target: Option<usize> = None;
+            for (idx, existing) in records.iter().enumerate() {
+                let compatible = rec.params.iter().all(|(p, t)| {
+                    existing.get(p).map_or(true, |et| et == t)
+                });
+                if compatible {
+                    merged_target = Some(idx);
+                    break;
+                }
             }
+            match merged_target {
+                Some(idx) => {
+                    let existing = &mut records[idx];
+                    for (p, t) in rec.params {
+                        if existing.get(&p).is_none() {
+                            existing.params.push((p, t));
+                        }
+                    }
+                    existing.params.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+                None => records.push(rec),
+            }
+        }
+
+        for inst in &records {
+            let inst_name = match inst.canonical_name(name) {
+                Some(n) => n,
+                None => continue,
+            };
+            let mono_variants: Vec<ADTVariant> = variants
+                .iter()
+                .map(|v| {
+                    let fields: Vec<String> = variant_field_types
+                        .iter()
+                        .find(|(vname, _)| vname == &v.name)
+                        .map(|(_, fields)| {
+                            fields
+                                .iter()
+                                .map(|f| {
+                                    if is_generic_param(f) {
+                                        inst.get(f).unwrap_or(f).to_string()
+                                    } else {
+                                        f.clone()
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    ADTVariant {
+                        name: v.name.clone(),
+                        fields,
+                    }
+                })
+                .collect();
+
+            instantiations.insert(inst_name, mono_variants);
         }
 
         // If no instantiations found, generate one with Int as default.
@@ -1826,3 +1861,5 @@ impl MonoContext {
         (self.struct_defs.contains_key(n), self.known_types.contains_key(n))
     }
 }
+
+// TEMP DEBUG
