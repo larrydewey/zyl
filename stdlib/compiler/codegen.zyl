@@ -753,8 +753,11 @@
     (icnf-arm-size (hd-ia xs) (tl2 xs))))
 
 (defn icnf-arm-size (arm rest)
+  ; Match-arm bodies must contain at most ONE call (see icnf-add2 note);
+  ; nest the sum through helpers.
   (match arm
-    (IArm d65 d66 d67 body (+ 1 (icnf-size body) (icnf-count-arms rest)))))
+    (IArm d65 d66 d67 body
+      (icnf-add2 1 (icnf-add2 (icnf-size body) (icnf-count-arms rest))))))
 
 (defn cg-function (st f)
   (match f

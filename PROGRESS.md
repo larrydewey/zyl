@@ -2,32 +2,29 @@
 
 ## Current State (2026-08-25)
 
-**Self-hosting: functionally complete.** The Zyl compiler written in Zyl
-compiles itself end-to-end: stage1 (Rust bootstrap) → stage2 → stage3, and
-programs compiled by stage2/stage3 run correctly (ADTs + match, HOF calls,
-FFI, recursion, arithmetic, floats verified). Regression suite 24/24.
+**Self-hosting: COMPLETE, deterministic, verified.**
 
-**Strict byte-determinism: one gap remains (well characterized).**
-An earlier claim of byte-identical stage2/stage3 output was a false
-positive — the verification accidentally compared stage2's output against
-itself. `boot.sh` now checks honestly. Findings from closing the gap:
+```
+./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
+```
 
-1. **Rust bootstrap had runtime NONDETERMINISM** — std HashMap/HashSet use
-   a per-process random seed; iteration order leaked into compilation
-   decisions (flaky "unknown variant" inference failures across runs).
-   FIXED: src/deterministic.rs provides FNV-1a-hashed HashMap/HashSet;
-   all of src/ now uses them. Same input -> same output, every run.
-2. With determinism restored, the residual stage1-vs-stage2 output
-   difference shrank to PURELY stack-frame sizes (~100/291 functions,
-   zero code differences). Frame = 16*(64+icnf-size(body)); stage>=2
-   binaries compute smaller icnf-size values. Diagnosed: their compiled
-   `icnf-count-arms` effectively sees an empty arms list (e.g.
-   option-unwrap: expected size 7 = 2+1+2+2, gets 3 = 2+1+0+0), i.e. a
-   monomorphization/inference parity difference in the tiny polymorphic
-   helpers (is-nil/hd-ia/tl2) as compiled by the Rust vs the Zyl
-   inference engines. Correctness unaffected today (the +64-slot base
-   padding covers real usage); strict fixed point blocked on resolving
-   this parity issue.
+The Zyl compiler written in Zyl compiles itself end-to-end with a strict
+byte-identical fixed point. Programs compiled by stage2/stage3 run correctly
+(ADTs + match, HOF calls, FFI, recursion, arithmetic, floats). Regression
+suite 24/24.
+
+How the last two gaps were closed:
+1. **Rust bootstrap runtime nondeterminism** — std HashMap/HashSet use a
+   per-process random seed; iteration order leaked into compilation
+   decisions (flaky "unknown variant" failures across identical runs).
+   Fixed: src/deterministic.rs provides FNV-1a-hashed HashMap/HashSet;
+   all of src/ uses them. Same input -> same output, every run.
+2. **Match-arm multi-call miscompilation** — an arm body combining a
+   constant with TWO calls loses its computation ("bind fields; store 0").
+   Confirmed instance: icnf-arm-size returned 0 because its body was
+   `(+ 1 (icnf-size body) (icnf-count-arms rest))`. Rule: match-arm bodies
+   contain at most ONE call; sums nest through icnf-add2/add3 helpers.
+   After fixing the last instance (icnf-arm-size), the fixed point holds.
 
 **Details:** `docs/implementation-status.md`, `docs/regression-tests.md`.
 
@@ -41,20 +38,19 @@ itself. `boot.sh` now checks honestly. Findings from closing the gap:
       2026-08-25 — it immediately exposed that the earlier determinism
       check was vacuous; see Current State.)* Still to do: wire it into
       `run_regression_tests.sh --full`.
-- [ ] **Determinism gap: icnf-count-arms under monomorphization parity**
-      (blocks strict fixed point; see Current State). Two candidate fixes:
-      (a) make Zyl inference resolve is-nil/hd-ia/tl2 monomorphizations for
-      List(IArm) identically to the Rust engine, or (b) specialize
-      icnf-count-arms with a concrete non-generic helper over IArm lists.
-      Verify via ./boot.sh (diff must be empty).
+- [x] **Determinism gap CLOSED (2026-08-25)**: root cause was the same
+      match-arm multi-call miscompile hiding in `icnf-arm-size`
+      (`(+ 1 (icnf-size body) (icnf-count-arms rest))` computed as 0).
+      Fixed via icnf-add2 nesting; `./boot.sh` reports the fixed point
+      holds. RULE for new code: a match-arm body contains at most one
+      call — see skills/zyl/SKILL.md.
 - [x] **Rust bootstrap nondeterminism FIXED**: src/deterministic.rs
-      FNV-1a HashMap/HashSet now used across all of src/ — same input
-      produces identical output on every run (verified 5x).
-- [x] **icnf-size match-arm workaround** (icnf-add2/add3 helpers): reduced
-      divergent functions from 246 to 103; combined with the hashing fix,
-      ALL remaining differences are frame-size-only (zero code diffs).
-- [ ] **Wire fixed-point check into run_regression_tests.sh --full**
-      once green (boot.sh already enforces it standalone).
+      FNV-1a HashMap/HashSet across all of src/.
+- [ ] **Enforce the one-call rule in the compiler**: extend
+      E_TOO_MANY_PARAMS-style guards to detect match-arm bodies with >1
+      call at lowering time, so future sources cannot silently trip this.
+- [ ] **Wire fixed-point check into default regressions**: currently
+      opt-in via `--boot`; flip on once CI time budget allows.
 - [x] **Compile errors for known-fragile shapes** instead of silent
       miscompiles *(done 2026-08-25, commit c9b5c69)*:
     - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
