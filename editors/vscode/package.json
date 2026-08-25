@@ -1,0 +1,27 @@
+{
+  "name": "zyl-lang",
+  "displayName": "Zyl Language Basics",
+  "description": "Syntax highlighting, bracket matching, and commenting for the Zyl deterministic Lisp systems language.",
+  "version": "0.1.0",
+  "publisher": "zyl-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.70.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "zyl",
+        "aliases": ["Zyl", "zyl"],
+        "extensions": [".zyl"],
+        "configuration": "./zyl-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zyl",
+        "scopeName": "source.zyl",
+        "path": "./syntaxes/zyl.tmLanguage.json"
+      }
+    ]
+  }
+}
