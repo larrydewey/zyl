@@ -6100,11 +6100,18 @@ impl CodeGen {
                 // open(path_ptr, flags) -> fd or -1
                 // SYS_OPEN = 2
                 // Determine flags based on mode string at compile time.
-                let mode_is_write = match lookup.get(mode).copied().or_else(|| stmts.iter().find(|n| n.id == *mode)) {
-                    Some(ICNFNode { node: ICNFInner::Const(Atom::Str(m)), .. }) => {
-                        m.contains('w') || m.contains('a') || m.contains('+')
-                    }
-                    _ => true, // default to write mode
+                let mode_node = lookup.get(mode).copied().or_else(|| stmts.iter().find(|n| n.id == *mode));
+                let mode_str = match mode_node {
+                    Some(ICNFNode { node: ICNFInner::Const(Atom::Str(m)), .. }) => Some(m.clone()),
+                    _ => None,
+                };
+                let mode_is_write = match &mode_str {
+                    Some(m) => m.contains('w') || m.contains('a') || m.contains('+'),
+                    None => true, // default to write mode
+                };
+                let mode_is_append = match &mode_str {
+                    Some(m) => m.contains('a'),
+                    None => false,
                 };
 
                 let path_node = lookup.get(path).copied().or_else(|| stmts.iter().find(|n| n.id == *path));
@@ -6122,7 +6129,11 @@ impl CodeGen {
                         self.asm.push("    mov rdi, rax         # path pointer".to_string());
                         self.asm_push_align();
                         if mode_is_write {
-                            self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                            if mode_is_append {
+                                self.asm.push("    mov rsi, 1089   # O_WRONLY|O_CREAT|O_APPEND".to_string());
+                            } else {
+                                self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                            }
                             self.asm.push("    mov rdx, 420       # 0o644".to_string());
                         } else {
                             self.asm.push("    mov rsi, 0         # O_RDONLY".to_string());
@@ -6139,7 +6150,11 @@ impl CodeGen {
                 self.asm.push(format!("    lea rdi, [{}]      # path pointer", path_label));
                 self.asm_push_align();
                 if mode_is_write {
-                    self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                    if mode_is_append {
+                        self.asm.push("    mov rsi, 1089   # O_WRONLY|O_CREAT|O_APPEND".to_string());
+                    } else {
+                        self.asm.push("    mov rsi, 577       # O_WRONLY|O_CREAT|O_TRUNC".to_string());
+                    }
                     self.asm.push("    mov rdx, 420       # 0o644".to_string());
                 } else {
                     self.asm.push("    mov rsi, 0         # O_RDONLY".to_string());

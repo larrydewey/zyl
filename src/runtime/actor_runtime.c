@@ -33,7 +33,7 @@ long long zyl_call_on_big_stack(long long (*fn)(void)) {
     g_bigstack_fn = fn;
     g_bigstack_result = 0;
     pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, (size_t)512 * 1024 * 1024);
+    pthread_attr_setstacksize(&attr, (size_t)64 * 1024 * 1024 * 1024ULL);
     if (pthread_create(&t, &attr, zyl_bigstack_tramp, 0) != 0) {
         /* fallback: run inline */
         return fn();
@@ -948,6 +948,9 @@ int zyl_run_tests(void) {
 long long zyl_file_open_c(long long path, long long mode) {
     const char* m = (const char*)(size_t)mode;
     if (m && m[0] == 'r') return (long long)open((const char*)(size_t)path, O_RDONLY);
+    if (m && m[0] == 'a')
+        return (long long)open((const char*)(size_t)path,
+                               O_WRONLY | O_CREAT | O_APPEND, 0644);
     return (long long)open((const char*)(size_t)path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 }
 long long zyl_file_read_c(long long fd, long long count) {
@@ -985,3 +988,17 @@ long long zyl_strcpy(long long dst, long long src) {
     return dst;
 }
 
+
+/* Append src at the end of the NUL-terminated string in dst.
+   Used by the Zyl-level buf-append wrapper so repeated appends
+   accumulate (matching the Rust bootstrap's StringBuffer backend). */
+long long zyl_str_append(long long dst, long long src) {
+    if (!dst) return dst;
+    if (!src) return dst;
+    char* d = (char*)(size_t)dst;
+    while (*d) d++;
+    const char* s = (const char*)(size_t)src;
+    while (*s) { *d++ = *s++; }
+    *d = 0;
+    return dst;
+}
