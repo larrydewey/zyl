@@ -428,6 +428,122 @@ Stage2 blocker update (same day, later):
   inputs. A general fix is bootstrap sibling-TCO with explicit
   callee-saved register save/restore.
 
+- STAGE1 SEGFAULT RESOLVED (2026-08-24): root cause was stack exhaustion,
+  NOT a miscompile. stage1's parser recursion (per-char lex_c1 descent)
+  uses ~16KB uniform frames; the big-stack worker thread only reserved
+  512MB, exhausted at depth ~32K on the full 2434-line input. GDB showed
+  SIGSEGV touching [rbp-8] with a garbage rbp in ___if_result_1200.else
+  right after `call _ZYL_lex_c1`. Fix: zyl_call_on_big_stack now
+  reserves a 64GB thread stack (src/runtime/actor_runtime.c; virtual
+  reservation only, pages committed lazily). Verified: stage1 compiles
+  the FULL selfhost source end-to-end (parse -> lower -> codegen,
+  exit 0); no doubled call symbols remain in its output.
+- NEXT BLOCKER (stage2 completeness, found during verification): stage1
+  silently DROPS the last ~12 defns (everything from cg-reset-slots
+  onward) when compiling the full input — output asm calls f_cg_program/
+  f_cg_param_env/etc. but never defines them. NOT a hard 255-function
+  cap: 300 tiny defns all compile fine; it is scale/content-dependent.
+  Same bug class as the dropped dbg-log statements in driver.zyl's
+  boot-run chain (only some statements of deeply nested let-chains
+  execute). Suspect: stage1's own compiled ic-defns/cg-functions drop
+  work at program scale, or the Rust bootstrap miscompiles deep chains.
+  Next session: bisect which pipeline phase loses the forms by making
+  emit-out dump intermediate counts via separate top-level helper
+  functions (NOT inline dbg-log in long let-chains — those get dropped).
+
+- SELF-HOSTING BREAKTHROUGH SESSION (2026-08-25): fixed a stack of
+  bootstrap compiler bugs that had stage2 completely non-functional.
+  stage1 now compiles correct code for ADTs+match, HOF calls, FFI,
+  recursion, arithmetic; stage2 builds, links, parses, and starts
+  codegen. Remaining gap documented below.
+
+  Fixed in the Zyl sources (stdlib/):
+  1. icnf.zyl ic-ffi: NEVER built an IFfi node — returned a bare arg
+     list and dropped the C symbol, so every general (ffi-call ...)
+     compiled to garbage constants in stage>=2 binaries. Now emits
+     (IFfi (atom-text sym "") args). NOTE: atom-text, not ident-name —
+     ident-name intentionally returns the fallback for AString atoms.
+  2. codegen.zyl cg-fn-check-head: FN arm RETURNED the str-eq result
+     instead of recursing on mismatch — only the first collected fn name
+     was ever found. Also removed two DUPLICATE FnName deftypes (each
+     deftype creates distinct constructor identities; duplicates make
+     pattern matches silently fail).
+  3. codegen.zyl call emission rewritten: alignment pad is now emitted
+     BEFORE pushes (old code padded AFTER pushing args, so every odd-arg
+     pop read the wrong slot — e.g. (dbl 21) passed garbage). Unified
+     direct/indirect fire path with cleanup.
+  4. codegen.zyl HOF support: cg-load-nonslot loads fn values via lea
+     rip+offset for known top-level fns; cg-fire-user dispatches to an
+     indirect `mov r10,[rbp+off]; call r10` when the callee names a
+     local binding. (applyit dbl 21) works end-to-end through stage1.
+  5. codegen.zyl cg-arith-mnem: Rem (op 4) did NOT emit cqo before idiv;
+     stale rdx made the 128-bit quotient overflow -> SIGFPE in any
+     stage>=2 binary computing %. Div and Rem both cqo now.
+  6. Arity >6 functions eliminated (selfhost codegen has no stack-arg
+     support): merged lex-num-e/text, lex-ident-e/text; folded
+     lex-sym-pk/e/tok chain; refactored cg-if-parts to take the CGP
+     label carrier; rewrote match-arm pipeline as cg-arm-one/cg-arm-match
+     using CGP(st, fail-label, join-label). CAREFUL: CGP field order in
+     construction must match destructuring — a swap silently mislabels
+     every jump.
+  7. allocator.zyl: bare `(ffi-call ...)` function bodies wrapped in
+     (let h (...) h) — belt-and-braces against body-shape fragility.
+  8. src/codegen.rs: file-open mode "a" now maps to O_APPEND(1089)
+     instead of O_TRUNC(577) — append-mode logs were wiping their own
+     file each open (this masqueraded as "dropped statements" for hours).
+  9. src/runtime/actor_runtime.c: big-stack worker reservation raised
+     512MB -> 64GB (virtual only).
+  10. selfhost/driver.zyl + codegen.zyl cg-entry-stub: generated entry
+      stub now calls zyl_call_on_big_stack(f_main) — stage1-generated
+      binaries previously ran user main on the 8MB main thread and died
+      in deep parser recursion.
+
+  Verified working THROUGH stage1: recursive ADT + match-with-bindings,
+  self/mutual recursion, HOF indirect calls, direct calls incl. odd arg
+  counts, FFI wrappers, if/while/arithmetic, floats. Regression suite
+  green.
+
+  REMAINING (stage2 compiles but emits empty/partial asm): stage2's own
+  compiled codegen drops per-function emission (cg-functions-go logs one
+  marker then output buffer ends up empty; file-write of cg-buffer writes
+  1 byte). Every stage1->stage2 bug fixed so far exposed the next layer;
+  the pattern suggests remaining statement/value-propagation gaps in
+  stage1's ICNF embedding for the deeper codegen.zyl shapes (long let
+  chains inside match arms whose results feed file-write). Next session:
+  bisect stage1's compilation of emit-out/cg-functions with dbg markers
+  at each step (file-append now works so logs are reliable), diffing
+  statement counts between small inputs (which compile correctly) and
+  the full source.
+
+- **SELF-HOSTING COMPLETE (2026-08-25)**: the full bootstrap loop works
+  and is deterministic.
+    - stage1 (Rust-compiled) compiles selfhost/zyl_selfhost_compiler.zyl
+      -> stage2 ✓
+    - stage2 compiles the same source -> stage3 ✓
+    - stage2 output == stage3 output BYTE-FOR-BYTE on the same input
+      (Phase 5 determinism check) ✓
+    - programs compiled by stage2/stage3 run correctly (HOF calls,
+      arithmetic, print verified) ✓
+  The last blocker was: allocator.zyl's buf-append called zyl_strcpy,
+  which OVERWRITES dst from offset 0. The Rust bootstrap treats
+  buf-append as a StringBuffer special form with a hidden cursor, so
+  stage1 worked while every stage>=2 binary reduced its entire codegen
+  output to the LAST emitted string ("\n"). Fix: new C primitive
+  zyl_str_append (appends at strlen(dst)) + allocator.zyl buf-append now
+  calls it; safe for fresh-buffer uses (str-intern etc.) where append ==
+  copy. Also fixed in this final push: zyl_file_open_c (C helper) opened
+  "a" mode with O_TRUNC, wiping logs each open.
+  Debug instrumentation added during the hunt has been removed; sources
+  are clean and balance/arity checks pass.
+
+  Remaining hardening (optional, non-blocking):
+    - selfhost codegen still lacks stack-passed args (>6 params) — all
+      sources now keep arity <=6 by convention; add an E_* error when a
+      defn exceeds 6 params.
+    - cg-dbg debug helper remains available for future boot debugging.
+    - Replace the fixed 8MB codegen buffer (cg-new) with growth, or size
+      it from icnf-size, before the compiler source grows much further.
+
 Known remaining gaps in the Rust bootstrap (future hardening): silent
 zero fallbacks in `src/codegen.rs` MakeVariant emission should become
 E_* compile errors (P1 no-null principle); spurious "expected function

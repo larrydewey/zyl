@@ -4,6 +4,15 @@
 
 All 9 core compilation phases plus linking are complete and tested. The compiler builds and runs successfully. The full language feature set — struct system, ADT system, float support, actor concurrency, closure support, FFI, try/catch, and I/O — has full pipeline coverage across all phases.
 
+**Self-hosting: COMPLETE and deterministic (2026-08-25).** The Zyl compiler
+written in Zyl (`selfhost/zyl_selfhost_compiler.zyl`, assembled from
+`stdlib/compiler/*` + `stdlib/allocator` + `selfhost/driver.zyl`) compiles
+itself end-to-end: stage1 (Rust-compiled) → stage2 → stage3, with stage2 and
+stage3 producing byte-identical assembly for the same input (fixed point /
+Phase 5 determinism check). Programs compiled by stage2/stage3 run correctly.
+See `PROGRESS.md` ("SELF-HOSTING COMPLETE") for details and remaining
+non-blocking hardening items.
+
 **Total source lines:** ~20,000 (19,559 lines Rust + 208 lines C)
 
 ---
