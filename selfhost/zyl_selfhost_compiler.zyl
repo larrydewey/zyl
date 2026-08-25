@@ -2338,6 +2338,58 @@
     (Nil 0)
     (Cons h t (+ (icnf-size h) (icnf-count-list t)))))
 
+; Static slot-count estimate: every runtime `cg-new-slot` corresponds to
+; exactly one ILet node or one non-wildcard pattern bind, allocated once
+; during codegen (branches accumulate, never reuse). Frames are now sized
+; from this instead of the uniform 16*(64+icnf-size) waste.
+(defn icnf-slot-count (e)
+  (match e
+    (IConst d80 0)
+    (IStr d81 0)
+    (IFlt d82 0)
+    (ILoad d83 0)
+    (IBinop d84 l r (icnf-add2 (icnf-slot-count l) (icnf-slot-count r)))
+    (ICall d85 args (icnf-count-slots-list args))
+    (IFfi d86 args (icnf-count-slots-list args))
+    (IPrint a (icnf-slot-count a))
+    (IIf c t eb (icnf-add3 (icnf-slot-count c) (icnf-slot-count t) (icnf-slot-count eb)))
+    (IWhile c b (icnf-add2 (icnf-slot-count c) (icnf-slot-count b)))
+    (ISet d87 v (icnf-slot-count v))
+    (ILet d88 v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
+    (ISeq es (icnf-count-slots-list es))
+    (IVariant d89 d90 fields (icnf-count-slots-list fields))
+    (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))))
+
+(defn icnf-count-slots-list (xs)
+  (if (is-nil xs)
+    0
+    (icnf-add2 (icnf-slot-count (hd-ia xs)) (icnf-count-slots-list (tl2 xs)))))
+
+(defn icnf-count-arm-slots (arms)
+  (if (is-nil arms)
+    0
+    (icnf-arm-slots (hd-ia arms) (tl2 arms))))
+
+(defn icnf-arm-slots (arm rest)
+  ; binops never combine two direct calls here (constraint 8).
+  (match arm
+    (IArm d91 d92 binds body
+      (icnf-add2 (icnf-binds-slots binds 0)
+                 (icnf-add2 (icnf-slot-count body) (icnf-count-arm-slots rest))))))
+
+; Count of non-wildcard pattern binds (each gets exactly one slot).
+(defn icnf-binds-slots (binds acc)
+  (if (is-nil binds)
+    acc
+    (icnf-binds-slots (tl2 binds)
+                      (+ acc (icnf-bind-real (shd binds))))))
+
+(defn icnf-bind-real (b)
+  ; exact "_" (length 1, byte '_') gets no slot in cg-bind-one
+  (if (= (alloc-strlen b) 1)
+    (if (= (byte-at b 0) 95) 0 1)
+    1))
+
 (defn icnf-count-arms (xs)
   (if (is-nil xs)
     0
@@ -2354,8 +2406,14 @@
   (match f
     (IFn name params body
      (let env (cg-param-env params 0 (EnvNil))
-       (let fsz (* 16 (+ 64 (icnf-size body)))
-         (let st1 (cg-emit st "f_")
+       ; Frame sized from actual slot usage: param slots + one per ILet /
+       ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
+       ; The old uniform 16*(64+icnf-size) wasted ~16x stack.
+       (let nslots (icnf-add2 (list-length params)
+                              (+ (icnf-slot-count body) 8))
+         ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
+         (let fsz (* 16 (+ 1 (/ nslots 2)))
+          (let st1 (cg-emit st "f_")
            (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
              (let st3 (cg-emit-line st2 ":")
                (let st4 (cg-emit-line st3 "    push rbp")
@@ -2365,10 +2423,10 @@
                        (let st8 (cg-param-spills st7 0 (list-length params))
                          ; per-function slot counter reset after params
                          (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                           (let st10 (cg-expr st9 env body)
-                             (let st11 (cg-emit-line st10 "    mov rsp, rbp")
-                               (let st12 (cg-emit-line st11 "    pop rbp")
-                                 (cg-emit-line st12 "    ret"))))))))))))))))))
+                            (let st10 (cg-expr st9 env body)
+                              (let st11 (cg-emit-line st10 "    mov rsp, rbp")
+                                (let st12 (cg-emit-line st11 "    pop rbp")
+                                  (cg-emit-line st12 "    ret")))))))))))))))))))
 
 (defn cg-reset-slots (st next-off)
   (match st
