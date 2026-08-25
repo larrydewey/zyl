@@ -100,7 +100,7 @@
           (let new-len (- len 1)
             (let new-kptr (arena-alloc (struct-get m "arena") (* new-len 8))
               (let new-vptr (arena-alloc (struct-get m "arena") (* new-len 8))
-                (let dst 0
+                (let-mut dst 0
                   (begin
                     (for (j 0) (< j len)
                       (begin

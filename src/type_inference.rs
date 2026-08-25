@@ -5,6 +5,33 @@ use crate::ast::*;
 use crate::error::{Span, ZylError};
 use crate::type_system::*;
 
+/// One concrete instantiation of a generic ADT: a mapping from generic
+/// parameter names to concrete type strings, sorted by param name.
+/// Canonical instance name: `{ADT}_{sorted unique concrete types joined by _}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdtInstantiation {
+    pub params: Vec<(String, String)>,
+}
+
+impl AdtInstantiation {
+    /// Canonical monomorphized type name for this instantiation
+    /// (e.g. `Opt_Int`, `Pair_Int_String`). None when nothing is constrained.
+    pub fn canonical_name(&self, adt: &str) -> Option<String> {
+        let mut tys: Vec<&str> = self.params.iter().map(|(_, t)| t.as_str()).collect();
+        tys.sort();
+        tys.dedup();
+        if tys.is_empty() {
+            return None;
+        }
+        Some(format!("{}_{}", adt, tys.join("_")))
+    }
+
+    /// Concrete type bound to a generic param, if any.
+    pub fn get(&self, param: &str) -> Option<&str> {
+        self.params.iter().find(|(p, _)| p == param).map(|(_, t)| t.as_str())
+    }
+}
+
 pub struct TypeInferer {
     env: TypeEnv,
     trait_ctx: TraitContext,
@@ -21,9 +48,13 @@ pub struct TypeInferer {
     subst: Subst,
     /// ADT definitions for variant field type lookups.
     adt_defs: IndexMap<String, Vec<(String, Vec<String>)>>,
-    /// Tracks which concrete types instantiate each generic ADT.
-    /// Maps ADT name → list of concrete types used.
-    adt_instantiations: IndexMap<String, Vec<String>>,
+    /// Variant name -> owning ADT name (constructors may arrive as raw
+    /// Call/Apply forms; this index recognizes them during inference).
+    variant_to_adt: IndexMap<String, String>,
+    /// Tracks which concrete instantiations each generic ADT is used with.
+    /// Each record maps generic parameter names to concrete type strings
+    /// (sorted by param name), collected from constructor call sites.
+    adt_instantiations: IndexMap<String, Vec<AdtInstantiation>>,
     /// Caches inferred return types for function bodies to avoid redundant inference on repeated call sites.
     body_infer_cache: RefCell<IndexMap<String, Type>>,
     first_body_error: Option<ZylError>,
@@ -32,6 +63,11 @@ pub struct TypeInferer {
     skip_generic_def_names: RefCell<crate::deterministic::HashSet<String>>,
     /// Match-arm pattern variables bound to String fields (for codegen print detection).
     string_match_vars: RefCell<crate::deterministic::HashSet<String>>,
+    /// Observed argument-type signatures per function (call-site evidence).
+    /// Used by finalize_param_types to concretize untyped params ONLY when
+    /// every call site agrees — replacing the old first-site write-back that
+    /// made every function monomorphic at its first call.
+    arg_type_observations: RefCell<IndexMap<String, Vec<Vec<String>>>>,
 }
 
 impl TypeInferer {
@@ -56,11 +92,13 @@ impl TypeInferer {
             var_gen_counter: Cell::new(0),
             subst: Subst::new(),
             adt_defs: IndexMap::new(),
+            variant_to_adt: IndexMap::new(),
             adt_instantiations: IndexMap::new(),
             body_infer_cache: RefCell::new(IndexMap::new()),
             first_body_error: None,
             skip_generic_def_names: RefCell::new(crate::deterministic::HashSet::default()),
             string_match_vars: RefCell::new(crate::deterministic::HashSet::default()),
+            arg_type_observations: RefCell::new(IndexMap::new()),
         }
     }
 
@@ -102,6 +140,7 @@ impl TypeInferer {
             });
         }
 
+        self.finalize_param_types();
         if !result.is_empty() {
             Ok(result)
         } else {
@@ -152,6 +191,119 @@ impl TypeInferer {
             // substitution bindings touching List/Option
             eprintln!("[ty] done collect");
         }
+        self.finalize_param_types();
+    }
+
+    /// Concretize untyped function parameters when EVERY observed call site
+    /// agrees on the concrete type. This restores the useful half of the old
+    /// first-site write-back (downstream code needs param types for struct
+    /// layouts, float detection, etc.) without its failure mode: sites that
+    /// disagree leave the parameter polymorphic instead of poisoning it with
+    /// whichever site came first.
+    pub fn finalize_param_types(&mut self) {
+        let observations = self.arg_type_observations.borrow().clone();
+        for (fname, sites) in &observations {
+            if sites.is_empty() {
+                continue;
+            }
+            let arity = sites[0].len();
+            if sites.iter().any(|s| s.len() != arity) {
+                continue;
+            }
+            let mut resolved: Vec<Option<String>> = vec![None; arity];
+            for (i, site) in sites.iter().enumerate() {
+                for (j, ts) in site.iter().enumerate() {
+                    if ts.is_empty() || ts.starts_with('?') {
+                        // Unresolved evidence at any site disqualifies the param.
+                        resolved[j] = None;
+                        break;
+                    }
+                    match &resolved[j] {
+                        None => {
+                            if i == 0 {
+                                resolved[j] = Some(ts.clone());
+                            } else {
+                                resolved[j] = None;
+                                break;
+                            }
+                        }
+                        Some(prev) => {
+                            if prev != ts {
+                                resolved[j] = None;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(entries) = self.known_functions.get_mut(fname) {
+                for (j, entry) in entries.iter_mut().enumerate() {
+                    if j < resolved.len() {
+                        if matches!(entry.1, Type::Var(_)) {
+                            if let Some(ts) = &resolved[j] {
+                                entry.1 = type_from_display(ts);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.arg_type_observations.borrow_mut().clear();
+    }
+
+    /// Record a generic ADT constructor call site as an instantiation.
+    /// Computes the {generic param -> concrete type} mapping for the variant's
+    /// generic fields from the inferred argument types, and inserts it into
+    /// `adt_instantiations` (deduplicated). Returns the mapping.
+    fn record_make_variant(
+        &mut self,
+        adt_name: &str,
+        variant_name: &str,
+        args: &[Expr],
+    ) -> Option<AdtInstantiation> {
+        let fields = self
+            .adt_defs
+            .get(adt_name)
+            .and_then(|variants| variants.iter().find(|(n, _)| n == variant_name).map(|(_, f)| f.clone()))?;
+        let mut mapping: Vec<(String, String)> = Vec::new();
+        let mut generic_field_count = 0usize;
+        for f in &fields {
+            if is_generic_param(f) {
+                generic_field_count += 1;
+            }
+        }
+        for (i, arg) in args.iter().enumerate() {
+            if i >= fields.len() {
+                break;
+            }
+            if is_generic_param(&fields[i]) {
+                let concrete = self
+                    .infer_expr(arg)
+                    .map(|t| format!("{}", t))
+                    .unwrap_or_default();
+                // Unresolved type vars (?N) carry no instantiation evidence.
+                if !concrete.is_empty() && !concrete.starts_with('?') {
+                    mapping.push((fields[i].clone(), concrete));
+                }
+            }
+        }
+        // Partial evidence mints inconsistent instance names (Assoc_Int vs
+        // Assoc_Int_String for the same instance) — only record fully
+        // constrained constructions here. The inference-time handler sees
+        // bound parameters and records the complete mapping.
+        if mapping.len() < generic_field_count {
+            return None;
+        }
+        if mapping.is_empty() {
+            return None;
+        }
+        mapping.sort_by(|a, b| a.0.cmp(&b.0));
+        let inst = AdtInstantiation { params: mapping };
+        let records = self.adt_instantiations.entry(adt_name.to_string()).or_default();
+        if !records.contains(&inst) {
+            records.push(inst.clone());
+        }
+        Some(inst)
     }
 
     /// Recursively walk an expression and record concrete types used with generic
@@ -159,32 +311,7 @@ impl TypeInferer {
     fn collect_adt_instantiations_expr(&mut self, expr: &Expr) {
         match &expr.inner {
             ExprInner::MakeVariant(adt_name, variant_name, args) => {
-                if let Some(fields) = self
-                    .adt_defs
-                    .get(adt_name)
-                    .and_then(|variants| variants.iter().find(|(n, _)| n == variant_name).map(|(_, f)| f.clone()))
-                {
-                    for (i, arg) in args.iter().enumerate() {
-                        if i < fields.len() {
-                            // The concrete instantiation type at this field position:
-                            // generic params are resolved by inference; concrete field
-                            // types are recorded as-is (they are the instantiation).
-                            let ty_str = if is_generic_param(&fields[i]) {
-                                self.infer_expr(arg)
-                                    .map(|t| format!("{}", t))
-                                    .unwrap_or_default()
-                            } else {
-                                fields[i].clone()
-                            };
-                            if !ty_str.is_empty() {
-                                self.adt_instantiations
-                                    .entry(adt_name.clone())
-                                    .or_default()
-                                    .push(ty_str);
-                            }
-                        }
-                    }
-                }
+                self.record_make_variant(adt_name, variant_name, args);
             }
             ExprInner::Call(op, args) => {
                 self.collect_adt_instantiations_expr(op);
@@ -427,6 +554,9 @@ impl TypeInferer {
                         .map(|v| (v.name.clone(), v.fields.clone()))
                         .collect();
                     self.adt_defs.insert(name.clone(), variant_info.clone());
+                    for (vname, _) in &variant_info {
+                        self.variant_to_adt.insert(vname.clone(), name.clone());
+                    }
                     let has_generic = variants
                         .iter()
                         .any(|v| v.fields.iter().any(|f| is_generic_param(f)));
@@ -583,6 +713,9 @@ impl TypeInferer {
                         }
                     }
                     if !variant_info.is_empty() {
+                        for (vname, _) in &variant_info {
+                            self.variant_to_adt.insert(vname.clone(), name.clone());
+                        }
                         self.adt_defs.insert(name.clone(), variant_info);
                     }
                     if has_generic {
@@ -1570,6 +1703,8 @@ impl TypeInferer {
 
                 // Infer types of args and unify with field types.
                 let mut arg_types: Vec<String> = Vec::with_capacity(args.len());
+                let mut param_mapping: Vec<(String, String)> = Vec::new();
+                let generic_field_count = field_types.iter().filter(|f| is_generic_param(f)).count();
                 for (i, arg) in args.iter().enumerate() {
                     let inferred_type = self.infer_expr(arg)?;
                     let type_str = format!("{}", inferred_type);
@@ -1578,16 +1713,34 @@ impl TypeInferer {
                     if i < field_types.len() {
                         let expected_type = &field_types[i];
                         if is_generic_param(expected_type) {
-                            // Record ADT instantiation: this generic type param was used with this concrete type.
-                            let concrete_type = type_str.clone();
-                            self.adt_instantiations
-                                .entry(adt_name.clone())
-                                .or_default()
-                                .push(concrete_type.clone());
+                            // Record the {generic param -> concrete type} binding for
+                            // this constructor site. Unresolved type vars (?N) carry
+                            // no evidence.
+                            if !type_str.is_empty() && !type_str.starts_with('?') {
+                                param_mapping.push((expected_type.clone(), type_str.clone()));
+                            }
                         } else {
                             let expected_ty = self.resolve_type_name(expected_type).unwrap_or_else(|| Type::Var(self.fresh_var()));
                             drop(self.unify(&inferred_type, &expected_ty, expr.span.clone()));
                         }
+                    }
+                }
+
+                // Record this instantiation and name the value with the
+                // instantiated type (e.g. Opt_Int) so every binding site
+                // carries its instance through match/let/call unification.
+                if param_mapping.len() >= generic_field_count && !param_mapping.is_empty() {
+                    param_mapping.sort_by(|a, b| a.0.cmp(&b.0));
+                    let inst = AdtInstantiation { params: param_mapping };
+                    let records = self
+                        .adt_instantiations
+                        .entry(adt_name.clone())
+                        .or_default();
+                    if !records.contains(&inst) {
+                        records.push(inst.clone());
+                    }
+                    if let Some(mono_name) = inst.canonical_name(adt_name) {
+                        return Ok(Type::Nominal(mono_name));
                     }
                 }
 
@@ -1612,6 +1765,13 @@ impl TypeInferer {
                 ));
             }
             let arg_types: Vec<Type> = args.iter().map(|arg| self.infer_expr(arg)).collect::<std::result::Result<Vec<_>, _>>()?;
+            // Record this site's argument-type signature for deferred
+            // consistent-site refinement (finalize_param_types).
+            self.arg_type_observations
+                .borrow_mut()
+                .entry(name.to_string())
+                .or_default()
+                .push(arg_types.iter().map(|t| format!("{}", t)).collect());
             // Bind each param. Typed params are unified against the declared type
             // (compile-time check). Untyped params: infer concrete type from the
             // argument and update known_functions so the substitution resolves them.
@@ -1627,32 +1787,26 @@ impl TypeInferer {
                     bound_param_types.push(expected_params[i].1.clone());
                 }
             }
-            // Update known_functions with inferred concrete types for untyped params.
-            if args.len() > 0 && expected_params.len() > 0 {
-                let mut new_known: Vec<(String, Type)> = expected_params.clone();
-                let mut changed = false;
-                for (i, _arg) in args.iter().enumerate() {
-                    if i < new_known.len() && matches!(new_known[i].1, Type::Var(_)) {
-                        new_known[i].1 = arg_types[i].clone();
-                        changed = true;
-                    }
-                }
-                if changed {
-                    self.known_functions.entry(name.to_string())
-                        .and_modify(|entries| {
-                            for (j, nt) in new_known.iter().enumerate() {
-                                if j < entries.len() {
-                                    entries[j].1 = nt.1.clone();
-                                }
-                            }
-                        });
-                }
-            }
+            // NOTE: no global write-back of concrete argument types into
+            // known_functions. Untyped params are type variables: each call
+            // site binds them locally (per-site instantiation). Mutating the
+            // shared scheme here made every function monomorphic at its FIRST
+            // call site — the root cause of cross-module generic mis-unification
+            // ((Some 42) poisoning (Some "hi"), list helpers fixing one elem
+            // type for all modules).
             // If params were untyped, infer return type from body now that params are resolved.
             // Skip if already inferring this function (recursive call).
             if self.function_bodies.contains_key(name) && !self.inferring_functions.borrow().contains(name) {
-                // Check cache to avoid redundant body inference on repeated call sites.
-                if let Some(cached) = self.body_infer_cache.borrow().get(name).cloned() {
+                // Check cache to avoid redundant body inference on repeated call
+                // sites. Keyed by the call-site argument-type signature so two
+                // sites instantiating different concrete types get independent
+                // body inference (per-site polymorphism).
+                let site_key = format!(
+                    "{}::{}",
+                    name,
+                    arg_types.iter().map(|t| format!("{}", t)).collect::<Vec<_>>().join(",")
+                );
+                if let Some(cached) = self.body_infer_cache.borrow().get(&site_key).cloned() {
                     self.function_returns.insert(name.to_string(), cached.clone());
                     return Ok(cached);
                 }
@@ -1660,23 +1814,37 @@ impl TypeInferer {
                 let param_types: Vec<Type> = bound_param_types.clone();
                 let param_names: Vec<String> = expected_params.iter().map(|(n, _)| n.clone()).collect();
                 for (n, t) in param_names.iter().zip(param_types.iter()) {
-                    drop(self.env.bind(n.clone(), t.clone()));
+                    self.env.bind_param(n.clone(), t.clone());
                 }
                 let body = self.function_bodies.get(name).cloned();
+                // Expose a FRESH return variable for the duration of body
+                // inference so recursive self-calls constrain this site's own
+                // return instead of reading a stale concrete type left by an
+                // earlier call site (cross-site pollution).
+                let site_ret = Type::Var(self.fresh_var());
+                let prev_ret = self.function_returns.insert(name.to_string(), site_ret.clone());
                 // Mark this function as being inferred to avoid infinite recursion.
                 self.inferring_functions.borrow_mut().insert(name.to_string());
-                let inferred_ret = if let Some(b) = body { 
+                let inferred_ret = if let Some(b) = body {
                     self.infer_expr(&b)
-                } else { 
-                    Ok(Type::Var(self.fresh_var())) 
+                } else {
+                    Ok(Type::Var(self.fresh_var()))
                 };
                 self.inferring_functions.borrow_mut().remove(name);
                 self.env = old_env;
+                match prev_ret {
+                    Some(prev) => { self.function_returns.insert(name.to_string(), prev); }
+                    None => { self.function_returns.remove(&name.to_string()); }
+                }
                 match inferred_ret {
                     Ok(ret_ty) => {
-                        self.body_infer_cache.borrow_mut().insert(name.to_string(), ret_ty.clone());
-                        self.function_returns.insert(name.to_string(), ret_ty.clone());
-                        return Ok(ret_ty.clone());
+                        // Tie the recursive-call variable to the body's type;
+                        // substitution resolves any constraints collected.
+                        drop(self.unify(&site_ret, &ret_ty, expr.span.clone()));
+                        let final_ret = self.subst.apply(&ret_ty);
+                        self.body_infer_cache.borrow_mut().insert(site_key, final_ret.clone());
+                        self.function_returns.insert(name.to_string(), final_ret.clone());
+                        return Ok(final_ret);
                     }
                     Err(e) => {
                         // Do NOT swallow: a body-inference failure here means
@@ -1688,10 +1856,12 @@ impl TypeInferer {
                     }
                 }
             }
-            // If the stored return type is a type variable, unify it with a fresh var
-            // so it can be resolved later by substitution.
+            // If the stored return type is a type variable, return it as-is so
+            // callers' constraints flow into it (e.g. the fresh site_ret var
+            // exposed during recursive body inference). Returning a fresh var
+            // here discarded those constraints.
             if matches!(&ret_type, Type::Var(_)) {
-                Ok(Type::Var(self.fresh_var()))
+                Ok(ret_type.clone())
             } else {
                 Ok(ret_type)
             }
@@ -1730,6 +1900,40 @@ impl TypeInferer {
                     Ok(ret)
                 }
             }
+        } else if let Some(adt_name) = self.variant_to_adt.get(name).cloned() {
+            // Constructor call in raw Call/Apply form (PostProcessor runs
+            // before module resolution, so module-defined ADT constructors
+            // arrive here unidentified). Same semantics as MakeVariant:
+            // unify concrete fields, record the instantiation, and name the
+            // value with the instantiated type.
+            let variant_fields = self
+                .adt_defs
+                .get(&adt_name)
+                .and_then(|variants| variants.iter().find(|(vn, _)| vn == name).map(|(_, f)| f.clone()))
+                .unwrap_or_default();
+            let mut param_mapping: Vec<(String, String)> = Vec::new();
+            let generic_field_count = variant_fields.iter().filter(|f| is_generic_param(f)).count();
+            for (i, arg) in args.iter().enumerate() {
+                let at = self.infer_expr(arg)?;
+                if i < variant_fields.len() && is_generic_param(&variant_fields[i]) {
+                    let ts = format!("{}", at);
+                    if !ts.is_empty() && !ts.starts_with('?') {
+                        param_mapping.push((variant_fields[i].clone(), ts));
+                    }
+                }
+            }
+            if !param_mapping.is_empty() && param_mapping.len() >= generic_field_count {
+                param_mapping.sort_by(|a, b| a.0.cmp(&b.0));
+                let inst = AdtInstantiation { params: param_mapping };
+                let records = self.adt_instantiations.entry(adt_name.clone()).or_default();
+                if !records.contains(&inst) {
+                    records.push(inst.clone());
+                }
+                if let Some(mono_name) = inst.canonical_name(&adt_name) {
+                    return Ok(Type::Nominal(mono_name));
+                }
+            }
+            Ok(Type::Nominal(adt_name))
         } else {
             // Unknown/unregistered callee (e.g. a self-recursive call whose
             // definition is still being inferred). The call's TYPE is its
@@ -1899,6 +2103,25 @@ impl TypeInferer {
             }
         }
         None
+    }
+
+    /// If `name` is an ADT or an instance of one, return the base ADT name.
+    /// The root is the SHORTEST matching deftype key: monomorphization emits
+    /// instances (`Result_Int`) as first-class deftypes alongside their base
+    /// (`Result`), and same-base comparisons need the root.
+    fn base_adt_name(&self, name: &str) -> Option<String> {
+        let mut best: Option<&String> = None;
+        for key in self.adt_defs.keys() {
+            if name == key.as_str()
+                || name.starts_with(&format!("{}_", key))
+            {
+                match best {
+                    Some(b) if b.len() <= key.len() => {}
+                    _ => best = Some(key),
+                }
+            }
+        }
+        best.cloned()
     }
 
     fn resolve_type_name(&self, name: &str) -> Option<Type> {
@@ -2106,6 +2329,25 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
             {
                 Ok(())
             }
+            // Two instantiations of the SAME base ADT adapt to each other:
+            // multi-parameter ADTs (Result<T,E>) constrain different params
+            // at different constructor sites ((Ok v) sees only T, (Err e)
+            // only E); the instances are layout-compatible machine words and
+            // the full instantiation is recovered by record merging during
+            // monomorphization.
+            (Type::Nominal(n1), Type::Nominal(n2)) if n1 != n2 => {
+                let b1 = self.base_adt_name(n1);
+                let b2 = self.base_adt_name(n2);
+                if b1.is_some() && b1 == b2 {
+                    Ok(())
+                } else {
+                    Err(ZylError::E_TYPE_MISMATCH(
+                        span.clone(),
+                        format!("{}", t1),
+                        format!("{}", t2),
+                    ))
+                }
+            }
             // A capability-boxed opaque (e.g. an FFI result TBox<?v> whose
             // variable is still unbound) adapts to any expected type: the C
             // runtime hands back raw machine words that callers reinterpret.
@@ -2227,7 +2469,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     }
 
     /// Expose ADT instantiation info: which concrete types each generic ADT was used with.
-    pub fn get_adt_instantiations(&self) -> &IndexMap<String, Vec<String>> {
+    pub fn get_adt_instantiations(&self) -> &IndexMap<String, Vec<AdtInstantiation>> {
         &self.adt_instantiations
     }
 
@@ -2376,6 +2618,18 @@ pub fn is_generic_param(s: &str) -> bool {
     s.len() == 1 && s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
         || s.starts_with('T')
             && !matches!(s, "TCap" | "TMut" | "TBox" | "TPin" | "TAtomic" | "TFun")
+}
+
+/// Rebuild a Type from its Display string (used by finalize_param_types).
+fn type_from_display(s: &str) -> Type {
+    match s {
+        "Int" => Type::Prim(PrimType::Int),
+        "Float" => Type::Prim(PrimType::Float),
+        "Bool" => Type::Prim(PrimType::Bool),
+        "String" => Type::Prim(PrimType::String),
+        "Unit" => Type::Prim(PrimType::Unit),
+        other => Type::Nominal(other.to_string()),
+    }
 }
 fn parse_cap_type(s: &str) -> Option<String> {
     for cap in ["TCap", "TMut", "TBox", "TPin", "TAtomic"] {

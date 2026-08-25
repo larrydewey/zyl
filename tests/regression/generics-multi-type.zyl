@@ -1,0 +1,24 @@
+; Generic ADT multi-instance regression — a generic ADT must be usable with
+; ANY concrete type, with distinct instances coexisting in one program.
+; Guards the 2026-08-25 rewrite: positional instantiation records, per-site
+; polymorphic call inference, record merging for multi-param ADTs.
+
+(deftype _g_Opt (Some T) (None))
+
+(defn _g-opt-int (o)
+  (match o
+    (Some v v)
+    (None 0)))
+
+(defn _g-opt-tag (o)
+  (match o
+    (Some s 1)
+    (None 0)))
+
+(defn main ()
+  (begin
+    ; Opt used with Int and String in the same program — the instances
+    ; must not poison each other (the old first-site monomorphization bug:
+    ; whichever site inferred first fixed the shared scheme for all sites).
+    (print (_g-opt-int (Some 42)))
+    (print (_g-opt-tag (Some "hi")))))

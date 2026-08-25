@@ -298,6 +298,14 @@ impl TypeEnv {
         Ok(())
     }
 
+    /// Bind a parameter, shadowing any outer binding. Used when inferring a
+    /// function body whose parameter names may collide with leftover outer
+    /// bindings (e.g. match pattern vars); the param must win.
+    pub fn bind_param(&mut self, name: String, t: Type) {
+        let old = self.current.insert(name, t);
+        drop(old);
+    }
+
     /// Enter a new scope (e.g., for let bindings or closures).
     pub fn enter_scope(&mut self) {
         self.parents.push(std::mem::take(&mut self.current));

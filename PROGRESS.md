@@ -190,23 +190,50 @@ How the last two gaps were closed:
 - [ ] **Frame sizing**: uniform ~16KB frames (`16*(64+icnf-size)`) waste
       stack; size frames from actual slot counts. Enables revisiting
       sibling TCO safely.
-- [ ] **Cross-module inference fragility**: generic list helpers mis-unify
-      across element types (constraint forcing duplicated per-module
-      helpers like `ih-ic`/`fh-if`). ROOT CAUSE IDENTIFIED (2026-08-25):
-      (1) untyped params are implicitly MONOMORPHIC — the first call site
-      fixes known_functions param types for all sites
-      (type_inference.rs handle_apply mutates the shared scheme);
-      (2) ADT constructor calls lose their type-parameter instantiation —
-      `(Some 42)` and `(Some "hi")` both infer as base `Opt`, so call-site
-      unification never sees Opt_Int vs Opt_String; (3) body inference is
-      best-effort: errors surface only as warnings (main.rs Phase 5),
-      because legacy sources have spurious artifacts (e.g. cg-if-parts
-      "expected String, found Icnf"), so blanket escalation breaks boot.
-      Landed as part of this item: match-arm result mismatches are now
-      HARD errors (was silently swallowed), which catches one class.
-      Proper fix = per-call-site instantiation (fresh param scheme per
-      site + ADT params carried in Nominal types) — a dedicated project;
-      until then keep per-element-type helper duplicates.
+- [x] **Cross-module inference fragility / generic ADT system rewrite**
+      *(phase 1–2 landed 2026-08-25)*. ROOT CAUSES were: (1) untyped params
+      implicitly MONOMORPHIC — handle_apply wrote the first call site's arg
+      types back into the shared known_functions scheme, poisoning all other
+      sites; (2) ADT constructor calls lost their type-parameter
+      instantiation — module-defined constructors arrive as raw Call/Apply
+      (PostProcessor runs before module resolution) and fell into the
+      unknown-callee branch, inferring as opaque vars; (3) instantiation
+      evidence was a flat bag of type strings per ADT, unusable for
+      multi-param ADTs or site resolution. LANDED:
+      - `adt_instantiations` now stores positional `{generic param ->
+        concrete}` records (`AdtInstantiation`), deduplicated, with full
+        coverage required before recording (partial evidence minted
+        inconsistent names like Assoc_Int vs Assoc_Int_String).
+      - MakeVariant inference returns the instantiated name (`Opt_Int`) so
+        every binding site carries its instance through match/let/call.
+      - New constructor branch in handle_apply recognizes variant names via
+        `variant_to_adt` index — module constructors now record
+        instantiations and return instance types.
+      - Per-site polymorphism: the global write-back is REMOVED; body
+        inference is cached per call-site argument signature; recursive
+        self-calls constrain a fresh per-site return variable instead of
+        reading stale global returns; params bound with bind_param (shadow)
+        so leaked pattern-var bindings can't override them.
+      - `finalize_param_types`: deferred consistent-site refinement — a
+        param is concretized only when EVERY observed call site agrees
+        (restores param types codegen needs for struct layouts/floats,
+        without first-site poisoning).
+      - Monomorphization consumes merged records: non-conflicting partial
+        records for one instance are unioned (Result<T,E>: `(Ok v)` gives T,
+        `(Err e)` gives E → one Result_T_E deftype); per-instance Deftypes
+        substitute each field by its own param's concrete type.
+      - unify: two instances of the SAME base ADT unify leniently (base =
+        shortest adt_defs key that prefix-matches).
+      - Fixed latent stdlib bug exposed by the stricter checker:
+        collections/map.zyl used `let dst 0` mutated by set! (now let-mut).
+      - New test tests/regression/generics-multi-type.zyl (Opt at Int AND
+        String in one program, distinct matches, through stage-Rust
+        codegen). Boot fixed point holds; suite 21/27 — the 6 remaining
+        failures are the pre-existing baseline set, each now failing at a
+        LATER, more specific point (stricter checking exposes deeper latent
+        bugs: unit_test reaches an ill-typed Result<Vec>/Int unwrap;
+        collections map-remove segfaults in newly-reached let-mut-in-for
+        codegen; compiler/parser-verify/selfhost-codegen pending triage).
 - [x] **Match-in-value-position** *(done 2026-08-25)*: the restriction
       was already effectively lifted by earlier codegen fixes — verified
       let bindings, binop args, if branches, call args, nested arm-body
