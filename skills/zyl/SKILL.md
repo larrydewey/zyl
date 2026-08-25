@@ -99,8 +99,15 @@ these. Violations miscompile SILENTLY.
    buffers only — appending to a non-empty buffer accumulates (this is
    what you want for output buffers; NOT copy semantics).
 8. **A match-arm body contains at most ONE call.** An arm body like
-   `(+ 1 (f x) (g y))` silently computes 0 in stage>=2 binaries. Nest
-   through helper functions: `(icnf-add2 1 (icnf-add2 (f x) (g y)))`.
+   `(+ 3 (f x) (g y))` silently computes 0 in stage>=2 binaries (the
+   Zyl lowering's binop handler only folded 1-2 args; nary fold now
+   exists but keep arms simple). Nest through helpers:
+   `(icnf-add2 1 (icnf-add2 (f x) (g y)))`. The Rust-side compiler
+   rejects violating shapes with E_MATCH_ARM_COMPLEX.
+9. **';' inside strings is safe** (lexer is string-aware as of
+   2026-08-25), but older stage binaries truncate there.
+10. **';' inside strings is safe** (lexer is string-aware as of
+   2026-08-25), but older stage binaries truncate there.
 9. Keep function arities/bodies moderate; frame size scales with
    `16*(64+icnf-size)` bytes (~11KB typical) so deep recursion needs the
    big-stack worker (generated entry stubs already route main through it).

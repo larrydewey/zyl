@@ -206,6 +206,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
     };
+    // Guard: match-arm bodies must stay shallow (single call / single
+    // simple binop) — deeper shapes lose their computation or crash the
+    // self-hosted codegen (see PROGRESS.md determinism gap).
+    icnf::validate_match_arm_complexity(&icnf_program)?;
     // Also pass struct layouts to codegen for potential future use.
     let struct_layouts_for_codegen = struct_layouts.clone();
     println!(

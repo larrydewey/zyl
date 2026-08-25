@@ -82,15 +82,44 @@ impl std::fmt::Display for Token {
 }
 
 /// Strip line comments from source text.
+/// `;` starts a comment only OUTSIDE string literals — strings are
+/// preserved byte-for-byte, including any ';' they contain.
 fn strip_comments(src: &str) -> String {
     let mut result = String::with_capacity(src.len());
-    for line in src.lines() {
-        if let Some(pos) = line.find(';') {
-            result.push_str(&line[..pos]);
+    let mut in_string = false;
+    let mut chars = src.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            result.push(c);
+            match c {
+                '\\' => {
+                    // preserve the escaped character verbatim
+                    if let Some(&next) = chars.peek() {
+                        result.push(next);
+                        chars.next();
+                    }
+                }
+                '"' => in_string = false,
+                _ => {}
+            }
         } else {
-            result.push_str(line);
+            match c {
+                '"' => {
+                    in_string = true;
+                    result.push(c);
+                }
+                ';' => {
+                    // skip to end of line
+                    for d in chars.by_ref() {
+                        if d == '\n' {
+                            result.push('\n');
+                            break;
+                        }
+                    }
+                }
+                _ => result.push(c),
+            }
         }
-        result.push('\n');
     }
     result
 }

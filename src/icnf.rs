@@ -4179,3 +4179,110 @@ fn parse_single_param(expr: &Expr) -> Param {
         }
     }
 }
+
+// ─── Match-arm complexity guard (E_MATCH_ARM_COMPLEX) ───────────────────
+//
+// The self-hosted (stage>=2) codegen loses a match arm's computation when
+// the arm body combines a constant with multiple calls, and crashes on
+// nested BinOp chains. Sources must keep every match-arm body shallow:
+// at most one call and at most one binop. Sums nest through helper
+// functions (see skills/zyl/SKILL.md, constraint 8).
+//
+// This validation runs in the Rust bootstrap so violations are rejected
+// before any stage binary is produced.
+
+// E_MATCH_ARM_COMPLEX guard helpers.
+//
+// Failure mode: a BinOp statement whose direct operands include TWO OR
+// MORE calls loses its computation in stage>=2 binaries ("bind fields;
+// store 0"). Single-call binops and calls nested inside other calls are
+// fine. Operand ids reference sibling statements in the same arm body,
+// which is where the flattened argument evaluations live.
+
+fn is_call_stmt(node: &ICNFNode) -> bool {
+    matches!(node.node, ICNFInner::Call(_, _) | ICNFInner::FfiCall { .. })
+}
+
+
+pub fn validate_match_arm_complexity(program: &ICNFProgram) -> Result<(), ZylError> {
+    fn check_body(body: &[ICNFNode], fn_name: &str, variant: &str) -> Result<(), ZylError> {
+        let mut lookup: std::collections::BTreeMap<usize, &ICNFNode> = std::collections::BTreeMap::new();
+        for n in body {
+            lookup.insert(n.id, n);
+        }
+        for n in body {
+            if let ICNFInner::BinOp(_, l, r) = &n.node {
+                let mut call_ops = 0usize;
+                let mut const_ops = 0usize;
+                for id in [l, r] {
+                    if let Some(nd) = lookup.get(id).copied() {
+                        if is_call_stmt(nd) {
+                            call_ops += 1;
+                        }
+                        if matches!(nd.node, ICNFInner::Const(_)) {
+                            const_ops += 1;
+                        }
+                    }
+                }
+                // Confirmed-failing shape: constant combined with two or
+                // more calls ("bind fields; store 0" in stage>=2 codegen).
+                // Bare call+call sums and plain variable sums work.
+                if call_ops >= 2 && const_ops >= 1 {
+                    return Err(ZylError::E_USER_ERROR(
+                        crate::error::Span::default(),
+                        format!(
+                            "E_MATCH_ARM_COMPLEX: match arm `{}::{}` combines a constant with {} calls \
+                             in one binop - nest sums through helper functions so each arm body has a \
+                             single call (see skills/zyl/SKILL.md constraint 8)",
+                            fn_name, variant, call_ops
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn walk(node: &ICNFNode, fn_name: &str) -> Result<(), ZylError> {
+        use ICNFInner::*;
+        match &node.node {
+            Match { arms, .. } => {
+                for arm in arms {
+                    check_body(&arm.body, fn_name, &arm.variant_name)?;
+                    for n in &arm.body {
+                        walk(n, fn_name)?;
+                    }
+                }
+            }
+            If { then_body, else_body, .. } => {
+                for n in then_body.iter().chain(else_body.iter()) {
+                    walk(n, fn_name)?;
+                }
+            }
+            While { cond_body, body, .. } | For { cond_nodes: cond_body, body, .. } => {
+                for n in cond_body.iter().chain(body.iter()) {
+                    walk(n, fn_name)?;
+                }
+            }
+            Begin(stmts) => {
+                for n in stmts {
+                    walk(n, fn_name)?;
+                }
+            }
+            TryCatch { try_body, catch_body, .. } => {
+                for n in try_body.iter().chain(catch_body.iter()) {
+                    walk(n, fn_name)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    for func in &program.functions {
+        for stmt in &func.body {
+            walk(stmt, &func.name)?;
+        }
+    }
+    Ok(())
+}

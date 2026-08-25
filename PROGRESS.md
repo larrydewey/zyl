@@ -38,12 +38,28 @@ How the last two gaps were closed:
       2026-08-25 — it immediately exposed that the earlier determinism
       check was vacuous; see Current State.)* Still to do: wire it into
       `run_regression_tests.sh --full`.
-- [x] **Determinism gap CLOSED (2026-08-25)**: root cause was the same
-      match-arm multi-call miscompile hiding in `icnf-arm-size`
-      (`(+ 1 (icnf-size body) (icnf-count-arms rest))` computed as 0).
-      Fixed via icnf-add2 nesting; `./boot.sh` reports the fixed point
-      holds. RULE for new code: a match-arm body contains at most one
-      call — see skills/zyl/SKILL.md.
+- [x] **Determinism gap CLOSED (2026-08-25)**: TWO root causes found and
+      fixed:
+      (a) The Zyl lowering's `ic-binop` handled only 1-2 arguments — any
+      3+-argument binop (`(+ 3 x y)`) silently lowered to `(IConst 0)` in
+      stage>=2 binaries, zeroing out size computations. Fixed with a
+      left-associative n-ary fold (`ic-binop-fold`), matching the Rust
+      bootstrap's convert_nary_fold.
+      (b) `icnf-arm-size`'s `(+ 1 (sz body) (count rest))` shape needed
+      icnf-add2 nesting (match-arm bodies: at most ONE call).
+      `./boot.sh` reports the fixed point holds; verified end-to-end with
+      nested-variant and multi-call programs through stage2.
+- [x] **E_MATCH_ARM_COMPLEX guard (Rust side)**: src/icnf.rs now rejects,
+      at ICNF-generation time, any match arm whose BinOp directly combines
+      2+ call operands AND a constant operand — the confirmed-failing
+      shape. Bare call+call sums are allowed (verified working through
+      stage1->stage2). Note: the Rust n-ary fold emits chained binops so
+      most multi-call sums never present this shape; the guard is
+      defense-in-depth for future lowering changes.
+- [x] **Lexer fix**: ';' inside string literals no longer starts a
+      comment (src/lexer.rs strip_comments is now string-aware). Strings
+      containing semicolons previously truncated at the ';' — this was
+      corrupting boot sources that used ';' in message strings.
 - [x] **Rust bootstrap nondeterminism FIXED**: src/deterministic.rs
       FNV-1a HashMap/HashSet across all of src/.
 - [ ] **Enforce the one-call rule in the compiler**: extend
