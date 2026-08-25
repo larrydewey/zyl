@@ -8,8 +8,9 @@
 #   --verbose    Print compiler output
 #   --depth N    Set nesting depth for stress tests (default: 100)
 #   --timeout N  Per-test timeout in seconds (default: 10)
-#   --boot       Also run the self-hosting fixed-point verification
-#                (./boot.sh --skip-rust; takes several minutes)
+#   --boot       Force the self-hosting fixed-point verification
+#                (./boot.sh --skip-rust) in any mode
+#   --no-boot    Skip the fixed-point verification in --full mode
 
 set -euo pipefail
 
@@ -25,6 +26,7 @@ DEPTH=100
 TIMEOUT=10
 DRY_RUN=0
 BOOT=0
+NO_BOOT=0
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --full) MODE="full"; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --boot) BOOT=1; shift ;;
+        --no-boot) NO_BOOT=1; shift ;;
         --filter) FILTER="$2"; shift 2 ;;
         --verbose) VERBOSE=1; shift ;;
         --depth) DEPTH="$2"; shift 2 ;;
@@ -40,6 +43,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1"; exit 2 ;;
     esac
 done
+
+# The self-hosting fixed-point check runs by default in --full mode;
+# opt out with --no-boot.
+if [ "$MODE" = "full" ]; then
+    BOOT=1
+fi
 
 # Counters
 PASS=0
@@ -177,8 +186,8 @@ if [ "$MODE" = "full" ]; then
     done
 fi
 
-# Self-hosting fixed-point verification (opt-in: slow, several minutes)
-if [ "$BOOT" -eq 1 ]; then
+# Self-hosting fixed-point verification (default in --full; slow)
+if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ]; then
     TOTAL=$((TOTAL + 1))
     echo ""
     echo "=== Self-hosting fixed point (boot.sh) ==="
