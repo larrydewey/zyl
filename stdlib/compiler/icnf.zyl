@@ -408,9 +408,11 @@
       ; tail = everything after the symbol: (arg* timeout).
       ; Both branches lower through ic-arg-list so their types unify
       ; (a bare Nil here would clash as Option vs List).
+      ; NOTE: the symbol is a string literal -> use atom-text, NOT
+      ; ident-name (which only extracts identifiers).
       (if (> (list-length tail) 1)
-        (ic-arg-list arena (butlast tail (no-asts)) vt)
-        (ic-arg-list arena Nil vt)))
+        (IFfi (atom-text sym "") (ic-arg-list arena (butlast tail (no-asts)) vt))
+        (IFfi (atom-text sym "") Nil)))
     (Nil (IFfi "?" Nil))))
 
 

@@ -219,9 +219,9 @@
   (if (= c 34)
     (lex-str-e arena src len i acc (scan-str-end src len (+ i 1)))
     (if (= c 58)
-      (lex-sym-probe arena src len i acc 58)
+      (lex-sym-probe arena src len i acc)
       (if (= c 126)
-        (lex-sym-probe arena src len i acc 126)
+        (lex-sym-probe arena src len i acc)
         (if (= (chr-digit-p c) 1)
           (lex-num-e arena src len i acc (scan-number-end src len i))
           (if (= c 45)
@@ -245,44 +245,43 @@
 
 ; Numeric literal: i..e; float when the text carries '.' or exponent.
 (defn lex-num-e (arena src len i acc e)
-  (lex-num-text arena src len i acc e (sub-str arena src i (- e i))))
-
-(defn lex-num-text (arena src len i acc e text)
-  (if (= (text-float-marker-p text) 1)
-    (lex-loop arena src len e (Cons (TkFloat text) acc))
-    (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc))))
+  (let text (sub-str arena src i (- e i))
+    (if (= (text-float-marker-p text) 1)
+      (lex-loop arena src len e (Cons (TkFloat text) acc))
+      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc)))))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)
-  (lex-ident-text arena src len i acc e (sub-str arena src i (- e i))))
-
-(defn lex-ident-text (arena src len i acc e text)
-  (if (> (str-eq text (str-intern arena "true")) 0)
-    (lex-loop arena src len e (Cons (TkBool true) acc))
-    (if (> (str-eq text (str-intern arena "false")) 0)
-      (lex-loop arena src len e (Cons (TkBool false) acc))
-      (lex-loop arena src len e (Cons (TkIdent text) acc)))))
+  (let text (sub-str arena src i (- e i))
+    (if (> (str-eq text (str-intern arena "true")) 0)
+      (lex-loop arena src len e (Cons (TkBool true) acc))
+      (if (> (str-eq text (str-intern arena "false")) 0)
+        (lex-loop arena src len e (Cons (TkBool false) acc))
+        (lex-loop arena src len e (Cons (TkIdent text) acc))))))
 
 ; ':' / '~' prefixed keyword or symbol: probe the next non-ws char.
-(defn lex-sym-probe (arena src len i acc c)
-  (lex-sym-pk arena src len i acc c (next-nonws src len (+ i 1))))
+(defn lex-sym-probe (arena src len i acc)
+  (lex-sym-pk arena src len i acc (next-nonws src len (+ i 1))))
 
-(defn lex-sym-pk (arena src len i acc c pk)
-  (if (< pk 0)
-    (lex-sym-bare arena src len i acc c)
-    (if (= (chr-ident-start-p (byte-at src pk)) 0)
+; c is the character at i, recovered with byte-at so the arity stays <= 6.
+(defn lex-sym-pk (arena src len i acc pk)
+  (let c (byte-at src i)
+    (if (< pk 0)
       (lex-sym-bare arena src len i acc c)
-      (if (= (chr-punctuator-p (byte-at src pk)) 1)
+      (if (= (chr-ident-start-p (byte-at src pk)) 0)
         (lex-sym-bare arena src len i acc c)
-        (lex-sym-e arena src len i acc c (scan-ident-end src len pk))))))
+        (if (= (chr-punctuator-p (byte-at src pk)) 1)
+          (lex-sym-bare arena src len i acc c)
+          (lex-sym-tok arena src len i acc (scan-ident-end src len pk)))))))
 
-(defn lex-sym-e (arena src len i acc c end)
-  (lex-sym-tok arena src len i acc c end (sub-str arena src (+ i 1) (- end (+ i 1)))))
-
-(defn lex-sym-tok (arena src len i acc c end text)
-  (if (= c 58)
-    (lex-loop arena src len end (Cons (TkKeyword text) acc))
-    (lex-loop arena src len end (Cons (TkSymbol text) acc))))
+; end = index one past the symbol text; token kind depends on the
+; introducing character c (58 = ':').
+(defn lex-sym-tok (arena src len i acc end)
+  (let c (byte-at src i)
+    (let text (sub-str arena src (+ i 1) (- end (+ i 1)))
+      (if (= c 58)
+        (lex-loop arena src len end (Cons (TkKeyword text) acc))
+        (lex-loop arena src len end (Cons (TkSymbol text) acc))))))
 
 (defn lex-sym-bare (arena src len i acc c)
   (if (= c 58)

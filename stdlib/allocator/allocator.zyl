@@ -90,40 +90,40 @@
 ; on failure.
 ; Returns: Int (handle)
 (defn arena-create (block-size)
-  (ffi-call "zyl_arena_create" block-size 1000))
+  (let h (ffi-call "zyl_arena_create" block-size 1000) h))
 
 ; Allocate `size` bytes from `arena`, 16-byte aligned. Returns an address
 ; (Int), or 0 on failure.
 ; Returns: Int (address)
 (defn arena-alloc (arena size)
-  (ffi-call "zyl_arena_alloc" arena size 1000))
+  (let h (ffi-call "zyl_arena_alloc" arena size 1000) h))
 
 ; Allocate `size` zero-initialized bytes from `arena`. Returns an address
 ; (Int), or 0 on failure.
 ; Returns: Int (address)
 (defn arena-alloc-zeroed (arena size)
-  (ffi-call "zyl_arena_alloc_zeroed" arena size 1000))
+  (let h (ffi-call "zyl_arena_alloc_zeroed" arena size 1000) h))
 
 ; Free every block in `arena` at once. The handle stays valid and the arena
 ; can be reused immediately.
 ; Returns: Unit
 (defn arena-reset (arena)
-  (ffi-call "zyl_arena_reset" arena 1000))
+  (let h (ffi-call "zyl_arena_reset" arena 1000) h))
 
 ; Free every block in `arena` and invalidate the handle.
 ; Returns: Unit
 (defn arena-destroy (arena)
-  (ffi-call "zyl_arena_destroy" arena 1000))
+  (let h (ffi-call "zyl_arena_destroy" arena 1000) h))
 
 ; Bytes currently allocated from `arena`.
 ; Returns: Int
 (defn arena-used (arena)
-  (ffi-call "zyl_arena_used" arena 1000))
+  (let h (ffi-call "zyl_arena_used" arena 1000) h))
 
 ; Total block capacity backing `arena`.
 ; Returns: Int
 (defn arena-capacity (arena)
-  (ffi-call "zyl_arena_capacity" arena 1000))
+  (let h (ffi-call "zyl_arena_capacity" arena 1000) h))
 
 ; ===========================================================================
 ; STRING HELPERS
@@ -137,10 +137,12 @@
 ; Intern a String into `arena`: copy its bytes (including terminator) into a
 ; fresh zeroed buffer. Returns the buffer pointer.
 ; Returns: Int (pointer)
-; Copy a NUL-terminated string from src into the pre-allocated buffer dst.
+; Append src at the end of the NUL-terminated string in dst (true append,
+; NOT overwrite). Matches the Rust bootstrap's StringBuffer backend so
+; stage>=2 codegen output accumulates across emits.
 ; Returns: dst
 (defn buf-append (dst src)
-  (ffi-call "zyl_strcpy" dst src 1000))
+  (ffi-call "zyl_str_append" dst src 1000))
 
 ; Zyl-level error: print and exit.
 (defn error (msg)
