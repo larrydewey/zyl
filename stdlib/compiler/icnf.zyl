@@ -237,9 +237,12 @@
   (let nm (first-ast (rest-ast kids))
     (let params (first-ast (rest-ast (rest-ast kids)))
       (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
-        (IFn (str-intern arena (ident-name nm ""))
-             (list-reverse (param-names params (no-strs)))
-             (ic-expr arena body vt))))))
+        (let ps (list-reverse (param-names params (no-strs)))
+          ; The self-hosted codegen passes args in SysV registers only;
+          ; more than 6 params silently miscompiles.
+          (if (> (list-length ps) 6)
+            (ffi-call "f_error" "E_TOO_MANY_PARAMS: defn has more than 6 parameters" 1000)
+            (IFn (str-intern arena (ident-name nm "")) ps (ic-expr arena body vt))))))))
 
 (defn ic-defn-short (arena kids vt)
   (let nm (first-ast (rest-ast kids))
