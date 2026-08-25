@@ -17,8 +17,9 @@ pub struct CodeGen {
     /// P1: fatal emission problems (unresolvable values). Never silently
     /// fabricate zeros — record here; main() turns these into E_CODEGEN.
     pub fatal_errors: Vec<String>,
-    /// TCO: statement id of the current function's final value (tail position).
-    func_tail_id: usize,
+    /// TCO: statement ids of true tail positions (self-calls eligible for
+    /// frame-reuse), computed per function including through If/Match nests.
+    tail_call_ids: std::collections::HashSet<usize>,
     /// Label counter for unique jump targets and string literals.
     label_counter: usize,
     /// XMM register counter for SSE floating-point register allocation.
@@ -78,7 +79,7 @@ impl CodeGen {
         Self {
             asm: Vec::new(),
             fatal_errors: Vec::new(),
-            func_tail_id: 0,
+            tail_call_ids: std::collections::HashSet::new(),
             label_counter: 0,
             xmm_counter: 0,
             spawn_counter: 0,
@@ -835,12 +836,18 @@ impl CodeGen {
                 continue;
             }
             self.current_func = func.name.clone();
-            // Tail position exists only if the final statement is NOT inside
-            // an embedded branch/match-arm body (those run conditionally).
-            self.func_tail_id = match func.body.last() {
-                Some(st) if !program.emitted_branch_ids.contains(&st.id) => st.id,
-                _ => 0,
-            };
+            // Tail positions: walk the final-statement chain; an If/Match in
+            // final position passes tail status into its branches/arms, so a
+            // self-call nested inside if/match chains still qualifies.
+            self.tail_call_ids.clear();
+            if let Some(last) = func.body.last() {
+                let mut ids = std::collections::HashSet::new();
+                collect_tail_calls(&last.node, last.id, &func.name, &mut ids);
+                self.tail_call_ids = ids;
+            }
+            if std::env::var("ZYL_DBG_TCO").is_ok() && !self.tail_call_ids.is_empty() {
+                eprintln!("[tco] {} -> {:?} ids", func.name, self.tail_call_ids);
+            }
             let fn_name = format!("_ZYL_{}", func.name);
             self.asm_push_align();
             self.asm_push_align();
@@ -3663,9 +3670,11 @@ impl CodeGen {
             // uniform size (global spill_frame) and parameter slots live at
             // the same rbp-relative offsets in every frame — so replacing
             // call+return-address with a jump reuses the caller's frame.
-            if false
-                && name == sanitize_name(&self.current_func)
-                && node_id == self.func_tail_id
+            // Sibling TCO: any tail-position user-function call qualifies.
+            // Sound because all frames are uniform and r12 (the only
+            // callee-saved reg used) is never live across calls in this
+            // codebase — match handlers consume it before any call.
+            if self.tail_call_ids.contains(&node_id)
                 && target_reg == "rax"
                 && !is_float
                 && num_args <= 6
@@ -7801,6 +7810,41 @@ fn simple_hash(name: &str) -> u64 {
 }
 
 /// Sanitize a function/variable name for the assembly symbol namespace.
+/// Collect ids of self-calls in TRUE tail position: walk down the final
+/// statement chain — an If/Match whose node is last passes tail status into
+/// its branches/arms; anything else terminates the walk.
+fn collect_tail_calls(
+    node: &ICNFInner,
+    id: usize,
+    func_name: &str,
+    out: &mut std::collections::HashSet<usize>,
+) {
+    match node {
+        // Any tail-position user call qualifies (self OR sibling); the
+        // emitter enforces register-class/arity guards.
+        ICNFInner::Call { .. } if false => {}
+        ICNFInner::Call(..) => {
+            out.insert(id);
+        }
+        ICNFInner::If { then_body, else_body, .. } => {
+            if let Some(t) = then_body.last() {
+                collect_tail_calls(&t.node, t.id, func_name, out);
+            }
+            if let Some(e) = else_body.last() {
+                collect_tail_calls(&e.node, e.id, func_name, out);
+            }
+        }
+        ICNFInner::Match { arms, .. } => {
+            for arm in arms {
+                if let Some(a) = arm.body.last() {
+                    collect_tail_calls(&a.node, a.id, func_name, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 fn sanitize_name(name: &str) -> String {
     name.chars()
         .map(|c| match c {
