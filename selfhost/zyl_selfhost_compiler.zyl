@@ -936,8 +936,40 @@
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)
+; Whole-token-stream paren balance. The reader consumes to EOF on an
+; unclosed form, so imbalance must be checked on the token stream itself.
+; All 15 variants enumerated: partial enumerations fail inference here.
+(defn bal-walk (toks depth)
+  (match toks
+    (Nil depth)
+    (Cons t rest
+      (match t
+        (TkLParen d50 (bal-walk rest (+ depth 1)))
+        (TkRParen d51 (bal-walk rest (- depth 1)))
+        (TkEof d52 (bal-walk rest depth))
+        (TkIdent d53 (bal-walk rest depth))
+        (TkInt d54 (bal-walk rest depth))
+        (TkFloat d55 (bal-walk rest depth))
+        (TkString d56 (bal-walk rest depth))
+        (TkBool d57 (bal-walk rest depth))
+        (TkSymbol d58 (bal-walk rest depth))
+        (TkKeyword d59 (bal-walk rest depth))
+        (TkLBrace d60 (bal-walk rest depth))
+        (TkRBrace d61 (bal-walk rest depth))
+        (TkLBracket d62 (bal-walk rest depth))
+        (TkRBracket d63 (bal-walk rest depth))
+        (TkColon d64 (bal-walk rest depth))))))
+
+(defn check-balanced (toks)
+  (if (= (bal-walk toks 0) 0)
+    0
+    (ffi-call "f_error" "E_UNBALANCED_PARENS: '(' and ')' counts differ" 1000)))
+
 (defn zyl-parse (arena src)
-  (parse-program arena (zyl-lex arena src)))
+  (let toks (zyl-lex arena src)
+    (begin
+      (check-balanced toks)
+      (parse-program arena toks))))
 
 ; ---------- stdlib/compiler/icnf.zyl ----------
 ; === Zyl Standard Library — Compiler ICNF lowering ===
@@ -1117,10 +1149,15 @@
     (Nil vt)
     (Cons v rest
       (let tail (vt-from-variants arena rest vt (+ tag 1))
-        (VTEntry (str-intern arena (variant-name v))
-                 tag
-                 (variant-arity v)
-                 tail)))))
+        (let nm (str-intern arena (variant-name v))
+          ; Duplicate variant names across deftypes create incompatible
+          ; constructor identities whose pattern matches silently fail.
+          (if (> (vt-tag-of tail nm) -1)
+            (ffi-call "f_error" "E_DUPLICATE_VARIANT: variant name defined by more than one deftype" 1000)
+            (VTEntry nm
+                     tag
+                     (variant-arity v)
+                     tail)))))))
 
 ; Name of a variant spec: (Nil) | (Cons Int L) | bare Nil.
 (defn variant-name (v)
@@ -1173,9 +1210,12 @@
   (let nm (first-ast (rest-ast kids))
     (let params (first-ast (rest-ast (rest-ast kids)))
       (let body (first-ast (rest-ast (rest-ast (rest-ast kids))))
-        (IFn (str-intern arena (ident-name nm ""))
-             (list-reverse (param-names params (no-strs)))
-             (ic-expr arena body vt))))))
+        (let ps (list-reverse (param-names params (no-strs)))
+          ; The self-hosted codegen passes args in SysV registers only;
+          ; more than 6 params silently miscompiles.
+          (if (> (list-length ps) 6)
+            (ffi-call "f_error" "E_TOO_MANY_PARAMS: defn has more than 6 parameters" 1000)
+            (IFn (str-intern arena (ident-name nm "")) ps (ic-expr arena body vt))))))))
 
 (defn ic-defn-short (arena kids vt)
   (let nm (first-ast (rest-ast kids))
