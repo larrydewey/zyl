@@ -132,139 +132,25 @@ How the last two gaps were closed:
       then a Zyl-written LSP once the self-hosted one is trusted.
 
 ### P3 — Bootstrap correctness & performance
-- [ ] **For-loop supply-node leak corrupts return values** *(diagnosed
-      2026-08-25; LAST remaining failure class — now the only thing between
-      us and 27/27)*. For/While cond+body supply nodes AND For init-binding
-      nodes leak into the function's top-level ICNF body via global_stmts
-      during conversion. Codegen's trailing-pure emission re-emits them
-      AFTER the function's result load — `mov eax, 0` from a leaked Const
-      clobbers the return value (map-remove hit path then dereferences a
-      garbage handle -> SIGSEGV in unit_test AND collections). Repro:
-      `(let-mut d 0 (begin (for (j 0) (< j 3) ...) d))` returns 0 not 3;
-      inserting any statement before the tail read masks it.
-      ATTEMPTS REVERTED (both regressed control-flow/for-loop-early-exit):
-      (a) codegen skip-nonfinal-pure rule — skipped the real tail load when
-      leaks followed it; (b) central ICNF prune of embedded duplicates —
-      early-exit depends on placement/mutation ordering of loop-var nodes
-      shared between init and body. PROPER FIX requires dependency-ordered
-      emission: build func.body so every node appears exactly once, ordered
-      after its operands and before its consumers, with loop-carried vars
-      (i set! inside the body that the cond reads) kept as slot writes —
-      i.e. SSA-with-loops semantics, not list dedup. Suggest tackling with
-      an explicit pass over convert_expr_to_stmts output at Defn
-      finalization, walking the embedded subtrees as the backbone.
-- [x] **Float ABI fixes (Rust bootstrap, 2026-08-25)**: several
-      pre-existing codegen bugs fixed and verified end-to-end:
-    - rodata collectors did not recurse into `Match` arm bodies —
-      float/string literals inside arms referenced labels that were never
-      emitted (undefined `.flt_N` at link time). Both collectors now walk
-      arm bodies.
-    - `(print <float>)` printed garbage ints: Print's type detection
-      relied on ICNF `typ`, which is almost always `None`.
-      `node_looks_float` is now a method that follows Assign/Load chains,
-      recognizes Float-typed params (`float_params`) and Float-returning
-      calls (`func_returns`); the Print handler uses it as a fallback.
-    - printf with `al != 0` spills xmm args via aligned SSE stores →
-      segfault on this codegen's unaligned frames. The float print path
-      now dynamically aligns rsp to 16 around printf and restores it via
-      `lea rsp, [rbp-frame]`.
-    - Float arguments across calls silently arrived as 0: caller passed
-      64-bit bit patterns in GPRs but the callee prologue read xmm regs.
-      Convention is now uniform: floats travel as GPR bit patterns
-      end-to-end (prologue stores the GPR directly).
-    - Verified: constant/bound/param/call-result floats print correctly;
-      24/24 regression + boot fixed point still hold.
-- [x] **Float/match codegen sweep, round 2 (2026-08-25)**: match-in-value-
-      position as a call argument no longer crashes; a cluster of related
-      float bugs fixed:
-    - `emit_float_load_into` gained Call/UnOp cases (GPR bit-pattern
-      convention); its stale xmm-args call convention removed.
-    - `MatchArmICNF.field_types` (from adt_defs, with monomorphized-name
-      fallback) feeds a new `float_locals` set so BinOp/UnOp inside match
-      arms pick SSE paths (`(* side side)` was an integer `imul`).
-    - Float BinOp/UnOp results now land in **both** xmm0 and rax (bit
-      pattern): downstream consumers (match joins, result slots) read
-      GPRs. `emit_binop_direct` and `emit_node_inner` both fixed.
-    - Float negation: `neg` on xmm registers (assembler error) replaced
-      with `0 - x`; xmm0/xmm-src register collision guarded.
-    - **Float comparisons were vacuous**: emit_binop_direct's float Eq/
-      Lt/Gt... arms had `xor eax,eax` between `ucomisd` and `setcc`,
-      clobbering the flags so every comparison returned true. Fixed.
-      This had been masking that `(/ 1.0 2.0 3.0)` ≠ `0.166667`
-      bit-exactly.
-    - assert-equal on floats is now approximate (|a-b| ≤ 1e-5 via new
-      `.flt_abs_mask`/`.flt_epsilon` rodata), matching %.6f printing
-      precision. Exact `==` remains exact.
-    - Verified: 24/24 regression + boot fixed point hold.
-- [ ] **Remaining known gaps**: TCO tail-call path does not handle float
-      args; catch-all (wildcard) arms work — Int discriminants verified,
-      float-arm + catch-all combinations now work end-to-end.
-- [x] **Stack-passed args >6 params** in selfhost codegen *(done
-      2026-08-25)*: the arity<=6 restriction is LIFTED. `cg-call-args`
-      now stages every argument in an 8-byte scratch slot, copy-pushes
-      args >=6 in reverse (SysV stack args), loads register args from
-      scratch, and cleans up pad+scratch+copies; `cg-param-spills` loads
-      callee stack args from `[rbp+16+8*(i-6)]`. The E_TOO_MANY_PARAMS
-      guard was removed from icnf.zyl. Verified end-to-end through
-      stage2 (id8 -> 7, sum8 -> 36); boot fixed point holds; 25/25.
-      Bootstrap constraint 1 lifted in skills/zyl/SKILL.md.
-- [ ] **Frame sizing**: uniform ~16KB frames (`16*(64+icnf-size)`) waste
-      stack; size frames from actual slot counts. Enables revisiting
-      sibling TCO safely.
-- [x] **Cross-module inference fragility / generic ADT system rewrite**
-      *(phase 1–2 landed 2026-08-25)*. ROOT CAUSES were: (1) untyped params
-      implicitly MONOMORPHIC — handle_apply wrote the first call site's arg
-      types back into the shared known_functions scheme, poisoning all other
-      sites; (2) ADT constructor calls lost their type-parameter
-      instantiation — module-defined constructors arrive as raw Call/Apply
-      (PostProcessor runs before module resolution) and fell into the
-      unknown-callee branch, inferring as opaque vars; (3) instantiation
-      evidence was a flat bag of type strings per ADT, unusable for
-      multi-param ADTs or site resolution. LANDED:
-      - `adt_instantiations` now stores positional `{generic param ->
-        concrete}` records (`AdtInstantiation`), deduplicated, with full
-        coverage required before recording (partial evidence minted
-        inconsistent names like Assoc_Int vs Assoc_Int_String).
-      - MakeVariant inference returns the instantiated name (`Opt_Int`) so
-        every binding site carries its instance through match/let/call.
-      - New constructor branch in handle_apply recognizes variant names via
-        `variant_to_adt` index — module constructors now record
-        instantiations and return instance types.
-      - Per-site polymorphism: the global write-back is REMOVED; body
-        inference is cached per call-site argument signature; recursive
-        self-calls constrain a fresh per-site return variable instead of
-        reading stale global returns; params bound with bind_param (shadow)
-        so leaked pattern-var bindings can't override them.
-      - `finalize_param_types`: deferred consistent-site refinement — a
-        param is concretized only when EVERY observed call site agrees
-        (restores param types codegen needs for struct layouts/floats,
-        without first-site poisoning).
-      - Monomorphization consumes merged records: non-conflicting partial
-        records for one instance are unioned (Result<T,E>: `(Ok v)` gives T,
-        `(Err e)` gives E → one Result_T_E deftype); per-instance Deftypes
-        substitute each field by its own param's concrete type.
-      - unify: two instances of the SAME base ADT unify leniently (base =
-        shortest adt_defs key that prefix-matches).
-      - Fixed latent stdlib bug exposed by the stricter checker:
-        collections/map.zyl used `let dst 0` mutated by set! (now let-mut).
-      - New test tests/regression/generics-multi-type.zyl (Opt at Int AND
-        String in one program, distinct matches, through stage-Rust
-        codegen). Boot fixed point holds; suite 21/27 — the 6 remaining
-        failures are the pre-existing baseline set, each now failing at a
-        LATER, more specific point (stricter checking exposes deeper latent
-        bugs: unit_test reaches an ill-typed Result<Vec>/Int unwrap;
-        collections map-remove segfaults in newly-reached let-mut-in-for
-        codegen; compiler/parser-verify/selfhost-codegen pending triage).
-- [x] **Match-in-value-position** *(done 2026-08-25)*: the restriction
-      was already effectively lifted by earlier codegen fixes — verified
-      let bindings, binop args, if branches, call args, nested arm-body
-      matches, and multiple matches per defn through stage1 AND stage2
-      (all produce correct values). Codified with
-      tests/regression/match-value-position.zyl (7 shapes; runs in the
-      Rust suite; stage>=2 verified manually since run-tests is a
-      Rust-bootstrap special form). Constraint 2 lifted in the skill.
-- [ ] **Scale profiling**: O(n²) suspects in str-intern scans and arena
-      fragmentation when compiling very large inputs.
+- [ ] **map-remove returns the wrong Map** *(downgraded from segfault to
+      assertion failure 2026-08-25 — root-cause class FIXED)*. The For-loop
+      supply-node leak that corrupted return values and caused SIGSEGVs is
+      RESOLVED by four codegen/ICNF changes:
+      (1) ICNFFuncSig.result_id + epilogue re-materialization of the tail
+      value into rax (return no longer depends on statement order);
+      (2) function-wide dedup keeping the embedded (owning) copy of every
+      node id over leaked branch/top-level clones;
+      (3) recursive hoist of For init-binding nodes before their For;
+      (4) If/For branch emitters skip everything after the branch's final
+      node and fresh-emit value-kind last nodes (MakeStruct/MakeVariant now
+      count as value kinds).
+      REMAINING: map-remove's result aliases its input (r == m, len 1 not 0)
+      — a value-flow bug where the outer if selects `m` or the caller binds
+      r to m's slot; unit_test fails only on this same map-remove assert
+      (181/182). Debugging state: removed=1 confirmed at runtime, else
+      branch builds the new struct, yet the caller observes m. Next step:
+      trace main-side let-binding slot assignment for `(let r (map-remove
+      m 1))` vs m's slot.
 
 ### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
 The Rust bootstrap gained significant inference/codegen semantics during

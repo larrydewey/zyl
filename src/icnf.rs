@@ -180,6 +180,82 @@ pub struct ICNFFuncSig {
     pub params: Vec<(String, Type)>, // param_name -> type
     pub return_type: Option<Type>,   // None = Unit
     pub body: Vec<ICNFNode>,         // converted function body statements
+    /// SSA id of the body's tail expression - the function's result value.
+    pub result_id: usize,
+}
+
+/// SSA id of a converted statement list's tail - the value the function returns.
+fn result_id_of(stmts: &[ICNFNode]) -> usize {
+    stmts.last().map(|n| n.id).unwrap_or(0)
+}
+
+/// Move For init-binding nodes (referenced BY ID, not embedded) to directly
+/// before their For. They leak into enclosing lists AFTER the For during
+/// conversion; emitting them there clobbers rax between a computation and
+/// its phi/slot store. Applied recursively to every statement list.
+fn hoist_for_inits(stmts: &mut Vec<ICNFNode>) {
+    for s in stmts.iter_mut() {
+        match &mut s.node {
+            ICNFInner::For { cond_nodes, body, .. } => {
+                hoist_for_inits(cond_nodes);
+                hoist_for_inits(body);
+            }
+            ICNFInner::While { cond_body, body, .. } => {
+                hoist_for_inits(cond_body);
+                hoist_for_inits(body);
+            }
+            ICNFInner::If { then_body, else_body, .. } => {
+                hoist_for_inits(then_body);
+                hoist_for_inits(else_body);
+            }
+            ICNFInner::Match { arms, .. } => {
+                for a in arms.iter_mut() { hoist_for_inits(&mut a.body); }
+            }
+            ICNFInner::Begin(list) => hoist_for_inits(list),
+            _ => {}
+        }
+    }
+    let mut for_init_ids: Vec<usize> = Vec::new();
+    for stmt in stmts.iter() {
+        if let ICNFInner::For { init_bindings, .. } = &stmt.node {
+            for (_, v) in init_bindings {
+                if let Some(id) = v { for_init_ids.push(*id); }
+            }
+        }
+    }
+    if for_init_ids.is_empty() {
+        return;
+    }
+    let mut hoisted: Vec<ICNFNode> = Vec::new();
+    let mut others: Vec<ICNFNode> = Vec::new();
+    for stmt in std::mem::take(stmts) {
+        if for_init_ids.contains(&stmt.id)
+            && matches!(stmt.node, ICNFInner::Const(_) | ICNFInner::Load(_))
+        {
+            hoisted.push(stmt);
+        } else {
+            others.push(stmt);
+        }
+    }
+    let mut rebuilt: Vec<ICNFNode> = Vec::new();
+    for stmt in others {
+        if !hoisted.is_empty() {
+            if let ICNFInner::For { init_bindings, .. } = &stmt.node {
+                let ids: Vec<usize> =
+                    init_bindings.iter().filter_map(|(_, v)| *v).collect();
+                let mut mine: Vec<ICNFNode> = Vec::new();
+                let mut rest: Vec<ICNFNode> = Vec::new();
+                for h in hoisted.drain(..) {
+                    if ids.contains(&h.id) { mine.push(h); } else { rest.push(h); }
+                }
+                rebuilt.extend(mine);
+                hoisted = rest;
+            }
+        }
+        rebuilt.push(stmt);
+    }
+    rebuilt.extend(hoisted);
+    *stmts = rebuilt;
 }
 
 /// A single statement in the SSA IR. Each has a unique SSA ID and region annotation.
@@ -615,6 +691,39 @@ impl IcnfConverter {
     /// were force-pushed during conversion, while `body` holds the full node
     /// set. Walk the temp buffer as the ordering backbone, pulling in body
     /// statements as their ids are reached; then append leftovers.
+    /// Function-wide dedup keeping the AUTHORITATIVE copy: node ids appear
+    /// exactly once, and the copy embedded in the control-flow subtree that
+    /// owns it wins over leaked top-level/branch clones.
+    fn prune_embedded_duplicates(func_body: &mut Vec<ICNFNode>) {
+        fn dedup(nodes: &mut Vec<ICNFNode>, seen: &mut crate::deterministic::HashSet<usize>) {
+            for n in nodes.iter_mut() {
+                match &mut n.node {
+                    ICNFInner::For { cond_nodes, body, .. } => {
+                        dedup(cond_nodes, seen);
+                        dedup(body, seen);
+                    }
+                    ICNFInner::While { cond_body, body, .. } => {
+                        dedup(cond_body, seen);
+                        dedup(body, seen);
+                    }
+                    ICNFInner::If { then_body, else_body, .. } => {
+                        dedup(then_body, seen);
+                        dedup(else_body, seen);
+                    }
+                    ICNFInner::Match { arms, .. } => {
+                        for a in arms.iter_mut() { dedup(&mut a.body, seen); }
+                    }
+                    ICNFInner::Begin(stmts) => dedup(stmts, seen),
+                    _ => {}
+                }
+            }
+            nodes.retain(|n| seen.insert(n.id));
+        }
+        let mut seen: crate::deterministic::HashSet<usize> = crate::deterministic::HashSet::default();
+        dedup(func_body, &mut seen);
+        hoist_for_inits(func_body);
+    }
+
     fn merge_temp_and_body(
         temp_nodes: Vec<ICNFNode>,
         body: Vec<ICNFNode>,
@@ -894,8 +1003,10 @@ impl IcnfConverter {
                             .map(|(p, t)| (p.name.clone(), t))
                             .collect(),
                         return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        result_id: result_id_of(&body_stmts),
                         body: func_body,
-                    };
+        };
+
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -947,8 +1058,10 @@ impl IcnfConverter {
                             .map(|(p, t)| (p.name.clone(), t))
                             .collect(),
                         return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        result_id: result_id_of(&body_stmts),
                         body: func_body,
-                    };
+        };
+
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -1000,8 +1113,10 @@ impl IcnfConverter {
                         name: func_name.clone(),
                         params: Vec::new(),
                         return_type: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                        result_id: ret_id,
                         body: func_body,
-                    };
+        };
+
                     self.functions.push(func_sig);
                     self.push_to_globals = saved_push;
                     let saved2_globals = std::mem::take(&mut self.global_stmts);
@@ -1162,8 +1277,10 @@ impl IcnfConverter {
                             .map(|(p, t)| (p.name.clone(), t))
                             .collect(),
                         return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                        result_id: result_id_of(&body_stmts),
                         body: func_body,
-                    };
+        };
+
                     self.functions.push(func_sig);
                     self.current_scope = saved_scope;
                 }
@@ -1426,13 +1543,18 @@ impl IcnfConverter {
         // capture lists synced now that every body is stored.
         self.apply_pending_cap_patches();
 
-        Ok(ICNFProgram {
+        let mut program = ICNFProgram {
             functions: std::mem::take(&mut self.functions),
             statements: std::mem::take(&mut self.global_stmts),
             closure_bodies: std::mem::take(&mut self.closure_bodies),
             closures: std::mem::take(&mut self.closures),
             emitted_branch_ids: std::mem::take(&mut self.emitted_branch_ids),
-        })
+        };
+        for f in program.functions.iter_mut() {
+            Self::prune_embedded_duplicates(&mut f.body);
+            f.result_id = f.body.last().map(|n| n.id).unwrap_or(f.result_id);
+        }
+        Ok(program)
     }
 
     /// Get the set of branch body IDs for deduplication in codegen.
@@ -3284,8 +3406,10 @@ impl IcnfConverter {
                     name: func_name.clone(),
                     params: Vec::new(),
                     return_type: Some(Type::Prim(crate::type_system::PrimType::Int)),
+                    result_id: ret_id,
                     body: func_body,
-                };
+    };
+
                 self.functions.push(func_sig);
                 // Also emit a top-level zyl_register_test call.
                 let saved2_globals = std::mem::take(&mut self.global_stmts);
@@ -3382,8 +3506,10 @@ impl IcnfConverter {
                         .map(|(p, t)| (p.name.clone(), t))
                         .collect(),
                     return_type: Some(Type::Prim(crate::type_system::PrimType::Unit)),
+                    result_id: result_id_of(&body_stmts),
                     body: func_body,
-                };
+    };
+
                 self.functions.push(func_sig);
                 self.current_scope = saved_scope;
                 Ok(Vec::new())
