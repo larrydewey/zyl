@@ -821,7 +821,7 @@
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)
     0
-    (icnf-add2 (icnf-slot-count (hd-ia xs)) (icnf-count-slots-list (tl2 xs)))))
+    (icnf-add2 (icnf-slot-count (hd-icnf xs)) (icnf-count-slots-list (tl2 xs)))))
 
 (defn icnf-count-arm-slots (arms)
   (if (is-nil arms)
@@ -1104,6 +1104,12 @@
   (match xs
     (Cons a d73 a)
     (Nil (IArm "" -1 Nil (IConst 0)))))
+
+; Head of a list of Icnf nodes (distinct from hd-ia: IArm lists).
+(defn hd-icnf (xs)
+  (match xs
+    (Cons a d74a a)
+    (Nil (IConst 0))))
 
 (defn cg-arena-of (st)
   (match st

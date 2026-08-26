@@ -1429,6 +1429,20 @@ impl MonoContext {
         }
     }
 
+
+    /// Generic parameter declaration order for an ADT, derived from adt_defs.
+    fn adt_param_order(&self, name: &str) -> Vec<String> {
+        let mut order: Vec<String> = Vec::new();
+        for (_, fields) in self.adt_defs.get(name).cloned().unwrap_or_default() {
+            for f in fields {
+                if is_generic_param(&f) && !order.contains(&f) {
+                    order.push(f);
+                }
+            }
+        }
+        order
+    }
+
     /// Resolve a MakeVariant to its concrete ADT instantiation name.
     ///
     /// Uses the instantiations recorded by type inference (one {param ->
@@ -1472,14 +1486,16 @@ impl MonoContext {
                 }
             });
             if is_match {
-                if let Some(mono_name) = inst.canonical_name(adt_name) {
+                let order = self.adt_param_order(adt_name);
+                if let Some(mono_name) = inst.canonical_name_positional(adt_name, &order) {
                     return Some(mono_name);
                 }
             }
         }
-        records
-            .first()
-            .and_then(|inst| inst.canonical_name(adt_name))
+        records.first().and_then(|inst| {
+            let order = self.adt_param_order(adt_name);
+            inst.canonical_name_positional(adt_name, &order)
+        })
     }
 
     /// Collect ADT instantiations for a generic type.
@@ -1539,7 +1555,8 @@ impl MonoContext {
         }
 
         for inst in &records {
-            let inst_name = match inst.canonical_name(name) {
+            let order = self.adt_param_order(name);
+            let inst_name = match inst.canonical_name_positional(name, &order) {
                 Some(n) => n,
                 None => continue,
             };

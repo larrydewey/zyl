@@ -122,7 +122,7 @@
 ; Head identifier of a form list compared against `s`; 1 when equal.
 (defn head-name-is (arena kids s)
   (match kids
-    (Cons head d14 (> (str-eq (ident-name head "") (str-intern arena s)) 0))
+    (Cons head d14 (if (> (str-eq (ident-name head "") (str-intern arena s)) 0) 1 0))
     (Nil 0)))
 
 ; Form-level test: parenthesised form whose head identifier equals `s`.
