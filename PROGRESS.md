@@ -144,13 +144,14 @@ How the last two gaps were closed:
       (4) If/For branch emitters skip everything after the branch's final
       node and fresh-emit value-kind last nodes (MakeStruct/MakeVariant now
       count as value kinds).
-      REMAINING: map-remove's result aliases its input (r == m, len 1 not 0)
-      — a value-flow bug where the outer if selects `m` or the caller binds
-      r to m's slot; unit_test fails only on this same map-remove assert
-      (181/182). Debugging state: removed=1 confirmed at runtime, else
-      branch builds the new struct, yet the caller observes m. Next step:
-      trace main-side let-binding slot assignment for `(let r (map-remove
-      m 1))` vs m's slot.
+      REMAINING (one narrow bug): map-remove result.len reads 1 not 0.
+      Fully diagnosed: inside map-remove's else branch, the nested
+      copy-loop`s temps ALIAS the `new-len` stack slot (offset reuse across
+      sibling scopes) — the MakeStruct build then reads clobbered slot 88.
+      (kptr equality of r and m is a red herring: arena-alloc(0 bytes)
+      legitimately returns the same bump-pointer.) This is the frame-sizing/
+      slot-aliasing item below: unique slots per binding (no cross-scope
+      reuse within a frame) closes it.
 
 ### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
 The Rust bootstrap gained significant inference/codegen semantics during
