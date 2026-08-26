@@ -2,16 +2,17 @@
 
 ## Current State (2026-08-25)
 
-**Self-hosting: COMPLETE, deterministic, verified.**
+**Self-hosting: COMPLETE, deterministic, verified. Regression suite 27/27.**
 
 ```
 ./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
 ```
 
 The Zyl compiler written in Zyl compiles itself end-to-end with a strict
-byte-identical fixed point. Programs compiled by stage2/stage3 run correctly
-(ADTs + match, HOF calls, FFI, recursion, arithmetic, floats). Regression
-suite 24/24.
+byte-identical fixed point. Generic ADTs instantiate correctly with any
+concrete type (per-site instantiation, positional instance naming);
+per-site polymorphic functions work cross-module (shared list helpers
+replacing per-module duplicates).
 
 How the last two gaps were closed:
 1. **Rust bootstrap runtime nondeterminism** — std HashMap/HashSet use a
