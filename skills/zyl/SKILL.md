@@ -88,10 +88,10 @@ these. Violations miscompile SILENTLY.
    ```
 5. **One deftype per name, ever.** Duplicate deftypes create incompatible
    constructor identities; pattern matches against them silently fail.
-6. **Prefer flat `begin` sequences + recursion** over deep nesting; keep
-   let-chains short. Cross-module generic inference can mis-unify shared
-   list helpers across element types — modules keep private typed helpers
-   (e.g. `ih-ic`, `fh-if`) instead of sharing.
+6. ~~Cross-module shared list helpers~~ LIFTED (2026-08-25): per-site
+   generic inference works; `list-head-or` is shared across element
+   types in codegen.zyl (verified via boot fixed point). Prefer flat
+   code and short let-chains regardless.
 7. **buf-append appends at strlen(dst)** (true append). Fresh zeroed
    buffers only — appending to a non-empty buffer accumulates (this is
    what you want for output buffers; NOT copy semantics).
