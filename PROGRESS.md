@@ -266,6 +266,21 @@ How the last two gaps were closed:
 - [ ] **Scale profiling**: O(n²) suspects in str-intern scans and arena
       fragmentation when compiling very large inputs.
 
+### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
+The Rust bootstrap gained significant inference/codegen semantics during
+the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
+(stdlib/compiler/*.zyl) does not yet mirror:
+- [ ] Positional ADT instance naming + {param -> concrete} instantiation
+      records (Rust: AdtInstantiation, adt_param_order).
+- [ ] Constructor recognition for raw Call/Apply forms (Rust:
+      variant_to_adt index in handle_apply).
+- [ ] Per-call-site polymorphism for untyped params (no shared-scheme
+      mutation; per-signature body cache; finalize_param_types).
+- [ ] Match pattern-var shadowing + arm-scoped env (bind_param).
+- [ ] Epilogue result materialization from a declared result id.
+Until then, selfhost sources must respect the stricter-of-the-two
+constraints; the boot fixed point is the arbiter.
+
 ### P4 — Feature completeness & polish
 - [ ] Contract injection overlay (spec §23, Phase 10) — last unimplemented
       optional phase.
