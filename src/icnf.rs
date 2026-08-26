@@ -1550,9 +1550,17 @@ impl IcnfConverter {
             closures: std::mem::take(&mut self.closures),
             emitted_branch_ids: std::mem::take(&mut self.emitted_branch_ids),
         };
+        // NOTE: result_id comes from the construction site
+        // (result_id_of(&body_stmts)) where the tail expression is known
+        // BEFORE global-statement leaks are merged. Recomputing from the
+        // merged body here would pick up trailing leaked Loads (e.g.
+        // Load("m")) and make functions return their argument instead of
+        // their result.
         for f in program.functions.iter_mut() {
             Self::prune_embedded_duplicates(&mut f.body);
-            f.result_id = f.body.last().map(|n| n.id).unwrap_or(f.result_id);
+            if std::env::var("ZYL_DBG_ICNF").is_ok() {
+                eprintln!("[res] {} result_id={} last={:?}", f.name, f.result_id, f.body.last().map(|n| (n.id, format!("{:?}", std::mem::discriminant(&n.node)))));
+            }
         }
         Ok(program)
     }

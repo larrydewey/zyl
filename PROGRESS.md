@@ -132,31 +132,19 @@ How the last two gaps were closed:
       then a Zyl-written LSP once the self-hosted one is trusted.
 
 ### P3 — Bootstrap correctness & performance
-- [ ] **map-remove returns the wrong Map** *(downgraded from segfault to
-      assertion failure 2026-08-25 — root-cause class FIXED)*. The For-loop
-      supply-node leak that corrupted return values and caused SIGSEGVs is
-      RESOLVED by four codegen/ICNF changes:
-      (1) ICNFFuncSig.result_id + epilogue re-materialization of the tail
-      value into rax (return no longer depends on statement order);
-      (2) function-wide dedup keeping the embedded (owning) copy of every
-      node id over leaked branch/top-level clones;
-      (3) recursive hoist of For init-binding nodes before their For;
-      (4) If/For branch emitters skip everything after the branch's final
-      node and fresh-emit value-kind last nodes (MakeStruct/MakeVariant now
-      count as value kinds).
-      REMAINING (one narrow bug): map-remove result.len reads 1 not 0.
-      Fully diagnosed via ICNF+asm trace: the emitted else-branch contains
-      `Load(m); StructGet(kptr); Assign("new-len", <that value>)` — i.e. the
-      Let temp-buffer flattening glued new-len's Assign onto the WRONG value
-      node (m's kptr) during conversion. Slots themselves are UNIQUE
-      (ZYL_DBG2 SLOTS map confirms: new-len=10, no collisions) — the bug is
-      statement ORDERING in convert_expr_to_stmts for nested let/let-mut
-      bodies whose value expressions contain struct-gets of outer params,
-      not slot aliasing. Fix = dependency-ordered emission (emit each Assign
-      immediately after its own value computation; never let a later
-      statement's supply nodes interleave). Same project as the P3 frame-
-      sizing item; until then avoid nested lets whose initializers read
-      struct fields of outer bindings (map-remove pattern).
+- [x] **map-remove / for-loop value corruption RESOLVED** *(2026-08-25,
+      suite 27/27)*. Two independent codegen defects:
+      (1) For-loop supply-node leak — fixed via ICNFFuncSig.result_id +
+      epilogue re-materialization, function-wide embed-first dedup,
+      recursive For-init hoisting, and branch emitters that skip past
+      their final node.
+      (2) MakeStruct field computation clobbered r10 — emit_load_into's
+      MakeStruct path computed field values (which may contain calls whose
+      arg staging uses r10) while r10 held the new struct's base pointer;
+      fields landed in the wrong object (map-remove returned its input).
+      Fixed by computing all fields first (push), then allocating and
+      popping into place.
+      Suite 27/27, boot fixed point holds.
 
 ### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
 The Rust bootstrap gained significant inference/codegen semantics during

@@ -2777,16 +2777,13 @@ impl CodeGen {
                 ..
             }) if !emitted_ids.contains(&src_ssa_id) => {
                 // Not yet emitted — emit MakeStruct inline.
-                let total_size = field_ids.len() * 8;
-                self.asm_push_align();
-                self.asm.push(format!("    mov edi, {}", total_size));
-                self.asm_push_align();
-                self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                self.asm_push_align();
-                self.asm_push_align();
-                self.asm.push("    mov r10, rax".to_string());
-                for (i, &fid) in field_ids.iter().enumerate() {
-                    let off = i * 8;
+                //
+                // Compute ALL field values first and push them; only then
+                // allocate. Field expressions may contain calls whose arg
+                // staging uses r10 — computing them while r10 holds the new
+                // struct's base pointer corrupts the struct (fields written
+                // into the wrong object).
+                for &fid in field_ids.iter() {
                     match lookup.get(&fid).copied().or_else(|| stmts.iter().find(|n| n.id == fid)) {
                         Some(ICNFNode { node: ICNFInner::Const(atom), .. }) => {
                             match atom {
@@ -2807,15 +2804,37 @@ impl CodeGen {
                                 let slot = (si + 1) * 8;
                                 self.asm_push_align();
                                 self.asm.push(format!("    mov rax, [rbp-{}]", slot));
+                            } else {
+                                let hash = simple_hash(lvar);
+                                let slot = ((hash % 32) + 1) * 8;
+                                self.asm_push_align();
+                                self.asm.push(format!("    mov rax, [rbp-{}]", slot));
                             }
                         }
                         Some(_n) => {
                             self.emit_load_into(fid, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots);
-                            self.asm_push_align();
-                            self.asm.push("    mov rax, rax".to_string());
                         }
-                        None => {}
+                        None => {
+                            self.asm_push_align();
+                            self.asm.push("    xor eax, eax".to_string());
+                        }
                     }
+                    self.asm_push_align();
+                    self.asm.push("    push rax".to_string());
+                }
+                let total_size = field_ids.len() * 8;
+                self.asm_push_align();
+                self.asm.push(format!("    mov edi, {}", total_size));
+                self.asm_push_align();
+                self.asm.push("    call zyl_heap_alloc@plt".to_string());
+                self.asm_push_align();
+                self.asm.push("    mov r10, rax".to_string());
+                // Fields were pushed in order; pop in REVERSE so field i lands
+                // at offset i*8.
+                for (i, &fid) in field_ids.iter().enumerate().rev() {
+                    let off = i * 8;
+                    self.asm_push_align();
+                    self.asm.push("    pop rax".to_string());
                     self.asm_push_align();
                     self.asm.push(format!("    mov [r10 + {}], rax", off));
                 }
