@@ -145,13 +145,18 @@ How the last two gaps were closed:
       node and fresh-emit value-kind last nodes (MakeStruct/MakeVariant now
       count as value kinds).
       REMAINING (one narrow bug): map-remove result.len reads 1 not 0.
-      Fully diagnosed: inside map-remove's else branch, the nested
-      copy-loop`s temps ALIAS the `new-len` stack slot (offset reuse across
-      sibling scopes) — the MakeStruct build then reads clobbered slot 88.
-      (kptr equality of r and m is a red herring: arena-alloc(0 bytes)
-      legitimately returns the same bump-pointer.) This is the frame-sizing/
-      slot-aliasing item below: unique slots per binding (no cross-scope
-      reuse within a frame) closes it.
+      Fully diagnosed via ICNF+asm trace: the emitted else-branch contains
+      `Load(m); StructGet(kptr); Assign("new-len", <that value>)` — i.e. the
+      Let temp-buffer flattening glued new-len's Assign onto the WRONG value
+      node (m's kptr) during conversion. Slots themselves are UNIQUE
+      (ZYL_DBG2 SLOTS map confirms: new-len=10, no collisions) — the bug is
+      statement ORDERING in convert_expr_to_stmts for nested let/let-mut
+      bodies whose value expressions contain struct-gets of outer params,
+      not slot aliasing. Fix = dependency-ordered emission (emit each Assign
+      immediately after its own value computation; never let a later
+      statement's supply nodes interleave). Same project as the P3 frame-
+      sizing item; until then avoid nested lets whose initializers read
+      struct fields of outer bindings (map-remove pattern).
 
 ### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
 The Rust bootstrap gained significant inference/codegen semantics during
