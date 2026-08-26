@@ -104,7 +104,7 @@
                   (begin
                     (for (j 0) (< j len)
                       (begin
-                        (if (not (== j removed))
+                        (if (not (== (+ j 1) removed))
                           (begin
                             (alloc-write-int (+ new-kptr (* dst 8)) (alloc-read-int (+ (struct-get m "kptr") (* j 8))))
                             (alloc-write-int (+ new-vptr (* dst 8)) (alloc-read-int (+ (struct-get m "vptr") (* j 8))))

@@ -1382,7 +1382,38 @@ impl CodeGen {
                 self.asm.push("    call zyl_actor_wait_all@plt".to_string());
             }
 
-            // Return result: if body ends with a value in eax, keep it; otherwise return 0.
+            // Return result: re-materialize the body's tail expression into
+            // rax. Leaked control-flow supply nodes may have been emitted
+            // after the real tail load, clobbering eax — an explicit reload
+            // makes the return value independent of statement ordering.
+            if std::env::var("ZYL_DBG_EPI").is_ok() {
+                let lastdesc = func.body.last().map(|n| format!("#{} {:?}", n.id, n.node));
+                eprintln!("[epi] {} result_id={} body_last={:?}", func.name, func.result_id, lastdesc);
+            }
+            if func.result_id != 0 {
+                if let Some(node) = func.body.iter().find(|n| n.id == func.result_id) {
+                    match &node.node {
+                        ICNFInner::Load(name) => {
+                            if let Some(&slot_idx) = local_vars.get(name) {
+                                self.asm_push_align();
+                                self.asm
+                                    .push(format!("    mov rax, [rbp-{}]", (slot_idx + 1) * 8));
+                            } else {
+                                let hash = simple_hash(name);
+                                let offset = ((hash % 32) + 1) * 8;
+                                self.asm_push_align();
+                                self.asm
+                                    .push(format!("    mov rax, [rbp-{}]", offset));
+                            }
+                        }
+                        _ => {
+                            // Non-pure results (Call/If/For/...) leave the
+                            // value in rax via their handlers. Const results
+                            // were emitted as the final statement.
+                        }
+                    }
+                }
+            }
             self.asm_push_align();
             self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256)));
             self.asm_push_align();
@@ -4514,6 +4545,7 @@ impl CodeGen {
         }
         let mut then_local_vars = local_vars.clone();
         let then_last_id = then_body.last().map(|s| s.id);
+        let mut then_done = false;
         for stmt in then_body {
             // Skip condition BinOps — already emitted by emit_condition_inline.
             if then_cond_ids.contains(&stmt.id) {
@@ -5420,6 +5452,7 @@ impl CodeGen {
                 // Emit the 'then' branch statements inline. Clone local_vars for each branch scope.
                 let mut then_local_vars = local_vars.clone();
                 let then_last_id = then_body.last().map(|s| s.id);
+                let mut then_done = false;
                 for stmt in then_body {
                     // The branch's final node is its result value: emit it
                     // fresh into rax even when flagged as an operand or
@@ -5439,6 +5472,8 @@ impl CodeGen {
                             | ICNFInner::StructGet(..)
                             | ICNFInner::Call(..)
                             | ICNFInner::FfiCall { .. }
+                            | ICNFInner::MakeStruct(..)
+                            | ICNFInner::MakeVariant { .. }
                     );
                     if Some(stmt.id) == then_last_id && is_value_kind {
                         self.emit_load_into(
@@ -5452,6 +5487,13 @@ impl CodeGen {
                             &phi_slots,
                         );
                         emitted_ids.insert(stmt.id);
+                        then_done = true;
+                        continue;
+                    }
+                    // Anything after the branch's final node is a leaked
+                    // supply copy — emitting it would clobber rax between the
+                    // result value and the phi store below.
+                    if then_done {
                         continue;
                     }
                     // Skip nodes already emitted as part of a nested control-flow structure
@@ -5525,6 +5567,7 @@ impl CodeGen {
                 // Emit the 'else' branch statements inline. Clone local_vars for each branch scope.
                 let mut else_local_vars = local_vars.clone();
                 let else_last_id = else_body.last().map(|s| s.id);
+                let mut else_done = false;
                 for stmt in else_body {
                     // The branch's final node is its result value: emit it
                     // fresh into rax even when flagged as an operand or
@@ -5542,6 +5585,8 @@ impl CodeGen {
                             | ICNFInner::StructGet(..)
                             | ICNFInner::Call(..)
                             | ICNFInner::FfiCall { .. }
+                            | ICNFInner::MakeStruct(..)
+                            | ICNFInner::MakeVariant { .. }
                     );
                     if Some(stmt.id) == else_last_id && is_value_kind_else {
                         self.emit_load_into(
@@ -5555,9 +5600,16 @@ impl CodeGen {
                             &phi_slots,
                         );
                         emitted_ids.insert(stmt.id);
+                        else_done = true;
                         continue;
                     }
-                    // Skip nodes already emitted by a nested control-flow structure (see then arm).
+                                        // Anything after the branch's final node is a leaked
+                    // supply copy — emitting it would clobber rax between the
+                    // result value and the phi store below.
+                    if else_done {
+                        continue;
+                    }
+// Skip nodes already emitted by a nested control-flow structure (see then arm).
                     if emitted_ids.contains(&stmt.id) {
                         continue;
                     }
@@ -5922,6 +5974,8 @@ impl CodeGen {
 
                 // Emit body.
                 let body_local_vars: HashMap<String, usize> = local_vars.clone();
+                let for_body_last_id = body.last().map(|s| s.id);
+                let mut for_body_done = false;
                 for stmt in body {
                     // Skip Assign nodes that are created by SetBang for SSA tracking.
                     // They would emit redundant stores to stack slots.
@@ -5937,6 +5991,28 @@ impl CodeGen {
                             ICNFInner::UnOp(_, _) => continue,
                             _ => {}
                         }
+                    }
+                    // The loop body's final node is its result value (consumed
+                    // by an enclosing value context): emit it fresh into rax
+                    // even when flagged as an operand. Anything after it is a
+                    // leaked supply copy — skip.
+                    if Some(stmt.id) == for_body_last_id && !for_body_done {
+                        self.emit_load_into(
+                            stmt.id,
+                            "rax",
+                            stmts,
+                            &body_local_vars,
+                            &for_lookup,
+                            emitted_ids,
+                            &crate::deterministic::HashSet::default(),
+                            phi_slots,
+                        );
+                        emitted_ids.insert(stmt.id);
+                        for_body_done = true;
+                        continue;
+                    }
+                    if for_body_done {
+                        continue;
                     }
                     self.emit_node(
                         stmt,
@@ -5955,6 +6031,30 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm_push_align();
                 self.asm.push(format!("{}:", loop_end));
+
+                // The exit path arrives through the failed condition, which
+                // left rax = 0 (comparison result). Re-materialize the body's
+                // tail value so the loop's result survives the exit.
+                if let Some(last) = body.last() {
+                    match &last.node {
+                        ICNFInner::Load(_) | ICNFInner::Const(_)
+                        | ICNFInner::BinOp(..) | ICNFInner::StructGet(..) => {
+                            let mut empty = crate::deterministic::HashSet::default();
+                            self.emit_load_into(
+                                last.id,
+                                "rax",
+                                stmts,
+                                &body_local_vars,
+                                &for_lookup,
+                                emitted_ids,
+                                &empty,
+                                phi_slots,
+                            );
+                            emitted_ids.insert(last.id);
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             ICNFInner::Print(args) => {
@@ -5971,7 +6071,21 @@ impl CodeGen {
 
                 for &arg_id in args.iter() {
                     let node = find_node(arg_id);
-                    let is_string = match node {
+                    // An If/Cond result whose branches are string constants is
+                    // a string (branch bodies were de-leaked; the phi slot
+                    // holds the branch value).
+                    let if_string_branches = match node {
+                        Some(ICNFNode { node: ICNFInner::If { then_body, else_body, .. }, .. }) => {
+                            let branch_str = |b: &[ICNFNode]| {
+                                b.last().map(|n| matches!(&n.node, ICNFInner::Const(Atom::Str(_)) | ICNFInner::StrImm(_))).unwrap_or(false)
+                            };
+                            let has_else = !else_body.is_empty();
+                            branch_str(then_body) && (!has_else || branch_str(else_body))
+                        }
+                        _ => false,
+                    };
+                    let is_string = if_string_branches
+                        || match node {
                         Some(ICNFNode {
                             node: ICNFInner::Const(Atom::Str(_)),
                             ..
