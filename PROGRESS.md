@@ -132,6 +132,27 @@ How the last two gaps were closed:
       then a Zyl-written LSP once the self-hosted one is trusted.
 
 ### P3 — Bootstrap correctness & performance
+- [ ] **For-loop supply-node leak corrupts return values** *(diagnosed
+      2026-08-25; LAST remaining failure class — now the only thing between
+      us and 27/27)*. For/While cond+body supply nodes AND For init-binding
+      nodes leak into the function's top-level ICNF body via global_stmts
+      during conversion. Codegen's trailing-pure emission re-emits them
+      AFTER the function's result load — `mov eax, 0` from a leaked Const
+      clobbers the return value (map-remove hit path then dereferences a
+      garbage handle -> SIGSEGV in unit_test AND collections). Repro:
+      `(let-mut d 0 (begin (for (j 0) (< j 3) ...) d))` returns 0 not 3;
+      inserting any statement before the tail read masks it.
+      ATTEMPTS REVERTED (both regressed control-flow/for-loop-early-exit):
+      (a) codegen skip-nonfinal-pure rule — skipped the real tail load when
+      leaks followed it; (b) central ICNF prune of embedded duplicates —
+      early-exit depends on placement/mutation ordering of loop-var nodes
+      shared between init and body. PROPER FIX requires dependency-ordered
+      emission: build func.body so every node appears exactly once, ordered
+      after its operands and before its consumers, with loop-carried vars
+      (i set! inside the body that the cond reads) kept as slot writes —
+      i.e. SSA-with-loops semantics, not list dedup. Suggest tackling with
+      an explicit pass over convert_expr_to_stmts output at Defn
+      finalization, walking the embedded subtrees as the backbone.
 - [x] **Float ABI fixes (Rust bootstrap, 2026-08-25)**: several
       pre-existing codegen bugs fixed and verified end-to-end:
     - rodata collectors did not recurse into `Match` arm bodies —

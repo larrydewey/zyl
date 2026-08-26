@@ -25,7 +25,7 @@
 ; True when the Ast node is an identifier equal to `s`.
 (defn ident-eq (arena a s)
   (match a
-    (AIdent n (> (str-eq n (str-intern arena s)) 0))
+    (AIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
     (AInt d1 0)
     (AFloat d2 0)
     (AString d3 0)

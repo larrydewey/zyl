@@ -14,8 +14,25 @@ pub struct AdtInstantiation {
 }
 
 impl AdtInstantiation {
-    /// Canonical monomorphized type name for this instantiation
-    /// (e.g. `Opt_Int`, `Pair_Int_String`). None when nothing is constrained.
+    /// Canonical monomorphized type name for this instantiation, POSITIONAL
+    /// over the ADT's declared generic-parameter order (e.g. `Opt_Int`,
+    /// `Result_Int_String`). Positional naming prevents collisions between
+    /// distinct instances ({T:Int,E:String} vs {T:String,E:Int}).
+    /// Unconstrained params render as `?` (callers avoid recording those).
+    pub fn canonical_name_positional(&self, adt: &str, param_order: &[String]) -> Option<String> {
+        if param_order.is_empty() || self.params.is_empty() {
+            return None;
+        }
+        let tys: Vec<String> = param_order
+            .iter()
+            .map(|p| self.get(p).unwrap_or("?").to_string())
+            .collect();
+        Some(format!("{}_{}", adt, tys.join("_")))
+    }
+
+    /// Legacy sorted-unique naming. Ambiguous for multi-param ADTs
+    /// ({T:Int,E:String} and {T:String,E:Int} collide); kept only for
+    /// single-constraint records.
     pub fn canonical_name(&self, adt: &str) -> Option<String> {
         let mut tys: Vec<&str> = self.params.iter().map(|(_, t)| t.as_str()).collect();
         tys.sort();
@@ -51,6 +68,9 @@ pub struct TypeInferer {
     /// Variant name -> owning ADT name (constructors may arrive as raw
     /// Call/Apply forms; this index recognizes them during inference).
     variant_to_adt: IndexMap<String, String>,
+    /// Generic parameter names per ADT in declaration order (first appearance
+    /// across variants), for positional instance naming.
+    adt_param_order: IndexMap<String, Vec<String>>,
     /// Tracks which concrete instantiations each generic ADT is used with.
     /// Each record maps generic parameter names to concrete type strings
     /// (sorted by param name), collected from constructor call sites.
@@ -93,6 +113,7 @@ impl TypeInferer {
             subst: Subst::new(),
             adt_defs: IndexMap::new(),
             variant_to_adt: IndexMap::new(),
+            adt_param_order: IndexMap::new(),
             adt_instantiations: IndexMap::new(),
             body_infer_cache: RefCell::new(IndexMap::new()),
             first_body_error: None,
@@ -1364,14 +1385,11 @@ impl TypeInferer {
                             .or_else(|| self.resolve_monomorphized_adt(&n))
                     }
                     None => {
-                        // Fallback: find which known ADT defines this variant.
-                        arms.first()
-                            .and_then(|arm| {
-                                self.adt_defs
-                                    .iter()
-                                    .find(|(_, variants)| variants.iter().any(|(vn, _)| vn == &arm.variant))
-                                    .map(|(n, _)| n.clone())
-                            })
+                        // Scrutinee type unresolved (type var): leave pattern
+                        // vars polymorphic. Guessing an ADT here can latch
+                        // onto a monomorphized instance (List_Icnf) and bind
+                        // pattern vars to the wrong concrete field types.
+                        None
                     }
                 };
 
@@ -1381,6 +1399,11 @@ impl TypeInferer {
                         .as_ref()
                         .and_then(|an| self.adt_field_types(an, &arm.variant))
                         .unwrap_or_default();
+                    // Pattern bindings are scoped to this arm: snapshot and
+                    // restore so names like "a"/"v" leaked from earlier
+                    // matches (env.bind silently fails on duplicates) can't
+                    // poison later arms/functions.
+                    let arm_env = self.env.clone();
                     for (i, p) in arm.patterns.iter().enumerate() {
                         if let ExprInner::Atom(Atom::Ident(name)) = &p.inner {
                             // Bind pattern var to the concrete field type when known.
@@ -1404,12 +1427,16 @@ impl TypeInferer {
                             if matches!(&pt, Type::Prim(PrimType::String)) {
                                 self.string_match_vars.borrow_mut().insert(name.clone());
                             }
-                            drop(self.env.bind(name.clone(), pt));
+                            // Shadow (not plain bind): common short names
+                            // collide with outer scopes; the arm's field
+                            // type must win.
+                            self.env.bind_param(name.clone(), pt);
                         } else {
                             drop(self.infer_expr(p));
                         }
                     }
                     let abt = self.infer_expr(&arm.body)?;
+                    self.env = arm_env;
                     {
                         if let Some(ref t) = first {
                             // All arms must agree — a mismatch here is the
@@ -1739,8 +1766,10 @@ impl TypeInferer {
                     if !records.contains(&inst) {
                         records.push(inst.clone());
                     }
-                    if let Some(mono_name) = inst.canonical_name(adt_name) {
-                        return Ok(Type::Nominal(mono_name));
+                    if let Some(order) = self.adt_param_order.get(adt_name.as_str()) {
+                        if let Some(mono_name) = inst.canonical_name_positional(adt_name, order) {
+                            return Ok(Type::Nominal(mono_name));
+                        }
                     }
                 }
 
@@ -1929,8 +1958,10 @@ impl TypeInferer {
                 if !records.contains(&inst) {
                     records.push(inst.clone());
                 }
-                if let Some(mono_name) = inst.canonical_name(&adt_name) {
-                    return Ok(Type::Nominal(mono_name));
+                if let Some(order) = self.adt_param_order.get(&adt_name) {
+                    if let Some(mono_name) = inst.canonical_name_positional(&adt_name, order) {
+                        return Ok(Type::Nominal(mono_name));
+                    }
                 }
             }
             Ok(Type::Nominal(adt_name))
@@ -2469,6 +2500,11 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     }
 
     /// Expose ADT instantiation info: which concrete types each generic ADT was used with.
+    /// Generic parameter declaration order per ADT (for positional naming).
+    pub fn get_adt_param_order(&self) -> &IndexMap<String, Vec<String>> {
+        &self.adt_param_order
+    }
+
     pub fn get_adt_instantiations(&self) -> &IndexMap<String, Vec<AdtInstantiation>> {
         &self.adt_instantiations
     }

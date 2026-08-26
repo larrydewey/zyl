@@ -45,7 +45,7 @@
 ; True when `a` is an AIdent whose name equals `s`.
 (defn ident-eq (arena a s)
   (match a
-    (AIdent n (> (str-eq n (str-intern arena s)) 0))
+    (AIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
     (AInt d11 0)
     (AFloat d12 0)
     (AString d13 0)
