@@ -2478,9 +2478,7 @@
 
 ; Head of a List(IFunc); empty placeholder when exhausted.
 (defn fnhead-if (xs)
-  (match xs
-    (Cons f d77 f)
-    (Nil (IFn "" Nil (IConst 0)))))
+  (list-head-or xs (IFn "" Nil (IConst 0))))
 
 (defn cg-collect-one (st f rest)
   (match f
@@ -2627,15 +2625,18 @@
 ; TYPED LIST HEADS/TAILS (total via fallback values)
 ; ===========================================================================
 
-(defn ih-ic (xs)
+; Shared polymorphic list head (constraint 6 lifted: per-site generic
+; inference makes one shared helper safe across element types).
+(defn list-head-or (xs default)
   (match xs
     (Cons a d70 a)
-    (Nil (IConst 0))))
+    (Nil default)))
+
+(defn ih-ic (xs)
+  (list-head-or xs (IConst 0)))
 
 (defn fh-if (xs)
-  (match xs
-    (Cons f d71 f)
-    (Nil (IFn "" Nil (IConst 0)))))
+  (list-head-or xs (IFn "" Nil (IConst 0))))
 
 (defn shd (xs)
   (match xs
@@ -2643,9 +2644,7 @@
     (Nil "")))
 
 (defn hd-ia (xs)
-  (match xs
-    (Cons a d73 a)
-    (Nil (IArm "" -1 Nil (IConst 0)))))
+  (list-head-or xs (IArm "" -1 Nil (IConst 0))))
 
 ; Head of a list of Icnf nodes (distinct from hd-ia: IArm lists).
 (defn hd-icnf (xs)
