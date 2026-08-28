@@ -1,0 +1,242 @@
+; === Zyl Type System — Hindley-Milner Inference ===
+; Module: compiler/type_system
+; Provides: Type ADT, Subst map, TypeVarGen, TypeEnv, TraitContext, TypeInferer
+; Status: Phase 1 rewrite (correct Zyl deftype/match syntax, fixed recursion)
+
+; ===========================================================================
+; GENERIC PAIR — used for matching and result types
+; ===========================================================================
+
+(deftype Pair (P A B))
+
+; ===========================================================================
+; TYPE ADT
+; ===========================================================================
+
+(deftype Type (TInt)
+             (TBool)
+             (TString)
+             (TFun (List Type))
+             (TList (List Type))
+             (TArray Type (Int))
+             (TCap Type)
+             (TMut Type)
+             (TStruct String (List Type))
+             (TVar Int Type))
+
+; ===========================================================================
+; SUBST MAP — List of (Int Type) bindings
+; ===========================================================================
+
+(deftype Subst (SBindings (List TypeBind)))
+
+(deftype TypeBind (TB Int Type))
+
+; ===========================================================================
+; TYPEVAR GENERATOR
+; ===========================================================================
+
+(deftype TypeVarGen (TVG Int))
+
+; ===========================================================================
+; TYPE ENVIRONMENT — List of (String Type) bindings
+; ===========================================================================
+
+(deftype TypeEnv (TEBindings (List EnvBind)))
+
+(deftype EnvBind (EB String Type))
+
+; ===========================================================================
+; TRAIT CONTEXT — List of (String (List Type)) bounds
+; ===========================================================================
+
+(deftype TraitContext (TCTraitBounds (List TraitBound)))
+
+(deftype TraitBound (TRB String (List Type)))
+
+; ===========================================================================
+; TYPE INFERENCE ENGINE
+; ===========================================================================
+
+; Full inference-context record owned by the type system (see
+; stdlib/compiler/type_inference.zyl for the inference logic that uses it).
+(deftype TypeInferer
+    (TIEnv TypeEnv)
+    (TISubst Subst)
+    (TINext Int)
+    (TIKnownTypes (List TypeBind))
+    (TIKnownFns (List FnSig))
+    (TIFuncReturns (List FnReturn))
+    (TIAdtDefs (List AdtDef))
+    (TIVariantToAdt (List TypeBind))
+    (TIStringMatchVars (List String))
+    (TIInferringFns (List String))
+    (TIBodyCache (List BodyCache)))
+
+; Inference support ADTs (function signatures, return types, ADT defs,
+; variant fields, per-site body cache, string-match vars).
+(deftype FnSig (FNS Name (List ParamType)))
+(deftype ParamType (PT Name Type))
+(deftype FnReturn (FR Name Type))
+(deftype AdtDef (AD Name (List Variant)))
+(deftype Variant (V Name (List Field)))
+(deftype Field (F Name Type))
+(deftype BodyCache (BC Key Type))
+(deftype VarPair (VP Index Int))
+
+; ===========================================================================
+; UNIFICATION RESULT
+; ===========================================================================
+
+(deftype UnifyResult (UOk Subst)
+                     (UErr String))
+
+; ===========================================================================
+; TYPE VARIABLE GENERATION
+; ===========================================================================
+
+(deftype TypeVar (TV Int))
+
+(defn typevar-gen-new (g)
+  (Pair (TypeVar (TVG.n g)) (TypeVarGen (+ (TVG.n g) 1))))
+
+(defn typevar-gen-next (g)
+  (TVG.n g))
+
+; ===========================================================================
+; SUBSTITUTION OPERATIONS
+; ===========================================================================
+
+(defn subst-empty ()
+  (Subst Nil))
+
+(defn subst-lookup (s n)
+  (subst-lookup-binds (SBindings.binds s) n))
+
+(defn subst-lookup-binds (binds n)
+  (match binds
+    (Nil None)
+    ((TB k v) rest
+     (if (= k n)
+       (Some v)
+       (subst-lookup-binds rest n)))))
+
+(defn subst-insert (s n t)
+  (Subst (cons (TB n t) (SBindings.binds s))))
+
+; Apply substitution to a single Type — helper to avoid lambda recursion issue
+(defn subst-apply-type (s t)
+  (match t
+    (TInt TInt)
+    (TBool TBool)
+    (TString TString)
+    (TFun args (subst-apply-type-list s args))
+    (TList elem (TList (subst-apply-type s elem)))
+    (TArray elem len (TArray (subst-apply-type s elem) len))
+    (TCap inner (TCap (subst-apply-type s inner)))
+    (TMut inner (TMut (subst-apply-type s inner)))
+    (TStruct name fields (subst-apply-type-struct s name fields))
+    (TVar m inner
+     (match (subst-lookup s m)
+       (Some t (subst-apply-type s t))
+       (None (TVar m (subst-apply-type s inner))))) ))
+
+(defn subst-apply-type-list (s types)
+  (match types
+    (Nil Nil)
+    ((Pair h t) (cons (subst-apply-type s h) (subst-apply-type-list s t)))))
+
+(defn subst-apply-type-struct (s name fields)
+  (TStruct name (subst-apply-type-list s fields)))
+
+; Main entry — wraps the inner function
+(defn subst-apply (s t)
+  (subst-apply-type s t))
+
+(defn subst-union (s1 s2)
+  (match (SBindings.binds s1)
+    (Nil s2)
+    ((TB n t) rest
+     (let ((t2 (subst-apply s2 t)))
+       (let ((new-s (subst-insert (subst-union (Subst rest) s2) n t2)))
+         new-s)))))
+
+; ===========================================================================
+; FREE TYPE VARIABLE COMPUTATION
+; ===========================================================================
+
+(defn type-free-vars (t)
+  (match t
+    (TInt Nil)
+    (TBool Nil)
+    (TString Nil)
+    (TFun args (type-free-vars-list args))
+    (TList elem (type-free-vars elem))
+    (TArray elem _ (type-free-vars elem))
+    (TCap inner (type-free-vars inner))
+    (TMut inner (type-free-vars inner))
+    (TStruct _ fields (type-free-vars-list fields))
+    (TVar n _ (List n)) ))
+
+(defn type-free-vars-list (types)
+  (match types
+    (Nil Nil)
+    ((Pair h t) (union (type-free-vars h) (type-free-vars-list t)))))
+
+; ===========================================================================
+; UNIFICATION
+; ===========================================================================
+
+(defn unify (s t1 t2)
+  (let ((t1x (subst-apply s t1)))
+    (let ((t2x (subst-apply s t2)))
+      (unify-terms t1x t2x))))
+
+(defn unify-terms (t1 t2)
+  (match (Pair t1 t2)
+    ((Pair TInt TInt) (UOk (subst-empty)))
+    ((Pair TBool TBool) (UOk (subst-empty)))
+    ((Pair TString TString) (UOk (subst-empty)))
+    ((Pair (TFun args1) (TFun args2))
+     (if (= (length args1) (length args2))
+       (unify-args (subst-empty) args1 args2)
+       (UErr "Function arity mismatch")))
+    ((Pair (TList e1) (TList e2))
+     (unify (subst-empty) e1 e2))
+    ((Pair (TArray e1 l1) (TArray e2 l2))
+     (if (= l1 l2)
+       (unify (subst-empty) e1 e2)
+       (UErr "Array length mismatch")))
+    ((Pair (TCap a) (TCap b))
+     (unify (subst-empty) a b))
+    ((Pair (TMut a) (TMut b))
+     (unify (subst-empty) a b))
+    ((Pair (TStruct n1 fs1) (TStruct n2 fs2))
+     (if (= n1 n2)
+       (if (= (length fs1) (length fs2))
+         (unify-args (subst-empty) fs1 fs2)
+         (UErr "Struct field count mismatch"))
+       (UErr "Struct name mismatch")))
+    ((Pair (TVar n _) _)
+     (unify-var n t2))
+    ((Pair _ (TVar n _))
+     (unify-var n t1))
+    (_ (UErr "Type mismatch"))))
+
+(defn unify-var (n t)
+  (let ((s (subst-empty)))
+    (match (subst-lookup s n)
+      (Some tx
+       (if (= tx t)
+         (UOk s)
+         (UErr "Variable already bound")))
+      (None (UOk (subst-insert s n t)) ))))
+
+(defn unify-args (s args1 args2)
+  (match (Pair args1 args2)
+    (Pair Nil Nil (UOk s))
+    (Pair ((Pair h1 t1) (Pair h2 t2))
+     (match (unify s h1 h2)
+       (UOk sx (unify-args sx t1 t2))
+       (UErr e (UErr e))))))
+
