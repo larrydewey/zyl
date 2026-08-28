@@ -382,7 +382,7 @@ impl Optimizer {
             ICNFInner::UnOp(_, arg) => {
                 used_ids.insert(*arg);
             }
-            ICNFInner::Call(_, args) => {
+            ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => {
                 for &a in args {
                     used_ids.insert(a);
                 }
