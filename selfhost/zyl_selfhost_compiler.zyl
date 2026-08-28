@@ -1257,6 +1257,22 @@
 
 (deftype EnvBind (EB String Type))
 
+; Look up a name in a TypeEnv, returning the bound Type or None.
+(defn env-get (env name)
+  (env-get-binds (TEBindings.binds env) name))
+
+(defn env-get-binds (binds name)
+  (match binds
+    (Nil None)
+    ((EB k v) rest
+      (if (= k name)
+        (Some v)
+        (env-get-binds rest name)))))
+
+; Bind a name to a type in a TypeEnv.
+(defn env-bind (env name typ)
+  (TypeEnv (cons (EB name typ) (TEBindings.binds env))))
+
 ; ===========================================================================
 ; TRAIT CONTEXT — List of (String (List Type)) bounds
 ; ===========================================================================
@@ -1362,6 +1378,35 @@
 
 (defn subst-apply-type-struct (s name fields)
   (TStruct name (subst-apply-type-list s fields)))
+
+; ===========================================================================
+; UTILITY HELPERS — nil?, fst, snd (type_inference.zyl dependencies)
+; ===========================================================================
+
+(defn nil? (xs)
+  (match xs
+    (Nil true)
+    (Cons d1 false)))
+
+(defn fst (p)
+  (match p
+    (Pair a d2 a)
+    (_ (fst-pair p))))
+
+(defn fst-pair (p)
+  (match p
+    (Pair (Some a) d3 a)
+    (Pair (None) d4 0)))
+
+(defn snd (p)
+  (match p
+    (Pair a b b)
+    (_ (snd-pair p))))
+
+(defn snd-pair (p)
+  (match p
+    (Pair a b b)
+    (_ 0)))
 
 ; Main entry — wraps the inner function
 (defn subst-apply (s t)
