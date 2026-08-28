@@ -1,0 +1,552 @@
+; === Zyl Standard Library — Region Inference Engine ===
+; Module: compiler/region_inference
+; Provides: Region inference (spec §9.1 rules R1-R8) + capture analysis
+; Works on Icnf instructions (compiler/icnf.zyl)
+;
+; Two-pass algorithm:
+;   Pass 1 (ri-collect-defs): gather function signatures + struct regions
+;   Pass 2 (ri-infer-expr): analyze each expression, assign regions
+
+; ===========================================================================
+; REGION ADT — spec §9.1 (R1-R8)
+; ===========================================================================
+
+(deftype Region RStack RHeap RGlobal RCircular RPin)
+
+(deftype CaptureInfo (CI (List String) (List (Pair String Region))))
+
+; ===========================================================================
+; REGION ENVIRONMENT — scoped bindings: name → (region, escaped?)
+; ===========================================================================
+
+(deftype RE (RE (List RegionBind) (List (List RegionBind))))
+(deftype RegionBind (RB String Region Bool))
+
+; RegionEnv wraps RE for clarity; constructors access RE fields directly.
+(defn RegionEnv (cur parents)
+  (RE cur parents))
+
+(defn (RE.cur self)
+  (match self
+    ((RE c _) c)))
+
+(defn (RE.parens self)
+  (match self
+    ((RE _ p) p)))
+
+; ===========================================================================
+; REGION INFERENCE RESULTS
+; ===========================================================================
+
+(deftype RegionResult (RR Region (Option CaptureInfo)))
+
+(deftype RegionInferer (RI RegionEnv (List StructRegion) (List FuncSig)))
+
+; ===========================================================================
+; STRUCT / FUNCTION SIGNATURE HELPERS
+; ===========================================================================
+
+(deftype StructRegion (SR String (List VariantRegion)))
+(deftype VariantRegion (VR String (List FieldRegion)))
+(deftype FieldRegion (FR String Region))
+(deftype FuncSig (FS String (List Region) Region))
+
+; ===========================================================================
+; REGION ENVIRONMENT HELPERS
+; ===========================================================================
+
+(defn env-new ()
+  (RE Nil Nil))
+(defn env-get (env name)
+  (env-get-cur (RE.cur env) name))
+(defn env-get-cur (binds name)
+  (match binds
+    (Nil (env-get-parents (RE.parens env) name))
+    ((RB n r esc) rest
+      (if (= (str-eq n name) 0)
+        (Some (Pair r esc))
+        (env-get-cur rest name)))))
+(defn env-get-parents (parents name)
+  (match parents
+    (Nil None)
+    ((Cons scope rest)
+      (env-get-binds scope name))
+    (Nil None)))
+(defn env-get-binds (binds name)
+  (match binds
+    (Nil None)
+    ((RB n r esc) rest
+      (if (= (str-eq n name) 0)
+        (Some (Pair r esc))
+        (env-get-binds rest name)))))
+(defn env-is-escaped (env name)
+  (match (env-get env name)
+    (Some (Pair r esc) (if esc 1 0))
+    (None 0)))
+(defn env-bind (env name region)
+  (RegionEnv (Cons (RB name region 0) (RE.cur env)) (RE.parens env)))
+(defn env-contains (env name)
+  (if (= (env-contains-cur (RE.cur env) name) 1)
+    1
+    (env-contains-parents (RE.parens env))))
+(defn env-contains-cur (binds name)
+  (match binds
+    (Nil 0)
+    ((RB n _ _) rest
+      (if (= (str-eq n name) 0) 1 (env-contains-cur rest name)))))
+(defn env-contains-parents (parents)
+  (env-contains-parents-inner parents))
+(defn env-contains-parents-inner (parents)
+  (match parents
+    (Nil 0)
+    ((Cons scope rest)
+      (if (= (env-contains-cur scope) 1) 1
+        (env-contains-parents-inner rest)))
+    (Nil 0)))
+(defn env-escape (env name)
+  (if (= (env-contains-cur (RE.cur env) name) 1)
+    (env-escape-cur (RE.cur env) name (RE.parens env))
+    (env-escape-parents (RE.parens env) name)))
+(defn env-escape-cur (binds name parens)
+  (env-escape-cur-inner binds name parens Nil 0))
+(defn env-escape-cur-inner (binds name parens accum found)
+  (match binds
+    (Nil (if (= found 1)
+            (RegionEnv Nil (list-reverse accum))
+            (env-escape-parents parens name)))
+    ((RB n r esc) rest
+      (if (= (str-eq n name) 0)
+        (RegionEnv (list-reverse (Cons (RB n r 1) accum)) parens)
+        (env-escape-cur-inner rest name parens
+          (Cons (RB n r esc) accum) found)))))
+(defn env-escape-parents (parents name)
+  (env-escape-parents-inner parents name Nil))
+(defn env-escape-parents-inner (parents name depth)
+  (match parents
+    (Nil (RegionEnv Nil Nil))
+    ((Cons scope rest)
+      (let (esc new-scope) (env-escape-scope scope name)
+        (if (= esc 1)
+          (RegionEnv (Cons scope new-scope) (RE.parens (RegionEnv Nil new-scope)))
+          (if (= (length rest) 0)
+            (RegionEnv (Cons scope Nil) (RE.parens (RegionEnv Nil Nil)))
+            (env-escape-parents-inner rest name (Cons depth Nil)))))
+    (Nil (RegionEnv Nil Nil))))
+(defn env-escape-scope (scope name)
+  (env-escape-scope-inner scope name Nil 0))
+(defn env-escape-scope-inner (scope name accum found)
+  (match scope
+    (Nil (Pair found Nil))
+    ((Cons (RB n r esc) rest)
+      (if (= (str-eq n name) 0)
+        (let new-r (if (= r RStack) RHeap r)
+          (Pair 1 (list-reverse (Cons (RB n new-r 1) accum))))
+        (env-escape-scope-inner rest name
+          (Cons (RB n r esc) accum) found)))))
+(defn env-enter (env)
+  (RegionEnv Nil (Cons (RE.cur env) (RE.parens env))))
+(defn env-exit (env)
+  (match (Pair (RE.cur env) (RE.parens env))
+    (Pair current parens
+      (if (= (length current) 0)
+        (RegionEnv Nil parens)
+        (if (= (length parens) 0)
+          (RegionEnv current parens)
+          (env-merge-into-last current parens))))))
+(defn env-merge-into-last (current parens)
+  (match parens
+    (Nil (RegionEnv current parens))
+    ((Cons last rest)
+      (RegionEnv Nil (Cons (env-merge-binds current last) rest)))))
+(defn env-merge-binds (incoming outer)
+  (env-merge-binds-loop incoming outer Nil))
+(defn env-merge-binds-loop (incoming outer acc)
+  (match incoming
+    (Nil (env-add-remaining outer acc))
+    ((Cons bind rest)
+      (match bind
+        ((RB n r esc)
+          (if (= esc 1)
+            (env-merge-binds-loop rest outer acc)
+            (if (= (env-list-has outer n) 1)
+              (env-merge-binds-loop rest outer acc)
+              (env-merge-binds-loop rest outer (Cons bind acc)))))))))
+(defn env-list-has (binds name)
+  (match binds
+    (Nil 0)
+    ((Cons (RB n _ _) rest)
+      (if (= (str-eq n name) 0) 1 (env-list-has rest name)))))
+(defn env-add-remaining (binds acc)
+  (match binds
+    (Nil acc)
+    ((Cons bind rest) (env-add-remaining rest (Cons bind acc)))))
+(defn env-snapshot (env)
+  (RegionEnv (RE.cur env) (RE.parens env)))
+(defn env-bindings (env)
+  (env-bindings-cur (RE.cur env) (env-bindings-parents (RE.parens env))))
+(defn env-bindings-cur (binds names)
+  (match binds
+    (Nil names)
+    ((Cons (RB n _ _) rest)
+      (if (= (env-names-has names n) 1)
+        (env-bindings-cur rest names)
+        (env-bindings-cur rest (Cons n names))))))
+(defn env-names-has (names name)
+  (match names
+    (Nil 0)
+    ((Cons h rest) (if (= (str-eq h name) 0) 1 (env-names-has rest name)))))
+(defn env-bindings-parents (parents)
+  (match parents
+    (Nil Nil)
+    ((Cons scope rest)
+      (env-bindings-cur scope (env-bindings-parents rest)))))
+(deftype StructRegion (SR String (List VariantRegion)))
+(deftype VariantRegion (VR String (List FieldRegion)))
+(deftype FieldRegion (FR String Region))
+
+(deftype FuncSig (FS String (List Region) Region))
+
+(deftype RegionInferer (RI RegionEnv (List StructRegion) (List FuncSig)))
+
+(defn ri-new ()
+  (RegionInferer (env-new) Nil Nil))
+
+(defn ri-union-regions (a b)
+  (match (Pair a b)
+    (Pair RGlobal _) RGlobal
+    (Pair _ RGlobal RGlobal)
+    (Pair RHeap RCircular) RHeap
+    (Pair RCircular RHeap) RHeap
+    (Pair RHeap _) RHeap
+    (Pair _ RHeap RHeap)
+    (Pair RPin RStack) RPin
+    (Pair RStack RPin) RPin
+    (Pair _ _) (if (>= (region-rank a) (region-rank b)) a b)))
+
+(defn region-rank (r)
+  (match r
+    (RStack 0)
+    (RPin 1)
+    (RHeap 2)
+    (RCircular 3)
+    (RGlobal 4)))
+
+(defn ri-is-literal-const (ic)
+  (match ic
+    (IConst _ 1)
+    (IStr _ 1)
+    (IFlt _ 1)
+    (ILoad _ 0)
+    (IBinop d5 a b (if (= (ri-is-literal-const a) 1)
+                      (ri-is-literal-const b)
+                      0))
+    (ICall d6 args (ri-is-literal-icnf-list args))
+    (IFfi d7 args (ri-is-literal-icnf-list args))
+    (IPrint d (ri-is-literal-const d))
+    (IIf c t e (if (= (ri-is-literal-const c) 1)
+                  (if (= (ri-is-literal-const t) 1)
+                    (ri-is-literal-const e)
+                    0)
+                  0))
+    (IWhile _ _ 0)
+    (ISet _ _ 0)
+    (ILet d14 val body
+      (if (= (ri-is-literal-const val) 1)
+        (ri-is-literal-const body)
+        0))
+    (ISeq d15 (ri-is-literal-icnf-list d15))
+    (IVariant d16 _ d18 (ri-is-literal-icnf-list d18))
+    (IMatch d19 scr arms
+      (if (= (ri-is-literal-const scr) 1)
+        (ri-is-literal-arms arms)
+        0))
+    (IFn d20 d21 d22 (ri-is-literal-const d22))))
+
+(defn ri-is-literal-icnf-list (icnfs)
+  (match icnfs
+    (Nil 1)
+    ((Cons h rest) (if (= (ri-is-literal-const h) 1)
+                     (ri-is-literal-icnf-list rest)
+                     0))))
+
+(defn ri-is-literal-arms (arms)
+  (match arms
+    (Nil 1)
+    ((Cons arm rest)
+      (match arm
+        ((IArm _ _ _ body)
+          (if (= (ri-is-literal-const body) 1)
+            (ri-is-literal-arms rest)
+            0)))
+      0)))
+
+(defn ri-analyze-captures (outer-env ic)
+  (ri-capture-collect ic outer-env Nil))
+
+(defn ri-capture-collect (ic captured-refs env)
+  (match ic
+    (ILoad name
+      (if (= (env-contains env name) 1)
+        (ri-capture-add name (env-get env name) captured-refs)
+        captured-refs))
+    (IBinop d1 a b (ri-capture-collect a
+      (ri-capture-collect b captured-refs env)
+      env))
+    (ICall d2 args (ri-capture-collect-list args captured-refs env))
+    (IFfi d3 args (ri-capture-collect-list args captured-refs env))
+    (IPrint d (ri-capture-collect d captured-refs env))
+    (IIf c t e
+      (ri-capture-collect e
+        (ri-capture-collect t
+          (ri-capture-collect c captured-refs env)
+          env)
+        env))
+    (IWhile c b
+      (ri-capture-collect b
+        (ri-capture-collect c captured-refs env)
+        env))
+    (ISet d10 val
+      (if (= (env-contains env d10) 1)
+        (ri-capture-add d10 (env-get env d10)
+          (ri-capture-collect val captured-refs env))
+        (ri-capture-collect val captured-refs env)))
+    (ILet d11 val body
+      (let new-env (env-bind env d11 RStack)
+        (ri-capture-collect body captured-refs new-env)))
+    (ISeq items (ri-capture-collect-list items captured-refs env))
+    (IVariant d12 d13 args (ri-capture-collect-list args captured-refs env))
+    (IMatch d14 scr arms
+      (ri-capture-collect-arms arms
+        (ri-capture-collect scr captured-refs env)
+        env))
+    (IFn d15 d16 body
+      (ri-capture-collect body captured-refs env))))
+
+(defn ri-capture-collect-list (icnfs acc env)
+  (match icnfs
+    (Nil acc)
+    ((Cons h rest)
+      (ri-capture-collect-list rest
+        (ri-capture-collect h acc env)
+        env))))
+
+(defn ri-capture-add (name get-result acc)
+  (match get-result
+    (Some (Pair r esc)
+      (if (= (ri-capture-list-has acc name) 1)
+        acc
+        (Cons (Pair name r) acc)))
+    (None acc)))
+
+(defn ri-capture-list-has (refs name)
+  (match refs
+    (Nil 0)
+    ((Cons (Pair n _) rest)
+      (if (= (str-eq n name) 0) 1 (ri-capture-list-has rest name)))))
+
+(defn ri-capture-collect-arms (arms acc env)
+  (match arms
+    (Nil acc)
+    ((Cons arm rest)
+      (match arm
+        ((IArm _ _ binds body)
+          (let arm-env (ri-bind-params binds env RStack)
+            (ri-capture-collect-arms rest
+              (ri-capture-collect body acc arm-env)
+              env))))))
+
+(defn ri-bind-params (params env region)
+  (match params
+    (Nil env)
+    ((Cons name rest)
+      (ri-bind-params rest (env-bind env name region) region)))
+
+(deftype RegionResult (RR Region (Option CaptureInfo)))
+
+(defn ri-infer-expr (ri ic)
+  (match ic
+    (IConst _ (RR RStack None))
+    (IStr _ (RR RHeap None))
+    (IFlt _ (RR RHeap None))
+    (ILoad name
+      (match (env-get (RI.env ri) name)
+        (Some (Pair r esc) (RR r None))
+        (None (RR RStack None))))
+    (IBinop d4 left right
+      (let lr (ri-infer-expr ri left)
+        (let rr (ri-infer-expr ri right)
+          (RR (ri-union-regions (RR.reg lr) (RR.reg rr)) None))))
+    (ICall d5 args
+      (ri-infer-args ri args)
+      (RR RHeap None))
+    (IFfi d6 args
+      (ri-infer-args ri args)
+      (RR RPin None))
+    (IPrint d7
+      (ri-infer-expr ri d7)
+      (RR RStack None))
+    (IIf d8 cond then_ else_
+      (ri-infer-expr ri cond)
+      (let tr (ri-infer-expr ri then_)
+        (let er (ri-infer-expr ri else_)
+          (RR (ri-union-regions (RR.reg tr) (RR.reg er)) None))))
+    (IWhile d9 cond body
+      (ri-infer-expr ri cond)
+      (ri-infer-expr ri body))
+    (ISet d10 name val
+      (let vr (ri-infer-expr ri val)
+        (if (= (env-contains (RI.env ri) name) 0)
+          (RR RStack None)
+          (RR (RR.reg vr) None))))
+    (ILet d11 name val body
+      (let env0 (RI.env ri)
+        (let _ (ri-infer-expr ri val)
+          (let env1 (env-enter env0)
+            (let env2 (env-bind env1 name RStack)
+              (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+                (let result (ri-infer-expr ri2 body)
+                  (let env3 (RI.env ri2)
+                    (let env4 (env-exit env3)
+                      (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                      result)))))))))
+    (ISeq d12 items
+      (ri-infer-seq ri items))
+    (IVariant d13 d14 d15
+      (ri-infer-args ri d15)
+      (RR RHeap None))
+    (IMatch d16 scrutinee arms
+      (ri-infer-expr ri scrutinee)
+      (ri-infer-match-arms ri arms (RR RStack None)))
+    (IFn d17 name params body
+      (let env0 (RI.env ri)
+        (let env1 (env-enter env0)
+          (let env2 (ri-bind-params params env1 RStack)
+            (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+              (let _ (ri-infer-expr ri2 body)
+                (let env3 (RI.env ri2)
+                  (let env4 (env-exit env3)
+                    (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                    (RR RHeap None))))))))))
+
+(defn ri-infer-args (ri icnfs)
+  (ri-infer-args-loop ri icnfs RStack))
+
+(defn ri-infer-args-loop (ri args region)
+  (match args
+    (Nil region)
+    ((Cons ic rest)
+      (ri-infer-args-loop rest
+        (ri-union-regions region (RR.reg (ri-infer-expr ri ic)))
+        region))))
+
+(defn ri-infer-seq (ri items)
+  (ri-infer-seq-loop ri items (RR RStack None)))
+
+(defn ri-infer-seq-loop (ri items result)
+  (match items
+    (Nil result)
+    ((Cons ic rest)
+      (ri-infer-seq-loop rest
+        (ri-infer-expr ri ic)
+        result))))
+
+(defn ri-infer-match-arms (ri arms acc)
+  (match arms
+    (Nil acc)
+    ((Cons arm rest)
+      (match arm
+        ((IArm _ _ binds body)
+          (let env0 (RI.env ri)
+            (let env1 (env-enter env0)
+              (let env2 (ri-bind-params binds env1 RStack)
+                (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+                  (let arm-result (ri-infer-expr ri2 body)
+                    (let env3 (RI.env ri2)
+                      (let env4 (env-exit env3)
+                        (let new-acc (RR
+                          (ri-union-regions
+                            (RR.reg acc)
+                            (RR.reg arm-result))
+                          None)
+                        (ri-infer-match-arms
+                          (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                          rest
+                          new-acc))))))))))
+
+(defn ri-collect-defs (ri items)
+  (ri-collect-defs-loop ri items))
+
+(defn ri-collect-defs-loop (ri items)
+  (match items
+    (Nil ri)
+    ((Cons ic rest)
+      (let ri2 (ri-collect-one ic ri)
+        (ri-collect-defs-loop ri2 rest)))))
+
+(defn ri-collect-one (ic ri)
+  (match ic
+    (IFn d1 name params body
+      (let param-regions (ri-make-param-regions (length params))
+        (let fsig (FS name param-regions RHeap)
+          (ri-add-func-sig ri name fsig))))
+    (IVariant d2 name d3 args
+      (let field-regions (SR name
+        (Cons (VR "default"
+          (ri-make-field-regions args Nil)) Nil)))
+      (ri-add-struct-region ri field-regions))
+    (ISeq d4
+      (ri-collect-defs-loop ri d4))))
+
+(defn ri-make-param-regions (count)
+  (ri-make-param-regions-loop count Nil))
+
+(defn ri-make-param-regions-loop (count acc)
+  (if (= count 0)
+    (list-reverse acc)
+    (ri-make-param-regions-loop (- count 1)
+      (Cons RStack acc))))
+
+(defn ri-make-field-regions (args acc)
+  (match args
+    (Nil acc)
+    ((Cons _ rest)
+      (ri-make-field-regions rest
+        (Cons (FR "" RStack) acc)))))
+
+(defn ri-add-func-sig (ri name fsig)
+  (let fs (RI.fs ri)
+    (if (ri-func-sig-exists fs name)
+      ri
+      (RegionInferer (RI (RI.env ri) (RI.sr ri)
+        (Cons (FS name (FS.params fsig) (FS.ret fsig)) fs)))))
+
+(defn ri-func-sig-exists (sigs name)
+  (match sigs
+    (Nil 0)
+    ((Cons (FS n _ _) rest)
+      (if (= (str-eq n name) 0) 1 (ri-func-sig-exists rest name)))))
+
+(defn ri-add-struct-region (ri sr)
+  (let srlist (RI.sr ri)
+    (if (ri-sr-exists srlist (SR.name sr))
+      ri
+      (RegionInferer (RI (RI.env ri) (Cons sr srlist) (RI.fs ri)))))
+
+(defn ri-sr-exists (srs name)
+  (match srs
+    (Nil 0)
+    ((Cons (SR n _) rest)
+      (if (= (str-eq n name) 0) 1 (ri-sr-exists rest name)))))
+
+(defn ri-infer (icnf-list ri)
+  (let ri2 (ri-collect-defs ri icnf-list)
+    (if (= (length icnf-list) 0)
+      ri2
+      (ri-infer-expressions ri2 icnf-list))))
+
+(defn ri-infer-expressions (ri items)
+  (match items
+    (Nil ri)
+    ((Cons ic rest)
+      (let ri2 (ri-infer-expr ri ic)
+        (ri-infer-expressions ri2 rest)))))
