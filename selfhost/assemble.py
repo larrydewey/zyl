@@ -7,6 +7,7 @@ files = [
     'stdlib/core/list.zyl',
     'stdlib/allocator/allocator.zyl',
     'stdlib/compiler/ast.zyl',
+    'stdlib/compiler/expr_inner.zyl',
     'stdlib/compiler/lexer.zyl',
     'stdlib/compiler/parser.zyl',
     'stdlib/compiler/resolver.zyl',
