@@ -6,8 +6,31 @@
 (use compiler/lexer)
 (use compiler/parser)
 (use compiler/ast)
+(use compiler/expr_inner)
 (use compiler/icnf)
 (use compiler/codegen)
+
+; Boot driver with type inference + region inference in the pipeline.
+; Pipeline: lexer → parser → Ast → ExprInner (bridge) → type inference
+;           → region inference → monomorphization → ICNF → codegen
+
+(defn type-region-infer (inferer exprs)
+  ; Run type inference then region inference on the expr list.
+  ; Returns a list of Expr (typed, region-annotated) ready for ICNF.
+  (let (typed (collect-definitions (inferer-new) exprs))
+    (let (regioned (inferer-new)
+          _ (infer-region-infer regioned typed))
+      typed)))
+
+(defn infer-region-infer (inferer typed)
+  ; Stub: full region inference will be wired in later.
+  ; For now, just return the typed expression list.
+  (match typed
+    (Nil Nil)
+    ((Pair e rest)
+      (cons
+        e
+        (infer-region-infer inferer rest)))))
 
 (defn dbg-log (msg)
   (let f (file-open "/tmp/dbg" "a")
@@ -32,10 +55,14 @@
     (let d2 (file-close fd)
       (dbg-log "parse\n")
       (let prog (zyl-parse arena srcbuf)
-        (dbg-log "lower\n")
-        (let fns (ic-program arena prog)
-          (dbg-log "codegen\n")
-          (emit-out arena fns))))))
+        (dbg-log "bridge\n")
+        (let exprs (convert-ast prog)
+          (dbg-log "type-infer\n")
+          (let typed (collect-definitions (inferer-new) (to-expr-list exprs))
+            (dbg-log "lower\n")
+            (let fns (ic-program arena typed)
+              (dbg-log "codegen\n")
+              (emit-out arena fns))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)
