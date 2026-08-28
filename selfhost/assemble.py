@@ -11,6 +11,7 @@ files = [
     'stdlib/compiler/parser.zyl',
     'stdlib/compiler/icnf.zyl',
     'stdlib/compiler/codegen.zyl',
+    'stdlib/compiler/region_inference.zyl',
     'selfhost/driver.zyl',
 ]
 
