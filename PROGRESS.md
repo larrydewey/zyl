@@ -215,16 +215,33 @@ the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
       be resolved`. Root cause: placeholder functions matched `Some`/`None`
       against lookups that actually return a plain `List` (`lookup-adt-def` →
       `Nil`/variants), plus `apply-to-nominal` used a fake `"___scrutinee_dummy"`
-      lookup and dropped the subject type. Fixed: threaded the real match
-      `subject-type` through `infer-lookup-arm-field-types`/`-scrutinee-adt`;
-      replaced `apply-to-nominal` with a faithful `resolve-nominal` (mirrors Rust
-      `resolve_nominal`: `subst-apply` then `TStruct` name, else `None`);
-      rewrote `infer-lookup-variant-fields`/`infer-get-variant-fields` to walk
-      the real `TIAdtDefs` via `lookup-adt-def` + new `infer-find-variant-fields`,
-      threading the inferer. Combined source now completes Phases 1–9 (parse →
-      assembly). Regression suite: 6/6 pass. Remaining non-blocking warning:
-      `subst-lookup-binds` (type_system.zyl:119) codegen warning re unbound
-      `None` — compiles; investigate later.
+       lookup and dropped the subject type. Fixed: threaded the real match
+       `subject-type` through `infer-lookup-arm-field-types`/`-scrutinee-adt`;
+       replaced `apply-to-nominal` with a faithful `resolve-nominal` (mirrors Rust
+       `resolve_nominal`: `subst-apply` then `TStruct` name, else `None`);
+       rewrote `infer-lookup-variant-fields`/`infer-get-variant-fields` to walk
+       the real `TIAdtDefs` via `lookup-adt-def` + new `infer-find-variant-fields`,
+       threading the inferer. Combined source now completes Phases 1–9 (parse →
+       assembly). Regression suite: 6/6 pass. Remaining non-blocking warning:
+       `subst-lookup-binds` (type_system.zyl:119) codegen warning re unbound
+       `None` — compiles; investigate later.
+- [ ] **2026-08-27: Type-ADT restructured + unification threaded + "Core" ported** —
+       (a) `Type` ADT gained `TFloat`/`TUnit`/`TMap`/`TResult`; `TCap` changed from
+       1-field to `(TCap CapKind Type)`; removed standalone `TMut` Type variant
+       (now a CapKind). Added `CapKind` ADT: `TCCap`/`TCMut`/`TCAtomic`/`TCBox`/`TCPin`.
+       (b) `subst-apply-type` and `type-free-vars` updated for all new variants.
+       (c) **Unification chain fixed**: `unify` threads accumulated subst through
+       `unify-terms`/`unify-var` (was restarting with `subst-empty` at every
+       primitive match); `unify-var` now takes the current subst `s` and threads
+       it (was creating empty subst); `unify-terms` returns `(UOk s)` instead of
+       `(UOk (subst-empty))` so bindings accumulate. (d) **`collect-definitions`
+       ported** — the declared "Core" that was skeleton/missing: iterates exprs,
+       registers `Defn`/`Call(defn)`/`Apply(defn)` in `TIKnownFns` +
+       `TIFuncReturns`, handles `Deftype`/`StructDef`. (e) `finalize-param-types`
+       ported (resolves type vars from call-site evidence). (f) `infer-program`
+       entry point added (collect → infer each expr → finalize). (g) Updated
+       TCap/TMut/TBox/TPin → TCap/TCMut/TCBox/TCPin in all inference usages.
+       Both files compile through Phases 1–9; regression suite 6/6 pass.
 - [ ] Positional ADT instance naming + {param -> concrete} instantiation
       records (Rust: AdtInstantiation, adt_param_order).
 - [ ] Constructor recognition for raw Call/Apply forms (Rust:

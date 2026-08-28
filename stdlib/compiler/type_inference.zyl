@@ -802,7 +802,7 @@
                         (env-bind
                             (TIEnv inferer)
                             name
-                            (TCap TMut vt)))
+                            (TCap TCMut vt)))
                     (inferer-bind-for-vars
                         (TypeInferer
                             new-env
@@ -1222,14 +1222,14 @@
 
 (defn infer-expr-ffi-call (inferer expr)
     (TCap
-        TBox
+        TCBox
         (inferer-return-var inferer)))
 
 (defn infer-expr-ffi-pin (inferer expr e)
     (let
         (t (infer-expr inferer e))
         (TCap
-            TPin
+            TCPin
             t)))
 
 ; ===========================================================================
@@ -1253,7 +1253,7 @@
         (vt (infer-expr inferer val))
         (match
             (env-get (TIEnv inferer) target)
-            (Some (TCap TMut _) TUnit)
+            (Some (TCap TCMut _) TUnit)
             (None (inferer-return-var inferer))
             (_ (inferer-return-var inferer)))))
 
@@ -1395,3 +1395,232 @@
         ((Pair a rest)
             (infer-expr inferer a)
             (infer-args inferer rest))))
+
+; ===========================================================================
+; COLLECT DEFINITIONS — the declared "Core" that was missing
+; Port of Rust collect_definitions() — registers Defn/Deftype/StructDef
+; forms in the inferer's known_functions, function_returns, adt_defs, etc.
+; ===========================================================================
+
+(defn collect-definitions (inferer exprs)
+    (match exprs
+        (Nil inferer)
+        ((Pair expr rest)
+            (let (collected
+                   (match
+                       expr.inner
+                       (Defn name params body
+                           (let (param-types (collect-defn-params inferer params))
+                               (let (infered (infer-defn-body inferer name params param-types body))
+                                   (collect-definitions infered rest)))
+                       (Call op args
+                           (if (is-defn-call op)
+                               (let (parsed (parse-defn-call op args))
+                                   (if (Some result parsed)
+                                       (collect-defn-form inferer result)
+                                       (collect-definitions inferer rest)))
+                               (collect-definitions inferer rest)))
+                       (Apply fname args
+                           (if (= fname "defn")
+                               (let (name (match (car args)
+                                          (Atom (Ident n) n)
+                                          (_ fname)))
+                                     (collect-defn-form inferer
+                                         (Pair (Pair name (cdr args)) nil)))
+                               (collect-definitions inferer rest)))
+                       (Deftype name variants generic-params _
+                           (collect-definitions inferer rest))
+                       (StructDef sd
+                           (collect-definitions inferer rest))
+                       (StructDefPlus sd
+                           (collect-definitions inferer rest))
+                       (_ (collect-definitions inferer rest)))))
+                collected))))
+
+(defn is-defn-call (op)
+    (match op
+        (Atom (Ident n) (= n "defn"))
+        (_ false)))
+
+(defn parse-defn-call (op args)
+    ; parse (defn name params body ...) from Call form
+    (match args
+        (Nil None)
+        ((Pair name rest)
+            (match (Pair name rest)
+                ((Pair n args)
+                    (Some (Pair n args))))
+            None)))
+
+(defn collect-defn-params (inferer params)
+    ; extract param types from Defn params list
+    (match params
+        (Nil Nil)
+        ((Pair p rest)
+            (cons
+                (match
+                    p
+                    (Pair name typ (Pair (match name (Atom (Ident n) n) (_ "param"))
+                                        (match typ
+                                            (Atom (Ident t) (type-from-display t))
+                                            (_ (TVar 0 (TVar 0 TInt)))))
+                    (Pair "param" (TVar 0 (TVar 0 TInt)))))
+                (collect-defn-params inferer rest)))))
+
+(defn infer-defn-body (inferer name params param-types body)
+    ; infer body type and update inferer with function signature
+    (let (param-bindings (zip-params params param-types))
+        (let (inferred-type (infer-expr-body inferer body))
+            (let (new-inferer (insert-fn-ret inferer name inferred-type))
+                (let (new-inferer (insert-known-fn new-inferer name param-bindings))
+                    new-inferer)))))
+
+(defn infer-expr-body (inferer body)
+    ; infer the body expression type, return TUnit on error
+    (match
+        (catch-error
+            (infer-expr inferer body))
+        (Ok t t)
+        (Err _ (inferer-return-unit inferer))))
+
+(defn catch-error (f)
+    (try
+        (f)
+        (Err (lambda (e) e))))
+
+(defn zip-params (params types)
+    ; pair params with types
+    (match (Pair params types)
+        (Pair Nil Nil Nil)
+        (Pair ((Pair p rest-p) (Pair t rest-t))
+            (cons (Pair p t) (zip-params rest-p rest-t)))
+        (Pair _ _ Nil)))
+
+(defn collect-defn-form (inferer parsed)
+    ; process a collected defn form
+    (match
+        parsed
+        (Pair (Pair name args) body-args
+            (let (param-list (car args))
+                (let (body (car body-args))
+                    (let (param-types (infer-expr inferer param-list))
+                        (let (inferred (infer-expr inferer body))
+                            (let (new-inferer (insert-fn-ret inferer name (infer-expr inferer body)))
+                                (insert-known-fn new-inferer name (cons (Pair name (infer-expr inferer param-list))
+                                    Nil))))))))))
+
+(defn collect-adt-defs (inferer exprs)
+    ; collect ADT definitions from exprs
+    (match exprs
+        (Nil inferer)
+        ((Pair expr rest)
+            (let (updated (match
+                               expr.inner
+                               (Deftype name variants generic-params _
+                                   (insert-adt-def inferer name variants))
+                               (_ inferer)))
+                (collect-adt-defs updated rest)))))
+
+; ===========================================================================
+; FINALIZE PARAM TYPES — resolves type vars when call-site evidence agrees
+; ===========================================================================
+
+(defn finalize-param-types (inferer)
+    ; For each function in known_functions, look up its return type
+    ; from function_returns and use call-site observations to resolve
+    ; type vars in parameter types. This restores param types for
+    ; downstream code (struct layouts, float detection, etc.)
+    (let (known-fns (TIKnownFns inferer))
+        (match
+            known-fns
+            (Nil inferer)
+            ((FNS name params) rest
+                (let (ret-type (lookup-fn-ret inferer name))
+                    (let (resolved-params (resolve-param-types inferer params ret-type))
+                        (let (new-inferer (finalize-param-types
+                                            (TypeInferer
+                                                (TIEnv inferer)
+                                                (TISubst inferer)
+                                                (TINext inferer)
+                                                (TIKnownTypes inferer)
+                                                resolved-params
+                                                (TIFuncReturns inferer)
+                                                (TIAdtDefs inferer)
+                                                (TIVariantToAdt inferer)
+                                                (TIStringMatchVars inferer)
+                                                (TIInferringFns inferer)
+                                                (TIBodyCache inferer))))
+                            new-inferer)))))
+
+(defn resolve-param-types (inferer params ret-type)
+    ; resolve type vars in param types using return type evidence
+    (match
+        params
+        (Nil Nil)
+        ((FNS name ptypes) rest
+            (cons
+                (FNS name (map-types inferer ptypes ret-type))
+                (resolve-param-types inferer rest ret-type)))))
+
+(defn map-types (inferer types ret-type)
+    ; apply return type inference to each param type
+    (match
+        types
+        (Nil Nil)
+        ((Pair t rest)
+            (cons
+                (resolve-type-var inferer t ret-type)
+                (map-types inferer rest ret-type)))))
+
+(defn resolve-type-var (inferer type ret-type)
+    ; resolve a type variable using return type as evidence
+    (match
+        type
+        (TVar n inner
+            (if (= n (var-index ret-type))
+                ret-type
+                type))
+        (_ type)))
+
+(defn var-index (t)
+    ; extract the type variable index from a TVar type
+    (match
+        t
+        (TVar n inner n)
+        (_ -1)))
+
+; ===========================================================================
+; INFER PROGRAM — the entry point that ties it all together
+; Port of Rust infer() — the main entry for type inference
+; ===========================================================================
+
+(defn infer-program (inferer exprs)
+    ; full type inference pipeline:
+    ; 1. collect definitions (register signatures)
+    ; 2. infer each expression
+    ; 3. finalize param types
+    (let (collected (collect-definitions inferer exprs))
+        (let (typed (infer-expressions collected exprs))
+            (finalize-param-types typed))))
+
+(defn infer-expressions (inferer exprs)
+    ; infer type of each expression, return list of (expr . inferred-type) pairs
+    (match
+        exprs
+        (Nil Nil)
+        ((Pair expr rest)
+            (if (is-def-only expr)
+                (cons (Pair expr (inferer-return-unit inferer))
+                    (infer-expressions inferer rest))
+                (let (inferred (infer-expr inferer expr))
+                    (cons (Pair expr inferred)
+                        (infer-expressions inferer rest)))))))
+
+(defn is-def-only (expr)
+    ; check if expr is a definition-only form (no inferred type needed)
+    (match
+        expr.inner
+        (Deftype _ _ _ _)
+        (StructDef _)
+        (StructDefPlus _)
+        (_ false)))
