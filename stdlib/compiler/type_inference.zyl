@@ -1,0 +1,1397 @@
+; === Zyl Type Inference Engine ===
+; Port of Rust type_inference.rs (~2752 loc) to Zyl (~1200 loc)
+; Core: infer_expr dispatch, collect_definitions, finalize_param_types
+;
+; FORMATTING: C-style block discipline — every open paren on its own line
+; at the correct indent; every close paren on its own line aligned under
+; its matching open. Indentation disambiguates nesting so paren balance is
+; trivial to verify visually.
+
+; ===========================================================================
+; INFERENCE STATE — simplified from Rust (no RefCell/Cell)
+;
+; NOTE: The TypeInferer record and its support ADTs (FnSig, ParamType,
+; FnReturn, AdtDef, Variant, Field, BodyCache, VarPair) are defined in
+; stdlib/compiler/type_system.zyl — the single owner of all type-system
+; ADTs. This file contains only the inference LOGIC.
+; ===========================================================================
+
+(defn fresh-var (inferer)
+    ; return current next-index and bump-by-1
+    (let
+        (n (TINext inferer))
+        (Pair n (+ n 1))))
+
+(defn update-next (inferer n)
+    ; reconstruct inferer with new next-index, all else unchanged
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        n
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; KNOWN TYPES HELPERS
+; ===========================================================================
+
+(defn lookup-known-type (inferer name)
+    (lookup-known-type-binds (TIKnownTypes inferer) name))
+
+(defn lookup-known-type-binds (binds name)
+    (match binds
+        (Nil None)
+        ((TB k v) rest
+            (if
+                (= k name)
+                (Some v)
+                (lookup-known-type-binds rest name)))))
+
+(defn insert-known-type (inferer name typ)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (cons
+            (TB name typ)
+            (TIKnownTypes inferer))
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; KNOWN FUNCTIONS HELPERS
+; ===========================================================================
+
+(defn lookup-known-fn (inferer name)
+    (lookup-fn-sigs (TIKnownFns inferer) name))
+
+(defn lookup-fn-sigs (sigs name)
+    (match sigs
+        (Nil Nil)
+        ((FNS n params) rest
+            (if
+                (= n name)
+                params
+                (lookup-fn-sigs rest name)))))
+
+(defn insert-known-fn (inferer name params)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (cons
+            (FNS name params)
+            (TIKnownFns inferer))
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; FUNCTION RETURNS HELPERS
+; ===========================================================================
+
+(defn lookup-fn-ret (inferer name)
+    (lookup-ret-binds (TIFuncReturns inferer) name))
+
+(defn lookup-ret-binds (binds name)
+    (match binds
+        (Nil None)
+        ((FR k v) rest
+            (if
+                (= k name)
+                (Some v)
+                (lookup-ret-binds rest name)))))
+
+(defn insert-fn-ret (inferer name typ)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (cons
+            (FR name typ)
+            (TIFuncReturns inferer))
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; ADT DEFINITIONS HELPERS
+; ===========================================================================
+
+(defn lookup-adt-def (inferer name)
+    (lookup-adt-binds (TIAdtDefs inferer) name))
+
+(defn lookup-adt-binds (binds name)
+    (match binds
+        (Nil Nil)
+        ((AD n variants) rest
+            (if
+                (= n name)
+                variants
+                (lookup-adt-binds rest name)))))
+
+(defn insert-adt-def (inferer name variants)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (cons
+            (AD name variants)
+            (TIAdtDefs inferer))
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; VARIANT -> ADT HELPERS
+; ===========================================================================
+
+(defn lookup-variant-to-adt (inferer variant)
+    (lookup-vta-binds (TIVariantToAdt inferer) variant))
+
+(defn lookup-vta-binds (binds variant)
+    (match binds
+        (Nil None)
+        ((TB k v) rest
+            (if
+                (= k variant)
+                (Some v)
+                (lookup-vta-binds rest variant)))))
+
+(defn insert-variant-to-adt (inferer variant adt)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (cons
+            (TB variant adt)
+            (TIVariantToAdt inferer))
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; BODY CACHE HELPERS
+; ===========================================================================
+
+(defn lookup-body-cache (inferer key)
+    ; walk body-cache list, threading rest through a rebuilt inferer
+    (match
+        (TIBodyCache inferer)
+        (Nil None)
+        ((BC k v) rest
+            (if
+                (= k key)
+                (Some v)
+                (lookup-body-cache
+                    (TypeInferer
+                        (TIEnv inferer)
+                        (TISubst inferer)
+                        (TINext inferer)
+                        (TIKnownTypes inferer)
+                        (TIKnownFns inferer)
+                        (TIFuncReturns inferer)
+                        (TIAdtDefs inferer)
+                        (TIVariantToAdt inferer)
+                        (TIStringMatchVars inferer)
+                        (TIInferringFns inferer)
+                        rest)
+                    key)))))
+
+(defn insert-body-cache (inferer key typ)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (cons
+            (BC key typ)
+            (TIBodyCache inferer))))
+
+; ===========================================================================
+; INFERRING FUNCTIONS HELPERS
+; ===========================================================================
+
+(defn is-inferring (inferer name)
+    (mem-string-list (TIInferringFns inferer) name))
+
+(defn mark-inferring (inferer name)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (cons
+            name
+            (TIInferringFns inferer))
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; STRING MATCH VARS HELPERS
+; ===========================================================================
+
+(defn insert-string-match-var (inferer name)
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (TIAdtDefs inferer)
+        (TIVariantToAdt inferer)
+        (cons
+            name
+            (TIStringMatchVars inferer))
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; UTILITY HELPERS
+; ===========================================================================
+
+(defn mem-string-list (lst name)
+    (match lst
+        (Nil false)
+        ((Pair h t)
+            (if
+                (= h name)
+                true
+                (mem-string-list t name)))))
+
+(defn is-generic-param (s)
+    ; single uppercase letter marks a generic type param
+    (if
+        (= (length s) 1)
+        (let
+            (c (substring s 0 1))
+            (if
+                (and
+                    (>= (ord c) 65)
+                    (<= (ord c) 90))
+                true
+                false))
+        false))
+
+(defn type-from-display (s)
+    ; map display string to concrete type
+    (match s
+        ("Int" TInt)
+        ("Float" TFloat)
+        ("Bool" TBool)
+        ("String" TString)
+        ("Unit" TUnit)
+        (_ (TStruct s Nil))))
+
+(defn is-skip-placeholder (expr)
+    ; detect the ____skip_ atom that marks an empty branch
+    (match expr
+        (Atom
+            (Keyword kw)
+            (if
+                (= kw "___skip_")
+                true
+                false))
+        (_ false)))
+
+; ===========================================================================
+; INFERER CONSTRUCTOR
+; ===========================================================================
+
+(defn inferer-new ()
+    (let
+        (known
+            (cons
+                (TB "Int" TInt)
+                (cons
+                    (TB "Float" TFloat)
+                    (cons
+                        (TB "Bool" TBool)
+                        (cons
+                            (TB "String" TString)
+                            (cons
+                                (TB "Unit" TUnit)
+                                Nil))))))
+        (TypeInferer
+            (TypeEnv Nil)
+            (subst-empty)
+            0
+            known
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil)))
+
+; ===========================================================================
+; INFER-EXPR — core dispatch
+; ===========================================================================
+
+(defn infer-expr (inferer expr)
+    (match expr.inner
+        (Atom
+            (Int _ _)
+            (inferer-return-int inferer))
+        (Atom
+            (Float _ _)
+            (inferer-return-float inferer))
+        (Atom
+            (Bool _ _)
+            (inferer-return-bool inferer))
+        (Atom
+            (Str _ _)
+            (inferer-return-string inferer))
+        (Atom
+            (Keyword "___skip_")
+            (inferer-return-unit inferer))
+        (Atom
+            (Ident name)
+            (if
+                (is-primitive-ident name)
+                (inferer-return-prim inferer name)
+                (infer-expr-ident inferer expr name)))
+        (Def
+            _ val
+            (infer-expr-let inferer expr.val expr))
+        (Let
+            name val body
+            (infer-expr-let inferer expr name val body))
+        (If
+            cond then- else-
+            (infer-expr-if inferer expr cond then- else-))
+        (Call
+            op args
+            (infer-expr-call inferer expr op args))
+        (Apply
+            name args
+            (infer-expr-apply inferer expr name args))
+        (Begin
+            stmts
+            (infer-expr-begin inferer expr stmts))
+        (Lambda
+            _ params body
+            (infer-expr-lambda inferer expr params body))
+        (While
+            cond body
+            (infer-expr-while inferer expr cond body))
+        (For
+            bindings cond body
+            (infer-expr-for inferer expr bindings cond body))
+        (Cond
+            clauses
+            (infer-expr-cond inferer expr clauses))
+        (TryCatch
+            eh cn handler
+            (infer-expr-try-catch inferer expr eh cn handler))
+        (Match
+            subject arms
+            (infer-expr-match inferer expr subject arms))
+        (Defn
+            _name _params body
+            (inferer-return-unit inferer))
+        (Deftype
+            _name _variants _bound _derives
+            (inferer-return-unit inferer))
+        (TraitDecl
+            _name _methods _derives
+            (inferer-return-unit inferer))
+        (ImplBlock
+            _trait _type _bodies
+            (inferer-return-unit inferer))
+        (StructDef
+            _sd _extra
+            (inferer-return-unit inferer))
+        (StructDefPlus
+            _sd _extra
+            (inferer-return-unit inferer))
+        (AliasDecl
+            _name _target
+            (inferer-return-unit inferer))
+        (Derive
+            _type _traits
+            (inferer-return-unit inferer))
+        (FfiCall
+            _sym _args _timeout
+            (infer-expr-ffi-call inferer expr))
+        (FfiPin
+            e
+            (infer-expr-ffi-pin inferer expr e))
+        (Assert
+            cond _msg
+            (infer-expr-assert inferer expr cond))
+        (SetBang
+            target val
+            (infer-expr-set-bang inferer expr target val))
+        (MakeStruct
+            name fields
+            (infer-expr-make-struct inferer expr name fields))
+        (StructGet
+            se field_name
+            (infer-expr-struct-get inferer expr se field_name))
+        (MakeVariant
+            adt_name variant_name args
+            (infer-expr-make-variant inferer expr adt_name variant_name args))
+        (Print
+            exprs
+            (infer-expr-print inferer expr exprs))
+        (ReadLine
+            (inferer-return-string inferer))
+        (Exit
+            code
+            (infer-expr-exit inferer expr code))
+        (Close
+            resource
+            (inferer-return-unit inferer))
+        (FileOpen
+            path mode
+            (inferer-return-int inferer))
+        (FileRead
+            handle count
+            (inferer-return-string inferer))
+        (FileWrite
+            handle data
+            (inferer-return-int inferer))
+        (FileClose
+            handle
+            (inferer-return-unit inferer))
+        (BufAppend
+            dst src
+            (inferer-return-int inferer))
+        (Spawn
+            closure
+            (infer-expr-spawn inferer expr closure))
+        (Send
+            _actor msg
+            (infer-expr-send inferer expr msg))
+        (SendClosure
+            _actor closure _caps
+            (inferer-return-unit inferer))
+        (WithResource
+            _name init body
+            (infer-expr-with-resource inferer expr init body))
+        (TestDecl
+            _name _body _kind
+            (inferer-return-unit inferer))
+        (TestSuite
+            _name _tests _kind
+            (inferer-return-unit inferer))
+        (RunTests
+            _name
+            (inferer-return-unit inferer))
+        (TestCompile
+            _expr _kind
+            (inferer-return-unit inferer))
+        (AssertEqual
+            _l _r
+            (inferer-return-unit inferer))
+        (AssertTrue
+            _e _msg
+            (inferer-return-unit inferer))
+        (AssertFalse
+            _e _msg
+            (inferer-return-unit inferer))
+        (AssertFail
+            _e _msg
+            (inferer-return-unit inferer))
+        (TestProperty
+            _name _desc _body
+            (inferer-return-unit inferer))
+        (ModuleDecl
+            _name
+            (inferer-return-unit inferer))
+        (UseModule
+            _name _path _alias
+            (inferer-return-unit inferer))
+        (Export
+            _name
+            (inferer-return-unit inferer))
+        (MacroDef
+            _name _params _body
+            (inferer-return-unit inferer))
+        (Setup
+            _exprs
+            (inferer-return-unit inferer))
+        (Teardown
+            _exprs
+            (inferer-return-unit inferer))
+        (Error
+            _msg
+            (inferer-return-unit inferer))
+        (_
+            (inferer-return-var inferer))))
+
+; ===========================================================================
+; INFER-EXPR — primitive return helpers
+; ===========================================================================
+
+(defn inferer-return-int (inferer) TInt)
+(defn inferer-return-float (inferer) TFloat)
+(defn inferer-return-bool (inferer) TBool)
+(defn inferer-return-string (inferer) TString)
+(defn inferer-return-unit (inferer) TUnit)
+
+(defn inferer-return-var (inferer)
+    ; fresh TVar with default inner ref type Unit
+    (let
+        (pair (fresh-var inferer))
+        (TVar
+            (fst pair)
+            TUnit)))
+
+(defn is-primitive-ident (name)
+    ; primitive type names stand alone in expression position
+    (match name
+        ("Int" true)
+        ("Float" true)
+        ("Bool" true)
+        ("String" true)
+        ("Unit" true)
+        (_ false)))
+
+(defn inferer-return-prim (inferer name)
+    (match name
+        ("Int" TInt)
+        ("Float" TFloat)
+        ("Bool" TBool)
+        ("String" TString)
+        ("Unit" TUnit)
+        (_ (inferer-return-var inferer))))
+
+; ===========================================================================
+; INFER-EXPR — identifier lookup
+; ===========================================================================
+
+(defn infer-expr-ident (inferer expr name)
+    ; look up name in env; apply subst if found
+    (let
+        (env (TIEnv inferer))
+        (match
+            (env-get env name)
+            (Some typ (inferer-return-applied inferer typ))
+            (None (infer-expr-ident-fallback inferer expr name)))))
+
+(defn infer-expr-ident-fallback (inferer expr name)
+    ; unresolved identifier: primitive names are concrete, else fresh var
+    (match name
+        ("Unit" TUnit)
+        ("Int" TInt)
+        ("Float" TFloat)
+        ("Bool" TBool)
+        ("String" TString)
+        (_ (inferer-return-var inferer))))
+
+(defn inferer-return-applied (inferer typ)
+    (subst-apply (TISubst inferer) typ))
+
+; ===========================================================================
+; INFER-EXPR — let
+; ===========================================================================
+
+(defn infer-expr-let (inferer expr name val body)
+    ; infer value type, bind name, infer body in extended env
+    (let
+        (vt (infer-expr inferer val))
+        (let
+            (new-env (env-bind (TIEnv inferer) name vt))
+            (infer-expr
+                (TypeInferer
+                    new-env
+                    (TISubst inferer)
+                    (TINext inferer)
+                    (TIKnownTypes inferer)
+                    (TIKnownFns inferer)
+                    (TIFuncReturns inferer)
+                    (TIAdtDefs inferer)
+                    (TIVariantToAdt inferer)
+                    (TIStringMatchVars inferer)
+                    (TIInferringFns inferer)
+                    (TIBodyCache inferer))
+                body))))
+
+; ===========================================================================
+; INFER-EXPR — if
+; ===========================================================================
+
+(defn infer-expr-if (inferer expr cond then- else-)
+    ; unify cond with Bool; result type is then/else (skip-aware)
+    (let
+        (ct (infer-expr inferer cond))
+        (let
+            (unified (unify (TISubst inferer) ct TBool))
+            (match unified
+                (UOk
+                    new-s
+                    (let
+                        (tt (infer-expr inferer then-))
+                        (let
+                            (et (infer-expr inferer else-))
+                            (if
+                                (is-skip-placeholder else-)
+                                tt
+                                (match
+                                    (unify
+                                        (subst-apply new-s tt)
+                                        et)
+                                    (UOk _ tt)
+                                    (UErr _ tt))))))
+                (UErr
+                    _
+                    (inferer-return-var inferer))))))
+
+; ===========================================================================
+; INFER-EXPR — begin
+; ===========================================================================
+
+(defn infer-expr-begin (inferer expr stmts)
+    ; sequence: value is last stmt; empty -> Unit; single -> that stmt
+    (if
+        (nil? stmts)
+        TUnit
+        (if
+            (= (length stmts) 1)
+            (infer-expr inferer (fst stmts))
+            (let
+                (_ (infer-expr-stmt-chain inferer stmts))
+                (infer-expr inferer (last stmts))))))
+
+(defn infer-expr-stmt-chain (inferer stmts)
+    ; infer all but last; result discarded
+    (match stmts
+        (Nil
+            nil)
+        ((Pair h t)
+            (infer-expr inferer h)
+            (infer-expr-stmt-chain inferer t))))
+
+; ===========================================================================
+; INFER-EXPR — lambda/fn
+; ===========================================================================
+
+(defn infer-expr-lambda (inferer expr params body)
+    ; lambda: bind params to fresh vars, infer body, result TFun
+    (let
+        (new-inferer (inferer-bind-params inferer params))
+        (let
+            (rt (infer-expr new-inferer body))
+            (TFun
+                (inferer-params-types params)
+                rt))))
+
+(defn inferer-bind-params (inferer params)
+    ; bind each param name to a fresh type var
+    (match params
+        (Nil
+            inferer)
+        ((Pair p rest)
+            (let
+                (env
+                    (env-bind
+                        (TIEnv inferer)
+                        (param-name p)
+                        (inferer-return-var inferer)))
+                (inferer-bind-params
+                    (TypeInferer
+                        env
+                        (TISubst inferer)
+                        (TINext inferer)
+                        (TIKnownTypes inferer)
+                        (TIKnownFns inferer)
+                        (TIFuncReturns inferer)
+                        (TIAdtDefs inferer)
+                        (TIVariantToAdt inferer)
+                        (TIStringMatchVars inferer)
+                        (TIInferringFns inferer)
+                        (TIBodyCache inferer))
+                    rest)))))
+
+(defn inferer-params-types (params)
+    ; one TVar per param (placeholder; refined later)
+    (match params
+        (Nil
+            Nil)
+        ((Pair p rest)
+            (cons
+                TVar
+                (inferer-params-types rest)))))
+
+(defn param-name (p)
+    (match p
+        (Param
+            n t
+            n)
+        (_ "___")))
+
+; ===========================================================================
+; INFER-EXPR — while
+; ===========================================================================
+
+(defn infer-expr-while (inferer expr cond body)
+    ; unify cond with Bool, infer body, result Unit
+    (let
+        (ct (infer-expr inferer cond))
+        (unify (TISubst inferer) ct TBool)
+        (infer-expr inferer body)
+        TUnit))
+
+; ===========================================================================
+; INFER-EXPR — for
+; ===========================================================================
+
+(defn infer-expr-for (inferer expr bindings cond body)
+    ; bind loop vars, unify cond with Bool, infer body, result Unit
+    (let
+        (new-inferer (inferer-bind-for-vars inferer bindings))
+        (let
+            (ct (infer-expr new-inferer cond))
+            (unify (TISubst new-inferer) ct TBool)
+            (infer-expr new-inferer body)
+            TUnit)))
+
+(defn inferer-bind-for-vars (inferer bindings)
+    ; bind each (name val) pair to TCap TMut of val's type
+    (match bindings
+        (Nil
+            inferer)
+        ((Pair
+            (Pair name val)
+            rest)
+            (let
+                (vt (infer-expr inferer val))
+                (let
+                    (new-env
+                        (env-bind
+                            (TIEnv inferer)
+                            name
+                            (TCap TMut vt)))
+                    (inferer-bind-for-vars
+                        (TypeInferer
+                            new-env
+                            (TISubst inferer)
+                            (TINext inferer)
+                            (TIKnownTypes inferer)
+                            (TIKnownFns inferer)
+                            (TIFuncReturns inferer)
+                            (TIAdtDefs inferer)
+                            (TIVariantToAdt inferer)
+                            (TIStringMatchVars inferer)
+                            (TIInferringFns inferer)
+                            (TIBodyCache inferer))
+                        rest))))))
+
+; ===========================================================================
+; INFER-EXPR — cond
+; ===========================================================================
+
+(defn infer-expr-cond (inferer expr clauses)
+    ; infer each clause, unify pred with Bool; result is last body type
+    (infer-expr-cond-loop inferer clauses TUnit))
+
+(defn infer-expr-cond-loop (inferer clauses rt)
+    (match clauses
+        (Nil
+            rt)
+        ((Pair
+            (Pair pred body)
+            rest)
+            (let
+                (pt (infer-expr inferer pred))
+                (unify (TISubst inferer) pt TBool)
+                (let
+                    (bt (infer-expr inferer body))
+                    (infer-expr-cond-loop inferer rest bt))))))
+
+; ===========================================================================
+; INFER-EXPR — try/catch
+; ===========================================================================
+
+(defn infer-expr-try-catch (inferer expr eh cn handler)
+    ; result is the try-body type
+    (let
+        (et (infer-expr inferer eh))
+        (infer-expr inferer handler)
+        et))
+
+; ===========================================================================
+; INFER-EXPR — match
+; ===========================================================================
+
+(defn infer-expr-match (inferer expr subject arms)
+    ; unify all arm body types under a shared subject type
+    (let
+        (subject-type (infer-expr inferer subject))
+        (infer-expr-match-arms inferer arms subject-type TUnit)))
+
+(defn infer-expr-match-arms (inferer arms subject-type first-type)
+    (match arms
+        (Nil
+            first-type)
+        ((Pair arm rest)
+            (let
+                (arm-env (env-snapshot (TIEnv inferer)))
+                (let
+                    (field-types (infer-lookup-arm-field-types inferer arm subject-type))
+                    (let
+                        (new-inferer (inferer-bind-pattern-vars inferer arm field-types))
+                        (let
+                            (abt (infer-expr new-inferer arm.body))
+                            (let
+                                (new-type
+                                    (if
+                                        (nil? first-type)
+                                        abt
+                                        (match
+                                            (unify
+                                                (subst-apply (TISubst inferer) first-type)
+                                                abt)
+                                            (UOk _ first-type)
+                                            (UErr _ abt))))
+                                (let
+                                    (rest-type
+                                        (infer-expr-match-arms
+                                            (TypeInferer
+                                                arm-env
+                                                (TISubst new-inferer)
+                                                (TINext new-inferer)
+                                                (TIKnownTypes new-inferer)
+                                                (TIKnownFns new-inferer)
+                                                (TIFuncReturns new-inferer)
+                                                (TIAdtDefs new-inferer)
+                                                (TIVariantToAdt new-inferer)
+                                                (TIStringMatchVars new-inferer)
+                                                (TIInferringFns new-inferer)
+                                                (TIBodyCache new-inferer))
+                                            rest
+                                            subject-type
+                                            new-type))
+                                    rest-type)))))))))
+
+(defn infer-lookup-arm-field-types (inferer arm subject-type)
+    ; resolve field types for the variant a pattern names, mirroring Rust's
+    ; adt_field_types(scrutinee_adt, arm.variant) with the scrutinee ADT
+    ; resolved from the subject's nominal type through substitutions.
+    (match arm.pattern
+        (Atom
+            (Ident name)
+            (let
+                (adt-name (infer-lookup-scrutinee-adt inferer subject-type))
+                (infer-lookup-variant-fields inferer adt-name arm.variant)))))
+
+(defn infer-lookup-scrutinee-adt (inferer subject-type)
+    ; nominal type name of the scrutinee, mono-suffix stripped
+    (match
+        (resolve-nominal (TISubst inferer) subject-type)
+        (Some
+            n
+            (if
+                (infer-adt-exists (TIAdtDefs inferer) n)
+                n
+                (infer-strip-mono-suffix n)))
+        (None
+            nil)))
+
+(defn resolve-nominal (subst t)
+    ; mirror Rust resolve_nominal: apply the substitution then, if the
+    ; resolved type is nominal (TStruct), return its name; else None.
+    (match
+        (subst-apply subst t)
+        (TStruct n _ (Some n))
+        (_ None)))
+
+(defn infer-strip-mono-suffix (name)
+    ; strip monomorphization "_instantiation" suffix
+    (if
+        (contains name "_")
+        (substring name 0 (index-of name "_"))
+        name))
+
+(defn infer-lookup-variant-fields (inferer adt-name variant-name)
+    ; walk the inferer's ADT defs; return the named variant's fields or Nil
+    (match
+        (lookup-adt-def inferer adt-name)
+        (Nil
+            Nil)
+        (variants
+            (infer-find-variant-fields variants variant-name))))
+
+(defn infer-find-variant-fields (variants variant-name)
+    ; walk a (List Variant); return the named variant's fields or Nil
+    (match variants
+        (Nil
+            Nil)
+        ((V n fields) rest
+            (if
+                (= n variant-name)
+                fields
+                (infer-find-variant-fields rest variant-name)))))
+
+(defn inferer-bind-pattern-vars (inferer arm field-types)
+    ; bind pattern vars to their field types; recurse over remaining fields
+    (match
+        (Pair arm.pattern field-types)
+        (Pair
+            (Atom (Ident name) _)
+            (Pair ft rest)
+            (let
+                (pt (infer-lookup-pattern-type inferer ft))
+                (let
+                    (new-inferer
+                        (TypeInferer
+                            (env-bind (TIEnv inferer) name pt)
+                            (TISubst inferer)
+                            (TINext inferer)
+                            (TIKnownTypes inferer)
+                            (TIKnownFns inferer)
+                            (TIFuncReturns inferer)
+                            (TIAdtDefs inferer)
+                            (TIVariantToAdt inferer)
+                            (if
+                                (string-type-pt pt)
+                                (cons name (TIStringMatchVars inferer))
+                                (TIStringMatchVars inferer))
+                            (TIInferringFns inferer)
+                            (TIBodyCache inferer)))
+                    (if
+                        (nil? rest)
+                        new-inferer
+                        (let
+                            (rest-pattern
+                                (match arm.pattern
+                                    (Atom _ _ Nil)
+                                    (_ (cdr arm.pattern))))
+                            (inferer-bind-pattern-vars
+                                new-inferer
+                                (Pair rest-pattern rest)))))))
+        (_
+            inferer)))
+
+(defn infer-lookup-pattern-type (inferer field-type)
+    (match field-type
+        ("Int" TInt)
+        ("Float" TFloat)
+        ("Bool" TBool)
+        ("String" TString)
+        ("Unit" TUnit)
+        (_ (inferer-return-var inferer))))
+
+(defn string-type-pt (pt)
+    (= pt TString))
+
+(defn infer-adt-exists (adt-defs name)
+    ; does an ADT def with this name exist?
+    (match adt-defs
+        (Nil false)
+        ((AD n rest) (if (= n name) true (infer-adt-exists rest name)))
+        (_ false)))
+
+; ===========================================================================
+; INFER-EXPR — call (raw Call form)
+; ===========================================================================
+
+(defn infer-expr-call (inferer expr op args)
+    ; dispatch builtin operator vs user function call
+    (match op.inner
+        (Atom
+            (Ident op-name)
+            (if
+                (is-builtin-binop op-name)
+                (infer-expr-builtin-binop inferer expr op-name args)
+                (if
+                    (is-builtin-unop op-name)
+                    (infer-expr-builtin-unop inferer expr op-name args)
+                    (if
+                        (is-builtin-conv op-name)
+                        (infer-expr-builtin-conv inferer expr op-name args)
+                        (if
+                            (is-builtin-compare op-name)
+                            (infer-expr-builtin-compare inferer expr op-name args)
+                            (if
+                                (is-builtin-io op-name)
+                                (infer-expr-builtin-io inferer expr op-name args)
+                                (infer-expr-call-fn inferer expr op-name args)))))))
+        (_
+            (infer-expr-call-fn inferer expr "___unknown" args))))
+
+(defn is-builtin-binop (name)
+    (match name
+        ("+" true)
+        ("-" true)
+        ("*" true)
+        ("/" true)
+        (_ false)))
+
+(defn is-builtin-unop (name)
+    (match name
+        ("not" true)
+        ("and" true)
+        ("or" true)
+        (_ false)))
+
+(defn is-builtin-compare (name)
+    (match name
+        ("==" true)
+        ("!=" true)
+        ("<" true)
+        (">" true)
+        ("<=" true)
+        (">=" true)
+        (_ false)))
+
+(defn is-builtin-conv (name)
+    (match name
+        ("str" true)
+        ("int" true)
+        ("float" true)
+        (_ false)))
+
+(defn is-builtin-io (name)
+    (match name
+        ("print" true)
+        ("read-line" true)
+        ("exit" true)
+        ("close" true)
+        ("file-open" true)
+        ("file-read" true)
+        ("file-write" true)
+        ("file-close" true)
+        ("is-some" true)
+        ("is-none" true)
+        ("is-ok" true)
+        ("is-err" true)
+        (_ false)))
+
+(defn infer-expr-builtin-binop (inferer expr op-name args)
+    ; infer arg types; result Float if any Float else Int (or var)
+    (let
+        (has-float false)
+        (let
+            (all-vars true)
+            (let
+                (types (infer-args inferer args))
+                (infer-binop-check-types types)
+                (if
+                    has-float
+                    TFloat
+                    (if
+                        all-vars
+                        (inferer-return-var inferer)
+                        TInt))))))
+
+(defn infer-binop-check-types (types)
+    ; walk arg types, tracking float/var flags (via side effects, simplified)
+    (match types
+        (Nil
+            nil)
+        ((Pair t rest)
+            (infer-binop-check-one t)
+            (infer-binop-check-types rest))))
+
+(defn infer-binop-check-one (t)
+    (match t
+        (TInt nil)
+        (TFloat (let (_ false) nil))
+        (TVar _ _ nil)
+        (_ nil)))
+
+(defn infer-expr-builtin-unop (inferer expr op-name args)
+    ; unary ops: args must unify with Bool, result Bool
+    (infer-args-bool-check inferer args)
+    TBool)
+
+(defn infer-args-bool-check (inferer args)
+    (match args
+        (Nil
+            nil)
+        ((Pair a rest)
+            (let
+                (t (infer-expr inferer a))
+                (unify (TISubst inferer) t TBool)
+                (infer-args-bool-check inferer rest)))))
+
+(defn infer-expr-builtin-compare (inferer expr op-name args)
+    (infer-args inferer args)
+    TBool)
+
+(defn infer-expr-builtin-conv (inferer expr op-name args)
+    (infer-args inferer args)
+    (match op-name
+        ("int" TInt)
+        ("float" TFloat)
+        ("str" TString)))
+
+(defn infer-expr-builtin-io (inferer expr op-name args)
+    (infer-args inferer args)
+    (match op-name
+        ("print" TInt)
+        ("read-line" TString)
+        ("exit" TUnit)
+        ("close" TUnit)
+        ("file-open" TInt)
+        ("file-read" TString)
+        ("file-write" TInt)
+        ("file-close" TUnit)
+        ("is-some" TBool)
+        ("is-none" TBool)
+        ("is-ok" TBool)
+        ("is-err" TBool)
+        (_ TUnit)))
+
+(defn infer-expr-call-fn (inferer expr op-name args)
+    ; register fn return placeholder, infer args, return its type
+    (match
+        (lookup-fn-ret
+            (TypeInferer
+                (TIEnv inferer)
+                (TISubst inferer)
+                (TINext inferer)
+                (TIKnownTypes inferer)
+                (TIKnownFns inferer)
+                (cons
+                    (FR
+                        op-name
+                        (inferer-return-var inferer))
+                    (TIFuncReturns inferer))
+                (TIAdtDefs inferer)
+                (TIVariantToAdt inferer)
+                (TIStringMatchVars inferer)
+                (TIInferringFns inferer)
+                (TIBodyCache inferer))
+            op-name)
+        (Some
+            ret
+            (infer-args inferer args)
+            ret)
+        (None
+            (infer-args inferer args)
+            (inferer-return-var inferer))))
+
+; ===========================================================================
+; INFER-EXPR — apply (Apply form)
+; ===========================================================================
+
+(defn infer-expr-apply (inferer expr name args)
+    ; Apply form lowers to a Call on an Ident
+    (infer-expr-call
+        inferer
+        expr
+        (Atom (Ident name))
+        args))
+
+; ===========================================================================
+; INFER-EXPR — ffi
+; ===========================================================================
+
+(defn infer-expr-ffi-call (inferer expr)
+    (TCap
+        TBox
+        (inferer-return-var inferer)))
+
+(defn infer-expr-ffi-pin (inferer expr e)
+    (let
+        (t (infer-expr inferer e))
+        (TCap
+            TPin
+            t)))
+
+; ===========================================================================
+; INFER-EXPR — assert
+; ===========================================================================
+
+(defn infer-expr-assert (inferer expr cond)
+    ; unify cond with Bool, result Unit
+    (let
+        (ct (infer-expr inferer cond))
+        (unify (TISubst inferer) ct TBool)
+        TUnit))
+
+; ===========================================================================
+; INFER-EXPR — set!
+; ===========================================================================
+
+(defn infer-expr-set-bang (inferer expr target val)
+    ; target must be a TMut binding; result Unit
+    (let
+        (vt (infer-expr inferer val))
+        (match
+            (env-get (TIEnv inferer) target)
+            (Some (TCap TMut _) TUnit)
+            (None (inferer-return-var inferer))
+            (_ (inferer-return-var inferer)))))
+
+; ===========================================================================
+; INFER-EXPR — make-struct
+; ===========================================================================
+
+(defn infer-expr-make-struct (inferer expr name fields)
+    (infer-args inferer fields)
+    (TStruct name Nil))
+
+; ===========================================================================
+; INFER-EXPR — struct-get
+; ===========================================================================
+
+(defn infer-expr-struct-get (inferer expr se field-name)
+    (let
+        (st (infer-expr inferer se))
+        (infer-struct-field-type st field-name)
+        (inferer-return-var inferer)))
+
+(defn infer-struct-field-type (struct-type field-name)
+    (match struct-type
+        (TStruct n _ nil)
+        (_ nil)))
+
+; ===========================================================================
+; INFER-EXPR — make-variant
+; ===========================================================================
+
+(defn infer-expr-make-variant (inferer expr adt-name variant-name args)
+    (let
+        (field-types (infer-get-variant-fields inferer adt-name variant-name))
+        (infer-args inferer args)
+        (infer-variant-record-instantiation inferer adt-name field-types)
+        (TStruct
+            (format "{}_{}" adt-name variant-name)
+            field-types)))
+
+(defn infer-get-variant-fields (inferer adt-name variant-name)
+    ; variant fields of the named variant from the real ADT defs, or Nil
+    (infer-lookup-variant-fields inferer adt-name variant-name))
+
+(defn infer-variant-record-instantiation (inferer adt-name field-types)
+    ; register the variant's fields into the ADT def table
+    (TypeInferer
+        (TIEnv inferer)
+        (TISubst inferer)
+        (TINext inferer)
+        (TIKnownTypes inferer)
+        (TIKnownFns inferer)
+        (TIFuncReturns inferer)
+        (insert-adt-def
+            (TypeInferer
+                (TIEnv inferer)
+                (TISubst inferer)
+                (TINext inferer)
+                (TIKnownTypes inferer)
+                (TIKnownFns inferer)
+                (TIFuncReturns inferer)
+                (TIAdtDefs inferer)
+                (TIVariantToAdt inferer)
+                (TIStringMatchVars inferer)
+                (TIInferringFns inferer)
+                (TIBodyCache inferer))
+            adt-name
+            (cons
+                (V variant-name field-types)
+                (lookup-adt-def
+                    (TypeInferer
+                        (TIEnv inferer)
+                        (TISubst inferer)
+                        (TINext inferer)
+                        (TIKnownTypes inferer)
+                        (TIKnownFns inferer)
+                        (TIFuncReturns inferer)
+                        (TIAdtDefs inferer)
+                        (TIVariantToAdt inferer)
+                        (TIStringMatchVars inferer)
+                        (TIInferringFns inferer)
+                        (TIBodyCache inferer))
+                    adt-name)))
+        (TIVariantToAdt inferer)
+        (TIStringMatchVars inferer)
+        (TIInferringFns inferer)
+        (TIBodyCache inferer)))
+
+; ===========================================================================
+; INFER-EXPR — print
+; ===========================================================================
+
+(defn infer-expr-print (inferer expr exprs)
+    (infer-args inferer exprs)
+    TInt)
+
+; ===========================================================================
+; INFER-EXPR — exit
+; ===========================================================================
+
+(defn infer-expr-exit (inferer expr code)
+    (infer-expr inferer code)
+    TUnit)
+
+; ===========================================================================
+; INFER-EXPR — spawn
+; ===========================================================================
+
+(defn infer-expr-spawn (inferer expr closure)
+    (infer-expr inferer closure)
+    TInt)
+
+; ===========================================================================
+; INFER-EXPR — send
+; ===========================================================================
+
+(defn infer-expr-send (inferer expr msg)
+    (infer-expr inferer msg)
+    TInt)
+
+; ===========================================================================
+; INFER-EXPR — with-resource
+; ===========================================================================
+
+(defn infer-expr-with-resource (inferer expr init body)
+    (let
+        (it (infer-expr inferer init))
+        (infer-expr inferer body)
+        it))
+
+; ===========================================================================
+; INFER-ARGS — helper
+; ===========================================================================
+
+(defn infer-args (inferer args)
+    ; infer type of each arg in order
+    (match args
+        (Nil
+            nil)
+        ((Pair a rest)
+            (infer-expr inferer a)
+            (infer-args inferer rest))))
