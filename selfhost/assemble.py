@@ -13,6 +13,7 @@ files = [
     'stdlib/compiler/resolver.zyl',
     'stdlib/compiler/type_system.zyl',
     'stdlib/compiler/type_inference.zyl',
+    'stdlib/compiler/monomorphization.zyl',
     'stdlib/compiler/icnf.zyl',
     'stdlib/compiler/codegen.zyl',
     'stdlib/compiler/region_inference.zyl',

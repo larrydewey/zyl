@@ -4164,6 +4164,590 @@
         (StructDefPlus _)
         (_ false)))
 
+; ---------- stdlib/compiler/monomorphization.zyl ----------
+; === Zyl Compiler — Monomorphization (Phase 6) ===
+; Instantiates generic functions, resolves call sites, substitutes type vars.
+; Port of src/monomorphization.rs to Zyl.
+;
+; Structure:
+;   1. ADTs (MonoCtx, MonoInstance, AdtInstantiation)
+;   2. Helpers (list ops, KV lookup, type helpers)
+;   3. Substitution (subst-expr)
+;   4. Pipeline (monomorphize)
+
+; ===========================================================================
+; ADTs — KV stores (List-based, matching type_system.zyl style)
+; ===========================================================================
+
+(deftype MonoKV (MK String A))
+
+(deftype MonoCtx (MC
+  (MCGenFns (List (MonoKV (List MonoParam))))       ; name → [MonoParam]
+  (MCKnownFns (List (MonoKV (List (MonoKV Type))))) ; name → [(param, Type)]
+  (MCReturns (List (MonoKV Type)))                   ; name → ret Type
+  (MCKTypes (List (MonoKV Type)))                    ; name → Type
+  (MCStructs (List (MonoKV (List (MonoKV Type)))))   ; name → [(field, Type)]
+  (MCAdtDefs (List (MonoKV (List (MonoKV (List String)))))) ; name → [(variant, [fields])]
+  (MCAdtInsts (List (MonoKV (List AdtInstantiation))))   ; name → [AdtInstantiation]
+  (MCTImpls (List (MonoKV (List Type)))))             ; trait → [impl_type]
+
+(deftype MonoParam (MP String (List String)))
+(deftype MonoInstance (MI String Expr (List MonoParam)))
+(deftype AdtInstantiation (AI (List String) (List Type)))
+
+; ===========================================================================
+; Field accessors
+; ===========================================================================
+
+(defn mc-gen-fns (ctx) (match ctx (MC g _ _ _ _ _ _ _) g))
+(defn mc-known-fns (ctx) (match ctx (MC _ f _ _ _ _ _ _) f))
+(defn mc-returns (ctx) (match ctx (MC _ _ r _ _ _ _ _) r))
+(defn mc-ktypes (ctx) (match ctx (MC _ _ _ kt _ _ _ _) kt))
+(defn mc-structs (ctx) (match ctx (MC _ _ _ _ sd _ _ _) sd))
+(defn mc-adt-defs (ctx) (match ctx (MC _ _ _ _ _ adt _ _) adt))
+(defn mc-adt-insts (ctx) (match ctx (MC _ _ _ _ _ _ ai _) ai))
+(defn mc-timpls (ctx) (match ctx (MC _ _ _ _ _ _ _ ti) ti))
+
+; ===========================================================================
+; Helpers — list ops (no stdlib)
+; ===========================================================================
+
+(defn list-contains (lst x)
+  (match lst
+    (Nil false)
+    ((cons h t) (if (= h x) true (list-contains t x)))
+    (false)))
+
+(defn list-length (lst)
+  (match lst
+    (Nil 0)
+    ((cons _ t) (+ 1 (list-length t)))
+    (0)))
+
+(defn list-first (lst)
+  (match lst
+    ((cons h _) h)
+    (nil)))
+
+(defn list-last (lst)
+  (match lst
+    ((cons h Nil) h)
+    ((cons _ t) (list-last t))
+    (nil)))
+
+(defn list-nth (lst i)
+  (match (i lst)
+    (0 (cons h _) h)
+    (n (cons _ t) (list-nth t (- n 1)))
+    (nil)))
+
+(defn list-push (lst x)
+  (cons x lst))
+
+; ===========================================================================
+; KV helpers — List (MonoKV K V)
+; ===========================================================================
+
+(defn kv-get (binds key default)
+  (match binds
+    (Nil default)
+    ((MK k v) rest
+      (if (= k key) v (kv-get rest key default)))))
+
+(defn kv-set (binds key val)
+  (match binds
+    (Nil (cons (MK key val) Nil))
+    ((MK k v) rest
+      (if (= k key)
+        (cons (MK key val) rest)
+        (cons (MK k v) (kv-set rest key val))))))
+
+(defn kv-contains (binds key)
+  (match binds
+    (Nil false)
+    ((MK k _) rest
+      (if (= k key) true (kv-contains rest key)))))
+
+; ===========================================================================
+; String helpers
+; ===========================================================================
+
+(defn str-contains (s sub)
+  (if (<= (length sub) (length s))
+    (let sl (length s) ll (length sub) i 0 found false)
+    (while (and (< i (- sl ll)) (not found))
+      (if (= (substring s i (+ i ll)) sub)
+        (do (set! found true) nil)
+        (do (set! i (+ i 1)) nil)))
+    found
+    false))
+
+(defn str-starts-with (s prefix)
+  (if (<= (length prefix) (length s))
+    (= (substring s 0 (length prefix)) prefix)
+    false))
+
+(defn str-drop (s n)
+  (if (<= n (length s)) (substring s n) ""))
+
+(defn str-join (lst sep)
+  (match lst
+    (Nil "")
+    ((cons h Nil) h)
+    ((cons h t) (string-append h (string-append sep (str-join t sep))))))
+
+(defn str-sort (lst)
+  (match lst
+    (Nil Nil)
+    ((cons h Nil) (cons h Nil))
+    ((cons h t)
+      (let sorted (str-sort t)
+        (str-insert h sorted)))))
+
+(defn str-insert (x lst)
+  (match lst
+    (Nil (cons x Nil))
+    ((cons h t)
+      (if (<= x h)
+        (cons x (cons h t))
+        (cons h (str-insert x t))))))
+
+(defn str-dedup (lst)
+  (match lst
+    (Nil Nil)
+    ((cons h t)
+      (if (list-contains t h)
+        (str-dedup t)
+        (cons h (str-dedup t))))))
+
+; ===========================================================================
+; Type helpers
+; ===========================================================================
+
+(defn param-type-from-str (s)
+  (match s
+    ("Int" TInt)
+    ("Float" TFloat)
+    ("Bool" TBool)
+    ("String" TString)
+    ("Unit" TUnit)
+    (_ (TVar 0))))
+
+(defn is-uppercase-ident (name)
+  (if (= (length name) 0)
+    false
+    (let c (substring name 0 1)
+      (and (>= (ord c) 65) (<= (ord c) 90)))))
+
+; ===========================================================================
+; Lookup helpers
+; ===========================================================================
+
+(defn lookup-fn-sigs (ctx name)
+  (kv-get (mc-known-fns ctx) name Nil))
+
+(defn lookup-fn-ret (ctx name)
+  (kv-get (mc-returns ctx) name (TVar 0)))
+
+(defn lookup-known-type (ctx name)
+  (kv-get (mc-ktypes ctx) name (TVar 0)))
+
+; ===========================================================================
+; find-satisfying-types
+; ===========================================================================
+
+(defn find-satisfying-types (ctx trait-name)
+  (let result Nil
+    (let impls (kv-get (mc-timpls ctx) trait-name Nil))
+    (for (t impls)
+      (if (not (= t (TVar 0)))
+        (do (set! result (list-push result t)) nil)))
+    (match trait-name
+      ("Eq" "Ord" "Debug" "Clone" "Hash"
+        (if (not (list-contains result TInt)) (do (set! result (list-push result TInt)) nil))
+        (if (not (list-contains result TFloat)) (do (set! result (list-push result TFloat)) nil))
+        (if (not (list-contains result TBool)) (do (set! result (list-push result TBool)) nil))
+        result)
+      (_ result))))
+
+; ===========================================================================
+; check-trait-bound
+; ===========================================================================
+
+(defn check-trait-bound (ctx ty trait-name)
+  (if (or (= ty TInt) (= ty TFloat) (= ty TBool) (= ty TString))
+    true
+    (let impls (kv-get (mc-timpls ctx) trait-name Nil)
+      (list-contains impls ty))))
+
+; ===========================================================================
+; discover-from-ast — find generic function definitions
+; ===========================================================================
+
+(defn extract-mono-params (params)
+  (let result Nil
+    (for (p params)
+      (let pname (match p (P n _) n)
+        pbounds (match (match p (P _ t) t) (Some v) v (_ Nil))
+        (if (is-uppercase-ident pname)
+          (do (set! result (list-push result (MP pname pbounds))) nil)))
+    result))
+
+(defn discover-from-ast (ctx exprs)
+  (let gen-fns (mc-gen-fns ctx)
+    (for (expr exprs)
+      (match expr.inner
+        (EDefn name params body
+          (let mp (extract-mono-params params)
+            (if (> (list-length mp) 0)
+              (do (set! gen-fns (kv-set gen-fns name (list-push (kv-get gen-fns name Nil) (first mp)))) nil)))))
+        (EApply "defn" args
+          (if (> (list-length args) 2)
+            (let n (match (match (list-nth args 0) (EAtom (AIdent n2)) _ Nil) (Some v) v (_ nil))
+              pexprs (match (match (list-nth args 1) (EApply _ ps) (ECall _ ps) _ Nil) (_ ps) (_ Nil))
+              mp (for ((i p) (index pexprs))
+                    (let pn (match (match p (EAtom (AIdent n2)) _ Nil) (Some v) v (_ (string-append "T" (string i))))
+                      (MP pn Nil)))
+              (if (and n (> (list-length mp) 0))
+                (do (set! gen-fns (kv-set gen-fns n (list-push (kv-get gen-fns n Nil) (first mp)))) nil))))
+            (Nil)))
+      (set! ctx (MC gen-fns (mc-known-fns ctx) (mc-returns ctx) (mc-ktypes ctx) (mc-structs ctx) (mc-adt-defs ctx) (mc-adt-insts ctx) (mc-timpls ctx)))
+    ctx))
+
+; ===========================================================================
+; infer-arg-type — infer concrete type from expression structure
+; ===========================================================================
+
+(defn infer-arg-type (ctx expr)
+  (match expr.inner
+    (EAtom (AInt _ _)) (TPrim PInt)
+    (EAtom (AFloat _ _)) (TPrim PFloat)
+    (EAtom (ABool _ _)) (TPrim PBool)
+    (EAtom (AStr _ _)) (TPrim PString)
+    (EAtom (AIdent name)
+      (cond
+        ((kv-contains (mc-ktypes ctx) name) (kv-get (mc-ktypes ctx) name (TVar 0)))
+        ((is-uppercase-ident name) (TVar 0))
+        ((is-generic-param name) (TVar 0))
+        (else (TNominal name))))
+    (EApply fname args
+      (cond
+        ((kv-contains (mc-returns ctx) fname)
+          (let ret (kv-get (mc-returns ctx) fname (TVar 0))
+            (if (= ret (TVar 0))
+              (if (str-starts-with fname "make-") (TNominal (str-drop fname 5)) ret)
+              ret)))
+        ((= fname "vec")
+          (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0)))
+        ((kv-contains (mc-known-fns ctx) fname)
+          (let sigs (kv-get (mc-known-fns ctx) fname Nil)
+            (if (>= (list-length sigs) (list-length args))
+              (infer-arg-type ctx (list-nth args 0))
+              (TVar 0))))
+        (else (TNominal fname))))
+    (ECall op args
+      (let op-name (match op.inner (EAtom (AIdent n)) n (_ nil))
+        (cond
+          ((or (= op-name "+") (= op-name "-") (= op-name "*") (= op-name "/"))
+            (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TPrim PInt)))
+          ((or (= op-name "==") (= op-name "!=") (= op-name "<") (= op-name ">") (= op-name "<=") (= op-name ">="))
+            (TPrim PBool))
+          ((kv-contains (mc-returns ctx) op-name)
+            (let ret (kv-get (mc-returns ctx) op-name (TVar 0))
+              (if (= ret (TVar 0))
+                (if (str-starts-with op-name "make-") (TNominal (str-drop op-name 5)) ret)
+                ret)))
+          ((str-starts-with op-name "make-") (TNominal (str-drop op-name 5)))
+          (else (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0)))))
+    (EIf _ then_ else_
+      (let tt (infer-arg-type ctx then_)
+        (if (is-skip-placeholder else_)
+          tt
+          (let et (infer-arg-type ctx else_)
+            (if (= (type-to-string tt) (type-to-string et)) tt (TVar 0))))))
+    (ELet _ val _ (infer-arg-type ctx val))
+    (EBegin exprs
+      (if (> (list-length exprs) 0) (infer-arg-type ctx (list-last exprs)) (TPrim PUnit)))
+    (EMakeStruct name _) (TNominal name)
+    (EMakeVariant adt_name _ _) (TNominal adt_name)
+    (_ (TVar 0))))
+
+; ===========================================================================
+; unify-types — simplified compatibility check
+; ===========================================================================
+
+(defn unify-types (t1 t2)
+  (cond
+    ((= t1 t2) true)
+    ((= t1 (TVar 0)) true)
+    ((= t2 (TVar 0)) true)
+    ((= t1 (TCap (TVar 0))) true)
+    ((= t2 (TCap (TVar 0))) true)
+    ((= t1 (TPrim PInt)) (= t2 (TPrim PFloat)))
+    ((= t1 (TPrim PFloat)) (= t2 (TPrim PInt)))
+    (else false)))
+
+; ===========================================================================
+; resolve-call-site — determine canonical name for a generic call
+; ===========================================================================
+
+(defn resolve-call-site (ctx fname generics args)
+  (if (= (list-length generics) 0)
+    (None)
+    (let known (lookup-fn-sigs ctx fname)
+      (let type-map Nil
+        (for ((i arg) (index args))
+          (if (< i (list-length known))
+            (let sig (list-nth known i)
+              (let pname (match sig (MK pn _) pn)
+                expected (match sig (MK _ v) v)
+                arg-type (infer-arg-type ctx arg)
+                (if (is-uppercase-ident pname)
+                  (do (set! type-map (kv-set type-map pname arg-type)) nil))))))
+        (if (and (= (list-length type-map) 0) (> (list-length generics) 0))
+          (None)
+          (let sorted-keys (str-sort (kv-keys type-map))
+            (let type-names (for (k sorted-keys)
+                                (type-to-string (kv-get type-map k (TVar 0))))
+              (let unique (str-dedup type-names)
+                (let unique-sorted (str-sort unique)
+                  (Some (string-append fname "_" (str-join unique-sorted "_"))))))))))))
+
+; ===========================================================================
+; generate-instantiations — create monomorphized function copies
+; ===========================================================================
+
+(defn collect-instantiations (ctx name generics)
+  (let known (lookup-fn-sigs ctx name)
+    (let inst-sets Nil
+      (for (sig known)
+        (let (pname expected-type) (match sig (MK pn pt) (pn pt))
+          (if (is-uppercase-ident pname)
+            (match expected-type
+              (TVar _)
+              (TNominal trait-name
+                (let satisfying (find-satisfying-types ctx trait-name)
+                  (for (ty satisfying)
+                    (let found (for (inst inst-sets)
+                                  (if (kv-contains inst pname)
+                                    (if (= (kv-get inst pname (TVar 0)) ty) true false)
+                                    false))
+                      (unless found
+                        (let new-inst (for ((k v) inst-sets) (kv-set new-inst k v))
+                          (do (set! inst-sets (list-push inst-sets (kv-set new-inst pname ty))) nil)))))))
+              _ nil)))
+      (if (= (list-length inst-sets) 0)
+        (do
+          (let inst Nil missing Nil)
+          (for (g generics)
+            (if (> (list-length (MP.bounds g)) 0)
+              (do
+                (let found-type false)
+                (for (bound (MP.bounds g))
+                  (let types (find-satisfying-types ctx bound)
+                    (if (> (list-length types) 0)
+                      (do (set! inst (kv-set inst (MP.name g) (first types)) (set! found-type true)) nil)))
+                (unless found-type (do (set! missing (list-push missing (MP.name g))) nil)))
+              (do (set! missing (list-push missing (MP.name g)))))
+            (if (> (list-length inst) 0)
+              (do (set! inst-sets (list-push inst-sets inst)))
+              (if (> (list-length missing) 0)
+                ; E_CANNOT_INFER in full impl
+                nil)))
+          inst-sets)
+        inst-sets))))
+
+(defn generate-instantiations (ctx name generics params body)
+  (let inst-sets (collect-instantiations ctx name generics)
+    (let instances Nil
+      (for (type-map inst-sets)
+        (let sorted-keys (str-sort (kv-keys type-map))
+          (let type-names (for (k sorted-keys)
+                              (type-to-string (kv-get type-map k (TVar 0))))
+            (let unique (str-dedup type-names)
+              (let unique-sorted (str-sort unique)
+                (let canonical (string-append name "_" (str-join unique-sorted "_"))
+                  (let substituted-body (subst-expr body type-map Nil Nil)
+                    (let substituted-params (for (p params)
+                                                (if (is-uppercase-ident (P.name p))
+                                                  (if (kv-contains type-map (P.name p))
+                                                    (MP (P.name p) (list (type-to-string (kv-get type-map (P.name p) (TVar 0)))))
+                                                    (MP (P.name p) (match (P.type p) (Some v) v (_ nil))))
+                                                    (MP (P.name p) (match (P.type p) (Some v) v (_ nil)))))
+                      (do (set! instances (list-push instances (MI canonical substituted-body substituted-params))) nil))))))))
+      instances)))
+
+; ===========================================================================
+; subst-expr — recursive expression transformer
+; ===========================================================================
+
+(defn subst-expr (expr type-map var-renames var-types)
+  (match expr.inner
+    (EDefn name params body
+      (let new-params (for (p params)
+                          (if (is-uppercase-ident (P.name p))
+                            (if (kv-contains type-map (P.name p))
+                              (P (P.name p) (Some (type-to-string (kv-get type-map (P.name p) (TVar 0)))))
+                              p)
+                              p)))
+        (let child-types (kv-set Nil name (infer-arg-type (MC Nil Nil Nil Nil Nil Nil Nil Nil) (subst-expr body type-map var-renames var-types)))
+          (EDefn name new-params
+            (subst-expr body type-map var-renames child-types))))
+    (ECall op args
+      (ECall (subst-expr op type-map var-renames var-types)
+             (for (a args) (subst-expr a type-map var-renames var-types))))
+    (EApply fname args
+      (EApply fname (for (a args) (subst-expr a type-map var-renames var-types))))
+    (ELet name val body
+      (let new-val (subst-expr val type-map var-renames var-types)
+        (let child-types (kv-set Nil name (infer-arg-type (MC Nil Nil Nil Nil Nil Nil Nil Nil) new-val))
+          (ELet name new-val (subst-expr body type-map var-renames child-types)))))
+    (EIf cond then- else-
+      (EIf (subst-expr cond type-map var-renames var-types)
+           (subst-expr then- type-map var-renames var-types)
+           (subst-expr else- type-map var-renames var-types)))
+    (ELambda name params body
+      (ELambda name params (subst-expr body type-map var-renames var-types)))
+    (EFn name params body
+      (EFn name params (subst-expr body type-map var-renames var-types)))
+    (EBegin exprs
+      (EBegin (for (e exprs) (subst-expr e type-map var-renames var-types))))
+    (EPrint exprs
+      (EPrint (for (e exprs) (subst-expr e type-map var-renames var-types))))
+    (EWhile cond body
+      (EWhile (subst-expr cond type-map var-renames var-types)
+              (subst-expr body type-map var-renames var-types)))
+    (EFor bindings cond body
+      (EFor bindings
+        (subst-expr cond type-map var-renames var-types)
+        (subst-expr body type-map var-renames var-types)))
+    (ECond clauses
+      (ECond (for ((c b) clauses)
+                ((subst-expr c type-map var-renames var-types)
+                 (subst-expr b type-map var-renames var-types)))))
+    (EMatch subject arms
+      (EMatch (subst-expr subject type-map var-renames var-types)
+              (for (arm arms)
+                (MA (MA.variant arm)
+                    (for (p (MA.patterns arm)) (subst-expr p type-map var-renames var-types))
+                    (subst-expr (MA.body arm) type-map var-renames var-types)))))
+    (EAtom (AIdent name)
+      (EAtom (AIdent (if (kv-contains var-renames name)
+                        (kv-get var-renames name name)
+                        name))))
+    (EAtom atom
+      (EAtom atom))
+    (EMakeVariant adt_name variant_name args
+      (EMakeVariant adt_name variant_name
+        (for (a args) (subst-expr a type-map var-renames var-types))))
+    (EDeftype name variants _ bound
+      (EDeftype name
+        (for (v variants)
+          (AV (AV.name v)
+              (for (f (AV.fields v))
+                (if (is-uppercase-ident f)
+                  (if (kv-contains type-map f)
+                    (type-to-string (kv-get type-map f (TVar 0)))
+                    f)
+                    f)))
+          bound))
+      Nil bound)
+    (_ expr.inner)))
+
+(defn substitute-in-expr (expr)
+  (subst-expr expr Nil Nil Nil))
+
+(defn substitute-in-adt (expr)
+  (match expr.inner
+    (EDeftype name variants _ bound
+      (EDeftype name
+        (for (v variants)
+          (AV (AV.name v)
+              (for (f (AV.fields v))
+                (if (is-uppercase-ident f) nil f)))
+          bound))
+        Nil bound)
+    (_ (substitute-in-expr expr))))
+
+; ===========================================================================
+; monomorphize — main entry point
+; ===========================================================================
+
+(defn monomorphize (ctx exprs)
+  (let result Nil
+    (for (expr exprs)
+      (match expr.inner
+        (EDefn name params body
+          (if (kv-contains (mc-gen-fns ctx) name)
+            (do
+              (let generics (kv-get (mc-gen-fns ctx) name Nil)
+                (let instantiations (generate-instantiations ctx name generics params body)
+                  (for (mono instantiations)
+                    (let mono-params (for (p (MI.params mono))
+                                        (P (P.name p)
+                                           (if (> (list-length (MP.bounds p)) 0)
+                                             (Some (first (MP.bounds p)))
+                                             None)))
+                      (do (set! result (list-push result (E (MI.body mono)))) nil)))
+                  (do (set! result (list-push result expr)))
+                  (do (set! result (list-push result (substitute-in-expr expr)))))))))
+        (ECall op args
+          (let op-name (match op.inner (EAtom (AIdent n)) n (_ nil))
+            (if (and op-name (kv-contains (mc-gen-fns ctx) op-name))
+              (let generics (kv-get (mc-gen-fns ctx) op-name Nil)
+                (match (resolve-call-site ctx op-name generics args)
+                  (Some canonical-name
+                    (do (set! result (list-push result (E (ECall (E (EAtom (AIdent canonical-name))) args))))) nil)
+                  (_ (do (set! result (list-push result (substitute-in-expr expr))) nil))))
+              (do (set! result (list-push result (substitute-in-expr expr))) nil))))
+        (EApply fname args
+          (if (kv-contains (mc-gen-fns ctx) fname)
+            (match (resolve-call-site ctx fname (kv-get (mc-gen-fns ctx) fname Nil) args)
+              (Some canonical-name
+                (do (set! result (list-push result (E (EApply canonical-name args))))) nil)
+              (_ (do (set! result (list-push result (substitute-in-expr expr))) nil)))
+            (do (set! result (list-push result (substitute-in-expr expr))) nil)))
+        (EDeftype name variants _ bound
+          (do (set! result (list-push result (substitute-in-adt expr))))
+        (EImplBlock trait_name type_name bodies
+          (for (body bodies)
+            (let concrete-name (string-append trait_name "." (DN.name body) "_" type_name)
+              (let mut-params (DN.params body)
+                (if (> (list-length mut-params) 0)
+                  (do (set! (list-nth mut-params 0)
+                            (P (P.name (list-nth mut-params 0))
+                               (Some type_name))) nil)))
+              (do (set! result (list-push result
+                        (E (EDefn concrete-name mut-params (DN.body body)))))))
+          (do (set! result (list-push result expr))))
+        (_
+          (do (set! result (list-push result (substitute-in-expr expr))))))
+    result))
+
+; ===========================================================================
+; mono-context-new — construct from TypeInferer
+; ===========================================================================
+
+(defn mono-context-new (inferer)
+  (MC
+    Nil  ; generic_functions (populated by discover-from-ast)
+    (inferer-known-fns inferer)
+    (inferer-returns inferer)
+    (inferer-known-types inferer)
+    (inferer-struct-defs inferer)
+    (inferer-adt-defs inferer)
+    (inferer-adt-instantiations inferer)
+    Nil))  ; trait_impls
+
+; ===========================================================================
+; kv-keys — extract keys from List (MonoKV K V)
+; ===========================================================================
+
+(defn kv-keys (binds)
+  (match binds
+    (Nil Nil)
+    ((MK k _) rest (cons k (kv-keys rest))))
+
 ; ---------- stdlib/compiler/icnf.zyl ----------
 ; === Zyl Standard Library — Compiler ICNF lowering ===
 ; Module: compiler/icnf
@@ -6420,27 +7004,9 @@
 
 
 
-; Boot driver with type inference + region inference in the pipeline.
-; Pipeline: lexer → parser → Ast → ExprInner (bridge) → type inference
-;           → region inference → monomorphization → ICNF → codegen
 
-(defn type-region-infer (inferer exprs)
-  ; Run type inference then region inference on the expr list.
-  ; Returns a list of Expr (typed, region-annotated) ready for ICNF.
-  (let (typed (collect-definitions (inferer-new) exprs))
-    (let (regioned (inferer-new)
-          _ (infer-region-infer regioned typed))
-      typed)))
-
-(defn infer-region-infer (inferer typed)
-  ; Stub: full region inference will be wired in later.
-  ; For now, just return the typed expression list.
-  (match typed
-    (Nil Nil)
-    ((Pair e rest)
-      (cons
-        e
-        (infer-region-infer inferer rest)))))
+; Pipeline: lexer → parser → Ast → ExprInner → type inference
+;           → monomorphization → ICNF → codegen
 
 (defn dbg-log (msg)
   (let f (file-open "/tmp/dbg" "a")
@@ -6451,8 +7017,6 @@
   (let st (cg-program (cg-new arena) fns)
     (let buf (cg-buffer st)
       (let blen (alloc-strlen buf)
-        ; Guard: buffer capacity is 64MB; refuse to write anything that
-        ; came within 1MB of it (silent arena corruption otherwise).
         (if (> blen 66060288)
           (ffi-call "f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
           (let out (file-open "/tmp/zyl_boot_out.s" "w")
@@ -6468,11 +7032,14 @@
         (dbg-log "bridge\n")
         (let exprs (convert-ast prog)
           (dbg-log "type-infer\n")
-          (let typed (collect-definitions (inferer-new) (to-expr-list exprs))
-            (dbg-log "lower\n")
-            (let fns (ic-program arena typed)
-              (dbg-log "codegen\n")
-              (emit-out arena fns))))))))
+          (let inferer (collect-definitions (inferer-new) exprs)
+            (dbg-log "mono\n")
+            (let mono-ctx (mono-context-new inferer)
+              (let mono-exprs (monomorphize mono-ctx exprs)
+                (dbg-log "lower\n")
+                (let fns (ic-program arena mono-exprs)
+                  (dbg-log "codegen\n")
+                  (emit-out arena fns))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)
@@ -6482,4 +7049,3 @@
         (begin
           (dbg-log "no input\n")
           1)))))
-
