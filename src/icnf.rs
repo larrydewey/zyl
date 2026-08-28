@@ -306,6 +306,9 @@ pub enum ICNFInner {
     UnOp(UnOpKind, usize),
     /// Function call: name(args...) → result_ssa.
     Call(String, Vec<usize>),
+    /// Indirect function call: loads callee from SSA slot, calls with args → result_ssa.
+    /// Used for local closures, non-atom call operators, and any callee that isn't a direct symbol.
+    CallIndirect(usize, Vec<usize>), // callee_ssa_id -> args -> result_ssa
     /// If-then-else with phi node at join point. Branch bodies embedded directly (like While).
     If {
         cond_ssa: usize,
@@ -536,6 +539,8 @@ pub struct IcnfConverter {
     in_let_value: bool,
     /// Monomorphized let binding name added to scope (for capture resolution).
     let_binding_name: Option<String>,
+    /// SSA IDs of values known to be closures (for CallIndirect emission).
+    closure_ssa_ids: crate::deterministic::HashSet<usize>,
 }
 
 #[allow(dead_code)]
@@ -560,6 +565,7 @@ impl IcnfConverter {
             pending_cap_patches: Vec::new(),
             in_let_value: false,
             let_binding_name: None,
+            closure_ssa_ids: crate::deterministic::HashSet::default(),
         }
     }
 
@@ -1308,21 +1314,22 @@ impl IcnfConverter {
                         format!("fn_{:04x}", ssa_id)
                     }
                 } else {
-                    format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
+                    format!("fn_{}", sanitize_name(name))
                 };
                 self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
-                    self.global_stmts.push(ICNFNode {
-                        id: ssa_id,
-                        region: Region::Heap,
-                        typ: None,
-                        is_branch_body: false,
-                        node: ICNFInner::Closure {
-                            name: closure_name,
-                            captures,
-                                params: params.iter().map(|p| p.name.clone()).collect(),
-                        },
-                    });
-                    let saved_scope = std::mem::take(&mut self.current_scope);
+                self.closure_ssa_ids.insert(ssa_id);
+                self.global_stmts.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Closure {
+                        name: closure_name,
+                        captures,
+                            params: params.iter().map(|p| p.name.clone()).collect(),
+                    },
+                });
+                let saved_scope = std::mem::take(&mut self.current_scope);
                     // Save current globals, use a temp buffer for closure body.
                     let saved_globals = std::mem::take(&mut self.global_stmts);
                     let saved_push = self.push_to_globals;
@@ -1368,6 +1375,7 @@ impl IcnfConverter {
                         format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
+                    self.closure_ssa_ids.insert(ssa_id);
                     self.global_stmts.push(ICNFNode {
                         id: ssa_id,
                         region: Region::Heap,
@@ -1876,6 +1884,7 @@ impl IcnfConverter {
 
             // Let binding.
             ExprInner::Let(name, val, body) => {
+                eprintln!("ICNF LET: name={:?}, val_inner={:?}", name, std::mem::discriminant(&val.inner));
                 // Defer all global pushes to ensure correct ordering:
                 // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);
@@ -2212,6 +2221,7 @@ impl IcnfConverter {
                     format!("fn_{}", sanitize_name(name))
                 };
                 self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
+                self.closure_ssa_ids.insert(ssa_id);
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -2269,6 +2279,7 @@ impl IcnfConverter {
                         format!("{}_fn_{:04x}", sanitize_name(name), ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
+                    self.closure_ssa_ids.insert(ssa_id);
                     self.current_scope = saved_scope;
                     return Ok(vec![ICNFNode {
                         id: ssa_id,
@@ -2328,6 +2339,7 @@ impl IcnfConverter {
                     format!("fn_{}", sanitize_name(name))
                 };
                 self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
+                self.closure_ssa_ids.insert(ssa_id);
                 self.current_scope = saved_scope;
                 Ok(vec![ICNFNode {
                     id: ssa_id,
@@ -2394,6 +2406,7 @@ impl IcnfConverter {
                         format!("fn_{:04x}", ssa_id)
                     };
                     self.closures.insert(ssa_id, (closure_name.clone(), Vec::new()));
+                    self.closure_ssa_ids.insert(ssa_id);
                     self.current_scope = saved_scope;
                     let node = ICNFNode {
                         id: ssa_id,
@@ -2452,6 +2465,7 @@ impl IcnfConverter {
                     format!("fn_{:04x}", ssa_id)
                 };
                 self.closures.insert(ssa_id, (closure_name.clone(), captures.clone()));
+                self.closure_ssa_ids.insert(ssa_id);
                 self.current_scope = saved_scope;
                 let node = ICNFNode {
                     id: ssa_id,
@@ -2614,7 +2628,13 @@ impl IcnfConverter {
                     && !is_arithmetic_or_cmp_expr(op) =>
             {
                 let func_name = match &op.inner {
-                    ExprInner::Atom(Atom::Ident(n)) => sanitize_name(n),
+                    ExprInner::Atom(Atom::Ident(n)) => {
+                        let sn = sanitize_name(n);
+                        if std::env::var("ZYL_DBG2").is_ok() && (n == "f" || n.contains("fact")) {
+                            eprintln!("ICNF CALL: func_name={}, in_scope={}, scope_keys={:?}", sn, self.current_scope.contains_key(n), self.current_scope.keys().collect::<Vec<_>>());
+                        }
+                        sn
+                    },
                     _ => return Ok(Vec::new()),
                 };
 
@@ -2632,7 +2652,17 @@ impl IcnfConverter {
                     result.append(&mut stmts);
                 }
 
-                result.push(self.emit(ICNFInner::Call(func_name, arg_ids)));
+                // Check if func_name refers to a local/closure variable (in scope and callable).
+                let call_node = if let Some(callee_ssa) = self.current_scope.get(&func_name) {
+                    if self.closure_ssa_ids.contains(callee_ssa) {
+                        ICNFInner::CallIndirect(*callee_ssa, arg_ids)
+                    } else {
+                        ICNFInner::Call(func_name, arg_ids)
+                    }
+                } else {
+                    ICNFInner::Call(func_name, arg_ids)
+                };
+                result.push(self.emit(call_node));
                 Ok(result)
             }
 
@@ -3915,7 +3945,17 @@ impl IcnfConverter {
             result.append(&mut stmts);
         }
 
-        result.push(self.emit(ICNFInner::Call(sanitize_name(name), arg_ids)));
+        let san = sanitize_name(name);
+        let call_node = if let Some(callee_ssa) = self.current_scope.get(&san) {
+            if self.closure_ssa_ids.contains(callee_ssa) {
+                ICNFInner::CallIndirect(*callee_ssa, arg_ids)
+            } else {
+                ICNFInner::Call(san, arg_ids)
+            }
+        } else {
+            ICNFInner::Call(san, arg_ids)
+        };
+        result.push(self.emit(call_node));
         Ok(result)
     }
 
@@ -4085,7 +4125,7 @@ impl IcnfConverter {
             ICNFInner::Const(_) => Region::Global, // constants are global.
             ICNFInner::Load(_) | ICNFInner::Assign(_, _) => Region::Stack, // local bindings.
             ICNFInner::BinOp(..) | ICNFInner::UnOp(..) => Region::Stack, // arithmetic on stack.
-            ICNFInner::Call(..) => Region::Heap,   // function results may escape.
+            ICNFInner::Call(..) | ICNFInner::CallIndirect(..) => Region::Heap, // function results may escape.
             ICNFInner::If { .. } => Region::Stack,
             ICNFInner::While { .. } | ICNFInner::For { .. } => Region::Stack,
             ICNFInner::Closure { .. } => Region::Heap,

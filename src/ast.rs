@@ -1665,7 +1665,6 @@ impl PostProcessor {
 
             // let → Let (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "let") && args.len() >= 2 => {
-                // Handle both (let name value body) and (let (name value) body) forms.
                 let (name, val, body_args) = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => {
                         let n = n.clone();
@@ -1673,7 +1672,7 @@ impl PostProcessor {
                         (n, v, &args[2..])
                     }
                     // (let (name value) body ...) - binding tuple
-                    ExprInner::Call(first, ref fields) if !fields.is_empty() => {
+                    ExprInner::Call(first, ref fields) => {
                         let n = match &first.inner {
                             ExprInner::Atom(Atom::Ident(s)) => s.clone(),
                             _ => "___let_".to_string(),
@@ -1682,7 +1681,6 @@ impl PostProcessor {
                         (n, v, &args[1..])
                     }
                     ExprInner::Apply(first, ref fields) if !fields.is_empty() => {
-                        // Apply("name", [value]) — first is the name string directly.
                         let n = first.clone();
                         let v = fields.first().cloned().unwrap_or_else(|| atom(Span::default(), Atom::Int(0)));
                         (n, v, &args[1..])

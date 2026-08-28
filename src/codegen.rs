@@ -167,7 +167,7 @@ impl CodeGen {
             ICNFInner::UnOp(_, id) => {
                 out.insert(*id);
             }
-            ICNFInner::Call(_, args) | ICNFInner::Print(args) | ICNFInner::FfiCall { args, .. } => {
+            ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) | ICNFInner::Print(args) | ICNFInner::FfiCall { args, .. } => {
                 for &a in args {
                     out.insert(a);
                 }
@@ -280,6 +280,7 @@ impl CodeGen {
                     let value_kind = matches!(
                         &st.node,
                         ICNFInner::Call(..)
+                            | ICNFInner::CallIndirect(..)
                             | ICNFInner::FfiCall { .. }
                             | ICNFInner::BinOp(..)
                             | ICNFInner::UnOp(..)
@@ -464,7 +465,7 @@ impl CodeGen {
                                 for &arg_id in args {
                                     branch_body_ids.insert(arg_id);
                                 }
-                            } else if let ICNFInner::Call(_, args) = &n.node {
+                            } else if let ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) = &n.node {
                                 for &arg_id in args {
                                     branch_body_ids.insert(arg_id);
                                 }
@@ -498,7 +499,7 @@ impl CodeGen {
                     ICNFInner::UnOp(_, id) => {
                         main_operand_ids.insert(*id);
                     }
-                    ICNFInner::Call(_, args) => {
+                    ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => {
                         for &a in args {
                             main_operand_ids.insert(a);
                         }
@@ -709,7 +710,7 @@ impl CodeGen {
                 if main_operand_ids.contains(&stmt.id) {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                        | ICNFInner::Call(_, _) => continue,
+                        | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                         ICNFInner::FfiCall { .. } => continue,
                         ICNFInner::BinOp(_, _, _) => continue,
                         ICNFInner::UnOp(_, _) => continue,
@@ -785,7 +786,7 @@ impl CodeGen {
                 if main_operand_ids.contains(&stmt.id) {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                        | ICNFInner::Call(_, _) => continue,
+                        | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                         ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
                             // Emitted on-demand by their parent handler.
                             continue
@@ -1040,7 +1041,7 @@ impl CodeGen {
                     ICNFInner::UnOp(_, id) => {
                         operand_ids.insert(*id);
                     }
-                    ICNFInner::Call(_, args) => {
+                    ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => {
                         for &a in args {
                             operand_ids.insert(a);
                         }
@@ -1090,7 +1091,7 @@ impl CodeGen {
                                 ICNFInner::UnOp(_, id) => {
                                     operand_ids.insert(*id);
                                 }
-                                ICNFInner::Call(_, args) => {
+                                ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => {
                                     for &a in args {
                                         operand_ids.insert(a);
                                     }
@@ -1306,7 +1307,7 @@ impl CodeGen {
                 // Skip standalone Call/FfiCall that is followed by an Assign
                 // referencing their result (from Def["r", Call] flattening).
                 // The Assign handler will emit the call on-demand.
-                if matches!(&stmt.node, ICNFInner::Call(..) | ICNFInner::FfiCall { .. }) {
+                if matches!(&stmt.node, ICNFInner::Call(..) | ICNFInner::CallIndirect(..) | ICNFInner::FfiCall { .. }) {
                     let is_def_call = func.body.iter().skip_while(|s| s.id == stmt.id).skip(1)
                         .take_while(|s| matches!(&s.node, ICNFInner::Const(_) | ICNFInner::Load(_)))
                         .find_map(|s| {
@@ -1345,7 +1346,7 @@ impl CodeGen {
                 if operand_ids.contains(&stmt.id) {
                     match &stmt.node {
                         ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                        | ICNFInner::Call(_, _) => continue,
+                        | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                         ICNFInner::FfiCall { .. } => continue,
                         ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
                             // Emitted on-demand by their parent handler.
@@ -1599,7 +1600,7 @@ impl CodeGen {
                     if operand_ids.contains(&stmt.id) {
                         match &stmt.node {
                             ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                            | ICNFInner::Call(_, _) => continue,
+                            | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                             ICNFInner::FfiCall { .. } => continue,
                             ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
                                 continue
@@ -1788,6 +1789,7 @@ impl CodeGen {
                     Some(Type::Nominal(t)) if !self.struct_layouts.contains_key(t)
                 )
             }
+            ICNFInner::CallIndirect(_, _) => false,
             ICNFInner::Assign(_, val) => self.node_looks_variant(*val, lookup, stmts, depth + 1),
             ICNFInner::Load(nm) => {
                 for s in stmts {
@@ -1849,6 +1851,7 @@ impl CodeGen {
                 ICNFInner::Call(name, _) => {
                     matches!(name.as_str(), "str-concat" | "str_concat" | "str-substring" | "str_substring" | "read-line" | "read_line")
                 }
+                ICNFInner::CallIndirect(_, _) => false,
                 ICNFInner::Assign(_, val) => Self::node_looks_string(*val, lookup, stmts),
                 ICNFInner::If { then_body, else_body, .. } => {
                     Self::branch_bodies_look_string(then_body, lookup, stmts)
@@ -1967,6 +1970,7 @@ impl CodeGen {
                 self.func_returns.get(&sanitize_name(name)),
                 Some(Type::Prim(PrimType::Float))
             ),
+            ICNFInner::CallIndirect(_, _) => false,
             ICNFInner::UnOp(op, a) if *op == crate::icnf::UnOpKind::Negate => {
                 // Float negation result (integer Negate on floats is invalid).
                 self.node_looks_float(*a, lookup, stmts, depth + 1)
@@ -4252,7 +4256,7 @@ impl CodeGen {
                         if arm_operand_ids.contains(&stmt.id) {
                             match &stmt.node {
                                 ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                                | ICNFInner::Call(_, _) => continue,
+                        | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                                 ICNFInner::FfiCall { .. } => continue,
                                 ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => {
                                     continue
@@ -4550,7 +4554,7 @@ impl CodeGen {
             match &stmt.node {
                 ICNFInner::BinOp(_, l, r) => { then_operand_ids.insert(*l); then_operand_ids.insert(*r); }
                 ICNFInner::UnOp(_, id) => { then_operand_ids.insert(*id); }
-                ICNFInner::Call(_, args) => { for &a in args { then_operand_ids.insert(a); } }
+                ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => { for &a in args { then_operand_ids.insert(a); } }
                 ICNFInner::Print(args) => { for &a in args { then_operand_ids.insert(a); } }
                 ICNFInner::StructGet(struct_id, _) => { then_operand_ids.insert(*struct_id); }
                 ICNFInner::MakeStruct(_, field_ids) => { for &f in field_ids { then_operand_ids.insert(f); } }
@@ -4636,7 +4640,7 @@ impl CodeGen {
             match &stmt.node {
                 ICNFInner::BinOp(_, l, r) => { else_operand_ids.insert(*l); else_operand_ids.insert(*r); }
                 ICNFInner::UnOp(_, id) => { else_operand_ids.insert(*id); }
-                ICNFInner::Call(_, args) => { for &a in args { else_operand_ids.insert(a); } }
+                ICNFInner::Call(_, args) | ICNFInner::CallIndirect(_, args) => { for &a in args { else_operand_ids.insert(a); } }
                 ICNFInner::Print(args) => { for &a in args { else_operand_ids.insert(a); } }
                 ICNFInner::StructGet(struct_id, _) => { else_operand_ids.insert(*struct_id); }
                 ICNFInner::MakeStruct(_, field_ids) => { for &f in field_ids { else_operand_ids.insert(f); } }
@@ -4987,6 +4991,7 @@ impl CodeGen {
                 // Standalone Call/FfiCall statements are no-ops in the emit loop, so
                 // a Call-valued Assign must emit the call on-demand to get its result.
                 let needs_on_demand = matches!(value_node, Some(ICNFNode { node: ICNFInner::Call(..), .. }))
+                    || matches!(value_node, Some(ICNFNode { node: ICNFInner::CallIndirect(..), .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::FfiCall { .. }, .. }))
                     || matches!(value_node, Some(ICNFNode { node: ICNFInner::Const(crate::ast::Atom::Ident(n)), .. }) if self.function_names.contains(n));
                 if needs_on_demand && !emitted_ids.contains(&resolved_value_id) {
@@ -5488,8 +5493,9 @@ impl CodeGen {
                             | ICNFInner::BinOp(..)
                             | ICNFInner::UnOp(..)
                             | ICNFInner::Eq { .. }
-                            | ICNFInner::StructGet(..)
+                             | ICNFInner::StructGet(..)
                             | ICNFInner::Call(..)
+                            | ICNFInner::CallIndirect(..)
                             | ICNFInner::FfiCall { .. }
                             | ICNFInner::MakeStruct(..)
                             | ICNFInner::MakeVariant { .. }
@@ -5532,7 +5538,7 @@ impl CodeGen {
                     if then_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
                             ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                            | ICNFInner::Call(_, _) => continue,
+                            | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                             ICNFInner::FfiCall { .. } => continue,
                             ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => continue,
                             ICNFInner::BinOp(_, _, _) => continue,
@@ -5601,8 +5607,9 @@ impl CodeGen {
                             | ICNFInner::BinOp(..)
                             | ICNFInner::UnOp(..)
                             | ICNFInner::Eq { .. }
-                            | ICNFInner::StructGet(..)
+                             | ICNFInner::StructGet(..)
                             | ICNFInner::Call(..)
+                            | ICNFInner::CallIndirect(..)
                             | ICNFInner::FfiCall { .. }
                             | ICNFInner::MakeStruct(..)
                             | ICNFInner::MakeVariant { .. }
@@ -5642,7 +5649,7 @@ impl CodeGen {
                     if else_operand_ids.contains(&stmt.id) {
                         match &stmt.node {
                             ICNFInner::Load(_) | ICNFInner::Const(_) | ICNFInner::Assign(_, _)
-                            | ICNFInner::Call(_, _) => continue,
+                            | ICNFInner::Call(_, _) | ICNFInner::CallIndirect(..) => continue,
                             ICNFInner::FfiCall { .. } => continue,
                             ICNFInner::Spawn(_) | ICNFInner::Send(..) | ICNFInner::SendClosure(..) => continue,
                             ICNFInner::BinOp(_, _, _) => continue,
@@ -6775,6 +6782,137 @@ impl CodeGen {
                     node.id,
                     false,
                 );
+            }
+
+            ICNFInner::CallIndirect(callee_ssa, args) => {
+                if operand_ids.contains(&node.id) {
+                    return;
+                }
+                let abi_regs_64 = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                let abi_xmm = ["xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"];
+                let target_reg = match &node.typ {
+                    Some(t) if !matches!(t, Type::Prim(PrimType::Int | PrimType::Bool | PrimType::Unit | PrimType::Float)) => "rax",
+                    _ => "eax",
+                };
+                let is_float = matches!(node.typ.as_ref(), Some(Type::Prim(PrimType::Float)));
+
+                // Reverse-lookup the callee variable name from the Assign node.
+                let callee_name = if let Some(ICNFNode { node: ICNFInner::Assign(nm, _), .. }) = lookup.get(callee_ssa) {
+                    Some(nm.clone())
+                } else {
+                    None
+                };
+
+                // Determine if this is a known closure with env convention.
+                let mut env_call = false;
+                let mut known = false;
+                if let Some(ref nm) = callee_name {
+                    for s in stmts.iter() {
+                        if let ICNFInner::Assign(n, vid) = &s.node {
+                            if n == nm || sanitize_name(n) == *nm {
+                                if let Some(ICNFNode { node: ICNFInner::Closure { captures, .. }, .. }) = lookup.get(vid) {
+                                    env_call = !captures.is_empty();
+                                    known = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                let dynamic_dispatch = !known;
+                let num_args = args.len().min(6);
+
+                // Evaluate args and save to stack temps.
+                let mut is_floats: Vec<bool> = Vec::with_capacity(num_args);
+                for (i, &arg_id) in args.iter().enumerate().take(num_args) {
+                    let arg_node = lookup.get(&arg_id).copied().or_else(|| stmts.iter().find(|n| n.id == arg_id));
+                    let arg_is_float = arg_node.and_then(|n| n.typ.as_ref()).is_some_and(|t| matches!(t, Type::Prim(PrimType::Float)));
+                    if arg_is_float {
+                        let xmm_reg = abi_xmm[i];
+                        self.emit_float_load_into(arg_id, &xmm_reg, stmts, local_vars, lookup, emitted_ids, operand_ids);
+                        self.asm_push_align();
+                        self.asm.push("    sub rsp, 16".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!("    movsd [rsp], {}", xmm_reg));
+                        is_floats.push(true);
+                    } else {
+                        let reg = abi_regs_64[i];
+                        self.emit_load_into(arg_id, reg, stmts, local_vars, lookup, emitted_ids, &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default());
+                        self.asm_push_align();
+                        self.asm.push("    sub rsp, 8".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov [rsp], {}", reg));
+                        is_floats.push(false);
+                    }
+                }
+
+                // Load saved args into ABI registers (shift by 1 if env/dynamic to leave rdi for env/closure).
+                let abi_base = if env_call || dynamic_dispatch { 1 } else { 0 };
+                for (i, &arg_is_float) in is_floats.iter().enumerate().rev() {
+                    if arg_is_float {
+                        let xmm_reg = abi_xmm[i + abi_base];
+                        self.asm_push_align();
+                        self.asm.push(format!("    movsd {}, [rsp]", xmm_reg));
+                        self.asm_push_align();
+                        self.asm.push("    add rsp, 16".to_string());
+                    } else {
+                        let reg_64 = abi_regs_64[i + abi_base];
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov {}, [rsp]", reg_64));
+                        self.asm_push_align();
+                        self.asm.push("    add rsp, 8".to_string());
+                    }
+                }
+
+                // Load closure value from frame slot and call.
+                if let Some(ref nm) = callee_name {
+                    if let Some(&slot_idx) = local_vars.get(nm).or_else(|| {
+                        local_vars.iter().find(|(k, _)| sanitize_name(k) == *nm).map(|(_, v)| v)
+                    }) {
+                        let offset = (slot_idx + 1) * 8;
+                        self.asm_push_align();
+                        self.asm.push(format!("    mov rax, [rbp-{}]", offset));
+                        self.asm_push_align();
+                        if dynamic_dispatch {
+                            self.asm.push("    mov rdi, rax".to_string());
+                            self.asm_push_align();
+                            let helper = format!("zyl_call{}@plt", num_args);
+                            self.asm.push(format!("    call {}", helper));
+                        } else if env_call {
+                            self.asm.push("    mov rdi, rax".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    mov rax, [rax]".to_string());
+                            self.asm_push_align();
+                            self.asm.push("    call rax".to_string());
+                        } else {
+                            self.asm.push("    call rax".to_string());
+                        }
+                    } else {
+                        // Fallback: load SSA directly and use dynamic dispatch.
+                        self.emit_load_into(*callee_ssa, "rax", stmts, local_vars, lookup, emitted_ids, &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default());
+                        self.asm_push_align();
+                        let helper = format!("zyl_call{}@plt", num_args);
+                        self.asm.push("    mov rdi, rax".to_string());
+                        self.asm_push_align();
+                        self.asm.push(format!("    call {}", helper));
+                    }
+                } else {
+                    // No name resolved: load SSA directly and use dynamic dispatch.
+                    self.emit_load_into(*callee_ssa, "rax", stmts, local_vars, lookup, emitted_ids, &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default());
+                    self.asm_push_align();
+                    let helper = format!("zyl_call{}@plt", num_args);
+                    self.asm.push("    mov rdi, rax".to_string());
+                    self.asm_push_align();
+                    self.asm.push(format!("    call {}", helper));
+                }
+
+                if is_float {
+                    self.asm_push_align();
+                    self.asm.push(format!("    movsd {}, xmm0", target_reg));
+                } else {
+                    self.asm_push_align();
+                    self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+                }
             }
 
             ICNFInner::Exit(code_id) => {

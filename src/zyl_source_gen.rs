@@ -125,6 +125,18 @@ impl ZylSourceGen {
                         buf.push(format!("(let {} ({} {}))", name, fname, arg_names.join(" ")));
                     }
                 }
+                ICNFInner::CallIndirect(callee_id, args) => {
+                    let callee = self.ensure_name(*callee_id);
+                    let arg_names: Vec<String> = args
+                        .iter()
+                        .map(|id| self.ensure_name(*id))
+                        .collect();
+                    if arg_names.is_empty() {
+                        buf.push(format!("(let {} ({}))", name, callee));
+                    } else {
+                        buf.push(format!("(let {} ({} {}))", name, callee, arg_names.join(" ")));
+                    }
+                }
                 ICNFInner::If { cond_ssa, then_body, else_body, result_var } => {
                     let cond = self.ensure_name(*cond_ssa);
                     let then_expr = self.embed_stmts(then_body);
