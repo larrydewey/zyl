@@ -1,4 +1,5 @@
-# Cargo build artifacts
+# Build artifacts
+/build/
 /target
 
 # Compiler output
