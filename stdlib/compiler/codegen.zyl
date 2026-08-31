@@ -1096,11 +1096,6 @@
 (defn fh-if (xs)
   (list-head-or xs (IFn "" Nil (IConst 0))))
 
-(defn shd (xs)
-  (match xs
-    (Cons s d72 s)
-    (Nil "")))
-
 (defn hd-ia (xs)
   (list-head-or xs (IArm "" -1 Nil (IConst 0))))
 

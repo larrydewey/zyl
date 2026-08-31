@@ -727,7 +727,7 @@
                 (env
                     (env-bind
                         (TIEnv inferer)
-                        (param-name p)
+                        (typed-param-name p)
                         (inferer-return-var inferer)))
                 (inferer-bind-params
                     (TypeInferer
@@ -754,7 +754,7 @@
                 TVar
                 (inferer-params-types rest)))))
 
-(defn param-name (p)
+(defn typed-param-name (p)
     (match p
         (Param
             n t

@@ -26,11 +26,11 @@
 (defn RegionEnv (cur parents)
   (RE cur parents))
 
-(defn (RE.cur self)
+(defn RE.cur (self)
   (match self
     ((RE c _) c)))
 
-(defn (RE.parens self)
+(defn RE.parens (self)
   (match self
     ((RE _ p) p)))
 
@@ -231,7 +231,7 @@
     (RCircular 3)
     (RGlobal 4)))
 
-(defn ri-is-literal-const (ic)
+(defn ri-is-literal-const ((ic Icnf))
   (match ic
     (IConst _ 1)
     (IStr _ 1)
@@ -283,7 +283,7 @@
 (defn ri-analyze-captures (outer-env ic)
   (ri-capture-collect ic outer-env Nil))
 
-(defn ri-capture-collect (ic captured-refs env)
+(defn ri-capture-collect ((ic Icnf) captured-refs env)
   (match ic
     (ILoad name
       (if (= (env-contains env name) 1)
@@ -363,7 +363,7 @@
 
 (deftype RegionResult (RR Region (Option CaptureInfo)))
 
-(defn ri-infer-expr (ri ic)
+(defn ri-infer-expr (ri (ic Icnf))
   (match ic
     (IConst _ (RR RStack None))
     (IStr _ (RR RHeap None))
@@ -483,7 +483,7 @@
       (let ri2 (ri-collect-one ic ri)
         (ri-collect-defs-loop ri2 rest)))))
 
-(defn ri-collect-one (ic ri)
+(defn ri-collect-one ((ic Icnf) ri)
   (match ic
     (IFn d1 name params body
       (let param-regions (ri-make-param-regions (length params))

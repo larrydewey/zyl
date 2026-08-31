@@ -31,11 +31,10 @@
   (ILet String Icnf Icnf)              ; name, value, body
   (ISeq (List Icnf))
   (IVariant String Int (List Icnf))    ; variant name, tag, field values
-  (IMatch Icnf (List IArm)))
+  (IMatch Icnf (List IArm))
+  (IFn String (List String) Icnf))     ; top-level function def: name, params, body
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
-
-(deftype IFunc (IFn String (List String) Icnf))     ; name, params, body
 
 ; Binop opcodes (instruction payloads, not node kinds):
 ; 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
