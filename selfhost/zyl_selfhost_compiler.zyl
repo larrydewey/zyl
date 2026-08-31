@@ -11554,7 +11554,7 @@
               TIEnv inferer
             )
             (
-              param-name p
+              typed-param-name p
             )
             (
               inferer-return-var inferer
@@ -11629,7 +11629,7 @@
   )
 )
 (
-  defn param-name
+  defn typed-param-name
   (
     p
   )
@@ -17688,11 +17688,8 @@
       List IArm
     )
   )
-)
-(
-  deftype IArm
   (
-    IArm String Int
+    IFn String
     (
       List String
     )
@@ -17700,9 +17697,9 @@
   )
 )
 (
-  deftype IFunc
+  deftype IArm
   (
-    IFn String
+    IArm String Int
     (
       List String
     )
@@ -24874,22 +24871,6 @@
   )
 )
 (
-  defn shd
-  (
-    xs
-  )
-  (
-    match xs
-    (
-      Cons s d72 s
-    )
-    (
-      Nil
-      ""
-    )
-  )
-)
-(
   defn hd-ia
   (
     xs
@@ -25001,9 +24982,9 @@
   )
 )
 (
-  defn
+  defn RE.cur
   (
-    RE.cur self
+    self
   )
   (
     match self
@@ -25016,9 +24997,9 @@
   )
 )
 (
-  defn
+  defn RE.parens
   (
-    RE.parens self
+    self
   )
   (
     match self
@@ -26128,7 +26109,9 @@
   (
     defn ri-is-literal-const
     (
-      ic
+      (
+        ic Icnf
+      )
     )
     (
       match ic
@@ -26350,7 +26333,10 @@
   (
     defn ri-capture-collect
     (
-      ic captured-refs env
+      (
+        ic Icnf
+      )
+      captured-refs env
     )
     (
       match ic
@@ -26661,7 +26647,10 @@
       (
         defn ri-infer-expr
         (
-          ri ic
+          ri
+          (
+            ic Icnf
+          )
         )
         (
           match ic
@@ -27227,7 +27216,10 @@
                 (
                   defn ri-collect-one
                   (
-                    ic ri
+                    (
+                      ic Icnf
+                    )
+                    ri
                   )
                   (
                     match ic

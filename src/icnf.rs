@@ -6,9 +6,14 @@ use crate::error::ZylError;
 use crate::region_inference::Region;
 use crate::type_system::Type;
 
-/// Sanitize an identifier for use as an assembly label: replace hyphens with underscores.
+/// Sanitize an identifier for use as an assembly label: replace characters
+/// that are illegal in asm symbol names (hyphens, dots, and the `?`/`!`
+/// predicate/mutation-convention suffixes) with underscores.
 fn sanitize_name(name: &str) -> String {
-    name.replace('-', "_").replace('.', "_")
+    name.replace('-', "_")
+        .replace('.', "_")
+        .replace('?', "_")
+        .replace('!', "_")
 }
 
 /// Collect all variable names referenced in an expression (for closure capture analysis).

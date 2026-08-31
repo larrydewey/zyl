@@ -1811,13 +1811,7 @@ impl Parser {
                     // If pexprs is empty, the operator itself is the param (e.g., (x)).
                     let mut params = Vec::new();
                     if pexprs.is_empty() {
-                        if let ExprInner::Atom(Atom::Ident(name)) = &op.inner {
-                            params.push(Param {
-                                span: Span::default(),
-                                name: name.clone(),
-                                typ: None,
-                            });
-                        }
+                        params.push(self.parse_param(op));
                     } else {
                         params.push(self.parse_param(op));
                         for pe in pexprs {
@@ -1874,6 +1868,27 @@ impl Parser {
                     _ => "?".into(),
                 };
                 let tp = match &fields[1].inner {
+                    ExprInner::Atom(Atom::Ident(t)) | ExprInner::Atom(Atom::Keyword(t)) => {
+                        Some(t.clone())
+                    }
+                    _ => None,
+                };
+                Param {
+                    span: Span::default(),
+                    name: nm,
+                    typ: tp,
+                }
+            }
+            // Plain typed param `(name Type)` — no colon, unlike the bounded
+            // generic-param form `(T : Bound)` above, which parses with op=T
+            // and fields=[":", Bound] (fields.len() == 2). Here op is the
+            // param name itself and fields holds just the type.
+            ExprInner::Call(ref op, ref fields) if fields.len() == 1 => {
+                let nm = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(nn)) => nn.clone(),
+                    _ => "?".into(),
+                };
+                let tp = match &fields[0].inner {
                     ExprInner::Atom(Atom::Ident(t)) | ExprInner::Atom(Atom::Keyword(t)) => {
                         Some(t.clone())
                     }
