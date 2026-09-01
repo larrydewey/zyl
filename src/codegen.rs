@@ -1845,40 +1845,53 @@ impl CodeGen {
     /// True when the node statically looks like a string value (string
     /// literal or call to a known str-* builtin).
     fn node_looks_string(
+        &self,
         id: usize,
         lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
     ) -> bool {
-        match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+        let owned;
+        let found = match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            Some(n) => Some(n),
+            None => {
+                // Branch-body nodes several levels of nesting deep may not
+                // have been merged into `lookup`/`stmts` by every caller —
+                // fall back to the function-wide node registry so string
+                // detection doesn't silently fail on deeply-nested operands.
+                owned = self.all_nodes.get(&id).cloned();
+                owned.as_ref()
+            }
+        };
+        match found {
             Some(n) => match &n.node {
                 ICNFInner::Const(crate::ast::Atom::Str(_)) | ICNFInner::StrImm(_) => true,
                 ICNFInner::Call(name, _) => {
                     matches!(name.as_str(), "str-concat" | "str_concat" | "str-substring" | "str_substring" | "read-line" | "read_line")
                 }
                 ICNFInner::CallIndirect(_, _) => false,
-                ICNFInner::Assign(_, val) => Self::node_looks_string(*val, lookup, stmts),
+                ICNFInner::Assign(_, val) => self.node_looks_string(*val, lookup, stmts),
                 ICNFInner::If { then_body, else_body, .. } => {
-                    Self::branch_bodies_look_string(then_body, lookup, stmts)
-                        || Self::branch_bodies_look_string(else_body, lookup, stmts)
+                    self.branch_bodies_look_string(then_body, lookup, stmts)
+                        || self.branch_bodies_look_string(else_body, lookup, stmts)
                 }
                 ICNFInner::Match { arms, .. } => arms
                     .iter()
-                    .any(|arm| Self::branch_bodies_look_string(&arm.body, lookup, stmts)),
+                    .any(|arm| self.branch_bodies_look_string(&arm.body, lookup, stmts)),
                 ICNFInner::Load(name) if name.starts_with("___") => {
                     // Result var (cond/if/match phi): resolve its producing
                     // statement and inspect the branch value(s).
                     for s in stmts {
                         match &s.node {
                             ICNFInner::Assign(nm, val) if nm == name => {
-                                if Self::node_looks_string(*val, lookup, stmts) {
+                                if self.node_looks_string(*val, lookup, stmts) {
                                     return true;
                                 }
                             }
                             ICNFInner::If { result_var, then_body, else_body, .. }
                                 if result_var == name =>
                             {
-                                if Self::branch_bodies_look_string(then_body, lookup, stmts)
-                                    || Self::branch_bodies_look_string(else_body, lookup, stmts)
+                                if self.branch_bodies_look_string(then_body, lookup, stmts)
+                                    || self.branch_bodies_look_string(else_body, lookup, stmts)
                                 {
                                     return true;
                                 }
@@ -1895,13 +1908,14 @@ impl CodeGen {
     }
 
     fn branch_bodies_look_string(
+        &self,
         body: &[ICNFNode],
         lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
         stmts: &[ICNFNode],
     ) -> bool {
         body.iter().any(|n| match &n.node {
             ICNFInner::Const(crate::ast::Atom::Str(_)) | ICNFInner::StrImm(_) => true,
-            _ => Self::node_looks_string(n.id, lookup, stmts),
+            _ => self.node_looks_string(n.id, lookup, stmts),
         })
     }
 
@@ -2644,6 +2658,20 @@ impl CodeGen {
                         self.asm
                             .push(format!("    mov {}, rax", reg_to_64(target_reg)));
                     }
+                } else if matches!(op, BinOpKind::Eq | BinOpKind::Neq)
+                    && (self.node_looks_string(*left_id, lookup, stmts)
+                        || self.node_looks_string(*right_id, lookup, stmts))
+                {
+                    // Strings compare by content, not pointer identity — the
+                    // generic BinOp path (unlike the dedicated Eq node) had
+                    // no string awareness and fell through to a raw pointer
+                    // compare via emit_binop_direct.
+                    self.emit_str_eq(*left_id, *right_id, target_reg, stmts, local_vars, lookup, emitted_ids);
+                    if matches!(op, BinOpKind::Neq) {
+                        self.asm_push_align();
+                        self.asm.push(format!("    xor {}, 1", reg_to_64(target_reg)));
+                    }
+                    emitted_ids.insert(src_ssa_id);
                 } else {
                     self.emit_binop_direct(
                         op,
@@ -3020,8 +3048,8 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm
                         .push(format!("    mov {}, rax", reg_to_64(target_reg)));
-                } else if Self::node_looks_string(*left, lookup, stmts)
-                    || Self::node_looks_string(*right, lookup, stmts)
+                } else if self.node_looks_string(*left, lookup, stmts)
+                    || self.node_looks_string(*right, lookup, stmts)
                 {
                     // Strings compare by content, not pointer identity.
                     self.emit_str_eq(*left, *right, target_reg, stmts, local_vars, lookup, emitted_ids);
@@ -4384,6 +4412,19 @@ impl CodeGen {
         }
 
         match cond_node {
+            ICNFInner::BinOp(op, left_id, right_id)
+                if matches!(op, BinOpKind::Eq | BinOpKind::Neq)
+                    && (self.node_looks_string(*left_id, lookup, stmts)
+                        || self.node_looks_string(*right_id, lookup, stmts)) =>
+            {
+                // Strings compare by content, not pointer identity — see the
+                // matching fix in the generic BinOp-as-value path.
+                self.emit_str_eq(*left_id, *right_id, "eax", stmts, local_vars, lookup, emitted_ids);
+                if matches!(op, BinOpKind::Neq) {
+                    self.asm_push_align();
+                    self.asm.push("    xor eax, 1".to_string());
+                }
+            }
             ICNFInner::BinOp(op, left_id, right_id) => {
                 // Use emit_load_into to properly handle all operand types
                 // (Load, Const, StructGet, Call, BinOp results, etc.)
@@ -5084,8 +5125,21 @@ impl CodeGen {
                     let is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)))
                         || (self.node_looks_float(*left_id, lookup, stmts, 0)
                             || self.node_looks_float(*right_id, lookup, stmts, 0));
+                    // Strings compare by content, not pointer identity — see
+                    // the matching fix in the other BinOp emission sites.
+                    let is_string_eq = !is_float
+                        && matches!(op, BinOpKind::Eq | BinOpKind::Neq)
+                        && (self.node_looks_string(*left_id, lookup, stmts)
+                            || self.node_looks_string(*right_id, lookup, stmts));
 
-                    if is_float {
+                    if is_string_eq {
+                        self.emit_str_eq(*left_id, *right_id, "rax", stmts, local_vars, lookup, emitted_ids);
+                        if matches!(op, BinOpKind::Neq) {
+                            self.asm_push_align();
+                            self.asm.push("    xor rax, 1".to_string());
+                        }
+                        emitted_ids.insert(node.id);
+                    } else if is_float {
                        let xmm1 = format!("xmm{}", self.alloc_xmm());
                        let xmm2 = format!("xmm{}", self.alloc_xmm());
                        let xmm_dest = "xmm0".to_string();
@@ -6155,7 +6209,8 @@ impl CodeGen {
                                 if !result {
                                     if let Some(vn) = find_node(value_id) {
                                         if let ICNFInner::Call(fname, _) = &vn.node {
-                                            result = self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String)));
+                                            result = self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String)))
+                                                || matches!(fname.as_str(), "str-concat" | "str_concat" | "str-substring" | "str_substring" | "read-line" | "read_line");
                                         }
                                     }
                                 }
@@ -6168,7 +6223,8 @@ impl CodeGen {
                         Some(ICNFNode {
                             node: ICNFInner::Call(fname, _),
                             ..
-                        }) => self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String))),
+                        }) => self.func_returns.get(&fname.replace('-', "_")).is_some_and(|t| matches!(t, Type::Prim(PrimType::String)))
+                            || matches!(fname.as_str(), "str-concat" | "str_concat" | "str-substring" | "str_substring" | "read-line" | "read_line"),
                         _ => false,
                     };
                     // Check if node's type is explicitly set.
@@ -6931,8 +6987,8 @@ impl CodeGen {
             }
 
             ICNFInner::Eq { left, right } => {
-                if Self::node_looks_string(*left, lookup, stmts)
-                    || Self::node_looks_string(*right, lookup, stmts)
+                if self.node_looks_string(*left, lookup, stmts)
+                    || self.node_looks_string(*right, lookup, stmts)
                 {
                     self.emit_str_eq(*left, *right, "eax", stmts, local_vars, lookup, emitted_ids);
                     emitted_ids.insert(node.id);

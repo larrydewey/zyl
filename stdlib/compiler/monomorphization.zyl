@@ -113,7 +113,7 @@
 (defn str-contains-loop (s sub sl ll i)
   (if (> (+ i ll) sl)
     false
-    (if (= (str-substring s i (+ i ll)) sub)
+    (if (= (str-substring s i ll) sub)
       true
       (str-contains-loop s sub sl ll (+ i 1)))))
 
@@ -527,59 +527,59 @@
     (EDefn name params body
       (let new-params (subst-defn-params params type-map)
         (let child-types (kv-set Nil name (infer-arg-type (MC Nil Nil Nil Nil Nil Nil Nil Nil) (subst-expr body type-map var-renames var-types)))
-          (EDefn name new-params
-            (subst-expr body type-map var-renames child-types)))))
+          (Expr (EDefn name new-params
+            (subst-expr body type-map var-renames child-types))))))
     (ECall op args
-      (ECall (subst-expr op type-map var-renames var-types)
-             (subst-expr-list args type-map var-renames var-types)))
+      (Expr (ECall (subst-expr op type-map var-renames var-types)
+             (subst-expr-list args type-map var-renames var-types))))
     (EApply fname args
-      (EApply fname (subst-expr-list args type-map var-renames var-types)))
+      (Expr (EApply fname (subst-expr-list args type-map var-renames var-types))))
     (ELet name val body
       (let new-val (subst-expr val type-map var-renames var-types)
         (let child-types (kv-set Nil name (infer-arg-type (MC Nil Nil Nil Nil Nil Nil Nil Nil) new-val))
-          (ELet name new-val (subst-expr body type-map var-renames child-types)))))
+          (Expr (ELet name new-val (subst-expr body type-map var-renames child-types))))))
     (EIf cond then- else-
-      (EIf (subst-expr cond type-map var-renames var-types)
+      (Expr (EIf (subst-expr cond type-map var-renames var-types)
            (subst-expr then- type-map var-renames var-types)
-           (subst-expr else- type-map var-renames var-types)))
+           (subst-expr else- type-map var-renames var-types))))
     (ELambda name params body
-      (ELambda name params (subst-expr body type-map var-renames var-types)))
+      (Expr (ELambda name params (subst-expr body type-map var-renames var-types))))
     (EFn name params body
-      (EFn name params (subst-expr body type-map var-renames var-types)))
+      (Expr (EFn name params (subst-expr body type-map var-renames var-types))))
     (EBegin exprs
-      (EBegin (subst-expr-list exprs type-map var-renames var-types)))
+      (Expr (EBegin (subst-expr-list exprs type-map var-renames var-types))))
     (EPrint exprs
-      (EPrint (subst-expr-list exprs type-map var-renames var-types)))
+      (Expr (EPrint (subst-expr-list exprs type-map var-renames var-types))))
     (EWhile cond body
-      (EWhile (subst-expr cond type-map var-renames var-types)
-              (subst-expr body type-map var-renames var-types)))
+      (Expr (EWhile (subst-expr cond type-map var-renames var-types)
+              (subst-expr body type-map var-renames var-types))))
     (EFor bindings cond body
-      (EFor bindings
+      (Expr (EFor bindings
         (subst-expr cond type-map var-renames var-types)
-        (subst-expr body type-map var-renames var-types)))
+        (subst-expr body type-map var-renames var-types))))
     (ECond clauses
-      (ECond (subst-cond-clauses clauses type-map var-renames var-types)))
+      (Expr (ECond (subst-cond-clauses clauses type-map var-renames var-types))))
     (EMatch subject arms
-      (EMatch (subst-expr subject type-map var-renames var-types)
-              (subst-match-arms arms type-map var-renames var-types)))
+      (Expr (EMatch (subst-expr subject type-map var-renames var-types)
+              (subst-match-arms arms type-map var-renames var-types))))
     (EAtom (AIdent name)
-      (EAtom (AIdent (if (kv-contains var-renames name)
+      (Expr (EAtom (AIdent (if (kv-contains var-renames name)
                         (kv-get var-renames name name)
-                        name))))
+                        name)))))
     (EAtom atom
-      (EAtom atom))
+      (Expr (EAtom atom)))
     (EMakeVariant adt_name variant_name args
-      (EMakeVariant adt_name variant_name
-        (subst-expr-list args type-map var-renames var-types)))
+      (Expr (EMakeVariant adt_name variant_name
+        (subst-expr-list args type-map var-renames var-types))))
     (EDeftype name variants d20 bound
-      (EDeftype name (subst-adt-variants variants type-map) Nil bound))
-    (d1 (Expr.inner expr))))
+      (Expr (EDeftype name (subst-adt-variants variants type-map) Nil bound)))
+    (d1 expr)))
 
 (defn substitute-in-expr (expr)
   (subst-expr expr Nil Nil Nil))
 
 (defn substitute-in-adt-field (f)
-  (if (is-uppercase-ident f) nil f))
+  (if (is-uppercase-ident f) "" f))
 
 (defn substitute-in-adt-fields (fields)
   (match fields
@@ -596,7 +596,7 @@
 (defn substitute-in-adt (expr)
   (match (Expr.inner expr)
     (EDeftype name variants d21 bound
-      (EDeftype name (substitute-in-adt-variants variants) Nil bound))
+      (Expr (EDeftype name (substitute-in-adt-variants variants) Nil bound)))
     (d1 (substitute-in-expr expr))))
 
 ; ===========================================================================

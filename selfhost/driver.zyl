@@ -36,7 +36,7 @@
       (dbg-log "parse\n")
       (let prog (zyl-parse arena srcbuf)
         (dbg-log "bridge\n")
-        (let exprs (convert-ast prog)
+        (let exprs (convert-ast-list prog)
           (dbg-log "type-infer\n")
           (let inferer (collect-definitions (inferer-new) exprs)
             (dbg-log "mono\n")
