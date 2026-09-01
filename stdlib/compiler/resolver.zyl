@@ -31,7 +31,7 @@
   (match form
     (AList kids
       (match kids
-        (Cons hd tl (match hd (AIdent nm nm) (dh "")))
+        (Cons hd tl (match hd (AstIdent nm nm) (dh "")))
         (dk "")))
     (df "")))
 
@@ -40,7 +40,7 @@
   (match kids
     (Cons hd tl
       (match tl
-        (Cons p1 r1 (match p1 (AIdent nm nm) (dp "")))
+        (Cons p1 r1 (match p1 (AstIdent nm nm) (dp "")))
         (dr "")))
     (dn "")))
 

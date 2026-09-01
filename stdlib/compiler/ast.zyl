@@ -44,11 +44,11 @@
 
 ; A parsed s-expression: an atom or a parenthesised list of forms.
 (deftype Ast
-  (AIdent String)
-  (AInt Int)
-  (AFloat String)
+  (AstIdent String)
+  (AstInt Int)
+  (AstFloat String)
   (AString String)
-  (ABool Bool)
+  (AstBool Bool)
   (AList (List Ast)))
 
 ; --- Immutable environments -------------------------------------------------

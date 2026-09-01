@@ -2065,7 +2065,7 @@ impl PostProcessor {
                         // Call from parse_list: first element = condition, rest = body.
                         if let ExprInner::Call(first, rest) = &a.inner {
                             (
-                                first.clone(),
+                                Box::new(Self::cond_test_expr((**first).clone())),
                                 if rest.is_empty() {
                                     Box::new(atom(Span::default(), Atom::Int(0)))
                                 } else {
@@ -2077,7 +2077,7 @@ impl PostProcessor {
                             )
                         } else if let ExprInner::Apply(_, ref inner) = &a.inner {
                             (
-                                Box::new(inner[0].clone()),
+                                Box::new(Self::cond_test_expr(inner[0].clone())),
                                 Box::new(Expr {
                                     span: Span::default(),
                                     inner: ExprInner::Begin(inner[1..].to_vec()),
@@ -2085,7 +2085,7 @@ impl PostProcessor {
                             )
                         } else {
                             // Fallback: entire arm is the condition, empty body.
-                            (a.into(), Box::new(atom(Span::default(), Atom::Int(0))))
+                            (Box::new(Self::cond_test_expr(a.clone())), Box::new(atom(Span::default(), Atom::Int(0))))
                         }
                     })
                     .collect();
@@ -2100,7 +2100,7 @@ impl PostProcessor {
                         let a = self.post_process_expr(a.clone());
                         if let ExprInner::Call(first, rest) = &a.inner {
                             (
-                                first.clone(),
+                                Box::new(Self::cond_test_expr((**first).clone())),
                                 if rest.is_empty() {
                                     Box::new(atom(Span::default(), Atom::Int(0)))
                                 } else {
@@ -2112,14 +2112,14 @@ impl PostProcessor {
                             )
                         } else if let ExprInner::Apply(_, ref inner) = &a.inner {
                             (
-                                Box::new(inner[0].clone()),
+                                Box::new(Self::cond_test_expr(inner[0].clone())),
                                 Box::new(Expr {
                                     span: Span::default(),
                                     inner: ExprInner::Begin(inner[1..].to_vec()),
                                 })
                             )
                         } else {
-                            (a.into(), Box::new(atom(Span::default(), Atom::Int(0))))
+                            (Box::new(Self::cond_test_expr(a.clone())), Box::new(atom(Span::default(), Atom::Int(0))))
                         }
                     })
                     .collect();
@@ -2610,6 +2610,19 @@ impl PostProcessor {
 
     fn is_ident_op(op: &Expr, name: &str) -> bool {
         matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == name)
+    }
+
+    /// `else` as a `cond` clause's test is never specially recognized —
+    /// it's just an ordinary (unbound) identifier, which evaluates to
+    /// false at runtime, so every `(else BODY)` fallback clause in every
+    /// `cond` silently never fires. Rewrite the bare identifier `else`
+    /// into the literal `true`, matching standard Lisp/Scheme semantics.
+    fn cond_test_expr(test: Expr) -> Expr {
+        if matches!(&test.inner, ExprInner::Atom(Atom::Ident(n)) if n == "else") {
+            atom(test.span.clone(), Atom::Bool(true))
+        } else {
+            test
+        }
     }
 
     fn parse_params_list_inner(arg: Option<&Expr>) -> Vec<Param> {

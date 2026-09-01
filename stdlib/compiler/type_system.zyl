@@ -95,8 +95,17 @@
         (env-get-binds rest name)))))
 
 ; Bind a name to a type in a TypeEnv.
-(defn env-bind (env name typ)
-  (TypeEnv (Cons (EB name typ) (TEBindings.binds env))))
+; Same "type name instead of real constructor" bug as inferer-new's
+; (TypeEnv Nil) — TypeEnv's constructor is TEBindings. This one is called
+; on every let/lambda/match-arm binding, so it corrupted the environment
+; chain everywhere, not just at startup.
+(defn env-bind (env bind-name typ)
+  ; param named "bind-name", not "name" — a caller passing its own local
+  ; variable literally named "name" as this argument collided with this
+  ; function's own "name" parameter when inlined, corrupting slot allocation
+  ; for the inlined MakeVariant's field ("MakeVariant field load of `name`
+  ; ... has no local slot").
+  (TEBindings (Cons (EB bind-name typ) (TEBindings.binds env))))
 
 ; ===========================================================================
 ; TRAIT CONTEXT — List of (String (List Type)) bounds
@@ -115,8 +124,8 @@
 ; A record with 11 fields, NOT 11 variants — every "TIxxx" name below used
 ; to be its own single-field variant (nonsensical for a record: each
 ; `(TypeInferer ...)` construction call names none of those 11 variants, so
-; it always resolved to the wildcard sentinel discriminant; and no TIEnv/
-; TISubst/... accessor functions existed at all, despite being called
+; it always resolved to the wildcard sentinel discriminant; and no ti-env/
+; ti-subst/... accessor functions existed at all, despite being called
 ; throughout type_inference.zyl as if they extracted a field). Fixed to one
 ; variant with all 11 fields, with real accessor functions defined below
 ; (same convention as Expr.inner / P.name elsewhere in this codebase).
@@ -134,17 +143,17 @@
     (List String)
     (List BodyCache)))
 
-(defn TIEnv (ti) (match ti (TypeInferer v d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v)))
-(defn TISubst (ti) (match ti (TypeInferer d1 v d2 d3 d4 d5 d6 d7 d8 d9 d10 v)))
-(defn TINext (ti) (match ti (TypeInferer d1 d2 v d3 d4 d5 d6 d7 d8 d9 d10 v)))
-(defn TIKnownTypes (ti) (match ti (TypeInferer d1 d2 d3 v d4 d5 d6 d7 d8 d9 d10 v)))
-(defn TIKnownFns (ti) (match ti (TypeInferer d1 d2 d3 d4 v d5 d6 d7 d8 d9 d10 v)))
-(defn TIFuncReturns (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 v d6 d7 d8 d9 d10 v)))
-(defn TIAdtDefs (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 v d7 d8 d9 d10 v)))
-(defn TIVariantToAdt (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 v d8 d9 d10 v)))
-(defn TIStringMatchVars (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 v d9 d10 v)))
-(defn TIInferringFns (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 v d10 v)))
-(defn TIBodyCache (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v v)))
+(defn ti-env (ti) (match ti (TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 v)))
+(defn ti-subst (ti) (match ti (TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 v)))
+(defn ti-next (ti) (match ti (TypeInferer tic1 tic2 v tic4 tic5 tic6 tic7 tic8 tic9 tic10 tic11 v)))
+(defn ti-known-types (ti) (match ti (TypeInferer tid1 tid2 tid3 v tid5 tid6 tid7 tid8 tid9 tid10 tid11 v)))
+(defn ti-known-fns (ti) (match ti (TypeInferer tie1 tie2 tie3 tie4 v tie6 tie7 tie8 tie9 tie10 tie11 v)))
+(defn ti-func-returns (ti) (match ti (TypeInferer tif1 tif2 tif3 tif4 tif5 v tif7 tif8 tif9 tif10 tif11 v)))
+(defn ti-adt-defs (ti) (match ti (TypeInferer tig1 tig2 tig3 tig4 tig5 tig6 v tig8 tig9 tig10 tig11 v)))
+(defn ti-variant-to-adt (ti) (match ti (TypeInferer tih1 tih2 tih3 tih4 tih5 tih6 tih7 v tih9 tih10 tih11 v)))
+(defn ti-string-match-vars (ti) (match ti (TypeInferer tii1 tii2 tii3 tii4 tii5 tii6 tii7 tii8 v tii10 tii11 v)))
+(defn ti-inferring-fns (ti) (match ti (TypeInferer tij1 tij2 tij3 tij4 tij5 tij6 tij7 tij8 tij9 v tij11 v)))
+(defn ti-body-cache (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 v v)))
 
 ; Inference support ADTs (function signatures, return types, ADT defs,
 ; variant fields, per-site body cache, string-match vars).
@@ -180,8 +189,10 @@
 ; SUBSTITUTION OPERATIONS
 ; ===========================================================================
 
+; Same "type name instead of real constructor" bug as TypeEnv above —
+; Subst's constructor is SBindings, not Subst.
 (defn subst-empty ()
-  (Subst Nil))
+  (SBindings Nil))
 
 (defn subst-lookup (s n)
   (subst-lookup-binds (SBindings.binds s) n))
@@ -195,7 +206,7 @@
        (subst-lookup-binds rest n)))))
 
 (defn subst-insert (s n t)
-  (Subst (Cons (TB n t) (SBindings.binds s))))
+  (SBindings (Cons (TB n t) (SBindings.binds s))))
 
 ; Apply substitution to a single Type — helper to avoid lambda recursion issue
 (defn subst-apply-type (s t)
@@ -330,9 +341,13 @@
          (UErr "Struct field count mismatch"))
        (UErr "Struct name mismatch")))
     ((Pair (TMap k1 v1) (TMap k2 v2))
-     (unify (unify s k1 k2) v1 v2))
+     (match (unify s k1 k2)
+       (UOk sx (unify sx v1 v2))
+       (UErr e (UErr e))))
     ((Pair (TResult e1 h1) (TResult e2 h2))
-     (unify (unify s e1 e2) h1 h2))
+     (match (unify s e1 e2)
+       (UOk sx (unify sx h1 h2))
+       (UErr e (UErr e))))
     ((Pair (TVar n d5) d6)
      (unify-var s n t2))
     ((Pair d7 (TVar n d8))

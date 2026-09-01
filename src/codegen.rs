@@ -7673,8 +7673,8 @@ impl CodeGen {
                                 // P1: never fabricate a zero for an unresolvable
                                 // variable reference in a variant field.
                                 self.fatal_errors.push(format!(
-                                    "MakeVariant field load of `{}` (field ssa {}) has no local slot",
-                                    lvar, field_id
+                                    "MakeVariant field load of `{}` (field ssa {}) has no local slot [in {}]",
+                                    lvar, field_id, self.current_func
                                 ));
                                 self.asm_push_align();
                                 self.asm.push("    mov rax, 0".to_string());

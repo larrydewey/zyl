@@ -19,30 +19,30 @@
 (defn fresh-var (inferer)
     ; return current next-index and bump-by-1
     (let
-        (n (TINext inferer))
+        (n (ti-next inferer))
         (Pair n (+ n 1))))
 
 (defn update-next (inferer n)
     ; reconstruct inferer with new next-index, all else unchanged
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
         n
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; KNOWN TYPES HELPERS
 ; ===========================================================================
 
 (defn lookup-known-type (inferer name)
-    (lookup-known-type-binds (TIKnownTypes inferer) name))
+    (lookup-known-type-binds (ti-known-types inferer) name))
 
 (defn lookup-known-type-binds (binds name)
     (match binds
@@ -55,26 +55,26 @@
 
 (defn insert-known-type (inferer name typ)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
         (Cons
             (TB name typ)
-            (TIKnownTypes inferer))
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-known-types inferer))
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; KNOWN FUNCTIONS HELPERS
 ; ===========================================================================
 
 (defn lookup-known-fn (inferer name)
-    (lookup-fn-sigs-binds (TIKnownFns inferer) name))
+    (lookup-fn-sigs-binds (ti-known-fns inferer) name))
 
 (defn lookup-fn-sigs-binds (sigs name)
     (match sigs
@@ -87,26 +87,26 @@
 
 (defn insert-known-fn (inferer name params)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
         (Cons
             (FNS name params)
-            (TIKnownFns inferer))
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-known-fns inferer))
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; FUNCTION RETURNS HELPERS
 ; ===========================================================================
 
 (defn lookup-fn-ret (inferer name)
-    (lookup-ret-binds (TIFuncReturns inferer) name))
+    (lookup-ret-binds (ti-func-returns inferer) name))
 
 (defn lookup-ret-binds (binds name)
     (match binds
@@ -119,26 +119,26 @@
 
 (defn insert-fn-ret (inferer name typ)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
         (Cons
             (FR name typ)
-            (TIFuncReturns inferer))
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-func-returns inferer))
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; ADT DEFINITIONS HELPERS
 ; ===========================================================================
 
 (defn lookup-adt-def (inferer name)
-    (lookup-adt-binds (TIAdtDefs inferer) name))
+    (lookup-adt-binds (ti-adt-defs inferer) name))
 
 (defn lookup-adt-binds (binds name)
     (match binds
@@ -151,26 +151,26 @@
 
 (defn insert-adt-def (inferer name variants)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
         (Cons
             (AD name variants)
-            (TIAdtDefs inferer))
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-adt-defs inferer))
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; VARIANT -> ADT HELPERS
 ; ===========================================================================
 
 (defn lookup-variant-to-adt (inferer variant)
-    (lookup-vta-binds (TIVariantToAdt inferer) variant))
+    (lookup-vta-binds (ti-variant-to-adt inferer) variant))
 
 (defn lookup-vta-binds (binds variant)
     (match binds
@@ -183,19 +183,19 @@
 
 (defn insert-variant-to-adt (inferer variant adt)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
         (Cons
             (TB variant adt)
-            (TIVariantToAdt inferer))
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-variant-to-adt inferer))
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; BODY CACHE HELPERS
@@ -204,7 +204,7 @@
 (defn lookup-body-cache (inferer key)
     ; walk body-cache list, threading rest through a rebuilt inferer
     (match
-        (TIBodyCache inferer)
+        (ti-body-cache inferer)
         (Nil None)
         ((BC k v) rest
             (if
@@ -212,57 +212,57 @@
                 (Some v)
                 (lookup-body-cache
                     (TypeInferer
-                        (TIEnv inferer)
-                        (TISubst inferer)
-                        (TINext inferer)
-                        (TIKnownTypes inferer)
-                        (TIKnownFns inferer)
-                        (TIFuncReturns inferer)
-                        (TIAdtDefs inferer)
-                        (TIVariantToAdt inferer)
-                        (TIStringMatchVars inferer)
-                        (TIInferringFns inferer)
+                        (ti-env inferer)
+                        (ti-subst inferer)
+                        (ti-next inferer)
+                        (ti-known-types inferer)
+                        (ti-known-fns inferer)
+                        (ti-func-returns inferer)
+                        (ti-adt-defs inferer)
+                        (ti-variant-to-adt inferer)
+                        (ti-string-match-vars inferer)
+                        (ti-inferring-fns inferer)
                         rest)
                     key)))))
 
 (defn insert-body-cache (inferer key typ)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
         (Cons
             (BC key typ)
-            (TIBodyCache inferer))))
+            (ti-body-cache inferer))))
 
 ; ===========================================================================
 ; INFERRING FUNCTIONS HELPERS
 ; ===========================================================================
 
 (defn is-inferring (inferer name)
-    (mem-string-list (TIInferringFns inferer) name))
+    (mem-string-list (ti-inferring-fns inferer) name))
 
 (defn mark-inferring (inferer name)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
         (Cons
             name
-            (TIInferringFns inferer))
-        (TIBodyCache inferer)))
+            (ti-inferring-fns inferer))
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; STRING MATCH VARS HELPERS
@@ -270,19 +270,19 @@
 
 (defn insert-string-match-var (inferer name)
     (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (TIAdtDefs inferer)
-        (TIVariantToAdt inferer)
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
         (Cons
             name
-            (TIStringMatchVars inferer))
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+            (ti-string-match-vars inferer))
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)))
 
 ; ===========================================================================
 ; UTILITY HELPERS
@@ -313,7 +313,7 @@
             (if (= s "Bool") TBool
                 (if (= s "String") TString
                     (if (= s "Unit") TUnit
-                        (TVar 0)))))))
+                        (TVar 0 TUnit)))))))
 
 (defn type-from-display (s)
     ; map display string to concrete type
@@ -347,7 +347,13 @@
                                 (TB "Unit" TUnit)
                                 Nil))))))
         (TypeInferer
-            (TypeEnv Nil)
+            ; TypeEnv's real constructor is TEBindings (see type_system.zyl)
+            ; — "TypeEnv" is only the type name. This resolved to some
+            ; unrelated 0-arity variant elsewhere in the program (tag 4),
+            ; silently discarding the Nil argument and leaving ti-env holding
+            ; garbage from field0 onward — the initial inferer was corrupt
+            ; before a single expression was ever processed.
+            (TEBindings Nil)
             (subst-empty)
             0
             known
@@ -602,7 +608,7 @@
 (defn infer-expr-ident (inferer expr name)
     ; look up name in env; apply subst if found
     (let
-        (env (TIEnv inferer))
+        (env (ti-env inferer))
         (match
             (env-get env name)
             (Some typ (inferer-return-applied inferer typ))
@@ -613,7 +619,7 @@
     (if (is-primitive-type-name name) (prim-type-from-name name) (inferer-return-var inferer)))
 
 (defn inferer-return-applied (inferer typ)
-    (subst-apply (TISubst inferer) typ))
+    (subst-apply (ti-subst inferer) typ))
 
 ; ===========================================================================
 ; INFER-EXPR — let
@@ -624,20 +630,20 @@
     (let
         (vt (infer-expr inferer val))
         (let
-            (new-env (env-bind (TIEnv inferer) name vt))
+            (new-env (env-bind (ti-env inferer) name vt))
             (infer-expr
                 (TypeInferer
                     new-env
-                    (TISubst inferer)
-                    (TINext inferer)
-                    (TIKnownTypes inferer)
-                    (TIKnownFns inferer)
-                    (TIFuncReturns inferer)
-                    (TIAdtDefs inferer)
-                    (TIVariantToAdt inferer)
-                    (TIStringMatchVars inferer)
-                    (TIInferringFns inferer)
-                    (TIBodyCache inferer))
+                    (ti-subst inferer)
+                    (ti-next inferer)
+                    (ti-known-types inferer)
+                    (ti-known-fns inferer)
+                    (ti-func-returns inferer)
+                    (ti-adt-defs inferer)
+                    (ti-variant-to-adt inferer)
+                    (ti-string-match-vars inferer)
+                    (ti-inferring-fns inferer)
+                    (ti-body-cache inferer))
                 body))))
 
 ; ===========================================================================
@@ -649,7 +655,7 @@
     (let
         (ct (infer-expr inferer cond))
         (let
-            (unified (unify (TISubst inferer) ct TBool))
+            (unified (unify (ti-subst inferer) ct TBool))
             (match unified
                 (UOk
                     new-s
@@ -662,6 +668,7 @@
                                 tt
                                 (match
                                     (unify
+                                        new-s
                                         (subst-apply new-s tt)
                                         et)
                                     (UOk d12 tt)
@@ -688,12 +695,23 @@
 
 (defn infer-expr-stmt-chain (inferer stmts)
     ; infer all but last; result discarded
+    ;
+    ; The two body statements below MUST stay wrapped in one `begin`: an
+    ; arm shaped `((Cons h t) stmt1 stmt2)` (nested-pattern head followed by
+    ; TWO bare trailing forms) matches the parser's "((RB n r esc) rest
+    ; body)" Cons-sugar heuristic (decompose_match_arm, ast.rs) whenever
+    ; there are 2+ trailing forms — it reinterprets stmt1 as a second
+    ; pattern-binding and stmt2 as the real body, silently losing stmt1 and
+    ; corrupting the arm (confirmed: `t` came out as a null pointer at
+    ; runtime, "unreachable case"-free but plain SIGSEGV). One `begin` form
+    ; keeps the trailing-forms count at 1 and avoids the ambiguity.
     (match stmts
         (Nil
             nil)
         ((Cons h t)
-            (infer-expr inferer h)
-            (infer-expr-stmt-chain inferer t))))
+            (begin
+                (infer-expr inferer h)
+                (infer-expr-stmt-chain inferer t)))))
 
 ; ===========================================================================
 ; INFER-EXPR — lambda/fn
@@ -718,22 +736,22 @@
             (let
                 (env
                     (env-bind
-                        (TIEnv inferer)
+                        (ti-env inferer)
                         (typed-param-name p)
                         (inferer-return-var inferer)))
                 (inferer-bind-params
                     (TypeInferer
                         env
-                        (TISubst inferer)
-                        (TINext inferer)
-                        (TIKnownTypes inferer)
-                        (TIKnownFns inferer)
-                        (TIFuncReturns inferer)
-                        (TIAdtDefs inferer)
-                        (TIVariantToAdt inferer)
-                        (TIStringMatchVars inferer)
-                        (TIInferringFns inferer)
-                        (TIBodyCache inferer))
+                        (ti-subst inferer)
+                        (ti-next inferer)
+                        (ti-known-types inferer)
+                        (ti-known-fns inferer)
+                        (ti-func-returns inferer)
+                        (ti-adt-defs inferer)
+                        (ti-variant-to-adt inferer)
+                        (ti-string-match-vars inferer)
+                        (ti-inferring-fns inferer)
+                        (ti-body-cache inferer))
                     rest)))))
 
 (defn inferer-params-types (params)
@@ -766,7 +784,7 @@
     ; unify cond with Bool, infer body, result Unit
     (let
         (ct (infer-expr inferer cond))
-        (unify (TISubst inferer) ct TBool)
+        (unify (ti-subst inferer) ct TBool)
         (infer-expr inferer body)
         TUnit))
 
@@ -780,7 +798,7 @@
         (new-inferer (inferer-bind-for-vars inferer bindings))
         (let
             (ct (infer-expr new-inferer cond))
-            (unify (TISubst new-inferer) ct TBool)
+            (unify (ti-subst new-inferer) ct TBool)
             (infer-expr new-inferer body)
             TUnit)))
 
@@ -797,22 +815,22 @@
                         (let
                             (new-env
                                 (env-bind
-                                    (TIEnv inferer)
+                                    (ti-env inferer)
                                     name
                                     (TCap TCMut vt)))
                             (inferer-bind-for-vars
                                 (TypeInferer
                                     new-env
-                                    (TISubst inferer)
-                                    (TINext inferer)
-                                    (TIKnownTypes inferer)
-                                    (TIKnownFns inferer)
-                                    (TIFuncReturns inferer)
-                                    (TIAdtDefs inferer)
-                                    (TIVariantToAdt inferer)
-                                    (TIStringMatchVars inferer)
-                                    (TIInferringFns inferer)
-                                    (TIBodyCache inferer))
+                                    (ti-subst inferer)
+                                    (ti-next inferer)
+                                    (ti-known-types inferer)
+                                    (ti-known-fns inferer)
+                                    (ti-func-returns inferer)
+                                    (ti-adt-defs inferer)
+                                    (ti-variant-to-adt inferer)
+                                    (ti-string-match-vars inferer)
+                                    (ti-inferring-fns inferer)
+                                    (ti-body-cache inferer))
                                 rest))))))))
 
 ; ===========================================================================
@@ -832,7 +850,7 @@
                 (Pair pred body
                     (let
                         (pt (infer-expr inferer pred))
-                        (unify (TISubst inferer) pt TBool)
+                        (unify (ti-subst inferer) pt TBool)
                         (let
                             (bt (infer-expr inferer body))
                             (infer-expr-cond-loop inferer rest bt))))))))
@@ -872,7 +890,7 @@
                 ; built for the unrelated RegionEnv type; calling it on a
                 ; TypeEnv value fed the wrong shape into RegionEnv's own
                 ; RE.cur/RE.parens accessors.
-                (arm-env (TIEnv inferer))
+                (arm-env (ti-env inferer))
                 (let
                     (field-types (infer-lookup-arm-field-types inferer arm subject-type))
                     (let
@@ -886,7 +904,8 @@
                                         abt
                                         (match
                                             (unify
-                                                (subst-apply (TISubst inferer) first-type)
+                                                (ti-subst inferer)
+                                                (subst-apply (ti-subst inferer) first-type)
                                                 abt)
                                             (UOk d15 first-type)
                                             (UErr d16 abt))))
@@ -895,16 +914,16 @@
                                         (infer-expr-match-arms
                                             (TypeInferer
                                                 arm-env
-                                                (TISubst new-inferer)
-                                                (TINext new-inferer)
-                                                (TIKnownTypes new-inferer)
-                                                (TIKnownFns new-inferer)
-                                                (TIFuncReturns new-inferer)
-                                                (TIAdtDefs new-inferer)
-                                                (TIVariantToAdt new-inferer)
-                                                (TIStringMatchVars new-inferer)
-                                                (TIInferringFns new-inferer)
-                                                (TIBodyCache new-inferer))
+                                                (ti-subst new-inferer)
+                                                (ti-next new-inferer)
+                                                (ti-known-types new-inferer)
+                                                (ti-known-fns new-inferer)
+                                                (ti-func-returns new-inferer)
+                                                (ti-adt-defs new-inferer)
+                                                (ti-variant-to-adt new-inferer)
+                                                (ti-string-match-vars new-inferer)
+                                                (ti-inferring-fns new-inferer)
+                                                (ti-body-cache new-inferer))
                                             rest
                                             subject-type
                                             new-type))
@@ -921,11 +940,11 @@
 (defn infer-lookup-scrutinee-adt (inferer subject-type)
     ; nominal type name of the scrutinee, mono-suffix stripped
     (match
-        (resolve-nominal (TISubst inferer) subject-type)
+        (resolve-nominal (ti-subst inferer) subject-type)
         (Some
             n
             (if
-                (infer-adt-exists (TIAdtDefs inferer) n)
+                (infer-adt-exists (ti-adt-defs inferer) n)
                 n
                 (infer-strip-mono-suffix n)))
         (None
@@ -982,33 +1001,57 @@
     (inferer-bind-pattern-vars-loop inferer (MA.patterns arm) field-types))
 
 (defn inferer-bind-pattern-vars-loop (inferer patterns field-types)
-    (match (Pair patterns field-types)
-        (Pair (Cons pat prest) (Cons ft frest)
-            (match (Expr.inner pat)
-                (EAtom (AIdent name)
-                    (let
-                        (pt (infer-lookup-pattern-type inferer ft))
-                        (let
-                            (new-inferer
-                                (TypeInferer
-                                    (env-bind (TIEnv inferer) name pt)
-                                    (TISubst inferer)
-                                    (TINext inferer)
-                                    (TIKnownTypes inferer)
-                                    (TIKnownFns inferer)
-                                    (TIFuncReturns inferer)
-                                    (TIAdtDefs inferer)
-                                    (TIVariantToAdt inferer)
-                                    (if
-                                        (string-type-pt pt)
-                                        (Cons name (TIStringMatchVars inferer))
-                                        (TIStringMatchVars inferer))
-                                    (TIInferringFns inferer)
-                                    (TIBodyCache inferer)))
-                            (inferer-bind-pattern-vars-loop new-inferer prest frest))))
-                (d1 (inferer-bind-pattern-vars-loop inferer prest frest))))
-        (d18
-            inferer)))
+    ; walk patterns/field-types in lockstep without wrapping both lists in
+    ; one Pair match — a Pair nested-matching two DIFFERENT monomorphized
+    ; List element types (List Expr, List FieldType) in the same match
+    ; corrupted codegen (only one side's Cons/Nil dispatch worked); plain
+    ; sequential matches on each list sidestep the collision entirely.
+    (match patterns
+        (Nil inferer)
+        ((Cons pat prest)
+            (match field-types
+                (Nil inferer)
+                ((Cons ft frest)
+                    (inferer-bind-pattern-vars-step inferer pat ft prest frest))))))
+
+(defn inferer-bind-pattern-vars-step (inferer pat ft prest frest)
+    ; split out of inferer-bind-pattern-vars-loop as its own function.
+    ; Uses the EXPLICIT two-level match (bind `atom` first, then match on
+    ; it) instead of the nested-pattern sugar `(EAtom (AIdent name) ...)` —
+    ; that sugar is desugared by the Rust bootstrap into a synthetic-var
+    ; wrapper match, and THAT path lost `name`'s stack slot entirely
+    ; (MakeVariant field load of `name` had no local slot) even though the
+    ; explicit two-level style — the same shape infer-expr already uses
+    ; successfully — binds it fine.
+    (match (Expr.inner pat)
+        (EAtom atom
+            (inferer-bind-pattern-vars-atom inferer atom ft prest frest))
+        (d1 (inferer-bind-pattern-vars-loop inferer prest frest))))
+
+(defn inferer-bind-pattern-vars-atom (inferer atom ft prest frest)
+    (match atom
+        (AIdent name
+            (let
+                (pt (infer-lookup-pattern-type inferer ft))
+                (let
+                    (new-inferer
+                        (TypeInferer
+                            (env-bind (ti-env inferer) name pt)
+                            (ti-subst inferer)
+                            (ti-next inferer)
+                            (ti-known-types inferer)
+                            (ti-known-fns inferer)
+                            (ti-func-returns inferer)
+                            (ti-adt-defs inferer)
+                            (ti-variant-to-adt inferer)
+                            (if
+                                (string-type-pt pt)
+                                (Cons name (ti-string-match-vars inferer))
+                                (ti-string-match-vars inferer))
+                            (ti-inferring-fns inferer)
+                            (ti-body-cache inferer)))
+                    (inferer-bind-pattern-vars-loop new-inferer prest frest))))
+        (d2 (inferer-bind-pattern-vars-loop inferer prest frest))))
 
 (defn infer-lookup-pattern-type (inferer field-type)
     (if (is-primitive-type-name field-type) (prim-type-from-name field-type) (inferer-return-var inferer)))
@@ -1103,8 +1146,9 @@
         (Nil
             nil)
         ((Cons t rest)
-            (infer-binop-check-one t)
-            (infer-binop-check-types rest))))
+            (begin
+                (infer-binop-check-one t)
+                (infer-binop-check-types rest)))))
 
 (defn infer-binop-check-one (t)
     (match t
@@ -1125,7 +1169,7 @@
         ((Cons a rest)
             (let
                 (t (infer-expr inferer a))
-                (unify (TISubst inferer) t TBool)
+                (unify (ti-subst inferer) t TBool)
                 (infer-args-bool-check inferer rest)))))
 
 (defn infer-expr-builtin-compare (inferer expr op-name args)
@@ -1137,7 +1181,7 @@
     (if (= op-name "int") TInt
         (if (= op-name "float") TFloat
             (if (= op-name "str") TString
-                (TVar 0)))))
+                (TVar 0 TUnit)))))
 
 (defn infer-expr-builtin-io (inferer expr op-name args)
     (infer-args inferer args)
@@ -1160,21 +1204,21 @@
     (match
         (lookup-fn-ret
             (TypeInferer
-                (TIEnv inferer)
-                (TISubst inferer)
-                (TINext inferer)
-                (TIKnownTypes inferer)
-                (TIKnownFns inferer)
+                (ti-env inferer)
+                (ti-subst inferer)
+                (ti-next inferer)
+                (ti-known-types inferer)
+                (ti-known-fns inferer)
                 (Cons
                     (FR
                         op-name
                         (inferer-return-var inferer))
-                    (TIFuncReturns inferer))
-                (TIAdtDefs inferer)
-                (TIVariantToAdt inferer)
-                (TIStringMatchVars inferer)
-                (TIInferringFns inferer)
-                (TIBodyCache inferer))
+                    (ti-func-returns inferer))
+                (ti-adt-defs inferer)
+                (ti-variant-to-adt inferer)
+                (ti-string-match-vars inferer)
+                (ti-inferring-fns inferer)
+                (ti-body-cache inferer))
             op-name)
         (Some
             ret
@@ -1220,7 +1264,7 @@
     ; unify cond with Bool, result Unit
     (let
         (ct (infer-expr inferer cond))
-        (unify (TISubst inferer) ct TBool)
+        (unify (ti-subst inferer) ct TBool)
         TUnit))
 
 ; ===========================================================================
@@ -1232,7 +1276,7 @@
     (let
         (vt (infer-expr inferer val))
         (match
-            (env-get (TIEnv inferer) target)
+            (env-get (ti-env inferer) target)
             (Some (TCap TCMut d23) TUnit)
             (None (inferer-return-var inferer))
             (d1 (inferer-return-var inferer)))))
@@ -1281,9 +1325,9 @@
 ; (a) it referenced `variant-name`, which isn't one of this function's
 ;     parameters (an undefined identifier — silently compiles to 0);
 ; (b) it spliced the WHOLE TypeInferer that insert-adt-def returns into the
-;     TIAdtDefs FIELD SLOT of another TypeInferer, instead of using it as
+;     ti-adt-defs FIELD SLOT of another TypeInferer, instead of using it as
 ;     the return value — a type confusion that corrupts every other field
-;     read through that fake "TIAdtDefs" list later (this crashed the
+;     read through that fake "ti-adt-defs" list later (this crashed the
 ;     self-hosted compiler chasing what looked like a list but was really
 ;     another TypeInferer's fields).
 ; ADT definitions are already collected up front by collect-definitions
@@ -1340,13 +1384,18 @@
 ; ===========================================================================
 
 (defn infer-args (inferer args)
-    ; infer type of each arg in order
+    ; infer type of each arg in order, collecting the results into a list.
+    ; A match arm body with 2+ bare trailing forms (no `begin`/`let`
+    ; wrapper) is misparsed as the parser's Cons-nested-pattern sugar (see
+    ; infer-expr-stmt-chain's comment above) — the old body here had
+    ; exactly that shape (two bare statements) and also never actually
+    ; collected a types list despite callers like infer-expr-builtin-binop
+    ; expecting one back.
     (match args
         (Nil
-            nil)
+            Nil)
         ((Cons a rest)
-            (infer-expr inferer a)
-            (infer-args inferer rest))))
+            (Cons (infer-expr inferer a) (infer-args inferer rest)))))
 
 ; ===========================================================================
 ; COLLECT DEFINITIONS — the declared "Core" that was missing
@@ -1356,7 +1405,7 @@
 
 ; Despite its own comment ("registers Defn/Deftype/StructDef forms"), this
 ; used to only match EDefn — EDeftype was never handled here at all, so
-; TIAdtDefs stayed empty for the entire compile. A separate, correct
+; ti-adt-defs stayed empty for the entire compile. A separate, correct
 ; `collect-adt-defs` function existed below to do exactly this, but nothing
 ; ever called it (driver.zyl only calls collect-definitions) — merged its
 ; EDeftype handling in directly instead of leaving it as unreachable code.
@@ -1383,7 +1432,7 @@
                     (P name typ
                         (match typ
                             (Some t (type-from-display t))
-                            (None (TVar 0)))))
+                            (None (TVar 0 TUnit)))))
                 (collect-defn-params inferer rest)))))
 
 (defn infer-defn-body (inferer name params param-types body)
@@ -1408,12 +1457,17 @@
         (catch e (Err e))))
 
 (defn zip-params (params types)
-    ; pair params with types
-    (match (Pair params types)
-        (Pair Nil Nil Nil)
-        (Pair (Cons p rest-p) (Cons t rest-t)
-            (Cons (Pair p t) (zip-params rest-p rest-t)))
-        (Pair d26 d27 Nil)))
+    ; pair params with types — sequential matches, not a Pair-wrapped nested
+    ; match (params/types are different monomorphized List element types,
+    ; which corrupts codegen when nested inside one match; see
+    ; inferer-bind-pattern-vars-loop)
+    (match params
+        (Nil Nil)
+        ((Cons p rest-p)
+            (match types
+                (Nil Nil)
+                ((Cons t rest-t)
+                    (Cons (Pair p t) (zip-params rest-p rest-t)))))))
 
 
 (defn collect-adt-defs (inferer exprs)
@@ -1437,7 +1491,7 @@
     ; from function_returns and use call-site observations to resolve
     ; type vars in parameter types. This restores param types for
     ; downstream code (struct layouts, float detection, etc.)
-    (let (known-fns (TIKnownFns inferer))
+    (let (known-fns (ti-known-fns inferer))
         (match
             known-fns
             (Nil inferer)
@@ -1446,17 +1500,17 @@
                     (let (resolved-params (resolve-param-types inferer params ret-type))
                         (let (new-inferer (finalize-param-types
                                             (TypeInferer
-                                                (TIEnv inferer)
-                                                (TISubst inferer)
-                                                (TINext inferer)
-                                                (TIKnownTypes inferer)
+                                                (ti-env inferer)
+                                                (ti-subst inferer)
+                                                (ti-next inferer)
+                                                (ti-known-types inferer)
                                                 resolved-params
-                                                (TIFuncReturns inferer)
-                                                (TIAdtDefs inferer)
-                                                (TIVariantToAdt inferer)
-                                                (TIStringMatchVars inferer)
-                                                (TIInferringFns inferer)
-                                                (TIBodyCache inferer))))
+                                                (ti-func-returns inferer)
+                                                (ti-adt-defs inferer)
+                                                (ti-variant-to-adt inferer)
+                                                (ti-string-match-vars inferer)
+                                                (ti-inferring-fns inferer)
+                                                (ti-body-cache inferer))))
                             new-inferer)))))))
 
 (defn resolve-param-types (inferer params ret-type)

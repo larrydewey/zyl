@@ -1,7 +1,7 @@
 ; === Zyl Compiler — ExprInner AST Bridge ===
 ; Port of Rust ast.rs ExprInner enum to Zyl deftype/match form.
 ;
-; The Zyl parser produces raw Ast (AIdent/AInt/AList).
+; The Zyl parser produces raw Ast (AstIdent/AstInt/AList).
 ; type_inference.zyl expects ExprInner (Atom/Call/Defn/.../Apply).
 ; This module bridges that gap.
 ;
@@ -137,7 +137,7 @@
 ; second (or later) pattern name and then pass it straight to `convert-ast`
 ; (which expects a single `Ast`), silently feeding it a list instead — the
 ; list's own Cons/Nil discriminant (0/1) would alias against unrelated `Ast`
-; variants (AIdent/AInt) with completely wrong field data. These helpers
+; variants (AstIdent/AstInt) with completely wrong field data. These helpers
 ; walk lists explicitly by index instead, so no parser below ever binds a
 ; "final" argument name straight off a multi-field Cons pattern.
 
@@ -181,25 +181,25 @@
 ; ===========================================================================
 ; AST → EXPRINNER CONVERTER
 ; ===========================================================================
-; Converts raw ast.zyl Ast (AIdent/AInt/AList) to ExprInner.
+; Converts raw ast.zyl Ast (AstIdent/AstInt/AList) to ExprInner.
 ; Head-symbol recognition happens here (no-dispatch architecture).
 ; ===========================================================================
 
 (defn convert-ast (ast)
   (match ast
-    (AIdent s
+    (AstIdent s
       (let (atom (AIdent s))
         (Expr (EAtom atom))))
-    (AInt n
+    (AstInt n
       (let (atom (AInt n))
         (Expr (EAtom atom))))
-    (AFloat s
+    (AstFloat s
       (let (atom (AFloat s))
         (Expr (EAtom atom))))
     (AString s
       (let (atom (AStr s))
         (Expr (EAtom atom))))
-    (ABool b
+    (AstBool b
       (let (atom (ABool b))
         (Expr (EAtom atom))))
     (AList lst
@@ -223,15 +223,15 @@
     (Nil (Expr (EAtom ANil)))
     (Cons head rest
       (match head
-        (AIdent n (dispatch-special n rest))
+        (AstIdent n (dispatch-special n rest))
         (d1 (Expr (ECall (convert-ast head) (convert-ast-list rest))))))))
 
 ; Special-form recognition by head-symbol NAME (no-dispatch architecture:
 ; recognition happens here, never in the reader). Every branch that used to
-; be a `(AIdent "name" ...)` match arm is a `str-eq` check instead — match
+; be a `(AstIdent "name" ...)` match arm is a `str-eq` check instead — match
 ; arms only bind IDENTIFIER patterns; a literal string in pattern position
 ; is never compared at all, so every one of those arms fired unconditionally
-; on the FIRST arm's variant (AIdent), making every special form after the
+; on the FIRST arm's variant (AstIdent), making every special form after the
 ; first permanently unreachable.
 (defn dispatch-special (n rest)
   (if (> (str-eq n "defn") 0)
@@ -427,15 +427,15 @@
     (d1 Nil)))
 
 (defn parse-defn (args)
-  (match (ast-nth args 0 (AInt 0))
-    (AIdent n
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent n
       (if (ast-has-at-least args 3)
         (Some
           (Expr
             (EDefn
               n
-              (parse-params (ast-nth args 1 (AInt 0)))
-              (convert-ast (ast-list-last args (AInt 0))))))
+              (parse-params (ast-nth args 1 (AstInt 0)))
+              (convert-ast (ast-list-last args (AstInt 0))))))
         None))
     (d1 None)))
 
@@ -453,15 +453,15 @@
 )
 (defn parse-single-param (p)
   (match p
-    (AIdent name (P name None))
+    (AstIdent name (P name None))
     (AList (Cons name (Cons typ rest))
       (P (a-ident-to-str name) (Some (convert-ast typ))))
     (d1 (P "___" None))))
 
 (defn parse-deftype (args)
   (if (ast-has-at-least args 1)
-    (match (ast-nth args 0 (AInt 0))
-      (AIdent n
+    (match (ast-nth args 0 (AstInt 0))
+      (AstIdent n
         (Some
           (Expr
             (EDeftype
@@ -491,7 +491,7 @@
 )
 (defn parse-adt-variant (v)
   (match v
-    (AIdent name
+    (AstIdent name
       (AV name Nil))
     (AList (Cons name rest)
       (AV
@@ -508,40 +508,40 @@
         (parse-field-names rest)))))
 
 (defn parse-def (args)
-  (match (ast-nth args 0 (AInt 0))
-    (AIdent n
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent n
       (if (ast-has-at-least args 2)
         (Some
           (Expr
             (EDef
               n
-              (convert-ast (ast-nth args 1 (AInt 0))))))
+              (convert-ast (ast-nth args 1 (AstInt 0))))))
         None))
     (d1 None)))
 
 (defn parse-let (args)
-  (match (ast-nth args 0 (AInt 0))
-    (AIdent n
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent n
       (if (ast-has-at-least args 3)
         (Some
           (Expr
             (ELet
               n
-              (convert-ast (ast-nth args 1 (AInt 0)))
-              (convert-ast (ast-list-last args (AInt 0))))))
+              (convert-ast (ast-nth args 1 (AstInt 0)))
+              (convert-ast (ast-list-last args (AstInt 0))))))
         None))
     (d1 None)))
 
 (defn parse-let-mut (args)
-  (match (ast-nth args 0 (AInt 0))
-    (AIdent n
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent n
       (if (ast-has-at-least args 3)
         (Some
           (Expr
             (ELetMut
               n
-              (convert-ast (ast-nth args 1 (AInt 0)))
-              (convert-ast (ast-list-last args (AInt 0))))))
+              (convert-ast (ast-nth args 1 (AstInt 0)))
+              (convert-ast (ast-list-last args (AstInt 0))))))
         None))
     (d1 None)))
 
@@ -550,9 +550,9 @@
     (Some
       (Expr
         (EIf
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0)))
-          (convert-ast (ast-nth args 2 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0)))
+          (convert-ast (ast-nth args 2 (AstInt 0))))))
     None))
 
 (defn parse-while (args)
@@ -560,8 +560,8 @@
     (Some
       (Expr
         (EWhile
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-for (args)
@@ -569,9 +569,9 @@
     (Some
       (Expr
         (EFor
-          (parse-for-bindings (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0)))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (parse-for-bindings (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0)))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-for-bindings (bindings)
@@ -588,14 +588,14 @@
 )
 (defn parse-for-binding (binding)
   (match binding
-    (AIdent name
+    (AstIdent name
       (Pair name None))
     (AList (Cons name rest)
       (Pair
         (a-ident-to-str name)
         (if (nil? rest)
           None
-          (Some (convert-ast (ast-list-last rest (AInt 0)))))))
+          (Some (convert-ast (ast-list-last rest (AstInt 0)))))))
     (d1 (Pair "___" None))))
 
 (defn parse-cond (args)
@@ -619,12 +619,24 @@
 
 )
 (defn parse-cond-clause (clause)
+  ; `else` as a cond-test is never specially recognized anywhere in this
+  ; toolchain (grepped the whole stdlib/compiler + Rust src: zero matches
+  ; for the literal "else") — it's just parsed as an ordinary identifier,
+  ; which is unresolved and silently compiles to 0/false. That meant every
+  ; `(else BODY)` fallback clause in every `cond` in the entire codebase
+  ; NEVER fired. Special-case it here to the literal `true`, matching
+  ; standard Lisp/Scheme `cond` semantics.
   (match clause
     (AList kids
       (Pair
-        (convert-ast (ast-nth kids 0 (AInt 0)))
-        (convert-ast (ast-list-last kids (AInt 0)))))
+        (convert-ast (cond-test-ast (ast-nth kids 0 (AstInt 0))))
+        (convert-ast (ast-list-last kids (AstInt 0)))))
     (d1 (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
+
+(defn cond-test-ast (test)
+  (match test
+    (AstIdent name (if (= name "else") (AstBool true) test))
+    (d1 test)))
 
 ; Match arms are every element AFTER the subject: `(match subject arm1 arm2
 ; ...)` — NOT one single list-wrapped argument, so `parse-match-arms` takes
@@ -635,7 +647,7 @@
     (Some
       (Expr
         (EMatch
-          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
           (parse-match-arms (ast-list-nth-rest args 1)))))
     None))
 
@@ -652,9 +664,9 @@
         (Nil (MA "___" Nil (Expr (EAtom ANil))))
         (Cons pattern rest
           (MA
-            (match pattern (AIdent n n) (d1 "___"))
+            (match pattern (AstIdent n n) (d1 "___"))
             (convert-ast-list (ast-list-butlast rest))
-            (convert-ast (ast-list-last rest (AInt 0)))))))
+            (convert-ast (ast-list-last rest (AstInt 0)))))))
     (d1 (MA "___" Nil (Expr (EAtom ANil))))))
 
 (defn parse-try (args)
@@ -662,9 +674,9 @@
     (Some
       (Expr
         (ETryCatch
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "___"))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-begin (args)
@@ -679,8 +691,8 @@
       (Expr
         (ELambda
           "___"
-          (parse-params (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (parse-params (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-fn (args)
@@ -689,8 +701,8 @@
       (Expr
         (EFn
           "___"
-          (parse-params (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (parse-params (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-print (args)
@@ -701,8 +713,8 @@
     (Some
       (Expr
         (EAssertEqual
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-assert (args)
@@ -710,57 +722,57 @@
     (Some
       (Expr
         (EAssert
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (Some (convert-ast (ast-list-last args (AInt 0)))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (Some (convert-ast (ast-list-last args (AstInt 0)))))))
     (if (ast-has-at-least args 1)
       (Some
         (Expr
           (EAssert
-            (convert-ast (ast-nth args 0 (AInt 0)))
+            (convert-ast (ast-nth args 0 (AstInt 0)))
             None)))
       None)))
 
 (defn parse-spawn (args)
   (if (nil? args)
     None
-    (Some (Expr (ESpawn (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (ESpawn (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-send (args)
   (if (ast-has-at-least args 2)
     (Some
       (Expr
         (ESend
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-ffi-pin (args)
   (if (nil? args)
     None
-    (Some (Expr (EFfiPin (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EFfiPin (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-ffi-unpin (args)
   (if (nil? args)
     None
-    (Some (Expr (EFfiUnpin (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EFfiUnpin (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-exit (args)
   (if (nil? args)
     None
-    (Some (Expr (EExit (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EExit (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-close (args)
   (if (nil? args)
     None
-    (Some (Expr (EClose (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EClose (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-file-open (args)
   (if (ast-has-at-least args 2)
     (Some
       (Expr
         (EFileOpen
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-file-read (args)
@@ -768,8 +780,8 @@
     (Some
       (Expr
         (EFileRead
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-file-write (args)
@@ -777,22 +789,22 @@
     (Some
       (Expr
         (EFileWrite
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-file-close (args)
   (if (nil? args)
     None
-    (Some (Expr (EFileClose (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EFileClose (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-set-bang (args)
   (if (ast-has-at-least args 2)
     (Some
       (Expr
         (ESetBang
-          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-module (args)
@@ -801,8 +813,8 @@
     (Some
       (Expr
         (EModuleDecl
-          (match (ast-nth args 0 (AInt 0))
-            (AIdent n n)
+          (match (ast-nth args 0 (AstInt 0))
+            (AstIdent n n)
             (d1 "___")))))))
 
 (defn parse-use (args)
@@ -819,8 +831,8 @@
     (Some
       (Expr
         (EExport
-          (match (ast-nth args 0 (AInt 0))
-            (AIdent n n)
+          (match (ast-nth args 0 (AstInt 0))
+            (AstIdent n n)
             (d1 "___")))))))
 
 (defn parse-derive (args)
@@ -828,7 +840,7 @@
     (Some
       (Expr
         (EDerive
-          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
           (parse-derive-traits (ast-list-nth-rest args 1)))))
     None))
 
@@ -836,19 +848,19 @@
   (match xs
     (Nil Nil)
     (Cons t rest
-      (let hd (match t (AIdent n n) (d1 "___"))
+      (let hd (match t (AstIdent n n) (d1 "___"))
         (Cons hd (parse-derive-traits rest))))))
 
 (defn parse-macro (args)
-  (match (ast-nth args 0 (AInt 0))
-    (AIdent n
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent n
       (if (ast-has-at-least args 3)
         (Some
           (Expr
             (EMacroDef
               n
-              (convert-ast-list (to-list (ast-nth args 1 (AInt 0))))
-              (convert-ast (ast-list-last args (AInt 0))))))
+              (convert-ast-list (to-list (ast-nth args 1 (AstInt 0))))
+              (convert-ast (ast-list-last args (AstInt 0))))))
         None))
     (d1 None)))
 
@@ -857,8 +869,8 @@
     (Some
       (Expr
         (ETestDecl
-          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
-          (convert-ast (ast-list-last args (AInt 0)))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (convert-ast (ast-list-last args (AstInt 0)))
           None)))
     None))
 
@@ -876,9 +888,9 @@
     (Some
       (Expr
         (EWithResource
-          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
-          (convert-ast (ast-nth args 1 (AInt 0)))
-          (convert-ast (ast-list-last args (AInt 0))))))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (convert-ast (ast-nth args 1 (AstInt 0)))
+          (convert-ast (ast-list-last args (AstInt 0))))))
     None))
 
 (defn parse-make-struct (args)
@@ -886,7 +898,7 @@
     (Some
       (Expr
         (EMakeStruct
-          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
           (convert-ast-list (ast-list-nth-rest args 1)))))
     None))
 
@@ -895,19 +907,19 @@
     (Some
       (Expr
         (EStructGet
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "")))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "")))))
     None))
 
 (defn parse-make-variant (args)
   (if (ast-has-at-least args 2)
-    (match (ast-nth args 0 (AInt 0))
+    (match (ast-nth args 0 (AstInt 0))
       (AList adt-kids
         (Some
           (Expr
             (EMakeVariant
-              (match (ast-nth adt-kids 0 (AInt 0)) (AIdent n n) (d1 "___"))
-              (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "___"))
+              (match (ast-nth adt-kids 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+              (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "___"))
               (convert-ast-list (ast-list-nth-rest args 2))))))
       (d1 None))
     None))
@@ -915,15 +927,15 @@
 (defn parse-unwrap (args)
   (if (nil? args)
     None
-    (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AInt 0))))))))
+    (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-buf-append (args)
   (if (ast-has-at-least args 2)
     (Some
       (Expr
         (EBufAppend
-          (convert-ast (ast-nth args 0 (AInt 0)))
-          (convert-ast (ast-nth args 1 (AInt 0))))))
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          (convert-ast (ast-nth args 1 (AstInt 0))))))
     None))
 
 (defn parse-test-property (args)
@@ -938,7 +950,7 @@
 
 (defn a-ident-to-str (ast)
   (match ast
-    (AIdent s s)
+    (AstIdent s s)
     (d1 "")))
 
 (defn nil? (xs)
