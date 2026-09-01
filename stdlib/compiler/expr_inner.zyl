@@ -128,6 +128,57 @@
 (defn Expr.inner (e) (match e (Expr i i)))
 
 ; ===========================================================================
+; AST-LIST HELPERS (raw ast.zyl `Ast` streams)
+; ===========================================================================
+; A match arm of shape `(Cons a b)` matched DIRECTLY against a `(List Ast)`
+; scrutinee binds `a` to the single head element (safe) but `b` to the
+; REMAINING TAIL — itself a `(List Ast)`, not a single `Ast` — since that's
+; genuinely `Cons`'s second field type. Every parser below used to bind a
+; second (or later) pattern name and then pass it straight to `convert-ast`
+; (which expects a single `Ast`), silently feeding it a list instead — the
+; list's own Cons/Nil discriminant (0/1) would alias against unrelated `Ast`
+; variants (AIdent/AInt) with completely wrong field data. These helpers
+; walk lists explicitly by index instead, so no parser below ever binds a
+; "final" argument name straight off a multi-field Cons pattern.
+
+(defn ast-nth (xs n fb)
+  (match xs
+    (Nil fb)
+    (Cons h t (if (= n 0) h (ast-nth t (- n 1) fb)))))
+
+(defn ast-list-last (xs fb)
+  (match xs
+    (Nil fb)
+    (Cons h t (if (nil? t) h (ast-list-last t fb)))))
+
+(defn ast-list-butlast (xs)
+  (ast-list-butlast-acc xs Nil))
+
+(defn ast-list-butlast-acc (xs acc)
+  (match xs
+    (Nil (list-reverse acc))
+    (Cons h t (if (nil? t) (list-reverse acc) (ast-list-butlast-acc t (Cons h acc))))))
+
+(defn ast-has-at-least (xs n)
+  (if (= n 0)
+    true
+    (match xs
+      (Nil false)
+      (Cons d1 t (ast-has-at-least t (- n 1))))))
+
+; Unwrap an Option, or lower to `fb` when it's None — replaces the
+; `(if (Some x y) x fb)` idiom used throughout this module, which does NOT
+; pattern-match: this compiler's `if` has no if-let sugar, so that idiom's
+; condition is a 2-argument call to the 1-field `Some` constructor and
+; ALWAYS evaluates false, meaning every special form below silently
+; degraded to `EUnknown` (or `None`) regardless of whether parsing actually
+; succeeded.
+(defn unwrap-or-expr (opt fb)
+  (match opt
+    (Some e e)
+    (None fb)))
+
+; ===========================================================================
 ; AST → EXPRINNER CONVERTER
 ; ===========================================================================
 ; Converts raw ast.zyl Ast (AIdent/AInt/AList) to ExprInner.
@@ -154,7 +205,7 @@
     (AList lst
       (if (nil? lst)
         (Expr (EAtom ANil))
-        (convert-list-to-exprinner (to-list lst))))))
+        (convert-list-to-exprinner lst)))))
 
 ; Helper: convert-ast returns a list of Expr (for Begin sequences)
 ; The head symbol determines which ExprInner variant to produce.
@@ -170,236 +221,203 @@
 (defn convert-list-to-exprinner (ast-list)
   (match ast-list
     (Nil (Expr (EAtom ANil)))
-    ((Cons head rest)
+    (Cons head rest
       (match head
-        (AIdent "defn"
-          (let (parsed (parse-defn rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "defn" (convert-ast-list rest))))))
-        (AIdent "deftype"
-          (let (parsed (parse-deftype rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "deftype" (convert-ast-list rest))))))
-        (AIdent "def"
-          (let (parsed (parse-def rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "def" (convert-ast-list rest))))))
-        (AIdent "let"
-          (let (parsed (parse-let rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "let" (convert-ast-list rest))))))
-        (AIdent "if"
-          (let (parsed (parse-if rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "if" (convert-ast-list rest))))))
-        (AIdent "while"
-          (let (parsed (parse-while rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "while" (convert-ast-list rest))))))
-        (AIdent "for"
-          (let (parsed (parse-for rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "for" (convert-ast-list rest))))))
-        (AIdent "cond"
-          (let (parsed (parse-cond rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "cond" (convert-ast-list rest))))))
-        (AIdent "match"
-          (let (parsed (parse-match rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "match" (convert-ast-list rest))))))
-        (AIdent "try"
-          (let (parsed (parse-try rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "try" (convert-ast-list rest))))))
-        (AIdent "begin"
-          (let (parsed (parse-begin rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "begin" (convert-ast-list rest))))))
-        (AIdent "lambda"
-          (let (parsed (parse-lambda rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "lambda" (convert-ast-list rest))))))
-        (AIdent "fn"
-          (let (parsed (parse-fn rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "fn" (convert-ast-list rest))))))
-        (AIdent "print"
-          (let (parsed (parse-print rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "print" (convert-ast-list rest))))))
-        (AIdent "assert-equal"
-          (let (parsed (parse-assert-equal rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "assert-equal" (convert-ast-list rest))))))
-        (AIdent "assert"
-          (let (parsed (parse-assert rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "assert" (convert-ast-list rest))))))
-        (AIdent "spawn"
-          (let (parsed (parse-spawn rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "spawn" (convert-ast-list rest))))))
-        (AIdent "send"
-          (let (parsed (parse-send rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "send" (convert-ast-list rest))))))
-        (AIdent "ffi-pin"
-          (let (parsed (parse-ffi-pin rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "ffi-pin" (convert-ast-list rest))))))
-        (AIdent "ffi-unpin"
-          (let (parsed (parse-ffi-unpin rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "ffi-unpin" (convert-ast-list rest))))))
-        (AIdent "exit"
-          (let (parsed (parse-exit rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "exit" (convert-ast-list rest))))))
-        (AIdent "close"
-          (let (parsed (parse-close rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "close" (convert-ast-list rest))))))
-        (AIdent "file-open"
-          (let (parsed (parse-file-open rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "file-open" (convert-ast-list rest))))))
-        (AIdent "file-read"
-          (let (parsed (parse-file-read rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "file-read" (convert-ast-list rest))))))
-        (AIdent "file-write"
-          (let (parsed (parse-file-write rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "file-write" (convert-ast-list rest))))))
-        (AIdent "file-close"
-          (let (parsed (parse-file-close rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "file-close" (convert-ast-list rest))))))
-        (AIdent "set!"
-          (let (parsed (parse-set-bang rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "set!" (convert-ast-list rest))))))
-        (AIdent "module"
-          (let (parsed (parse-module rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "module" (convert-ast-list rest))))))
-        (AIdent "use"
-          (let (parsed (parse-use rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "use" (convert-ast-list rest))))))
-        (AIdent "export"
-          (let (parsed (parse-export rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "export" (convert-ast-list rest))))))
-        (AIdent "derive"
-          (let (parsed (parse-derive rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "derive" (convert-ast-list rest))))))
-        (AIdent "macro"
-          (let (parsed (parse-macro rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "macro" (convert-ast-list rest))))))
-        (AIdent "test"
-          (let (parsed (parse-test rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "test" (convert-ast-list rest))))))
-        (AIdent "test-suite"
-          (let (parsed (parse-test-suite rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "test-suite" (convert-ast-list rest))))))
-        (AIdent "setup"
-          (let (parsed (parse-setup rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "setup" (convert-ast-list rest))))))
-        (AIdent "teardown"
-          (let (parsed (parse-teardown rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "teardown" (convert-ast-list rest))))))
-        (AIdent "with-resource"
-          (let (parsed (parse-with-resource rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "with-resource" (convert-ast-list rest))))))
-        (AIdent "read-line"
-          (let (d1 nil)
-            (Expr (EReadLine))))
-        (AIdent "make-struct"
-          (let (parsed (parse-make-struct rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "make-struct" (convert-ast-list rest))))))
-        (AIdent "struct-get"
-          (let (parsed (parse-struct-get rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "struct-get" (convert-ast-list rest))))))
-        (AIdent "make-variant"
-          (let (parsed (parse-make-variant rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "make-variant" (convert-ast-list rest))))))
-        (AIdent "unwrap"
-          (let (parsed (parse-unwrap rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "unwrap" (convert-ast-list rest))))))
-        (AIdent "buf-append"
-          (let (parsed (parse-buf-append rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "buf-append" (convert-ast-list rest))))))
-        (AIdent "test-property"
-          (let (parsed (parse-test-property rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "test-property" (convert-ast-list rest))))))
-        (AIdent "test-compile"
-          (let (parsed (parse-test-compile rest))
-            (if (Some expr parsed)
-              expr
-              (Expr (EUnknown "test-compile" (convert-ast-list rest))))))
-        (AIdent d1
-          (Expr (EApply (a-ident-to-str head) (convert-ast-list rest))))
-        (d2
-          (let (first (convert-ast head))
-            (Expr (ECall first (convert-ast-list rest)))))))))
+        (AIdent n (dispatch-special n rest))
+        (d1 (Expr (ECall (convert-ast head) (convert-ast-list rest))))))))
+
+; Special-form recognition by head-symbol NAME (no-dispatch architecture:
+; recognition happens here, never in the reader). Every branch that used to
+; be a `(AIdent "name" ...)` match arm is a `str-eq` check instead — match
+; arms only bind IDENTIFIER patterns; a literal string in pattern position
+; is never compared at all, so every one of those arms fired unconditionally
+; on the FIRST arm's variant (AIdent), making every special form after the
+; first permanently unreachable.
+(defn dispatch-special (n rest)
+  (if (> (str-eq n "defn") 0)
+    (match (parse-defn rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "defn" (convert-ast-list rest)))))
+  (if (> (str-eq n "deftype") 0)
+    (match (parse-deftype rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "deftype" (convert-ast-list rest)))))
+  (if (> (str-eq n "def") 0)
+    (match (parse-def rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "def" (convert-ast-list rest)))))
+  (if (> (str-eq n "let") 0)
+    (match (parse-let rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "let" (convert-ast-list rest)))))
+  (if (> (str-eq n "let-mut") 0)
+    (match (parse-let-mut rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "let-mut" (convert-ast-list rest)))))
+  (if (> (str-eq n "if") 0)
+    (match (parse-if rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "if" (convert-ast-list rest)))))
+  (if (> (str-eq n "while") 0)
+    (match (parse-while rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "while" (convert-ast-list rest)))))
+  (if (> (str-eq n "for") 0)
+    (match (parse-for rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "for" (convert-ast-list rest)))))
+  (if (> (str-eq n "cond") 0)
+    (match (parse-cond rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "cond" (convert-ast-list rest)))))
+  (if (> (str-eq n "match") 0)
+    (match (parse-match rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "match" (convert-ast-list rest)))))
+  (if (> (str-eq n "try") 0)
+    (match (parse-try rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "try" (convert-ast-list rest)))))
+  (if (> (str-eq n "begin") 0)
+    (match (parse-begin rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "begin" (convert-ast-list rest)))))
+  (if (> (str-eq n "lambda") 0)
+    (match (parse-lambda rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "lambda" (convert-ast-list rest)))))
+  (if (> (str-eq n "fn") 0)
+    (match (parse-fn rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "fn" (convert-ast-list rest)))))
+  (if (> (str-eq n "print") 0)
+    (match (parse-print rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "print" (convert-ast-list rest)))))
+  (if (> (str-eq n "assert-equal") 0)
+    (match (parse-assert-equal rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "assert-equal" (convert-ast-list rest)))))
+  (if (> (str-eq n "assert") 0)
+    (match (parse-assert rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "assert" (convert-ast-list rest)))))
+  (if (> (str-eq n "spawn") 0)
+    (match (parse-spawn rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "spawn" (convert-ast-list rest)))))
+  (if (> (str-eq n "send") 0)
+    (match (parse-send rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "send" (convert-ast-list rest)))))
+  (if (> (str-eq n "ffi-pin") 0)
+    (match (parse-ffi-pin rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "ffi-pin" (convert-ast-list rest)))))
+  (if (> (str-eq n "ffi-unpin") 0)
+    (match (parse-ffi-unpin rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "ffi-unpin" (convert-ast-list rest)))))
+  (if (> (str-eq n "exit") 0)
+    (match (parse-exit rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "exit" (convert-ast-list rest)))))
+  (if (> (str-eq n "close") 0)
+    (match (parse-close rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "close" (convert-ast-list rest)))))
+  (if (> (str-eq n "file-open") 0)
+    (match (parse-file-open rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "file-open" (convert-ast-list rest)))))
+  (if (> (str-eq n "file-read") 0)
+    (match (parse-file-read rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "file-read" (convert-ast-list rest)))))
+  (if (> (str-eq n "file-write") 0)
+    (match (parse-file-write rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "file-write" (convert-ast-list rest)))))
+  (if (> (str-eq n "file-close") 0)
+    (match (parse-file-close rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "file-close" (convert-ast-list rest)))))
+  (if (> (str-eq n "set!") 0)
+    (match (parse-set-bang rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "set!" (convert-ast-list rest)))))
+  (if (> (str-eq n "module") 0)
+    (match (parse-module rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "module" (convert-ast-list rest)))))
+  (if (> (str-eq n "use") 0)
+    (match (parse-use rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "use" (convert-ast-list rest)))))
+  (if (> (str-eq n "export") 0)
+    (match (parse-export rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "export" (convert-ast-list rest)))))
+  (if (> (str-eq n "derive") 0)
+    (match (parse-derive rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "derive" (convert-ast-list rest)))))
+  (if (> (str-eq n "macro") 0)
+    (match (parse-macro rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "macro" (convert-ast-list rest)))))
+  (if (> (str-eq n "test") 0)
+    (match (parse-test rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "test" (convert-ast-list rest)))))
+  (if (> (str-eq n "test-suite") 0)
+    (match (parse-test-suite rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "test-suite" (convert-ast-list rest)))))
+  (if (> (str-eq n "setup") 0)
+    (match (parse-setup rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "setup" (convert-ast-list rest)))))
+  (if (> (str-eq n "teardown") 0)
+    (match (parse-teardown rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "teardown" (convert-ast-list rest)))))
+  (if (> (str-eq n "with-resource") 0)
+    (match (parse-with-resource rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "with-resource" (convert-ast-list rest)))))
+  (if (> (str-eq n "read-line") 0)
+    (Expr (EReadLine))
+  (if (> (str-eq n "make-struct") 0)
+    (match (parse-make-struct rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "make-struct" (convert-ast-list rest)))))
+  (if (> (str-eq n "struct-get") 0)
+    (match (parse-struct-get rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "struct-get" (convert-ast-list rest)))))
+  (if (> (str-eq n "make-variant") 0)
+    (match (parse-make-variant rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "make-variant" (convert-ast-list rest)))))
+  (if (> (str-eq n "unwrap") 0)
+    (match (parse-unwrap rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "unwrap" (convert-ast-list rest)))))
+  (if (> (str-eq n "buf-append") 0)
+    (match (parse-buf-append rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "buf-append" (convert-ast-list rest)))))
+  (if (> (str-eq n "test-property") 0)
+    (match (parse-test-property rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "test-property" (convert-ast-list rest)))))
+  (if (> (str-eq n "test-compile") 0)
+    (match (parse-test-compile rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
+    (Expr (EApply n (convert-ast-list rest)))
+  )))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -409,21 +427,17 @@
     (d1 Nil)))
 
 (defn parse-defn (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match name
-        (AIdent n
-          (match rest
-            (Nil None)
-            ((Cons params body-expr)
-              (let (param-args (convert-ast-list (to-list params)))
-                (Some
-                  (Expr
-                    (EDefn
-                      n
-                      (parse-params params)
-                      (convert-ast body-expr))))))))))))
+  (match (ast-nth args 0 (AInt 0))
+    (AIdent n
+      (if (ast-has-at-least args 3)
+        (Some
+          (Expr
+            (EDefn
+              n
+              (parse-params (ast-nth args 1 (AInt 0)))
+              (convert-ast (ast-list-last args (AInt 0))))))
+        None))
+    (d1 None)))
 
 (defn parse-params (params)
   (match params
@@ -445,20 +459,27 @@
     (d1 (P "___" None))))
 
 (defn parse-deftype (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match (convert-ast name)
-        (Expr (EAtom (AIdent n))
-          (Some
-            (Expr
-              (EDeftype
-                n
-                (parse-adt-variants rest)
-                Nil
-                None)))))))
+  (if (ast-has-at-least args 1)
+    (match (ast-nth args 0 (AInt 0))
+      (AIdent n
+        (Some
+          (Expr
+            (EDeftype
+              n
+              (parse-adt-variants (ast-list-nth-rest args 1))
+              Nil
+              None))))
+      (d1 None))
+    None))
 
-)
+; All elements after the type name are variant specs (no trailing "body").
+(defn ast-list-nth-rest (xs n)
+  (if (= n 0)
+    xs
+    (match xs
+      (Nil Nil)
+      (Cons d1 t (ast-list-nth-rest t (- n 1))))))
+
 (defn parse-adt-variants (variants)
   (match variants
     (Nil Nil)
@@ -475,7 +496,7 @@
     (AList (Cons name rest)
       (AV
         (a-ident-to-str name)
-        (parse-field-names (to-list rest))))
+        (parse-field-names rest)))
     (d1 (AV "___" Nil))))
 
 (defn parse-field-names (fields)
@@ -487,106 +508,72 @@
         (parse-field-names rest)))))
 
 (defn parse-def (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match name
-        (AIdent n
-          (match rest
-            (Nil None)
-            ((Cons val body-expr)
-              (Some
-                (Expr
-                  (EDef
-                    n
-                    (convert-ast-list-to-expr val))))))))))
-
-; convert-ast-list-to-expr: handle let-style binding where value can be multiple forms
-; (let name val body) where val might be (value body) as a list
-)
-(defn convert-ast-list-to-expr (ast)
-  (match ast
+  (match (ast-nth args 0 (AInt 0))
     (AIdent n
-      (let (atom (AIdent n))
-        (Expr (EAtom atom))))
-    (AInt n
-      (let (atom (AInt n))
-        (Expr (EAtom atom))))
-    (AFloat s
-      (let (atom (AFloat s))
-        (Expr (EAtom atom))))
-    (AString s
-      (let (atom (AStr s))
-        (Expr (EAtom atom))))
-    (ABool b
-      (let (atom (ABool b))
-        (Expr (EAtom atom))))
-    (AList lst
-      (if (nil? lst)
-        (Expr (EAtom ANil))
-        (convert-list-to-exprinner (to-list lst))))))
+      (if (ast-has-at-least args 2)
+        (Some
+          (Expr
+            (EDef
+              n
+              (convert-ast (ast-nth args 1 (AInt 0))))))
+        None))
+    (d1 None)))
 
 (defn parse-let (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match name
-        (AIdent n
-          (match rest
-            (Nil None)
-            ((Cons val body-expr)
-              (Some
-                (Expr
-                  (ELet
-                    n
-                    (convert-ast-list-to-expr val)
-                    (convert-ast body-expr))))))))))
+  (match (ast-nth args 0 (AInt 0))
+    (AIdent n
+      (if (ast-has-at-least args 3)
+        (Some
+          (Expr
+            (ELet
+              n
+              (convert-ast (ast-nth args 1 (AInt 0)))
+              (convert-ast (ast-list-last args (AInt 0))))))
+        None))
+    (d1 None)))
 
-)
+(defn parse-let-mut (args)
+  (match (ast-nth args 0 (AInt 0))
+    (AIdent n
+      (if (ast-has-at-least args 3)
+        (Some
+          (Expr
+            (ELetMut
+              n
+              (convert-ast (ast-nth args 1 (AInt 0)))
+              (convert-ast (ast-list-last args (AInt 0))))))
+        None))
+    (d1 None)))
+
 (defn parse-if (args)
-  (match args
-    (Nil None)
-    ((Cons cond rest)
-      (match rest
-        ((Cons then- else-)
-          (Some
-            (Expr
-              (EIf
-                (convert-ast cond)
-                (convert-ast then-)
-                (convert-ast else-)))))
-        (d1 None))))
+  (if (ast-has-at-least args 3)
+    (Some
+      (Expr
+        (EIf
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0)))
+          (convert-ast (ast-nth args 2 (AInt 0))))))
+    None))
 
-)
 (defn parse-while (args)
-  (match args
-    (Nil None)
-    ((Cons cond rest)
-      (match rest
-        (Cons body-expr d1
-          (Some
-            (Expr
-              (EWhile
-                (convert-ast cond)
-                (convert-ast body-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EWhile
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
-)
 (defn parse-for (args)
-  (match args
-    (Nil None)
-    ((Cons bindings cond rest)
-      (match rest
-        (Cons body-expr d1
-          (Some
-            (Expr
-              (EFor
-                (parse-for-bindings bindings)
-                (convert-ast cond)
-                (convert-ast body-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 3)
+    (Some
+      (Expr
+        (EFor
+          (parse-for-bindings (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0)))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
-)
 (defn parse-for-bindings (bindings)
   (match bindings
     (AList lst
@@ -596,7 +583,7 @@
           (let hd (parse-for-binding binding)
             (let tl (parse-for-bindings (AList rest))
               (Cons hd tl))))))
-    (d1 nil))
+    (d1 Nil))
 
 )
 (defn parse-for-binding (binding)
@@ -608,17 +595,16 @@
         (a-ident-to-str name)
         (if (nil? rest)
           None
-          (Some (convert-ast-list-to-expr (AList rest))))))
+          (Some (convert-ast (ast-list-last rest (AInt 0)))))))
     (d1 (Pair "___" None))))
 
 (defn parse-cond (args)
-  (match args
-    (Nil None)
-    (Cons d1 d2
-      (Some
-        (Expr
-          (ECond
-            (parse-cond-clauses (AList args))))))))
+  (if (nil? args)
+    None
+    (Some
+      (Expr
+        (ECond
+          (parse-cond-clauses (AList args)))))))
 
 (defn parse-cond-clauses (ast)
   (match ast
@@ -629,74 +615,58 @@
           (let hd (parse-cond-clause clause)
             (let tl (parse-cond-clauses (AList rest))
               (Cons hd tl))))))
-    (d1 nil))
+    (d1 Nil))
 
 )
 (defn parse-cond-clause (clause)
   (match clause
-    (AList (Cons pred body)
+    (AList kids
       (Pair
-        (convert-ast pred)
-        (convert-ast body)))
+        (convert-ast (ast-nth kids 0 (AInt 0)))
+        (convert-ast (ast-list-last kids (AInt 0)))))
     (d1 (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
 
+; Match arms are every element AFTER the subject: `(match subject arm1 arm2
+; ...)` — NOT one single list-wrapped argument, so `parse-match-arms` takes
+; a plain `List Ast` of arm-forms directly (args[1..]), one recursive step
+; at a time, same as the old Ast-based icnf.zyl's `ic-arms` did.
 (defn parse-match (args)
-  (match args
-    (Nil None)
-    ((Cons subject rest)
-      (match rest
-        (Cons arms-expr d1
-          (Some
-            (Expr
-              (EMatch
-                (convert-ast subject)
-                (parse-match-arms arms-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EMatch
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (parse-match-arms (ast-list-nth-rest args 1)))))
+    None))
 
-)
 (defn parse-match-arms (arms)
   (match arms
-    (AList lst
-      (match lst
-        (Nil Nil)
-        ((Cons arm rest)
-          (let hd (parse-match-arm arm)
-            (let tl (parse-match-arms (AList rest))
-              (Cons hd tl))))))
-    (d1 nil))
-
-)
+    (Nil Nil)
+    (Cons arm rest
+      (Cons (parse-match-arm arm) (parse-match-arms rest)))))
+; One arm: (VariantName pat* body) — name first, body last, middle binds.
 (defn parse-match-arm (arm)
   (match arm
-    (AList (Cons pattern rest)
-      (match rest
-        (Cons body d1
+    (AList kids
+      (match kids
+        (Nil (MA "___" Nil (Expr (EAtom ANil))))
+        (Cons pattern rest
           (MA
-            (match pattern
-              (AIdent n n)
-              (d1 "___"))
-            Nil
-            (convert-ast body)))
-        (d1 (MA "___" Nil (Expr (EAtom ANil))))))
+            (match pattern (AIdent n n) (d1 "___"))
+            (convert-ast-list (ast-list-butlast rest))
+            (convert-ast (ast-list-last rest (AInt 0)))))))
     (d1 (MA "___" Nil (Expr (EAtom ANil))))))
 
 (defn parse-try (args)
-  (match args
-    (Nil None)
-    ((Cons eh rest)
-      (match rest
-        ((Cons cn body-expr)
-          (Some
-            (Expr
-              (ETryCatch
-                (convert-ast eh)
-                (match cn
-                  (AIdent n n)
-                  (d1 "___"))
-                (convert-ast body-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 3)
+    (Some
+      (Expr
+        (ETryCatch
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "___"))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
-)
 (defn parse-begin (args)
   (match args
     (Nil (Some (Expr (EBegin Nil))))
@@ -704,154 +674,126 @@
 
 )
 (defn parse-lambda (args)
-  (match args
-    (Nil None)
-    ((Cons params rest)
-      (match rest
-        (Cons body-expr d1
-          (Some
-            (Expr
-              (ELambda
-                "___"
-                (parse-params params)
-                (convert-ast body-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (ELambda
+          "___"
+          (parse-params (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
-)
 (defn parse-fn (args)
-  (match args
-    (Nil None)
-    ((Cons params rest)
-      (match rest
-        (Cons body-expr d1
-          (Some
-            (Expr
-              (EFn
-                "___"
-                (parse-params params)
-                (convert-ast body-expr)))))
-        (d1 None))))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EFn
+          "___"
+          (parse-params (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
-)
 (defn parse-print (args)
   (Some (Expr (EPrint (convert-ast-list args)))))
 
 (defn parse-assert-equal (args)
-  (match args
-    (Nil None)
-    ((Cons l r)
-      (Some
-        (Expr
-          (EAssertEqual
-            (convert-ast-list-to-expr l)
-            (convert-ast-list-to-expr r)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EAssertEqual
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-assert (args)
-  (match args
-    (Nil None)
-    ((Cons cond rest)
-      (match rest
-        (Cons msg d1
-          (Some
-            (Expr
-              (EAssert
-                (convert-ast cond)
-                (Some (convert-ast-list-to-expr msg))))))
-        (d3
-          (Some
-            (Expr
-              (EAssert
-                (convert-ast cond)
-                None)))))))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EAssert
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (Some (convert-ast (ast-list-last args (AInt 0)))))))
+    (if (ast-has-at-least args 1)
+      (Some
+        (Expr
+          (EAssert
+            (convert-ast (ast-nth args 0 (AInt 0)))
+            None)))
+      None)))
 
-)
 (defn parse-spawn (args)
   (if (nil? args)
     None
-    (Some (Expr (ESpawn (convert-ast args))))))
+    (Some (Expr (ESpawn (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-send (args)
-  (match args
-    (Nil None)
-    ((Cons actor msg)
-      (Some
-        (Expr
-          (ESend
-            (convert-ast actor)
-            (convert-ast msg)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (ESend
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-ffi-pin (args)
   (if (nil? args)
     None
-    (Some (Expr (EFfiPin (convert-ast args))))))
+    (Some (Expr (EFfiPin (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-ffi-unpin (args)
   (if (nil? args)
     None
-    (Some (Expr (EFfiUnpin (convert-ast args))))))
+    (Some (Expr (EFfiUnpin (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-exit (args)
   (if (nil? args)
     None
-    (Some (Expr (EExit (convert-ast args))))))
+    (Some (Expr (EExit (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-close (args)
   (if (nil? args)
     None
-    (Some (Expr (EClose (convert-ast args))))))
+    (Some (Expr (EClose (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-file-open (args)
-  (match args
-    (Nil None)
-    ((Cons path mode)
-      (Some
-        (Expr
-          (EFileOpen
-            (convert-ast path)
-            (convert-ast mode)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EFileOpen
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-file-read (args)
-  (match args
-    (Nil None)
-    ((Cons handle count)
-      (Some
-        (Expr
-          (EFileRead
-            (convert-ast handle)
-            (convert-ast count)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EFileRead
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-file-write (args)
-  (match args
-    (Nil None)
-    ((Cons handle data)
-      (Some
-        (Expr
-          (EFileWrite
-            (convert-ast handle)
-            (convert-ast data)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EFileWrite
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-file-close (args)
   (if (nil? args)
     None
-    (Some (Expr (EFileClose (convert-ast args))))))
+    (Some (Expr (EFileClose (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-set-bang (args)
-  (match args
-    (Nil None)
-    ((Cons target val)
-      (Some
-        (Expr
-          (ESetBang
-            (match target
-              (AIdent n n)
-              (d1 "___"))
-            (convert-ast val)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (ESetBang
+          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-module (args)
   (if (nil? args)
@@ -859,12 +801,17 @@
     (Some
       (Expr
         (EModuleDecl
-          (match args
+          (match (ast-nth args 0 (AInt 0))
             (AIdent n n)
             (d1 "___")))))))
 
 (defn parse-use (args)
-  (Some (Expr (EUseModule (to-list args) None false))))
+  (Some (Expr (EUseModule (parse-idents args) None false))))
+
+(defn parse-idents (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (a-ident-to-str h) (parse-idents t)))))
 
 (defn parse-export (args)
   (if (nil? args)
@@ -872,67 +819,48 @@
     (Some
       (Expr
         (EExport
-          (match args
+          (match (ast-nth args 0 (AInt 0))
             (AIdent n n)
             (d1 "___")))))))
 
 (defn parse-derive (args)
-  (match args
-    (Nil None)
-    ((Cons type-expr rest)
-      (Some
-        (Expr
-          (EDerive
-            (match type-expr
-              (AIdent n n)
-              (d1 "___"))
-            (parse-derive-traits rest))))))
+  (if (ast-has-at-least args 1)
+    (Some
+      (Expr
+        (EDerive
+          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (parse-derive-traits (ast-list-nth-rest args 1)))))
+    None))
 
-)
-(defn parse-derive-traits (ast)
-  (match ast
-    (AList lst
-      (match lst
-        (Nil Nil)
-        ((Cons t rest)
-          (let hd (match t
-                    (AIdent n n)
-                    (d1 "___"))
-            (let tl (parse-derive-traits (AList rest))
-              (Cons hd tl))))))
-    (d1 nil))
+(defn parse-derive-traits (xs)
+  (match xs
+    (Nil Nil)
+    (Cons t rest
+      (let hd (match t (AIdent n n) (d1 "___"))
+        (Cons hd (parse-derive-traits rest))))))
 
-)
 (defn parse-macro (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match name
-        (AIdent n
-          (match rest
-            (Nil None)
-            ((Cons params body)
-              (Some
-                (Expr
-                  (EMacroDef
-                    n
-                    (convert-ast-list params)
-                    (convert-ast body)))))))))
+  (match (ast-nth args 0 (AInt 0))
+    (AIdent n
+      (if (ast-has-at-least args 3)
+        (Some
+          (Expr
+            (EMacroDef
+              n
+              (convert-ast-list (to-list (ast-nth args 1 (AInt 0))))
+              (convert-ast (ast-list-last args (AInt 0))))))
+        None))
     (d1 None)))
 
 (defn parse-test (args)
-  (match args
-    (Nil None)
-    ((Cons name body)
-      (Some
-        (Expr
-          (ETestDecl
-            (match name
-              (AIdent n n)
-              (d1 "___"))
-            (convert-ast body)
-            None))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (ETestDecl
+          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (convert-ast (ast-list-last args (AInt 0)))
+          None)))
+    None))
 
 (defn parse-test-suite (args)
   (Some (Expr (ETestSuite "___" Nil None))))
@@ -944,90 +872,59 @@
   (Some (Expr (ETeardown (convert-ast-list args)))))
 
 (defn parse-with-resource (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (match rest
-        ((Cons init body)
-          (Some
-            (Expr
-              (EWithResource
-                (match name
-                  (AIdent n n)
-                  (d1 "___"))
-                (convert-ast init)
-                (convert-ast body)))))
-        (d1 None)))
-    (d1 None)))
-
+  (if (ast-has-at-least args 3)
+    (Some
+      (Expr
+        (EWithResource
+          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (convert-ast (ast-nth args 1 (AInt 0)))
+          (convert-ast (ast-list-last args (AInt 0))))))
+    None))
 
 (defn parse-make-struct (args)
-  (match args
-    (Nil None)
-    ((Cons name rest)
-      (Some
-        (Expr
-          (EMakeStruct
-            (match name
-              (AIdent n n)
-              (d1 "___"))
-            (convert-ast-list rest)))))
-    (d1 None)))
+  (if (ast-has-at-least args 1)
+    (Some
+      (Expr
+        (EMakeStruct
+          (match (ast-nth args 0 (AInt 0)) (AIdent n n) (d1 "___"))
+          (convert-ast-list (ast-list-nth-rest args 1)))))
+    None))
 
 (defn parse-struct-get (args)
-  (match args
-    (Nil None)
-    ((Cons se rest)
-      (match rest
-        (Cons field d1
-          (Some
-            (Expr
-              (EStructGet
-                (convert-ast se)
-                (match field
-                  (AIdent n n)
-                  (d1 ""))))))
-        (d1 None)))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EStructGet
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "")))))
+    None))
 
 (defn parse-make-variant (args)
-  (match args
-    (Nil None)
-    ((Cons adt rest)
-      (match adt
-        (AList (Cons adt-name rest2)
-          (match rest2
-            (Nil None)
-            ((Cons variant fields-expr)
-              (Some
-                (Expr
-                  (EMakeVariant
-                    (match adt-name
-                      (AIdent n n)
-                      (d1 "___"))
-                    (match variant
-                      (AIdent n n)
-                      (d1 "___"))
-                    (convert-ast-list fields-expr)))))))
-        (d1 None)))
-    (d1 None)))
-
+  (if (ast-has-at-least args 2)
+    (match (ast-nth args 0 (AInt 0))
+      (AList adt-kids
+        (Some
+          (Expr
+            (EMakeVariant
+              (match (ast-nth adt-kids 0 (AInt 0)) (AIdent n n) (d1 "___"))
+              (match (ast-nth args 1 (AInt 0)) (AIdent n n) (d1 "___"))
+              (convert-ast-list (ast-list-nth-rest args 2))))))
+      (d1 None))
+    None))
 
 (defn parse-unwrap (args)
   (if (nil? args)
     None
-    (Some (Expr (EUnwrap (convert-ast args))))))
+    (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AInt 0))))))))
 
 (defn parse-buf-append (args)
-  (match args
-    (Nil None)
-    ((Cons dst src)
-      (Some
-        (Expr
-          (EBufAppend
-            (convert-ast dst)
-            (convert-ast src)))))
-    (d1 None)))
+  (if (ast-has-at-least args 2)
+    (Some
+      (Expr
+        (EBufAppend
+          (convert-ast (ast-nth args 0 (AInt 0)))
+          (convert-ast (ast-nth args 1 (AInt 0))))))
+    None))
 
 (defn parse-test-property (args)
   (Some (Expr (ETestProperty "___" (GenInt) (Expr (EAtom ANil))))))
@@ -1052,4 +949,4 @@
 (defn to-expr-list (ast)
   (match ast
     (AList lst (convert-ast-list lst))
-    (d1 nil)))
+    (d1 Nil)))

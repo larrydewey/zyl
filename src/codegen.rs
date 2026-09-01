@@ -724,6 +724,19 @@ impl CodeGen {
                         ICNFInner::Eq { .. } => continue,
                         ICNFInner::I32Imm(_) => continue,
                         ICNFInner::MakeVariant { .. } => continue,
+                        // Emitted inline by emit_load_into when its parent
+                        // requests the value — must not be emitted twice (a
+                        // second, "already emitted" fetch finds no phi slot
+                        // for a Match embedded only as an operand, and
+                        // silently leaves stale register data instead).
+                        ICNFInner::Match { .. } => continue,
+                        // Same bug class as Match above, for If: eagerly
+                        // emitting it here marks it "already emitted" with
+                        // no phi slot recorded for this embedding, so a
+                        // later on-demand fetch silently falls back to
+                        // whatever happens to be in the register instead of
+                        // the if-expression's real result.
+                        ICNFInner::If { .. } => continue,
                         _ => {}
                     }
                 }
@@ -1372,6 +1385,13 @@ impl CodeGen {
                         // Emitted inline by emit_load_into when its parent
                         // requests the value — must not be emitted twice.
                         ICNFInner::Match { .. } => continue,
+                        // Same bug class as Match above, for If: eagerly
+                        // emitting it here marks it "already emitted" with
+                        // no phi slot recorded for this embedding, so a
+                        // later on-demand fetch silently falls back to
+                        // whatever happens to be in the register instead of
+                        // the if-expression's real result.
+                        ICNFInner::If { .. } => continue,
                         _ => {}
                     }
                 }
@@ -1625,6 +1645,16 @@ impl CodeGen {
                             ICNFInner::Eq { .. } => continue,
                             ICNFInner::MakeVariant { .. } => continue,
                             ICNFInner::StructGet(..) => continue,
+                            // Emitted inline by emit_load_into when its parent
+                            // requests the value — must not be emitted twice.
+                            ICNFInner::Match { .. } => continue,
+                        // Same bug class as Match above, for If: eagerly
+                        // emitting it here marks it "already emitted" with
+                        // no phi slot recorded for this embedding, so a
+                        // later on-demand fetch silently falls back to
+                        // whatever happens to be in the register instead of
+                        // the if-expression's real result.
+                        ICNFInner::If { .. } => continue,
                             _ => {}
                         }
                     }
@@ -4392,6 +4422,24 @@ impl CodeGen {
                         ICNFInner::UnOp(_, _) => continue,
                         ICNFInner::Eq { .. } => continue,
                         ICNFInner::MakeVariant { .. } => continue,
+                        // A nested match used only as an operand (e.g. a
+                        // MakeVariant field) must stay unemitted here and be
+                        // generated fresh by emit_load_into at its use site.
+                        // Eagerly emitting it as a plain arm statement marks
+                        // its id "already emitted" with no phi slot recorded
+                        // for it, so the later on-demand fetch silently
+                        // leaves stale register data instead of the match's
+                        // real result — the root cause of a whole class of
+                        // "MakeVariant field quietly wrong when one field is
+                        // a nested match" bugs.
+                        ICNFInner::Match { .. } => continue,
+                        // Same bug class as Match above, for If: eagerly
+                        // emitting it here marks it "already emitted" with
+                        // no phi slot recorded for this embedding, so a
+                        // later on-demand fetch silently falls back to
+                        // whatever happens to be in the register instead of
+                        // the if-expression's real result.
+                        ICNFInner::If { .. } => continue,
                         _ => {}
                             }
                         }
