@@ -291,7 +291,7 @@
 (defn mem-string-list (lst name)
     (match lst
         (Nil false)
-        ((Pair h t)
+        ((Cons h t)
             (if
                 (= h name)
                 true
@@ -304,15 +304,20 @@
         (str-contains "ABCDEFGHIJKLMNOPQRSTUVWXYZ" s)
         false))
 
+(defn is-primitive-type-name (s)
+    (or (= s "Int") (or (= s "Float") (or (= s "Bool") (or (= s "String") (= s "Unit"))))))
+
+(defn prim-type-from-name (s)
+    (if (= s "Int") TInt
+        (if (= s "Float") TFloat
+            (if (= s "Bool") TBool
+                (if (= s "String") TString
+                    (if (= s "Unit") TUnit
+                        (TVar 0)))))))
+
 (defn type-from-display (s)
     ; map display string to concrete type
-    (match s
-        ("Int" TInt)
-        ("Float" TFloat)
-        ("Bool" TBool)
-        ("String" TString)
-        ("Unit" TUnit)
-        (_ (TStruct s Nil))))
+    (if (is-primitive-type-name s) (prim-type-from-name s) (TStruct s Nil)))
 
 (defn is-skip-placeholder (expr)
     ; detect the ____skip_ atom that marks an empty branch
@@ -323,7 +328,7 @@
                 (= kw "___skip_")
                 true
                 false))
-        (_ false)))
+        (d1 false)))
 
 ; ===========================================================================
 ; INFERER CONSTRUCTOR
@@ -363,16 +368,16 @@
 (defn infer-expr (inferer expr)
     (match expr.inner
         (Atom
-            (Int _ _)
+            (Int d1 d2)
             (inferer-return-int inferer))
         (Atom
-            (Float _ _)
+            (Float d3 d4)
             (inferer-return-float inferer))
         (Atom
-            (Bool _ _)
+            (Bool d5 d6)
             (inferer-return-bool inferer))
         (Atom
-            (Str _ _)
+            (Str d7 d8)
             (inferer-return-string inferer))
         (Atom
             (Keyword "___skip_")
@@ -384,7 +389,7 @@
                 (inferer-return-prim inferer name)
                 (infer-expr-ident inferer expr name)))
         (Def
-            _ val
+            d9 val
             (infer-expr-let inferer expr.val expr))
         (Let
             name val body
@@ -402,7 +407,7 @@
             stmts
             (infer-expr-begin inferer expr stmts))
         (Lambda
-            _ params body
+            d10 params body
             (infer-expr-lambda inferer expr params body))
         (While
             cond body
@@ -550,7 +555,7 @@
         (Error
             _msg
             (inferer-return-unit inferer))
-        (_
+        (d11
             (inferer-return-var inferer))))
 
 ; ===========================================================================
@@ -573,22 +578,10 @@
 
 (defn is-primitive-ident (name)
     ; primitive type names stand alone in expression position
-    (match name
-        ("Int" true)
-        ("Float" true)
-        ("Bool" true)
-        ("String" true)
-        ("Unit" true)
-        (_ false)))
+    (is-primitive-type-name name))
 
 (defn inferer-return-prim (inferer name)
-    (match name
-        ("Int" TInt)
-        ("Float" TFloat)
-        ("Bool" TBool)
-        ("String" TString)
-        ("Unit" TUnit)
-        (_ (inferer-return-var inferer))))
+    (if (is-primitive-type-name name) (prim-type-from-name name) (inferer-return-var inferer)))
 
 ; ===========================================================================
 ; INFER-EXPR — identifier lookup
@@ -605,13 +598,7 @@
 
 (defn infer-expr-ident-fallback (inferer expr name)
     ; unresolved identifier: primitive names are concrete, else fresh var
-    (match name
-        ("Unit" TUnit)
-        ("Int" TInt)
-        ("Float" TFloat)
-        ("Bool" TBool)
-        ("String" TString)
-        (_ (inferer-return-var inferer))))
+    (if (is-primitive-type-name name) (prim-type-from-name name) (inferer-return-var inferer)))
 
 (defn inferer-return-applied (inferer typ)
     (subst-apply (TISubst inferer) typ))
@@ -665,10 +652,10 @@
                                     (unify
                                         (subst-apply new-s tt)
                                         et)
-                                    (UOk _ tt)
-                                    (UErr _ tt))))))
+                                    (UOk d12 tt)
+                                    (UErr d13 tt))))))
                 (UErr
-                    _
+                    d14
                     (inferer-return-var inferer))))))
 
 ; ===========================================================================
@@ -684,15 +671,15 @@
             (= (list-length stmts) 1)
             (infer-expr inferer (fst stmts))
             (let
-                (_ (infer-expr-stmt-chain inferer stmts))
-                (infer-expr inferer (last stmts))))))
+                (d1 (infer-expr-stmt-chain inferer stmts))
+                (infer-expr inferer (list-last stmts))))))
 
 (defn infer-expr-stmt-chain (inferer stmts)
     ; infer all but last; result discarded
     (match stmts
         (Nil
             nil)
-        ((Pair h t)
+        ((Cons h t)
             (infer-expr inferer h)
             (infer-expr-stmt-chain inferer t))))
 
@@ -715,7 +702,7 @@
     (match params
         (Nil
             inferer)
-        ((Pair p rest)
+        ((Cons p rest)
             (let
                 (env
                     (env-bind
@@ -742,7 +729,7 @@
     (match params
         (Nil
             Nil)
-        ((Pair p rest)
+        ((Cons p rest)
             (Cons
                 TVar
                 (inferer-params-types rest)))))
@@ -752,7 +739,7 @@
         (Param
             n t
             n)
-        (_ "___")))
+        (d1 "___")))
 
 ; ===========================================================================
 ; INFER-EXPR — while
@@ -780,36 +767,36 @@
             (infer-expr new-inferer body)
             TUnit)))
 
-(defn inferer-bind-for-vars (inferer bindings)
+(defn inferer-bind-for-vars (inferer (bindings List))
     ; bind each (name val) pair to TCap TMut of val's type
     (match bindings
         (Nil
             inferer)
-        ((Pair
-            (Pair name val)
-            rest)
-            (let
-                (vt (infer-expr inferer val))
-                (let
-                    (new-env
-                        (env-bind
-                            (TIEnv inferer)
-                            name
-                            (TCap TCMut vt)))
-                    (inferer-bind-for-vars
-                        (TypeInferer
-                            new-env
-                            (TISubst inferer)
-                            (TINext inferer)
-                            (TIKnownTypes inferer)
-                            (TIKnownFns inferer)
-                            (TIFuncReturns inferer)
-                            (TIAdtDefs inferer)
-                            (TIVariantToAdt inferer)
-                            (TIStringMatchVars inferer)
-                            (TIInferringFns inferer)
-                            (TIBodyCache inferer))
-                        rest))))))
+        (Cons pair rest
+            (match pair
+                (Pair name val
+                    (let
+                        (vt (infer-expr inferer val))
+                        (let
+                            (new-env
+                                (env-bind
+                                    (TIEnv inferer)
+                                    name
+                                    (TCap TCMut vt)))
+                            (inferer-bind-for-vars
+                                (TypeInferer
+                                    new-env
+                                    (TISubst inferer)
+                                    (TINext inferer)
+                                    (TIKnownTypes inferer)
+                                    (TIKnownFns inferer)
+                                    (TIFuncReturns inferer)
+                                    (TIAdtDefs inferer)
+                                    (TIVariantToAdt inferer)
+                                    (TIStringMatchVars inferer)
+                                    (TIInferringFns inferer)
+                                    (TIBodyCache inferer))
+                                rest))))))))
 
 ; ===========================================================================
 ; INFER-EXPR — cond
@@ -823,15 +810,15 @@
     (match clauses
         (Nil
             rt)
-        ((Pair
-            (Pair pred body)
-            rest)
-            (let
-                (pt (infer-expr inferer pred))
-                (unify (TISubst inferer) pt TBool)
-                (let
-                    (bt (infer-expr inferer body))
-                    (infer-expr-cond-loop inferer rest bt))))))
+        (Cons clause rest
+            (match clause
+                (Pair pred body
+                    (let
+                        (pt (infer-expr inferer pred))
+                        (unify (TISubst inferer) pt TBool)
+                        (let
+                            (bt (infer-expr inferer body))
+                            (infer-expr-cond-loop inferer rest bt))))))))
 
 ; ===========================================================================
 ; INFER-EXPR — try/catch
@@ -858,7 +845,7 @@
     (match arms
         (Nil
             first-type)
-        ((Pair arm rest)
+        ((Cons arm rest)
             (let
                 (arm-env (env-snapshot (TIEnv inferer)))
                 (let
@@ -876,8 +863,8 @@
                                             (unify
                                                 (subst-apply (TISubst inferer) first-type)
                                                 abt)
-                                            (UOk _ first-type)
-                                            (UErr _ abt))))
+                                            (UOk d15 first-type)
+                                            (UErr d16 abt))))
                                 (let
                                     (rest-type
                                         (infer-expr-match-arms
@@ -902,12 +889,9 @@
     ; resolve field types for the variant a pattern names, mirroring Rust's
     ; adt_field_types(scrutinee_adt, arm.variant) with the scrutinee ADT
     ; resolved from the subject's nominal type through substitutions.
-    (match arm.pattern
-        (Atom
-            (Ident name)
-            (let
-                (adt-name (infer-lookup-scrutinee-adt inferer subject-type))
-                (infer-lookup-variant-fields inferer adt-name arm.variant)))))
+    (let
+        (adt-name (infer-lookup-scrutinee-adt inferer subject-type))
+        (infer-lookup-variant-fields inferer adt-name arm.variant)))
 
 (defn infer-lookup-scrutinee-adt (inferer subject-type)
     ; nominal type name of the scrutinee, mono-suffix stripped
@@ -927,8 +911,8 @@
     ; resolved type is nominal (TStruct), return its name; else None.
     (match
         (subst-apply subst t)
-        (TStruct n _ (Some n))
-        (_ None)))
+        (TStruct n d17 (Some n))
+        (d1 None)))
 
 (defn str-index-of-char (s c i)
     (if
@@ -970,52 +954,39 @@
 
 (defn inferer-bind-pattern-vars (inferer arm field-types)
     ; bind pattern vars to their field types; recurse over remaining fields
-    (match
-        (Pair arm.pattern field-types)
-        (Pair
-            (Atom (Ident name) _)
-            (Pair ft rest)
-            (let
-                (pt (infer-lookup-pattern-type inferer ft))
-                (let
-                    (new-inferer
-                        (TypeInferer
-                            (env-bind (TIEnv inferer) name pt)
-                            (TISubst inferer)
-                            (TINext inferer)
-                            (TIKnownTypes inferer)
-                            (TIKnownFns inferer)
-                            (TIFuncReturns inferer)
-                            (TIAdtDefs inferer)
-                            (TIVariantToAdt inferer)
-                            (if
-                                (string-type-pt pt)
-                                (Cons name (TIStringMatchVars inferer))
-                                (TIStringMatchVars inferer))
-                            (TIInferringFns inferer)
-                            (TIBodyCache inferer)))
-                    (if
-                        (nil? rest)
-                        new-inferer
+    (inferer-bind-pattern-vars-loop inferer arm.patterns field-types))
+
+(defn inferer-bind-pattern-vars-loop (inferer patterns field-types)
+    (match (Pair patterns field-types)
+        (Pair (Cons pat prest) (Cons ft frest)
+            (match pat.inner
+                (EAtom (AIdent name)
+                    (let
+                        (pt (infer-lookup-pattern-type inferer ft))
                         (let
-                            (rest-pattern
-                                (match arm.pattern
-                                    (Atom _ _ Nil)
-                                    (_ (cdr arm.pattern))))
-                            (inferer-bind-pattern-vars
-                                new-inferer
-                                (Pair rest-pattern rest)))))))
-        (_
+                            (new-inferer
+                                (TypeInferer
+                                    (env-bind (TIEnv inferer) name pt)
+                                    (TISubst inferer)
+                                    (TINext inferer)
+                                    (TIKnownTypes inferer)
+                                    (TIKnownFns inferer)
+                                    (TIFuncReturns inferer)
+                                    (TIAdtDefs inferer)
+                                    (TIVariantToAdt inferer)
+                                    (if
+                                        (string-type-pt pt)
+                                        (Cons name (TIStringMatchVars inferer))
+                                        (TIStringMatchVars inferer))
+                                    (TIInferringFns inferer)
+                                    (TIBodyCache inferer)))
+                            (inferer-bind-pattern-vars-loop new-inferer prest frest))))
+                (d1 (inferer-bind-pattern-vars-loop inferer prest frest))))
+        (d18
             inferer)))
 
 (defn infer-lookup-pattern-type (inferer field-type)
-    (match field-type
-        ("Int" TInt)
-        ("Float" TFloat)
-        ("Bool" TBool)
-        ("String" TString)
-        ("Unit" TUnit)
-        (_ (inferer-return-var inferer))))
+    (if (is-primitive-type-name field-type) (prim-type-from-name field-type) (inferer-return-var inferer)))
 
 (defn string-type-pt (pt)
     (= pt TString))
@@ -1024,8 +995,10 @@
     ; does an ADT def with this name exist?
     (match adt-defs
         (Nil false)
-        ((AD n rest) (if (= n name) true (infer-adt-exists rest name)))
-        (_ false)))
+        (Cons def rest
+            (match def
+                (AD n d19
+                    (if (= n name) true (infer-adt-exists rest name)))))))
 
 ; ===========================================================================
 ; INFER-EXPR — call (raw Call form)
@@ -1052,56 +1025,33 @@
                                 (is-builtin-io op-name)
                                 (infer-expr-builtin-io inferer expr op-name args)
                                 (infer-expr-call-fn inferer expr op-name args)))))))
-        (_
+        (d20
             (infer-expr-call-fn inferer expr "___unknown" args))))
 
 (defn is-builtin-binop (name)
-    (match name
-        ("+" true)
-        ("-" true)
-        ("*" true)
-        ("/" true)
-        (_ false)))
+    (or (= name "+") (or (= name "-") (or (= name "*") (= name "/")))))
 
 (defn is-builtin-unop (name)
-    (match name
-        ("not" true)
-        ("and" true)
-        ("or" true)
-        (_ false)))
+    (or (= name "not") (or (= name "and") (= name "or"))))
 
 (defn is-builtin-compare (name)
-    (match name
-        ("==" true)
-        ("!=" true)
-        ("<" true)
-        (">" true)
-        ("<=" true)
-        (">=" true)
-        (_ false)))
+    (or (= name "==") (or (= name "!=") (or (= name "<") (or (= name ">") (or (= name "<=") (= name ">=")))))))
 
 (defn is-builtin-conv (name)
-    (match name
-        ("str" true)
-        ("int" true)
-        ("float" true)
-        (_ false)))
+    (or (= name "str") (or (= name "int") (= name "float"))))
 
 (defn is-builtin-io (name)
-    (match name
-        ("print" true)
-        ("read-line" true)
-        ("exit" true)
-        ("close" true)
-        ("file-open" true)
-        ("file-read" true)
-        ("file-write" true)
-        ("file-close" true)
-        ("is-some" true)
-        ("is-none" true)
-        ("is-ok" true)
-        ("is-err" true)
-        (_ false)))
+    (or (= name "print")
+      (or (= name "read-line")
+        (or (= name "exit")
+          (or (= name "close")
+            (or (= name "file-open")
+              (or (= name "file-read")
+                (or (= name "file-write")
+                  (or (= name "file-close")
+                    (or (= name "is-some")
+                      (or (= name "is-none")
+                        (or (= name "is-ok") (= name "is-err")))))))))))))
 
 (defn infer-expr-builtin-binop (inferer expr op-name args)
     ; infer arg types; result Float if any Float else Int (or var)
@@ -1125,16 +1075,16 @@
     (match types
         (Nil
             nil)
-        ((Pair t rest)
+        ((Cons t rest)
             (infer-binop-check-one t)
             (infer-binop-check-types rest))))
 
 (defn infer-binop-check-one (t)
     (match t
         (TInt nil)
-        (TFloat (let (_ false) nil))
-        (TVar _ _ nil)
-        (_ nil)))
+        (TFloat (let (d1 false) nil))
+        (TVar d21 d22 nil)
+        (d1 nil)))
 
 (defn infer-expr-builtin-unop (inferer expr op-name args)
     ; unary ops: args must unify with Bool, result Bool
@@ -1145,7 +1095,7 @@
     (match args
         (Nil
             nil)
-        ((Pair a rest)
+        ((Cons a rest)
             (let
                 (t (infer-expr inferer a))
                 (unify (TISubst inferer) t TBool)
@@ -1157,27 +1107,26 @@
 
 (defn infer-expr-builtin-conv (inferer expr op-name args)
     (infer-args inferer args)
-    (match op-name
-        ("int" TInt)
-        ("float" TFloat)
-        ("str" TString)))
+    (if (= op-name "int") TInt
+        (if (= op-name "float") TFloat
+            (if (= op-name "str") TString
+                (TVar 0)))))
 
 (defn infer-expr-builtin-io (inferer expr op-name args)
     (infer-args inferer args)
-    (match op-name
-        ("print" TInt)
-        ("read-line" TString)
-        ("exit" TUnit)
-        ("close" TUnit)
-        ("file-open" TInt)
-        ("file-read" TString)
-        ("file-write" TInt)
-        ("file-close" TUnit)
-        ("is-some" TBool)
-        ("is-none" TBool)
-        ("is-ok" TBool)
-        ("is-err" TBool)
-        (_ TUnit)))
+    (if (= op-name "print") TInt
+        (if (= op-name "read-line") TString
+            (if (= op-name "exit") TUnit
+                (if (= op-name "close") TUnit
+                    (if (= op-name "file-open") TInt
+                        (if (= op-name "file-read") TString
+                            (if (= op-name "file-write") TInt
+                                (if (= op-name "file-close") TUnit
+                                    (if (= op-name "is-some") TBool
+                                        (if (= op-name "is-none") TBool
+                                            (if (= op-name "is-ok") TBool
+                                                (if (= op-name "is-err") TBool
+                                                    TUnit)))))))))))))
 
 (defn infer-expr-call-fn (inferer expr op-name args)
     ; register fn return placeholder, infer args, return its type
@@ -1257,9 +1206,9 @@
         (vt (infer-expr inferer val))
         (match
             (env-get (TIEnv inferer) target)
-            (Some (TCap TCMut _) TUnit)
+            (Some (TCap TCMut d23) TUnit)
             (None (inferer-return-var inferer))
-            (_ (inferer-return-var inferer)))))
+            (d1 (inferer-return-var inferer)))))
 
 ; ===========================================================================
 ; INFER-EXPR — make-struct
@@ -1281,8 +1230,8 @@
 
 (defn infer-struct-field-type (struct-type field-name)
     (match struct-type
-        (TStruct n _ nil)
-        (_ nil)))
+        (TStruct n d24 nil)
+        (d1 nil)))
 
 ; ===========================================================================
 ; INFER-EXPR — make-variant
@@ -1294,7 +1243,7 @@
         (infer-args inferer args)
         (infer-variant-record-instantiation inferer adt-name field-types)
         (TStruct
-            (format "{}_{}" adt-name variant-name)
+            (str-concat adt-name (str-concat "_" variant-name))
             field-types)))
 
 (defn infer-get-variant-fields (inferer adt-name variant-name)
@@ -1396,7 +1345,7 @@
     (match args
         (Nil
             nil)
-        ((Pair a rest)
+        ((Cons a rest)
             (infer-expr inferer a)
             (infer-args inferer rest))))
 
@@ -1409,66 +1358,25 @@
 (defn collect-definitions (inferer exprs)
     (match exprs
         (Nil inferer)
-        ((Pair expr rest)
-            (let (collected
-                   (match
-                       expr.inner
-                       (Defn name params body
-                           (let (param-types (collect-defn-params inferer params))
-                               (let (infered (infer-defn-body inferer name params param-types body))
-                                   (collect-definitions infered rest)))
-                       (Call op args
-                           (if (is-defn-call op)
-                               (let (parsed (parse-defn-call op args))
-                                   (if (Some result parsed)
-                                       (collect-defn-form inferer result)
-                                       (collect-definitions inferer rest)))
-                               (collect-definitions inferer rest)))
-                       (Apply fname args
-                           (if (= fname "defn")
-                               (let (name (match (car args)
-                                          (Atom (Ident n) n)
-                                          (_ fname)))
-                                     (collect-defn-form inferer
-                                         (Pair (Pair name (cdr args)) nil)))
-                               (collect-definitions inferer rest)))
-                       (Deftype name variants generic-params _
-                           (collect-definitions inferer rest))
-                       (StructDef sd
-                           (collect-definitions inferer rest))
-                       (StructDefPlus sd
-                           (collect-definitions inferer rest))
-                       (_ (collect-definitions inferer rest)))))
-                collected))))
-
-(defn is-defn-call (op)
-    (match op
-        (Atom (Ident n) (= n "defn"))
-        (_ false)))
-
-(defn parse-defn-call (op args)
-    ; parse (defn name params body ...) from Call form
-    (match args
-        (Nil None)
-        ((Pair name rest)
-            (match (Pair name rest)
-                ((Pair n args)
-                    (Some (Pair n args))))
-            None)))
+        ((Cons expr rest)
+            (match expr.inner
+                (EDefn name params body
+                    (let (param-types (collect-defn-params inferer params))
+                        (let (infered (infer-defn-body inferer name params param-types body))
+                            (collect-definitions infered rest))))
+                (d1 (collect-definitions inferer rest))))))
 
 (defn collect-defn-params (inferer params)
     ; extract param types from Defn params list
     (match params
         (Nil Nil)
-        ((Pair p rest)
+        ((Cons p rest)
             (Cons
-                (match
-                    p
-                    (Pair name typ (Pair (match name (Atom (Ident n) n) (_ "param"))
-                                        (match typ
-                                            (Atom (Ident t) (type-from-display t))
-                                            (_ (TVar 0 (TVar 0 TInt)))))
-                    (Pair "param" (TVar 0 (TVar 0 TInt)))))
+                (match p
+                    (P name typ
+                        (match typ
+                            (Some t (type-from-display t))
+                            (None (TVar 0)))))
                 (collect-defn-params inferer rest)))))
 
 (defn infer-defn-body (inferer name params param-types body)
@@ -1485,44 +1393,32 @@
         (catch-error
             (infer-expr inferer body))
         (Ok t t)
-        (Err _ (inferer-return-unit inferer))))
+        (Err d25 (inferer-return-unit inferer))))
 
 (defn catch-error (f)
     (try
-        (f)
-        (Err (lambda (e) e))))
+        (Ok (f))
+        (catch e (Err e))))
 
 (defn zip-params (params types)
     ; pair params with types
     (match (Pair params types)
         (Pair Nil Nil Nil)
-        (Pair ((Pair p rest-p) (Pair t rest-t))
+        (Pair (Cons p rest-p) (Cons t rest-t)
             (Cons (Pair p t) (zip-params rest-p rest-t)))
-        (Pair _ _ Nil)))
+        (Pair d26 d27 Nil)))
 
-(defn collect-defn-form (inferer parsed)
-    ; process a collected defn form
-    (match
-        parsed
-        (Pair (Pair name args) body-args
-            (let (param-list (car args))
-                (let (body (car body-args))
-                    (let (param-types (infer-expr inferer param-list))
-                        (let (inferred (infer-expr inferer body))
-                            (let (new-inferer (insert-fn-ret inferer name (infer-expr inferer body)))
-                                (insert-known-fn new-inferer name (Cons (Pair name (infer-expr inferer param-list))
-                                    Nil))))))))))
 
 (defn collect-adt-defs (inferer exprs)
     ; collect ADT definitions from exprs
     (match exprs
         (Nil inferer)
-        ((Pair expr rest)
+        ((Cons expr rest)
             (let (updated (match
                                expr.inner
-                               (Deftype name variants generic-params _
+                               (Deftype name variants generic-params d28
                                    (insert-adt-def inferer name variants))
-                               (_ inferer)))
+                               (d1 inferer)))
                 (collect-adt-defs updated rest)))))
 
 ; ===========================================================================
@@ -1571,7 +1467,7 @@
     (match
         types
         (Nil Nil)
-        ((Pair t rest)
+        ((Cons t rest)
             (Cons
                 (resolve-type-var inferer t ret-type)
                 (map-types inferer rest ret-type)))))
@@ -1584,14 +1480,14 @@
             (if (= n (var-index ret-type))
                 ret-type
                 type))
-        (_ type)))
+        (d1 type)))
 
 (defn var-index (t)
     ; extract the type variable index from a TVar type
     (match
         t
         (TVar n inner n)
-        (_ -1)))
+        (d1 -1)))
 
 ; ===========================================================================
 ; INFER PROGRAM — the entry point that ties it all together
@@ -1612,7 +1508,7 @@
     (match
         exprs
         (Nil Nil)
-        ((Pair expr rest)
+        ((Cons expr rest)
             (if (is-def-only expr)
                 (Cons (Pair expr (inferer-return-unit inferer))
                     (infer-expressions inferer rest))
@@ -1624,7 +1520,7 @@
     ; check if expr is a definition-only form (no inferred type needed)
     (match
         expr.inner
-        (Deftype _ _ _ _)
-        (StructDef _)
-        (StructDefPlus _)
-        (_ false)))
+        (Deftype d29 d30 d31 d32)
+        (StructDef d33)
+        (StructDefPlus d34)
+        (d1 false)))

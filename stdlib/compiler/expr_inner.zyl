@@ -85,17 +85,31 @@
 
 (deftype Param (P String (Option String)))
 
+(defn P.name (p) (match p (P n d1 n)))
+(defn P.type (p) (match p (P d1 t t)))
+
 (deftype MatchArm (MA String (List Expr) Expr))
+
+(defn MA.variant (arm) (match arm (MA v d1 d2 v)))
+(defn MA.patterns (arm) (match arm (MA d1 p d2 p)))
+(defn MA.body (arm) (match arm (MA d1 d2 b b)))
 
 (deftype CaptureInfo (CI String Int))
 
 (deftype ADTVariant (AV String (List String)))
+
+(defn AV.name (v) (match v (AV n d1 n)))
+(defn AV.fields (v) (match v (AV d1 f f)))
 
 (deftype TraitMethod (TM String (List Param) String))
 
 (deftype ImplBody (IB DefnNode))
 
 (deftype DefnNode (DN String (List Param) Expr))
+
+(defn DN.name (d) (match d (DN n d1 d2 n)))
+(defn DN.params (d) (match d (DN d1 p d2 p)))
+(defn DN.body (d) (match d (DN d1 d2 b b)))
 
 (deftype StructDef (SD String (List (Pair String (Option String)))))
 
@@ -342,7 +356,7 @@
               expr
               (Expr (EUnknown "with-resource" (convert-ast-list rest))))))
         (AIdent "read-line"
-          (let (_ nil)
+          (let (d1 nil)
             (Expr (EReadLine))))
         (AIdent "make-struct"
           (let (parsed (parse-make-struct rest))
@@ -379,9 +393,9 @@
             (if (Some expr parsed)
               expr
               (Expr (EUnknown "test-compile" (convert-ast-list rest))))))
-        (AIdent _
+        (AIdent d1
           (Expr (EApply (a-ident-to-str head) (convert-ast-list rest))))
-        (_
+        (d2
           (let (first (convert-ast head))
             (Expr (ECall first (convert-ast-list rest)))))))))
 
@@ -390,7 +404,7 @@
 (defn to-list (ast)
   (match ast
     (AList lst lst)
-    (_ nil)))
+    (d1 nil)))
 
 (defn parse-defn (args)
   (match args
@@ -415,10 +429,10 @@
       (match lst
         (Nil Nil)
         ((Cons p rest)
-          (Cons
-            (parse-single-param p)
-            (parse-params (AList rest)))))
-    (_ Nil)))
+          (let hd (parse-single-param p)
+            (let tl (parse-params (AList rest))
+              (Cons hd tl)))))
+    (d1 Nil)))
 
 )
 (defn parse-single-param (p)
@@ -426,7 +440,7 @@
     (AIdent name (P name None))
     (AList (Cons name (Cons typ rest))
       (P (a-ident-to-str name) (Some (convert-ast typ))))
-    (_ (P "___" None))))
+    (d1 (P "___" None))))
 
 (defn parse-deftype (args)
   (match args
@@ -460,7 +474,7 @@
       (AV
         (a-ident-to-str name)
         (parse-field-names (to-list rest))))
-    (_ (AV "___" Nil))))
+    (d1 (AV "___" Nil))))
 
 (defn parse-field-names (fields)
   (match fields
@@ -539,7 +553,7 @@
                 (convert-ast cond)
                 (convert-ast then-)
                 (convert-ast else-)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-while (args)
@@ -547,13 +561,13 @@
     (Nil None)
     ((Cons cond rest)
       (match rest
-        ((Cons body-expr)
+        (Cons body-expr d1
           (Some
             (Expr
               (EWhile
                 (convert-ast cond)
                 (convert-ast body-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-for (args)
@@ -561,14 +575,14 @@
     (Nil None)
     ((Cons bindings cond rest)
       (match rest
-        ((Cons body-expr)
+        (Cons body-expr d1
           (Some
             (Expr
               (EFor
                 (parse-for-bindings bindings)
                 (convert-ast cond)
                 (convert-ast body-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-for-bindings (bindings)
@@ -577,10 +591,10 @@
       (match lst
         (Nil Nil)
         ((Cons binding rest)
-          (Cons
-            (parse-for-binding binding)
-            (parse-for-bindings (AList rest)))))
-    (_ nil)))
+          (let hd (parse-for-binding binding)
+            (let tl (parse-for-bindings (AList rest))
+              (Cons hd tl)))))
+    (d1 nil)))
 
 )
 (defn parse-for-binding (binding)
@@ -593,17 +607,16 @@
         (if (nil? rest)
           None
           (Some (convert-ast-list-to-expr (AList rest))))))
-    (_ (Pair "___" None))))
+    (d1 (Pair "___" None))))
 
 (defn parse-cond (args)
   (match args
     (Nil None)
-    ((Cons clauses
+    (Cons d1 d2
       (Some
         (Expr
           (ECond
-            (parse-cond-clauses clauses))))))
-    (_ None)))
+            (parse-cond-clauses (AList args))))))))
 
 (defn parse-cond-clauses (ast)
   (match ast
@@ -611,10 +624,10 @@
       (match lst
         (Nil Nil)
         ((Cons clause rest)
-          (Cons
-            (parse-cond-clause clause)
-            (parse-cond-clauses (AList rest)))))
-    (_ nil)))
+          (let hd (parse-cond-clause clause)
+            (let tl (parse-cond-clauses (AList rest))
+              (Cons hd tl)))))
+    (d1 nil)))
 
 )
 (defn parse-cond-clause (clause)
@@ -623,20 +636,20 @@
       (Pair
         (convert-ast pred)
         (convert-ast body)))
-    (_ (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
+    (d1 (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
 
 (defn parse-match (args)
   (match args
     (Nil None)
     ((Cons subject rest)
       (match rest
-        ((Cons arms-expr)
+        (Cons arms-expr d1
           (Some
             (Expr
               (EMatch
                 (convert-ast subject)
                 (parse-match-arms arms-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-match-arms (arms)
@@ -645,25 +658,25 @@
       (match lst
         (Nil Nil)
         ((Cons arm rest)
-          (Cons
-            (parse-match-arm arm)
-            (parse-match-arms (AList rest)))))
-    (_ nil)))
+          (let hd (parse-match-arm arm)
+            (let tl (parse-match-arms (AList rest))
+              (Cons hd tl)))))
+    (d1 nil)))
 
 )
 (defn parse-match-arm (arm)
   (match arm
     (AList (Cons pattern rest)
       (match rest
-        ((Cons body)
+        (Cons body d1
           (MA
             (match pattern
               (AIdent n n)
-              (_ "___"))
+              (d1 "___"))
             Nil
             (convert-ast body)))
-        (_ (MA "___" Nil (Expr (EAtom ANil))))))
-    (_ (MA "___" Nil (Expr (EAtom ANil))))))
+        (d1 (MA "___" Nil (Expr (EAtom ANil))))))
+    (d1 (MA "___" Nil (Expr (EAtom ANil))))))
 
 (defn parse-try (args)
   (match args
@@ -677,20 +690,15 @@
                 (convert-ast eh)
                 (match cn
                   (AIdent n n)
-                  (_ "___"))
+                  (d1 "___"))
                 (convert-ast body-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-begin (args)
   (match args
     (Nil (Some (Expr (EBegin Nil))))
-    ((Cons stmts)
-      (Some
-        (Expr
-          (EBegin
-            (convert-ast-list stmts)))))
-    (_ (Some (Expr (EBegin (convert-ast-list args))))))
+    (d1 (Some (Expr (EBegin (convert-ast-list args))))))
 
 )
 (defn parse-lambda (args)
@@ -698,14 +706,14 @@
     (Nil None)
     ((Cons params rest)
       (match rest
-        ((Cons body-expr)
+        (Cons body-expr d1
           (Some
             (Expr
               (ELambda
                 "___"
                 (parse-params params)
                 (convert-ast body-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-fn (args)
@@ -713,14 +721,14 @@
     (Nil None)
     ((Cons params rest)
       (match rest
-        ((Cons body-expr)
+        (Cons body-expr d1
           (Some
             (Expr
               (EFn
                 "___"
                 (parse-params params)
                 (convert-ast body-expr)))))
-        (_ None))))
+        (d1 None))))
 
 )
 (defn parse-print (args)
@@ -735,20 +743,20 @@
           (EAssertEqual
             (convert-ast-list-to-expr l)
             (convert-ast-list-to-expr r)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-assert (args)
   (match args
     (Nil None)
     ((Cons cond rest)
       (match rest
-        ((Cons msg)
+        (Cons msg d1
           (Some
             (Expr
               (EAssert
                 (convert-ast cond)
                 (Some (convert-ast-list-to-expr msg))))))
-        (_
+        (d3
           (Some
             (Expr
               (EAssert
@@ -770,7 +778,7 @@
           (ESend
             (convert-ast actor)
             (convert-ast msg)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-ffi-pin (args)
   (if (nil? args)
@@ -801,7 +809,7 @@
           (EFileOpen
             (convert-ast path)
             (convert-ast mode)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-file-read (args)
   (match args
@@ -812,7 +820,7 @@
           (EFileRead
             (convert-ast handle)
             (convert-ast count)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-file-write (args)
   (match args
@@ -823,7 +831,7 @@
           (EFileWrite
             (convert-ast handle)
             (convert-ast data)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-file-close (args)
   (if (nil? args)
@@ -839,9 +847,9 @@
           (ESetBang
             (match target
               (AIdent n n)
-              (_ "___"))
+              (d1 "___"))
             (convert-ast val)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-module (args)
   (if (nil? args)
@@ -851,7 +859,7 @@
         (EModuleDecl
           (match args
             (AIdent n n)
-            (_ "___")))))))
+            (d1 "___")))))))
 
 (defn parse-use (args)
   (Some (Expr (EUseModule (to-list args) None false))))
@@ -864,7 +872,7 @@
         (EExport
           (match args
             (AIdent n n)
-            (_ "___")))))))
+            (d1 "___")))))))
 
 (defn parse-derive (args)
   (match args
@@ -875,7 +883,7 @@
           (EDerive
             (match type-expr
               (AIdent n n)
-              (_ "___"))
+              (d1 "___"))
             (parse-derive-traits rest))))))
 
 )
@@ -885,12 +893,12 @@
       (match lst
         (Nil Nil)
         ((Cons t rest)
-          (Cons
-            (match t
-              (AIdent n n)
-              (_ "___"))
-            (parse-derive-traits (AList rest)))))
-    (_ nil)))
+          (let hd (match t
+                    (AIdent n n)
+                    (d1 "___"))
+            (let tl (parse-derive-traits (AList rest))
+              (Cons hd tl)))))
+    (d1 nil)))
 
 )
 (defn parse-macro (args)
@@ -908,7 +916,7 @@
                     n
                     (convert-ast-list params)
                     (convert-ast body)))))))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-test (args)
   (match args
@@ -919,10 +927,10 @@
           (ETestDecl
             (match name
               (AIdent n n)
-              (_ "___"))
+              (d1 "___"))
             (convert-ast body)
             None))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-test-suite (args)
   (Some (Expr (ETestSuite "___" Nil None))))
@@ -944,11 +952,11 @@
               (EWithResource
                 (match name
                   (AIdent n n)
-                  (_ "___"))
+                  (d1 "___"))
                 (convert-ast init)
                 (convert-ast body)))))
-        (_ None))))
-    (_ None))
+        (d1 None))))
+    (d1 None))
 
 
 (defn parse-make-struct (args)
@@ -960,25 +968,25 @@
           (EMakeStruct
             (match name
               (AIdent n n)
-              (_ "___"))
+              (d1 "___"))
             (convert-ast-list rest)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-struct-get (args)
   (match args
     (Nil None)
     ((Cons se rest)
       (match rest
-        ((Cons field)
+        (Cons field d1
           (Some
             (Expr
               (EStructGet
                 (convert-ast se)
                 (match field
                   (AIdent n n)
-                  (_ "")))))
-        (_ None))))
-    (_ None)))
+                  (d1 "")))))
+        (d1 None))))
+    (d1 None)))
 
 (defn parse-make-variant (args)
   (match args
@@ -994,13 +1002,13 @@
                   (EMakeVariant
                     (match adt-name
                       (AIdent n n)
-                      (_ "___"))
+                      (d1 "___"))
                     (match variant
                       (AIdent n n)
-                      (_ "___"))
+                      (d1 "___"))
                     (convert-ast-list fields-expr)))))))
-        (_ None))))
-    (_ None))
+        (d1 None))))
+    (d1 None))
 
 
 (defn parse-unwrap (args)
@@ -1017,7 +1025,7 @@
           (EBufAppend
             (convert-ast dst)
             (convert-ast src)))))
-    (_ None)))
+    (d1 None)))
 
 (defn parse-test-property (args)
   (Some (Expr (ETestProperty "___" (GenInt) (Expr (EAtom ANil))))))
@@ -1032,14 +1040,14 @@
 (defn a-ident-to-str (ast)
   (match ast
     (AIdent s s)
-    (_ "")))
+    (d1 "")))
 
 (defn nil? (xs)
   (match xs
     (Nil true)
-    (_ false)))
+    (d1 false)))
 
 (defn to-expr-list (ast)
   (match ast
     (AList lst (convert-ast-list lst))
-    (_ nil)))
+    (d1 nil)))

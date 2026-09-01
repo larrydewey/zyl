@@ -28,11 +28,11 @@
 
 (defn RE.cur (self)
   (match self
-    ((RE c _) c)))
+    ((RE c d1) c)))
 
 (defn RE.parens (self)
   (match self
-    ((RE _ p) p)))
+    ((RE d2 p) p)))
 
 ; ===========================================================================
 ; REGION INFERENCE RESULTS
@@ -40,16 +40,29 @@
 
 (deftype RegionResult (RR Region (Option CaptureInfo)))
 
+(defn RR.reg (r) (match r (RR reg d1 reg)))
+(defn RR.capture (r) (match r (RR d1 c c)))
+
 (deftype RegionInferer (RI RegionEnv (List StructRegion) (List FuncSig)))
+
+(defn RI.env (ri) (match ri (RI e d1 d2 e)))
+(defn RI.sr (ri) (match ri (RI d1 s d2 s)))
+(defn RI.fs (ri) (match ri (RI d1 d2 f f)))
 
 ; ===========================================================================
 ; STRUCT / FUNCTION SIGNATURE HELPERS
 ; ===========================================================================
 
 (deftype StructRegion (SR String (List VariantRegion)))
+(defn SR.name (sr) (match sr (SR n d1 n)))
+(defn SR.variants (sr) (match sr (SR d1 v v)))
+
 (deftype VariantRegion (VR String (List FieldRegion)))
 (deftype FieldRegion (FR String Region))
 (deftype FuncSig (FS String (List Region) Region))
+(defn FS.name (fs) (match fs (FS n d1 d2 n)))
+(defn FS.params (fs) (match fs (FS d1 p d2 p)))
+(defn FS.ret (fs) (match fs (FS d1 d2 r r)))
 
 ; ===========================================================================
 ; REGION ENVIRONMENT HELPERS
@@ -57,7 +70,7 @@
 
 (defn env-new ()
   (RE Nil Nil))
-(defn env-get (env name)
+(defn re-env-get (env name)
   (env-get-cur (RE.cur env) name))
 (defn env-get-cur (binds name)
   (match binds
@@ -70,20 +83,20 @@
   (match parents
     (Nil None)
     ((Cons scope rest)
-      (env-get-binds scope name))
+      (re-env-get-binds scope name))
     (Nil None)))
-(defn env-get-binds (binds name)
+(defn re-env-get-binds (binds name)
   (match binds
     (Nil None)
     ((RB n r esc) rest
       (if (= (str-eq n name) 0)
         (Some (Pair r esc))
-        (env-get-binds rest name)))))
+        (re-env-get-binds rest name)))))
 (defn env-is-escaped (env name)
-  (match (env-get env name)
+  (match (re-env-get env name)
     (Some (Pair r esc) (if esc 1 0))
     (None 0)))
-(defn env-bind (env name region)
+(defn re-env-bind (env name region)
   (RegionEnv (Cons (RB name region 0) (RE.cur env)) (RE.parens env)))
 (defn env-contains (env name)
   (if (= (env-contains-cur (RE.cur env) name) 1)
@@ -92,7 +105,7 @@
 (defn env-contains-cur (binds name)
   (match binds
     (Nil 0)
-    ((RB n _ _) rest
+    ((RB n d3 d4) rest
       (if (= (str-eq n name) 0) 1 (env-contains-cur rest name)))))
 (defn env-contains-parents (parents)
   (env-contains-parents-inner parents))
@@ -173,7 +186,7 @@
 (defn env-list-has (binds name)
   (match binds
     (Nil 0)
-    ((Cons (RB n _ _) rest)
+    ((Cons (RB n d5 d6) rest)
       (if (= (str-eq n name) 0) 1 (env-list-has rest name)))))
 (defn env-add-remaining (binds acc)
   (match binds
@@ -186,7 +199,7 @@
 (defn env-bindings-cur (binds names)
   (match binds
     (Nil names)
-    ((Cons (RB n _ _) rest)
+    ((Cons (RB n d7 d8) rest)
       (if (= (env-names-has names n) 1)
         (env-bindings-cur rest names)
         (env-bindings-cur rest (Cons n names))))))
@@ -199,28 +212,21 @@
     (Nil Nil)
     ((Cons scope rest)
       (env-bindings-cur scope (env-bindings-parents rest)))))
-(deftype StructRegion (SR String (List VariantRegion)))
-(deftype VariantRegion (VR String (List FieldRegion)))
-(deftype FieldRegion (FR String Region))
-
-(deftype FuncSig (FS String (List Region) Region))
-
-(deftype RegionInferer (RI RegionEnv (List StructRegion) (List FuncSig)))
 
 (defn ri-new ()
   (RegionInferer (env-new) Nil Nil))
 
 (defn ri-union-regions (a b)
   (match (Pair a b)
-    (Pair RGlobal _) RGlobal
-    (Pair _ RGlobal RGlobal)
+    (Pair RGlobal d9) RGlobal
+    (Pair d10 RGlobal RGlobal)
     (Pair RHeap RCircular) RHeap
     (Pair RCircular RHeap) RHeap
-    (Pair RHeap _) RHeap
-    (Pair _ RHeap RHeap)
+    (Pair RHeap d11) RHeap
+    (Pair d12 RHeap RHeap)
     (Pair RPin RStack) RPin
     (Pair RStack RPin) RPin
-    (Pair _ _) (if (>= (region-rank a) (region-rank b)) a b)))
+    (Pair d13 d14) (if (>= (region-rank a) (region-rank b)) a b)))
 
 (defn region-rank (r)
   (match r
@@ -232,10 +238,10 @@
 
 (defn ri-is-literal-const ((ic Icnf))
   (match ic
-    (IConst _ 1)
-    (IStr _ 1)
-    (IFlt _ 1)
-    (ILoad _ 0)
+    (IConst d15 1)
+    (IStr d16 1)
+    (IFlt d17 1)
+    (ILoad d18 0)
     (IBinop d5 a b (if (= (ri-is-literal-const a) 1)
                       (ri-is-literal-const b)
                       0))
@@ -247,14 +253,14 @@
                     (ri-is-literal-const e)
                     0)
                   0))
-    (IWhile _ _ 0)
-    (ISet _ _ 0)
+    (IWhile d19 d20 0)
+    (ISet d21 d22 0)
     (ILet d14 val body
       (if (= (ri-is-literal-const val) 1)
         (ri-is-literal-const body)
         0))
     (ISeq d15 (ri-is-literal-icnf-list d15))
-    (IVariant d16 _ d18 (ri-is-literal-icnf-list d18))
+    (IVariant d16 d23 d18 (ri-is-literal-icnf-list d18))
     (IMatch d19 scr arms
       (if (= (ri-is-literal-const scr) 1)
         (ri-is-literal-arms arms)
@@ -273,7 +279,7 @@
     (Nil 1)
     ((Cons arm rest)
       (match arm
-        ((IArm _ _ _ body)
+        ((IArm d24 d25 d26 body)
           (if (= (ri-is-literal-const body) 1)
             (ri-is-literal-arms rest)
             0)))
@@ -286,7 +292,7 @@
   (match ic
     (ILoad name
       (if (= (env-contains env name) 1)
-        (ri-capture-add name (env-get env name) captured-refs)
+        (ri-capture-add name (re-env-get env name) captured-refs)
         captured-refs))
     (IBinop d1 a b (ri-capture-collect a
       (ri-capture-collect b captured-refs env)
@@ -306,11 +312,11 @@
         env))
     (ISet d10 val
       (if (= (env-contains env d10) 1)
-        (ri-capture-add d10 (env-get env d10)
+        (ri-capture-add d10 (re-env-get env d10)
           (ri-capture-collect val captured-refs env))
         (ri-capture-collect val captured-refs env)))
     (ILet d11 val body
-      (let new-env (env-bind env d11 RStack)
+      (let new-env (re-env-bind env d11 RStack)
         (ri-capture-collect body captured-refs new-env)))
     (ISeq items (ri-capture-collect-list items captured-refs env))
     (IVariant d12 d13 args (ri-capture-collect-list args captured-refs env))
@@ -340,7 +346,7 @@
 (defn ri-capture-list-has (refs name)
   (match refs
     (Nil 0)
-    ((Cons (Pair n _) rest)
+    ((Cons (Pair n d27) rest)
       (if (= (str-eq n name) 0) 1 (ri-capture-list-has rest name)))))
 
 (defn ri-capture-collect-arms (arms acc env)
@@ -348,7 +354,7 @@
     (Nil acc)
     ((Cons arm rest)
       (match arm
-        ((IArm _ _ binds body)
+        ((IArm d28 d29 binds body)
           (let arm-env (ri-bind-params binds env RStack)
             (ri-capture-collect-arms rest
               (ri-capture-collect body acc arm-env)
@@ -358,17 +364,15 @@
   (match params
     (Nil env)
     ((Cons name rest)
-      (ri-bind-params rest (env-bind env name region) region))))
-
-(deftype RegionResult (RR Region (Option CaptureInfo)))
+      (ri-bind-params rest (re-env-bind env name region) region))))
 
 (defn ri-infer-expr (ri (ic Icnf))
   (match ic
-    (IConst _ (RR RStack None))
-    (IStr _ (RR RHeap None))
-    (IFlt _ (RR RHeap None))
+    (IConst d30 (RR RStack None))
+    (IStr d31 (RR RHeap None))
+    (IFlt d32 (RR RHeap None))
     (ILoad name
-      (match (env-get (RI.env ri) name)
+      (match (re-env-get (RI.env ri) name)
         (Some (Pair r esc) (RR r None))
         (None (RR RStack None))))
     (IBinop d4 left right
@@ -399,9 +403,9 @@
           (RR (RR.reg vr) None))))
     (ILet d11 name val body
       (let env0 (RI.env ri)
-        (let _ (ri-infer-expr ri val)
+        (let d33 (ri-infer-expr ri val)
           (let env1 (env-enter env0)
-            (let env2 (env-bind env1 name RStack)
+            (let env2 (re-env-bind env1 name RStack)
               (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
                 (let result (ri-infer-expr ri2 body)
                   (let env3 (RI.env ri2)
@@ -421,7 +425,7 @@
         (let env1 (env-enter env0)
           (let env2 (ri-bind-params params env1 RStack)
             (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
-              (let _ (ri-infer-expr ri2 body)
+              (let d34 (ri-infer-expr ri2 body)
                 (let env3 (RI.env ri2)
                   (let env4 (env-exit env3)
                     (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
@@ -454,7 +458,7 @@
     (Nil acc)
     ((Cons arm rest)
       (match arm
-        ((IArm _ _ binds body)
+        ((IArm d35 d36 binds body)
           (let env0 (RI.env ri)
             (let env1 (env-enter env0)
               (let env2 (ri-bind-params binds env1 RStack)
@@ -508,7 +512,7 @@
 (defn ri-make-field-regions (args acc)
   (match args
     (Nil acc)
-    ((Cons _ rest)
+    ((Cons d37 rest)
       (ri-make-field-regions rest
         (Cons (FR "" RStack) acc)))))
 
@@ -522,7 +526,7 @@
 (defn ri-func-sig-exists (sigs name)
   (match sigs
     (Nil 0)
-    ((Cons (FS n _ _) rest)
+    ((Cons (FS n d38 d39) rest)
       (if (= (str-eq n name) 0) 1 (ri-func-sig-exists rest name)))))
 
 (defn ri-add-struct-region (ri sr)
@@ -534,7 +538,7 @@
 (defn ri-sr-exists (srs name)
   (match srs
     (Nil 0)
-    ((Cons (SR n _) rest)
+    ((Cons (SR n d40) rest)
       (if (= (str-eq n name) 0) 1 (ri-sr-exists rest name)))))
 
 (defn ri-infer (icnf-list ri)
