@@ -35,11 +35,34 @@
   (TCBox)
   (TCPin))
 
+; A nominal (named) type with no type arguments — sugar over TStruct.
+(defn TNominal (name) (TStruct name Nil))
+
+; Canonical display name for a Type — used to build monomorphized
+; function/struct names. Nested type args are not recursively expanded;
+; TStruct's own name carries the meaningful identity for that purpose.
+(defn type-to-string (t)
+  (match t
+    (TInt "Int")
+    (TFloat "Float")
+    (TBool "Bool")
+    (TString "String")
+    (TUnit "Unit")
+    (TFun d1 "Fn")
+    (TList d1 "List")
+    (TArray d1 d2 "Array")
+    (TCap d1 d2 "Cap")
+    (TStruct n d1 n)
+    (TVar d1 d2 "Var")
+    (TMap d1 d2 "Map")
+    (TResult d1 d2 "Result")))
+
 ; ===========================================================================
 ; SUBST MAP — List of (Int Type) bindings
 ; ===========================================================================
 
 (deftype Subst (SBindings (List TypeBind)))
+(defn SBindings.binds (s) (match s (SBindings b b)))
 
 (deftype TypeBind (TB Int Type))
 
@@ -48,12 +71,14 @@
 ; ===========================================================================
 
 (deftype TypeVarGen (TVG Int))
+(defn TVG.n (g) (match g (TVG n n)))
 
 ; ===========================================================================
 ; TYPE ENVIRONMENT — List of (String Type) bindings
 ; ===========================================================================
 
 (deftype TypeEnv (TEBindings (List EnvBind)))
+(defn TEBindings.binds (e) (match e (TEBindings b b)))
 
 (deftype EnvBind (EB String Type))
 
@@ -187,7 +212,7 @@
 (defn fst (p)
   (match p
     (Pair a d2 a)
-    (_ (fst-pair p))))
+    (d1 (fst-pair p))))
 
 (defn fst-pair (p)
   (match p
@@ -197,12 +222,12 @@
 (defn snd (p)
   (match p
     (Pair a b b)
-    (_ (snd-pair p))))
+    (d1 (snd-pair p))))
 
 (defn snd-pair (p)
   (match p
     (Pair a b b)
-    (_ 0)))
+    (d1 0)))
 
 ; Main entry — wraps the inner function
 (defn subst-apply (s t)
@@ -229,17 +254,17 @@
     (TUnit Nil)
     (TFun args (type-free-vars-list args))
     (TList elem (type-free-vars elem))
-    (TArray elem _ (type-free-vars elem))
-    (TCap _ inner (type-free-vars inner))
-    (TStruct _ fields (type-free-vars-list fields))
-    (TVar n _ (List n))
+    (TArray elem d1 (type-free-vars elem))
+    (TCap d2 inner (type-free-vars inner))
+    (TStruct d3 fields (type-free-vars-list fields))
+    (TVar n d4 (List n))
     (TMap k v (union (type-free-vars k) (type-free-vars v)))
     (TResult e h (union (type-free-vars e) (type-free-vars h))) ))
 
-(defn type-free-vars-list (types)
+(defn type-free-vars-list ((types (List Type)))
   (match types
     (Nil Nil)
-    ((Pair h t) (union (type-free-vars h) (type-free-vars-list t)))))
+    ((Cons h t) (union (type-free-vars h) (type-free-vars-list t)))))
 
 ; ===========================================================================
 ; UNIFICATION
@@ -281,11 +306,11 @@
      (unify (unify s k1 k2) v1 v2))
     ((Pair (TResult e1 h1) (TResult e2 h2))
      (unify (unify s e1 e2) h1 h2))
-    ((Pair (TVar n _) _)
+    ((Pair (TVar n d5) d6)
      (unify-var s n t2))
-    ((Pair _ (TVar n _))
+    ((Pair d7 (TVar n d8))
      (unify-var s n t1))
-    (_ (UErr "Type mismatch"))))
+    (d1 (UErr "Type mismatch"))))
 
 (defn unify-var (s n t)
   (match (subst-lookup s n)

@@ -1222,6 +1222,30 @@
   )
 )
 (
+  defn P.name
+  (
+    p
+  )
+  (
+    match p
+    (
+      P n d1 n
+    )
+  )
+)
+(
+  defn P.type
+  (
+    p
+  )
+  (
+    match p
+    (
+      P d1 t t
+    )
+  )
+)
+(
   deftype MatchArm
   (
     MA String
@@ -1229,6 +1253,42 @@
       List Expr
     )
     Expr
+  )
+)
+(
+  defn MA.variant
+  (
+    arm
+  )
+  (
+    match arm
+    (
+      MA v d1 d2 v
+    )
+  )
+)
+(
+  defn MA.patterns
+  (
+    arm
+  )
+  (
+    match arm
+    (
+      MA d1 p d2 p
+    )
+  )
+)
+(
+  defn MA.body
+  (
+    arm
+  )
+  (
+    match arm
+    (
+      MA d1 d2 b b
+    )
   )
 )
 (
@@ -1243,6 +1303,30 @@
     AV String
     (
       List String
+    )
+  )
+)
+(
+  defn AV.name
+  (
+    v
+  )
+  (
+    match v
+    (
+      AV n d1 n
+    )
+  )
+)
+(
+  defn AV.fields
+  (
+    v
+  )
+  (
+    match v
+    (
+      AV d1 f f
     )
   )
 )
@@ -1270,6 +1354,42 @@
       List Param
     )
     Expr
+  )
+)
+(
+  defn DN.name
+  (
+    d
+  )
+  (
+    match d
+    (
+      DN n d1 d2 n
+    )
+  )
+)
+(
+  defn DN.params
+  (
+    d
+  )
+  (
+    match d
+    (
+      DN d1 p d2 p
+    )
+  )
+)
+(
+  defn DN.body
+  (
+    d
+  )
+  (
+    match d
+    (
+      DN d1 d2 b b
+    )
   )
 )
 (
@@ -2628,7 +2748,7 @@
           (
             let
             (
-              _ nil
+              d1 nil
             )
             (
               Expr
@@ -2849,7 +2969,7 @@
           )
         )
         (
-          AIdent _
+          AIdent d1
           (
             Expr
             (
@@ -2864,7 +2984,7 @@
           )
         )
         (
-          _
+          d2
           (
             let
             (
@@ -2899,7 +3019,7 @@
       AList lst lst
     )
     (
-      _ nil
+      d1 nil
     )
   )
 )
@@ -2984,21 +3104,27 @@
             Cons p rest
           )
           (
-            Cons
+            let hd
             (
               parse-single-param p
             )
             (
-              parse-params
+              let tl
               (
-                AList rest
+                parse-params
+                (
+                  AList rest
+                )
+              )
+              (
+                Cons hd tl
               )
             )
           )
         )
       )
       (
-        _ Nil
+        d1 Nil
       )
     )
   )
@@ -3038,7 +3164,7 @@
       )
     )
     (
-      _
+      d1
       (
         P
         "___"
@@ -3152,7 +3278,7 @@
       )
     )
     (
-      _
+      d1
       (
         AV
         "___"
@@ -3444,7 +3570,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -3467,9 +3593,7 @@
       (
         match rest
         (
-          (
-            Cons body-expr
-          )
+          Cons body-expr d1
           (
             Some
             (
@@ -3487,7 +3611,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -3510,9 +3634,7 @@
       (
         match rest
         (
-          (
-            Cons body-expr
-          )
+          Cons body-expr d1
           (
             Some
             (
@@ -3533,7 +3655,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -3558,21 +3680,27 @@
             Cons binding rest
           )
           (
-            Cons
+            let hd
             (
               parse-for-binding binding
             )
             (
-              parse-for-bindings
+              let tl
               (
-                AList rest
+                parse-for-bindings
+                (
+                  AList rest
+                )
+              )
+              (
+                Cons hd tl
               )
             )
           )
         )
       )
       (
-        _ nil
+        d1 nil
       )
     )
   )
@@ -3619,7 +3747,7 @@
       )
     )
     (
-      _
+      d1
       (
         Pair
         "___"
@@ -3639,24 +3767,22 @@
       Nil None
     )
     (
+      Cons d1 d2
       (
-        Cons clauses
+        Some
         (
-          Some
+          Expr
           (
-            Expr
+            ECond
             (
-              ECond
+              parse-cond-clauses
               (
-                parse-cond-clauses clauses
+                AList args
               )
             )
           )
         )
       )
-    )
-    (
-      _ None
     )
   )
 )
@@ -3679,21 +3805,27 @@
             Cons clause rest
           )
           (
-            Cons
+            let hd
             (
               parse-cond-clause clause
             )
             (
-              parse-cond-clauses
+              let tl
               (
-                AList rest
+                parse-cond-clauses
+                (
+                  AList rest
+                )
+              )
+              (
+                Cons hd tl
               )
             )
           )
         )
       )
       (
-        _ nil
+        d1 nil
       )
     )
   )
@@ -3721,7 +3853,7 @@
       )
     )
     (
-      _
+      d1
       (
         Pair
         (
@@ -3757,9 +3889,7 @@
       (
         match rest
         (
-          (
-            Cons arms-expr
-          )
+          Cons arms-expr d1
           (
             Some
             (
@@ -3777,7 +3907,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -3802,21 +3932,27 @@
             Cons arm rest
           )
           (
-            Cons
+            let hd
             (
               parse-match-arm arm
             )
             (
-              parse-match-arms
+              let tl
               (
-                AList rest
+                parse-match-arms
+                (
+                  AList rest
+                )
+              )
+              (
+                Cons hd tl
               )
             )
           )
         )
       )
       (
-        _ nil
+        d1 nil
       )
     )
   )
@@ -3836,9 +3972,7 @@
       (
         match rest
         (
-          (
-            Cons body
-          )
+          Cons body d1
           (
             MA
             (
@@ -3847,7 +3981,7 @@
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
@@ -3858,7 +3992,7 @@
           )
         )
         (
-          _
+          d1
           (
             MA
             "___"
@@ -3874,7 +4008,7 @@
       )
     )
     (
-      _
+      d1
       (
         MA
         "___"
@@ -3924,7 +4058,7 @@
                     AIdent n n
                   )
                   (
-                    _
+                    d1
                     "___"
                   )
                 )
@@ -3936,7 +4070,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -3962,24 +4096,7 @@
       )
     )
     (
-      (
-        Cons stmts
-      )
-      (
-        Some
-        (
-          Expr
-          (
-            EBegin
-            (
-              convert-ast-list stmts
-            )
-          )
-        )
-      )
-    )
-    (
-      _
+      d1
       (
         Some
         (
@@ -4012,9 +4129,7 @@
       (
         match rest
         (
-          (
-            Cons body-expr
-          )
+          Cons body-expr d1
           (
             Some
             (
@@ -4033,7 +4148,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -4056,9 +4171,7 @@
       (
         match rest
         (
-          (
-            Cons body-expr
-          )
+          Cons body-expr d1
           (
             Some
             (
@@ -4077,7 +4190,7 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
@@ -4132,7 +4245,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4153,9 +4266,7 @@
       (
         match rest
         (
-          (
-            Cons msg
-          )
+          Cons msg d1
           (
             Some
             (
@@ -4176,7 +4287,7 @@
           )
         )
         (
-          _
+          d3
           (
             Some
             (
@@ -4251,7 +4362,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4386,7 +4497,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4421,7 +4532,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4456,7 +4567,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4511,7 +4622,7 @@
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
@@ -4523,7 +4634,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4550,7 +4661,7 @@
               AIdent n n
             )
             (
-              _
+              d1
               "___"
             )
           )
@@ -4601,7 +4712,7 @@
               AIdent n n
             )
             (
-              _
+              d1
               "___"
             )
           )
@@ -4636,7 +4747,7 @@
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
@@ -4668,28 +4779,34 @@
             Cons t rest
           )
           (
-            Cons
+            let hd
             (
               match t
               (
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
             (
-              parse-derive-traits
+              let tl
               (
-                AList rest
+                parse-derive-traits
+                (
+                  AList rest
+                )
+              )
+              (
+                Cons hd tl
               )
             )
           )
         )
       )
       (
-        _ nil
+        d1 nil
       )
     )
   )
@@ -4743,7 +4860,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4773,7 +4890,7 @@
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
@@ -4786,7 +4903,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4875,7 +4992,7 @@
                     AIdent n n
                   )
                   (
-                    _
+                    d1
                     "___"
                   )
                 )
@@ -4890,13 +5007,13 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
   )
   (
-    _ None
+    d1 None
   )
 )
 (
@@ -4925,7 +5042,7 @@
                 AIdent n n
               )
               (
-                _
+                d1
                 "___"
               )
             )
@@ -4937,7 +5054,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -4958,9 +5075,7 @@
       (
         match rest
         (
-          (
-            Cons field
-          )
+          Cons field d1
           (
             Some
             (
@@ -4976,7 +5091,7 @@
                     AIdent n n
                   )
                   (
-                    _
+                    d1
                     ""
                   )
                 )
@@ -4984,13 +5099,13 @@
             )
           )
           (
-            _ None
+            d1 None
           )
         )
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -5036,7 +5151,7 @@
                         AIdent n n
                       )
                       (
-                        _
+                        d1
                         "___"
                       )
                     )
@@ -5046,7 +5161,7 @@
                         AIdent n n
                       )
                       (
-                        _
+                        d1
                         "___"
                       )
                     )
@@ -5060,13 +5175,13 @@
           )
         )
         (
-          _ None
+          d1 None
         )
       )
     )
   )
   (
-    _ None
+    d1 None
   )
 )
 (
@@ -5125,7 +5240,7 @@
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -5187,7 +5302,7 @@
       AIdent s s
     )
     (
-      _
+      d1
       ""
     )
   )
@@ -5203,7 +5318,7 @@
       Nil true
     )
     (
-      _ false
+      d1 false
     )
   )
 )
@@ -5221,7 +5336,7 @@
       )
     )
     (
-      _ nil
+      d1 nil
     )
   )
 )
@@ -8532,11 +8647,92 @@
   )
 )
 (
+  defn TNominal
+  (
+    name
+  )
+  (
+    TStruct name Nil
+  )
+)
+(
+  defn type-to-string
+  (
+    t
+  )
+  (
+    match t
+    (
+      TInt
+      "Int"
+    )
+    (
+      TFloat
+      "Float"
+    )
+    (
+      TBool
+      "Bool"
+    )
+    (
+      TString
+      "String"
+    )
+    (
+      TUnit
+      "Unit"
+    )
+    (
+      TFun d1
+      "Fn"
+    )
+    (
+      TList d1
+      "List"
+    )
+    (
+      TArray d1 d2
+      "Array"
+    )
+    (
+      TCap d1 d2
+      "Cap"
+    )
+    (
+      TStruct n d1 n
+    )
+    (
+      TVar d1 d2
+      "Var"
+    )
+    (
+      TMap d1 d2
+      "Map"
+    )
+    (
+      TResult d1 d2
+      "Result"
+    )
+  )
+)
+(
   deftype Subst
   (
     SBindings
     (
       List TypeBind
+    )
+  )
+)
+(
+  defn SBindings.binds
+  (
+    s
+  )
+  (
+    match s
+    (
+      SBindings b b
     )
   )
 )
@@ -8553,11 +8749,35 @@
   )
 )
 (
+  defn TVG.n
+  (
+    g
+  )
+  (
+    match g
+    (
+      TVG n n
+    )
+  )
+)
+(
   deftype TypeEnv
   (
     TEBindings
     (
       List EnvBind
+    )
+  )
+)
+(
+  defn TEBindings.binds
+  (
+    e
+  )
+  (
+    match e
+    (
+      TEBindings b b
     )
   )
 )
@@ -9042,7 +9262,7 @@
       Pair a d2 a
     )
     (
-      _
+      d1
       (
         fst-pair p
       )
@@ -9083,7 +9303,7 @@
       Pair a b b
     )
     (
-      _
+      d1
       (
         snd-pair p
       )
@@ -9101,7 +9321,7 @@
       Pair a b b
     )
     (
-      _ 0
+      d1 0
     )
   )
 )
@@ -9201,25 +9421,25 @@
       )
     )
     (
-      TArray elem _
+      TArray elem d1
       (
         type-free-vars elem
       )
     )
     (
-      TCap _ inner
+      TCap d2 inner
       (
         type-free-vars inner
       )
     )
     (
-      TStruct _ fields
+      TStruct d3 fields
       (
         type-free-vars-list fields
       )
     )
     (
-      TVar n _
+      TVar n d4
       (
         List n
       )
@@ -9253,7 +9473,12 @@
 (
   defn type-free-vars-list
   (
-    types
+    (
+      types
+      (
+        List Type
+      )
+    )
   )
   (
     match types
@@ -9262,7 +9487,7 @@
     )
     (
       (
-        Pair h t
+        Cons h t
       )
       (
         union
@@ -9529,9 +9754,9 @@
       (
         Pair
         (
-          TVar n _
+          TVar n d5
         )
-        _
+        d6
       )
       (
         unify-var s n t2
@@ -9539,9 +9764,9 @@
     )
     (
       (
-        Pair _
+        Pair d7
         (
-          TVar n _
+          TVar n d8
         )
       )
       (
@@ -9549,7 +9774,7 @@
       )
     )
     (
-      _
+      d1
       (
         UErr
         "Type mismatch"
@@ -10387,7 +10612,7 @@
     )
     (
       (
-        Pair h t
+        Cons h t
       )
       (
         if
@@ -10425,37 +10650,107 @@
   )
 )
 (
+  defn is-primitive-type-name
+  (
+    s
+  )
+  (
+    or
+    (
+      = s
+      "Int"
+    )
+    (
+      or
+      (
+        = s
+        "Float"
+      )
+      (
+        or
+        (
+          = s
+          "Bool"
+        )
+        (
+          or
+          (
+            = s
+            "String"
+          )
+          (
+            = s
+            "Unit"
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn prim-type-from-name
+  (
+    s
+  )
+  (
+    if
+    (
+      = s
+      "Int"
+    )
+    TInt
+    (
+      if
+      (
+        = s
+        "Float"
+      )
+      TFloat
+      (
+        if
+        (
+          = s
+          "Bool"
+        )
+        TBool
+        (
+          if
+          (
+            = s
+            "String"
+          )
+          TString
+          (
+            if
+            (
+              = s
+              "Unit"
+            )
+            TUnit
+            (
+              TVar 0
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
   defn type-from-display
   (
     s
   )
   (
-    match s
+    if
     (
-      "Int"
-      TInt
+      is-primitive-type-name s
     )
     (
-      "Float"
-      TFloat
+      prim-type-from-name s
     )
     (
-      "Bool"
-      TBool
-    )
-    (
-      "String"
-      TString
-    )
-    (
-      "Unit"
-      TUnit
-    )
-    (
-      _
-      (
-        TStruct s Nil
-      )
+      TStruct s Nil
     )
   )
 )
@@ -10482,7 +10777,7 @@
       )
     )
     (
-      _ false
+      d1 false
     )
   )
 )
@@ -10566,7 +10861,7 @@
     (
       Atom
       (
-        Int _ _
+        Int d1 d2
       )
       (
         inferer-return-int inferer
@@ -10575,7 +10870,7 @@
     (
       Atom
       (
-        Float _ _
+        Float d3 d4
       )
       (
         inferer-return-float inferer
@@ -10584,7 +10879,7 @@
     (
       Atom
       (
-        Bool _ _
+        Bool d5 d6
       )
       (
         inferer-return-bool inferer
@@ -10593,7 +10888,7 @@
     (
       Atom
       (
-        Str _ _
+        Str d7 d8
       )
       (
         inferer-return-string inferer
@@ -10629,7 +10924,7 @@
     )
     (
       Def
-      _ val
+      d9 val
       (
         infer-expr-let inferer expr.val expr
       )
@@ -10671,7 +10966,7 @@
     )
     (
       Lambda
-      _ params body
+      d10 params body
       (
         infer-expr-lambda inferer expr params body
       )
@@ -11019,7 +11314,7 @@
       )
     )
     (
-      _
+      d11
       (
         inferer-return-var inferer
       )
@@ -11089,30 +11384,7 @@
     name
   )
   (
-    match name
-    (
-      "Int"
-      true
-    )
-    (
-      "Float"
-      true
-    )
-    (
-      "Bool"
-      true
-    )
-    (
-      "String"
-      true
-    )
-    (
-      "Unit"
-      true
-    )
-    (
-      _ false
-    )
+    is-primitive-type-name name
   )
 )
 (
@@ -11121,32 +11393,15 @@
     inferer name
   )
   (
-    match name
+    if
     (
-      "Int"
-      TInt
+      is-primitive-type-name name
     )
     (
-      "Float"
-      TFloat
+      prim-type-from-name name
     )
     (
-      "Bool"
-      TBool
-    )
-    (
-      "String"
-      TString
-    )
-    (
-      "Unit"
-      TUnit
-    )
-    (
-      _
-      (
-        inferer-return-var inferer
-      )
+      inferer-return-var inferer
     )
   )
 )
@@ -11189,32 +11444,15 @@
     inferer expr name
   )
   (
-    match name
+    if
     (
-      "Unit"
-      TUnit
+      is-primitive-type-name name
     )
     (
-      "Int"
-      TInt
+      prim-type-from-name name
     )
     (
-      "Float"
-      TFloat
-    )
-    (
-      "Bool"
-      TBool
-    )
-    (
-      "String"
-      TString
-    )
-    (
-      _
-      (
-        inferer-return-var inferer
-      )
+      inferer-return-var inferer
     )
   )
 )
@@ -11359,10 +11597,10 @@
                     et
                   )
                   (
-                    UOk _ tt
+                    UOk d12 tt
                   )
                   (
-                    UErr _ tt
+                    UErr d13 tt
                   )
                 )
               )
@@ -11371,7 +11609,7 @@
         )
         (
           UErr
-          _
+          d14
           (
             inferer-return-var inferer
           )
@@ -11409,7 +11647,7 @@
       (
         let
         (
-          _
+          d1
           (
             infer-expr-stmt-chain inferer stmts
           )
@@ -11417,7 +11655,7 @@
         (
           infer-expr inferer
           (
-            last stmts
+            list-last stmts
           )
         )
       )
@@ -11437,7 +11675,7 @@
     )
     (
       (
-        Pair h t
+        Cons h t
       )
       (
         infer-expr inferer h
@@ -11492,7 +11730,7 @@
     )
     (
       (
-        Pair p rest
+        Cons p rest
       )
       (
         let
@@ -11566,7 +11804,7 @@
     )
     (
       (
-        Pair p rest
+        Cons p rest
       )
       (
         Cons
@@ -11591,7 +11829,7 @@
       n
     )
     (
-      _
+      d1
       "___"
     )
   )
@@ -11660,7 +11898,10 @@
 (
   defn inferer-bind-for-vars
   (
-    inferer bindings
+    inferer
+    (
+      bindings List
+    )
   )
   (
     match bindings
@@ -11669,73 +11910,73 @@
       inferer
     )
     (
+      Cons pair rest
       (
-        Pair
+        match pair
         (
           Pair name val
-        )
-        rest
-      )
-      (
-        let
-        (
-          vt
           (
-            infer-expr inferer val
-          )
-        )
-        (
-          let
-          (
-            new-env
+            let
             (
-              env-bind
+              vt
               (
-                TIEnv inferer
-              )
-              name
-              (
-                TCap TCMut vt
+                infer-expr inferer val
               )
             )
-          )
-          (
-            inferer-bind-for-vars
             (
-              TypeInferer
-              new-env
+              let
               (
-                TISubst inferer
+                new-env
+                (
+                  env-bind
+                  (
+                    TIEnv inferer
+                  )
+                  name
+                  (
+                    TCap TCMut vt
+                  )
+                )
               )
               (
-                TINext inferer
-              )
-              (
-                TIKnownTypes inferer
-              )
-              (
-                TIKnownFns inferer
-              )
-              (
-                TIFuncReturns inferer
-              )
-              (
-                TIAdtDefs inferer
-              )
-              (
-                TIVariantToAdt inferer
-              )
-              (
-                TIStringMatchVars inferer
-              )
-              (
-                TIInferringFns inferer
-              )
-              (
-                TIBodyCache inferer
+                inferer-bind-for-vars
+                (
+                  TypeInferer
+                  new-env
+                  (
+                    TISubst inferer
+                  )
+                  (
+                    TINext inferer
+                  )
+                  (
+                    TIKnownTypes inferer
+                  )
+                  (
+                    TIKnownFns inferer
+                  )
+                  (
+                    TIFuncReturns inferer
+                  )
+                  (
+                    TIAdtDefs inferer
+                  )
+                  (
+                    TIVariantToAdt inferer
+                  )
+                  (
+                    TIStringMatchVars inferer
+                  )
+                  (
+                    TIInferringFns inferer
+                  )
+                  (
+                    TIBodyCache inferer
+                  )
+                )
+                rest
               )
             )
-            rest
           )
         )
       )
@@ -11763,38 +12004,38 @@
       rt
     )
     (
+      Cons clause rest
       (
-        Pair
+        match clause
         (
           Pair pred body
-        )
-        rest
-      )
-      (
-        let
-        (
-          pt
           (
-            infer-expr inferer pred
-          )
-        )
-        (
-          unify
-          (
-            TISubst inferer
-          )
-          pt TBool
-        )
-        (
-          let
-          (
-            bt
+            let
             (
-              infer-expr inferer body
+              pt
+              (
+                infer-expr inferer pred
+              )
             )
-          )
-          (
-            infer-expr-cond-loop inferer rest bt
+            (
+              unify
+              (
+                TISubst inferer
+              )
+              pt TBool
+            )
+            (
+              let
+              (
+                bt
+                (
+                  infer-expr inferer body
+                )
+              )
+              (
+                infer-expr-cond-loop inferer rest bt
+              )
+            )
           )
         )
       )
@@ -11851,7 +12092,7 @@
     )
     (
       (
-        Pair arm rest
+        Cons arm rest
       )
       (
         let
@@ -11912,10 +12153,10 @@
                         abt
                       )
                       (
-                        UOk _ first-type
+                        UOk d15 first-type
                       )
                       (
-                        UErr _ abt
+                        UErr d16 abt
                       )
                     )
                   )
@@ -11981,24 +12222,15 @@
     inferer arm subject-type
   )
   (
-    match arm.pattern
+    let
     (
-      Atom
+      adt-name
       (
-        Ident name
+        infer-lookup-scrutinee-adt inferer subject-type
       )
-      (
-        let
-        (
-          adt-name
-          (
-            infer-lookup-scrutinee-adt inferer subject-type
-          )
-        )
-        (
-          infer-lookup-variant-fields inferer adt-name arm.variant
-        )
-      )
+    )
+    (
+      infer-lookup-variant-fields inferer adt-name arm.variant
     )
   )
 )
@@ -12051,13 +12283,13 @@
       subst-apply subst t
     )
     (
-      TStruct n _
+      TStruct n d17
       (
         Some n
       )
     )
     (
-      _ None
+      d1 None
     )
   )
 )
@@ -12181,124 +12413,115 @@
     inferer arm field-types
   )
   (
+    inferer-bind-pattern-vars-loop inferer arm.patterns field-types
+  )
+)
+(
+  defn inferer-bind-pattern-vars-loop
+  (
+    inferer patterns field-types
+  )
+  (
     match
     (
-      Pair arm.pattern field-types
+      Pair patterns field-types
     )
     (
       Pair
       (
-        Atom
-        (
-          Ident name
-        )
-        _
+        Cons pat prest
       )
       (
-        Pair ft rest
+        Cons ft frest
       )
       (
-        let
+        match pat.inner
         (
-          pt
+          EAtom
           (
-            infer-lookup-pattern-type inferer ft
-          )
-        )
-        (
-          let
-          (
-            new-inferer
-            (
-              TypeInferer
-              (
-                env-bind
-                (
-                  TIEnv inferer
-                )
-                name pt
-              )
-              (
-                TISubst inferer
-              )
-              (
-                TINext inferer
-              )
-              (
-                TIKnownTypes inferer
-              )
-              (
-                TIKnownFns inferer
-              )
-              (
-                TIFuncReturns inferer
-              )
-              (
-                TIAdtDefs inferer
-              )
-              (
-                TIVariantToAdt inferer
-              )
-              (
-                if
-                (
-                  string-type-pt pt
-                )
-                (
-                  Cons name
-                  (
-                    TIStringMatchVars inferer
-                  )
-                )
-                (
-                  TIStringMatchVars inferer
-                )
-              )
-              (
-                TIInferringFns inferer
-              )
-              (
-                TIBodyCache inferer
-              )
-            )
+            AIdent name
           )
           (
-            if
+            let
             (
-              nil? rest
+              pt
+              (
+                infer-lookup-pattern-type inferer ft
+              )
             )
-            new-inferer
             (
               let
               (
-                rest-pattern
+                new-inferer
                 (
-                  match arm.pattern
+                  TypeInferer
                   (
-                    Atom _ _ Nil
+                    env-bind
+                    (
+                      TIEnv inferer
+                    )
+                    name pt
                   )
                   (
-                    _
+                    TISubst inferer
+                  )
+                  (
+                    TINext inferer
+                  )
+                  (
+                    TIKnownTypes inferer
+                  )
+                  (
+                    TIKnownFns inferer
+                  )
+                  (
+                    TIFuncReturns inferer
+                  )
+                  (
+                    TIAdtDefs inferer
+                  )
+                  (
+                    TIVariantToAdt inferer
+                  )
+                  (
+                    if
                     (
-                      cdr arm.pattern
+                      string-type-pt pt
                     )
+                    (
+                      Cons name
+                      (
+                        TIStringMatchVars inferer
+                      )
+                    )
+                    (
+                      TIStringMatchVars inferer
+                    )
+                  )
+                  (
+                    TIInferringFns inferer
+                  )
+                  (
+                    TIBodyCache inferer
                   )
                 )
               )
               (
-                inferer-bind-pattern-vars
-                new-inferer
-                (
-                  Pair rest-pattern rest
-                )
+                inferer-bind-pattern-vars-loop new-inferer prest frest
               )
             )
+          )
+        )
+        (
+          d1
+          (
+            inferer-bind-pattern-vars-loop inferer prest frest
           )
         )
       )
     )
     (
-      _
+      d18
       inferer
     )
   )
@@ -12309,32 +12532,15 @@
     inferer field-type
   )
   (
-    match field-type
+    if
     (
-      "Int"
-      TInt
+      is-primitive-type-name field-type
     )
     (
-      "Float"
-      TFloat
+      prim-type-from-name field-type
     )
     (
-      "Bool"
-      TBool
-    )
-    (
-      "String"
-      TString
-    )
-    (
-      "Unit"
-      TUnit
-    )
-    (
-      _
-      (
-        inferer-return-var inferer
-      )
+      inferer-return-var inferer
     )
   )
 )
@@ -12358,22 +12564,23 @@
       Nil false
     )
     (
+      Cons def rest
       (
-        AD n rest
-      )
-      (
-        if
+        match def
         (
-          = n name
-        )
-        true
-        (
-          infer-adt-exists rest name
+          AD n d19
+          (
+            if
+            (
+              = n name
+            )
+            true
+            (
+              infer-adt-exists rest name
+            )
+          )
         )
       )
-    )
-    (
-      _ false
     )
   )
 )
@@ -12439,7 +12646,7 @@
       )
     )
     (
-      _
+      d20
       (
         infer-expr-call-fn inferer expr
         "___unknown"
@@ -12454,25 +12661,28 @@
     name
   )
   (
-    match name
+    or
     (
+      = name
       "+"
-      true
     )
     (
-      "-"
-      true
-    )
-    (
-      "*"
-      true
-    )
-    (
-      "/"
-      true
-    )
-    (
-      _ false
+      or
+      (
+        = name
+        "-"
+      )
+      (
+        or
+        (
+          = name
+          "*"
+        )
+        (
+          = name
+          "/"
+        )
+      )
     )
   )
 )
@@ -12482,21 +12692,21 @@
     name
   )
   (
-    match name
+    or
     (
+      = name
       "not"
-      true
     )
     (
-      "and"
-      true
-    )
-    (
-      "or"
-      true
-    )
-    (
-      _ false
+      or
+      (
+        = name
+        "and"
+      )
+      (
+        = name
+        "or"
+      )
     )
   )
 )
@@ -12506,33 +12716,42 @@
     name
   )
   (
-    match name
+    or
     (
+      = name
       "=="
-      true
     )
     (
-      "!="
-      true
-    )
-    (
-      "<"
-      true
-    )
-    (
-      ">"
-      true
-    )
-    (
-      "<="
-      true
-    )
-    (
-      ">="
-      true
-    )
-    (
-      _ false
+      or
+      (
+        = name
+        "!="
+      )
+      (
+        or
+        (
+          = name
+          "<"
+        )
+        (
+          or
+          (
+            = name
+            ">"
+          )
+          (
+            or
+            (
+              = name
+              "<="
+            )
+            (
+              = name
+              ">="
+            )
+          )
+        )
+      )
     )
   )
 )
@@ -12542,21 +12761,21 @@
     name
   )
   (
-    match name
+    or
     (
+      = name
       "str"
-      true
     )
     (
-      "int"
-      true
-    )
-    (
-      "float"
-      true
-    )
-    (
-      _ false
+      or
+      (
+        = name
+        "int"
+      )
+      (
+        = name
+        "float"
+      )
     )
   )
 )
@@ -12566,57 +12785,84 @@
     name
   )
   (
-    match name
+    or
     (
+      = name
       "print"
-      true
     )
     (
-      "read-line"
-      true
-    )
-    (
-      "exit"
-      true
-    )
-    (
-      "close"
-      true
-    )
-    (
-      "file-open"
-      true
-    )
-    (
-      "file-read"
-      true
-    )
-    (
-      "file-write"
-      true
-    )
-    (
-      "file-close"
-      true
-    )
-    (
-      "is-some"
-      true
-    )
-    (
-      "is-none"
-      true
-    )
-    (
-      "is-ok"
-      true
-    )
-    (
-      "is-err"
-      true
-    )
-    (
-      _ false
+      or
+      (
+        = name
+        "read-line"
+      )
+      (
+        or
+        (
+          = name
+          "exit"
+        )
+        (
+          or
+          (
+            = name
+            "close"
+          )
+          (
+            or
+            (
+              = name
+              "file-open"
+            )
+            (
+              or
+              (
+                = name
+                "file-read"
+              )
+              (
+                or
+                (
+                  = name
+                  "file-write"
+                )
+                (
+                  or
+                  (
+                    = name
+                    "file-close"
+                  )
+                  (
+                    or
+                    (
+                      = name
+                      "is-some"
+                    )
+                    (
+                      or
+                      (
+                        = name
+                        "is-none"
+                      )
+                      (
+                        or
+                        (
+                          = name
+                          "is-ok"
+                        )
+                        (
+                          = name
+                          "is-err"
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     )
   )
 )
@@ -12676,7 +12922,7 @@
     )
     (
       (
-        Pair t rest
+        Cons t rest
       )
       (
         infer-binop-check-one t
@@ -12702,16 +12948,16 @@
       (
         let
         (
-          _ false
+          d1 false
         )
         nil
       )
     )
     (
-      TVar _ _ nil
+      TVar d21 d22 nil
     )
     (
-      _ nil
+      d1 nil
     )
   )
 )
@@ -12738,7 +12984,7 @@
     )
     (
       (
-        Pair a rest
+        Cons a rest
       )
       (
         let
@@ -12781,18 +13027,30 @@
     infer-args inferer args
   )
   (
-    match op-name
+    if
     (
+      = op-name
       "int"
-      TInt
     )
+    TInt
     (
-      "float"
+      if
+      (
+        = op-name
+        "float"
+      )
       TFloat
-    )
-    (
-      "str"
-      TString
+      (
+        if
+        (
+          = op-name
+          "str"
+        )
+        TString
+        (
+          TVar 0
+        )
+      )
     )
   )
 )
@@ -12805,57 +13063,100 @@
     infer-args inferer args
   )
   (
-    match op-name
+    if
     (
+      = op-name
       "print"
-      TInt
     )
+    TInt
     (
-      "read-line"
+      if
+      (
+        = op-name
+        "read-line"
+      )
       TString
-    )
-    (
-      "exit"
-      TUnit
-    )
-    (
-      "close"
-      TUnit
-    )
-    (
-      "file-open"
-      TInt
-    )
-    (
-      "file-read"
-      TString
-    )
-    (
-      "file-write"
-      TInt
-    )
-    (
-      "file-close"
-      TUnit
-    )
-    (
-      "is-some"
-      TBool
-    )
-    (
-      "is-none"
-      TBool
-    )
-    (
-      "is-ok"
-      TBool
-    )
-    (
-      "is-err"
-      TBool
-    )
-    (
-      _ TUnit
+      (
+        if
+        (
+          = op-name
+          "exit"
+        )
+        TUnit
+        (
+          if
+          (
+            = op-name
+            "close"
+          )
+          TUnit
+          (
+            if
+            (
+              = op-name
+              "file-open"
+            )
+            TInt
+            (
+              if
+              (
+                = op-name
+                "file-read"
+              )
+              TString
+              (
+                if
+                (
+                  = op-name
+                  "file-write"
+                )
+                TInt
+                (
+                  if
+                  (
+                    = op-name
+                    "file-close"
+                  )
+                  TUnit
+                  (
+                    if
+                    (
+                      = op-name
+                      "is-some"
+                    )
+                    TBool
+                    (
+                      if
+                      (
+                        = op-name
+                        "is-none"
+                      )
+                      TBool
+                      (
+                        if
+                        (
+                          = op-name
+                          "is-ok"
+                        )
+                        TBool
+                        (
+                          if
+                          (
+                            = op-name
+                            "is-err"
+                          )
+                          TBool
+                          TUnit
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     )
   )
 )
@@ -13034,7 +13335,7 @@
       (
         Some
         (
-          TCap TCMut _
+          TCap TCMut d23
         )
         TUnit
       )
@@ -13045,7 +13346,7 @@
         )
       )
       (
-        _
+        d1
         (
           inferer-return-var inferer
         )
@@ -13094,10 +13395,10 @@
   (
     match struct-type
     (
-      TStruct n _ nil
+      TStruct n d24 nil
     )
     (
-      _ nil
+      d1 nil
     )
   )
 )
@@ -13123,9 +13424,12 @@
     (
       TStruct
       (
-        format
-        "{}_{}"
-        adt-name variant-name
+        str-concat adt-name
+        (
+          str-concat
+          "_"
+          variant-name
+        )
       )
       field-types
     )
@@ -13337,7 +13641,7 @@
     )
     (
       (
-        Pair a rest
+        Cons a rest
       )
       (
         infer-expr inferer a
@@ -13360,205 +13664,41 @@
     )
     (
       (
-        Pair expr rest
+        Cons expr rest
       )
       (
-        let
+        match expr.inner
         (
-          collected
+          EDefn name params body
           (
-            match
-            expr.inner
+            let
             (
-              Defn name params body
+              param-types
               (
-                let
+                collect-defn-params inferer params
+              )
+            )
+            (
+              let
+              (
+                infered
                 (
-                  param-types
-                  (
-                    collect-defn-params inferer params
-                  )
-                )
-                (
-                  let
-                  (
-                    infered
-                    (
-                      infer-defn-body inferer name params param-types body
-                    )
-                  )
-                  (
-                    collect-definitions infered rest
-                  )
+                  infer-defn-body inferer name params param-types body
                 )
               )
               (
-                Call op args
-                (
-                  if
-                  (
-                    is-defn-call op
-                  )
-                  (
-                    let
-                    (
-                      parsed
-                      (
-                        parse-defn-call op args
-                      )
-                    )
-                    (
-                      if
-                      (
-                        Some result parsed
-                      )
-                      (
-                        collect-defn-form inferer result
-                      )
-                      (
-                        collect-definitions inferer rest
-                      )
-                    )
-                  )
-                  (
-                    collect-definitions inferer rest
-                  )
-                )
-              )
-              (
-                Apply fname args
-                (
-                  if
-                  (
-                    = fname
-                    "defn"
-                  )
-                  (
-                    let
-                    (
-                      name
-                      (
-                        match
-                        (
-                          car args
-                        )
-                        (
-                          Atom
-                          (
-                            Ident n
-                          )
-                          n
-                        )
-                        (
-                          _ fname
-                        )
-                      )
-                    )
-                    (
-                      collect-defn-form inferer
-                      (
-                        Pair
-                        (
-                          Pair name
-                          (
-                            cdr args
-                          )
-                        )
-                        nil
-                      )
-                    )
-                  )
-                  (
-                    collect-definitions inferer rest
-                  )
-                )
-              )
-              (
-                Deftype name variants generic-params _
-                (
-                  collect-definitions inferer rest
-                )
-              )
-              (
-                StructDef sd
-                (
-                  collect-definitions inferer rest
-                )
-              )
-              (
-                StructDefPlus sd
-                (
-                  collect-definitions inferer rest
-                )
-              )
-              (
-                _
-                (
-                  collect-definitions inferer rest
-                )
+                collect-definitions infered rest
               )
             )
           )
         )
-        collected
-      )
-    )
-  )
-)
-(
-  defn is-defn-call
-  (
-    op
-  )
-  (
-    match op
-    (
-      Atom
-      (
-        Ident n
-      )
-      (
-        = n
-        "defn"
-      )
-    )
-    (
-      _ false
-    )
-  )
-)
-(
-  defn parse-defn-call
-  (
-    op args
-  )
-  (
-    match args
-    (
-      Nil None
-    )
-    (
-      (
-        Pair name rest
-      )
-      (
-        match
         (
-          Pair name rest
-        )
-        (
+          d1
           (
-            Pair n args
-          )
-          (
-            Some
-            (
-              Pair n args
-            )
+            collect-definitions inferer rest
           )
         )
       )
-      None
     )
   )
 )
@@ -13574,60 +13714,26 @@
     )
     (
       (
-        Pair p rest
+        Cons p rest
       )
       (
         Cons
         (
-          match
-          p
+          match p
           (
-            Pair name typ
+            P name typ
             (
-              Pair
+              match typ
               (
-                match name
+                Some t
                 (
-                  Atom
-                  (
-                    Ident n
-                  )
-                  n
-                )
-                (
-                  _
-                  "param"
+                  type-from-display t
                 )
               )
               (
-                match typ
+                None
                 (
-                  Atom
-                  (
-                    Ident t
-                  )
-                  (
-                    type-from-display t
-                  )
-                )
-                (
-                  _
-                  (
-                    TVar 0
-                    (
-                      TVar 0 TInt
-                    )
-                  )
-                )
-              )
-            )
-            (
-              Pair
-              "param"
-              (
-                TVar 0
-                (
-                  TVar 0 TInt
+                  TVar 0
                 )
               )
             )
@@ -13700,7 +13806,7 @@
       Ok t t
     )
     (
-      Err _
+      Err d25
       (
         inferer-return-unit inferer
       )
@@ -13715,16 +13821,15 @@
   (
     try
     (
-      f
+      Ok
+      (
+        f
+      )
     )
     (
-      Err
+      catch e
       (
-        lambda
-        (
-          e
-        )
-        e
+        Err e
       )
     )
   )
@@ -13745,12 +13850,10 @@
     (
       Pair
       (
-        (
-          Pair p rest-p
-        )
-        (
-          Pair t rest-t
-        )
+        Cons p rest-p
+      )
+      (
+        Cons t rest-t
       )
       (
         Cons
@@ -13763,85 +13866,7 @@
       )
     )
     (
-      Pair _ _ Nil
-    )
-  )
-)
-(
-  defn collect-defn-form
-  (
-    inferer parsed
-  )
-  (
-    match
-    parsed
-    (
-      Pair
-      (
-        Pair name args
-      )
-      body-args
-      (
-        let
-        (
-          param-list
-          (
-            car args
-          )
-        )
-        (
-          let
-          (
-            body
-            (
-              car body-args
-            )
-          )
-          (
-            let
-            (
-              param-types
-              (
-                infer-expr inferer param-list
-              )
-            )
-            (
-              let
-              (
-                inferred
-                (
-                  infer-expr inferer body
-                )
-              )
-              (
-                let
-                (
-                  new-inferer
-                  (
-                    insert-fn-ret inferer name
-                    (
-                      infer-expr inferer body
-                    )
-                  )
-                )
-                (
-                  insert-known-fn new-inferer name
-                  (
-                    Cons
-                    (
-                      Pair name
-                      (
-                        infer-expr inferer param-list
-                      )
-                    )
-                    Nil
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
+      Pair d26 d27 Nil
     )
   )
 )
@@ -13857,7 +13882,7 @@
     )
     (
       (
-        Pair expr rest
+        Cons expr rest
       )
       (
         let
@@ -13867,13 +13892,13 @@
             match
             expr.inner
             (
-              Deftype name variants generic-params _
+              Deftype name variants generic-params d28
               (
                 insert-adt-def inferer name variants
               )
             )
             (
-              _ inferer
+              d1 inferer
             )
           )
         )
@@ -14018,7 +14043,7 @@
     )
     (
       (
-        Pair t rest
+        Cons t rest
       )
       (
         Cons
@@ -14055,7 +14080,7 @@
       )
     )
     (
-      _ type
+      d1 type
     )
   )
 )
@@ -14071,7 +14096,7 @@
       TVar n inner n
     )
     (
-      _ -1
+      d1 -1
     )
   )
 )
@@ -14115,7 +14140,7 @@
     )
     (
       (
-        Pair expr rest
+        Cons expr rest
       )
       (
         if
@@ -14165,16 +14190,16 @@
     match
     expr.inner
     (
-      Deftype _ _ _ _
+      Deftype d29 d30 d31 d32
     )
     (
-      StructDef _
+      StructDef d33
     )
     (
-      StructDefPlus _
+      StructDefPlus d34
     )
     (
-      _ false
+      d1 false
     )
   )
 )
@@ -14303,11 +14328,47 @@
   )
 )
 (
+  defn MP.name
+  (
+    p
+  )
+  (
+    match p
+    (
+      MP n d1 n
+    )
+  )
+)
+(
+  defn MP.bounds
+  (
+    p
+  )
+  (
+    match p
+    (
+      MP d1 b b
+    )
+  )
+)
+(
   deftype MonoInstance
   (
     MI String Expr
     (
       List MonoParam
+    )
+  )
+)
+(
+  defn MI.body
+  (
+    mono
+  )
+  (
+    match mono
+    (
+      MI d1 b d2 b
     )
   )
 )
@@ -14331,9 +14392,8 @@
   (
     match ctx
     (
-      MC g _ _ _ _ _ _ _
+      MC g d1 d2 d3 d4 d5 d6 d7 g
     )
-    g
   )
 )
 (
@@ -14344,9 +14404,8 @@
   (
     match ctx
     (
-      MC _ f _ _ _ _ _ _
+      MC d1 f d2 d3 d4 d5 d6 d7 f
     )
-    f
   )
 )
 (
@@ -14357,9 +14416,8 @@
   (
     match ctx
     (
-      MC _ _ r _ _ _ _ _
+      MC d1 d2 r d3 d4 d5 d6 d7 r
     )
-    r
   )
 )
 (
@@ -14370,9 +14428,8 @@
   (
     match ctx
     (
-      MC _ _ _ kt _ _ _ _
+      MC d1 d2 d3 kt d4 d5 d6 d7 kt
     )
-    kt
   )
 )
 (
@@ -14383,9 +14440,8 @@
   (
     match ctx
     (
-      MC _ _ _ _ sd _ _ _
+      MC d1 d2 d3 d4 sd d5 d6 d7 sd
     )
-    sd
   )
 )
 (
@@ -14396,9 +14452,8 @@
   (
     match ctx
     (
-      MC _ _ _ _ _ adt _ _
+      MC d1 d2 d3 d4 d5 adt d6 d7 adt
     )
-    adt
   )
 )
 (
@@ -14409,9 +14464,8 @@
   (
     match ctx
     (
-      MC _ _ _ _ _ _ ai _
+      MC d1 d2 d3 d4 d5 d6 ai d7 ai
     )
-    ai
   )
 )
 (
@@ -14422,9 +14476,8 @@
   (
     match ctx
     (
-      MC _ _ _ _ _ _ _ ti
+      MC d1 d2 d3 d4 d5 d6 d7 ti ti
     )
-    ti
   )
 )
 (
@@ -14438,9 +14491,7 @@
       Nil false
     )
     (
-      (
-        Cons h t
-      )
+      Cons h t
       (
         if
         (
@@ -14452,9 +14503,6 @@
         )
       )
     )
-    (
-      false
-    )
   )
 )
 (
@@ -14465,13 +14513,10 @@
   (
     match lst
     (
-      (
-        Cons h _
-      )
-      h
+      Cons h d1 h
     )
     (
-      nil
+      d1 nil
     )
   )
 )
@@ -14483,21 +14528,20 @@
   (
     match lst
     (
+      Cons h t
       (
-        Cons h Nil
+        if
+        (
+          = t Nil
+        )
+        h
+        (
+          list-last t
+        )
       )
-      h
     )
     (
-      (
-        Cons _ t
-      )
-      (
-        list-last t
-      )
-    )
-    (
-      nil
+      d1 nil
     )
   )
 )
@@ -14507,31 +14551,25 @@
     lst i
   )
   (
-    match
+    match lst
     (
-      i lst
+      Nil nil
     )
     (
-      0
+      Cons h t
       (
-        Cons h _
-      )
-      h
-    )
-    (
-      n
-      (
-        Cons _ t
-      )
-      (
-        list-nth t
+        if
         (
-          - n 1
+          = i 0
+        )
+        h
+        (
+          list-nth t
+          (
+            - i 1
+          )
         )
       )
-    )
-    (
-      nil
     )
   )
 )
@@ -14542,6 +14580,96 @@
   )
   (
     Cons x lst
+  )
+)
+(
+  defn list-map
+  (
+    f lst
+  )
+  (
+    match lst
+    (
+      Nil Nil
+    )
+    (
+      (
+        Cons h t
+      )
+      (
+        Cons
+        (
+          f h
+        )
+        (
+          list-map f t
+        )
+      )
+    )
+  )
+)
+(
+  defn list-map-indexed-loop
+  (
+    f lst i
+  )
+  (
+    match lst
+    (
+      Nil Nil
+    )
+    (
+      (
+        Cons h t
+      )
+      (
+        Cons
+        (
+          f i h
+        )
+        (
+          list-map-indexed-loop f t
+          (
+            + i 1
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn list-map-indexed
+  (
+    f lst
+  )
+  (
+    list-map-indexed-loop f lst 0
+  )
+)
+(
+  defn list-each
+  (
+    f lst
+  )
+  (
+    match lst
+    (
+      Nil nil
+    )
+    (
+      (
+        Cons h t
+      )
+      (
+        let d1
+        (
+          f h
+        )
+        (
+          list-each f t
+        )
+      )
+    )
   )
 )
 (
@@ -14631,7 +14759,7 @@
     )
     (
       (
-        MK k _
+        MK k d1
       )
       rest
       (
@@ -14906,31 +15034,45 @@
     s
   )
   (
-    match s
+    if
     (
+      = s
       "Int"
-      TInt
     )
+    TInt
     (
-      "Float"
-      TFloat
-    )
-    (
-      "Bool"
-      TBool
-    )
-    (
-      "String"
-      TString
-    )
-    (
-      "Unit"
-      TUnit
-    )
-    (
-      _
+      if
       (
-        TVar 0
+        = s
+        "Float"
+      )
+      TFloat
+      (
+        if
+        (
+          = s
+          "Bool"
+        )
+        TBool
+        (
+          if
+          (
+            = s
+            "String"
+          )
+          TString
+          (
+            if
+            (
+              = s
+              "Unit"
+            )
+            TUnit
+            (
+              TVar 0
+            )
+          )
+        )
       )
     )
   )
@@ -14973,22 +15115,6 @@
   )
 )
 (
-  defn lookup-fn-ret
-  (
-    ctx name
-  )
-  (
-    kv-get
-    (
-      mc-returns ctx
-    )
-    name
-    (
-      TVar 0
-    )
-  )
-)
-(
   defn lookup-known-type
   (
     ctx name
@@ -15005,119 +15131,148 @@
   )
 )
 (
+  defn filter-non-tvar
+  (
+    lst
+  )
+  (
+    match lst
+    (
+      Nil Nil
+    )
+    (
+      (
+        Cons h t
+      )
+      (
+        if
+        (
+          = h
+          (
+            TVar 0
+          )
+        )
+        (
+          filter-non-tvar t
+        )
+        (
+          Cons h
+          (
+            filter-non-tvar t
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn add-builtin-numeric-types
+  (
+    result
+  )
+  (
+    let r1
+    (
+      if
+      (
+        list-contains result TInt
+      )
+      result
+      (
+        list-push result TInt
+      )
+    )
+    (
+      let r2
+      (
+        if
+        (
+          list-contains r1 TFloat
+        )
+        r1
+        (
+          list-push r1 TFloat
+        )
+      )
+      (
+        if
+        (
+          list-contains r2 TBool
+        )
+        r2
+        (
+          list-push r2 TBool
+        )
+      )
+    )
+  )
+)
+(
+  defn is-auto-derived-trait
+  (
+    trait-name
+  )
+  (
+    or
+    (
+      = trait-name
+      "Eq"
+    )
+    (
+      or
+      (
+        = trait-name
+        "Ord"
+      )
+      (
+        or
+        (
+          = trait-name
+          "Debug"
+        )
+        (
+          or
+          (
+            = trait-name
+            "Clone"
+          )
+          (
+            = trait-name
+            "Hash"
+          )
+        )
+      )
+    )
+  )
+)
+(
   defn find-satisfying-types
   (
     ctx trait-name
   )
   (
-    let result Nil
+    let impls
     (
-      let impls
+      kv-get
       (
-        kv-get
-        (
-          mc-timpls ctx
-        )
-        trait-name Nil
+        mc-timpls ctx
       )
+      trait-name Nil
     )
     (
-      for
+      let result
       (
-        t impls
+        filter-non-tvar impls
       )
       (
         if
         (
-          not
-          (
-            = t
-            (
-              TVar 0
-            )
-          )
+          is-auto-derived-trait trait-name
         )
         (
-          begin
-          (
-            set! result
-            (
-              list-push result t
-            )
-          )
-          nil
-        )
-      )
-    )
-    (
-      match trait-name
-      (
-        "Eq"
-        "Ord"
-        "Debug"
-        "Clone"
-        "Hash"
-        (
-          if
-          (
-            not
-            (
-              list-contains result TInt
-            )
-          )
-          (
-            begin
-            (
-              set! result
-              (
-                list-push result TInt
-              )
-            )
-            nil
-          )
-        )
-        (
-          if
-          (
-            not
-            (
-              list-contains result TFloat
-            )
-          )
-          (
-            begin
-            (
-              set! result
-              (
-                list-push result TFloat
-              )
-            )
-            nil
-          )
-        )
-        (
-          if
-          (
-            not
-            (
-              list-contains result TBool
-            )
-          )
-          (
-            begin
-            (
-              set! result
-              (
-                list-push result TBool
-              )
-            )
-            nil
-          )
+          add-builtin-numeric-types result
         )
         result
-      )
-      (
-        _ result
       )
     )
   )
@@ -15166,18 +15321,18 @@
     params
   )
   (
-    let result Nil
+    match params
     (
-      for
-      (
-        p params
-      )
+      Nil Nil
+    )
+    (
+      Cons p rest
       (
         let pname
         (
           match p
           (
-            P n _ n
+            P n d1 n
           )
         )
         (
@@ -15188,10 +15343,13 @@
               P.type p
             )
             (
-              Some v v
+              Some v
+              (
+                Cons v Nil
+              )
             )
             (
-              _ Nil
+              d1 Nil
             )
           )
           (
@@ -15200,24 +15358,21 @@
               is-uppercase-ident pname
             )
             (
-              begin
+              Cons
               (
-                set! result
-                (
-                  list-push result
-                  (
-                    MP pname pbounds
-                  )
-                )
+                MP pname pbounds
               )
-              nil
+              (
+                extract-mono-params rest
+              )
             )
-            nil
+            (
+              extract-mono-params rest
+            )
           )
         )
       )
     )
-    result
   )
 )
 (
@@ -15237,7 +15392,7 @@
       )
     )
     (
-      _ Nil
+      d1 Nil
     )
   )
 )
@@ -15249,13 +15404,185 @@
   (
     match a
     (
-      EApply _ ps ps
+      EApply d2 ps ps
     )
     (
-      ECall _ ps ps
+      ECall d3 ps ps
     )
     (
-      _ Nil
+      d1 Nil
+    )
+  )
+)
+(
+  defn discover-mono-param
+  (
+    i p
+  )
+  (
+    let pn
+    (
+      match
+      (
+        ast-ident-name p
+      )
+      (
+        Some v v
+      )
+      (
+        d1
+        (
+          str-concat
+          "T"
+          (
+            string i
+          )
+        )
+      )
+    )
+    (
+      MP pn Nil
+    )
+  )
+)
+(
+  defn discover-from-ast-one
+  (
+    gen-fns expr
+  )
+  (
+    match expr.inner
+    (
+      EDefn name params body
+      (
+        let mp
+        (
+          extract-mono-params params
+        )
+        (
+          if
+          (
+            >
+            (
+              list-length mp
+            )
+            0
+          )
+          (
+            kv-set gen-fns name
+            (
+              list-push
+              (
+                kv-get gen-fns name Nil
+              )
+              (
+                list-first mp
+              )
+            )
+          )
+          gen-fns
+        )
+      )
+    )
+    (
+      EApply
+      "defn"
+      args
+      (
+        if
+        (
+          >
+          (
+            list-length args
+          )
+          2
+        )
+        (
+          let n
+          (
+            match
+            (
+              ast-ident-name
+              (
+                list-nth args 0
+              )
+            )
+            (
+              Some v v
+            )
+            (
+              d1 nil
+            )
+          )
+          (
+            let pexprs
+            (
+              ast-apply-args
+              (
+                list-nth args 1
+              )
+            )
+            (
+              let mp
+              (
+                list-map-indexed discover-mono-param pexprs
+              )
+              (
+                if
+                (
+                  and n
+                  (
+                    >
+                    (
+                      list-length mp
+                    )
+                    0
+                  )
+                )
+                (
+                  kv-set gen-fns n
+                  (
+                    list-push
+                    (
+                      kv-get gen-fns n Nil
+                    )
+                    (
+                      list-first mp
+                    )
+                  )
+                )
+                gen-fns
+              )
+            )
+          )
+        )
+        gen-fns
+      )
+    )
+    (
+      d1 gen-fns
+    )
+  )
+)
+(
+  defn discover-from-ast-loop
+  (
+    gen-fns exprs
+  )
+  (
+    match exprs
+    (
+      Nil gen-fns
+    )
+    (
+      Cons expr rest
+      (
+        discover-from-ast-loop
+        (
+          discover-from-ast-one gen-fns expr
+        )
+        rest
+      )
     )
   )
 )
@@ -15267,202 +15594,36 @@
   (
     let gen-fns
     (
-      mc-gen-fns ctx
+      discover-from-ast-loop
+      (
+        mc-gen-fns ctx
+      )
+      exprs
     )
     (
-      for
+      MC gen-fns
       (
-        expr exprs
+        mc-known-fns ctx
       )
       (
-        match expr.inner
-        (
-          EDefn name params body
-          (
-            let mp
-            (
-              extract-mono-params params
-            )
-            (
-              if
-              (
-                >
-                (
-                  list-length mp
-                )
-                0
-              )
-              (
-                begin
-                (
-                  set! gen-fns
-                  (
-                    kv-set gen-fns name
-                    (
-                      list-push
-                      (
-                        kv-get gen-fns name Nil
-                      )
-                      (
-                        first mp
-                      )
-                    )
-                  )
-                )
-                nil
-              )
-              nil
-            )
-          )
-        )
-        (
-          EApply
-          "defn"
-          args
-          (
-            if
-            (
-              >
-              (
-                list-length args
-              )
-              2
-            )
-            (
-              let n
-              (
-                match
-                (
-                  ast-ident-name
-                  (
-                    list-nth args 0
-                  )
-                )
-                (
-                  Some v v
-                )
-                (
-                  _ nil
-                )
-              )
-              (
-                let pexprs
-                (
-                  ast-apply-args
-                  (
-                    list-nth args 1
-                  )
-                )
-                (
-                  let mp
-                  (
-                    for
-                    (
-                      (
-                        i p
-                      )
-                      (
-                        index pexprs
-                      )
-                    )
-                    (
-                      let pn
-                      (
-                        match
-                        (
-                          ast-ident-name p
-                        )
-                        (
-                          Some v v
-                        )
-                        (
-                          _
-                          (
-                            str-concat
-                            "T"
-                            (
-                              string i
-                            )
-                          )
-                        )
-                      )
-                      (
-                        MP pn Nil
-                      )
-                    )
-                  )
-                  (
-                    if
-                    (
-                      and n
-                      (
-                        >
-                        (
-                          list-length mp
-                        )
-                        0
-                      )
-                    )
-                    (
-                      begin
-                      (
-                        set! gen-fns
-                        (
-                          kv-set gen-fns n
-                          (
-                            list-push
-                            (
-                              kv-get gen-fns n Nil
-                            )
-                            (
-                              first mp
-                            )
-                          )
-                        )
-                      )
-                      nil
-                    )
-                    nil
-                  )
-                )
-              )
-            )
-            nil
-          )
-        )
-        (
-          _ nil
-        )
+        mc-returns ctx
       )
       (
-        set! ctx
-        (
-          MC gen-fns
-          (
-            mc-known-fns ctx
-          )
-          (
-            mc-returns ctx
-          )
-          (
-            mc-ktypes ctx
-          )
-          (
-            mc-structs ctx
-          )
-          (
-            mc-adt-defs ctx
-          )
-          (
-            mc-adt-insts ctx
-          )
-          (
-            mc-timpls ctx
-          )
-        )
+        mc-ktypes ctx
+      )
+      (
+        mc-structs ctx
+      )
+      (
+        mc-adt-defs ctx
+      )
+      (
+        mc-adt-insts ctx
+      )
+      (
+        mc-timpls ctx
       )
     )
-    ctx
   )
 )
 (
@@ -15475,7 +15636,7 @@
     (
       EAtom
       (
-        AInt _ _
+        AInt d4 d5
       )
       (
         TPrim PInt
@@ -15484,7 +15645,7 @@
     (
       EAtom
       (
-        AFloat _ _
+        AFloat d6 d7
       )
       (
         TPrim PFloat
@@ -15493,7 +15654,7 @@
     (
       EAtom
       (
-        ABool _ _
+        ABool d8 d9
       )
       (
         TPrim PBool
@@ -15502,7 +15663,7 @@
     (
       EAtom
       (
-        AStr _ _
+        AStr d10 d11
       )
       (
         TPrim PString
@@ -15695,7 +15856,7 @@
             n
           )
           (
-            _ nil
+            d1 nil
           )
         )
         (
@@ -15856,7 +16017,7 @@
       )
     )
     (
-      EIf _ then_ else_
+      EIf d12 then_ else_
       (
         let tt
         (
@@ -15894,7 +16055,7 @@
       )
     )
     (
-      ELet _ val _
+      ELet d13 val d14
       (
         infer-arg-type ctx val
       )
@@ -15922,19 +16083,19 @@
       )
     )
     (
-      EMakeStruct name _
+      EMakeStruct name d15
       (
         TNominal name
       )
     )
     (
-      EMakeVariant adt_name _ _
+      EMakeVariant adt_name d16 d17
       (
         TNominal adt_name
       )
     )
     (
-      _
+      d1
       (
         TVar 0
       )
@@ -16030,6 +16191,130 @@
   )
 )
 (
+  defn kv-type-names
+  (
+    type-map keys
+  )
+  (
+    match keys
+    (
+      Nil Nil
+    )
+    (
+      Cons k rest
+      (
+        Cons
+        (
+          type-to-string
+          (
+            kv-get type-map k
+            (
+              TVar 0
+            )
+          )
+        )
+        (
+          kv-type-names type-map rest
+        )
+      )
+    )
+  )
+)
+(
+  defn canonical-name-from-type-map
+  (
+    base-name type-map
+  )
+  (
+    let sorted-keys
+    (
+      str-sort
+      (
+        kv-keys type-map
+      )
+    )
+    (
+      let unique-sorted
+      (
+        str-sort
+        (
+          str-dedup
+          (
+            kv-type-names type-map sorted-keys
+          )
+        )
+      )
+      (
+        str-concat base-name
+        (
+          str-concat
+          "_"
+          (
+            str-join unique-sorted
+            "_"
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn resolve-call-site-collect
+  (
+    ctx known args i
+  )
+  (
+    match args
+    (
+      Nil Nil
+    )
+    (
+      Cons arg rest
+      (
+        let tail
+        (
+          resolve-call-site-collect ctx known rest
+          (
+            + i 1
+          )
+        )
+        (
+          if
+          (
+            < i
+            (
+              list-length known
+            )
+          )
+          (
+            match
+            (
+              list-nth known i
+            )
+            (
+              MK pname expected
+              (
+                if
+                (
+                  is-uppercase-ident pname
+                )
+                (
+                  kv-set tail pname
+                  (
+                    infer-arg-type ctx arg
+                  )
+                )
+                tail
+              )
+            )
+          )
+          tail
+        )
+      )
+    )
+  )
+)
+(
   defn resolve-call-site
   (
     ctx fname generics args
@@ -16043,154 +16328,116 @@
       )
       0
     )
-    (
-      None
-    )
+    None
     (
       let known
       (
         lookup-fn-sigs ctx fname
       )
       (
-        let type-map Nil
+        let type-map
         (
-          for
+          resolve-call-site-collect ctx known args 0
+        )
+        (
+          if
           (
+            =
             (
-              i arg
+              list-length type-map
             )
+            0
+          )
+          None
+          (
+            Some
             (
-              index args
+              canonical-name-from-type-map fname type-map
             )
           )
+        )
+      )
+    )
+  )
+)
+(
+  defn collect-instantiations-bounds
+  (
+    ctx generics
+  )
+  (
+    match generics
+    (
+      Nil Nil
+    )
+    (
+      Cons g rest
+      (
+        let tail
+        (
+          collect-instantiations-bounds ctx rest
+        )
+        (
+          match
           (
-            if
+            MP.bounds g
+          )
+          (
+            Nil tail
+          )
+          (
+            Cons bound d18
             (
-              < i
+              match
               (
-                list-length known
-              )
-            )
-            (
-              let sig
-              (
-                list-nth known i
+                find-satisfying-types ctx bound
               )
               (
-                let pname
+                Nil tail
+              )
+              (
+                Cons t d19
                 (
-                  match sig
+                  Cons
                   (
-                    MK pn _
-                  )
-                  pn
-                )
-                expected
-                (
-                  match sig
-                  (
-                    MK _ v
-                  )
-                  v
-                )
-                arg-type
-                (
-                  infer-arg-type ctx arg
-                )
-                (
-                  if
-                  (
-                    is-uppercase-ident pname
-                  )
-                  (
-                    begin
+                    Pair
                     (
-                      set! type-map
-                      (
-                        kv-set type-map pname arg-type
-                      )
+                      MP.name g
                     )
-                    nil
+                    t
                   )
+                  tail
                 )
               )
             )
           )
         )
+      )
+    )
+  )
+)
+(
+  defn pairs-to-kv
+  (
+    pairs
+  )
+  (
+    match pairs
+    (
+      Nil Nil
+    )
+    (
+      Cons pr rest
+      (
+        match pr
         (
-          if
+          Pair k v
           (
-            and
+            kv-set
             (
-              =
-              (
-                list-length type-map
-              )
-              0
+              pairs-to-kv rest
             )
-            (
-              >
-              (
-                list-length generics
-              )
-              0
-            )
-          )
-          (
-            None
-          )
-          (
-            let sorted-keys
-            (
-              str-sort
-              (
-                kv-keys type-map
-              )
-            )
-            (
-              let type-names
-              (
-                for
-                (
-                  k sorted-keys
-                )
-                (
-                  type-to-string
-                  (
-                    kv-get type-map k
-                    (
-                      TVar 0
-                    )
-                  )
-                )
-              )
-              (
-                let unique
-                (
-                  str-dedup type-names
-                )
-                (
-                  let unique-sorted
-                  (
-                    str-sort unique
-                  )
-                  (
-                    Some
-                    (
-                      str-concat fname
-                      (
-                        str-concat
-                        "_"
-                        (
-                          str-join unique-sorted
-                          "_"
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
+            k v
           )
         )
       )
@@ -16203,266 +16450,26 @@
     ctx name generics
   )
   (
-    let known
+    let pairs
     (
-      lookup-fn-sigs ctx name
+      collect-instantiations-bounds ctx generics
     )
     (
-      let inst-sets Nil
+      if
       (
-        for
+        =
         (
-          sig known
+          list-length pairs
         )
+        0
+      )
+      Nil
+      (
+        Cons
         (
-          let
-          (
-            pname expected-type
-          )
-          (
-            match sig
-            (
-              MK pn pt
-            )
-            (
-              pn pt
-            )
-          )
-          (
-            if
-            (
-              is-uppercase-ident pname
-            )
-            (
-              match expected-type
-              (
-                TVar _
-              )
-              (
-                TNominal trait-name
-                (
-                  let satisfying
-                  (
-                    find-satisfying-types ctx trait-name
-                  )
-                  (
-                    for
-                    (
-                      ty satisfying
-                    )
-                    (
-                      let found
-                      (
-                        for
-                        (
-                          inst inst-sets
-                        )
-                        (
-                          if
-                          (
-                            kv-contains inst pname
-                          )
-                          (
-                            if
-                            (
-                              =
-                              (
-                                kv-get inst pname
-                                (
-                                  TVar 0
-                                )
-                              )
-                              ty
-                            )
-                            true false
-                          )
-                          false
-                        )
-                      )
-                      (
-                        unless found
-                        (
-                          let new-inst
-                          (
-                            for
-                            (
-                              (
-                                k v
-                              )
-                              inst-sets
-                            )
-                            (
-                              kv-set new-inst k v
-                            )
-                          )
-                          (
-                            begin
-                            (
-                              set! inst-sets
-                              (
-                                list-push inst-sets
-                                (
-                                  kv-set new-inst pname ty
-                                )
-                              )
-                            )
-                            nil
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-              _ nil
-            )
-          )
+          pairs-to-kv pairs
         )
-        (
-          if
-          (
-            =
-            (
-              list-length inst-sets
-            )
-            0
-          )
-          (
-            begin
-            (
-              let inst Nil missing Nil
-            )
-            (
-              for
-              (
-                g generics
-              )
-              (
-                if
-                (
-                  >
-                  (
-                    list-length
-                    (
-                      MP.bounds g
-                    )
-                  )
-                  0
-                )
-                (
-                  begin
-                  (
-                    let found-type false
-                  )
-                  (
-                    for
-                    (
-                      bound
-                      (
-                        MP.bounds g
-                      )
-                    )
-                    (
-                      let types
-                      (
-                        find-satisfying-types ctx bound
-                      )
-                      (
-                        if
-                        (
-                          >
-                          (
-                            list-length types
-                          )
-                          0
-                        )
-                        (
-                          begin
-                          (
-                            set! inst
-                            (
-                              kv-set inst
-                              (
-                                MP.name g
-                              )
-                              (
-                                first types
-                              )
-                            )
-                            (
-                              set! found-type true
-                            )
-                          )
-                          nil
-                        )
-                      )
-                    )
-                    (
-                      unless found-type
-                      (
-                        begin
-                        (
-                          set! missing
-                          (
-                            list-push missing
-                            (
-                              MP.name g
-                            )
-                          )
-                        )
-                        nil
-                      )
-                    )
-                  )
-                  (
-                    begin
-                    (
-                      set! missing
-                      (
-                        list-push missing
-                        (
-                          MP.name g
-                        )
-                      )
-                    )
-                  )
-                )
-                (
-                  if
-                  (
-                    >
-                    (
-                      list-length inst
-                    )
-                    0
-                  )
-                  (
-                    begin
-                    (
-                      set! inst-sets
-                      (
-                        list-push inst-sets inst
-                      )
-                    )
-                  )
-                  (
-                    if
-                    (
-                      >
-                      (
-                        list-length missing
-                      )
-                      0
-                    )
-                    nil
-                  )
-                )
-              )
-              inst-sets
-            )
-            inst-sets
-          )
-        )
+        Nil
       )
     )
   )
@@ -16494,7 +16501,7 @@
           P.name p
         )
         (
-          list
+          Cons
           (
             type-to-string
             (
@@ -16507,6 +16514,7 @@
               )
             )
           )
+          Nil
         )
       )
       (
@@ -16520,10 +16528,13 @@
             P.type p
           )
           (
-            Some v v
+            Some v
+            (
+              Cons v Nil
+            )
           )
           (
-            _ nil
+            d1 Nil
           )
         )
       )
@@ -16539,10 +16550,37 @@
           P.type p
         )
         (
-          Some v v
+          Some v
+          (
+            Cons v Nil
+          )
         )
         (
-          _ nil
+          d1 Nil
+        )
+      )
+    )
+  )
+)
+(
+  defn build-instance-params
+  (
+    params type-map
+  )
+  (
+    match params
+    (
+      Nil Nil
+    )
+    (
+      Cons p rest
+      (
+        Cons
+        (
+          build-instance-param p type-map
+        )
+        (
+          build-instance-params rest type-map
         )
       )
     )
@@ -16554,72 +16592,46 @@
     name params body type-map
   )
   (
-    let sorted-keys
+    let canonical
     (
-      str-sort
-      (
-        kv-keys type-map
-      )
+      canonical-name-from-type-map name type-map
     )
     (
-      let type-names
+      let substituted-body
       (
-        for
-        (
-          k sorted-keys
-        )
-        (
-          type-to-string
-          (
-            kv-get type-map k
-            (
-              TVar 0
-            )
-          )
-        )
+        subst-expr body type-map Nil Nil
       )
       (
-        let unique-sorted
+        let substituted-params
         (
-          str-sort
-          (
-            str-dedup type-names
-          )
+          build-instance-params params type-map
         )
         (
-          let canonical
-          (
-            str-concat name
-            (
-              str-concat
-              "_"
-              (
-                str-join unique-sorted
-                "_"
-              )
-            )
-          )
-          (
-            let substituted-body
-            (
-              subst-expr body type-map Nil Nil
-            )
-            (
-              let substituted-params
-              (
-                for
-                (
-                  p params
-                )
-                (
-                  build-instance-param p type-map
-                )
-              )
-              (
-                MI canonical substituted-body substituted-params
-              )
-            )
-          )
+          MI canonical substituted-body substituted-params
+        )
+      )
+    )
+  )
+)
+(
+  defn generate-instantiations-loop
+  (
+    name params body inst-sets
+  )
+  (
+    match inst-sets
+    (
+      Nil Nil
+    )
+    (
+      Cons type-map rest
+      (
+        Cons
+        (
+          build-instance name params body type-map
+        )
+        (
+          generate-instantiations-loop name params body rest
         )
       )
     )
@@ -16636,27 +16648,266 @@
       collect-instantiations ctx name generics
     )
     (
-      let instances Nil
+      generate-instantiations-loop name params body inst-sets
+    )
+  )
+)
+(
+  defn subst-expr-list
+  (
+    exprs type-map var-renames var-types
+  )
+  (
+    match exprs
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
       (
-        for
+        Cons
         (
-          type-map inst-sets
+          subst-expr e type-map var-renames var-types
         )
         (
-          begin
+          subst-expr-list rest type-map var-renames var-types
+        )
+      )
+    )
+  )
+)
+(
+  defn subst-defn-param
+  (
+    p type-map
+  )
+  (
+    if
+    (
+      is-uppercase-ident
+      (
+        P.name p
+      )
+    )
+    (
+      if
+      (
+        kv-contains type-map
+        (
+          P.name p
+        )
+      )
+      (
+        P
+        (
+          P.name p
+        )
+        (
+          Some
           (
-            set! instances
+            type-to-string
             (
-              list-push instances
+              kv-get type-map
               (
-                build-instance name params body type-map
+                P.name p
+              )
+              (
+                TVar 0
               )
             )
           )
-          nil
         )
       )
-      instances
+      p
+    )
+    p
+  )
+)
+(
+  defn subst-defn-params
+  (
+    params type-map
+  )
+  (
+    match params
+    (
+      Nil Nil
+    )
+    (
+      Cons p rest
+      (
+        Cons
+        (
+          subst-defn-param p type-map
+        )
+        (
+          subst-defn-params rest type-map
+        )
+      )
+    )
+  )
+)
+(
+  defn subst-cond-clauses
+  (
+    clauses type-map var-renames var-types
+  )
+  (
+    match clauses
+    (
+      Nil Nil
+    )
+    (
+      Cons clause rest
+      (
+        match clause
+        (
+          Pair c b
+          (
+            Cons
+            (
+              Pair
+              (
+                subst-expr c type-map var-renames var-types
+              )
+              (
+                subst-expr b type-map var-renames var-types
+              )
+            )
+            (
+              subst-cond-clauses rest type-map var-renames var-types
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn subst-match-arms
+  (
+    arms type-map var-renames var-types
+  )
+  (
+    match arms
+    (
+      Nil Nil
+    )
+    (
+      Cons arm rest
+      (
+        Cons
+        (
+          MA
+          (
+            MA.variant arm
+          )
+          (
+            subst-expr-list
+            (
+              MA.patterns arm
+            )
+            type-map var-renames var-types
+          )
+          (
+            subst-expr
+            (
+              MA.body arm
+            )
+            type-map var-renames var-types
+          )
+        )
+        (
+          subst-match-arms rest type-map var-renames var-types
+        )
+      )
+    )
+  )
+)
+(
+  defn subst-adt-field
+  (
+    f type-map
+  )
+  (
+    if
+    (
+      is-uppercase-ident f
+    )
+    (
+      if
+      (
+        kv-contains type-map f
+      )
+      (
+        type-to-string
+        (
+          kv-get type-map f
+          (
+            TVar 0
+          )
+        )
+      )
+      f
+    )
+    f
+  )
+)
+(
+  defn subst-adt-fields
+  (
+    fields type-map
+  )
+  (
+    match fields
+    (
+      Nil Nil
+    )
+    (
+      Cons f rest
+      (
+        Cons
+        (
+          subst-adt-field f type-map
+        )
+        (
+          subst-adt-fields rest type-map
+        )
+      )
+    )
+  )
+)
+(
+  defn subst-adt-variants
+  (
+    variants type-map
+  )
+  (
+    match variants
+    (
+      Nil Nil
+    )
+    (
+      Cons v rest
+      (
+        Cons
+        (
+          AV
+          (
+            AV.name v
+          )
+          (
+            subst-adt-fields
+            (
+              AV.fields v
+            )
+            type-map
+          )
+        )
+        (
+          subst-adt-variants rest type-map
+        )
+      )
     )
   )
 )
@@ -16672,71 +16923,27 @@
       (
         let new-params
         (
-          for
-          (
-            p params
-          )
-          (
-            if
-            (
-              is-uppercase-ident
-              (
-                P.name p
-              )
-            )
-            (
-              if
-              (
-                kv-contains type-map
-                (
-                  P.name p
-                )
-              )
-              (
-                P
-                (
-                  P.name p
-                )
-                (
-                  Some
-                  (
-                    type-to-string
-                    (
-                      kv-get type-map
-                      (
-                        P.name p
-                      )
-                      (
-                        TVar 0
-                      )
-                    )
-                  )
-                )
-              )
-              p
-            )
-            p
-          )
-        )
-      )
-      (
-        let child-types
-        (
-          kv-set Nil name
-          (
-            infer-arg-type
-            (
-              MC Nil Nil Nil Nil Nil Nil Nil Nil
-            )
-            (
-              subst-expr body type-map var-renames var-types
-            )
-          )
+          subst-defn-params params type-map
         )
         (
-          EDefn name new-params
+          let child-types
           (
-            subst-expr body type-map var-renames child-types
+            kv-set Nil name
+            (
+              infer-arg-type
+              (
+                MC Nil Nil Nil Nil Nil Nil Nil Nil
+              )
+              (
+                subst-expr body type-map var-renames var-types
+              )
+            )
+          )
+          (
+            EDefn name new-params
+            (
+              subst-expr body type-map var-renames child-types
+            )
           )
         )
       )
@@ -16749,13 +16956,7 @@
           subst-expr op type-map var-renames var-types
         )
         (
-          for
-          (
-            a args
-          )
-          (
-            subst-expr a type-map var-renames var-types
-          )
+          subst-expr-list args type-map var-renames var-types
         )
       )
     )
@@ -16764,13 +16965,7 @@
       (
         EApply fname
         (
-          for
-          (
-            a args
-          )
-          (
-            subst-expr a type-map var-renames var-types
-          )
+          subst-expr-list args type-map var-renames var-types
         )
       )
     )
@@ -16840,13 +17035,7 @@
       (
         EBegin
         (
-          for
-          (
-            e exprs
-          )
-          (
-            subst-expr e type-map var-renames var-types
-          )
+          subst-expr-list exprs type-map var-renames var-types
         )
       )
     )
@@ -16855,13 +17044,7 @@
       (
         EPrint
         (
-          for
-          (
-            e exprs
-          )
-          (
-            subst-expr e type-map var-renames var-types
-          )
+          subst-expr-list exprs type-map var-renames var-types
         )
       )
     )
@@ -16894,21 +17077,7 @@
       (
         ECond
         (
-          for
-          (
-            (
-              c b
-            )
-            clauses
-          )
-          (
-            (
-              subst-expr c type-map var-renames var-types
-            )
-            (
-              subst-expr b type-map var-renames var-types
-            )
-          )
+          subst-cond-clauses clauses type-map var-renames var-types
         )
       )
     )
@@ -16920,35 +17089,7 @@
           subst-expr subject type-map var-renames var-types
         )
         (
-          for
-          (
-            arm arms
-          )
-          (
-            MA
-            (
-              MA.variant arm
-            )
-            (
-              for
-              (
-                p
-                (
-                  MA.patterns arm
-                )
-              )
-              (
-                subst-expr p type-map var-renames var-types
-              )
-            )
-            (
-              subst-expr
-              (
-                MA.body arm
-              )
-              type-map var-renames var-types
-            )
-          )
+          subst-match-arms arms type-map var-renames var-types
         )
       )
     )
@@ -16985,69 +17126,22 @@
       (
         EMakeVariant adt_name variant_name
         (
-          for
-          (
-            a args
-          )
-          (
-            subst-expr a type-map var-renames var-types
-          )
+          subst-expr-list args type-map var-renames var-types
         )
       )
     )
     (
-      EDeftype name variants _ bound
+      EDeftype name variants d20 bound
       (
         EDeftype name
         (
-          for
-          (
-            v variants
-          )
-          (
-            AV
-            (
-              AV.name v
-            )
-            (
-              for
-              (
-                f
-                (
-                  AV.fields v
-                )
-              )
-              (
-                if
-                (
-                  is-uppercase-ident f
-                )
-                (
-                  if
-                  (
-                    kv-contains type-map f
-                  )
-                  (
-                    type-to-string
-                    (
-                      kv-get type-map f
-                      (
-                        TVar 0
-                      )
-                    )
-                  )
-                  f
-                )
-                f
-              )
-            )
-          )
+          subst-adt-variants variants type-map
         )
         Nil bound
       )
     )
     (
-      _ expr.inner
+      d1 expr.inner
     )
   )
 )
@@ -17061,6 +17155,76 @@
   )
 )
 (
+  defn substitute-in-adt-field
+  (
+    f
+  )
+  (
+    if
+    (
+      is-uppercase-ident f
+    )
+    nil f
+  )
+)
+(
+  defn substitute-in-adt-fields
+  (
+    fields
+  )
+  (
+    match fields
+    (
+      Nil Nil
+    )
+    (
+      Cons f rest
+      (
+        Cons
+        (
+          substitute-in-adt-field f
+        )
+        (
+          substitute-in-adt-fields rest
+        )
+      )
+    )
+  )
+)
+(
+  defn substitute-in-adt-variants
+  (
+    variants
+  )
+  (
+    match variants
+    (
+      Nil Nil
+    )
+    (
+      Cons v rest
+      (
+        Cons
+        (
+          AV
+          (
+            AV.name v
+          )
+          (
+            substitute-in-adt-fields
+            (
+              AV.fields v
+            )
+          )
+        )
+        (
+          substitute-in-adt-variants rest
+        )
+      )
+    )
+  )
+)
+(
   defn substitute-in-adt
   (
     expr
@@ -17068,42 +17232,17 @@
   (
     match expr.inner
     (
-      EDeftype name variants _ bound
+      EDeftype name variants d21 bound
       (
         EDeftype name
         (
-          for
-          (
-            v variants
-          )
-          (
-            AV
-            (
-              AV.name v
-            )
-            (
-              for
-              (
-                f
-                (
-                  AV.fields v
-                )
-              )
-              (
-                if
-                (
-                  is-uppercase-ident f
-                )
-                nil f
-              )
-            )
-          )
+          substitute-in-adt-variants variants
         )
         Nil bound
       )
     )
     (
-      _
+      d1
       (
         substitute-in-expr expr
       )
@@ -17141,438 +17280,358 @@
   )
 )
 (
+  defn monomorphize-push-instantiations
+  (
+    result instantiations
+  )
+  (
+    match instantiations
+    (
+      Nil result
+    )
+    (
+      Cons mono rest
+      (
+        monomorphize-push-instantiations
+        (
+          list-push result
+          (
+            Expr
+            (
+              MI.body mono
+            )
+          )
+        )
+        rest
+      )
+    )
+  )
+)
+(
+  defn monomorphize-push-impl-bodies
+  (
+    result trait_name type_name bodies
+  )
+  (
+    match bodies
+    (
+      Nil result
+    )
+    (
+      Cons body rest
+      (
+        let concrete-name
+        (
+          str-concat trait_name
+          (
+            str-concat
+            "."
+            (
+              str-concat
+              (
+                DN.name body
+              )
+              (
+                str-concat
+                "_"
+                type_name
+              )
+            )
+          )
+        )
+        (
+          let mut-params
+          (
+            annotate-first-param
+            (
+              DN.params body
+            )
+            type_name
+          )
+          (
+            monomorphize-push-impl-bodies
+            (
+              list-push result
+              (
+                Expr
+                (
+                  EDefn concrete-name mut-params
+                  (
+                    DN.body body
+                  )
+                )
+              )
+            )
+            trait_name type_name rest
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn monomorphize-one
+  (
+    ctx result expr
+  )
+  (
+    match expr.inner
+    (
+      EDefn name params body
+      (
+        if
+        (
+          kv-contains
+          (
+            mc-gen-fns ctx
+          )
+          name
+        )
+        (
+          let generics
+          (
+            kv-get
+            (
+              mc-gen-fns ctx
+            )
+            name Nil
+          )
+          (
+            let instantiations
+            (
+              generate-instantiations ctx name generics params body
+            )
+            (
+              let r1
+              (
+                monomorphize-push-instantiations result instantiations
+              )
+              (
+                let r2
+                (
+                  list-push r1 expr
+                )
+                (
+                  list-push r2
+                  (
+                    substitute-in-expr expr
+                  )
+                )
+              )
+            )
+          )
+        )
+        (
+          list-push result
+          (
+            substitute-in-expr expr
+          )
+        )
+      )
+    )
+    (
+      ECall op args
+      (
+        let op-name
+        (
+          match op.inner
+          (
+            EAtom
+            (
+              AIdent n
+            )
+            n
+          )
+          (
+            d1 nil
+          )
+        )
+        (
+          if
+          (
+            and op-name
+            (
+              kv-contains
+              (
+                mc-gen-fns ctx
+              )
+              op-name
+            )
+          )
+          (
+            let generics
+            (
+              kv-get
+              (
+                mc-gen-fns ctx
+              )
+              op-name Nil
+            )
+            (
+              match
+              (
+                resolve-call-site ctx op-name generics args
+              )
+              (
+                Some canonical-name
+                (
+                  list-push result
+                  (
+                    Expr
+                    (
+                      ECall
+                      (
+                        Expr
+                        (
+                          EAtom
+                          (
+                            AIdent canonical-name
+                          )
+                        )
+                      )
+                      args
+                    )
+                  )
+                )
+              )
+              (
+                d1
+                (
+                  list-push result
+                  (
+                    substitute-in-expr expr
+                  )
+                )
+              )
+            )
+          )
+          (
+            list-push result
+            (
+              substitute-in-expr expr
+            )
+          )
+        )
+      )
+    )
+    (
+      EApply fname args
+      (
+        if
+        (
+          kv-contains
+          (
+            mc-gen-fns ctx
+          )
+          fname
+        )
+        (
+          match
+          (
+            resolve-call-site ctx fname
+            (
+              kv-get
+              (
+                mc-gen-fns ctx
+              )
+              fname Nil
+            )
+            args
+          )
+          (
+            Some canonical-name
+            (
+              list-push result
+              (
+                Expr
+                (
+                  EApply canonical-name args
+                )
+              )
+            )
+          )
+          (
+            d1
+            (
+              list-push result
+              (
+                substitute-in-expr expr
+              )
+            )
+          )
+        )
+        (
+          list-push result
+          (
+            substitute-in-expr expr
+          )
+        )
+      )
+    )
+    (
+      EDeftype name variants d22 bound
+      (
+        list-push result
+        (
+          substitute-in-adt expr
+        )
+      )
+    )
+    (
+      EImplBlock trait_name type_name bodies
+      (
+        let r1
+        (
+          monomorphize-push-impl-bodies result trait_name type_name bodies
+        )
+        (
+          list-push r1 expr
+        )
+      )
+    )
+    (
+      d23
+      (
+        list-push result
+        (
+          substitute-in-expr expr
+        )
+      )
+    )
+  )
+)
+(
+  defn monomorphize-loop
+  (
+    ctx result exprs
+  )
+  (
+    match exprs
+    (
+      Nil result
+    )
+    (
+      Cons expr rest
+      (
+        monomorphize-loop ctx
+        (
+          monomorphize-one ctx result expr
+        )
+        rest
+      )
+    )
+  )
+)
+(
   defn monomorphize
   (
     ctx exprs
   )
   (
-    let result Nil
+    list-reverse
     (
-      for
-      (
-        expr exprs
-      )
-      (
-        match expr.inner
-        (
-          EDefn name params body
-          (
-            if
-            (
-              kv-contains
-              (
-                mc-gen-fns ctx
-              )
-              name
-            )
-            (
-              begin
-              (
-                let generics
-                (
-                  kv-get
-                  (
-                    mc-gen-fns ctx
-                  )
-                  name Nil
-                )
-                (
-                  let instantiations
-                  (
-                    generate-instantiations ctx name generics params body
-                  )
-                  (
-                    for
-                    (
-                      mono instantiations
-                    )
-                    (
-                      let mono-params
-                      (
-                        for
-                        (
-                          p
-                          (
-                            MI.params mono
-                          )
-                        )
-                        (
-                          P
-                          (
-                            P.name p
-                          )
-                          (
-                            if
-                            (
-                              >
-                              (
-                                list-length
-                                (
-                                  MP.bounds p
-                                )
-                              )
-                              0
-                            )
-                            (
-                              Some
-                              (
-                                first
-                                (
-                                  MP.bounds p
-                                )
-                              )
-                            )
-                            None
-                          )
-                        )
-                      )
-                      (
-                        begin
-                        (
-                          set! result
-                          (
-                            list-push result
-                            (
-                              Expr
-                              (
-                                MI.body mono
-                              )
-                            )
-                          )
-                        )
-                        nil
-                      )
-                    )
-                  )
-                  (
-                    begin
-                    (
-                      set! result
-                      (
-                        list-push result expr
-                      )
-                    )
-                    nil
-                  )
-                  (
-                    begin
-                    (
-                      set! result
-                      (
-                        list-push result
-                        (
-                          substitute-in-expr expr
-                        )
-                      )
-                    )
-                    nil
-                  )
-                )
-              )
-            )
-            (
-              begin
-              (
-                set! result
-                (
-                  list-push result
-                  (
-                    substitute-in-expr expr
-                  )
-                )
-              )
-              nil
-            )
-          )
-        )
-        (
-          ECall op args
-          (
-            let op-name
-            (
-              match op.inner
-              (
-                EAtom
-                (
-                  AIdent n
-                )
-                n
-              )
-              (
-                _ nil
-              )
-            )
-            (
-              if
-              (
-                and op-name
-                (
-                  kv-contains
-                  (
-                    mc-gen-fns ctx
-                  )
-                  op-name
-                )
-              )
-              (
-                let generics
-                (
-                  kv-get
-                  (
-                    mc-gen-fns ctx
-                  )
-                  op-name Nil
-                )
-                (
-                  match
-                  (
-                    resolve-call-site ctx op-name generics args
-                  )
-                  (
-                    Some canonical-name
-                    (
-                      begin
-                      (
-                        set! result
-                        (
-                          list-push result
-                          (
-                            Expr
-                            (
-                              ECall
-                              (
-                                Expr
-                                (
-                                  EAtom
-                                  (
-                                    AIdent canonical-name
-                                  )
-                                )
-                              )
-                              args
-                            )
-                          )
-                        )
-                      )
-                      nil
-                    )
-                  )
-                  (
-                    _
-                    (
-                      begin
-                      (
-                        set! result
-                        (
-                          list-push result
-                          (
-                            substitute-in-expr expr
-                          )
-                        )
-                      )
-                      nil
-                    )
-                  )
-                )
-              )
-              (
-                begin
-                (
-                  set! result
-                  (
-                    list-push result
-                    (
-                      substitute-in-expr expr
-                    )
-                  )
-                )
-                nil
-              )
-            )
-          )
-        )
-        (
-          EApply fname args
-          (
-            if
-            (
-              kv-contains
-              (
-                mc-gen-fns ctx
-              )
-              fname
-            )
-            (
-              match
-              (
-                resolve-call-site ctx fname
-                (
-                  kv-get
-                  (
-                    mc-gen-fns ctx
-                  )
-                  fname Nil
-                )
-                args
-              )
-              (
-                Some canonical-name
-                (
-                  begin
-                  (
-                    set! result
-                    (
-                      list-push result
-                      (
-                        Expr
-                        (
-                          EApply canonical-name args
-                        )
-                      )
-                    )
-                  )
-                  nil
-                )
-              )
-              (
-                _
-                (
-                  begin
-                  (
-                    set! result
-                    (
-                      list-push result
-                      (
-                        substitute-in-expr expr
-                      )
-                    )
-                  )
-                  nil
-                )
-              )
-            )
-            (
-              begin
-              (
-                set! result
-                (
-                  list-push result
-                  (
-                    substitute-in-expr expr
-                  )
-                )
-              )
-              nil
-            )
-          )
-        )
-        (
-          EDeftype name variants _ bound
-          (
-            begin
-            (
-              set! result
-              (
-                list-push result
-                (
-                  substitute-in-adt expr
-                )
-              )
-            )
-            nil
-          )
-        )
-        (
-          EImplBlock trait_name type_name bodies
-          (
-            begin
-            (
-              for
-              (
-                body bodies
-              )
-              (
-                let concrete-name
-                (
-                  str-concat trait_name
-                  (
-                    str-concat
-                    "."
-                    (
-                      str-concat
-                      (
-                        DN.name body
-                      )
-                      (
-                        str-concat
-                        "_"
-                        type_name
-                      )
-                    )
-                  )
-                )
-                (
-                  let mut-params
-                  (
-                    annotate-first-param
-                    (
-                      DN.params body
-                    )
-                    type_name
-                  )
-                  (
-                    begin
-                    (
-                      set! result
-                      (
-                        list-push result
-                        (
-                          Expr
-                          (
-                            EDefn concrete-name mut-params
-                            (
-                              DN.body body
-                            )
-                          )
-                        )
-                      )
-                    )
-                    nil
-                  )
-                )
-              )
-            )
-            (
-              begin
-              (
-                set! result
-                (
-                  list-push result expr
-                )
-              )
-              nil
-            )
-          )
-        )
-        (
-          _
-          (
-            begin
-            (
-              set! result
-              (
-                list-push result
-                (
-                  substitute-in-expr expr
-                )
-              )
-            )
-            nil
-          )
-        )
-      )
+      monomorphize-loop ctx Nil exprs
     )
-    result
   )
 )
 (
@@ -17581,27 +17640,7 @@
     inferer
   )
   (
-    MC
-    Nil
-    (
-      inferer-known-fns inferer
-    )
-    (
-      inferer-returns inferer
-    )
-    (
-      inferer-known-types inferer
-    )
-    (
-      inferer-struct-defs inferer
-    )
-    (
-      inferer-adt-defs inferer
-    )
-    (
-      inferer-adt-instantiations inferer
-    )
-    Nil
+    MC Nil Nil Nil Nil Nil Nil Nil Nil
   )
 )
 (
@@ -17616,7 +17655,7 @@
     )
     (
       (
-        MK k _
+        MK k d24
       )
       rest
       (
@@ -24993,7 +25032,7 @@
     match self
     (
       (
-        RE c _
+        RE c d1
       )
       c
     )
@@ -25008,7 +25047,7 @@
     match self
     (
       (
-        RE _ p
+        RE d2 p
       )
       p
     )
@@ -25020,6 +25059,30 @@
     RR Region
     (
       Option CaptureInfo
+    )
+  )
+)
+(
+  defn RR.reg
+  (
+    r
+  )
+  (
+    match r
+    (
+      RR reg d1 reg
+    )
+  )
+)
+(
+  defn RR.capture
+  (
+    r
+  )
+  (
+    match r
+    (
+      RR d1 c c
     )
   )
 )
@@ -25036,11 +25099,71 @@
   )
 )
 (
+  defn RI.env
+  (
+    ri
+  )
+  (
+    match ri
+    (
+      RI e d1 d2 e
+    )
+  )
+)
+(
+  defn RI.sr
+  (
+    ri
+  )
+  (
+    match ri
+    (
+      RI d1 s d2 s
+    )
+  )
+)
+(
+  defn RI.fs
+  (
+    ri
+  )
+  (
+    match ri
+    (
+      RI d1 d2 f f
+    )
+  )
+)
+(
   deftype StructRegion
   (
     SR String
     (
       List VariantRegion
+    )
+  )
+)
+(
+  defn SR.name
+  (
+    sr
+  )
+  (
+    match sr
+    (
+      SR n d1 n
+    )
+  )
+)
+(
+  defn SR.variants
+  (
+    sr
+  )
+  (
+    match sr
+    (
+      SR d1 v v
     )
   )
 )
@@ -25070,6 +25193,42 @@
   )
 )
 (
+  defn FS.name
+  (
+    fs
+  )
+  (
+    match fs
+    (
+      FS n d1 d2 n
+    )
+  )
+)
+(
+  defn FS.params
+  (
+    fs
+  )
+  (
+    match fs
+    (
+      FS d1 p d2 p
+    )
+  )
+)
+(
+  defn FS.ret
+  (
+    fs
+  )
+  (
+    match fs
+    (
+      FS d1 d2 r r
+    )
+  )
+)
+(
   defn env-new
   (
   )
@@ -25078,7 +25237,7 @@
   )
 )
 (
-  defn env-get
+  defn re-env-get
   (
     env name
   )
@@ -25149,7 +25308,7 @@
         Cons scope rest
       )
       (
-        env-get-binds scope name
+        re-env-get-binds scope name
       )
     )
     (
@@ -25158,7 +25317,7 @@
   )
 )
 (
-  defn env-get-binds
+  defn re-env-get-binds
   (
     binds name
   )
@@ -25188,7 +25347,7 @@
           )
         )
         (
-          env-get-binds rest name
+          re-env-get-binds rest name
         )
       )
     )
@@ -25202,7 +25361,7 @@
   (
     match
     (
-      env-get env name
+      re-env-get env name
     )
     (
       Some
@@ -25219,7 +25378,7 @@
   )
 )
 (
-  defn env-bind
+  defn re-env-bind
   (
     env name region
   )
@@ -25278,7 +25437,7 @@
     )
     (
       (
-        RB n _ _
+        RB n d3 d4
       )
       rest
       (
@@ -25793,7 +25952,7 @@
       (
         Cons
         (
-          RB n _ _
+          RB n d5 d6
         )
         rest
       )
@@ -25884,7 +26043,7 @@
       (
         Cons
         (
-          RB n _ _
+          RB n d7 d8
         )
         rest
       )
@@ -25965,52 +26124,6 @@
   )
 )
 (
-  deftype StructRegion
-  (
-    SR String
-    (
-      List VariantRegion
-    )
-  )
-)
-(
-  deftype VariantRegion
-  (
-    VR String
-    (
-      List FieldRegion
-    )
-  )
-)
-(
-  deftype FieldRegion
-  (
-    FR String Region
-  )
-)
-(
-  deftype FuncSig
-  (
-    FS String
-    (
-      List Region
-    )
-    Region
-  )
-)
-(
-  deftype RegionInferer
-  (
-    RI RegionEnv
-    (
-      List StructRegion
-    )
-    (
-      List FuncSig
-    )
-  )
-)
-(
   defn ri-new
   (
   )
@@ -26033,11 +26146,11 @@
       Pair a b
     )
     (
-      Pair RGlobal _
+      Pair RGlobal d9
     )
     RGlobal
     (
-      Pair _ RGlobal RGlobal
+      Pair d10 RGlobal RGlobal
     )
     (
       Pair RHeap RCircular
@@ -26048,11 +26161,11 @@
     )
     RHeap
     (
-      Pair RHeap _
+      Pair RHeap d11
     )
     RHeap
     (
-      Pair _ RHeap RHeap
+      Pair d12 RHeap RHeap
     )
     (
       Pair RPin RStack
@@ -26063,7 +26176,7 @@
     )
     RPin
     (
-      Pair _ _
+      Pair d13 d14
     )
     (
       if
@@ -26114,16 +26227,16 @@
   (
     match ic
     (
-      IConst _ 1
+      IConst d15 1
     )
     (
-      IStr _ 1
+      IStr d16 1
     )
     (
-      IFlt _ 1
+      IFlt d17 1
     )
     (
-      ILoad _ 0
+      ILoad d18 0
     )
     (
       IBinop d5 a b
@@ -26189,10 +26302,10 @@
       )
     )
     (
-      IWhile _ _ 0
+      IWhile d19 d20 0
     )
     (
-      ISet _ _ 0
+      ISet d21 d22 0
     )
     (
       ILet d14 val body
@@ -26218,7 +26331,7 @@
       )
     )
     (
-      IVariant d16 _ d18
+      IVariant d16 d23 d18
       (
         ri-is-literal-icnf-list d18
       )
@@ -26297,7 +26410,7 @@
         match arm
         (
           (
-            IArm _ _ _ body
+            IArm d24 d25 d26 body
           )
           (
             if
@@ -26352,7 +26465,7 @@
         (
           ri-capture-add name
           (
-            env-get env name
+            re-env-get env name
           )
           captured-refs
         )
@@ -26425,7 +26538,7 @@
         (
           ri-capture-add d10
           (
-            env-get env d10
+            re-env-get env d10
           )
           (
             ri-capture-collect val captured-refs env
@@ -26441,7 +26554,7 @@
       (
         let new-env
         (
-          env-bind env d11 RStack
+          re-env-bind env d11 RStack
         )
         (
           ri-capture-collect body captured-refs new-env
@@ -26552,7 +26665,7 @@
       (
         Cons
         (
-          Pair n _
+          Pair n d27
         )
         rest
       )
@@ -26591,7 +26704,7 @@
         match arm
         (
           (
-            IArm _ _ binds body
+            IArm d28 d29 binds body
           )
           (
             let arm-env
@@ -26628,19 +26741,10 @@
       (
         ri-bind-params rest
         (
-          env-bind env name region
+          re-env-bind env name region
         )
         region
       )
-    )
-  )
-)
-(
-  deftype RegionResult
-  (
-    RR Region
-    (
-      Option CaptureInfo
     )
   )
 )
@@ -26655,19 +26759,19 @@
   (
     match ic
     (
-      IConst _
+      IConst d30
       (
         RR RStack None
       )
     )
     (
-      IStr _
+      IStr d31
       (
         RR RHeap None
       )
     )
     (
-      IFlt _
+      IFlt d32
       (
         RR RHeap None
       )
@@ -26677,7 +26781,7 @@
       (
         match
         (
-          env-get
+          re-env-get
           (
             RI.env ri
           )
@@ -26836,7 +26940,7 @@
           RI.env ri
         )
         (
-          let _
+          let d33
           (
             ri-infer-expr ri val
           )
@@ -26848,7 +26952,7 @@
             (
               let env2
               (
-                env-bind env1 name RStack
+                re-env-bind env1 name RStack
               )
               (
                 let ri2
@@ -26960,7 +27064,7 @@
                 )
               )
               (
-                let _
+                let d34
                 (
                   ri-infer-expr ri2 body
                 )
@@ -27092,7 +27196,7 @@
         match arm
         (
           (
-            IArm _ _ binds body
+            IArm d35 d36 binds body
           )
           (
             let env0
@@ -27325,7 +27429,7 @@
     )
     (
       (
-        Cons _ rest
+        Cons d37 rest
       )
       (
         ri-make-field-regions rest
@@ -27400,7 +27504,7 @@
       (
         Cons
         (
-          FS n _ _
+          FS n d38 d39
         )
         rest
       )
@@ -27472,7 +27576,7 @@
       (
         Cons
         (
-          SR n _
+          SR n d40
         )
         rest
       )

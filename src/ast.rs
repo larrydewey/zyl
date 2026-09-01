@@ -961,6 +961,60 @@ impl PostProcessor {
     /// unreachable at runtime because the outer arm already fixed the tag,
     /// but they keep exhaustiveness checking satisfied without needing a
     /// wildcard mechanism. Desugars recursively, innermost levels first.
+    /// Decompose one raw match-arm s-expression into (variant, field-patterns, body).
+    ///
+    /// Two surface forms are accepted, since the reader gives them different
+    /// shapes depending on whether the field list is empty:
+    ///   - combined:  (Variant field1 field2 ... body)
+    ///       parses as Call(head=Variant-ident, args=[field1, field2, ..., body])
+    ///   - wrapped:   ((Variant field1 field2 ...) body...)
+    ///       parses as Call(head=(Variant field1 field2 ...)-expr, args=[body...])
+    ///     because the reader treats a non-atom first element of a list as an
+    ///     ordinary Call head. Here `head` is itself the field-pattern list, and
+    ///     the remaining args are the body (wrapped in Begin if there's more
+    ///     than one, e.g. from a `(... args)` reader that kept the trailing
+    ///     forms separate).
+    fn decompose_match_arm(arm_arg: &Expr) -> Option<(String, Vec<Expr>, Expr)> {
+        let ExprInner::Call(head, inner) = &arm_arg.inner else {
+            return None;
+        };
+        if inner.is_empty() {
+            return None;
+        }
+        match &head.inner {
+            ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => Some((
+                v.clone(),
+                inner[..inner.len() - 1].to_vec(),
+                inner[inner.len() - 1].clone(),
+            )),
+            ExprInner::Call(..) | ExprInner::Apply(..) if inner.len() > 1 => {
+                // ((Variant field*) tail-binding body) — sugar for matching
+                // a list's Cons cell with the head destructured by a nested
+                // variant pattern (`head` as-is) and the tail bound by the
+                // extra token(s) before body, e.g.
+                // `((RB n r esc) rest body)` desugars to
+                // `(Cons (RB n r esc) rest body)`, letting desugar_arm_raw's
+                // nested-pattern pass expand the inner RB pattern.
+                let mut pats = vec![(**head).clone()];
+                pats.extend(inner[..inner.len() - 1].iter().cloned());
+                Some(("Cons".to_string(), pats, inner[inner.len() - 1].clone()))
+            }
+            ExprInner::Call(inner_head, inner_fields) => {
+                let v = match &inner_head.inner {
+                    ExprInner::Atom(Atom::Ident(v)) | ExprInner::Atom(Atom::Keyword(v)) => {
+                        v.clone()
+                    }
+                    _ => return None,
+                };
+                Some((v, inner_fields.clone(), inner[0].clone()))
+            }
+            ExprInner::Apply(name, inner_fields) => {
+                Some((name.clone(), inner_fields.clone(), inner[0].clone()))
+            }
+            _ => None,
+        }
+    }
+
     fn desugar_arm_raw(&self, _variant: &str, pats: Vec<Expr>, body: Expr, span: &Span) -> (Vec<Expr>, Expr) {
         let mut pats = pats;
         let mut body = body;
@@ -2081,20 +2135,9 @@ impl PostProcessor {
                 let e = Box::new(self.post_process_expr(args[0].clone()));
                 let mut arms = Vec::new();
                 for arm_arg in &args[1..] {
-                    let (variant, pats, raw_body) = match &arm_arg.inner {
-                        ExprInner::Call(head, inner) if !inner.is_empty() => {
-                            let v = match &head.inner {
-                                ExprInner::Atom(Atom::Ident(v))
-                                | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
-                                _ => return expr,
-                            };
-                            (
-                                v,
-                                inner[..inner.len() - 1].to_vec(),
-                                inner[inner.len() - 1].clone(),
-                            )
-                        }
-                        _ => return expr,
+                    let Some((variant, pats, raw_body)) = Self::decompose_match_arm(arm_arg)
+                    else {
+                        return expr;
                     };
                     // Desugar nested variant patterns BEFORE post-processing.
                     let (pats, raw_body) =
@@ -2115,20 +2158,9 @@ impl PostProcessor {
                 let mut arms = Vec::new();
                 for arm_arg in &args[1..] {
                     // Decompose the RAW arm before post-processing.
-                    let (variant, pats, raw_body) = match &arm_arg.inner {
-                        ExprInner::Call(head, inner) if !inner.is_empty() => {
-                            let v = match &head.inner {
-                                ExprInner::Atom(Atom::Ident(v))
-                                | ExprInner::Atom(Atom::Keyword(v)) => v.clone(),
-                                _ => return expr,
-                            };
-                            (
-                                v,
-                                inner[..inner.len() - 1].to_vec(),
-                                inner[inner.len() - 1].clone(),
-                            )
-                        }
-                        _ => return expr,
+                    let Some((variant, pats, raw_body)) = Self::decompose_match_arm(arm_arg)
+                    else {
+                        return expr;
                     };
                     // Desugar nested variant patterns BEFORE post-processing.
                     let (pats, raw_body) =
