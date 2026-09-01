@@ -53,9 +53,17 @@
 
 (defn list-nth (lst i)
   (match lst
-    (Nil nil)
+    (Nil (list-nth-oob))
     (Cons h t
       (if (= i 0) h (list-nth t (- i 1))))))
+
+; Out-of-bounds list-nth is always a caller bug (indices here are supposed
+; to be pre-validated against list-length) — fail loudly instead of
+; silently returning an unresolved-identifier sentinel (which the codegen
+; would otherwise materialize as a bare 0, corrupting whatever type the
+; caller expected back).
+(defn list-nth-oob ()
+  (ffi-call "f_error" "E_LIST_NTH_OOB: list-nth called with an out-of-range index" 1000))
 
 (defn list-push (lst x)
   (Cons x lst))
@@ -293,16 +301,31 @@
 
 (defn infer-arg-type (ctx expr)
   (match (Expr.inner expr)
-    (EAtom (AInt d4 d5) (TPrim PInt))
-    (EAtom (AFloat d6 d7) (TPrim PFloat))
-    (EAtom (ABool d8 d9) (TPrim PBool))
-    (EAtom (AStr d10 d11) (TPrim PString))
-    (EAtom (AIdent name)
+    (EAtom atom (infer-arg-type-atom ctx atom))
+    (d100 (infer-arg-type-rest ctx expr))))
+
+; Split out of infer-arg-type: a single EAtom arm with a real nested match,
+; not five separate top-level `(EAtom (Variant ...) ...)` arms — those all
+; share the SAME outer discriminant (EAtom), so only the first is ever
+; reachable at dispatch time; the rest silently fall into its desugared
+; nested match's "unreachable case" arms (this is what crashed the self-
+; hosted compiler's own monomorphization pass on any non-AInt atom).
+(defn infer-arg-type-atom (ctx atom)
+  (match atom
+    (AInt d4 (TPrim PInt))
+    (AFloat d6 (TPrim PFloat))
+    (ABool d8 (TPrim PBool))
+    (AStr d10 (TPrim PString))
+    (AIdent name
       (cond
         ((kv-contains (mc-ktypes ctx) name) (kv-get (mc-ktypes ctx) name (TVar 0)))
         ((is-uppercase-ident name) (TVar 0))
         ((is-generic-param name) (TVar 0))
         (else (TNominal name))))
+    (d101 (TVar 0))))
+
+(defn infer-arg-type-rest (ctx expr)
+  (match (Expr.inner expr)
     (EApply fname args
       (cond
         ((kv-contains (mc-returns ctx) fname)

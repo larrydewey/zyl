@@ -112,18 +112,39 @@
 
 ; Full inference-context record owned by the type system (see
 ; stdlib/compiler/type_inference.zyl for the inference logic that uses it).
+; A record with 11 fields, NOT 11 variants — every "TIxxx" name below used
+; to be its own single-field variant (nonsensical for a record: each
+; `(TypeInferer ...)` construction call names none of those 11 variants, so
+; it always resolved to the wildcard sentinel discriminant; and no TIEnv/
+; TISubst/... accessor functions existed at all, despite being called
+; throughout type_inference.zyl as if they extracted a field). Fixed to one
+; variant with all 11 fields, with real accessor functions defined below
+; (same convention as Expr.inner / P.name elsewhere in this codebase).
 (deftype TypeInferer
-    (TIEnv TypeEnv)
-    (TISubst Subst)
-    (TINext Int)
-    (TIKnownTypes (List TypeBind))
-    (TIKnownFns (List FnSig))
-    (TIFuncReturns (List FnReturn))
-    (TIAdtDefs (List AdtDef))
-    (TIVariantToAdt (List TypeBind))
-    (TIStringMatchVars (List String))
-    (TIInferringFns (List String))
-    (TIBodyCache (List BodyCache)))
+  (TypeInferer
+    TypeEnv
+    Subst
+    Int
+    (List TypeBind)
+    (List FnSig)
+    (List FnReturn)
+    (List AdtDef)
+    (List TypeBind)
+    (List String)
+    (List String)
+    (List BodyCache)))
+
+(defn TIEnv (ti) (match ti (TypeInferer v d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v)))
+(defn TISubst (ti) (match ti (TypeInferer d1 v d2 d3 d4 d5 d6 d7 d8 d9 d10 v)))
+(defn TINext (ti) (match ti (TypeInferer d1 d2 v d3 d4 d5 d6 d7 d8 d9 d10 v)))
+(defn TIKnownTypes (ti) (match ti (TypeInferer d1 d2 d3 v d4 d5 d6 d7 d8 d9 d10 v)))
+(defn TIKnownFns (ti) (match ti (TypeInferer d1 d2 d3 d4 v d5 d6 d7 d8 d9 d10 v)))
+(defn TIFuncReturns (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 v d6 d7 d8 d9 d10 v)))
+(defn TIAdtDefs (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 v d7 d8 d9 d10 v)))
+(defn TIVariantToAdt (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 v d8 d9 d10 v)))
+(defn TIStringMatchVars (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 v d9 d10 v)))
+(defn TIInferringFns (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 v d10 v)))
+(defn TIBodyCache (ti) (match ti (TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v v)))
 
 ; Inference support ADTs (function signatures, return types, ADT defs,
 ; variant fields, per-site body cache, string-match vars).
@@ -271,8 +292,14 @@
 ; ===========================================================================
 
 (defn unify (s t1 t2)
-  (let ((t1x (subst-apply s t1)))
-    (let ((t2x (subst-apply s t2)))
+  ; `(let ((name val)) body)` is Scheme-style multi-binding let syntax this
+  ; language doesn't have — its real `let` takes exactly one (name val)
+  ; pair with a SINGLE wrapping paren: `(let (name val) body)`. Confirmed
+  ; empirically that the double-paren form silently produces 0 instead of
+  ; evaluating the body. `unify` is called from nearly every infer-expr-*
+  ; function, so this was corrupting type inference throughout.
+  (let (t1x (subst-apply s t1))
+    (let (t2x (subst-apply s t2))
       (unify-terms s t1x t2x))))
 
 (defn unify-terms (s t1 t2)
@@ -321,10 +348,15 @@
     (None (UOk (subst-insert s n t)) )))
 
 (defn unify-args (s args1 args2)
+  ; args1/args2 are (List Type) — Cons/Nil, not Pair (Pair only wraps the
+  ; two lists together for this match, same as unify-terms elsewhere); the
+  ; original nested pattern also wrapped both list-patterns in one extra
+  ; paren, an arity mismatch (1 pattern given for Pair's 2 real fields).
   (match (Pair args1 args2)
     (Pair Nil Nil (UOk s))
-    (Pair ((Pair h1 t1) (Pair h2 t2))
+    (Pair (Cons h1 t1) (Cons h2 t2)
      (match (unify s h1 h2)
        (UOk sx (unify-args sx t1 t2))
-       (UErr e (UErr e))))))
+       (UErr e (UErr e))))
+    (d1 (UErr "argument count mismatch"))))
 

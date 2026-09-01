@@ -321,13 +321,11 @@
 
 (defn is-skip-placeholder (expr)
     ; detect the ____skip_ atom that marks an empty branch
-    (match expr
-        (Atom
-            (Keyword kw)
-            (if
-                (= kw "___skip_")
-                true
-                false))
+    (match (Expr.inner expr)
+        (EAtom atom
+            (match atom
+                (AKeyword kw (= kw "___skip_"))
+                (d2 false)))
         (d1 false)))
 
 ; ===========================================================================
@@ -365,194 +363,208 @@
 ; INFER-EXPR — core dispatch
 ; ===========================================================================
 
+; infer-expr's outer dispatch used to name every arm WITHOUT the "E" prefix
+; that ExprInner's real variants all carry (EAtom/EDef/ELet/EIf/... — see
+; expr_inner.zyl). None of those bare names ("Atom", "Def", "Let", "If", ...)
+; match any declared variant anywhere, so every one of them resolved to the
+; wildcard sentinel discriminant — and since duplicate-wildcard arms only
+; let the FIRST one fire, infer-expr silently returned TInt for literally
+; every expression in the program, regardless of what it actually was. The
+; nested "(Atom (Int d1 d2) ...)" sub-patterns were doubly broken: besides
+; naming a non-existent outer variant, they also gave 1-field Atom variants
+; (AInt/AFloat/ABool/AStr/AIdent all have exactly one field) two pattern
+; names instead of one.
 (defn infer-expr (inferer expr)
     (match (Expr.inner expr)
-        (Atom
-            (Int d1 d2)
-            (inferer-return-int inferer))
-        (Atom
-            (Float d3 d4)
-            (inferer-return-float inferer))
-        (Atom
-            (Bool d5 d6)
-            (inferer-return-bool inferer))
-        (Atom
-            (Str d7 d8)
-            (inferer-return-string inferer))
-        (Atom
-            (Keyword "___skip_")
-            (inferer-return-unit inferer))
-        (Atom
-            (Ident name)
-            (if
-                (is-primitive-ident name)
-                (inferer-return-prim inferer name)
-                (infer-expr-ident inferer expr name)))
-        (Def
+        (EAtom atom
+            (match atom
+                (AInt d1 (inferer-return-int inferer))
+                (AFloat d3 (inferer-return-float inferer))
+                (ABool d5 (inferer-return-bool inferer))
+                (AStr d7 (inferer-return-string inferer))
+                (AKeyword kw
+                    (if (= kw "___skip_")
+                        (inferer-return-unit inferer)
+                        (inferer-return-var inferer)))
+                (AIdent name
+                    (if
+                        (is-primitive-ident name)
+                        (inferer-return-prim inferer name)
+                        (infer-expr-ident inferer expr name)))
+                (d100 (inferer-return-var inferer))))
+        (EDef
             d9 val
-            (infer-expr-let inferer expr.val expr))
-        (Let
+            ; `expr.val` was a bare, never-bound identifier (EDef's `val`
+            ; is already destructured right above) calling infer-expr-let
+            ; with only 3 of its 5 required args — EDef has no body (unlike
+            ; ELet), so there's nothing for that machinery to bind into;
+            ; just infer the value's type directly.
+            (infer-expr inferer val))
+        (ELet
             name val body
             (infer-expr-let inferer expr name val body))
-        (If
+        (EIf
             cond then- else-
             (infer-expr-if inferer expr cond then- else-))
-        (Call
+        (ECall
             op args
             (infer-expr-call inferer expr op args))
-        (Apply
+        (EApply
             name args
             (infer-expr-apply inferer expr name args))
-        (Begin
+        (EBegin
             stmts
             (infer-expr-begin inferer expr stmts))
-        (Lambda
+        (ELambda
             d10 params body
             (infer-expr-lambda inferer expr params body))
-        (While
+        (EFn
+            d10b params body
+            (infer-expr-lambda inferer expr params body))
+        (EWhile
             cond body
             (infer-expr-while inferer expr cond body))
-        (For
+        (EFor
             bindings cond body
             (infer-expr-for inferer expr bindings cond body))
-        (Cond
+        (ECond
             clauses
             (infer-expr-cond inferer expr clauses))
-        (TryCatch
+        (ETryCatch
             eh cn handler
             (infer-expr-try-catch inferer expr eh cn handler))
-        (Match
+        (EMatch
             subject arms
             (infer-expr-match inferer expr subject arms))
-        (Defn
+        (EDefn
             _name _params body
             (inferer-return-unit inferer))
-        (Deftype
+        (EDeftype
             _name _variants _bound _derives
             (inferer-return-unit inferer))
-        (TraitDecl
+        (ETraitDecl
             _name _methods _derives
             (inferer-return-unit inferer))
-        (ImplBlock
+        (EImplBlock
             _trait _type _bodies
             (inferer-return-unit inferer))
-        (StructDef
+        (EStructDef
             _sd _extra
             (inferer-return-unit inferer))
-        (StructDefPlus
+        (EStructDefPlus
             _sd _extra
             (inferer-return-unit inferer))
-        (AliasDecl
+        (EAliasDecl
             _name _target
             (inferer-return-unit inferer))
-        (Derive
+        (EDerive
             _type _traits
             (inferer-return-unit inferer))
-        (FfiCall
+        (EFfiCall
             _sym _args _timeout
             (infer-expr-ffi-call inferer expr))
-        (FfiPin
+        (EFfiPin
             e
             (infer-expr-ffi-pin inferer expr e))
-        (Assert
+        (EAssert
             cond _msg
             (infer-expr-assert inferer expr cond))
-        (SetBang
+        (ESetBang
             target val
             (infer-expr-set-bang inferer expr target val))
-        (MakeStruct
+        (EMakeStruct
             name fields
             (infer-expr-make-struct inferer expr name fields))
-        (StructGet
+        (EStructGet
             se field_name
             (infer-expr-struct-get inferer expr se field_name))
-        (MakeVariant
+        (EMakeVariant
             adt_name variant_name args
             (infer-expr-make-variant inferer expr adt_name variant_name args))
-        (Print
+        (EPrint
             exprs
             (infer-expr-print inferer expr exprs))
-        (ReadLine
+        (EReadLine
             (inferer-return-string inferer))
-        (Exit
+        (EExit
             code
             (infer-expr-exit inferer expr code))
-        (Close
+        (EClose
             resource
             (inferer-return-unit inferer))
-        (FileOpen
+        (EFileOpen
             path mode
             (inferer-return-int inferer))
-        (FileRead
+        (EFileRead
             handle count
             (inferer-return-string inferer))
-        (FileWrite
+        (EFileWrite
             handle data
             (inferer-return-int inferer))
-        (FileClose
+        (EFileClose
             handle
             (inferer-return-unit inferer))
-        (BufAppend
+        (EBufAppend
             dst src
             (inferer-return-int inferer))
-        (Spawn
+        (ESpawn
             closure
             (infer-expr-spawn inferer expr closure))
-        (Send
+        (ESend
             _actor msg
             (infer-expr-send inferer expr msg))
-        (SendClosure
+        (ESendClosure
             _actor closure _caps
             (inferer-return-unit inferer))
-        (WithResource
+        (EWithResource
             _name init body
             (infer-expr-with-resource inferer expr init body))
-        (TestDecl
+        (ETestDecl
             _name _body _kind
             (inferer-return-unit inferer))
-        (TestSuite
+        (ETestSuite
             _name _tests _kind
             (inferer-return-unit inferer))
-        (RunTests
+        (ERunTests
             _name
             (inferer-return-unit inferer))
-        (TestCompile
+        (ETestCompile
             _expr _kind
             (inferer-return-unit inferer))
-        (AssertEqual
+        (EAssertEqual
             _l _r
             (inferer-return-unit inferer))
-        (AssertTrue
+        (EAssertTrue
             _e _msg
             (inferer-return-unit inferer))
-        (AssertFalse
+        (EAssertFalse
             _e _msg
             (inferer-return-unit inferer))
-        (AssertFail
+        (EAssertFail
             _e _msg
             (inferer-return-unit inferer))
-        (TestProperty
+        (ETestProperty
             _name _desc _body
             (inferer-return-unit inferer))
-        (ModuleDecl
+        (EModuleDecl
             _name
             (inferer-return-unit inferer))
-        (UseModule
+        (EUseModule
             _name _path _alias
             (inferer-return-unit inferer))
-        (Export
+        (EExport
             _name
             (inferer-return-unit inferer))
-        (MacroDef
+        (EMacroDef
             _name _params _body
             (inferer-return-unit inferer))
-        (Setup
+        (ESetup
             _exprs
             (inferer-return-unit inferer))
-        (Teardown
+        (ETeardown
             _exprs
             (inferer-return-unit inferer))
-        (Error
+        (EError
             _msg
             (inferer-return-unit inferer))
         (d11
@@ -725,18 +737,23 @@
                     rest)))))
 
 (defn inferer-params-types (params)
-    ; one TVar per param (placeholder; refined later)
+    ; one TVar per param (placeholder; refined later). TVar is a 2-field
+    ; constructor (Int Type) — a bare `TVar` with no args isn't a value at
+    ; all; it fell through to whatever garbage happened to occupy the
+    ; hash-fallback stack slot for an unrecognized identifier.
     (match params
         (Nil
             Nil)
         ((Cons p rest)
             (Cons
-                TVar
+                (TVar 0 TUnit)
                 (inferer-params-types rest)))))
 
 (defn typed-param-name (p)
+    ; Param's real constructor is `P` (declared in expr_inner.zyl) — "Param"
+    ; is only the TYPE name, never a variant, so this never matched.
     (match p
-        (Param
+        (P
             n t
             n)
         (d1 "___")))
@@ -847,13 +864,21 @@
             first-type)
         ((Cons arm rest)
             (let
-                (arm-env (env-snapshot (TIEnv inferer)))
+                ; TypeEnv is immutable (env-bind always returns a new chain
+                ; without touching the original), so "snapshotting" it to
+                ; restore before the next arm is just the value itself.
+                ; `env-snapshot` here used to resolve — by cross-module name
+                ; collision — to region_inference.zyl's OWN env-snapshot,
+                ; built for the unrelated RegionEnv type; calling it on a
+                ; TypeEnv value fed the wrong shape into RegionEnv's own
+                ; RE.cur/RE.parens accessors.
+                (arm-env (TIEnv inferer))
                 (let
                     (field-types (infer-lookup-arm-field-types inferer arm subject-type))
                     (let
                         (new-inferer (inferer-bind-pattern-vars inferer arm field-types))
                         (let
-                            (abt (infer-expr new-inferer arm.body))
+                            (abt (infer-expr new-inferer (MA.body arm)))
                             (let
                                 (new-type
                                     (if
@@ -891,7 +916,7 @@
     ; resolved from the subject's nominal type through substitutions.
     (let
         (adt-name (infer-lookup-scrutinee-adt inferer subject-type))
-        (infer-lookup-variant-fields inferer adt-name arm.variant)))
+        (infer-lookup-variant-fields inferer adt-name (MA.variant arm))))
 
 (defn infer-lookup-scrutinee-adt (inferer subject-type)
     ; nominal type name of the scrutinee, mono-suffix stripped
@@ -904,7 +929,7 @@
                 n
                 (infer-strip-mono-suffix n)))
         (None
-            nil)))
+            "")))
 
 (defn resolve-nominal (subst t)
     ; mirror Rust resolve_nominal: apply the substitution then, if the
@@ -954,7 +979,7 @@
 
 (defn inferer-bind-pattern-vars (inferer arm field-types)
     ; bind pattern vars to their field types; recurse over remaining fields
-    (inferer-bind-pattern-vars-loop inferer arm.patterns field-types))
+    (inferer-bind-pattern-vars-loop inferer (MA.patterns arm) field-types))
 
 (defn inferer-bind-pattern-vars-loop (inferer patterns field-types)
     (match (Pair patterns field-types)
@@ -1007,24 +1032,26 @@
 (defn infer-expr-call (inferer expr op args)
     ; dispatch builtin operator vs user function call
     (match (Expr.inner op)
-        (Atom
-            (Ident op-name)
-            (if
-                (is-builtin-binop op-name)
-                (infer-expr-builtin-binop inferer expr op-name args)
-                (if
-                    (is-builtin-unop op-name)
-                    (infer-expr-builtin-unop inferer expr op-name args)
+        (EAtom atom
+            (match atom
+                (AIdent op-name
                     (if
-                        (is-builtin-conv op-name)
-                        (infer-expr-builtin-conv inferer expr op-name args)
+                        (is-builtin-binop op-name)
+                        (infer-expr-builtin-binop inferer expr op-name args)
                         (if
-                            (is-builtin-compare op-name)
-                            (infer-expr-builtin-compare inferer expr op-name args)
+                            (is-builtin-unop op-name)
+                            (infer-expr-builtin-unop inferer expr op-name args)
                             (if
-                                (is-builtin-io op-name)
-                                (infer-expr-builtin-io inferer expr op-name args)
-                                (infer-expr-call-fn inferer expr op-name args)))))))
+                                (is-builtin-conv op-name)
+                                (infer-expr-builtin-conv inferer expr op-name args)
+                                (if
+                                    (is-builtin-compare op-name)
+                                    (infer-expr-builtin-compare inferer expr op-name args)
+                                    (if
+                                        (is-builtin-io op-name)
+                                        (infer-expr-builtin-io inferer expr op-name args)
+                                        (infer-expr-call-fn inferer expr op-name args)))))))
+                (d21 (infer-expr-call-fn inferer expr "___unknown" args))))
         (d20
             (infer-expr-call-fn inferer expr "___unknown" args))))
 
@@ -1166,7 +1193,7 @@
     (infer-expr-call
         inferer
         expr
-        (Atom (Ident name))
+        (Expr (EAtom (AIdent name)))
         args))
 
 ; ===========================================================================
@@ -1250,49 +1277,21 @@
     ; variant fields of the named variant from the real ADT defs, or Nil
     (infer-lookup-variant-fields inferer adt-name variant-name))
 
+; Was meant to "register the variant's fields into the ADT def table", but:
+; (a) it referenced `variant-name`, which isn't one of this function's
+;     parameters (an undefined identifier — silently compiles to 0);
+; (b) it spliced the WHOLE TypeInferer that insert-adt-def returns into the
+;     TIAdtDefs FIELD SLOT of another TypeInferer, instead of using it as
+;     the return value — a type confusion that corrupts every other field
+;     read through that fake "TIAdtDefs" list later (this crashed the
+;     self-hosted compiler chasing what looked like a list but was really
+;     another TypeInferer's fields).
+; ADT definitions are already collected up front by collect-definitions
+; before expression-level inference ever runs, and this function's result
+; was discarded by its only caller (infer-expr-make-variant) regardless, so
+; there is nothing left for it to usefully do here.
 (defn infer-variant-record-instantiation (inferer adt-name field-types)
-    ; register the variant's fields into the ADT def table
-    (TypeInferer
-        (TIEnv inferer)
-        (TISubst inferer)
-        (TINext inferer)
-        (TIKnownTypes inferer)
-        (TIKnownFns inferer)
-        (TIFuncReturns inferer)
-        (insert-adt-def
-            (TypeInferer
-                (TIEnv inferer)
-                (TISubst inferer)
-                (TINext inferer)
-                (TIKnownTypes inferer)
-                (TIKnownFns inferer)
-                (TIFuncReturns inferer)
-                (TIAdtDefs inferer)
-                (TIVariantToAdt inferer)
-                (TIStringMatchVars inferer)
-                (TIInferringFns inferer)
-                (TIBodyCache inferer))
-            adt-name
-            (Cons
-                (V variant-name field-types)
-                (lookup-adt-def
-                    (TypeInferer
-                        (TIEnv inferer)
-                        (TISubst inferer)
-                        (TINext inferer)
-                        (TIKnownTypes inferer)
-                        (TIKnownFns inferer)
-                        (TIFuncReturns inferer)
-                        (TIAdtDefs inferer)
-                        (TIVariantToAdt inferer)
-                        (TIStringMatchVars inferer)
-                        (TIInferringFns inferer)
-                        (TIBodyCache inferer))
-                    adt-name)))
-        (TIVariantToAdt inferer)
-        (TIStringMatchVars inferer)
-        (TIInferringFns inferer)
-        (TIBodyCache inferer)))
+    inferer)
 
 ; ===========================================================================
 ; INFER-EXPR — print
@@ -1355,6 +1354,12 @@
 ; forms in the inferer's known_functions, function_returns, adt_defs, etc.
 ; ===========================================================================
 
+; Despite its own comment ("registers Defn/Deftype/StructDef forms"), this
+; used to only match EDefn — EDeftype was never handled here at all, so
+; TIAdtDefs stayed empty for the entire compile. A separate, correct
+; `collect-adt-defs` function existed below to do exactly this, but nothing
+; ever called it (driver.zyl only calls collect-definitions) — merged its
+; EDeftype handling in directly instead of leaving it as unreachable code.
 (defn collect-definitions (inferer exprs)
     (match exprs
         (Nil inferer)
@@ -1364,6 +1369,8 @@
                     (let (param-types (collect-defn-params inferer params))
                         (let (infered (infer-defn-body inferer name params param-types body))
                             (collect-definitions infered rest))))
+                (EDeftype name variants generic-params d28
+                    (collect-definitions (insert-adt-def inferer name variants) rest))
                 (d1 (collect-definitions inferer rest))))))
 
 (defn collect-defn-params (inferer params)
@@ -1453,13 +1460,19 @@
                             new-inferer)))))))
 
 (defn resolve-param-types (inferer params ret-type)
-    ; resolve type vars in param types using return type evidence
+    ; resolve type vars in param types using return type evidence.
+    ; `params` is a (List ParamType) — ParamType's real constructor is `PT`
+    ; (String Type), not `FNS` (that's FnSig's own constructor, for a
+    ; totally different list). Both happen to be single-variant types with
+    ; 2 fields, so the wrong nested pattern still "matched" by coincidence,
+    ; but bound "ptypes" to a lone Type value and then fed it to map-types
+    ; as if it were a (List Type).
     (match
         params
         (Nil Nil)
-        ((FNS name ptypes) rest
+        ((PT name ptype) rest
             (Cons
-                (FNS name (map-types inferer ptypes ret-type))
+                (PT name (resolve-type-var inferer ptype ret-type))
                 (resolve-param-types inferer rest ret-type)))))
 
 (defn map-types (inferer types ret-type)
