@@ -3031,7 +3031,7 @@
       AList lst lst
     )
     (
-      d1 nil
+      d1 Nil
     )
   )
 )
@@ -17167,36 +17167,39 @@
       )
     )
     (
-      EAtom
+      EAtom atom
       (
-        AIdent name
-      )
-      (
-        Expr
+        match atom
         (
-          EAtom
+          AIdent name
           (
-            AIdent
+            Expr
             (
-              if
+              EAtom
               (
-                kv-contains var-renames name
+                AIdent
+                (
+                  if
+                  (
+                    kv-contains var-renames name
+                  )
+                  (
+                    kv-get var-renames name name
+                  )
+                  name
+                )
               )
-              (
-                kv-get var-renames name name
-              )
-              name
             )
           )
         )
-      )
-    )
-    (
-      EAtom atom
-      (
-        Expr
         (
-          EAtom atom
+          d1
+          (
+            Expr
+            (
+              EAtom atom
+            )
+          )
         )
       )
     )
