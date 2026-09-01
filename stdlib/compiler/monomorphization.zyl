@@ -562,12 +562,13 @@
     (EMatch subject arms
       (Expr (EMatch (subst-expr subject type-map var-renames var-types)
               (subst-match-arms arms type-map var-renames var-types))))
-    (EAtom (AIdent name)
-      (Expr (EAtom (AIdent (if (kv-contains var-renames name)
-                        (kv-get var-renames name name)
-                        name)))))
     (EAtom atom
-      (Expr (EAtom atom)))
+      (match atom
+        (AIdent name
+          (Expr (EAtom (AIdent (if (kv-contains var-renames name)
+                            (kv-get var-renames name name)
+                            name)))))
+        (d1 (Expr (EAtom atom)))))
     (EMakeVariant adt_name variant_name args
       (Expr (EMakeVariant adt_name variant_name
         (subst-expr-list args type-map var-renames var-types))))

@@ -819,6 +819,11 @@ pub struct PostProcessor {
     /// ADT variant names: ADT name → list of variant names.
     /// Used to set type_name when creating MakeVariant.
     adt_variants: IndexMap<String, Vec<String>>,
+    /// (ADT name, variant name) → head type name of each field, in
+    /// declared order (e.g. `EAtom Atom` → ["Atom"]). Used to disambiguate
+    /// nested-pattern desugaring when a variant name is shared by more
+    /// than one ADT (see `find_adt_for_variant_hinted`).
+    variant_field_types: IndexMap<(String, String), Vec<String>>,
     /// Declared struct names, for make-X constructor resolution when X does
     /// not fit the PascalCase heuristic (e.g. test-prefixed `_t_Person`).
     struct_names: std::collections::BTreeSet<String>,
@@ -833,6 +838,7 @@ impl PostProcessor {
         Self {
             adt_type_params: IndexMap::new(),
             adt_variants: IndexMap::new(),
+            variant_field_types: IndexMap::new(),
             struct_names: std::collections::BTreeSet::new(),
             pattern_var_counter: std::cell::Cell::new(0),
         }
@@ -854,6 +860,12 @@ impl PostProcessor {
                     self.adt_type_params.insert(name.clone(), Vec::new());
                     let vn: Vec<String> = variants.iter().map(|v| v.name.clone()).collect();
                     self.adt_variants.insert(name.clone(), vn);
+                    for v in variants {
+                        let field_heads: Vec<String> =
+                            v.fields.iter().map(|f| Self::type_head_name(f)).collect();
+                        self.variant_field_types
+                            .insert((name.clone(), v.name.clone()), field_heads);
+                    }
                 }
                 ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
                     self.struct_names.insert(sd.name.clone());
@@ -875,11 +887,17 @@ impl PostProcessor {
                     };
                     let mut type_params: Vec<String> = Vec::new();
                     let mut variant_names: Vec<String> = Vec::new();
+                    let mut variant_fields: Vec<(String, Vec<String>)> = Vec::new();
                     for arg in &args[1..] {
                         match &arg.inner {
                             ExprInner::Call(first, inner_args) => {
                                 if let ExprInner::Atom(Atom::Ident(vname)) = &first.inner {
                                     variant_names.push(vname.clone());
+                                    let field_heads: Vec<String> = inner_args
+                                        .iter()
+                                        .map(Self::type_head_name_expr)
+                                        .collect();
+                                    variant_fields.push((vname.clone(), field_heads));
                                     for item in inner_args.iter() {
                                         if let ExprInner::Atom(Atom::Ident(n)) = &item.inner {
                                             if n.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
@@ -893,6 +911,11 @@ impl PostProcessor {
                                 if !inner_args.is_empty() {
                                     if let ExprInner::Atom(Atom::Ident(vname)) = &inner_args[0].inner {
                                         variant_names.push(vname.clone());
+                                        let field_heads: Vec<String> = inner_args[1..]
+                                            .iter()
+                                            .map(Self::type_head_name_expr)
+                                            .collect();
+                                        variant_fields.push((vname.clone(), field_heads));
                                         for item in inner_args.iter().skip(1) {
                                             if let ExprInner::Atom(Atom::Ident(n)) = &item.inner {
                                                 if n.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
@@ -905,12 +928,17 @@ impl PostProcessor {
                             }
                             ExprInner::Atom(Atom::Ident(v)) => {
                                 variant_names.push(v.clone());
+                                variant_fields.push((v.clone(), Vec::new()));
                             }
                             _ => {}
                         }
                     }
                     if !type_params.is_empty() {
                         self.adt_type_params.insert(name.clone(), type_params);
+                    }
+                    for (vname, field_heads) in variant_fields {
+                        self.variant_field_types
+                            .insert((name.clone(), vname), field_heads);
                     }
                     if !variant_names.is_empty() {
                         self.adt_variants.insert(name, variant_names);
@@ -941,12 +969,59 @@ impl PostProcessor {
 
     /// Look up which ADT a variant name belongs to.
     fn find_adt_for_variant(&self, variant_name: &str) -> Option<String> {
+        self.find_adt_for_variant_hinted(variant_name, None)
+    }
+
+    /// Resolve which ADT declares `variant_name`, preferring `expected_adt`
+    /// when given and it's one of the declaring ADTs.
+    ///
+    /// Variant names are not globally unique — `Atom` and `Ast` both declare
+    /// `AIdent`/`AInt`/`AFloat`/`ABool` with DIFFERENT discriminants. Without
+    /// a hint, this returns the first ADT found by iteration order, which
+    /// can silently resolve a nested pattern like `(EAtom (AIdent name) ...)`
+    /// against the wrong type (e.g. `Ast` instead of `Atom`) — the generated
+    /// match then compares a real `Atom` discriminant against `Ast`'s arm
+    /// set, mismatches, and falls through to the default arm every time.
+    fn find_adt_for_variant_hinted(
+        &self,
+        variant_name: &str,
+        expected_adt: Option<&str>,
+    ) -> Option<String> {
+        let mut fallback = None;
         for (adt_name, variants) in &self.adt_variants {
-            if variants.contains(&variant_name.to_string()) {
-                return Some(adt_name.clone());
+            if variants.iter().any(|v| v == variant_name) {
+                if Some(adt_name.as_str()) == expected_adt {
+                    return Some(adt_name.clone());
+                }
+                if fallback.is_none() {
+                    fallback = Some(adt_name.clone());
+                }
             }
         }
-        None
+        fallback
+    }
+
+    /// Head type name of a field-type expression, e.g. `Atom` → "Atom",
+    /// `(List Expr)` → "List". Used only as a disambiguation hint, so a
+    /// wrapper type's own name (not its inner element type) is fine.
+    fn type_head_name_expr(e: &Expr) -> String {
+        match &e.inner {
+            ExprInner::Atom(Atom::Ident(n)) | ExprInner::Atom(Atom::Keyword(n)) => n.clone(),
+            ExprInner::Call(head, _) => match &head.inner {
+                ExprInner::Atom(Atom::Ident(n)) | ExprInner::Atom(Atom::Keyword(n)) => n.clone(),
+                _ => String::new(),
+            },
+            ExprInner::Apply(n, _) => n.clone(),
+            _ => String::new(),
+        }
+    }
+
+    /// Head type name of a field-type string (from an already-parsed
+    /// `ADTVariant.fields` entry), e.g. "(List Ast)" → "List".
+    fn type_head_name(field_type_str: &str) -> String {
+        let s = field_type_str.trim();
+        let s = s.strip_prefix('(').unwrap_or(s);
+        s.split_whitespace().next().unwrap_or(s).to_string()
     }
 
     /// Desugar nested variant patterns in a match arm into inner matches.
@@ -1015,9 +1090,16 @@ impl PostProcessor {
         }
     }
 
-    fn desugar_arm_raw(&self, _variant: &str, pats: Vec<Expr>, body: Expr, span: &Span) -> (Vec<Expr>, Expr) {
+    fn desugar_arm_raw(&self, outer_variant: &str, pats: Vec<Expr>, body: Expr, span: &Span) -> (Vec<Expr>, Expr) {
         let mut pats = pats;
         let mut body = body;
+        // Field-type hints for this variant's own fields (by position), used
+        // to disambiguate a nested pattern whose head variant name is shared
+        // by more than one ADT — see `find_adt_for_variant_hinted`.
+        let outer_adt = self.find_adt_for_variant(outer_variant);
+        let field_hints: Option<&Vec<String>> = outer_adt
+            .as_ref()
+            .and_then(|adt| self.variant_field_types.get(&(adt.clone(), outer_variant.to_string())));
         for i in 0..pats.len() {
             // Is pattern[i] a variant-shaped pattern? Raw form: Call/Apply
             // headed by a known variant identifier.
@@ -1034,10 +1116,8 @@ impl PostProcessor {
                 _ => continue,
             };
             // Only desugar when the head is a KNOWN variant (not a function call).
-            if self.find_adt_for_variant(&pat_variant).is_none() {
-                continue;
-            }
-            let Some(pat_adt) = self.find_adt_for_variant(&pat_variant) else {
+            let expected = field_hints.and_then(|v| v.get(i)).map(|s| s.as_str());
+            let Some(pat_adt) = self.find_adt_for_variant_hinted(&pat_variant, expected) else {
                 continue;
             };
 

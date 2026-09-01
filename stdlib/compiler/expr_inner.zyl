@@ -406,7 +406,7 @@
 (defn to-list (ast)
   (match ast
     (AList lst lst)
-    (d1 nil)))
+    (d1 Nil)))
 
 (defn parse-defn (args)
   (match args

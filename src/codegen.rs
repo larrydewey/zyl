@@ -4286,16 +4286,30 @@ impl CodeGen {
                  // For each arm, compare discriminant and jump if match.
                 // NOTE: compare against the arm's actual discriminant, not the
                 // arm index — the ICNF sort does not guarantee index == disc.
+                // A wildcard/catch-all arm gets sentinel discriminant usize::MAX
+                // (see icnf.rs) — no real value ever carries that discriminant,
+                // so a `cmp`/`je` against it can never fire. Skip it here and
+                // route the "no match" fallthrough straight to its body instead,
+                // since a wildcard arm means "anything not listed above".
+                let wildcard_idx = arms.iter().position(|a| a.discriminant == usize::MAX);
                 for (i, arm) in arms.iter().enumerate() {
+                    if Some(i) == wildcard_idx {
+                        continue;
+                    }
                     self.asm_push_align();
                     self.asm.push(format!("    cmp eax, {}", arm.discriminant));
                     self.asm_push_align();
                     self.asm.push(format!("    je {}", arm_labels[i]));
                 }
 
-                // No match — fall through to default (undefined behavior).
+                // No match — fall through to the wildcard arm's body if one
+                // exists, otherwise the generic (undefined-behavior) default.
                 self.asm_push_align();
-                self.asm.push(format!("    jmp {}", default_label));
+                if let Some(wi) = wildcard_idx {
+                    self.asm.push(format!("    jmp {}", arm_labels[wi]));
+                } else {
+                    self.asm.push(format!("    jmp {}", default_label));
+                }
 
                 // Emit each arm body.
                 for (i, arm) in arms.iter().enumerate() {
@@ -4409,11 +4423,32 @@ impl CodeGen {
                     self.asm.push(format!("    jmp {}", join_label));
                 }
 
-                // Default (no match) — undefined behavior.
+                // Default (no match) — undefined behavior, but still store
+                // the sentinel to the phi slot before joining. Every real
+                // arm above stores its result there; the join point reads
+                // from that slot, not from eax — leaving it unwritten here
+                // meant the "sentinel" was silently discarded and the join
+                // picked up whatever stale value already occupied the slot
+                // (this was the actual source of the "garbage pointer"
+                // corruption chased through this whole file: any match that
+                // unexpectedly hit its default arm — e.g. because an outer
+                // catch-all pattern like `d1` got compiled to this same
+                // default path instead of an explicit arm — would silently
+                // propagate leftover stack bytes as its result).
                 self.asm_push_align();
                 self.asm.push(format!("{}:", default_label));
                 self.asm_push_align();
                 self.asm.push("    mov eax, -1".to_string()); // Error sentinel.
+                if let Some(ref slot) = phi_slots.get(result_var) {
+                    self.asm_push_align();
+                    let res_is_float = matches!(&node.typ, Some(t) if matches!(t, Type::Prim(PrimType::Float)));
+                    if res_is_float {
+                        self.asm.push(format!("    cvtsi2sd xmm0, eax"));
+                        self.asm.push(format!("    movsd [rbp-{}], xmm0", slot));
+                    } else {
+                        self.asm.push(format!("    mov [rbp-{}], rax", slot));
+                    }
+                }
                 self.asm_push_align();
                 self.asm.push(format!("    jmp {}", join_label));
 
