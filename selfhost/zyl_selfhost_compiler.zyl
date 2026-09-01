@@ -17669,30 +17669,45 @@
     (
       EDeftype name variants d22 bound
       (
-        list-push result
+        let acc0 result
         (
-          substitute-in-adt expr
+          let subresult
+          (
+            substitute-in-adt expr
+          )
+          (
+            list-push acc0 subresult
+          )
         )
       )
     )
     (
       EImplBlock trait_name type_name bodies
       (
-        let r1
+        let acc0 result
         (
-          monomorphize-push-impl-bodies result trait_name type_name bodies
-        )
-        (
-          list-push r1 expr
+          let r1
+          (
+            monomorphize-push-impl-bodies acc0 trait_name type_name bodies
+          )
+          (
+            list-push r1 expr
+          )
         )
       )
     )
     (
       d23
       (
-        list-push result
+        let acc0 result
         (
-          substitute-in-expr expr
+          let subresult
+          (
+            substitute-in-expr expr
+          )
+          (
+            list-push acc0 subresult
+          )
         )
       )
     )
