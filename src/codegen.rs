@@ -3940,12 +3940,15 @@ impl CodeGen {
             // arg beyond the first 6) must total an even count or the call
             // lands misaligned — with no discriminant/tag slot here to
             // absorb the parity like MakeVariant has, so pad explicitly.
+            // The pad itself is pushed AFTER argument evaluation (Phase 1),
+            // not before: argument expressions can themselves contain calls
+            // (e.g. `(f (g x))`), and those nested calls compute their own
+            // alignment padding assuming rsp is 16-aligned on entry to
+            // their own Phase 1 — a pad pushed here before Phase 1 would
+            // throw that assumption off by 8 bytes for every nested call
+            // evaluated below.
             let total_scratch_pushes = num_args + num_args.saturating_sub(6);
             let needs_align_pad = total_scratch_pushes % 2 == 1;
-            if needs_align_pad {
-                self.asm_push_align();
-                self.asm.push("    push rbp".to_string());
-            }
             let arg_is_floats: Vec<bool> = args
                 .iter()
                 .map(|&arg_id| {
@@ -3999,9 +4002,18 @@ impl CodeGen {
                 self.asm.push("    push r10".to_string());
                 pushed += 8;
             }
+            // Alignment pad, pushed only now (after all argument
+            // expressions — including any nested calls they contain — have
+            // finished evaluating) so it can't throw off a nested call's
+            // own alignment math. See the Phase 1 comment above.
+            if needs_align_pad {
+                self.asm_push_align();
+                self.asm.push("    push rbp".to_string());
+            }
+            let pad_off = if needs_align_pad { 8 } else { 0 };
             // Phase 3: load register args from their scratch slots.
             for i in (0..num_args.min(6)).rev() {
-                let off = 8 * (num_args - 1 - i) + pushed;
+                let off = 8 * (num_args - 1 - i) + pushed + pad_off;
                 if arg_is_floats[i] {
                     self.asm_push_align();
                     self.asm.push(format!("    movq r10, [rsp+{}]", off));
