@@ -128,10 +128,9 @@
       (let (esc new-scope) (env-escape-scope scope name)
         (if (= esc 1)
           (RegionEnv (Cons scope new-scope) (RE.parens (RegionEnv Nil new-scope)))
-          (if (= (length rest) 0)
+          (if (= (list-length rest) 0)
             (RegionEnv (Cons scope Nil) (RE.parens (RegionEnv Nil Nil)))
-            (env-escape-parents-inner rest name (Cons depth Nil)))))
-    (Nil (RegionEnv Nil Nil))))
+            (env-escape-parents-inner rest name (Cons depth Nil))))))))
 (defn env-escape-scope (scope name)
   (env-escape-scope-inner scope name Nil 0))
 (defn env-escape-scope-inner (scope name accum found)
@@ -148,9 +147,9 @@
 (defn env-exit (env)
   (match (Pair (RE.cur env) (RE.parens env))
     (Pair current parens
-      (if (= (length current) 0)
+      (if (= (list-length current) 0)
         (RegionEnv Nil parens)
-        (if (= (length parens) 0)
+        (if (= (list-length parens) 0)
           (RegionEnv current parens)
           (env-merge-into-last current parens))))))
 (defn env-merge-into-last (current parens)
@@ -353,13 +352,13 @@
           (let arm-env (ri-bind-params binds env RStack)
             (ri-capture-collect-arms rest
               (ri-capture-collect body acc arm-env)
-              env))))))
+              env)))))))
 
 (defn ri-bind-params (params env region)
   (match params
     (Nil env)
     ((Cons name rest)
-      (ri-bind-params rest (env-bind env name region) region)))
+      (ri-bind-params rest (env-bind env name region) region))))
 
 (deftype RegionResult (RR Region (Option CaptureInfo)))
 
@@ -426,7 +425,7 @@
                 (let env3 (RI.env ri2)
                   (let env4 (env-exit env3)
                     (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
-                    (RR RHeap None))))))))))
+                    (RR RHeap None)))))))))))
 
 (defn ri-infer-args (ri icnfs)
   (ri-infer-args-loop ri icnfs RStack))
@@ -471,7 +470,7 @@
                         (ri-infer-match-arms
                           (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
                           rest
-                          new-acc))))))))))
+                          new-acc))))))))))))))
 
 (defn ri-collect-defs (ri items)
   (ri-collect-defs-loop ri items))
@@ -486,7 +485,7 @@
 (defn ri-collect-one ((ic Icnf) ri)
   (match ic
     (IFn d1 name params body
-      (let param-regions (ri-make-param-regions (length params))
+      (let param-regions (ri-make-param-regions (list-length params))
         (let fsig (FS name param-regions RHeap)
           (ri-add-func-sig ri name fsig))))
     (IVariant d2 name d3 args
@@ -518,7 +517,7 @@
     (if (ri-func-sig-exists fs name)
       ri
       (RegionInferer (RI (RI.env ri) (RI.sr ri)
-        (Cons (FS name (FS.params fsig) (FS.ret fsig)) fs)))))
+        (Cons (FS name (FS.params fsig) (FS.ret fsig)) fs))))))
 
 (defn ri-func-sig-exists (sigs name)
   (match sigs
@@ -530,7 +529,7 @@
   (let srlist (RI.sr ri)
     (if (ri-sr-exists srlist (SR.name sr))
       ri
-      (RegionInferer (RI (RI.env ri) (Cons sr srlist) (RI.fs ri)))))
+      (RegionInferer (RI (RI.env ri) (Cons sr srlist) (RI.fs ri))))))
 
 (defn ri-sr-exists (srs name)
   (match srs
@@ -540,7 +539,7 @@
 
 (defn ri-infer (icnf-list ri)
   (let ri2 (ri-collect-defs ri icnf-list)
-    (if (= (length icnf-list) 0)
+    (if (= (list-length icnf-list) 0)
       ri2
       (ri-infer-expressions ri2 icnf-list))))
 

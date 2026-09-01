@@ -83,8 +83,6 @@
 
 (deftype Atom (AInt Int) (AFloat String) (ABool Bool) (AStr String) (AIdent String) (ASymbol String) (AKeyword String) (ANil))
 
-(deftype Option (Some A) (None))
-
 (deftype Param (P String (Option String)))
 
 (deftype MatchArm (MA String (List Expr) Expr))
@@ -111,7 +109,7 @@
 
 ; --- Expr wrapper — matches type_inference.zyl expectation of .inner ----------
 
-(deftype Expr (E ExprInner))
+(deftype Expr (Expr ExprInner))
 
 ; ===========================================================================
 ; AST → EXPRINNER CONVERTER
@@ -148,201 +146,201 @@
 (defn convert-ast-list (ast-list)
   (match ast-list
     (Nil Nil)
-    ((Pair a rest)
-      (cons
+    ((Cons a rest)
+      (Cons
         (convert-ast a)
         (convert-ast-list rest)))))
 
 (defn convert-list-to-exprinner (ast-list)
   (match ast-list
     (Nil (Expr (EAtom ANil)))
-    ((Pair head rest)
+    ((Cons head rest)
       (match head
         (AIdent "defn"
           (let (parsed (parse-defn rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "defn" (convert-ast-list rest)))))
+              (Expr (EUnknown "defn" (convert-ast-list rest))))))
         (AIdent "deftype"
           (let (parsed (parse-deftype rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "deftype" (convert-ast-list rest)))))
+              (Expr (EUnknown "deftype" (convert-ast-list rest))))))
         (AIdent "def"
           (let (parsed (parse-def rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "def" (convert-ast-list rest)))))
+              (Expr (EUnknown "def" (convert-ast-list rest))))))
         (AIdent "let"
           (let (parsed (parse-let rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "let" (convert-ast-list rest)))))
+              (Expr (EUnknown "let" (convert-ast-list rest))))))
         (AIdent "if"
           (let (parsed (parse-if rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "if" (convert-ast-list rest)))))
+              (Expr (EUnknown "if" (convert-ast-list rest))))))
         (AIdent "while"
           (let (parsed (parse-while rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "while" (convert-ast-list rest)))))
+              (Expr (EUnknown "while" (convert-ast-list rest))))))
         (AIdent "for"
           (let (parsed (parse-for rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "for" (convert-ast-list rest)))))
+              (Expr (EUnknown "for" (convert-ast-list rest))))))
         (AIdent "cond"
           (let (parsed (parse-cond rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "cond" (convert-ast-list rest)))))
+              (Expr (EUnknown "cond" (convert-ast-list rest))))))
         (AIdent "match"
           (let (parsed (parse-match rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "match" (convert-ast-list rest)))))
+              (Expr (EUnknown "match" (convert-ast-list rest))))))
         (AIdent "try"
           (let (parsed (parse-try rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "try" (convert-ast-list rest)))))
+              (Expr (EUnknown "try" (convert-ast-list rest))))))
         (AIdent "begin"
           (let (parsed (parse-begin rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "begin" (convert-ast-list rest)))))
+              (Expr (EUnknown "begin" (convert-ast-list rest))))))
         (AIdent "lambda"
           (let (parsed (parse-lambda rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "lambda" (convert-ast-list rest)))))
+              (Expr (EUnknown "lambda" (convert-ast-list rest))))))
         (AIdent "fn"
           (let (parsed (parse-fn rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "fn" (convert-ast-list rest)))))
+              (Expr (EUnknown "fn" (convert-ast-list rest))))))
         (AIdent "print"
           (let (parsed (parse-print rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "print" (convert-ast-list rest)))))
+              (Expr (EUnknown "print" (convert-ast-list rest))))))
         (AIdent "assert-equal"
           (let (parsed (parse-assert-equal rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "assert-equal" (convert-ast-list rest)))))
+              (Expr (EUnknown "assert-equal" (convert-ast-list rest))))))
         (AIdent "assert"
           (let (parsed (parse-assert rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "assert" (convert-ast-list rest)))))
+              (Expr (EUnknown "assert" (convert-ast-list rest))))))
         (AIdent "spawn"
           (let (parsed (parse-spawn rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "spawn" (convert-ast-list rest)))))
+              (Expr (EUnknown "spawn" (convert-ast-list rest))))))
         (AIdent "send"
           (let (parsed (parse-send rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "send" (convert-ast-list rest)))))
+              (Expr (EUnknown "send" (convert-ast-list rest))))))
         (AIdent "ffi-pin"
           (let (parsed (parse-ffi-pin rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "ffi-pin" (convert-ast-list rest)))))
+              (Expr (EUnknown "ffi-pin" (convert-ast-list rest))))))
         (AIdent "ffi-unpin"
           (let (parsed (parse-ffi-unpin rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "ffi-unpin" (convert-ast-list rest)))))
+              (Expr (EUnknown "ffi-unpin" (convert-ast-list rest))))))
         (AIdent "exit"
           (let (parsed (parse-exit rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "exit" (convert-ast-list rest)))))
+              (Expr (EUnknown "exit" (convert-ast-list rest))))))
         (AIdent "close"
           (let (parsed (parse-close rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "close" (convert-ast-list rest)))))
+              (Expr (EUnknown "close" (convert-ast-list rest))))))
         (AIdent "file-open"
           (let (parsed (parse-file-open rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "file-open" (convert-ast-list rest)))))
+              (Expr (EUnknown "file-open" (convert-ast-list rest))))))
         (AIdent "file-read"
           (let (parsed (parse-file-read rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "file-read" (convert-ast-list rest)))))
+              (Expr (EUnknown "file-read" (convert-ast-list rest))))))
         (AIdent "file-write"
           (let (parsed (parse-file-write rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "file-write" (convert-ast-list rest)))))
+              (Expr (EUnknown "file-write" (convert-ast-list rest))))))
         (AIdent "file-close"
           (let (parsed (parse-file-close rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "file-close" (convert-ast-list rest)))))
+              (Expr (EUnknown "file-close" (convert-ast-list rest))))))
         (AIdent "set!"
           (let (parsed (parse-set-bang rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "set!" (convert-ast-list rest)))))
+              (Expr (EUnknown "set!" (convert-ast-list rest))))))
         (AIdent "module"
           (let (parsed (parse-module rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "module" (convert-ast-list rest)))))
+              (Expr (EUnknown "module" (convert-ast-list rest))))))
         (AIdent "use"
           (let (parsed (parse-use rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "use" (convert-ast-list rest)))))
+              (Expr (EUnknown "use" (convert-ast-list rest))))))
         (AIdent "export"
           (let (parsed (parse-export rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "export" (convert-ast-list rest)))))
+              (Expr (EUnknown "export" (convert-ast-list rest))))))
         (AIdent "derive"
           (let (parsed (parse-derive rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "derive" (convert-ast-list rest)))))
+              (Expr (EUnknown "derive" (convert-ast-list rest))))))
         (AIdent "macro"
           (let (parsed (parse-macro rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "macro" (convert-ast-list rest)))))
+              (Expr (EUnknown "macro" (convert-ast-list rest))))))
         (AIdent "test"
           (let (parsed (parse-test rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "test" (convert-ast-list rest)))))
+              (Expr (EUnknown "test" (convert-ast-list rest))))))
         (AIdent "test-suite"
           (let (parsed (parse-test-suite rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "test-suite" (convert-ast-list rest)))))
+              (Expr (EUnknown "test-suite" (convert-ast-list rest))))))
         (AIdent "setup"
           (let (parsed (parse-setup rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "setup" (convert-ast-list rest)))))
+              (Expr (EUnknown "setup" (convert-ast-list rest))))))
         (AIdent "teardown"
           (let (parsed (parse-teardown rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "teardown" (convert-ast-list rest)))))
+              (Expr (EUnknown "teardown" (convert-ast-list rest))))))
         (AIdent "with-resource"
           (let (parsed (parse-with-resource rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "with-resource" (convert-ast-list rest)))))
+              (Expr (EUnknown "with-resource" (convert-ast-list rest))))))
         (AIdent "read-line"
           (let (_ nil)
             (Expr (EReadLine))))
@@ -350,37 +348,37 @@
           (let (parsed (parse-make-struct rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "make-struct" (convert-ast-list rest)))))
+              (Expr (EUnknown "make-struct" (convert-ast-list rest))))))
         (AIdent "struct-get"
           (let (parsed (parse-struct-get rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "struct-get" (convert-ast-list rest)))))
+              (Expr (EUnknown "struct-get" (convert-ast-list rest))))))
         (AIdent "make-variant"
           (let (parsed (parse-make-variant rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "make-variant" (convert-ast-list rest)))))
+              (Expr (EUnknown "make-variant" (convert-ast-list rest))))))
         (AIdent "unwrap"
           (let (parsed (parse-unwrap rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "unwrap" (convert-ast-list rest)))))
+              (Expr (EUnknown "unwrap" (convert-ast-list rest))))))
         (AIdent "buf-append"
           (let (parsed (parse-buf-append rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "buf-append" (convert-ast-list rest)))))
+              (Expr (EUnknown "buf-append" (convert-ast-list rest))))))
         (AIdent "test-property"
           (let (parsed (parse-test-property rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "test-property" (convert-ast-list rest)))))
+              (Expr (EUnknown "test-property" (convert-ast-list rest))))))
         (AIdent "test-compile"
           (let (parsed (parse-test-compile rest))
             (if (Some expr parsed)
               expr
-              (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
+              (Expr (EUnknown "test-compile" (convert-ast-list rest))))))
         (AIdent _
           (Expr (EApply (a-ident-to-str head) (convert-ast-list rest))))
         (_
@@ -397,42 +395,43 @@
 (defn parse-defn (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match name
         (AIdent n
           (match rest
             (Nil None)
-            ((Pair params body-expr)
+            ((Cons params body-expr)
               (let (param-args (convert-ast-list (to-list params)))
                 (Some
                   (Expr
                     (EDefn
                       n
                       (parse-params params)
-                      (convert-ast body-expr)))))))))))
+                      (convert-ast body-expr))))))))))))
 
 (defn parse-params (params)
   (match params
     (AList lst
       (match lst
         (Nil Nil)
-        ((Pair p rest)
-          (cons
+        ((Cons p rest)
+          (Cons
             (parse-single-param p)
             (parse-params (AList rest)))))
     (_ Nil)))
 
+)
 (defn parse-single-param (p)
   (match p
     (AIdent name (P name None))
-    (AList (Pair name (Pair typ rest))
+    (AList (Cons name (Cons typ rest))
       (P (a-ident-to-str name) (Some (convert-ast typ))))
     (_ (P "___" None))))
 
 (defn parse-deftype (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match (convert-ast name)
         (Expr (EAtom (AIdent n))
           (Some
@@ -443,19 +442,21 @@
                 Nil
                 None)))))))
 
+)
 (defn parse-adt-variants (variants)
   (match variants
     (Nil Nil)
-    ((Pair v rest)
-      (cons
+    ((Cons v rest)
+      (Cons
         (parse-adt-variant v)
         (parse-adt-variants rest))))
 
+)
 (defn parse-adt-variant (v)
   (match v
     (AIdent name
       (AV name Nil))
-    (AList (Pair name rest)
+    (AList (Cons name rest)
       (AV
         (a-ident-to-str name)
         (parse-field-names (to-list rest))))
@@ -464,20 +465,20 @@
 (defn parse-field-names (fields)
   (match fields
     (Nil Nil)
-    ((Pair f rest)
-      (cons
+    ((Cons f rest)
+      (Cons
         (a-ident-to-str f)
         (parse-field-names rest)))))
 
 (defn parse-def (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match name
         (AIdent n
           (match rest
             (Nil None)
-            ((Pair val body-expr)
+            ((Cons val body-expr)
               (Some
                 (Expr
                   (EDef
@@ -486,6 +487,7 @@
 
 ; convert-ast-list-to-expr: handle let-style binding where value can be multiple forms
 ; (let name val body) where val might be (value body) as a list
+)
 (defn convert-ast-list-to-expr (ast)
   (match ast
     (AIdent n
@@ -511,12 +513,12 @@
 (defn parse-let (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match name
         (AIdent n
           (match rest
             (Nil None)
-            ((Pair val body-expr)
+            ((Cons val body-expr)
               (Some
                 (Expr
                   (ELet
@@ -524,12 +526,13 @@
                     (convert-ast-list-to-expr val)
                     (convert-ast body-expr))))))))))
 
+)
 (defn parse-if (args)
   (match args
     (Nil None)
-    ((Pair cond rest)
+    ((Cons cond rest)
       (match rest
-        ((Pair then- else-)
+        ((Cons then- else-)
           (Some
             (Expr
               (EIf
@@ -538,12 +541,13 @@
                 (convert-ast else-)))))
         (_ None))))
 
+)
 (defn parse-while (args)
   (match args
     (Nil None)
-    ((Pair cond rest)
+    ((Cons cond rest)
       (match rest
-        ((Pair body-expr)
+        ((Cons body-expr)
           (Some
             (Expr
               (EWhile
@@ -551,12 +555,13 @@
                 (convert-ast body-expr)))))
         (_ None))))
 
+)
 (defn parse-for (args)
   (match args
     (Nil None)
-    ((Pair bindings cond rest)
+    ((Cons bindings cond rest)
       (match rest
-        ((Pair body-expr)
+        ((Cons body-expr)
           (Some
             (Expr
               (EFor
@@ -565,22 +570,24 @@
                 (convert-ast body-expr)))))
         (_ None))))
 
+)
 (defn parse-for-bindings (bindings)
   (match bindings
     (AList lst
       (match lst
         (Nil Nil)
-        ((Pair binding rest)
-          (cons
+        ((Cons binding rest)
+          (Cons
             (parse-for-binding binding)
             (parse-for-bindings (AList rest)))))
     (_ nil)))
 
+)
 (defn parse-for-binding (binding)
   (match binding
     (AIdent name
       (Pair name None))
-    (AList (Pair name rest)
+    (AList (Cons name rest)
       (Pair
         (a-ident-to-str name)
         (if (nil? rest)
@@ -591,7 +598,7 @@
 (defn parse-cond (args)
   (match args
     (Nil None)
-    ((Pair clauses
+    ((Cons clauses
       (Some
         (Expr
           (ECond
@@ -603,15 +610,16 @@
     (AList lst
       (match lst
         (Nil Nil)
-        ((Pair clause rest)
-          (cons
+        ((Cons clause rest)
+          (Cons
             (parse-cond-clause clause)
             (parse-cond-clauses (AList rest)))))
     (_ nil)))
 
+)
 (defn parse-cond-clause (clause)
   (match clause
-    (AList (Pair pred body)
+    (AList (Cons pred body)
       (Pair
         (convert-ast pred)
         (convert-ast body)))
@@ -620,9 +628,9 @@
 (defn parse-match (args)
   (match args
     (Nil None)
-    ((Pair subject rest)
+    ((Cons subject rest)
       (match rest
-        ((Pair arms-expr)
+        ((Cons arms-expr)
           (Some
             (Expr
               (EMatch
@@ -630,22 +638,24 @@
                 (parse-match-arms arms-expr)))))
         (_ None))))
 
+)
 (defn parse-match-arms (arms)
   (match arms
     (AList lst
       (match lst
         (Nil Nil)
-        ((Pair arm rest)
-          (cons
+        ((Cons arm rest)
+          (Cons
             (parse-match-arm arm)
             (parse-match-arms (AList rest)))))
     (_ nil)))
 
+)
 (defn parse-match-arm (arm)
   (match arm
-    (AList (Pair pattern rest)
+    (AList (Cons pattern rest)
       (match rest
-        ((Pair body)
+        ((Cons body)
           (MA
             (match pattern
               (AIdent n n)
@@ -658,9 +668,9 @@
 (defn parse-try (args)
   (match args
     (Nil None)
-    ((Pair eh rest)
+    ((Cons eh rest)
       (match rest
-        ((Pair cn body-expr)
+        ((Cons cn body-expr)
           (Some
             (Expr
               (ETryCatch
@@ -671,22 +681,24 @@
                 (convert-ast body-expr)))))
         (_ None))))
 
+)
 (defn parse-begin (args)
   (match args
     (Nil (Some (Expr (EBegin Nil))))
-    ((Pair stmts)
+    ((Cons stmts)
       (Some
         (Expr
           (EBegin
             (convert-ast-list stmts)))))
     (_ (Some (Expr (EBegin (convert-ast-list args))))))
 
+)
 (defn parse-lambda (args)
   (match args
     (Nil None)
-    ((Pair params rest)
+    ((Cons params rest)
       (match rest
-        ((Pair body-expr)
+        ((Cons body-expr)
           (Some
             (Expr
               (ELambda
@@ -695,12 +707,13 @@
                 (convert-ast body-expr)))))
         (_ None))))
 
+)
 (defn parse-fn (args)
   (match args
     (Nil None)
-    ((Pair params rest)
+    ((Cons params rest)
       (match rest
-        ((Pair body-expr)
+        ((Cons body-expr)
           (Some
             (Expr
               (EFn
@@ -709,13 +722,14 @@
                 (convert-ast body-expr)))))
         (_ None))))
 
+)
 (defn parse-print (args)
   (Some (Expr (EPrint (convert-ast-list args)))))
 
 (defn parse-assert-equal (args)
   (match args
     (Nil None)
-    ((Pair l r)
+    ((Cons l r)
       (Some
         (Expr
           (EAssertEqual
@@ -726,9 +740,9 @@
 (defn parse-assert (args)
   (match args
     (Nil None)
-    ((Pair cond rest)
+    ((Cons cond rest)
       (match rest
-        ((Pair msg)
+        ((Cons msg)
           (Some
             (Expr
               (EAssert
@@ -741,6 +755,7 @@
                 (convert-ast cond)
                 None)))))))
 
+)
 (defn parse-spawn (args)
   (if (nil? args)
     None
@@ -749,7 +764,7 @@
 (defn parse-send (args)
   (match args
     (Nil None)
-    ((Pair actor msg)
+    ((Cons actor msg)
       (Some
         (Expr
           (ESend
@@ -780,7 +795,7 @@
 (defn parse-file-open (args)
   (match args
     (Nil None)
-    ((Pair path mode)
+    ((Cons path mode)
       (Some
         (Expr
           (EFileOpen
@@ -791,7 +806,7 @@
 (defn parse-file-read (args)
   (match args
     (Nil None)
-    ((Pair handle count)
+    ((Cons handle count)
       (Some
         (Expr
           (EFileRead
@@ -802,7 +817,7 @@
 (defn parse-file-write (args)
   (match args
     (Nil None)
-    ((Pair handle data)
+    ((Cons handle data)
       (Some
         (Expr
           (EFileWrite
@@ -818,7 +833,7 @@
 (defn parse-set-bang (args)
   (match args
     (Nil None)
-    ((Pair target val)
+    ((Cons target val)
       (Some
         (Expr
           (ESetBang
@@ -854,7 +869,7 @@
 (defn parse-derive (args)
   (match args
     (Nil None)
-    ((Pair type-expr rest)
+    ((Cons type-expr rest)
       (Some
         (Expr
           (EDerive
@@ -863,28 +878,30 @@
               (_ "___"))
             (parse-derive-traits rest))))))
 
+)
 (defn parse-derive-traits (ast)
   (match ast
     (AList lst
       (match lst
         (Nil Nil)
-        ((Pair t rest)
-          (cons
+        ((Cons t rest)
+          (Cons
             (match t
               (AIdent n n)
               (_ "___"))
             (parse-derive-traits (AList rest)))))
     (_ nil)))
 
+)
 (defn parse-macro (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match name
         (AIdent n
           (match rest
             (Nil None)
-            ((Pair params body)
+            ((Cons params body)
               (Some
                 (Expr
                   (EMacroDef
@@ -896,7 +913,7 @@
 (defn parse-test (args)
   (match args
     (Nil None)
-    ((Pair name body)
+    ((Cons name body)
       (Some
         (Expr
           (ETestDecl
@@ -919,9 +936,9 @@
 (defn parse-with-resource (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (match rest
-        ((Pair init body)
+        ((Cons init body)
           (Some
             (Expr
               (EWithResource
@@ -931,12 +948,13 @@
                 (convert-ast init)
                 (convert-ast body)))))
         (_ None))))
-    (_ None)))
+    (_ None))
+
 
 (defn parse-make-struct (args)
   (match args
     (Nil None)
-    ((Pair name rest)
+    ((Cons name rest)
       (Some
         (Expr
           (EMakeStruct
@@ -949,9 +967,9 @@
 (defn parse-struct-get (args)
   (match args
     (Nil None)
-    ((Pair se rest)
+    ((Cons se rest)
       (match rest
-        ((Pair field)
+        ((Cons field)
           (Some
             (Expr
               (EStructGet
@@ -965,12 +983,12 @@
 (defn parse-make-variant (args)
   (match args
     (Nil None)
-    ((Pair adt rest)
+    ((Cons adt rest)
       (match adt
-        (AList (Pair adt-name rest2)
+        (AList (Cons adt-name rest2)
           (match rest2
             (Nil None)
-            ((Pair variant fields-expr)
+            ((Cons variant fields-expr)
               (Some
                 (Expr
                   (EMakeVariant
@@ -982,7 +1000,8 @@
                       (_ "___"))
                     (convert-ast-list fields-expr)))))))
         (_ None))))
-    (_ None)))
+    (_ None))
+
 
 (defn parse-unwrap (args)
   (if (nil? args)
@@ -992,7 +1011,7 @@
 (defn parse-buf-append (args)
   (match args
     (Nil None)
-    ((Pair dst src)
+    ((Cons dst src)
       (Some
         (Expr
           (EBufAppend
