@@ -431,8 +431,8 @@
         ((Cons p rest)
           (let hd (parse-single-param p)
             (let tl (parse-params (AList rest))
-              (Cons hd tl)))))
-    (d1 Nil)))
+              (Cons hd tl))))))
+    (d1 Nil))
 
 )
 (defn parse-single-param (p)
@@ -593,8 +593,8 @@
         ((Cons binding rest)
           (let hd (parse-for-binding binding)
             (let tl (parse-for-bindings (AList rest))
-              (Cons hd tl)))))
-    (d1 nil)))
+              (Cons hd tl))))))
+    (d1 nil))
 
 )
 (defn parse-for-binding (binding)
@@ -626,8 +626,8 @@
         ((Cons clause rest)
           (let hd (parse-cond-clause clause)
             (let tl (parse-cond-clauses (AList rest))
-              (Cons hd tl)))))
-    (d1 nil)))
+              (Cons hd tl))))))
+    (d1 nil))
 
 )
 (defn parse-cond-clause (clause)
@@ -660,8 +660,8 @@
         ((Cons arm rest)
           (let hd (parse-match-arm arm)
             (let tl (parse-match-arms (AList rest))
-              (Cons hd tl)))))
-    (d1 nil)))
+              (Cons hd tl))))))
+    (d1 nil))
 
 )
 (defn parse-match-arm (arm)
@@ -897,8 +897,8 @@
                     (AIdent n n)
                     (d1 "___"))
             (let tl (parse-derive-traits (AList rest))
-              (Cons hd tl)))))
-    (d1 nil)))
+              (Cons hd tl))))))
+    (d1 nil))
 
 )
 (defn parse-macro (args)
@@ -955,8 +955,8 @@
                   (d1 "___"))
                 (convert-ast init)
                 (convert-ast body)))))
-        (d1 None))))
-    (d1 None))
+        (d1 None)))
+    (d1 None)))
 
 
 (defn parse-make-struct (args)
@@ -984,8 +984,8 @@
                 (convert-ast se)
                 (match field
                   (AIdent n n)
-                  (d1 "")))))
-        (d1 None))))
+                  (d1 ""))))))
+        (d1 None)))
     (d1 None)))
 
 (defn parse-make-variant (args)
@@ -1007,8 +1007,8 @@
                       (AIdent n n)
                       (d1 "___"))
                     (convert-ast-list fields-expr)))))))
-        (d1 None))))
-    (d1 None))
+        (d1 None)))
+    (d1 None)))
 
 
 (defn parse-unwrap (args)
