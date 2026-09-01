@@ -180,7 +180,9 @@
 (deftype TypeVar (TV Int))
 
 (defn typevar-gen-new (g)
-  (Pair (TypeVar (TVG.n g)) (TypeVarGen (+ (TVG.n g) 1))))
+  ; same "type name instead of real constructor" bug as Subst/TypeEnv —
+  ; TypeVar's constructor is TV, TypeVarGen's is TVG.
+  (Pair (TV (TVG.n g)) (TVG (+ (TVG.n g) 1))))
 
 (defn typevar-gen-next (g)
   (TVG.n g))
@@ -289,14 +291,33 @@
     (TArray elem d1 (type-free-vars elem))
     (TCap d2 inner (type-free-vars inner))
     (TStruct d3 fields (type-free-vars-list fields))
-    (TVar n d4 (List n))
-    (TMap k v (union (type-free-vars k) (type-free-vars v)))
-    (TResult e h (union (type-free-vars e) (type-free-vars h))) ))
+    (TVar n d4 (Cons n Nil))
+    (TMap k v (tfv-union (type-free-vars k) (type-free-vars v)))
+    (TResult e h (tfv-union (type-free-vars e) (type-free-vars h))) ))
 
 (defn type-free-vars-list ((types (List Type)))
   (match types
     (Nil Nil)
-    ((Cons h t) (union (type-free-vars h) (type-free-vars-list t)))))
+    ((Cons h t) (tfv-union (type-free-vars h) (type-free-vars-list t)))))
+
+; `(List n)` used "List" as if it were a constructor (it's only ever a
+; TYPE NAME in field-type position, e.g. `(List Type)` — never callable);
+; the real way to build a one-element list is `(Cons n Nil)`. `union` was
+; never defined anywhere either — dedup-merge two int lists directly
+; (free-var indices), reusing `=` since ints compare safely (unlike the
+; ADT-pointer-equality pitfalls `list-contains` hits for structured values).
+(defn tfv-union (a b)
+  (match a
+    (Nil b)
+    (Cons h t
+      (if (tfv-contains b h)
+        (tfv-union t b)
+        (Cons h (tfv-union t b))))))
+
+(defn tfv-contains (lst x)
+  (match lst
+    (Nil false)
+    (Cons h t (if (= h x) true (tfv-contains t x)))))
 
 ; ===========================================================================
 ; UNIFICATION

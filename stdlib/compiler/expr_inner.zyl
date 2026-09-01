@@ -270,6 +270,18 @@
     (match (parse-cond rest)
       (Some expr expr)
       (None (Expr (EUnknown "cond" (convert-ast-list rest)))))
+  (if (> (str-eq n "or") 0)
+    (match (parse-or rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "or" (convert-ast-list rest)))))
+  (if (> (str-eq n "and") 0)
+    (match (parse-and rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "and" (convert-ast-list rest)))))
+  (if (> (str-eq n "not") 0)
+    (match (parse-not rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "not" (convert-ast-list rest)))))
   (if (> (str-eq n "match") 0)
     (match (parse-match rest)
       (Some expr expr)
@@ -417,7 +429,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  )))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -605,6 +617,44 @@
       (Expr
         (ECond
           (parse-cond-clauses (AList args)))))))
+
+; `or`/`and` aren't recognized as builtins anywhere in codegen (Rust or
+; self-hosted) — desugar to nested `if` here instead, at the SOURCE
+; level, so every downstream phase only ever sees plain EIf nodes (this
+; language has no short-circuit evaluation anyway — every argument is
+; always eagerly evaluated — so desugaring loses nothing).
+(defn parse-or (args)
+  (if (nil? args)
+    (Some (Expr (EAtom (ABool false))))
+    (Some (or-fold (convert-ast-list args)))))
+
+(defn or-fold (exprs)
+  (match exprs
+    (Nil (Expr (EAtom (ABool false))))
+    (Cons e rest
+      (match rest
+        (Nil e)
+        (d1 (Expr (EIf e (Expr (EAtom (ABool true))) (or-fold rest))))))))
+
+(defn parse-and (args)
+  (if (nil? args)
+    (Some (Expr (EAtom (ABool true))))
+    (Some (and-fold (convert-ast-list args)))))
+
+(defn and-fold (exprs)
+  (match exprs
+    (Nil (Expr (EAtom (ABool true))))
+    (Cons e rest
+      (match rest
+        (Nil e)
+        (d1 (Expr (EIf e (and-fold rest) (Expr (EAtom (ABool false))))))))))
+
+; `not` isn't a codegen builtin either — desugar to `(if x false true)`.
+(defn parse-not (args)
+  (match args
+    (Cons a d1
+      (Some (Expr (EIf (convert-ast a) (Expr (EAtom (ABool false))) (Expr (EAtom (ABool true)))))))
+    (d2 None)))
 
 (defn parse-cond-clauses (ast)
   (match ast
