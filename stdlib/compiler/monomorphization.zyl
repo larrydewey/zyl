@@ -285,8 +285,26 @@
     (d1 Nil)))
 
 (defn discover-mono-param (i p)
-  (let pn (match (ast-ident-name p) (Some v v) (d1 (str-concat "T" (string i))))
+  ; `(string i)` isn't a real builtin (codegen.rs recognizes str-concat/
+  ; str-equal/str-length/str-substring only, never "string") — this call
+  ; was dead code under the Rust bootstrap (DCE elided it) but the
+  ; self-hosted compiler's own reachability analysis emits it, producing
+  ; an undefined `f_string` symbol at link time. A small letter-index
+  ; table sidesteps needing int-to-string at all for this fallback name.
+  (let pn (match (ast-ident-name p) (Some v v) (d1 (str-concat "T" (mono-index-letter i))))
     (MP pn Nil)))
+
+(defn mono-index-letter (i)
+  (if (= i 0) "A"
+    (if (= i 1) "B"
+      (if (= i 2) "C"
+        (if (= i 3) "D"
+          (if (= i 4) "E"
+            (if (= i 5) "F"
+              (if (= i 6) "G"
+                (if (= i 7) "H"
+                  (if (= i 8) "I"
+                    "X"))))))))))
 
 (defn discover-from-ast-one (gen-fns expr)
   (match (Expr.inner expr)

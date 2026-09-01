@@ -159,3 +159,22 @@
 ; Returns: Bool (0/1)
 (defn str-eq (p1 p2)
   (ffi-call "zyl_cstr_eq" p1 p2 1000))
+
+; `str-concat` is recognized directly by codegen.rs's Rust bootstrap (as
+; are str-equal/str-length/str-substring) — the RUST-built stage1 never
+; actually calls this body, it inlines the FFI at every call site. But
+; the SELF-HOSTED icnf.zyl/codegen.zyl don't special-case the name at
+; all, so without a real definition every "str-concat" call site lowers
+; to a call to a nonexistent function, producing an undefined `f_str_concat`
+; symbol at link time when stage1 compiles this bundle to produce stage2.
+(defn str-concat (a b)
+  (ffi-call "zyl_cstr_concat" a b 1000))
+
+; Same story as str-concat above: str-length/str-substring are recognized
+; directly by codegen.rs, with no self-hosted-callable definition, so the
+; self-hosted compiler's own lowering needs real bodies for them too.
+(defn str-length (s)
+  (ffi-call "zyl_cstr_len" s 1000))
+
+(defn str-substring (s start len)
+  (ffi-call "zyl_cstr_substr" s start len 1000))
