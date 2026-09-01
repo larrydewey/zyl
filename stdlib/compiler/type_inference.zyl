@@ -919,7 +919,7 @@
         (>= i (str-length s))
         -1
         (if
-            (= (str-substring s i (+ i 1)) c)
+            (= (str-substring s i 1) c)
             i
             (str-index-of-char s c (+ i 1)))))
 

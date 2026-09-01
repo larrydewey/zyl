@@ -12327,10 +12327,7 @@
       (
         =
         (
-          str-substring s i
-          (
-            + i 1
-          )
+          str-substring s i 1
         )
         c
       )
@@ -14823,10 +14820,7 @@
       (
         =
         (
-          str-substring s i
-          (
-            + i ll
-          )
+          str-substring s i ll
         )
         sub
       )
@@ -16980,9 +16974,12 @@
             )
           )
           (
-            EDefn name new-params
+            Expr
             (
-              subst-expr body type-map var-renames child-types
+              EDefn name new-params
+              (
+                subst-expr body type-map var-renames child-types
+              )
             )
           )
         )
@@ -16991,21 +16988,27 @@
     (
       ECall op args
       (
-        ECall
+        Expr
         (
-          subst-expr op type-map var-renames var-types
-        )
-        (
-          subst-expr-list args type-map var-renames var-types
+          ECall
+          (
+            subst-expr op type-map var-renames var-types
+          )
+          (
+            subst-expr-list args type-map var-renames var-types
+          )
         )
       )
     )
     (
       EApply fname args
       (
-        EApply fname
+        Expr
         (
-          subst-expr-list args type-map var-renames var-types
+          EApply fname
+          (
+            subst-expr-list args type-map var-renames var-types
+          )
         )
       )
     )
@@ -17029,9 +17032,12 @@
             )
           )
           (
-            ELet name new-val
+            Expr
             (
-              subst-expr body type-map var-renames child-types
+              ELet name new-val
+              (
+                subst-expr body type-map var-renames child-types
+              )
             )
           )
         )
@@ -17040,96 +17046,123 @@
     (
       EIf cond then- else-
       (
-        EIf
+        Expr
         (
-          subst-expr cond type-map var-renames var-types
-        )
-        (
-          subst-expr then- type-map var-renames var-types
-        )
-        (
-          subst-expr else- type-map var-renames var-types
+          EIf
+          (
+            subst-expr cond type-map var-renames var-types
+          )
+          (
+            subst-expr then- type-map var-renames var-types
+          )
+          (
+            subst-expr else- type-map var-renames var-types
+          )
         )
       )
     )
     (
       ELambda name params body
       (
-        ELambda name params
+        Expr
         (
-          subst-expr body type-map var-renames var-types
+          ELambda name params
+          (
+            subst-expr body type-map var-renames var-types
+          )
         )
       )
     )
     (
       EFn name params body
       (
-        EFn name params
+        Expr
         (
-          subst-expr body type-map var-renames var-types
+          EFn name params
+          (
+            subst-expr body type-map var-renames var-types
+          )
         )
       )
     )
     (
       EBegin exprs
       (
-        EBegin
+        Expr
         (
-          subst-expr-list exprs type-map var-renames var-types
+          EBegin
+          (
+            subst-expr-list exprs type-map var-renames var-types
+          )
         )
       )
     )
     (
       EPrint exprs
       (
-        EPrint
+        Expr
         (
-          subst-expr-list exprs type-map var-renames var-types
+          EPrint
+          (
+            subst-expr-list exprs type-map var-renames var-types
+          )
         )
       )
     )
     (
       EWhile cond body
       (
-        EWhile
+        Expr
         (
-          subst-expr cond type-map var-renames var-types
-        )
-        (
-          subst-expr body type-map var-renames var-types
+          EWhile
+          (
+            subst-expr cond type-map var-renames var-types
+          )
+          (
+            subst-expr body type-map var-renames var-types
+          )
         )
       )
     )
     (
       EFor bindings cond body
       (
-        EFor bindings
+        Expr
         (
-          subst-expr cond type-map var-renames var-types
-        )
-        (
-          subst-expr body type-map var-renames var-types
+          EFor bindings
+          (
+            subst-expr cond type-map var-renames var-types
+          )
+          (
+            subst-expr body type-map var-renames var-types
+          )
         )
       )
     )
     (
       ECond clauses
       (
-        ECond
+        Expr
         (
-          subst-cond-clauses clauses type-map var-renames var-types
+          ECond
+          (
+            subst-cond-clauses clauses type-map var-renames var-types
+          )
         )
       )
     )
     (
       EMatch subject arms
       (
-        EMatch
+        Expr
         (
-          subst-expr subject type-map var-renames var-types
-        )
-        (
-          subst-match-arms arms type-map var-renames var-types
+          EMatch
+          (
+            subst-expr subject type-map var-renames var-types
+          )
+          (
+            subst-match-arms arms type-map var-renames var-types
+          )
         )
       )
     )
@@ -17139,18 +17172,21 @@
         AIdent name
       )
       (
-        EAtom
+        Expr
         (
-          AIdent
+          EAtom
           (
-            if
+            AIdent
             (
-              kv-contains var-renames name
+              if
+              (
+                kv-contains var-renames name
+              )
+              (
+                kv-get var-renames name name
+              )
+              name
             )
-            (
-              kv-get var-renames name name
-            )
-            name
           )
         )
       )
@@ -17158,33 +17194,39 @@
     (
       EAtom atom
       (
-        EAtom atom
+        Expr
+        (
+          EAtom atom
+        )
       )
     )
     (
       EMakeVariant adt_name variant_name args
       (
-        EMakeVariant adt_name variant_name
+        Expr
         (
-          subst-expr-list args type-map var-renames var-types
+          EMakeVariant adt_name variant_name
+          (
+            subst-expr-list args type-map var-renames var-types
+          )
         )
       )
     )
     (
       EDeftype name variants d20 bound
       (
-        EDeftype name
+        Expr
         (
-          subst-adt-variants variants type-map
+          EDeftype name
+          (
+            subst-adt-variants variants type-map
+          )
+          Nil bound
         )
-        Nil bound
       )
     )
     (
-      d1
-      (
-        Expr.inner expr
-      )
+      d1 expr
     )
   )
 )
@@ -17207,7 +17249,8 @@
     (
       is-uppercase-ident f
     )
-    nil f
+    ""
+    f
   )
 )
 (
@@ -17280,11 +17323,14 @@
     (
       EDeftype name variants d21 bound
       (
-        EDeftype name
+        Expr
         (
-          substitute-in-adt-variants variants
+          EDeftype name
+          (
+            substitute-in-adt-variants variants
+          )
+          Nil bound
         )
-        Nil bound
       )
     )
     (
@@ -27817,7 +27863,7 @@
         (
           let exprs
           (
-            convert-ast prog
+            convert-ast-list prog
           )
           (
             dbg-log
