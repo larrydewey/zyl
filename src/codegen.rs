@@ -411,11 +411,15 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    .space 4096".to_string());
 
-        // Global buffer for file reads.
+        // Global buffer for file reads. Sized well above any single
+        // `file-read` count callers request (e.g. boot-run reads up to
+        // 1048576 bytes) — the read syscall writes the full requested
+        // count straight into this buffer with no clamping, so it must
+        // be at least that large or larger reads corrupt adjacent bss.
         self.asm_push_align();
         self.asm.push(".file_read_buf:".to_string());
         self.asm_push_align();
-        self.asm.push("    .space 4096".to_string());
+        self.asm.push("    .space 8388608".to_string());
 
         // Emit text (code) section.
         self.asm_push_align();

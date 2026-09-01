@@ -260,7 +260,7 @@
     (MP pn Nil)))
 
 (defn discover-from-ast-one (gen-fns expr)
-  (match expr.inner
+  (match (Expr.inner expr)
     (EDefn name params body
       (let mp (extract-mono-params params)
         (if (> (list-length mp) 0)
@@ -292,7 +292,7 @@
 ; ===========================================================================
 
 (defn infer-arg-type (ctx expr)
-  (match expr.inner
+  (match (Expr.inner expr)
     (EAtom (AInt d4 d5) (TPrim PInt))
     (EAtom (AFloat d6 d7) (TPrim PFloat))
     (EAtom (ABool d8 d9) (TPrim PBool))
@@ -319,7 +319,7 @@
               (TVar 0))))
         (else (TNominal fname))))
     (ECall op args
-      (let op-name (match op.inner (EAtom (AIdent n) n) (d1 nil))
+      (let op-name (match (Expr.inner op) (EAtom (AIdent n) n) (d1 nil))
         (cond
           ((or (= op-name "+") (= op-name "-") (= op-name "*") (= op-name "/"))
             (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TPrim PInt)))
@@ -523,7 +523,7 @@
         (subst-adt-variants rest type-map)))))
 
 (defn subst-expr (expr type-map var-renames var-types)
-  (match expr.inner
+  (match (Expr.inner expr)
     (EDefn name params body
       (let new-params (subst-defn-params params type-map)
         (let child-types (kv-set Nil name (infer-arg-type (MC Nil Nil Nil Nil Nil Nil Nil Nil) (subst-expr body type-map var-renames var-types)))
@@ -573,7 +573,7 @@
         (subst-expr-list args type-map var-renames var-types)))
     (EDeftype name variants d20 bound
       (EDeftype name (subst-adt-variants variants type-map) Nil bound))
-    (d1 expr.inner)))
+    (d1 (Expr.inner expr))))
 
 (defn substitute-in-expr (expr)
   (subst-expr expr Nil Nil Nil))
@@ -594,7 +594,7 @@
         (substitute-in-adt-variants rest)))))
 
 (defn substitute-in-adt (expr)
-  (match expr.inner
+  (match (Expr.inner expr)
     (EDeftype name variants d21 bound
       (EDeftype name (substitute-in-adt-variants variants) Nil bound))
     (d1 (substitute-in-expr expr))))
@@ -627,7 +627,7 @@
             trait_name type_name rest))))))
 
 (defn monomorphize-one (ctx result expr)
-  (match expr.inner
+  (match (Expr.inner expr)
     (EDefn name params body
       (if (kv-contains (mc-gen-fns ctx) name)
         (let generics (kv-get (mc-gen-fns ctx) name Nil)
@@ -637,7 +637,7 @@
                 (list-push r2 (substitute-in-expr expr))))))
         (list-push result (substitute-in-expr expr))))
     (ECall op args
-      (let op-name (match op.inner (EAtom (AIdent n) n) (d1 nil))
+      (let op-name (match (Expr.inner op) (EAtom (AIdent n) n) (d1 nil))
         (if (and op-name (kv-contains (mc-gen-fns ctx) op-name))
           (let generics (kv-get (mc-gen-fns ctx) op-name Nil)
             (match (resolve-call-site ctx op-name generics args)
