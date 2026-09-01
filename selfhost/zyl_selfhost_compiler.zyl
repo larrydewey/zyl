@@ -1465,6 +1465,18 @@
   )
 )
 (
+  defn Expr.inner
+  (
+    e
+  )
+  (
+    match e
+    (
+      Expr i i
+    )
+  )
+)
+(
   defn convert-ast
   (
     ast
@@ -10857,7 +10869,10 @@
     inferer expr
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       Atom
       (
@@ -12435,7 +12450,10 @@
         Cons ft frest
       )
       (
-        match pat.inner
+        match
+        (
+          Expr.inner pat
+        )
         (
           EAtom
           (
@@ -12590,7 +12608,10 @@
     inferer expr op args
   )
   (
-    match op.inner
+    match
+    (
+      Expr.inner op
+    )
     (
       Atom
       (
@@ -13667,7 +13688,10 @@
         Cons expr rest
       )
       (
-        match expr.inner
+        match
+        (
+          Expr.inner expr
+        )
         (
           EDefn name params body
           (
@@ -13890,9 +13914,11 @@
           updated
           (
             match
-            expr.inner
             (
-              Deftype name variants generic-params d28
+              Expr.inner expr
+            )
+            (
+              EDeftype name variants generic-params d28
               (
                 insert-adt-def inferer name variants
               )
@@ -14188,15 +14214,17 @@
   )
   (
     match
-    expr.inner
     (
-      Deftype d29 d30 d31 d32
+      Expr.inner expr
     )
     (
-      StructDef d33
+      EDeftype d29 d30 d31 d32 true
     )
     (
-      StructDefPlus d34
+      EStructDef d33 d33b true
+    )
+    (
+      EStructDefPlus d34 d34b true
     )
     (
       d1 false
@@ -15451,7 +15479,10 @@
     gen-fns expr
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       EDefn name params body
       (
@@ -15632,7 +15663,10 @@
     ctx expr
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       EAtom
       (
@@ -15847,7 +15881,10 @@
       (
         let op-name
         (
-          match op.inner
+          match
+          (
+            Expr.inner op
+          )
           (
             EAtom
             (
@@ -16917,7 +16954,10 @@
     expr type-map var-renames var-types
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       EDefn name params body
       (
@@ -17141,7 +17181,10 @@
       )
     )
     (
-      d1 expr.inner
+      d1
+      (
+        Expr.inner expr
+      )
     )
   )
 )
@@ -17230,7 +17273,10 @@
     expr
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       EDeftype name variants d21 bound
       (
@@ -17375,7 +17421,10 @@
     ctx result expr
   )
   (
-    match expr.inner
+    match
+    (
+      Expr.inner expr
+    )
     (
       EDefn name params body
       (
@@ -17434,7 +17483,10 @@
       (
         let op-name
         (
-          match op.inner
+          match
+          (
+            Expr.inner op
+          )
           (
             EAtom
             (

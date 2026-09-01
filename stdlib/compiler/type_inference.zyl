@@ -366,7 +366,7 @@
 ; ===========================================================================
 
 (defn infer-expr (inferer expr)
-    (match expr.inner
+    (match (Expr.inner expr)
         (Atom
             (Int d1 d2)
             (inferer-return-int inferer))
@@ -959,7 +959,7 @@
 (defn inferer-bind-pattern-vars-loop (inferer patterns field-types)
     (match (Pair patterns field-types)
         (Pair (Cons pat prest) (Cons ft frest)
-            (match pat.inner
+            (match (Expr.inner pat)
                 (EAtom (AIdent name)
                     (let
                         (pt (infer-lookup-pattern-type inferer ft))
@@ -1006,7 +1006,7 @@
 
 (defn infer-expr-call (inferer expr op args)
     ; dispatch builtin operator vs user function call
-    (match op.inner
+    (match (Expr.inner op)
         (Atom
             (Ident op-name)
             (if
@@ -1359,7 +1359,7 @@
     (match exprs
         (Nil inferer)
         ((Cons expr rest)
-            (match expr.inner
+            (match (Expr.inner expr)
                 (EDefn name params body
                     (let (param-types (collect-defn-params inferer params))
                         (let (infered (infer-defn-body inferer name params param-types body))
@@ -1415,8 +1415,8 @@
         (Nil inferer)
         ((Cons expr rest)
             (let (updated (match
-                               expr.inner
-                               (Deftype name variants generic-params d28
+                               (Expr.inner expr)
+                               (EDeftype name variants generic-params d28
                                    (insert-adt-def inferer name variants))
                                (d1 inferer)))
                 (collect-adt-defs updated rest)))))
@@ -1519,8 +1519,8 @@
 (defn is-def-only (expr)
     ; check if expr is a definition-only form (no inferred type needed)
     (match
-        expr.inner
-        (Deftype d29 d30 d31 d32)
-        (StructDef d33)
-        (StructDefPlus d34)
+        (Expr.inner expr)
+        (EDeftype d29 d30 d31 d32 true)
+        (EStructDef d33 d33b true)
+        (EStructDefPlus d34 d34b true)
         (d1 false)))
