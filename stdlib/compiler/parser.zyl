@@ -95,13 +95,13 @@
 ; Returns: AstTok
 (defn read-form-atom (arena t rest)
   (match t
-    (TkInt v (AstOf (AInt v) rest))
-    (TkBool b (AstOf (ABool b) rest))
-    (TkFloat s (AstOf (AFloat s) rest))
+    (TkInt v (AstOf (AstInt v) rest))
+    (TkBool b (AstOf (AstBool b) rest))
+    (TkFloat s (AstOf (AstFloat s) rest))
     (TkString s (AstOf (AString s) rest))
-    (TkIdent s (AstOf (AIdent s) rest))
-    (TkSymbol s (AstOf (AIdent s) rest))
-    (TkKeyword s (AstOf (AIdent s) rest))
+    (TkIdent s (AstOf (AstIdent s) rest))
+    (TkSymbol s (AstOf (AstIdent s) rest))
+    (TkKeyword s (AstOf (AstIdent s) rest))
     ; closers / colon / eof in atom position: empty form
     (TkEof (AstOf (AList Nil) rest))
     (TkLParen (AstOf (AList (no-forms)) rest))

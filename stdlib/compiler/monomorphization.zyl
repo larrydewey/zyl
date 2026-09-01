@@ -46,9 +46,18 @@
     (d1 nil)))
 
 (defn list-last (lst)
+  ; match on `t` instead of `(if (= t Nil) h (list-last t))` — `=` on a
+  ; match-arm-bound variable vs. a bare zero-field constructor reference
+  ; isn't recognized as a variant comparison by codegen's node_looks_variant
+  ; heuristic (arm-bound pattern vars have no Assign node to trace), so it
+  ; fell back to raw pointer/integer equality: two separately-allocated Nil
+  ; values never compare equal, so this always recursed one call too far
+  ; and returned the `nil` fallback instead of the real last element.
   (match lst
     (Cons h t
-      (if (= t Nil) h (list-last t)))
+      (match t
+        (Nil h)
+        (d2 (list-last t))))
     (d1 nil)))
 
 (defn list-nth (lst i)
@@ -181,7 +190,7 @@
       (if (= s "Bool") TBool
         (if (= s "String") TString
           (if (= s "Unit") TUnit
-            (TVar 0)))))))
+            (TVar 0 TUnit)))))))
 
 (defn is-uppercase-ident (name)
   (if (= (str-length name) 0)
@@ -195,8 +204,12 @@
 (defn lookup-fn-sigs (ctx name)
   (kv-get (mc-known-fns ctx) name Nil))
 
-(defn lookup-known-type (ctx name)
-  (kv-get (mc-ktypes ctx) name (TVar 0)))
+; Renamed from `lookup-known-type` — that name collided with an unrelated
+; function of the same name in type_inference.zyl (both bundled together),
+; producing a duplicate assembly symbol at link time. This one is unused
+; (mc-ktypes is never populated by anything in this file).
+(defn mono-lookup-known-type (ctx name)
+  (kv-get (mc-ktypes ctx) name (TVar 0 TUnit)))
 
 ; ===========================================================================
 ; find-satisfying-types
@@ -206,7 +219,7 @@
   (match lst
     (Nil Nil)
     ((Cons h t)
-      (if (= h (TVar 0))
+      (if (= h (TVar 0 TUnit))
         (filter-non-tvar t)
         (Cons h (filter-non-tvar t))))))
 
@@ -253,8 +266,16 @@
             (extract-mono-params rest)))))))
 
 (defn ast-ident-name (a)
+  ; explicit two-level match, not the `(EAtom (AIdent n2) ...)` nested-
+  ; pattern sugar — that sugar desugars into a synthetic-var wrapper match
+  ; whose inner binding can lose its stack slot entirely (see
+  ; inferer-bind-pattern-vars-atom in type_inference.zyl for the confirmed
+  ; case: "MakeVariant field load ... has no local slot").
   (match a
-    (EAtom (AIdent n2) (Some n2))
+    (EAtom atom
+      (match atom
+        (AIdent n2 (Some n2))
+        (d2 Nil)))
     (d1 Nil)))
 
 (defn ast-apply-args (a)
@@ -312,61 +333,61 @@
 ; hosted compiler's own monomorphization pass on any non-AInt atom).
 (defn infer-arg-type-atom (ctx atom)
   (match atom
-    (AInt d4 (TPrim PInt))
-    (AFloat d6 (TPrim PFloat))
-    (ABool d8 (TPrim PBool))
-    (AStr d10 (TPrim PString))
+    (AInt d4 TInt)
+    (AFloat d6 TFloat)
+    (ABool d8 TBool)
+    (AStr d10 TString)
     (AIdent name
       (cond
-        ((kv-contains (mc-ktypes ctx) name) (kv-get (mc-ktypes ctx) name (TVar 0)))
-        ((is-uppercase-ident name) (TVar 0))
-        ((is-generic-param name) (TVar 0))
+        ((kv-contains (mc-ktypes ctx) name) (kv-get (mc-ktypes ctx) name (TVar 0 TUnit)))
+        ((is-uppercase-ident name) (TVar 0 TUnit))
+        ((is-generic-param name) (TVar 0 TUnit))
         (else (TNominal name))))
-    (d101 (TVar 0))))
+    (d101 (TVar 0 TUnit))))
 
 (defn infer-arg-type-rest (ctx expr)
   (match (Expr.inner expr)
     (EApply fname args
       (cond
         ((kv-contains (mc-returns ctx) fname)
-          (let ret (kv-get (mc-returns ctx) fname (TVar 0))
-            (if (= ret (TVar 0))
+          (let ret (kv-get (mc-returns ctx) fname (TVar 0 TUnit))
+            (if (= ret (TVar 0 TUnit))
               (if (str-starts-with fname "make-") (TNominal (str-drop fname 5)) ret)
               ret)))
         ((= fname "vec")
-          (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0)))
+          (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0 TUnit)))
         ((kv-contains (mc-known-fns ctx) fname)
           (let sigs (kv-get (mc-known-fns ctx) fname Nil)
             (if (>= (list-length sigs) (list-length args))
               (infer-arg-type ctx (list-nth args 0))
-              (TVar 0))))
+              (TVar 0 TUnit))))
         (else (TNominal fname))))
     (ECall op args
-      (let op-name (match (Expr.inner op) (EAtom (AIdent n) n) (d1 nil))
+      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (d1 nil))
         (cond
           ((or (= op-name "+") (= op-name "-") (= op-name "*") (= op-name "/"))
-            (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TPrim PInt)))
+            (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) TInt))
           ((or (= op-name "==") (= op-name "!=") (= op-name "<") (= op-name ">") (= op-name "<=") (= op-name ">="))
-            (TPrim PBool))
+            TBool)
           ((kv-contains (mc-returns ctx) op-name)
-            (let ret (kv-get (mc-returns ctx) op-name (TVar 0))
-              (if (= ret (TVar 0))
+            (let ret (kv-get (mc-returns ctx) op-name (TVar 0 TUnit))
+              (if (= ret (TVar 0 TUnit))
                 (if (str-starts-with op-name "make-") (TNominal (str-drop op-name 5)) ret)
                 ret)))
           ((str-starts-with op-name "make-") (TNominal (str-drop op-name 5)))
-          (else (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0))))))
+          (else (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0 TUnit))))))
     (EIf d12 then_ else_
       (let tt (infer-arg-type ctx then_)
         (if (is-skip-placeholder else_)
           tt
           (let et (infer-arg-type ctx else_)
-            (if (= (type-to-string tt) (type-to-string et)) tt (TVar 0))))))
+            (if (= (type-to-string tt) (type-to-string et)) tt (TVar 0 TUnit))))))
     (ELet d13 val d14 (infer-arg-type ctx val))
     (EBegin exprs
-      (if (> (list-length exprs) 0) (infer-arg-type ctx (list-last exprs)) (TPrim PUnit)))
+      (if (> (list-length exprs) 0) (infer-arg-type ctx (list-last exprs)) TUnit))
     (EMakeStruct name d15 (TNominal name))
     (EMakeVariant adt_name d16 d17 (TNominal adt_name))
-    (d1 (TVar 0))))
+    (d1 (TVar 0 TUnit))))
 
 ; ===========================================================================
 ; unify-types — simplified compatibility check
@@ -375,12 +396,12 @@
 (defn unify-types (t1 t2)
   (cond
     ((= t1 t2) true)
-    ((= t1 (TVar 0)) true)
-    ((= t2 (TVar 0)) true)
-    ((= t1 (TCap (TVar 0))) true)
-    ((= t2 (TCap (TVar 0))) true)
-    ((= t1 (TPrim PInt)) (= t2 (TPrim PFloat)))
-    ((= t1 (TPrim PFloat)) (= t2 (TPrim PInt)))
+    ((= t1 (TVar 0 TUnit)) true)
+    ((= t2 (TVar 0 TUnit)) true)
+    ((= t1 (TCap (TVar 0 TUnit))) true)
+    ((= t2 (TCap (TVar 0 TUnit))) true)
+    ((= t1 TInt) (= t2 TFloat))
+    ((= t1 TFloat) (= t2 TInt))
     (else false)))
 
 ; ===========================================================================
@@ -390,7 +411,7 @@
 (defn kv-type-names (type-map keys)
   (match keys
     (Nil Nil)
-    (Cons k rest (Cons (type-to-string (kv-get type-map k (TVar 0))) (kv-type-names type-map rest)))))
+    (Cons k rest (Cons (type-to-string (kv-get type-map k (TVar 0 TUnit))) (kv-type-names type-map rest)))))
 
 (defn canonical-name-from-type-map (base-name type-map)
   (let sorted-keys (str-sort (kv-keys type-map))
@@ -457,7 +478,7 @@
 (defn build-instance-param (p type-map)
   (if (is-uppercase-ident (P.name p))
     (if (kv-contains type-map (P.name p))
-      (MP (P.name p) (Cons (type-to-string (kv-get type-map (P.name p) (TVar 0))) Nil))
+      (MP (P.name p) (Cons (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit))) Nil))
       (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (d1 Nil))))
     (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (d1 Nil)))))
 
@@ -497,7 +518,7 @@
 (defn subst-defn-param (p type-map)
   (if (is-uppercase-ident (P.name p))
     (if (kv-contains type-map (P.name p))
-      (P (P.name p) (Some (type-to-string (kv-get type-map (P.name p) (TVar 0)))))
+      (P (P.name p) (Some (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit)))))
       p)
     p))
 
@@ -529,7 +550,7 @@
 (defn subst-adt-field (f type-map)
   (if (is-uppercase-ident f)
     (if (kv-contains type-map f)
-      (type-to-string (kv-get type-map f (TVar 0)))
+      (type-to-string (kv-get type-map f (TVar 0 TUnit)))
       f)
     f))
 
@@ -661,7 +682,7 @@
                 (list-push r2 (substitute-in-expr expr))))))
         (list-push result (substitute-in-expr expr))))
     (ECall op args
-      (let op-name (match (Expr.inner op) (EAtom (AIdent n) n) (d1 nil))
+      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (d1 nil))
         (if (and op-name (kv-contains (mc-gen-fns ctx) op-name))
           (let generics (kv-get (mc-gen-fns ctx) op-name Nil)
             (match (resolve-call-site ctx op-name generics args)

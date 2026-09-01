@@ -13,7 +13,7 @@
 
 (deftype Region RStack RHeap RGlobal RCircular RPin)
 
-(deftype CaptureInfo (CI (List String) (List (Pair String Region))))
+(deftype RegionCaptureInfo (RCI (List String) (List (Pair String Region))))
 
 ; ===========================================================================
 ; REGION ENVIRONMENT — scoped bindings: name → (region, escaped?)
@@ -38,7 +38,7 @@
 ; REGION INFERENCE RESULTS
 ; ===========================================================================
 
-(deftype RegionResult (RR Region (Option CaptureInfo)))
+(deftype RegionResult (RR Region (Option RegionCaptureInfo)))
 
 (defn RR.reg (r) (match r (RR reg d1 reg)))
 (defn RR.capture (r) (match r (RR d1 c c)))
@@ -58,7 +58,7 @@
 (defn SR.variants (sr) (match sr (SR d1 v v)))
 
 (deftype VariantRegion (VR String (List FieldRegion)))
-(deftype FieldRegion (FR String Region))
+(deftype FieldRegion (FldR String Region))
 (deftype FuncSig (FS String (List Region) Region))
 (defn FS.name (fs) (match fs (FS n d1 d2 n)))
 (defn FS.params (fs) (match fs (FS d1 p d2 p)))
@@ -214,7 +214,7 @@
       (env-bindings-cur scope (env-bindings-parents rest)))))
 
 (defn ri-new ()
-  (RegionInferer (env-new) Nil Nil))
+  (RI (env-new) Nil Nil))
 
 (defn ri-union-regions (a b)
   (match (Pair a b)
@@ -275,6 +275,12 @@
                      0))))
 
 (defn ri-is-literal-arms (arms)
+  ; the stray trailing `0` after the inner match used to sit as a SECOND
+  ; bare trailing form on the `(Cons arm rest)` arm — that shape (nested
+  ; pattern + 2 trailing forms, the first a list not a tail-binding atom)
+  ; is misparsed as Cons-nested-pattern sugar, silently discarding the
+  ; real inner match and always returning 0. IArm is a single-variant
+  ; type, so the inner match is already exhaustive without it.
   (match arms
     (Nil 1)
     ((Cons arm rest)
@@ -282,8 +288,7 @@
         ((IArm d24 d25 d26 body)
           (if (= (ri-is-literal-const body) 1)
             (ri-is-literal-arms rest)
-            0)))
-      0)))
+            0))))))
 
 (defn ri-analyze-captures (outer-env ic)
   (ri-capture-collect ic outer-env Nil))
@@ -406,11 +411,11 @@
         (let d33 (ri-infer-expr ri val)
           (let env1 (env-enter env0)
             (let env2 (re-env-bind env1 name RStack)
-              (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+              (let ri2 (RI env2 (RI.sr ri) (RI.fs ri))
                 (let result (ri-infer-expr ri2 body)
                   (let env3 (RI.env ri2)
                     (let env4 (env-exit env3)
-                      (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                      (RI env4 (RI.sr ri) (RI.fs ri))
                       result)))))))))
     (ISeq d12 items
       (ri-infer-seq ri items))
@@ -424,11 +429,11 @@
       (let env0 (RI.env ri)
         (let env1 (env-enter env0)
           (let env2 (ri-bind-params params env1 RStack)
-            (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+            (let ri2 (RI env2 (RI.sr ri) (RI.fs ri))
               (let d34 (ri-infer-expr ri2 body)
                 (let env3 (RI.env ri2)
                   (let env4 (env-exit env3)
-                    (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                    (RI env4 (RI.sr ri) (RI.fs ri))
                     (RR RHeap None)))))))))))
 
 (defn ri-infer-args (ri icnfs)
@@ -462,7 +467,7 @@
           (let env0 (RI.env ri)
             (let env1 (env-enter env0)
               (let env2 (ri-bind-params binds env1 RStack)
-                (let ri2 (RegionInferer (RI env2 (RI.sr ri) (RI.fs ri)))
+                (let ri2 (RI env2 (RI.sr ri) (RI.fs ri))
                   (let arm-result (ri-infer-expr ri2 body)
                     (let env3 (RI.env ri2)
                       (let env4 (env-exit env3)
@@ -472,7 +477,7 @@
                             (RR.reg arm-result))
                           None)
                         (ri-infer-match-arms
-                          (RegionInferer (RI env4 (RI.sr ri) (RI.fs ri)))
+                          (RI env4 (RI.sr ri) (RI.fs ri))
                           rest
                           new-acc))))))))))))))
 
@@ -514,14 +519,14 @@
     (Nil acc)
     ((Cons d37 rest)
       (ri-make-field-regions rest
-        (Cons (FR "" RStack) acc)))))
+        (Cons (FldR "" RStack) acc)))))
 
 (defn ri-add-func-sig (ri name fsig)
   (let fs (RI.fs ri)
     (if (ri-func-sig-exists fs name)
       ri
-      (RegionInferer (RI (RI.env ri) (RI.sr ri)
-        (Cons (FS name (FS.params fsig) (FS.ret fsig)) fs))))))
+      (RI (RI.env ri) (RI.sr ri)
+        (Cons (FS name (FS.params fsig) (FS.ret fsig)) fs)))))
 
 (defn ri-func-sig-exists (sigs name)
   (match sigs
@@ -533,7 +538,7 @@
   (let srlist (RI.sr ri)
     (if (ri-sr-exists srlist (SR.name sr))
       ri
-      (RegionInferer (RI (RI.env ri) (Cons sr srlist) (RI.fs ri))))))
+      (RI (RI.env ri) (Cons sr srlist) (RI.fs ri)))))
 
 (defn ri-sr-exists (srs name)
   (match srs

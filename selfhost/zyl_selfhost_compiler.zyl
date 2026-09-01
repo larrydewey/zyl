@@ -678,19 +678,19 @@
 (
   deftype Ast
   (
-    AIdent String
+    AstIdent String
   )
   (
-    AInt Int
+    AstInt Int
   )
   (
-    AFloat String
+    AstFloat String
   )
   (
     AString String
   )
   (
-    ABool Bool
+    AstBool Bool
   )
   (
     AList
@@ -1623,7 +1623,7 @@
   (
     match ast
     (
-      AIdent s
+      AstIdent s
       (
         let
         (
@@ -1641,7 +1641,7 @@
       )
     )
     (
-      AInt n
+      AstInt n
       (
         let
         (
@@ -1659,7 +1659,7 @@
       )
     )
     (
-      AFloat s
+      AstFloat s
       (
         let
         (
@@ -1695,7 +1695,7 @@
       )
     )
     (
-      ABool b
+      AstBool b
       (
         let
         (
@@ -1779,7 +1779,7 @@
       (
         match head
         (
-          AIdent n
+          AstIdent n
           (
             dispatch-special n rest
           )
@@ -3345,11 +3345,11 @@
     (
       ast-nth args 0
       (
-        AInt 0
+        AstInt 0
       )
     )
     (
-      AIdent n
+      AstIdent n
       (
         if
         (
@@ -3367,7 +3367,7 @@
                 (
                   ast-nth args 1
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3376,7 +3376,7 @@
                 (
                   ast-list-last args
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3443,7 +3443,7 @@
   (
     match p
     (
-      AIdent name
+      AstIdent name
       (
         P name None
       )
@@ -3494,11 +3494,11 @@
       (
         ast-nth args 0
         (
-          AInt 0
+          AstInt 0
         )
       )
       (
-        AIdent n
+        AstIdent n
         (
           Some
           (
@@ -3587,7 +3587,7 @@
   (
     match v
     (
-      AIdent name
+      AstIdent name
       (
         AV name Nil
       )
@@ -3653,11 +3653,11 @@
     (
       ast-nth args 0
       (
-        AInt 0
+        AstInt 0
       )
     )
     (
-      AIdent n
+      AstIdent n
       (
         if
         (
@@ -3675,7 +3675,7 @@
                 (
                   ast-nth args 1
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3700,11 +3700,11 @@
     (
       ast-nth args 0
       (
-        AInt 0
+        AstInt 0
       )
     )
     (
-      AIdent n
+      AstIdent n
       (
         if
         (
@@ -3722,7 +3722,7 @@
                 (
                   ast-nth args 1
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3731,7 +3731,7 @@
                 (
                   ast-list-last args
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3756,11 +3756,11 @@
     (
       ast-nth args 0
       (
-        AInt 0
+        AstInt 0
       )
     )
     (
-      AIdent n
+      AstIdent n
       (
         if
         (
@@ -3778,7 +3778,7 @@
                 (
                   ast-nth args 1
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3787,7 +3787,7 @@
                 (
                   ast-list-last args
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -3823,7 +3823,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3832,7 +3832,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3841,7 +3841,7 @@
             (
               ast-nth args 2
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3872,7 +3872,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3881,7 +3881,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3912,7 +3912,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3921,7 +3921,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3930,7 +3930,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -3992,7 +3992,7 @@
   (
     match binding
     (
-      AIdent name
+      AstIdent name
       (
         Pair name None
       )
@@ -4020,7 +4020,7 @@
               (
                 ast-list-last rest
                 (
-                  AInt 0
+                  AstInt 0
                 )
               )
             )
@@ -4124,9 +4124,12 @@
         (
           convert-ast
           (
-            ast-nth kids 0
+            cond-test-ast
             (
-              AInt 0
+              ast-nth kids 0
+              (
+                AstInt 0
+              )
             )
           )
         )
@@ -4135,7 +4138,7 @@
           (
             ast-list-last kids
             (
-              AInt 0
+              AstInt 0
             )
           )
         )
@@ -4162,6 +4165,32 @@
   )
 )
 (
+  defn cond-test-ast
+  (
+    test
+  )
+  (
+    match test
+    (
+      AstIdent name
+      (
+        if
+        (
+          = name
+          "else"
+        )
+        (
+          AstBool true
+        )
+        test
+      )
+    )
+    (
+      d1 test
+    )
+  )
+)
+(
   defn parse-match
   (
     args
@@ -4182,7 +4211,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4254,7 +4283,7 @@
             (
               match pattern
               (
-                AIdent n n
+                AstIdent n n
               )
               (
                 d1
@@ -4272,7 +4301,7 @@
               (
                 ast-list-last rest
                 (
-                  AInt 0
+                  AstInt 0
                 )
               )
             )
@@ -4317,7 +4346,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4326,11 +4355,11 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -4342,7 +4371,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4410,7 +4439,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4419,7 +4448,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4451,7 +4480,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4460,7 +4489,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4509,7 +4538,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4518,7 +4547,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4549,7 +4578,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4560,7 +4589,7 @@
               (
                 ast-list-last args
                 (
-                  AInt 0
+                  AstInt 0
                 )
               )
             )
@@ -4584,7 +4613,7 @@
               (
                 ast-nth args 0
                 (
-                  AInt 0
+                  AstInt 0
                 )
               )
             )
@@ -4618,7 +4647,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4648,7 +4677,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4657,7 +4686,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4689,7 +4718,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4720,7 +4749,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4751,7 +4780,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4782,7 +4811,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4812,7 +4841,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4821,7 +4850,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4852,7 +4881,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4861,7 +4890,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4892,7 +4921,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4901,7 +4930,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4933,7 +4962,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -4963,11 +4992,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -4979,7 +5008,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5011,11 +5040,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5092,11 +5121,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5129,11 +5158,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5169,7 +5198,7 @@
         (
           match t
           (
-            AIdent n n
+            AstIdent n n
           )
           (
             d1
@@ -5196,11 +5225,11 @@
     (
       ast-nth args 0
       (
-        AInt 0
+        AstInt 0
       )
     )
     (
-      AIdent n
+      AstIdent n
       (
         if
         (
@@ -5220,7 +5249,7 @@
                   (
                     ast-nth args 1
                     (
-                      AInt 0
+                      AstInt 0
                     )
                   )
                 )
@@ -5230,7 +5259,7 @@
                 (
                   ast-list-last args
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
               )
@@ -5266,11 +5295,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5282,7 +5311,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5367,11 +5396,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5383,7 +5412,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5392,7 +5421,7 @@
             (
               ast-list-last args
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5423,11 +5452,11 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5467,7 +5496,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5476,11 +5505,11 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
             (
-              AIdent n n
+              AstIdent n n
             )
             (
               d1
@@ -5508,7 +5537,7 @@
       (
         ast-nth args 0
         (
-          AInt 0
+          AstInt 0
         )
       )
       (
@@ -5524,11 +5553,11 @@
                 (
                   ast-nth adt-kids 0
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
                 (
-                  AIdent n n
+                  AstIdent n n
                 )
                 (
                   d1
@@ -5540,11 +5569,11 @@
                 (
                   ast-nth args 1
                   (
-                    AInt 0
+                    AstInt 0
                   )
                 )
                 (
-                  AIdent n n
+                  AstIdent n n
                 )
                 (
                   d1
@@ -5590,7 +5619,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5620,7 +5649,7 @@
             (
               ast-nth args 0
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5629,7 +5658,7 @@
             (
               ast-nth args 1
               (
-                AInt 0
+                AstInt 0
               )
             )
           )
@@ -5694,7 +5723,7 @@
   (
     match ast
     (
-      AIdent s s
+      AstIdent s s
     )
     (
       d1
@@ -7420,7 +7449,7 @@
       (
         AstOf
         (
-          AInt v
+          AstInt v
         )
         rest
       )
@@ -7430,7 +7459,7 @@
       (
         AstOf
         (
-          ABool b
+          AstBool b
         )
         rest
       )
@@ -7440,7 +7469,7 @@
       (
         AstOf
         (
-          AFloat s
+          AstFloat s
         )
         rest
       )
@@ -7460,7 +7489,7 @@
       (
         AstOf
         (
-          AIdent s
+          AstIdent s
         )
         rest
       )
@@ -7470,7 +7499,7 @@
       (
         AstOf
         (
-          AIdent s
+          AstIdent s
         )
         rest
       )
@@ -7480,7 +7509,7 @@
       (
         AstOf
         (
-          AIdent s
+          AstIdent s
         )
         rest
       )
@@ -8219,7 +8248,7 @@
           (
             match hd
             (
-              AIdent nm nm
+              AstIdent nm nm
             )
             (
               dh
@@ -8255,7 +8284,7 @@
           (
             match p1
             (
-              AIdent nm nm
+              AstIdent nm nm
             )
             (
               dp
@@ -9228,14 +9257,14 @@
 (
   defn env-bind
   (
-    env name typ
+    env bind-name typ
   )
   (
-    TypeEnv
+    TEBindings
     (
       Cons
       (
-        EB name typ
+        EB bind-name typ
       )
       (
         TEBindings.binds env
@@ -9295,134 +9324,134 @@
   )
 )
 (
-  defn TIEnv
+  defn ti-env
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer v d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v
+      TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 v
     )
   )
 )
 (
-  defn TISubst
+  defn ti-subst
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 v d2 d3 d4 d5 d6 d7 d8 d9 d10 v
+      TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 v
     )
   )
 )
 (
-  defn TINext
+  defn ti-next
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 v d3 d4 d5 d6 d7 d8 d9 d10 v
+      TypeInferer tic1 tic2 v tic4 tic5 tic6 tic7 tic8 tic9 tic10 tic11 v
     )
   )
 )
 (
-  defn TIKnownTypes
+  defn ti-known-types
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 v d4 d5 d6 d7 d8 d9 d10 v
+      TypeInferer tid1 tid2 tid3 v tid5 tid6 tid7 tid8 tid9 tid10 tid11 v
     )
   )
 )
 (
-  defn TIKnownFns
+  defn ti-known-fns
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 v d5 d6 d7 d8 d9 d10 v
+      TypeInferer tie1 tie2 tie3 tie4 v tie6 tie7 tie8 tie9 tie10 tie11 v
     )
   )
 )
 (
-  defn TIFuncReturns
+  defn ti-func-returns
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 v d6 d7 d8 d9 d10 v
+      TypeInferer tif1 tif2 tif3 tif4 tif5 v tif7 tif8 tif9 tif10 tif11 v
     )
   )
 )
 (
-  defn TIAdtDefs
+  defn ti-adt-defs
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 d6 v d7 d8 d9 d10 v
+      TypeInferer tig1 tig2 tig3 tig4 tig5 tig6 v tig8 tig9 tig10 tig11 v
     )
   )
 )
 (
-  defn TIVariantToAdt
+  defn ti-variant-to-adt
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 d6 d7 v d8 d9 d10 v
+      TypeInferer tih1 tih2 tih3 tih4 tih5 tih6 tih7 v tih9 tih10 tih11 v
     )
   )
 )
 (
-  defn TIStringMatchVars
+  defn ti-string-match-vars
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 v d9 d10 v
+      TypeInferer tii1 tii2 tii3 tii4 tii5 tii6 tii7 tii8 v tii10 tii11 v
     )
   )
 )
 (
-  defn TIInferringFns
+  defn ti-inferring-fns
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 v d10 v
+      TypeInferer tij1 tij2 tij3 tij4 tij5 tij6 tij7 tij8 tij9 v tij11 v
     )
   )
 )
 (
-  defn TIBodyCache
+  defn ti-body-cache
   (
     ti
   )
   (
     match ti
     (
-      TypeInferer d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 v v
+      TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 v v
     )
   )
 )
@@ -9537,7 +9566,7 @@
   (
   )
   (
-    Subst Nil
+    SBindings Nil
   )
 )
 (
@@ -9589,7 +9618,7 @@
     s n t
   )
   (
-    Subst
+    SBindings
     (
       Cons
       (
@@ -10221,11 +10250,22 @@
         )
       )
       (
-        unify
+        match
         (
           unify s k1 k2
         )
-        v1 v2
+        (
+          UOk sx
+          (
+            unify sx v1 v2
+          )
+        )
+        (
+          UErr e
+          (
+            UErr e
+          )
+        )
       )
     )
     (
@@ -10239,11 +10279,22 @@
         )
       )
       (
-        unify
+        match
         (
           unify s e1 e2
         )
-        h1 h2
+        (
+          UOk sx
+          (
+            unify sx h1 h2
+          )
+        )
+        (
+          UErr e
+          (
+            UErr e
+          )
+        )
       )
     )
     (
@@ -10378,7 +10429,7 @@
     (
       n
       (
-        TINext inferer
+        ti-next inferer
       )
     )
     (
@@ -10397,35 +10448,35 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     n
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10437,7 +10488,7 @@
   (
     lookup-known-type-binds
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     name
   )
@@ -10480,13 +10531,13 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
       Cons
@@ -10494,29 +10545,29 @@
         TB name typ
       )
       (
-        TIKnownTypes inferer
+        ti-known-types inferer
       )
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10528,7 +10579,7 @@
   (
     lookup-fn-sigs-binds
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     name
   )
@@ -10569,16 +10620,16 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
       Cons
@@ -10586,26 +10637,26 @@
         FNS name params
       )
       (
-        TIKnownFns inferer
+        ti-known-fns inferer
       )
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10617,7 +10668,7 @@
   (
     lookup-ret-binds
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     name
   )
@@ -10660,19 +10711,19 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
       Cons
@@ -10680,23 +10731,23 @@
         FR name typ
       )
       (
-        TIFuncReturns inferer
+        ti-func-returns inferer
       )
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10708,7 +10759,7 @@
   (
     lookup-adt-binds
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     name
   )
@@ -10749,22 +10800,22 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
       Cons
@@ -10772,20 +10823,20 @@
         AD name variants
       )
       (
-        TIAdtDefs inferer
+        ti-adt-defs inferer
       )
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10797,7 +10848,7 @@
   (
     lookup-vta-binds
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     variant
   )
@@ -10840,25 +10891,25 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
       Cons
@@ -10866,17 +10917,17 @@
         TB variant adt
       )
       (
-        TIVariantToAdt inferer
+        ti-variant-to-adt inferer
       )
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -10888,7 +10939,7 @@
   (
     match
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
     (
       Nil None
@@ -10911,34 +10962,34 @@
           (
             TypeInferer
             (
-              TIEnv inferer
+              ti-env inferer
             )
             (
-              TISubst inferer
+              ti-subst inferer
             )
             (
-              TINext inferer
+              ti-next inferer
             )
             (
-              TIKnownTypes inferer
+              ti-known-types inferer
             )
             (
-              TIKnownFns inferer
+              ti-known-fns inferer
             )
             (
-              TIFuncReturns inferer
+              ti-func-returns inferer
             )
             (
-              TIAdtDefs inferer
+              ti-adt-defs inferer
             )
             (
-              TIVariantToAdt inferer
+              ti-variant-to-adt inferer
             )
             (
-              TIStringMatchVars inferer
+              ti-string-match-vars inferer
             )
             (
-              TIInferringFns inferer
+              ti-inferring-fns inferer
             )
             rest
           )
@@ -10956,34 +11007,34 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
       Cons
@@ -10991,7 +11042,7 @@
         BC key typ
       )
       (
-        TIBodyCache inferer
+        ti-body-cache inferer
       )
     )
   )
@@ -11004,7 +11055,7 @@
   (
     mem-string-list
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     name
   )
@@ -11017,41 +11068,41 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
-      TIStringMatchVars inferer
+      ti-string-match-vars inferer
     )
     (
       Cons
       name
       (
-        TIInferringFns inferer
+        ti-inferring-fns inferer
       )
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -11063,41 +11114,41 @@
   (
     TypeInferer
     (
-      TIEnv inferer
+      ti-env inferer
     )
     (
-      TISubst inferer
+      ti-subst inferer
     )
     (
-      TINext inferer
+      ti-next inferer
     )
     (
-      TIKnownTypes inferer
+      ti-known-types inferer
     )
     (
-      TIKnownFns inferer
+      ti-known-fns inferer
     )
     (
-      TIFuncReturns inferer
+      ti-func-returns inferer
     )
     (
-      TIAdtDefs inferer
+      ti-adt-defs inferer
     )
     (
-      TIVariantToAdt inferer
+      ti-variant-to-adt inferer
     )
     (
       Cons
       name
       (
-        TIStringMatchVars inferer
+        ti-string-match-vars inferer
       )
     )
     (
-      TIInferringFns inferer
+      ti-inferring-fns inferer
     )
     (
-      TIBodyCache inferer
+      ti-body-cache inferer
     )
   )
 )
@@ -11229,7 +11280,7 @@
             )
             TUnit
             (
-              TVar 0
+              TVar 0 TUnit
             )
           )
         )
@@ -11339,7 +11390,7 @@
     (
       TypeInferer
       (
-        TypeEnv Nil
+        TEBindings Nil
       )
       (
         subst-empty
@@ -11933,7 +11984,7 @@
     (
       env
       (
-        TIEnv inferer
+        ti-env inferer
       )
     )
     (
@@ -11982,7 +12033,7 @@
   (
     subst-apply
     (
-      TISubst inferer
+      ti-subst inferer
     )
     typ
   )
@@ -12007,7 +12058,7 @@
         (
           env-bind
           (
-            TIEnv inferer
+            ti-env inferer
           )
           name vt
         )
@@ -12018,34 +12069,34 @@
           TypeInferer
           new-env
           (
-            TISubst inferer
+            ti-subst inferer
           )
           (
-            TINext inferer
+            ti-next inferer
           )
           (
-            TIKnownTypes inferer
+            ti-known-types inferer
           )
           (
-            TIKnownFns inferer
+            ti-known-fns inferer
           )
           (
-            TIFuncReturns inferer
+            ti-func-returns inferer
           )
           (
-            TIAdtDefs inferer
+            ti-adt-defs inferer
           )
           (
-            TIVariantToAdt inferer
+            ti-variant-to-adt inferer
           )
           (
-            TIStringMatchVars inferer
+            ti-string-match-vars inferer
           )
           (
-            TIInferringFns inferer
+            ti-inferring-fns inferer
           )
           (
-            TIBodyCache inferer
+            ti-body-cache inferer
           )
         )
         body
@@ -12073,7 +12124,7 @@
         (
           unify
           (
-            TISubst inferer
+            ti-subst inferer
           )
           ct TBool
         )
@@ -12109,6 +12160,7 @@
                   match
                   (
                     unify
+                    new-s
                     (
                       subst-apply new-s tt
                     )
@@ -12196,10 +12248,13 @@
         Cons h t
       )
       (
-        infer-expr inferer h
-      )
-      (
-        infer-expr-stmt-chain inferer t
+        begin
+        (
+          infer-expr inferer h
+        )
+        (
+          infer-expr-stmt-chain inferer t
+        )
       )
     )
   )
@@ -12257,7 +12312,7 @@
           (
             env-bind
             (
-              TIEnv inferer
+              ti-env inferer
             )
             (
               typed-param-name p
@@ -12273,34 +12328,34 @@
             TypeInferer
             env
             (
-              TISubst inferer
+              ti-subst inferer
             )
             (
-              TINext inferer
+              ti-next inferer
             )
             (
-              TIKnownTypes inferer
+              ti-known-types inferer
             )
             (
-              TIKnownFns inferer
+              ti-known-fns inferer
             )
             (
-              TIFuncReturns inferer
+              ti-func-returns inferer
             )
             (
-              TIAdtDefs inferer
+              ti-adt-defs inferer
             )
             (
-              TIVariantToAdt inferer
+              ti-variant-to-adt inferer
             )
             (
-              TIStringMatchVars inferer
+              ti-string-match-vars inferer
             )
             (
-              TIInferringFns inferer
+              ti-inferring-fns inferer
             )
             (
-              TIBodyCache inferer
+              ti-body-cache inferer
             )
           )
           rest
@@ -12370,7 +12425,7 @@
     (
       unify
       (
-        TISubst inferer
+        ti-subst inferer
       )
       ct TBool
     )
@@ -12404,7 +12459,7 @@
       (
         unify
         (
-          TISubst new-inferer
+          ti-subst new-inferer
         )
         ct TBool
       )
@@ -12450,7 +12505,7 @@
                 (
                   env-bind
                   (
-                    TIEnv inferer
+                    ti-env inferer
                   )
                   name
                   (
@@ -12464,34 +12519,34 @@
                   TypeInferer
                   new-env
                   (
-                    TISubst inferer
+                    ti-subst inferer
                   )
                   (
-                    TINext inferer
+                    ti-next inferer
                   )
                   (
-                    TIKnownTypes inferer
+                    ti-known-types inferer
                   )
                   (
-                    TIKnownFns inferer
+                    ti-known-fns inferer
                   )
                   (
-                    TIFuncReturns inferer
+                    ti-func-returns inferer
                   )
                   (
-                    TIAdtDefs inferer
+                    ti-adt-defs inferer
                   )
                   (
-                    TIVariantToAdt inferer
+                    ti-variant-to-adt inferer
                   )
                   (
-                    TIStringMatchVars inferer
+                    ti-string-match-vars inferer
                   )
                   (
-                    TIInferringFns inferer
+                    ti-inferring-fns inferer
                   )
                   (
-                    TIBodyCache inferer
+                    ti-body-cache inferer
                   )
                 )
                 rest
@@ -12540,7 +12595,7 @@
             (
               unify
               (
-                TISubst inferer
+                ti-subst inferer
               )
               pt TBool
             )
@@ -12619,7 +12674,7 @@
         (
           arm-env
           (
-            TIEnv inferer
+            ti-env inferer
           )
         )
         (
@@ -12664,9 +12719,12 @@
                       (
                         unify
                         (
+                          ti-subst inferer
+                        )
+                        (
                           subst-apply
                           (
-                            TISubst inferer
+                            ti-subst inferer
                           )
                           first-type
                         )
@@ -12691,34 +12749,34 @@
                         TypeInferer
                         arm-env
                         (
-                          TISubst new-inferer
+                          ti-subst new-inferer
                         )
                         (
-                          TINext new-inferer
+                          ti-next new-inferer
                         )
                         (
-                          TIKnownTypes new-inferer
+                          ti-known-types new-inferer
                         )
                         (
-                          TIKnownFns new-inferer
+                          ti-known-fns new-inferer
                         )
                         (
-                          TIFuncReturns new-inferer
+                          ti-func-returns new-inferer
                         )
                         (
-                          TIAdtDefs new-inferer
+                          ti-adt-defs new-inferer
                         )
                         (
-                          TIVariantToAdt new-inferer
+                          ti-variant-to-adt new-inferer
                         )
                         (
-                          TIStringMatchVars new-inferer
+                          ti-string-match-vars new-inferer
                         )
                         (
-                          TIInferringFns new-inferer
+                          ti-inferring-fns new-inferer
                         )
                         (
-                          TIBodyCache new-inferer
+                          ti-body-cache new-inferer
                         )
                       )
                       rest
@@ -12767,7 +12825,7 @@
     (
       resolve-nominal
       (
-        TISubst inferer
+        ti-subst inferer
       )
       subject-type
     )
@@ -12779,7 +12837,7 @@
         (
           infer-adt-exists
           (
-            TIAdtDefs inferer
+            ti-adt-defs inferer
           )
           n
         )
@@ -12946,110 +13004,140 @@
     inferer patterns field-types
   )
   (
-    match
+    match patterns
     (
-      Pair patterns field-types
+      Nil inferer
     )
     (
-      Pair
       (
         Cons pat prest
       )
       (
-        Cons ft frest
-      )
-      (
-        match
+        match field-types
         (
-          Expr.inner pat
+          Nil inferer
         )
         (
-          EAtom
           (
-            AIdent name
+            Cons ft frest
           )
           (
-            let
+            inferer-bind-pattern-vars-step inferer pat ft prest frest
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn inferer-bind-pattern-vars-step
+  (
+    inferer pat ft prest frest
+  )
+  (
+    match
+    (
+      Expr.inner pat
+    )
+    (
+      EAtom atom
+      (
+        inferer-bind-pattern-vars-atom inferer atom ft prest frest
+      )
+    )
+    (
+      d1
+      (
+        inferer-bind-pattern-vars-loop inferer prest frest
+      )
+    )
+  )
+)
+(
+  defn inferer-bind-pattern-vars-atom
+  (
+    inferer atom ft prest frest
+  )
+  (
+    match atom
+    (
+      AIdent name
+      (
+        let
+        (
+          pt
+          (
+            infer-lookup-pattern-type inferer ft
+          )
+        )
+        (
+          let
+          (
+            new-inferer
             (
-              pt
+              TypeInferer
               (
-                infer-lookup-pattern-type inferer ft
-              )
-            )
-            (
-              let
-              (
-                new-inferer
+                env-bind
                 (
-                  TypeInferer
+                  ti-env inferer
+                )
+                name pt
+              )
+              (
+                ti-subst inferer
+              )
+              (
+                ti-next inferer
+              )
+              (
+                ti-known-types inferer
+              )
+              (
+                ti-known-fns inferer
+              )
+              (
+                ti-func-returns inferer
+              )
+              (
+                ti-adt-defs inferer
+              )
+              (
+                ti-variant-to-adt inferer
+              )
+              (
+                if
+                (
+                  string-type-pt pt
+                )
+                (
+                  Cons name
                   (
-                    env-bind
-                    (
-                      TIEnv inferer
-                    )
-                    name pt
+                    ti-string-match-vars inferer
                   )
-                  (
-                    TISubst inferer
-                  )
-                  (
-                    TINext inferer
-                  )
-                  (
-                    TIKnownTypes inferer
-                  )
-                  (
-                    TIKnownFns inferer
-                  )
-                  (
-                    TIFuncReturns inferer
-                  )
-                  (
-                    TIAdtDefs inferer
-                  )
-                  (
-                    TIVariantToAdt inferer
-                  )
-                  (
-                    if
-                    (
-                      string-type-pt pt
-                    )
-                    (
-                      Cons name
-                      (
-                        TIStringMatchVars inferer
-                      )
-                    )
-                    (
-                      TIStringMatchVars inferer
-                    )
-                  )
-                  (
-                    TIInferringFns inferer
-                  )
-                  (
-                    TIBodyCache inferer
-                  )
+                )
+                (
+                  ti-string-match-vars inferer
                 )
               )
               (
-                inferer-bind-pattern-vars-loop new-inferer prest frest
+                ti-inferring-fns inferer
+              )
+              (
+                ti-body-cache inferer
               )
             )
           )
-        )
-        (
-          d1
           (
-            inferer-bind-pattern-vars-loop inferer prest frest
+            inferer-bind-pattern-vars-loop new-inferer prest frest
           )
         )
       )
     )
     (
-      d18
-      inferer
+      d2
+      (
+        inferer-bind-pattern-vars-loop inferer prest frest
+      )
     )
   )
 )
@@ -13466,10 +13554,13 @@
         Cons t rest
       )
       (
-        infer-binop-check-one t
-      )
-      (
-        infer-binop-check-types rest
+        begin
+        (
+          infer-binop-check-one t
+        )
+        (
+          infer-binop-check-types rest
+        )
       )
     )
   )
@@ -13538,7 +13629,7 @@
         (
           unify
           (
-            TISubst inferer
+            ti-subst inferer
           )
           t TBool
         )
@@ -13589,7 +13680,7 @@
         )
         TString
         (
-          TVar 0
+          TVar 0 TUnit
         )
       )
     )
@@ -13713,19 +13804,19 @@
       (
         TypeInferer
         (
-          TIEnv inferer
+          ti-env inferer
         )
         (
-          TISubst inferer
+          ti-subst inferer
         )
         (
-          TINext inferer
+          ti-next inferer
         )
         (
-          TIKnownTypes inferer
+          ti-known-types inferer
         )
         (
-          TIKnownFns inferer
+          ti-known-fns inferer
         )
         (
           Cons
@@ -13737,23 +13828,23 @@
             )
           )
           (
-            TIFuncReturns inferer
+            ti-func-returns inferer
           )
         )
         (
-          TIAdtDefs inferer
+          ti-adt-defs inferer
         )
         (
-          TIVariantToAdt inferer
+          ti-variant-to-adt inferer
         )
         (
-          TIStringMatchVars inferer
+          ti-string-match-vars inferer
         )
         (
-          TIInferringFns inferer
+          ti-inferring-fns inferer
         )
         (
-          TIBodyCache inferer
+          ti-body-cache inferer
         )
       )
       op-name
@@ -13847,7 +13938,7 @@
     (
       unify
       (
-        TISubst inferer
+        ti-subst inferer
       )
       ct TBool
     )
@@ -13872,7 +13963,7 @@
       (
         env-get
         (
-          TIEnv inferer
+          ti-env inferer
         )
         target
       )
@@ -14063,17 +14154,20 @@
     match args
     (
       Nil
-      nil
+      Nil
     )
     (
       (
         Cons a rest
       )
       (
-        infer-expr inferer a
-      )
-      (
-        infer-args inferer rest
+        Cons
+        (
+          infer-expr inferer a
+        )
+        (
+          infer-args inferer rest
+        )
       )
     )
   )
@@ -14172,7 +14266,7 @@
               (
                 None
                 (
-                  TVar 0
+                  TVar 0 TUnit
                 )
               )
             )
@@ -14279,33 +14373,34 @@
     params types
   )
   (
-    match
+    match params
     (
-      Pair params types
+      Nil Nil
     )
     (
-      Pair Nil Nil Nil
-    )
-    (
-      Pair
       (
         Cons p rest-p
       )
       (
-        Cons t rest-t
-      )
-      (
-        Cons
+        match types
         (
-          Pair p t
+          Nil Nil
         )
         (
-          zip-params rest-p rest-t
+          (
+            Cons t rest-t
+          )
+          (
+            Cons
+            (
+              Pair p t
+            )
+            (
+              zip-params rest-p rest-t
+            )
+          )
         )
       )
-    )
-    (
-      Pair d26 d27 Nil
     )
   )
 )
@@ -14360,7 +14455,7 @@
     (
       known-fns
       (
-        TIKnownFns inferer
+        ti-known-fns inferer
       )
     )
     (
@@ -14399,35 +14494,35 @@
                   (
                     TypeInferer
                     (
-                      TIEnv inferer
+                      ti-env inferer
                     )
                     (
-                      TISubst inferer
+                      ti-subst inferer
                     )
                     (
-                      TINext inferer
+                      ti-next inferer
                     )
                     (
-                      TIKnownTypes inferer
+                      ti-known-types inferer
                     )
                     resolved-params
                     (
-                      TIFuncReturns inferer
+                      ti-func-returns inferer
                     )
                     (
-                      TIAdtDefs inferer
+                      ti-adt-defs inferer
                     )
                     (
-                      TIVariantToAdt inferer
+                      ti-variant-to-adt inferer
                     )
                     (
-                      TIStringMatchVars inferer
+                      ti-string-match-vars inferer
                     )
                     (
-                      TIInferringFns inferer
+                      ti-inferring-fns inferer
                     )
                     (
-                      TIBodyCache inferer
+                      ti-body-cache inferer
                     )
                   )
                 )
@@ -14973,13 +15068,15 @@
     (
       Cons h t
       (
-        if
+        match t
         (
-          = t Nil
+          Nil h
         )
-        h
         (
-          list-last t
+          d2
+          (
+            list-last t
+          )
         )
       )
     )
@@ -15523,7 +15620,7 @@
             )
             TUnit
             (
-              TVar 0
+              TVar 0 TUnit
             )
           )
         )
@@ -15569,7 +15666,7 @@
   )
 )
 (
-  defn lookup-known-type
+  defn mono-lookup-known-type
   (
     ctx name
   )
@@ -15580,7 +15677,7 @@
     )
     name
     (
-      TVar 0
+      TVar 0 TUnit
     )
   )
 )
@@ -15603,7 +15700,7 @@
         (
           = h
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
         (
@@ -15837,12 +15934,18 @@
   (
     match a
     (
-      EAtom
+      EAtom atom
       (
-        AIdent n2
-      )
-      (
-        Some n2
+        match atom
+        (
+          AIdent n2
+          (
+            Some n2
+          )
+        )
+        (
+          d2 Nil
+        )
       )
     )
     (
@@ -16115,28 +16218,16 @@
   (
     match atom
     (
-      AInt d4
-      (
-        TPrim PInt
-      )
+      AInt d4 TInt
     )
     (
-      AFloat d6
-      (
-        TPrim PFloat
-      )
+      AFloat d6 TFloat
     )
     (
-      ABool d8
-      (
-        TPrim PBool
-      )
+      ABool d8 TBool
     )
     (
-      AStr d10
-      (
-        TPrim PString
-      )
+      AStr d10 TString
     )
     (
       AIdent name
@@ -16157,7 +16248,7 @@
             )
             name
             (
-              TVar 0
+              TVar 0 TUnit
             )
           )
         )
@@ -16166,7 +16257,7 @@
             is-uppercase-ident name
           )
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
         (
@@ -16174,7 +16265,7 @@
             is-generic-param name
           )
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
         (
@@ -16188,7 +16279,7 @@
     (
       d101
       (
-        TVar 0
+        TVar 0 TUnit
       )
     )
   )
@@ -16224,7 +16315,7 @@
               )
               fname
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
             (
@@ -16232,7 +16323,7 @@
               (
                 = ret
                 (
-                  TVar 0
+                  TVar 0 TUnit
                 )
               )
               (
@@ -16274,7 +16365,7 @@
               )
             )
             (
-              TVar 0
+              TVar 0 TUnit
             )
           )
         )
@@ -16313,7 +16404,7 @@
                 )
               )
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
           )
@@ -16333,14 +16424,13 @@
         (
           match
           (
-            Expr.inner op
+            ast-ident-name
+            (
+              Expr.inner op
+            )
           )
           (
-            EAtom
-            (
-              AIdent n
-            )
-            n
+            Some n n
           )
           (
             d1 nil
@@ -16383,9 +16473,7 @@
                   list-nth args 0
                 )
               )
-              (
-                TPrim PInt
-              )
+              TInt
             )
           )
           (
@@ -16416,9 +16504,7 @@
                 ">="
               )
             )
-            (
-              TPrim PBool
-            )
+            TBool
           )
           (
             (
@@ -16437,7 +16523,7 @@
                 )
                 op-name
                 (
-                  TVar 0
+                  TVar 0 TUnit
                 )
               )
               (
@@ -16445,7 +16531,7 @@
                 (
                   = ret
                   (
-                    TVar 0
+                    TVar 0 TUnit
                   )
                 )
                 (
@@ -16496,7 +16582,7 @@
                 )
               )
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
           )
@@ -16534,7 +16620,7 @@
               )
               tt
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
           )
@@ -16564,9 +16650,7 @@
             list-last exprs
           )
         )
-        (
-          TPrim PUnit
-        )
+        TUnit
       )
     )
     (
@@ -16584,7 +16668,7 @@
     (
       d1
       (
-        TVar 0
+        TVar 0 TUnit
       )
     )
   )
@@ -16606,7 +16690,7 @@
       (
         = t1
         (
-          TVar 0
+          TVar 0 TUnit
         )
       )
       true
@@ -16615,7 +16699,7 @@
       (
         = t2
         (
-          TVar 0
+          TVar 0 TUnit
         )
       )
       true
@@ -16626,7 +16710,7 @@
         (
           TCap
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
       )
@@ -16638,7 +16722,7 @@
         (
           TCap
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
       )
@@ -16646,30 +16730,18 @@
     )
     (
       (
-        = t1
-        (
-          TPrim PInt
-        )
+        = t1 TInt
       )
       (
-        = t2
-        (
-          TPrim PFloat
-        )
+        = t2 TFloat
       )
     )
     (
       (
-        = t1
-        (
-          TPrim PFloat
-        )
+        = t1 TFloat
       )
       (
-        = t2
-        (
-          TPrim PInt
-        )
+        = t2 TInt
       )
     )
     (
@@ -16696,7 +16768,7 @@
           (
             kv-get type-map k
             (
-              TVar 0
+              TVar 0 TUnit
             )
           )
         )
@@ -16997,7 +17069,7 @@
                 P.name p
               )
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
           )
@@ -17199,7 +17271,7 @@
                 P.name p
               )
               (
-                TVar 0
+                TVar 0 TUnit
               )
             )
           )
@@ -17331,7 +17403,7 @@
         (
           kv-get type-map f
           (
-            TVar 0
+            TVar 0 TUnit
           )
         )
       )
@@ -17990,14 +18062,13 @@
         (
           match
           (
-            Expr.inner op
+            ast-ident-name
+            (
+              Expr.inner op
+            )
           )
           (
-            EAtom
-            (
-              AIdent n
-            )
-            n
+            Some n n
           )
           (
             d1 nil
@@ -24721,9 +24792,9 @@
   deftype Region RStack RHeap RGlobal RCircular RPin
 )
 (
-  deftype CaptureInfo
+  deftype RegionCaptureInfo
   (
-    CI
+    RCI
     (
       List String
     )
@@ -24800,7 +24871,7 @@
   (
     RR Region
     (
-      Option CaptureInfo
+      Option RegionCaptureInfo
     )
   )
 )
@@ -24921,7 +24992,7 @@
 (
   deftype FieldRegion
   (
-    FR String Region
+    FldR String Region
   )
 )
 (
@@ -25870,7 +25941,7 @@
   (
   )
   (
-    RegionInferer
+    RI
     (
       env-new
     )
@@ -26170,7 +26241,6 @@
           )
         )
       )
-      0
     )
   )
 )
@@ -26699,15 +26769,12 @@
               (
                 let ri2
                 (
-                  RegionInferer
+                  RI env2
                   (
-                    RI env2
-                    (
-                      RI.sr ri
-                    )
-                    (
-                      RI.fs ri
-                    )
+                    RI.sr ri
+                  )
+                  (
+                    RI.fs ri
                   )
                 )
                 (
@@ -26726,15 +26793,12 @@
                         env-exit env3
                       )
                       (
-                        RegionInferer
+                        RI env4
                         (
-                          RI env4
-                          (
-                            RI.sr ri
-                          )
-                          (
-                            RI.fs ri
-                          )
+                          RI.sr ri
+                        )
+                        (
+                          RI.fs ri
                         )
                       )
                       result
@@ -26794,15 +26858,12 @@
             (
               let ri2
               (
-                RegionInferer
+                RI env2
                 (
-                  RI env2
-                  (
-                    RI.sr ri
-                  )
-                  (
-                    RI.fs ri
-                  )
+                  RI.sr ri
+                )
+                (
+                  RI.fs ri
                 )
               )
               (
@@ -26821,15 +26882,12 @@
                       env-exit env3
                     )
                     (
-                      RegionInferer
+                      RI env4
                       (
-                        RI env4
-                        (
-                          RI.sr ri
-                        )
-                        (
-                          RI.fs ri
-                        )
+                        RI.sr ri
+                      )
+                      (
+                        RI.fs ri
                       )
                     )
                     (
@@ -26958,15 +27016,12 @@
                 (
                   let ri2
                   (
-                    RegionInferer
+                    RI env2
                     (
-                      RI env2
-                      (
-                        RI.sr ri
-                      )
-                      (
-                        RI.fs ri
-                      )
+                      RI.sr ri
+                    )
+                    (
+                      RI.fs ri
                     )
                   )
                   (
@@ -27002,15 +27057,12 @@
                           (
                             ri-infer-match-arms
                             (
-                              RegionInferer
+                              RI env4
                               (
-                                RI env4
-                                (
-                                  RI.sr ri
-                                )
-                                (
-                                  RI.fs ri
-                                )
+                                RI.sr ri
+                              )
+                              (
+                                RI.fs ri
                               )
                             )
                             rest
@@ -27178,7 +27230,7 @@
         (
           Cons
           (
-            FR
+            FldR
             ""
             RStack
           )
@@ -27205,28 +27257,25 @@
       )
       ri
       (
-        RegionInferer
+        RI
         (
-          RI
+          RI.env ri
+        )
+        (
+          RI.sr ri
+        )
+        (
+          Cons
           (
-            RI.env ri
-          )
-          (
-            RI.sr ri
-          )
-          (
-            Cons
+            FS name
             (
-              FS name
-              (
-                FS.params fsig
-              )
-              (
-                FS.ret fsig
-              )
+              FS.params fsig
             )
-            fs
+            (
+              FS.ret fsig
+            )
           )
+          fs
         )
       )
     )
@@ -27287,18 +27336,15 @@
       )
       ri
       (
-        RegionInferer
+        RI
         (
-          RI
-          (
-            RI.env ri
-          )
-          (
-            Cons sr srlist
-          )
-          (
-            RI.fs ri
-          )
+          RI.env ri
+        )
+        (
+          Cons sr srlist
+        )
+        (
+          RI.fs ri
         )
       )
     )
