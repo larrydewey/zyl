@@ -58,7 +58,7 @@
         (TIEnv inferer)
         (TISubst inferer)
         (TINext inferer)
-        (cons
+        (Cons
             (TB name typ)
             (TIKnownTypes inferer))
         (TIKnownFns inferer)
@@ -74,16 +74,16 @@
 ; ===========================================================================
 
 (defn lookup-known-fn (inferer name)
-    (lookup-fn-sigs (TIKnownFns inferer) name))
+    (lookup-fn-sigs-binds (TIKnownFns inferer) name))
 
-(defn lookup-fn-sigs (sigs name)
+(defn lookup-fn-sigs-binds (sigs name)
     (match sigs
         (Nil Nil)
         ((FNS n params) rest
             (if
                 (= n name)
                 params
-                (lookup-fn-sigs rest name)))))
+                (lookup-fn-sigs-binds rest name)))))
 
 (defn insert-known-fn (inferer name params)
     (TypeInferer
@@ -91,7 +91,7 @@
         (TISubst inferer)
         (TINext inferer)
         (TIKnownTypes inferer)
-        (cons
+        (Cons
             (FNS name params)
             (TIKnownFns inferer))
         (TIFuncReturns inferer)
@@ -124,7 +124,7 @@
         (TINext inferer)
         (TIKnownTypes inferer)
         (TIKnownFns inferer)
-        (cons
+        (Cons
             (FR name typ)
             (TIFuncReturns inferer))
         (TIAdtDefs inferer)
@@ -157,7 +157,7 @@
         (TIKnownTypes inferer)
         (TIKnownFns inferer)
         (TIFuncReturns inferer)
-        (cons
+        (Cons
             (AD name variants)
             (TIAdtDefs inferer))
         (TIVariantToAdt inferer)
@@ -190,7 +190,7 @@
         (TIKnownFns inferer)
         (TIFuncReturns inferer)
         (TIAdtDefs inferer)
-        (cons
+        (Cons
             (TB variant adt)
             (TIVariantToAdt inferer))
         (TIStringMatchVars inferer)
@@ -237,7 +237,7 @@
         (TIVariantToAdt inferer)
         (TIStringMatchVars inferer)
         (TIInferringFns inferer)
-        (cons
+        (Cons
             (BC key typ)
             (TIBodyCache inferer))))
 
@@ -259,7 +259,7 @@
         (TIAdtDefs inferer)
         (TIVariantToAdt inferer)
         (TIStringMatchVars inferer)
-        (cons
+        (Cons
             name
             (TIInferringFns inferer))
         (TIBodyCache inferer)))
@@ -278,7 +278,7 @@
         (TIFuncReturns inferer)
         (TIAdtDefs inferer)
         (TIVariantToAdt inferer)
-        (cons
+        (Cons
             name
             (TIStringMatchVars inferer))
         (TIInferringFns inferer)
@@ -300,15 +300,8 @@
 (defn is-generic-param (s)
     ; single uppercase letter marks a generic type param
     (if
-        (= (length s) 1)
-        (let
-            (c (substring s 0 1))
-            (if
-                (and
-                    (>= (ord c) 65)
-                    (<= (ord c) 90))
-                true
-                false))
+        (= (str-length s) 1)
+        (str-contains "ABCDEFGHIJKLMNOPQRSTUVWXYZ" s)
         false))
 
 (defn type-from-display (s)
@@ -339,15 +332,15 @@
 (defn inferer-new ()
     (let
         (known
-            (cons
+            (Cons
                 (TB "Int" TInt)
-                (cons
+                (Cons
                     (TB "Float" TFloat)
-                    (cons
+                    (Cons
                         (TB "Bool" TBool)
-                        (cons
+                        (Cons
                             (TB "String" TString)
-                            (cons
+                            (Cons
                                 (TB "Unit" TUnit)
                                 Nil))))))
         (TypeInferer
@@ -688,7 +681,7 @@
         (nil? stmts)
         TUnit
         (if
-            (= (length stmts) 1)
+            (= (list-length stmts) 1)
             (infer-expr inferer (fst stmts))
             (let
                 (_ (infer-expr-stmt-chain inferer stmts))
@@ -750,7 +743,7 @@
         (Nil
             Nil)
         ((Pair p rest)
-            (cons
+            (Cons
                 TVar
                 (inferer-params-types rest)))))
 
@@ -937,12 +930,23 @@
         (TStruct n _ (Some n))
         (_ None)))
 
+(defn str-index-of-char (s c i)
+    (if
+        (>= i (str-length s))
+        -1
+        (if
+            (= (str-substring s i (+ i 1)) c)
+            i
+            (str-index-of-char s c (+ i 1)))))
+
 (defn infer-strip-mono-suffix (name)
     ; strip monomorphization "_instantiation" suffix
-    (if
-        (contains name "_")
-        (substring name 0 (index-of name "_"))
-        name))
+    (let
+        (idx (str-index-of-char name "_" 0))
+        (if
+            (>= idx 0)
+            (str-substring name 0 idx)
+            name)))
 
 (defn infer-lookup-variant-fields (inferer adt-name variant-name)
     ; walk the inferer's ADT defs; return the named variant's fields or Nil
@@ -986,7 +990,7 @@
                             (TIVariantToAdt inferer)
                             (if
                                 (string-type-pt pt)
-                                (cons name (TIStringMatchVars inferer))
+                                (Cons name (TIStringMatchVars inferer))
                                 (TIStringMatchVars inferer))
                             (TIInferringFns inferer)
                             (TIBodyCache inferer)))
@@ -1185,7 +1189,7 @@
                 (TINext inferer)
                 (TIKnownTypes inferer)
                 (TIKnownFns inferer)
-                (cons
+                (Cons
                     (FR
                         op-name
                         (inferer-return-var inferer))
@@ -1320,7 +1324,7 @@
                 (TIInferringFns inferer)
                 (TIBodyCache inferer))
             adt-name
-            (cons
+            (Cons
                 (V variant-name field-types)
                 (lookup-adt-def
                     (TypeInferer
@@ -1457,7 +1461,7 @@
     (match params
         (Nil Nil)
         ((Pair p rest)
-            (cons
+            (Cons
                 (match
                     p
                     (Pair name typ (Pair (match name (Atom (Ident n) n) (_ "param"))
@@ -1493,7 +1497,7 @@
     (match (Pair params types)
         (Pair Nil Nil Nil)
         (Pair ((Pair p rest-p) (Pair t rest-t))
-            (cons (Pair p t) (zip-params rest-p rest-t)))
+            (Cons (Pair p t) (zip-params rest-p rest-t)))
         (Pair _ _ Nil)))
 
 (defn collect-defn-form (inferer parsed)
@@ -1506,7 +1510,7 @@
                     (let (param-types (infer-expr inferer param-list))
                         (let (inferred (infer-expr inferer body))
                             (let (new-inferer (insert-fn-ret inferer name (infer-expr inferer body)))
-                                (insert-known-fn new-inferer name (cons (Pair name (infer-expr inferer param-list))
+                                (insert-known-fn new-inferer name (Cons (Pair name (infer-expr inferer param-list))
                                     Nil))))))))))
 
 (defn collect-adt-defs (inferer exprs)
@@ -1550,7 +1554,7 @@
                                                 (TIStringMatchVars inferer)
                                                 (TIInferringFns inferer)
                                                 (TIBodyCache inferer))))
-                            new-inferer)))))
+                            new-inferer)))))))
 
 (defn resolve-param-types (inferer params ret-type)
     ; resolve type vars in param types using return type evidence
@@ -1558,7 +1562,7 @@
         params
         (Nil Nil)
         ((FNS name ptypes) rest
-            (cons
+            (Cons
                 (FNS name (map-types inferer ptypes ret-type))
                 (resolve-param-types inferer rest ret-type)))))
 
@@ -1568,7 +1572,7 @@
         types
         (Nil Nil)
         ((Pair t rest)
-            (cons
+            (Cons
                 (resolve-type-var inferer t ret-type)
                 (map-types inferer rest ret-type)))))
 
@@ -1610,10 +1614,10 @@
         (Nil Nil)
         ((Pair expr rest)
             (if (is-def-only expr)
-                (cons (Pair expr (inferer-return-unit inferer))
+                (Cons (Pair expr (inferer-return-unit inferer))
                     (infer-expressions inferer rest))
                 (let (inferred (infer-expr inferer expr))
-                    (cons (Pair expr inferred)
+                    (Cons (Pair expr inferred)
                         (infer-expressions inferer rest)))))))
 
 (defn is-def-only (expr)

@@ -7,7 +7,7 @@
 ; GENERIC PAIR — used for matching and result types
 ; ===========================================================================
 
-(deftype Pair (P A B))
+(deftype Pair (Pair A B))
 
 ; ===========================================================================
 ; TYPE ADT
@@ -71,7 +71,7 @@
 
 ; Bind a name to a type in a TypeEnv.
 (defn env-bind (env name typ)
-  (TypeEnv (cons (EB name typ) (TEBindings.binds env))))
+  (TypeEnv (Cons (EB name typ) (TEBindings.binds env))))
 
 ; ===========================================================================
 ; TRAIT CONTEXT — List of (String (List Type)) bounds
@@ -149,7 +149,7 @@
        (subst-lookup-binds rest n)))))
 
 (defn subst-insert (s n t)
-  (Subst (cons (TB n t) (SBindings.binds s))))
+  (Subst (Cons (TB n t) (SBindings.binds s))))
 
 ; Apply substitution to a single Type — helper to avoid lambda recursion issue
 (defn subst-apply-type (s t)
@@ -174,7 +174,7 @@
 (defn subst-apply-type-list (s types)
   (match types
     (Nil Nil)
-    ((Pair h t) (cons (subst-apply-type s h) (subst-apply-type-list s t)))))
+    ((Cons h t) (Cons (subst-apply-type s h) (subst-apply-type-list s t)))))
 
 (defn subst-apply-type-struct (s name fields)
   (TStruct name (subst-apply-type-list s fields)))
@@ -183,10 +183,6 @@
 ; UTILITY HELPERS — nil?, fst, snd (type_inference.zyl dependencies)
 ; ===========================================================================
 
-(defn nil? (xs)
-  (match xs
-    (Nil true)
-    (Cons d1 false)))
 
 (defn fst (p)
   (match p
@@ -262,7 +258,7 @@
     ((Pair TString TString) (UOk s))
     ((Pair TUnit TUnit) (UOk s))
     ((Pair (TFun args1) (TFun args2))
-     (if (= (length args1) (length args2))
+     (if (= (list-length args1) (list-length args2))
        (unify-args s args1 args2)
        (UErr "Function arity mismatch")))
     ((Pair (TList e1) (TList e2))
@@ -277,7 +273,7 @@
        (UErr "Capability kind mismatch")))
     ((Pair (TStruct n1 fs1) (TStruct n2 fs2))
      (if (= n1 n2)
-       (if (= (length fs1) (length fs2))
+       (if (= (list-length fs1) (list-length fs2))
          (unify-args s fs1 fs2)
          (UErr "Struct field count mismatch"))
        (UErr "Struct name mismatch")))
