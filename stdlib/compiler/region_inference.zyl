@@ -94,7 +94,7 @@
         (re-env-get-binds rest name)))))
 (defn env-is-escaped (env name)
   (match (re-env-get env name)
-    (Some (Pair r esc) (if esc 1 0))
+    (Some pr (match pr (Pair r esc (if esc 1 0))))
     (None 0)))
 (defn re-env-bind (env name region)
   (RegionEnv (Cons (RB name region 0) (RE.cur env)) (RE.parens env)))
@@ -149,12 +149,14 @@
 (defn env-escape-scope-inner (scope name accum found)
   (match scope
     (Nil (Pair found Nil))
-    ((Cons (RB n r esc) rest)
-      (if (= (str-eq n name) 0)
-        (let new-r (if (= r RStack) RHeap r)
-          (Pair 1 (list-reverse (Cons (RB n new-r 1) accum))))
-        (env-escape-scope-inner rest name
-          (Cons (RB n r esc) accum) found)))))
+    (Cons hd rest
+      (match hd
+        (RB n r esc
+          (if (= (str-eq n name) 0)
+            (let new-r (if (= r RStack) RHeap r)
+              (Pair 1 (list-reverse (Cons (RB n new-r 1) accum))))
+            (env-escape-scope-inner rest name
+              (Cons (RB n r esc) accum) found)))))))
 (defn env-enter (env)
   (RegionEnv Nil (Cons (RE.cur env) (RE.parens env))))
 (defn env-exit (env)
@@ -186,8 +188,10 @@
 (defn env-list-has (binds name)
   (match binds
     (Nil 0)
-    ((Cons (RB n d5 d6) rest)
-      (if (= (str-eq n name) 0) 1 (env-list-has rest name)))))
+    (Cons hd rest
+      (match hd
+        (RB n d5 d6
+          (if (= (str-eq n name) 0) 1 (env-list-has rest name)))))))
 (defn env-add-remaining (binds acc)
   (match binds
     (Nil acc)
@@ -199,10 +203,12 @@
 (defn env-bindings-cur (binds names)
   (match binds
     (Nil names)
-    ((Cons (RB n d7 d8) rest)
-      (if (= (env-names-has names n) 1)
-        (env-bindings-cur rest names)
-        (env-bindings-cur rest (Cons n names))))))
+    (Cons hd rest
+      (match hd
+        (RB n d7 d8
+          (if (= (env-names-has names n) 1)
+            (env-bindings-cur rest names)
+            (env-bindings-cur rest (Cons n names))))))))
 (defn env-names-has (names name)
   (match names
     (Nil 0)
@@ -342,17 +348,21 @@
 
 (defn ri-capture-add (name get-result acc)
   (match get-result
-    (Some (Pair r esc)
-      (if (= (ri-capture-list-has acc name) 1)
-        acc
-        (Cons (Pair name r) acc)))
+    (Some pr
+      (match pr
+        (Pair r esc
+          (if (= (ri-capture-list-has acc name) 1)
+            acc
+            (Cons (Pair name r) acc)))))
     (None acc)))
 
 (defn ri-capture-list-has (refs name)
   (match refs
     (Nil 0)
-    ((Cons (Pair n d27) rest)
-      (if (= (str-eq n name) 0) 1 (ri-capture-list-has rest name)))))
+    (Cons hd rest
+      (match hd
+        (Pair n d27
+          (if (= (str-eq n name) 0) 1 (ri-capture-list-has rest name)))))))
 
 (defn ri-capture-collect-arms (arms acc env)
   (match arms
@@ -378,7 +388,7 @@
     (IFlt d32 (RR RHeap None))
     (ILoad name
       (match (re-env-get (RI.env ri) name)
-        (Some (Pair r esc) (RR r None))
+        (Some pr (match pr (Pair r esc (RR r None))))
         (None (RR RStack None))))
     (IBinop d4 left right
       (let lr (ri-infer-expr ri left)
@@ -531,8 +541,10 @@
 (defn ri-func-sig-exists (sigs name)
   (match sigs
     (Nil 0)
-    ((Cons (FS n d38 d39) rest)
-      (if (= (str-eq n name) 0) 1 (ri-func-sig-exists rest name)))))
+    (Cons hd rest
+      (match hd
+        (FS n d38 d39
+          (if (= (str-eq n name) 0) 1 (ri-func-sig-exists rest name)))))))
 
 (defn ri-add-struct-region (ri sr)
   (let srlist (RI.sr ri)
@@ -543,8 +555,10 @@
 (defn ri-sr-exists (srs name)
   (match srs
     (Nil 0)
-    ((Cons (SR n d40) rest)
-      (if (= (str-eq n name) 0) 1 (ri-sr-exists rest name)))))
+    (Cons hd rest
+      (match hd
+        (SR n d40
+          (if (= (str-eq n name) 0) 1 (ri-sr-exists rest name)))))))
 
 (defn ri-infer (icnf-list ri)
   (let ri2 (ri-collect-defs ri icnf-list)

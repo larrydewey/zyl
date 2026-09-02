@@ -103,25 +103,36 @@
 ; KV helpers — List (MonoKV K V)
 ; ===========================================================================
 
+; kv-get/kv-set/kv-contains: were `((MK k v) rest body)` — the Cons-cell
+; nested-head-plus-tail-binding sugar the self-hosted parser drops the
+; tail binding for (only its simpler 2-element sibling form works).
+; Sequential matches sidestep it (same fix as type_system.zyl/
+; type_inference.zyl's *-binds helpers).
 (defn kv-get (binds key default)
   (match binds
     (Nil default)
-    ((MK k v) rest
-      (if (= k key) v (kv-get rest key default)))))
+    (Cons hd rest
+      (match hd
+        (MK k v
+          (if (= k key) v (kv-get rest key default)))))))
 
 (defn kv-set (binds key val)
   (match binds
     (Nil (Cons (MK key val) Nil))
-    ((MK k v) rest
-      (if (= k key)
-        (Cons (MK key val) rest)
-        (Cons (MK k v) (kv-set rest key val))))))
+    (Cons hd rest
+      (match hd
+        (MK k v
+          (if (= k key)
+            (Cons (MK key val) rest)
+            (Cons (MK k v) (kv-set rest key val))))))))
 
 (defn kv-contains (binds key)
   (match binds
     (Nil false)
-    ((MK k d1) rest
-      (if (= k key) true (kv-contains rest key)))))
+    (Cons hd rest
+      (match hd
+        (MK k d1
+          (if (= k key) true (kv-contains rest key)))))))
 
 ; ===========================================================================
 ; String helpers
@@ -754,6 +765,9 @@
 ; ===========================================================================
 
 (defn kv-keys (binds)
+  ; same Cons-cell nested-head-plus-tail-binding bug as kv-get/etc above.
   (match binds
     (Nil Nil)
-    ((MK k d24) rest (Cons k (kv-keys rest)))))
+    (Cons hd rest
+      (match hd
+        (MK k d24 (Cons k (kv-keys rest)))))))

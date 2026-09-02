@@ -464,10 +464,22 @@
 
 )
 (defn parse-single-param (p)
+  ; was `(AList (Cons name (Cons typ rest)) body)` — a pattern nested TWO
+  ; levels deep. The self-hosted parser's parse-match-arm only expands one
+  ; level of wrapped-form nesting (see its own comment); a second nested
+  ; Cons position isn't a plain identifier binding, so it got fed to
+  ; convert-ast as if it were CODE to evaluate, not a pattern to
+  ; destructure — corrupting field binding entirely ("rbp0"/undefined
+  ; symbol at link time). Sequential matches sidestep the nesting.
   (match p
     (AstIdent name (P name None))
-    (AList (Cons name (Cons typ rest))
-      (P (a-ident-to-str name) (Some (convert-ast typ))))
+    (AList lst
+      (match lst
+        (Cons name tail
+          (match tail
+            (Cons typ rest (P (a-ident-to-str name) (Some (convert-ast typ))))
+            (d2 (P "___" None))))
+        (d3 (P "___" None))))
     (d1 (P "___" None))))
 
 (defn parse-deftype (args)
@@ -502,13 +514,28 @@
 
 )
 (defn parse-adt-variant (v)
+  ; was `(AList (Cons name rest) body)` — a FLAT-form arm whose sole field
+  ; position is itself a nested list-pattern (AList has ONE field, a
+  ; `List Ast`; that field's own Cons/Nil shape was being destructured
+  ; INLINE in the same arm). The self-hosted parser has no equivalent of
+  ; the Rust bootstrap's desugar_arm_raw (nested-pattern → fresh-var +
+  ; inner-match desugaring) for either arm surface form, so the nested
+  ; `(Cons name rest)` position got fed to convert-ast as CODE to
+  ; evaluate ("Cons" called with args name/rest) instead of a pattern —
+  ; "name"/"rest" never got bound at all ("rbp0"/undefined symbol at
+  ; link time). Binding AList's field to one plain name, then
+  ; destructuring THAT in a separate inner match, sidesteps the nesting
+  ; entirely (same fix already applied to parse-single-param above).
   (match v
     (AstIdent name
       (AV name Nil))
-    (AList (Cons name rest)
-      (AV
-        (a-ident-to-str name)
-        (parse-field-names rest)))
+    (AList lst
+      (match lst
+        (Cons name rest
+          (AV
+            (a-ident-to-str name)
+            (parse-field-names rest)))
+        (d2 (AV "___" Nil))))
     (d1 (AV "___" Nil))))
 
 (defn parse-field-names (fields)
@@ -599,15 +626,19 @@
 
 )
 (defn parse-for-binding (binding)
+  ; same nested-field-position bug as parse-adt-variant above.
   (match binding
     (AstIdent name
       (Pair name None))
-    (AList (Cons name rest)
-      (Pair
-        (a-ident-to-str name)
-        (if (nil? rest)
-          None
-          (Some (convert-ast (ast-list-last rest (AstInt 0)))))))
+    (AList lst
+      (match lst
+        (Cons name rest
+          (Pair
+            (a-ident-to-str name)
+            (if (nil? rest)
+              None
+              (Some (convert-ast (ast-list-last rest (AstInt 0)))))))
+        (d2 (Pair "___" None))))
     (d1 (Pair "___" None))))
 
 (defn parse-cond (args)
@@ -706,18 +737,40 @@
     (Nil Nil)
     (Cons arm rest
       (Cons (parse-match-arm arm) (parse-match-arms rest)))))
-; One arm: (VariantName pat* body) — name first, body last, middle binds.
+; Two accepted arm surface forms (matching the Rust bootstrap's
+; decompose_match_arm — see ast.rs):
+;   flat:    (VariantName pat* body)   — kids[0] is a bare identifier
+;   wrapped: ((VariantName pat*) body) — kids[0] is itself a nested list
+; This used to handle ONLY the flat form: `(match pattern (AstIdent n n)
+; (d1 "___"))` silently fell to the wildcard "___" placeholder whenever
+; kids[0] was a list (the wrapped form), so every `((Variant a b) body)`
+; arm anywhere in the self-hosted compiler's OWN source resolved to a
+; nonexistent "___" variant — an unresolved name that lowers to the
+; sentinel wildcard discriminant, permanently unreachable at runtime and
+; miscompiling the field bindings into codegen's unresolved-variable
+; fallback path ("[rbp0]"/undefined `rbp0` symbol at link time).
 (defn parse-match-arm (arm)
   (match arm
     (AList kids
       (match kids
         (Nil (MA "___" Nil (Expr (EAtom ANil))))
         (Cons pattern rest
-          (MA
-            (match pattern (AstIdent n n) (d1 "___"))
-            (convert-ast-list (ast-list-butlast rest))
-            (convert-ast (ast-list-last rest (AstInt 0)))))))
-    (d1 (MA "___" Nil (Expr (EAtom ANil))))))
+          (match pattern
+            (AstIdent n
+              (MA
+                n
+                (convert-ast-list (ast-list-butlast rest))
+                (convert-ast (ast-list-last rest (AstInt 0)))))
+            (AList pkids
+              (match pkids
+                (Cons vname vfields
+                  (MA
+                    (match vname (AstIdent n2 n2) (d2 "___"))
+                    (convert-ast-list vfields)
+                    (convert-ast (ast-list-last rest (AstInt 0)))))
+                (d3 (MA "___" Nil (Expr (EAtom ANil))))))
+            (d1 (MA "___" Nil (Expr (EAtom ANil))))))))
+    (d4 (MA "___" Nil (Expr (EAtom ANil))))))
 
 (defn parse-try (args)
   (if (ast-has-at-least args 3)

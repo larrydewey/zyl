@@ -1,152 +1,23 @@
 ; === Zyl Module Resolver (self-hosted) ===
-; Ports src/module_resolver.rs semantics:
-;   - `(use path/module)` forms name dependencies.
-;   - Dependencies resolve to `<name>.zyl`, else `stdlib/<name>.zyl`.
-;   - Dependency definitions are inlined BEFORE the body, deduplicated.
-;   - core/core is auto-linked when no core/* module is used explicitly.
-;   - Root defn/def names shadow dependency definitions of the same name.
 ;
-; Implemented ITERATIVELY (worklist + while) rather than recursively:
-; sibling tail-calls through nested matches are not yet safe in the
-; self-hosted codegen (see PROGRESS.md).
+; The full `(use ...)` transitive-resolution logic that used to live here
+; (module loading, dependency worklist, shadowing) is DEAD CODE from the
+; self-hosted boot pipeline's perspective: driver.zyl's boot-run never
+; calls anything in this file — assemble.py handles module concatenation
+; at BUILD time instead, so runtime `(use ...)` resolution is unused by
+; the bootstrap. It was removed after an extensive chase confirmed it was
+; blocking the self-hosted compiler's own boot process at LINK time with
+; an undefined `rbp0` symbol, despite never executing: the self-hosted
+; compiler's reachability analysis is less aggressive than the Rust
+; bootstrap's, so unreachable code here still got fully compiled. Root
+; cause wasn't pinned down (every `set!` target name read back as an
+; empty string by ICNF-lowering time despite parsing correctly — doesn't
+; fit this session's other confirmed bug classes), and since the whole
+; module resolution feature isn't wired into the boot path at all, there
+; was nothing worth keeping half-broken. See git history to revive it.
+;
+; shd/stl (head/tail, like car/cdr) are kept — codegen.zyl depends on them.
 
-(use core/list)
-(use compiler/parser)
-
-; --- helpers ---------------------------------------------------------------
-
-(defn str-eq-cstr (a b)
-  (= (ffi-call "strcmp" a b 1000) 0))
-
-(defn str-in-list (name xs)
-  (match xs
-    (Nil 0)
-    (Cons h1 tl
-      (if (str-eq-cstr name h1)
-        1
-        (str-in-list name tl)))))
-
-; Head identifier name of an AList form; "" otherwise.
-(defn form-head-name (form)
-  (match form
-    (AList kids
-      (match kids
-        (Cons hd tl (match hd (AstIdent nm nm) (dh "")))
-        (dk "")))
-    (df "")))
-
-; Second element of an AList form when it is an identifier; "" otherwise.
-(defn second-ident-in (kids)
-  (match kids
-    (Cons hd tl
-      (match tl
-        (Cons p1 r1 (match p1 (AstIdent nm nm) (dp "")))
-        (dr "")))
-    (dn "")))
-
-(defn form-second-ident (form)
-  (match form
-    (AList kids (second-ident-in kids))
-    (df2 "")))
-
-; `(use <module> ...)` -> module path; "" otherwise.
-(defn use-module-name (form)
-  (if (str-eq-cstr (form-head-name form) "use")
-    (form-second-ident form)
-    ""))
-
-; Binding name of a top-level defn/def item; "" otherwise.
-(defn def-binding-name (item)
-  (let head (form-head-name item)
-    (if (str-eq-cstr head "defn")
-      (form-second-ident item)
-      (if (str-eq-cstr head "def")
-        (form-second-ident item)
-        ""))))
-
-(defn file-exists (path)
-  (let fd (file-open path "r")
-    (if (> fd 0)
-      (begin (file-close fd) 1)
-      0)))
-
-; "<name>.zyl" if readable, else "stdlib/<name>.zyl", else "".
-(defn find-dep-path (arena name)
-  (let buf (arena-alloc-zeroed arena 512)
-    (begin
-      (buf-append buf name)
-      (buf-append buf ".zyl")
-      (if (= (file-exists buf) 1)
-        buf
-        (let buf2 (arena-alloc-zeroed arena 640)
-          (begin
-            (buf-append buf2 "stdlib/")
-            (buf-append buf2 name)
-            (buf-append buf2 ".zyl")
-            (if (= (file-exists buf2) 1)
-              buf2
-              "")))))))
-
-(defn read-file-src (path)
-  (let fd (file-open path "r")
-    (if (> fd 0)
-      (let src (file-read fd 1048576)
-        (begin (file-close fd) src))
-      "")))
-
-; --- use extraction ---------------------------------------------------------
-
-(defn collect-use-names (items acc)
-  (match items
-    (Nil acc)
-    (Cons item rest
-      (let nm (use-module-name item)
-        (if (> (alloc-strlen nm) 0)
-          (collect-use-names rest (Cons nm acc))
-          (collect-use-names rest acc))))))
-
-(defn has-core-use (names)
-  (match names
-    (Nil 0)
-    (Cons h1 tl
-      (if (str-eq-cstr h1 "core/core")
-        1
-        (if (str-eq-cstr h1 "core/option")
-          1
-          (if (str-eq-cstr h1 "core/result")
-            1
-            (has-core-use tl)))))))
-
-; Non-use items in original order.
-(defn drop-use-forms (items acc)
-  (match items
-    (Nil (list-reverse acc))
-    (Cons item rest
-      (if (> (alloc-strlen (use-module-name item)) 0)
-        (drop-use-forms rest acc)
-        (drop-use-forms rest (Cons item acc))))))
-
-; Top-level defn/def binding names, in order.
-(defn collect-def-names (items acc)
-  (match items
-    (Nil (list-reverse acc))
-    (Cons item rest
-      (let nm (def-binding-name item)
-        (if (> (alloc-strlen nm) 0)
-          (collect-def-names rest (Cons nm acc))
-          (collect-def-names rest acc))))))
-
-; Drop defn/def items whose name appears in `shadows`.
-(defn drop-shadowed (items shadows acc)
-  (match items
-    (Nil (list-reverse acc))
-    (Cons item rest
-      (let nm (def-binding-name item)
-        (if (str-in-list nm shadows)
-          (drop-shadowed rest shadows acc)
-          (drop-shadowed rest shadows (Cons item acc)))))))
-
-; Head/tail helpers (like car/cdr).
 (defn shd (xs)
   (match xs
     (Cons h _ h)
@@ -156,70 +27,3 @@
   (match xs
     (Cons _ t t)
     (Nil Nil)))
-
-; Lookup module items from (Cons name items ...) list.
-(defn module-items-for (name mod-items)
-  (match mod-items
-    (Nil Nil)
-    (Cons (Cons nm its) rest
-      (if (str-eq-cstr name nm)
-        its
-        (module-items-for name rest)))))
-
-; --- resolution (iterative worklist) ---------------------------------------
-;
-; Worklist loop: pop a module name, load+parse it, push ITS uses to the front
-; of the worklist, record its items. Completion order is dependency-safe
-; (deps finish before their dependents because they are processed next).
-; No recursion anywhere — sibling TCO through nested matches is not yet safe
-; in the self-hosted codegen.
-
-(defn resolve-program (arena items)
-  (let uses0 (list-reverse (collect-use-names items Nil))
-    (let todo0
-      (if (= (has-core-use uses0) 0)
-        (Cons "core/core" uses0)
-        uses0)
-      (begin
-        (let-mut todo todo0)
-        (let-mut seen Nil)
-        (let-mut done-names Nil)
-        (let-mut mod-items Nil)
-        ; ---- Phase A: transitively load + parse every used module ----
-        (while (not (is-nil todo))
-          (begin
-            (let name (shd todo)
-              (begin
-                (set! todo (stl todo))
-                (if (= (str-in-list name seen) 0)
-                  (begin
-                    (set! seen (Cons name seen))
-                    (let path (find-dep-path arena name)
-                      (if (> (alloc-strlen path) 0)
-                        (begin
-                          (let src (read-file-src path))
-                          (let its (zyl-parse arena src))
-                          (begin
-                            ; this module's own deps -> front of worklist
-                            (set! todo (list-append (collect-use-names its Nil) todo))
-                            (set! mod-items (Cons (Cons name its) mod-items))
-                            (set! done-names (Cons name done-names)))))
-                      (begin
-                        (print "zylc: module not found:")
-                        (print name)))))))))
-        ; ---- Phase B: emit module items in completion order, then append
-        ; the user body (root defn/def names shadow dep definitions) ----
-        (let-mut emitted Nil)
-        (let-mut dn (list-reverse done-names))
-        (while (not (is-nil dn))
-          (begin
-            (let nm (shd dn)
-              (begin
-                (set! emitted
-                  (list-append emitted (module-items-for nm mod-items)))
-                (set! dn (stl dn))))))
-        (let body (drop-use-forms items Nil))
-          (let shadows (collect-def-names body Nil))
-            (list-append
-              (drop-shadowed emitted shadows Nil)
-              body)))))
