@@ -12623,16 +12623,19 @@
       )
     )
     (
-      unify
+      begin
       (
-        ti-subst inferer
+        unify
+        (
+          ti-subst inferer
+        )
+        ct TBool
       )
-      ct TBool
+      (
+        infer-expr inferer body
+      )
+      TUnit
     )
-    (
-      infer-expr inferer body
-    )
-    TUnit
   )
 )
 (
@@ -12657,16 +12660,19 @@
         )
       )
       (
-        unify
+        begin
         (
-          ti-subst new-inferer
+          unify
+          (
+            ti-subst new-inferer
+          )
+          ct TBool
         )
-        ct TBool
+        (
+          infer-expr new-inferer body
+        )
+        TUnit
       )
-      (
-        infer-expr new-inferer body
-      )
-      TUnit
     )
   )
 )
@@ -12793,22 +12799,25 @@
               )
             )
             (
-              unify
+              begin
               (
-                ti-subst inferer
-              )
-              pt TBool
-            )
-            (
-              let
-              (
-                bt
+                unify
                 (
-                  infer-expr inferer body
+                  ti-subst inferer
                 )
+                pt TBool
               )
               (
-                infer-expr-cond-loop inferer rest bt
+                let
+                (
+                  bt
+                  (
+                    infer-expr inferer body
+                  )
+                )
+                (
+                  infer-expr-cond-loop inferer rest bt
+                )
               )
             )
           )
@@ -12831,9 +12840,12 @@
       )
     )
     (
-      infer-expr inferer handler
+      begin
+      (
+        infer-expr inferer handler
+      )
+      et
     )
-    et
   )
 )
 (
@@ -13722,19 +13734,22 @@
           )
         )
         (
-          infer-binop-check-types types
-        )
-        (
-          if
-          has-float
-          TFloat
+          begin
+          (
+            infer-binop-check-types types
+          )
           (
             if
-            all-vars
+            has-float
+            TFloat
             (
-              inferer-return-var inferer
+              if
+              all-vars
+              (
+                inferer-return-var inferer
+              )
+              TInt
             )
-            TInt
           )
         )
       )
@@ -13830,14 +13845,17 @@
           )
         )
         (
-          unify
+          begin
           (
-            ti-subst inferer
+            unify
+            (
+              ti-subst inferer
+            )
+            t TBool
           )
-          t TBool
-        )
-        (
-          infer-args-bool-check inferer rest
+          (
+            infer-args-bool-check inferer rest
+          )
         )
       )
     )
@@ -14139,13 +14157,16 @@
       )
     )
     (
-      unify
+      begin
       (
-        ti-subst inferer
+        unify
+        (
+          ti-subst inferer
+        )
+        ct TBool
       )
-      ct TBool
+      TUnit
     )
-    TUnit
   )
 )
 (
@@ -14247,10 +14268,13 @@
       )
     )
     (
-      infer-struct-field-type st field-name
-    )
-    (
-      inferer-return-var inferer
+      begin
+      (
+        infer-struct-field-type st field-name
+      )
+      (
+        inferer-return-var inferer
+      )
     )
   )
 )
@@ -14283,22 +14307,25 @@
       )
     )
     (
-      infer-args inferer args
-    )
-    (
-      infer-variant-record-instantiation inferer adt-name field-types
-    )
-    (
-      TStruct
+      begin
       (
-        str-concat adt-name
-        (
-          str-concat
-          "_"
-          variant-name
-        )
+        infer-args inferer args
       )
-      field-types
+      (
+        infer-variant-record-instantiation inferer adt-name field-types
+      )
+      (
+        TStruct
+        (
+          str-concat adt-name
+          (
+            str-concat
+            "_"
+            variant-name
+          )
+        )
+        field-types
+      )
     )
   )
 )
@@ -14372,9 +14399,12 @@
       )
     )
     (
-      infer-expr inferer body
+      begin
+      (
+        infer-expr inferer body
+      )
+      it
     )
-    it
   )
 )
 (
