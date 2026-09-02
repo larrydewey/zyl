@@ -192,6 +192,246 @@
     )
   )
 )
+; ---------- stdlib/core/result.zyl ----------
+(
+  deftype Result
+  (
+    Ok T
+  )
+  (
+    Err E
+  )
+)
+(
+  defn result-unwrap
+  (
+    res default
+  )
+  (
+    match res
+    (
+      Ok v v
+    )
+    (
+      Err w1x default
+    )
+  )
+)
+(
+  defn result-is-ok
+  (
+    res
+  )
+  (
+    match res
+    (
+      Ok w2x true
+    )
+    (
+      Err w3x false
+    )
+  )
+)
+(
+  defn result-is-err
+  (
+    res
+  )
+  (
+    match res
+    (
+      Ok w4x false
+    )
+    (
+      Err w5x true
+    )
+  )
+)
+(
+  defn result-map
+  (
+    res f
+  )
+  (
+    match res
+    (
+      Ok v
+      (
+        Ok
+        (
+          f v
+        )
+      )
+    )
+    (
+      Err e
+      (
+        Err e
+      )
+    )
+  )
+)
+(
+  defn result-and
+  (
+    res other
+  )
+  (
+    match res
+    (
+      Ok w6x other
+    )
+    (
+      Err w7x res
+    )
+  )
+)
+(
+  defn result-or
+  (
+    res other
+  )
+  (
+    match res
+    (
+      Ok w8x res
+    )
+    (
+      Err w9x other
+    )
+  )
+)
+(
+  defn result-expect
+  (
+    res msg
+  )
+  (
+    match res
+    (
+      Ok v v
+    )
+    (
+      Err w10x
+      (
+        error msg
+      )
+    )
+  )
+)
+(
+  defn result-unwrap-or
+  (
+    res default
+  )
+  (
+    match res
+    (
+      Ok v v
+    )
+    (
+      Err w11x default
+    )
+  )
+)
+(
+  defn result-ok
+  (
+    v
+  )
+  (
+    Ok v
+  )
+)
+(
+  defn result-err
+  (
+    e
+  )
+  (
+    Err e
+  )
+)
+(
+  defn result-flatmap
+  (
+    res f
+  )
+  (
+    match res
+    (
+      Ok v
+      (
+        f v
+      )
+    )
+    (
+      Err e
+      (
+        Err e
+      )
+    )
+  )
+)
+(
+  defn result-inspect
+  (
+    res f
+  )
+  (
+    match res
+    (
+      Ok v
+      (
+        begin
+        (
+          f v
+        )
+        res
+      )
+    )
+    (
+      Err e
+      (
+        begin
+        (
+          f e
+        )
+        res
+      )
+    )
+  )
+)
+(
+  defn result-and-then
+  (
+    res f
+  )
+  (
+    result-flatmap res f
+  )
+)
+(
+  defn result-or-else
+  (
+    res f
+  )
+  (
+    match res
+    (
+      Ok v
+      (
+        Ok v
+      )
+    )
+    (
+      Err e
+      (
+        f e
+      )
+    )
+  )
+)
 ; ---------- stdlib/core/list.zyl ----------
 (
   deftype List
@@ -3303,14 +3543,14 @@
                                                                                                   >
                                                                                                   (
                                                                                                     str-eq n
-                                                                                                    "buf-append"
+                                                                                                    "test-property"
                                                                                                   )
                                                                                                   0
                                                                                                 )
                                                                                                 (
                                                                                                   match
                                                                                                   (
-                                                                                                    parse-buf-append rest
+                                                                                                    parse-test-property rest
                                                                                                   )
                                                                                                   (
                                                                                                     Some expr expr
@@ -3321,7 +3561,7 @@
                                                                                                       Expr
                                                                                                       (
                                                                                                         EUnknown
-                                                                                                        "buf-append"
+                                                                                                        "test-property"
                                                                                                         (
                                                                                                           convert-ast-list rest
                                                                                                         )
@@ -3335,14 +3575,14 @@
                                                                                                     >
                                                                                                     (
                                                                                                       str-eq n
-                                                                                                      "test-property"
+                                                                                                      "test-compile"
                                                                                                     )
                                                                                                     0
                                                                                                   )
                                                                                                   (
                                                                                                     match
                                                                                                     (
-                                                                                                      parse-test-property rest
+                                                                                                      parse-test-compile rest
                                                                                                     )
                                                                                                     (
                                                                                                       Some expr expr
@@ -3353,7 +3593,7 @@
                                                                                                         Expr
                                                                                                         (
                                                                                                           EUnknown
-                                                                                                          "test-property"
+                                                                                                          "test-compile"
                                                                                                           (
                                                                                                             convert-ast-list rest
                                                                                                           )
@@ -3362,44 +3602,11 @@
                                                                                                     )
                                                                                                   )
                                                                                                   (
-                                                                                                    if
+                                                                                                    Expr
                                                                                                     (
-                                                                                                      >
+                                                                                                      EApply n
                                                                                                       (
-                                                                                                        str-eq n
-                                                                                                        "test-compile"
-                                                                                                      )
-                                                                                                      0
-                                                                                                    )
-                                                                                                    (
-                                                                                                      match
-                                                                                                      (
-                                                                                                        parse-test-compile rest
-                                                                                                      )
-                                                                                                      (
-                                                                                                        Some expr expr
-                                                                                                      )
-                                                                                                      (
-                                                                                                        None
-                                                                                                        (
-                                                                                                          Expr
-                                                                                                          (
-                                                                                                            EUnknown
-                                                                                                            "test-compile"
-                                                                                                            (
-                                                                                                              convert-ast-list rest
-                                                                                                            )
-                                                                                                          )
-                                                                                                        )
-                                                                                                      )
-                                                                                                    )
-                                                                                                    (
-                                                                                                      Expr
-                                                                                                      (
-                                                                                                        EApply n
-                                                                                                        (
-                                                                                                          convert-ast-list rest
-                                                                                                        )
+                                                                                                        convert-ast-list rest
                                                                                                       )
                                                                                                     )
                                                                                                   )
@@ -3903,7 +4110,98 @@
             )
           )
         )
-        None
+        (
+          if
+          (
+            ast-has-at-least args 2
+          )
+          (
+            Some
+            (
+              Expr
+              (
+                ELet
+                n
+                (
+                  convert-ast
+                  (
+                    ast-nth args 1
+                    (
+                      AstInt 0
+                    )
+                  )
+                )
+                (
+                  Expr
+                  (
+                    EAtom
+                    (
+                      AIdent
+                      "Unit"
+                    )
+                  )
+                )
+              )
+            )
+          )
+          None
+        )
+      )
+    )
+    (
+      AList blist
+      (
+        match blist
+        (
+          Cons bname d9
+          (
+            match bname
+            (
+              AstIdent bn
+              (
+                if
+                (
+                  ast-has-at-least args 2
+                )
+                (
+                  Some
+                  (
+                    Expr
+                    (
+                      ELet
+                      bn
+                      (
+                        convert-ast
+                        (
+                          ast-nth blist 1
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                      (
+                        convert-ast
+                        (
+                          ast-nth args 1
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+                None
+              )
+            )
+            (
+              d3 None
+            )
+          )
+        )
+        (
+          d2 None
+        )
       )
     )
     (
@@ -3959,7 +4257,98 @@
             )
           )
         )
-        None
+        (
+          if
+          (
+            ast-has-at-least args 2
+          )
+          (
+            Some
+            (
+              Expr
+              (
+                ELetMut
+                n
+                (
+                  convert-ast
+                  (
+                    ast-nth args 1
+                    (
+                      AstInt 0
+                    )
+                  )
+                )
+                (
+                  Expr
+                  (
+                    EAtom
+                    (
+                      AIdent
+                      "Unit"
+                    )
+                  )
+                )
+              )
+            )
+          )
+          None
+        )
+      )
+    )
+    (
+      AList blist
+      (
+        match blist
+        (
+          Cons bname d9
+          (
+            match bname
+            (
+              AstIdent bn
+              (
+                if
+                (
+                  ast-has-at-least args 2
+                )
+                (
+                  Some
+                  (
+                    Expr
+                    (
+                      ELetMut
+                      bn
+                      (
+                        convert-ast
+                        (
+                          ast-nth blist 1
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                      (
+                        convert-ast
+                        (
+                          ast-nth args 1
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+                None
+              )
+            )
+            (
+              d3 None
+            )
+          )
+        )
+        (
+          d2 None
+        )
       )
     )
     (
@@ -4228,13 +4617,46 @@
     (
       Some
       (
+        cond-fold
+        (
+          parse-cond-clauses
+          (
+            AList args
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn cond-fold
+  (
+    clauses
+  )
+  (
+    match clauses
+    (
+      Nil
+      (
         Expr
         (
-          ECond
+          EAtom ANil
+        )
+      )
+    )
+    (
+      Cons c rest
+      (
+        match c
+        (
+          Pair test body
           (
-            parse-cond-clauses
+            Expr
             (
-              AList args
+              EIf test body
+              (
+                cond-fold rest
+              )
             )
           )
         )
@@ -6074,46 +6496,6 @@
         )
       )
     )
-  )
-)
-(
-  defn parse-buf-append
-  (
-    args
-  )
-  (
-    if
-    (
-      ast-has-at-least args 2
-    )
-    (
-      Some
-      (
-        Expr
-        (
-          EBufAppend
-          (
-            convert-ast
-            (
-              ast-nth args 0
-              (
-                AstInt 0
-              )
-            )
-          )
-          (
-            convert-ast
-            (
-              ast-nth args 1
-              (
-                AstInt 0
-              )
-            )
-          )
-        )
-      )
-    )
-    None
   )
 )
 (
@@ -14178,43 +14560,7 @@
     inferer body
   )
   (
-    match
-    (
-      catch-error
-      (
-        infer-expr inferer body
-      )
-    )
-    (
-      Ok t t
-    )
-    (
-      Err d25
-      (
-        inferer-return-unit inferer
-      )
-    )
-  )
-)
-(
-  defn catch-error
-  (
-    f
-  )
-  (
-    try
-    (
-      Ok
-      (
-        f
-      )
-    )
-    (
-      catch e
-      (
-        Err e
-      )
-    )
+    infer-expr inferer body
   )
 )
 (
@@ -20616,7 +20962,51 @@
           cg-fbinop st env op l r
         )
         (
-          cg-ibinop st env op l r
+          if
+          (
+            >
+            (
+              if
+              (
+                or
+                (
+                  = op 9
+                )
+                (
+                  = op 10
+                )
+              )
+              (
+                if
+                (
+                  or
+                  (
+                    =
+                    (
+                      kind-of env l
+                    )
+                    1
+                  )
+                  (
+                    =
+                    (
+                      kind-of env r
+                    )
+                    1
+                  )
+                )
+                1 0
+              )
+              0
+            )
+            0
+          )
+          (
+            cg-strbinop st env op l r
+          )
+          (
+            cg-ibinop st env op l r
+          )
         )
       )
     )
@@ -21216,6 +21606,39 @@
           )
         )
       )
+    )
+  )
+)
+(
+  defn cg-strbinop
+  (
+    st env op l r
+  )
+  (
+    let st2
+    (
+      cg-expr st env
+      (
+        IFfi
+        "zyl_cstr_eq"
+        (
+          Cons l
+          (
+            Cons r Nil
+          )
+        )
+      )
+    )
+    (
+      if
+      (
+        = op 10
+      )
+      (
+        cg-emit-line st2
+        "    xor rax, 1"
+      )
+      st2
     )
   )
 )
@@ -22776,52 +23199,93 @@
     (
       CGP st flabel lend
       (
-        let st3
+        if
         (
-          cg-tag-check st tag
+          = tag -1
         )
         (
-          let st4
+          match
           (
-            cg-emit st3
-            "    jne "
+            cg-bind-fields st env binds 0
           )
           (
-            let st5
+            CGE st6 arm-env
             (
-              cg-nl
+              let st7
               (
-                cg-emit st4 flabel
-              )
-            )
-            (
-              match
-              (
-                cg-bind-fields st5 env binds 0
+                cg-expr st6 arm-env body
               )
               (
-                CGE st6 arm-env
+                let st8
                 (
-                  let st7
+                  cg-emit-line st7
+                  "    mov [rsp], rax"
+                )
+                (
+                  let st9
                   (
-                    cg-expr st6 arm-env body
+                    cg-emit st8
+                    "    jmp "
                   )
                   (
-                    let st8
+                    cg-nl
                     (
-                      cg-emit-line st7
-                      "    mov [rsp], rax"
+                      cg-emit st9 lend
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+        (
+          let st3
+          (
+            cg-tag-check st tag
+          )
+          (
+            let st4
+            (
+              cg-emit st3
+              "    jne "
+            )
+            (
+              let st5
+              (
+                cg-nl
+                (
+                  cg-emit st4 flabel
+                )
+              )
+              (
+                match
+                (
+                  cg-bind-fields st5 env binds 0
+                )
+                (
+                  CGE st6 arm-env
+                  (
+                    let st7
+                    (
+                      cg-expr st6 arm-env body
                     )
                     (
-                      let st9
+                      let st8
                       (
-                        cg-emit st8
-                        "    jmp "
+                        cg-emit-line st7
+                        "    mov [rsp], rax"
                       )
                       (
-                        cg-nl
+                        let st9
                         (
-                          cg-emit st9 lend
+                          cg-emit st8
+                          "    jmp "
+                        )
+                        (
+                          cg-nl
+                          (
+                            cg-emit st9 lend
+                          )
                         )
                       )
                     )
@@ -24125,36 +24589,43 @@
           "    mov rbp, rsp"
         )
         (
-          let st4
+          let st3b
           (
             cg-emit-line st3
-            "    lea rdi, [rip+f_main]"
+            "    call zyl_ensure_arenas"
           )
           (
-            let st5
+            let st4
             (
-              cg-emit-line st4
-              "    call zyl_call_on_big_stack"
+              cg-emit-line st3b
+              "    lea rdi, [rip+f_main]"
             )
             (
-              let st6
+              let st5
               (
-                cg-emit-line st5
-                "    xor eax, eax"
+                cg-emit-line st4
+                "    call zyl_call_on_big_stack"
               )
               (
-                let st7
+                let st6
                 (
-                  cg-emit-line st6
-                  "    pop rbp"
+                  cg-emit-line st5
+                  "    xor eax, eax"
                 )
                 (
-                  let st8
+                  let st7
                   (
-                    cg-emit-line st7
-                    "    ret"
+                    cg-emit-line st6
+                    "    pop rbp"
                   )
-                  st8
+                  (
+                    let st8
+                    (
+                      cg-emit-line st7
+                      "    ret"
+                    )
+                    st8
+                  )
                 )
               )
             )

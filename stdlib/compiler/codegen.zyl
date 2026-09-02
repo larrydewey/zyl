@@ -225,10 +225,23 @@
     (IStr s (cg-string-const st s))
     (IFlt t (cg-float-const st t))
     (ILoad n (cg-load-value st env n))
+    ; `=`/`!=` between two STRING-kind operands used to fall straight into
+    ; cg-ibinop's raw `cmp rax, rcx` — a bare POINTER comparison. Since
+    ; str-substring/str-concat/etc. always heap-allocate a FRESH buffer,
+    ; two textually-identical strings routinely live at different
+    ; addresses (e.g. str-contains-loop's per-candidate str-substring
+    ; result, or two independently-parsed occurrences of the same
+    ; identifier), so pointer equality silently gave the wrong answer —
+    ; deterministically wrong within one build, but the wrongness itself
+    ; depends on allocation order, which shifts between stage2 and stage3
+    ; (compiled by different machine code), breaking the self-hosting
+    ; fixed point. Route string-kind `=`/`!=` through zyl_cstr_eq instead.
     (IBinop op l r
      (if (> (if (= (kind-of env l) 2) 1 (if (= (kind-of env r) 2) 1 0)) 0)
        (cg-fbinop st env op l r)
-       (cg-ibinop st env op l r)))
+       (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of env l) 1) (= (kind-of env r) 1)) 1 0) 0) 0)
+         (cg-strbinop st env op l r)
+         (cg-ibinop st env op l r))))
     (ICall name args (cg-call-args st env name args true 0))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
@@ -358,6 +371,15 @@
             (if (< op 5)
               (cg-arith-mnem st6 op)
               (cg-cmp-set st6 op))))))))
+
+; String `=`/`!=`: content comparison via the C runtime (zyl_cstr_eq),
+; reusing cg-call-args' proven-safe ABI/stack-alignment handling instead
+; of hand-rolling a new call sequence.
+(defn cg-strbinop (st env op l r)
+  (let st2 (cg-expr st env (IFfi "zyl_cstr_eq" (Cons l (Cons r Nil))))
+    (if (= op 10)
+      (cg-emit-line st2 "    xor rax, 1")
+      st2)))
 
 (defn cg-arith-mnem (st op)
   ; Div (3) and Rem (4) both sign-extend rax into rdx via cqo before idiv,
@@ -696,18 +718,40 @@
 
 ; Emit one arm's tag check, bindings, body and exit jump. flabel (carried
 ; in p) is where a failed tag check goes; lend is the match join label.
+;
+; A wildcard/catch-all arm (any pattern name that doesn't resolve to a
+; real variant, e.g. this codebase's pervasive dummy names d1/d2/...)
+; gets sentinel tag -1 from vt-tag-of ("not found"). Unconditionally
+; emitting a tag check for it — `cmp rax, -1` — can never actually match
+; a real scrutinee's tag, so the wildcard arm's own body was NEVER
+; reachable: every such arm always "failed" its own check and fell
+; through to lzero's hardcoded 0, silently discarding whatever the arm
+; was supposed to compute. This is the single mechanism behind the
+; entire "rbp0"/wildcard-arm-returns-0 bug class chased through this
+; session once cg-load-unresolved stopped being the direct culprit — the
+; Rust bootstrap's codegen.rs already special-cases this (skips cmp/je
+; for the wildcard arm, routes the no-match fallthrough straight to its
+; body); this mirrors that: skip the tag check entirely and match
+; unconditionally when tag is the sentinel.
 (defn cg-arm-match (p env tag binds body)
   (match p
     (CGP st flabel lend
-      (let st3 (cg-tag-check st tag)
-        (let st4 (cg-emit st3 "    jne ")
-          (let st5 (cg-nl (cg-emit st4 flabel))
-            (match (cg-bind-fields st5 env binds 0)
-              (CGE st6 arm-env
-                (let st7 (cg-expr st6 arm-env body)
-                  (let st8 (cg-emit-line st7 "    mov [rsp], rax")
-                    (let st9 (cg-emit st8 "    jmp ")
-                      (cg-nl (cg-emit st9 lend)))))))))))))
+      (if (= tag -1)
+        (match (cg-bind-fields st env binds 0)
+          (CGE st6 arm-env
+            (let st7 (cg-expr st6 arm-env body)
+              (let st8 (cg-emit-line st7 "    mov [rsp], rax")
+                (let st9 (cg-emit st8 "    jmp ")
+                  (cg-nl (cg-emit st9 lend)))))))
+        (let st3 (cg-tag-check st tag)
+          (let st4 (cg-emit st3 "    jne ")
+            (let st5 (cg-nl (cg-emit st4 flabel))
+              (match (cg-bind-fields st5 env binds 0)
+                (CGE st6 arm-env
+                  (let st7 (cg-expr st6 arm-env body)
+                    (let st8 (cg-emit-line st7 "    mov [rsp], rax")
+                      (let st9 (cg-emit st8 "    jmp ")
+                        (cg-nl (cg-emit st9 lend))))))))))))))
 
 (defn cgr-st (r)
   (match r
@@ -975,15 +1019,28 @@
 (defn cg-entry-stub (st)
   ; Run user main on a big-stack worker thread (C runtime helper): the
   ; self-hosted compiler recurses deeply while parsing large inputs.
+  ;
+  ; MUST call zyl_ensure_arenas@plt before any allocation happens (it
+  ; sets the global g_heap_arena/g_pin_arena used by zyl_heap_alloc,
+  ; which backs str-concat/str-substring/str-length and every other
+  ; heap-allocating builtin). This mirrors codegen.rs's entry stub,
+  ; which always emits this call. This self-hosted stub used to omit
+  ; it entirely, leaving g_heap_arena permanently NULL for any binary
+  ; produced by this codegen — every heap-allocating builtin silently
+  ; returned 0 (null) from zyl_heap_alloc's `!g_heap_arena` guard, and
+  ; the first caller to actually dereference that null buffer (here,
+  ; zyl_cstr_substr's memcpy into a null `buf`) segfaulted deep into
+  ; the run instead of failing at start.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
-        (let st4 (cg-emit-line st3 "    lea rdi, [rip+f_main]")
-          (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
-            (let st6 (cg-emit-line st5 "    xor eax, eax")
-              (let st7 (cg-emit-line st6 "    pop rbp")
-                (let st8 (cg-emit-line st7 "    ret")
-                  st8)))))))))
+        (let st3b (cg-emit-line st3 "    call zyl_ensure_arenas")
+          (let st4 (cg-emit-line st3b "    lea rdi, [rip+f_main]")
+            (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
+              (let st6 (cg-emit-line st5 "    xor eax, eax")
+                (let st7 (cg-emit-line st6 "    pop rbp")
+                  (let st8 (cg-emit-line st7 "    ret")
+                    st8))))))))))
 
 (defn cg-format-strings (st)
   (let st1 (cg-emit-line st ".section .rodata")

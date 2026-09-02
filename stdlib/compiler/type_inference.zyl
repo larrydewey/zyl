@@ -1478,18 +1478,19 @@
                 (let (new-inferer (insert-known-fn new-inferer name param-bindings))
                     new-inferer)))))
 
+; ETryCatch (`try`/`catch`) has no lowering anywhere past parsing in this
+; self-hosted pipeline — monomorphization.zyl's subst-expr, icnf.zyl's
+; ic-expr, and codegen.zyl all silently discard it via their generic
+; wildcard defaults (icnf.zyl's ic-expr comment: unsupported shapes lower
+; to a harmless (IConst 0)). Wrapping infer-expr in a try/catch here
+; (catch-error) made catch-error itself compile down to a bare "return 0"
+; instead of ever running its body — the null was then dereferenced by
+; the very next line, segfaulting. Type inference in this compiler is
+; already best-effort (a genuine type error elsewhere already degrades to
+; TUnit rather than aborting), so call infer-expr directly instead of
+; through a try/catch this pipeline can't actually support.
 (defn infer-expr-body (inferer body)
-    ; infer the body expression type, return TUnit on error
-    (match
-        (catch-error
-            (infer-expr inferer body))
-        (Ok t t)
-        (Err d25 (inferer-return-unit inferer))))
-
-(defn catch-error (f)
-    (try
-        (Ok (f))
-        (catch e (Err e))))
+    (infer-expr inferer body))
 
 (defn zip-params (params types)
     ; pair params with types — sequential matches, not a Pair-wrapped nested

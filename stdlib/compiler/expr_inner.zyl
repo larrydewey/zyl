@@ -416,10 +416,16 @@
     (match (parse-unwrap rest)
       (Some expr expr)
       (None (Expr (EUnknown "unwrap" (convert-ast-list rest)))))
-  (if (> (str-eq n "buf-append") 0)
-    (match (parse-buf-append rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "buf-append" (convert-ast-list rest)))))
+  ; "buf-append" is deliberately NOT special-cased here (unlike the Rust
+  ; bootstrap's parser.rs/ast.rs, which intercept it as EBufAppend) —
+  ; EBufAppend has no icnf.zyl/codegen.zyl lowering anywhere in this
+  ; self-hosted pipeline, so intercepting it silently discarded every
+  ; `(buf-append dst src)` call to a bare (IConst 0) via ic-expr's
+  ; wildcard default, dropping the append with NO emitted code at all —
+  ; while allocator.zyl's own `buf-append` (a real function wrapping
+  ; ffi-call) sat right there, completely shadowed by the special form
+  ; and never reachable. Falling through to an ordinary EApply call lets
+  ; that real function run instead.
   (if (> (str-eq n "test-property") 0)
     (match (parse-test-property rest)
       (Some expr expr)
@@ -429,7 +435,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  ))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -558,6 +564,19 @@
         None))
     (d1 None)))
 
+; Rust bootstrap's p_let (src/parser.rs) supports THREE surface forms:
+;   1. (let name val body...)  -- flat, name a bare ident, >=3 args
+;   2. (let name val)          -- flat, 2 args, implicit Unit body
+;   3. (let (name val) body)   -- wrapped single-binding list
+; This parser used to support ONLY form 1. Form 3 — used pervasively
+; throughout type_system.zyl/type_inference.zyl/monomorphization.zyl —
+; silently fell through to `None`, which the caller turns into an
+; EUnknown node; EUnknown lowers to a harmless-looking (IConst 0) in
+; icnf.zyl. Every function whose ENTIRE body was a form-3 `let`
+; (inferer-new, infer-defn-body, ...) therefore compiled down to a bare
+; "return 0", discarding all of its real work — the true cause behind a
+; whole class of "silently returns garbage/null" bugs chased this
+; session (e.g. ti-env dereferencing the null inferer-new result).
 (defn parse-let (args)
   (match (ast-nth args 0 (AstInt 0))
     (AstIdent n
@@ -568,7 +587,29 @@
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
               (convert-ast (ast-list-last args (AstInt 0))))))
-        None))
+        (if (ast-has-at-least args 2)
+          (Some
+            (Expr
+              (ELet
+                n
+                (convert-ast (ast-nth args 1 (AstInt 0)))
+                (Expr (EAtom (AIdent "Unit"))))))
+          None)))
+    (AList blist
+      (match blist
+        (Cons bname d9
+          (match bname
+            (AstIdent bn
+              (if (ast-has-at-least args 2)
+                (Some
+                  (Expr
+                    (ELet
+                      bn
+                      (convert-ast (ast-nth blist 1 (AstInt 0)))
+                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                None))
+            (d3 None)))
+        (d2 None)))
     (d1 None)))
 
 (defn parse-let-mut (args)
@@ -581,7 +622,29 @@
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
               (convert-ast (ast-list-last args (AstInt 0))))))
-        None))
+        (if (ast-has-at-least args 2)
+          (Some
+            (Expr
+              (ELetMut
+                n
+                (convert-ast (ast-nth args 1 (AstInt 0)))
+                (Expr (EAtom (AIdent "Unit"))))))
+          None)))
+    (AList blist
+      (match blist
+        (Cons bname d9
+          (match bname
+            (AstIdent bn
+              (if (ast-has-at-least args 2)
+                (Some
+                  (Expr
+                    (ELetMut
+                      bn
+                      (convert-ast (ast-nth blist 1 (AstInt 0)))
+                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                None))
+            (d3 None)))
+        (d2 None)))
     (d1 None)))
 
 (defn parse-if (args)
@@ -641,13 +704,27 @@
         (d2 (Pair "___" None))))
     (d1 (Pair "___" None))))
 
+; `ECond` (the node parse-cond used to build directly) has no icnf.zyl/
+; codegen.zyl lowering anywhere — monomorphization.zyl/type_inference.zyl
+; recurse into it, but ic-expr's wildcard default silently drops any
+; unhandled ExprInner shape to a bare (IConst 0). Every `cond` in the
+; entire self-hosted compiler's own source (infer-arg-type-atom's AIdent
+; arm among them) therefore compiled down to a literal "0", discarding
+; the whole clause chain. Desugar to nested `if` here instead, at the
+; source level (same fix already applied to `or`/`and` above) — so every
+; downstream phase only ever sees plain EIf nodes.
 (defn parse-cond (args)
   (if (nil? args)
     None
-    (Some
-      (Expr
-        (ECond
-          (parse-cond-clauses (AList args)))))))
+    (Some (cond-fold (parse-cond-clauses (AList args))))))
+
+(defn cond-fold (clauses)
+  (match clauses
+    (Nil (Expr (EAtom ANil)))
+    (Cons c rest
+      (match c
+        (Pair test body
+          (Expr (EIf test body (cond-fold rest))))))))
 
 ; `or`/`and` aren't recognized as builtins anywhere in codegen (Rust or
 ; self-hosted) — desugar to nested `if` here instead, at the SOURCE
@@ -1031,15 +1108,6 @@
   (if (nil? args)
     None
     (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AstInt 0))))))))
-
-(defn parse-buf-append (args)
-  (if (ast-has-at-least args 2)
-    (Some
-      (Expr
-        (EBufAppend
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-nth args 1 (AstInt 0))))))
-    None))
 
 (defn parse-test-property (args)
   (Some (Expr (ETestProperty "___" (GenInt) (Expr (EAtom ANil))))))

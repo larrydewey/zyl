@@ -136,6 +136,16 @@ def file_to_structural(filepath):
 
 files = [
     'stdlib/core/option.zyl',
+    # `Result`/`Ok`/`Err` (type_inference.zyl's catch-error/infer-expr-body
+    # match on these) used to be entirely absent from this bundle — with no
+    # deftype declaring them, vt-tag-of returned -1 for BOTH `Ok` and `Err`,
+    # so cg-arm-match's wildcard handling (tag == -1) treated both match
+    # arms as unconditional wildcards and only the FIRST ("Ok") ever fired,
+    # regardless of the actual value. Every catch-error call site blindly
+    # read field+8 off of whatever catch-error returned as if it were
+    # always `Ok`, segfaulting the instant an `Err` (or anything else) came
+    # back.
+    'stdlib/core/result.zyl',
     'stdlib/core/list.zyl',
     'stdlib/allocator/allocator.zyl',
     'stdlib/compiler/ast.zyl',
