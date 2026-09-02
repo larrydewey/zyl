@@ -268,11 +268,16 @@
       (let st4 (cg-emit st3 "]")
         (cg-nl st4)))))
 
-; P1 note: kept for parity with previous behavior; flagged for hardening.
+; Fallback for a name that's neither a bound slot nor a known function —
+; e.g. the bare (undefined) identifier `nil` used pervasively across this
+; codebase as a discarded/placeholder value. Used to emit "mov rax, [rbp"
+; + literal 0 + "]" — i.e. the bare text "[rbp0]", which GAS parses as a
+; reference to an undefined symbol named `rbp0` (no register+immediate
+; syntax without a +/- between them), not as [rbp+0]. A plain immediate
+; load avoids the memory-operand text construction entirely, matching
+; what the Rust bootstrap already does for the same case.
 (defn cg-load-unresolved (st)
-  (let st2 (cg-emit st "    mov rax, [rbp")
-    (let st3 (cg-emit-int st2 0)
-      (cg-nl (cg-emit st3 "]")))))
+  (cg-nl (cg-emit st "    mov rax, 0")))
 
 (defn cg-if-dispatch (st env c t eb)
   (cg-if-labels (cg-label-pair st) env c t eb))

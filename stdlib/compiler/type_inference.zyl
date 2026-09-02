@@ -45,13 +45,19 @@
     (lookup-known-type-binds (ti-known-types inferer) name))
 
 (defn lookup-known-type-binds (binds name)
+    ; was `((TB k v) rest body)` — the Cons-cell nested-head-plus-tail-
+    ; binding sugar the self-hosted parser drops the tail binding for
+    ; (only its simpler 2-element sibling form works); sequential
+    ; matches sidestep it (same fix as type_system.zyl's *-binds helpers).
     (match binds
         (Nil None)
-        ((TB k v) rest
-            (if
-                (= k name)
-                (Some v)
-                (lookup-known-type-binds rest name)))))
+        (Cons hd rest
+            (match hd
+                (TB k v
+                    (if
+                        (= k name)
+                        (Some v)
+                        (lookup-known-type-binds rest name)))))))
 
 (defn insert-known-type (inferer name typ)
     (TypeInferer
@@ -77,13 +83,16 @@
     (lookup-fn-sigs-binds (ti-known-fns inferer) name))
 
 (defn lookup-fn-sigs-binds (sigs name)
+    ; same Cons-cell nested-head-plus-tail-binding bug as above.
     (match sigs
         (Nil Nil)
-        ((FNS n params) rest
-            (if
-                (= n name)
-                params
-                (lookup-fn-sigs-binds rest name)))))
+        (Cons hd rest
+            (match hd
+                (FNS n params
+                    (if
+                        (= n name)
+                        params
+                        (lookup-fn-sigs-binds rest name)))))))
 
 (defn insert-known-fn (inferer name params)
     (TypeInferer
@@ -109,13 +118,16 @@
     (lookup-ret-binds (ti-func-returns inferer) name))
 
 (defn lookup-ret-binds (binds name)
+    ; same Cons-cell nested-head-plus-tail-binding bug as above.
     (match binds
         (Nil None)
-        ((FR k v) rest
-            (if
-                (= k name)
-                (Some v)
-                (lookup-ret-binds rest name)))))
+        (Cons hd rest
+            (match hd
+                (FR k v
+                    (if
+                        (= k name)
+                        (Some v)
+                        (lookup-ret-binds rest name)))))))
 
 (defn insert-fn-ret (inferer name typ)
     (TypeInferer
@@ -141,13 +153,16 @@
     (lookup-adt-binds (ti-adt-defs inferer) name))
 
 (defn lookup-adt-binds (binds name)
+    ; same Cons-cell nested-head-plus-tail-binding bug as above.
     (match binds
         (Nil Nil)
-        ((AD n variants) rest
-            (if
-                (= n name)
-                variants
-                (lookup-adt-binds rest name)))))
+        (Cons hd rest
+            (match hd
+                (AD n variants
+                    (if
+                        (= n name)
+                        variants
+                        (lookup-adt-binds rest name)))))))
 
 (defn insert-adt-def (inferer name variants)
     (TypeInferer
@@ -173,13 +188,16 @@
     (lookup-vta-binds (ti-variant-to-adt inferer) variant))
 
 (defn lookup-vta-binds (binds variant)
+    ; same Cons-cell nested-head-plus-tail-binding bug as above.
     (match binds
         (Nil None)
-        ((TB k v) rest
-            (if
-                (= k variant)
-                (Some v)
-                (lookup-vta-binds rest variant)))))
+        (Cons hd rest
+            (match hd
+                (TB k v
+                    (if
+                        (= k variant)
+                        (Some v)
+                        (lookup-vta-binds rest variant)))))))
 
 (defn insert-variant-to-adt (inferer variant adt)
     (TypeInferer
@@ -202,28 +220,32 @@
 ; ===========================================================================
 
 (defn lookup-body-cache (inferer key)
-    ; walk body-cache list, threading rest through a rebuilt inferer
+    ; walk body-cache list, threading rest through a rebuilt inferer.
+    ; Was `((BC k v) rest body)` — same Cons-cell nested-head-plus-tail-
+    ; binding bug fixed throughout this file/type_system.zyl.
     (match
         (ti-body-cache inferer)
         (Nil None)
-        ((BC k v) rest
-            (if
-                (= k key)
-                (Some v)
-                (lookup-body-cache
-                    (TypeInferer
-                        (ti-env inferer)
-                        (ti-subst inferer)
-                        (ti-next inferer)
-                        (ti-known-types inferer)
-                        (ti-known-fns inferer)
-                        (ti-func-returns inferer)
-                        (ti-adt-defs inferer)
-                        (ti-variant-to-adt inferer)
-                        (ti-string-match-vars inferer)
-                        (ti-inferring-fns inferer)
-                        rest)
-                    key)))))
+        (Cons hd rest
+            (match hd
+                (BC k v
+                    (if
+                        (= k key)
+                        (Some v)
+                        (lookup-body-cache
+                            (TypeInferer
+                                (ti-env inferer)
+                                (ti-subst inferer)
+                                (ti-next inferer)
+                                (ti-known-types inferer)
+                                (ti-known-fns inferer)
+                                (ti-func-returns inferer)
+                                (ti-adt-defs inferer)
+                                (ti-variant-to-adt inferer)
+                                (ti-string-match-vars inferer)
+                                (ti-inferring-fns inferer)
+                                rest)
+                            key)))))))
 
 (defn insert-body-cache (inferer key typ)
     (TypeInferer
@@ -986,15 +1008,18 @@
             (infer-find-variant-fields variants variant-name))))
 
 (defn infer-find-variant-fields (variants variant-name)
-    ; walk a (List Variant); return the named variant's fields or Nil
+    ; walk a (List Variant); return the named variant's fields or Nil.
+    ; Same Cons-cell nested-head-plus-tail-binding bug fixed elsewhere.
     (match variants
         (Nil
             Nil)
-        ((V n fields) rest
-            (if
-                (= n variant-name)
-                fields
-                (infer-find-variant-fields rest variant-name)))))
+        (Cons hd rest
+            (match hd
+                (V n fields
+                    (if
+                        (= n variant-name)
+                        fields
+                        (infer-find-variant-fields rest variant-name)))))))
 
 (defn inferer-bind-pattern-vars (inferer arm field-types)
     ; bind pattern vars to their field types; recurse over remaining fields
@@ -1272,14 +1297,24 @@
 ; ===========================================================================
 
 (defn infer-expr-set-bang (inferer expr target val)
-    ; target must be a TMut binding; result Unit
+    ; target must be a TMut binding; result Unit. Was
+    ; `(Some (TCap TCMut d23) TUnit)` — nested field position (same
+    ; missing-desugaring issue fixed elsewhere this session).
     (let
         (vt (infer-expr inferer val))
         (match
             (env-get (ti-env inferer) target)
-            (Some (TCap TCMut d23) TUnit)
+            (Some tv (infer-expr-set-bang-check inferer tv))
             (None (inferer-return-var inferer))
             (d1 (inferer-return-var inferer)))))
+
+(defn infer-expr-set-bang-check (inferer tv)
+    (match tv
+        (TCap kind d23
+            (match kind
+                (TCMut TUnit)
+                (d24 (inferer-return-var inferer))))
+        (d25 (inferer-return-var inferer))))
 
 ; ===========================================================================
 ; INFER-EXPR — make-struct
@@ -1495,23 +1530,25 @@
         (match
             known-fns
             (Nil inferer)
-            ((FNS name params) rest
-                (let (ret-type (lookup-fn-ret inferer name))
-                    (let (resolved-params (resolve-param-types inferer params ret-type))
-                        (let (new-inferer (finalize-param-types
-                                            (TypeInferer
-                                                (ti-env inferer)
-                                                (ti-subst inferer)
-                                                (ti-next inferer)
-                                                (ti-known-types inferer)
-                                                resolved-params
-                                                (ti-func-returns inferer)
-                                                (ti-adt-defs inferer)
-                                                (ti-variant-to-adt inferer)
-                                                (ti-string-match-vars inferer)
-                                                (ti-inferring-fns inferer)
-                                                (ti-body-cache inferer))))
-                            new-inferer)))))))
+            (Cons hd rest
+                (match hd
+                    (FNS name params
+                        (let (ret-type (lookup-fn-ret inferer name))
+                            (let (resolved-params (resolve-param-types inferer params ret-type))
+                                (let (new-inferer (finalize-param-types
+                                                    (TypeInferer
+                                                        (ti-env inferer)
+                                                        (ti-subst inferer)
+                                                        (ti-next inferer)
+                                                        (ti-known-types inferer)
+                                                        resolved-params
+                                                        (ti-func-returns inferer)
+                                                        (ti-adt-defs inferer)
+                                                        (ti-variant-to-adt inferer)
+                                                        (ti-string-match-vars inferer)
+                                                        (ti-inferring-fns inferer)
+                                                        (ti-body-cache inferer))))
+                                    new-inferer)))))))))
 
 (defn resolve-param-types (inferer params ret-type)
     ; resolve type vars in param types using return type evidence.
@@ -1524,10 +1561,12 @@
     (match
         params
         (Nil Nil)
-        ((PT name ptype) rest
-            (Cons
-                (PT name (resolve-type-var inferer ptype ret-type))
-                (resolve-param-types inferer rest ret-type)))))
+        (Cons hd rest
+            (match hd
+                (PT name ptype
+                    (Cons
+                        (PT name (resolve-type-var inferer ptype ret-type))
+                        (resolve-param-types inferer rest ret-type)))))))
 
 (defn map-types (inferer types ret-type)
     ; apply return type inference to each param type

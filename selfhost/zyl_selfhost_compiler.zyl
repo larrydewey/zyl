@@ -3581,22 +3581,44 @@
       )
     )
     (
-      AList
+      AList lst
       (
-        Cons name
+        match lst
         (
-          Cons typ rest
-        )
-      )
-      (
-        P
-        (
-          a-ident-to-str name
-        )
-        (
-          Some
+          Cons name tail
           (
-            convert-ast typ
+            match tail
+            (
+              Cons typ rest
+              (
+                P
+                (
+                  a-ident-to-str name
+                )
+                (
+                  Some
+                  (
+                    convert-ast typ
+                  )
+                )
+              )
+            )
+            (
+              d2
+              (
+                P
+                "___"
+                None
+              )
+            )
+          )
+        )
+        (
+          d3
+          (
+            P
+            "___"
+            None
           )
         )
       )
@@ -3725,17 +3747,28 @@
       )
     )
     (
-      AList
+      AList lst
       (
-        Cons name rest
-      )
-      (
-        AV
+        match lst
         (
-          a-ident-to-str name
+          Cons name rest
+          (
+            AV
+            (
+              a-ident-to-str name
+            )
+            (
+              parse-field-names rest
+            )
+          )
         )
         (
-          parse-field-names rest
+          d2
+          (
+            AV
+            "___"
+            Nil
+          )
         )
       )
     )
@@ -4130,32 +4163,43 @@
       )
     )
     (
-      AList
+      AList lst
       (
-        Cons name rest
-      )
-      (
-        Pair
+        match lst
         (
-          a-ident-to-str name
-        )
-        (
-          if
+          Cons name rest
           (
-            nil? rest
-          )
-          None
-          (
-            Some
+            Pair
             (
-              convert-ast
+              a-ident-to-str name
+            )
+            (
+              if
               (
-                ast-list-last rest
+                nil? rest
+              )
+              None
+              (
+                Some
                 (
-                  AstInt 0
+                  convert-ast
+                  (
+                    ast-list-last rest
+                    (
+                      AstInt 0
+                    )
+                  )
                 )
               )
             )
+          )
+        )
+        (
+          d2
+          (
+            Pair
+            "___"
+            None
           )
         )
       )
@@ -4624,29 +4668,88 @@
         (
           Cons pattern rest
           (
-            MA
+            match pattern
             (
-              match pattern
+              AstIdent n
               (
-                AstIdent n n
-              )
-              (
-                d1
-                "___"
-              )
-            )
-            (
-              convert-ast-list
-              (
-                ast-list-butlast rest
-              )
-            )
-            (
-              convert-ast
-              (
-                ast-list-last rest
+                MA
+                n
                 (
-                  AstInt 0
+                  convert-ast-list
+                  (
+                    ast-list-butlast rest
+                  )
+                )
+                (
+                  convert-ast
+                  (
+                    ast-list-last rest
+                    (
+                      AstInt 0
+                    )
+                  )
+                )
+              )
+            )
+            (
+              AList pkids
+              (
+                match pkids
+                (
+                  Cons vname vfields
+                  (
+                    MA
+                    (
+                      match vname
+                      (
+                        AstIdent n2 n2
+                      )
+                      (
+                        d2
+                        "___"
+                      )
+                    )
+                    (
+                      convert-ast-list vfields
+                    )
+                    (
+                      convert-ast
+                      (
+                        ast-list-last rest
+                        (
+                          AstInt 0
+                        )
+                      )
+                    )
+                  )
+                )
+                (
+                  d3
+                  (
+                    MA
+                    "___"
+                    Nil
+                    (
+                      Expr
+                      (
+                        EAtom ANil
+                      )
+                    )
+                  )
+                )
+              )
+            )
+            (
+              d1
+              (
+                MA
+                "___"
+                Nil
+                (
+                  Expr
+                  (
+                    EAtom ANil
+                  )
                 )
               )
             )
@@ -4655,7 +4758,7 @@
       )
     )
     (
-      d1
+      d4
       (
         MA
         "___"
@@ -8538,519 +8641,6 @@
 )
 ; ---------- stdlib/compiler/resolver.zyl ----------
 (
-  defn str-eq-cstr
-  (
-    a b
-  )
-  (
-    =
-    (
-      ffi-call
-      "strcmp"
-      a b 1000
-    )
-    0
-  )
-)
-(
-  defn str-in-list
-  (
-    name xs
-  )
-  (
-    match xs
-    (
-      Nil 0
-    )
-    (
-      Cons h1 tl
-      (
-        if
-        (
-          str-eq-cstr name h1
-        )
-        1
-        (
-          str-in-list name tl
-        )
-      )
-    )
-  )
-)
-(
-  defn form-head-name
-  (
-    form
-  )
-  (
-    match form
-    (
-      AList kids
-      (
-        match kids
-        (
-          Cons hd tl
-          (
-            match hd
-            (
-              AstIdent nm nm
-            )
-            (
-              dh
-              ""
-            )
-          )
-        )
-        (
-          dk
-          ""
-        )
-      )
-    )
-    (
-      df
-      ""
-    )
-  )
-)
-(
-  defn second-ident-in
-  (
-    kids
-  )
-  (
-    match kids
-    (
-      Cons hd tl
-      (
-        match tl
-        (
-          Cons p1 r1
-          (
-            match p1
-            (
-              AstIdent nm nm
-            )
-            (
-              dp
-              ""
-            )
-          )
-        )
-        (
-          dr
-          ""
-        )
-      )
-    )
-    (
-      dn
-      ""
-    )
-  )
-)
-(
-  defn form-second-ident
-  (
-    form
-  )
-  (
-    match form
-    (
-      AList kids
-      (
-        second-ident-in kids
-      )
-    )
-    (
-      df2
-      ""
-    )
-  )
-)
-(
-  defn use-module-name
-  (
-    form
-  )
-  (
-    if
-    (
-      str-eq-cstr
-      (
-        form-head-name form
-      )
-      "use"
-    )
-    (
-      form-second-ident form
-    )
-    ""
-  )
-)
-(
-  defn def-binding-name
-  (
-    item
-  )
-  (
-    let head
-    (
-      form-head-name item
-    )
-    (
-      if
-      (
-        str-eq-cstr head
-        "defn"
-      )
-      (
-        form-second-ident item
-      )
-      (
-        if
-        (
-          str-eq-cstr head
-          "def"
-        )
-        (
-          form-second-ident item
-        )
-        ""
-      )
-    )
-  )
-)
-(
-  defn file-exists
-  (
-    path
-  )
-  (
-    let fd
-    (
-      file-open path
-      "r"
-    )
-    (
-      if
-      (
-        > fd 0
-      )
-      (
-        begin
-        (
-          file-close fd
-        )
-        1
-      )
-      0
-    )
-  )
-)
-(
-  defn find-dep-path
-  (
-    arena name
-  )
-  (
-    let buf
-    (
-      arena-alloc-zeroed arena 512
-    )
-    (
-      begin
-      (
-        buf-append buf name
-      )
-      (
-        buf-append buf
-        ".zyl"
-      )
-      (
-        if
-        (
-          =
-          (
-            file-exists buf
-          )
-          1
-        )
-        buf
-        (
-          let buf2
-          (
-            arena-alloc-zeroed arena 640
-          )
-          (
-            begin
-            (
-              buf-append buf2
-              "stdlib/"
-            )
-            (
-              buf-append buf2 name
-            )
-            (
-              buf-append buf2
-              ".zyl"
-            )
-            (
-              if
-              (
-                =
-                (
-                  file-exists buf2
-                )
-                1
-              )
-              buf2
-              ""
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn read-file-src
-  (
-    path
-  )
-  (
-    let fd
-    (
-      file-open path
-      "r"
-    )
-    (
-      if
-      (
-        > fd 0
-      )
-      (
-        let src
-        (
-          file-read fd 1048576
-        )
-        (
-          begin
-          (
-            file-close fd
-          )
-          src
-        )
-      )
-      ""
-    )
-  )
-)
-(
-  defn collect-use-names
-  (
-    items acc
-  )
-  (
-    match items
-    (
-      Nil acc
-    )
-    (
-      Cons item rest
-      (
-        let nm
-        (
-          use-module-name item
-        )
-        (
-          if
-          (
-            >
-            (
-              alloc-strlen nm
-            )
-            0
-          )
-          (
-            collect-use-names rest
-            (
-              Cons nm acc
-            )
-          )
-          (
-            collect-use-names rest acc
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn has-core-use
-  (
-    names
-  )
-  (
-    match names
-    (
-      Nil 0
-    )
-    (
-      Cons h1 tl
-      (
-        if
-        (
-          str-eq-cstr h1
-          "core/core"
-        )
-        1
-        (
-          if
-          (
-            str-eq-cstr h1
-            "core/option"
-          )
-          1
-          (
-            if
-            (
-              str-eq-cstr h1
-              "core/result"
-            )
-            1
-            (
-              has-core-use tl
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn drop-use-forms
-  (
-    items acc
-  )
-  (
-    match items
-    (
-      Nil
-      (
-        list-reverse acc
-      )
-    )
-    (
-      Cons item rest
-      (
-        if
-        (
-          >
-          (
-            alloc-strlen
-            (
-              use-module-name item
-            )
-          )
-          0
-        )
-        (
-          drop-use-forms rest acc
-        )
-        (
-          drop-use-forms rest
-          (
-            Cons item acc
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn collect-def-names
-  (
-    items acc
-  )
-  (
-    match items
-    (
-      Nil
-      (
-        list-reverse acc
-      )
-    )
-    (
-      Cons item rest
-      (
-        let nm
-        (
-          def-binding-name item
-        )
-        (
-          if
-          (
-            >
-            (
-              alloc-strlen nm
-            )
-            0
-          )
-          (
-            collect-def-names rest
-            (
-              Cons nm acc
-            )
-          )
-          (
-            collect-def-names rest acc
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn drop-shadowed
-  (
-    items shadows acc
-  )
-  (
-    match items
-    (
-      Nil
-      (
-        list-reverse acc
-      )
-    )
-    (
-      Cons item rest
-      (
-        let nm
-        (
-          def-binding-name item
-        )
-        (
-          if
-          (
-            str-in-list nm shadows
-          )
-          (
-            drop-shadowed rest shadows acc
-          )
-          (
-            drop-shadowed rest shadows
-            (
-              Cons item acc
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
   defn shd
   (
     xs
@@ -9078,264 +8668,6 @@
     )
     (
       Nil Nil
-    )
-  )
-)
-(
-  defn module-items-for
-  (
-    name mod-items
-  )
-  (
-    match mod-items
-    (
-      Nil Nil
-    )
-    (
-      Cons
-      (
-        Cons nm its
-      )
-      rest
-      (
-        if
-        (
-          str-eq-cstr name nm
-        )
-        its
-        (
-          module-items-for name rest
-        )
-      )
-    )
-  )
-)
-(
-  defn resolve-program
-  (
-    arena items
-  )
-  (
-    let uses0
-    (
-      list-reverse
-      (
-        collect-use-names items Nil
-      )
-    )
-    (
-      let todo0
-      (
-        if
-        (
-          =
-          (
-            has-core-use uses0
-          )
-          0
-        )
-        (
-          Cons
-          "core/core"
-          uses0
-        )
-        uses0
-      )
-      (
-        begin
-        (
-          let-mut todo todo0
-        )
-        (
-          let-mut seen Nil
-        )
-        (
-          let-mut done-names Nil
-        )
-        (
-          let-mut mod-items Nil
-        )
-        (
-          while
-          (
-            not
-            (
-              is-nil todo
-            )
-          )
-          (
-            begin
-            (
-              let name
-              (
-                shd todo
-              )
-              (
-                begin
-                (
-                  set! todo
-                  (
-                    stl todo
-                  )
-                )
-                (
-                  if
-                  (
-                    =
-                    (
-                      str-in-list name seen
-                    )
-                    0
-                  )
-                  (
-                    begin
-                    (
-                      set! seen
-                      (
-                        Cons name seen
-                      )
-                    )
-                    (
-                      let path
-                      (
-                        find-dep-path arena name
-                      )
-                      (
-                        if
-                        (
-                          >
-                          (
-                            alloc-strlen path
-                          )
-                          0
-                        )
-                        (
-                          begin
-                          (
-                            let src
-                            (
-                              read-file-src path
-                            )
-                          )
-                          (
-                            let its
-                            (
-                              zyl-parse arena src
-                            )
-                          )
-                          (
-                            begin
-                            (
-                              set! todo
-                              (
-                                list-append
-                                (
-                                  collect-use-names its Nil
-                                )
-                                todo
-                              )
-                            )
-                            (
-                              set! mod-items
-                              (
-                                Cons
-                                (
-                                  Cons name its
-                                )
-                                mod-items
-                              )
-                            )
-                            (
-                              set! done-names
-                              (
-                                Cons name done-names
-                              )
-                            )
-                          )
-                        )
-                      )
-                      (
-                        begin
-                        (
-                          print
-                          "zylc: module not found:"
-                        )
-                        (
-                          print name
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-        (
-          let-mut emitted Nil
-        )
-        (
-          let-mut dn
-          (
-            list-reverse done-names
-          )
-        )
-        (
-          while
-          (
-            not
-            (
-              is-nil dn
-            )
-          )
-          (
-            begin
-            (
-              let nm
-              (
-                shd dn
-              )
-              (
-                begin
-                (
-                  set! emitted
-                  (
-                    list-append emitted
-                    (
-                      module-items-for nm mod-items
-                    )
-                  )
-                )
-                (
-                  set! dn
-                  (
-                    stl dn
-                  )
-                )
-              )
-            )
-          )
-        )
-        (
-          let body
-          (
-            drop-use-forms items Nil
-          )
-        )
-        (
-          let shadows
-          (
-            collect-def-names body Nil
-          )
-        )
-        (
-          list-append
-          (
-            drop-shadowed emitted shadows Nil
-          )
-          body
-        )
-      )
     )
   )
 )
@@ -9580,20 +8912,23 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        EB k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k name
-        )
-        (
-          Some v
-        )
-        (
-          env-get-binds rest name
+          EB k v
+          (
+            if
+            (
+              = k name
+            )
+            (
+              Some v
+            )
+            (
+              env-get-binds rest name
+            )
+          )
         )
       )
     )
@@ -9938,20 +9273,23 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        TB k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k n
-        )
-        (
-          Some v
-        )
-        (
-          subst-lookup-binds rest n
+          TB k v
+          (
+            if
+            (
+              = k n
+            )
+            (
+              Some v
+            )
+            (
+              subst-lookup-binds rest n
+            )
+          )
         )
       )
     )
@@ -10151,18 +9489,16 @@
   (
     match p
     (
-      Pair
+      Pair first d3
       (
-        Some a
+        match first
+        (
+          Some a a
+        )
+        (
+          None 0
+        )
       )
-      d3 a
-    )
-    (
-      Pair
-      (
-        None
-      )
-      d4 0
     )
   )
 )
@@ -10206,58 +9542,6 @@
   )
   (
     subst-apply-type s t
-  )
-)
-(
-  defn subst-union
-  (
-    s1 s2
-  )
-  (
-    match
-    (
-      SBindings.binds s1
-    )
-    (
-      Nil s2
-    )
-    (
-      (
-        TB n t
-      )
-      rest
-      (
-        let
-        (
-          (
-            t2
-            (
-              subst-apply s2 t
-            )
-          )
-        )
-        (
-          let
-          (
-            (
-              new-s
-              (
-                subst-insert
-                (
-                  subst-union
-                  (
-                    Subst rest
-                  )
-                  s2
-                )
-                n t2
-              )
-            )
-          )
-          new-s
-        )
-      )
-    )
   )
 )
 (
@@ -10463,265 +9747,371 @@
     s t1 t2
   )
   (
-    match
+    match t1
     (
-      Pair t1 t2
-    )
-    (
-      (
-        Pair TInt TInt
-      )
-      (
-        UOk s
-      )
-    )
-    (
-      (
-        Pair TFloat TFloat
-      )
-      (
-        UOk s
-      )
-    )
-    (
-      (
-        Pair TBool TBool
-      )
-      (
-        UOk s
-      )
-    )
-    (
-      (
-        Pair TString TString
-      )
-      (
-        UOk s
-      )
-    )
-    (
-      (
-        Pair TUnit TUnit
-      )
-      (
-        UOk s
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TFun args1
-        )
-        (
-          TFun args2
-        )
-      )
-      (
-        if
-        (
-          =
-          (
-            list-length args1
-          )
-          (
-            list-length args2
-          )
-        )
-        (
-          unify-args s args1 args2
-        )
-        (
-          UErr
-          "Function arity mismatch"
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TList e1
-        )
-        (
-          TList e2
-        )
-      )
-      (
-        unify s e1 e2
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TArray e1 l1
-        )
-        (
-          TArray e2 l2
-        )
-      )
-      (
-        if
-        (
-          = l1 l2
-        )
-        (
-          unify s e1 e2
-        )
-        (
-          UErr
-          "Array length mismatch"
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TCap k1 a
-        )
-        (
-          TCap k2 b
-        )
-      )
-      (
-        if
-        (
-          = k1 k2
-        )
-        (
-          unify s a b
-        )
-        (
-          UErr
-          "Capability kind mismatch"
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TStruct n1 fs1
-        )
-        (
-          TStruct n2 fs2
-        )
-      )
-      (
-        if
-        (
-          = n1 n2
-        )
-        (
-          if
-          (
-            =
-            (
-              list-length fs1
-            )
-            (
-              list-length fs2
-            )
-          )
-          (
-            unify-args s fs1 fs2
-          )
-          (
-            UErr
-            "Struct field count mismatch"
-          )
-        )
-        (
-          UErr
-          "Struct name mismatch"
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TMap k1 v1
-        )
-        (
-          TMap k2 v2
-        )
-      )
-      (
-        match
-        (
-          unify s k1 k2
-        )
-        (
-          UOk sx
-          (
-            unify sx v1 v2
-          )
-        )
-        (
-          UErr e
-          (
-            UErr e
-          )
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TResult e1 h1
-        )
-        (
-          TResult e2 h2
-        )
-      )
-      (
-        match
-        (
-          unify s e1 e2
-        )
-        (
-          UOk sx
-          (
-            unify sx h1 h2
-          )
-        )
-        (
-          UErr e
-          (
-            UErr e
-          )
-        )
-      )
-    )
-    (
-      (
-        Pair
-        (
-          TVar n d5
-        )
-        d6
-      )
+      TVar n d5
       (
         unify-var s n t2
       )
     )
     (
+      d10
       (
-        Pair d7
-        (
-          TVar n d8
-        )
+        unify-terms-not-tvar1 s t1 t2
       )
+    )
+  )
+)
+(
+  defn unify-terms-not-tvar1
+  (
+    s t1 t2
+  )
+  (
+    match t2
+    (
+      TVar n d8
       (
         unify-var s n t1
       )
     )
     (
-      d1
+      d11
+      (
+        unify-terms-concrete s t1 t2
+      )
+    )
+  )
+)
+(
+  defn unify-terms-concrete
+  (
+    s t1 t2
+  )
+  (
+    match t1
+    (
+      TInt
+      (
+        match t2
+        (
+          TInt
+          (
+            UOk s
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TFloat
+      (
+        match t2
+        (
+          TFloat
+          (
+            UOk s
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TBool
+      (
+        match t2
+        (
+          TBool
+          (
+            UOk s
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TString
+      (
+        match t2
+        (
+          TString
+          (
+            UOk s
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TUnit
+      (
+        match t2
+        (
+          TUnit
+          (
+            UOk s
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TFun args1
+      (
+        match t2
+        (
+          TFun args2
+          (
+            if
+            (
+              =
+              (
+                list-length args1
+              )
+              (
+                list-length args2
+              )
+            )
+            (
+              unify-args s args1 args2
+            )
+            (
+              UErr
+              "Function arity mismatch"
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TList e1
+      (
+        match t2
+        (
+          TList e2
+          (
+            unify s e1 e2
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TArray e1 l1
+      (
+        match t2
+        (
+          TArray e2 l2
+          (
+            if
+            (
+              = l1 l2
+            )
+            (
+              unify s e1 e2
+            )
+            (
+              UErr
+              "Array length mismatch"
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TCap k1 a
+      (
+        match t2
+        (
+          TCap k2 b
+          (
+            if
+            (
+              = k1 k2
+            )
+            (
+              unify s a b
+            )
+            (
+              UErr
+              "Capability kind mismatch"
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TStruct n1 fs1
+      (
+        match t2
+        (
+          TStruct n2 fs2
+          (
+            if
+            (
+              = n1 n2
+            )
+            (
+              if
+              (
+                =
+                (
+                  list-length fs1
+                )
+                (
+                  list-length fs2
+                )
+              )
+              (
+                unify-args s fs1 fs2
+              )
+              (
+                UErr
+                "Struct field count mismatch"
+              )
+            )
+            (
+              UErr
+              "Struct name mismatch"
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TMap k1 v1
+      (
+        match t2
+        (
+          TMap k2 v2
+          (
+            match
+            (
+              unify s k1 k2
+            )
+            (
+              UOk sx
+              (
+                unify sx v1 v2
+              )
+            )
+            (
+              UErr e
+              (
+                UErr e
+              )
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      TResult e1 h1
+      (
+        match t2
+        (
+          TResult e2 h2
+          (
+            match
+            (
+              unify s e1 e2
+            )
+            (
+              UOk sx
+              (
+                unify sx h1 h2
+              )
+            )
+            (
+              UErr e
+              (
+                UErr e
+              )
+            )
+          )
+        )
+        (
+          d1
+          (
+            UErr
+            "Type mismatch"
+          )
+        )
+      )
+    )
+    (
+      d2
       (
         UErr
         "Type mismatch"
@@ -10772,48 +10162,58 @@
     s args1 args2
   )
   (
-    match
+    match args1
     (
-      Pair args1 args2
-    )
-    (
-      Pair Nil Nil
+      Nil
       (
-        UOk s
-      )
-    )
-    (
-      Pair
-      (
-        Cons h1 t1
-      )
-      (
-        Cons h2 t2
-      )
-      (
-        match
+        match args2
         (
-          unify s h1 h2
-        )
-        (
-          UOk sx
+          Nil
           (
-            unify-args sx t1 t2
+            UOk s
           )
         )
         (
-          UErr e
+          d1
           (
-            UErr e
+            UErr
+            "argument count mismatch"
           )
         )
       )
     )
     (
-      d1
+      Cons h1 t1
       (
-        UErr
-        "argument count mismatch"
+        match args2
+        (
+          Cons h2 t2
+          (
+            match
+            (
+              unify s h1 h2
+            )
+            (
+              UOk sx
+              (
+                unify-args sx t1 t2
+              )
+            )
+            (
+              UErr e
+              (
+                UErr e
+              )
+            )
+          )
+        )
+        (
+          d2
+          (
+            UErr
+            "argument count mismatch"
+          )
+        )
       )
     )
   )
@@ -10904,20 +10304,23 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        TB k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k name
-        )
-        (
-          Some v
-        )
-        (
-          lookup-known-type-binds rest name
+          TB k v
+          (
+            if
+            (
+              = k name
+            )
+            (
+              Some v
+            )
+            (
+              lookup-known-type-binds rest name
+            )
+          )
         )
       )
     )
@@ -10995,18 +10398,21 @@
       Nil Nil
     )
     (
+      Cons hd rest
       (
-        FNS n params
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = n name
-        )
-        params
-        (
-          lookup-fn-sigs-binds rest name
+          FNS n params
+          (
+            if
+            (
+              = n name
+            )
+            params
+            (
+              lookup-fn-sigs-binds rest name
+            )
+          )
         )
       )
     )
@@ -11084,20 +10490,23 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        FR k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k name
-        )
-        (
-          Some v
-        )
-        (
-          lookup-ret-binds rest name
+          FR k v
+          (
+            if
+            (
+              = k name
+            )
+            (
+              Some v
+            )
+            (
+              lookup-ret-binds rest name
+            )
+          )
         )
       )
     )
@@ -11175,18 +10584,21 @@
       Nil Nil
     )
     (
+      Cons hd rest
       (
-        AD n variants
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = n name
-        )
-        variants
-        (
-          lookup-adt-binds rest name
+          AD n variants
+          (
+            if
+            (
+              = n name
+            )
+            variants
+            (
+              lookup-adt-binds rest name
+            )
+          )
         )
       )
     )
@@ -11264,20 +10676,23 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        TB k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k variant
-        )
-        (
-          Some v
-        )
-        (
-          lookup-vta-binds rest variant
+          TB k v
+          (
+            if
+            (
+              = k variant
+            )
+            (
+              Some v
+            )
+            (
+              lookup-vta-binds rest variant
+            )
+          )
         )
       )
     )
@@ -11345,55 +10760,58 @@
       Nil None
     )
     (
+      Cons hd rest
       (
-        BC k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k key
-        )
-        (
-          Some v
-        )
-        (
-          lookup-body-cache
+          BC k v
           (
-            TypeInferer
+            if
             (
-              ti-env inferer
+              = k key
             )
             (
-              ti-subst inferer
+              Some v
             )
             (
-              ti-next inferer
+              lookup-body-cache
+              (
+                TypeInferer
+                (
+                  ti-env inferer
+                )
+                (
+                  ti-subst inferer
+                )
+                (
+                  ti-next inferer
+                )
+                (
+                  ti-known-types inferer
+                )
+                (
+                  ti-known-fns inferer
+                )
+                (
+                  ti-func-returns inferer
+                )
+                (
+                  ti-adt-defs inferer
+                )
+                (
+                  ti-variant-to-adt inferer
+                )
+                (
+                  ti-string-match-vars inferer
+                )
+                (
+                  ti-inferring-fns inferer
+                )
+                rest
+              )
+              key
             )
-            (
-              ti-known-types inferer
-            )
-            (
-              ti-known-fns inferer
-            )
-            (
-              ti-func-returns inferer
-            )
-            (
-              ti-adt-defs inferer
-            )
-            (
-              ti-variant-to-adt inferer
-            )
-            (
-              ti-string-match-vars inferer
-            )
-            (
-              ti-inferring-fns inferer
-            )
-            rest
           )
-          key
         )
       )
     )
@@ -13368,18 +12786,21 @@
       Nil
     )
     (
+      Cons hd rest
       (
-        V n fields
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = n variant-name
-        )
-        fields
-        (
-          infer-find-variant-fields rest variant-name
+          V n fields
+          (
+            if
+            (
+              = n variant-name
+            )
+            fields
+            (
+              infer-find-variant-fields rest variant-name
+            )
+          )
         )
       )
     )
@@ -14368,11 +13789,10 @@
         target
       )
       (
-        Some
+        Some tv
         (
-          TCap TCMut d23
+          infer-expr-set-bang-check inferer tv
         )
-        TUnit
       )
       (
         None
@@ -14385,6 +13805,36 @@
         (
           inferer-return-var inferer
         )
+      )
+    )
+  )
+)
+(
+  defn infer-expr-set-bang-check
+  (
+    inferer tv
+  )
+  (
+    match tv
+    (
+      TCap kind d23
+      (
+        match kind
+        (
+          TCMut TUnit
+        )
+        (
+          d24
+          (
+            inferer-return-var inferer
+          )
+        )
+      )
+    )
+    (
+      d25
+      (
+        inferer-return-var inferer
       )
     )
   )
@@ -14865,69 +14315,72 @@
         Nil inferer
       )
       (
+        Cons hd rest
         (
-          FNS name params
-        )
-        rest
-        (
-          let
+          match hd
           (
-            ret-type
-            (
-              lookup-fn-ret inferer name
-            )
-          )
-          (
-            let
-            (
-              resolved-params
-              (
-                resolve-param-types inferer params ret-type
-              )
-            )
+            FNS name params
             (
               let
               (
-                new-inferer
+                ret-type
                 (
-                  finalize-param-types
-                  (
-                    TypeInferer
-                    (
-                      ti-env inferer
-                    )
-                    (
-                      ti-subst inferer
-                    )
-                    (
-                      ti-next inferer
-                    )
-                    (
-                      ti-known-types inferer
-                    )
-                    resolved-params
-                    (
-                      ti-func-returns inferer
-                    )
-                    (
-                      ti-adt-defs inferer
-                    )
-                    (
-                      ti-variant-to-adt inferer
-                    )
-                    (
-                      ti-string-match-vars inferer
-                    )
-                    (
-                      ti-inferring-fns inferer
-                    )
-                    (
-                      ti-body-cache inferer
-                    )
-                  )
+                  lookup-fn-ret inferer name
                 )
               )
-              new-inferer
+              (
+                let
+                (
+                  resolved-params
+                  (
+                    resolve-param-types inferer params ret-type
+                  )
+                )
+                (
+                  let
+                  (
+                    new-inferer
+                    (
+                      finalize-param-types
+                      (
+                        TypeInferer
+                        (
+                          ti-env inferer
+                        )
+                        (
+                          ti-subst inferer
+                        )
+                        (
+                          ti-next inferer
+                        )
+                        (
+                          ti-known-types inferer
+                        )
+                        resolved-params
+                        (
+                          ti-func-returns inferer
+                        )
+                        (
+                          ti-adt-defs inferer
+                        )
+                        (
+                          ti-variant-to-adt inferer
+                        )
+                        (
+                          ti-string-match-vars inferer
+                        )
+                        (
+                          ti-inferring-fns inferer
+                        )
+                        (
+                          ti-body-cache inferer
+                        )
+                      )
+                    )
+                  )
+                  new-inferer
+                )
+              )
             )
           )
         )
@@ -14947,20 +14400,23 @@
       Nil Nil
     )
     (
+      Cons hd rest
       (
-        PT name ptype
-      )
-      rest
-      (
-        Cons
+        match hd
         (
-          PT name
+          PT name ptype
           (
-            resolve-type-var inferer ptype ret-type
+            Cons
+            (
+              PT name
+              (
+                resolve-type-var inferer ptype ret-type
+              )
+            )
+            (
+              resolve-param-types inferer rest ret-type
+            )
           )
-        )
-        (
-          resolve-param-types inferer rest ret-type
         )
       )
     )
@@ -15637,18 +15093,21 @@
       Nil default
     )
     (
+      Cons hd rest
       (
-        MK k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k key
-        )
-        v
-        (
-          kv-get rest key default
+          MK k v
+          (
+            if
+            (
+              = k key
+            )
+            v
+            (
+              kv-get rest key default
+            )
+          )
         )
       )
     )
@@ -15672,29 +15131,32 @@
       )
     )
     (
+      Cons hd rest
       (
-        MK k v
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k key
-        )
-        (
-          Cons
+          MK k v
           (
-            MK key val
-          )
-          rest
-        )
-        (
-          Cons
-          (
-            MK k v
-          )
-          (
-            kv-set rest key val
+            if
+            (
+              = k key
+            )
+            (
+              Cons
+              (
+                MK key val
+              )
+              rest
+            )
+            (
+              Cons
+              (
+                MK k v
+              )
+              (
+                kv-set rest key val
+              )
+            )
           )
         )
       )
@@ -15712,18 +15174,21 @@
       Nil false
     )
     (
+      Cons hd rest
       (
-        MK k d1
-      )
-      rest
-      (
-        if
+        match hd
         (
-          = k key
-        )
-        true
-        (
-          kv-contains rest key
+          MK k d1
+          (
+            if
+            (
+              = k key
+            )
+            true
+            (
+              kv-contains rest key
+            )
+          )
         )
       )
     )
@@ -18767,14 +18232,17 @@
       Nil Nil
     )
     (
+      Cons hd rest
       (
-        MK k d24
-      )
-      rest
-      (
-        Cons k
+        match hd
         (
-          kv-keys rest
+          MK k d24
+          (
+            Cons k
+            (
+              kv-keys rest
+            )
+          )
         )
       )
     )
@@ -21356,23 +20824,10 @@
     st
   )
   (
-    let st2
+    cg-nl
     (
       cg-emit st
-      "    mov rax, [rbp"
-    )
-    (
-      let st3
-      (
-        cg-emit-int st2 0
-      )
-      (
-        cg-nl
-        (
-          cg-emit st3
-          "]"
-        )
-      )
+      "    mov rax, 0"
     )
   )
 )
@@ -25254,2656 +24709,6 @@
     )
     (
       Nil Nil
-    )
-  )
-)
-; ---------- stdlib/compiler/region_inference.zyl ----------
-(
-  deftype Region RStack RHeap RGlobal RCircular RPin
-)
-(
-  deftype RegionCaptureInfo
-  (
-    RCI
-    (
-      List String
-    )
-    (
-      List
-      (
-        Pair String Region
-      )
-    )
-  )
-)
-(
-  deftype RE
-  (
-    RE
-    (
-      List RegionBind
-    )
-    (
-      List
-      (
-        List RegionBind
-      )
-    )
-  )
-)
-(
-  deftype RegionBind
-  (
-    RB String Region Bool
-  )
-)
-(
-  defn RegionEnv
-  (
-    cur parents
-  )
-  (
-    RE cur parents
-  )
-)
-(
-  defn RE.cur
-  (
-    self
-  )
-  (
-    match self
-    (
-      (
-        RE c d1
-      )
-      c
-    )
-  )
-)
-(
-  defn RE.parens
-  (
-    self
-  )
-  (
-    match self
-    (
-      (
-        RE d2 p
-      )
-      p
-    )
-  )
-)
-(
-  deftype RegionResult
-  (
-    RR Region
-    (
-      Option RegionCaptureInfo
-    )
-  )
-)
-(
-  defn RR.reg
-  (
-    r
-  )
-  (
-    match r
-    (
-      RR reg d1 reg
-    )
-  )
-)
-(
-  defn RR.capture
-  (
-    r
-  )
-  (
-    match r
-    (
-      RR d1 c c
-    )
-  )
-)
-(
-  deftype RegionInferer
-  (
-    RI RegionEnv
-    (
-      List StructRegion
-    )
-    (
-      List FuncSig
-    )
-  )
-)
-(
-  defn RI.env
-  (
-    ri
-  )
-  (
-    match ri
-    (
-      RI e d1 d2 e
-    )
-  )
-)
-(
-  defn RI.sr
-  (
-    ri
-  )
-  (
-    match ri
-    (
-      RI d1 s d2 s
-    )
-  )
-)
-(
-  defn RI.fs
-  (
-    ri
-  )
-  (
-    match ri
-    (
-      RI d1 d2 f f
-    )
-  )
-)
-(
-  deftype StructRegion
-  (
-    SR String
-    (
-      List VariantRegion
-    )
-  )
-)
-(
-  defn SR.name
-  (
-    sr
-  )
-  (
-    match sr
-    (
-      SR n d1 n
-    )
-  )
-)
-(
-  defn SR.variants
-  (
-    sr
-  )
-  (
-    match sr
-    (
-      SR d1 v v
-    )
-  )
-)
-(
-  deftype VariantRegion
-  (
-    VR String
-    (
-      List FieldRegion
-    )
-  )
-)
-(
-  deftype FieldRegion
-  (
-    FldR String Region
-  )
-)
-(
-  deftype FuncSig
-  (
-    FS String
-    (
-      List Region
-    )
-    Region
-  )
-)
-(
-  defn FS.name
-  (
-    fs
-  )
-  (
-    match fs
-    (
-      FS n d1 d2 n
-    )
-  )
-)
-(
-  defn FS.params
-  (
-    fs
-  )
-  (
-    match fs
-    (
-      FS d1 p d2 p
-    )
-  )
-)
-(
-  defn FS.ret
-  (
-    fs
-  )
-  (
-    match fs
-    (
-      FS d1 d2 r r
-    )
-  )
-)
-(
-  defn env-new
-  (
-  )
-  (
-    RE Nil Nil
-  )
-)
-(
-  defn re-env-get
-  (
-    env name
-  )
-  (
-    env-get-cur
-    (
-      RE.cur env
-    )
-    name
-  )
-)
-(
-  defn env-get-cur
-  (
-    binds name
-  )
-  (
-    match binds
-    (
-      Nil
-      (
-        env-get-parents
-        (
-          RE.parens env
-        )
-        name
-      )
-    )
-    (
-      (
-        RB n r esc
-      )
-      rest
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        (
-          Some
-          (
-            Pair r esc
-          )
-        )
-        (
-          env-get-cur rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn env-get-parents
-  (
-    parents name
-  )
-  (
-    match parents
-    (
-      Nil None
-    )
-    (
-      (
-        Cons scope rest
-      )
-      (
-        re-env-get-binds scope name
-      )
-    )
-    (
-      Nil None
-    )
-  )
-)
-(
-  defn re-env-get-binds
-  (
-    binds name
-  )
-  (
-    match binds
-    (
-      Nil None
-    )
-    (
-      (
-        RB n r esc
-      )
-      rest
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        (
-          Some
-          (
-            Pair r esc
-          )
-        )
-        (
-          re-env-get-binds rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn env-is-escaped
-  (
-    env name
-  )
-  (
-    match
-    (
-      re-env-get env name
-    )
-    (
-      Some
-      (
-        Pair r esc
-      )
-      (
-        if esc 1 0
-      )
-    )
-    (
-      None 0
-    )
-  )
-)
-(
-  defn re-env-bind
-  (
-    env name region
-  )
-  (
-    RegionEnv
-    (
-      Cons
-      (
-        RB name region 0
-      )
-      (
-        RE.cur env
-      )
-    )
-    (
-      RE.parens env
-    )
-  )
-)
-(
-  defn env-contains
-  (
-    env name
-  )
-  (
-    if
-    (
-      =
-      (
-        env-contains-cur
-        (
-          RE.cur env
-        )
-        name
-      )
-      1
-    )
-    1
-    (
-      env-contains-parents
-      (
-        RE.parens env
-      )
-    )
-  )
-)
-(
-  defn env-contains-cur
-  (
-    binds name
-  )
-  (
-    match binds
-    (
-      Nil 0
-    )
-    (
-      (
-        RB n d3 d4
-      )
-      rest
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        1
-        (
-          env-contains-cur rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn env-contains-parents
-  (
-    parents
-  )
-  (
-    env-contains-parents-inner parents
-  )
-)
-(
-  defn env-contains-parents-inner
-  (
-    parents
-  )
-  (
-    match parents
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons scope rest
-      )
-      (
-        if
-        (
-          =
-          (
-            env-contains-cur scope
-          )
-          1
-        )
-        1
-        (
-          env-contains-parents-inner rest
-        )
-      )
-    )
-    (
-      Nil 0
-    )
-  )
-)
-(
-  defn env-escape
-  (
-    env name
-  )
-  (
-    if
-    (
-      =
-      (
-        env-contains-cur
-        (
-          RE.cur env
-        )
-        name
-      )
-      1
-    )
-    (
-      env-escape-cur
-      (
-        RE.cur env
-      )
-      name
-      (
-        RE.parens env
-      )
-    )
-    (
-      env-escape-parents
-      (
-        RE.parens env
-      )
-      name
-    )
-  )
-)
-(
-  defn env-escape-cur
-  (
-    binds name parens
-  )
-  (
-    env-escape-cur-inner binds name parens Nil 0
-  )
-)
-(
-  defn env-escape-cur-inner
-  (
-    binds name parens accum found
-  )
-  (
-    match binds
-    (
-      Nil
-      (
-        if
-        (
-          = found 1
-        )
-        (
-          RegionEnv Nil
-          (
-            list-reverse accum
-          )
-        )
-        (
-          env-escape-parents parens name
-        )
-      )
-    )
-    (
-      (
-        RB n r esc
-      )
-      rest
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        (
-          RegionEnv
-          (
-            list-reverse
-            (
-              Cons
-              (
-                RB n r 1
-              )
-              accum
-            )
-          )
-          parens
-        )
-        (
-          env-escape-cur-inner rest name parens
-          (
-            Cons
-            (
-              RB n r esc
-            )
-            accum
-          )
-          found
-        )
-      )
-    )
-  )
-)
-(
-  defn env-escape-parents
-  (
-    parents name
-  )
-  (
-    env-escape-parents-inner parents name Nil
-  )
-)
-(
-  defn env-escape-parents-inner
-  (
-    parents name depth
-  )
-  (
-    match parents
-    (
-      Nil
-      (
-        RegionEnv Nil Nil
-      )
-    )
-    (
-      (
-        Cons scope rest
-      )
-      (
-        let
-        (
-          esc new-scope
-        )
-        (
-          env-escape-scope scope name
-        )
-        (
-          if
-          (
-            = esc 1
-          )
-          (
-            RegionEnv
-            (
-              Cons scope new-scope
-            )
-            (
-              RE.parens
-              (
-                RegionEnv Nil new-scope
-              )
-            )
-          )
-          (
-            if
-            (
-              =
-              (
-                list-length rest
-              )
-              0
-            )
-            (
-              RegionEnv
-              (
-                Cons scope Nil
-              )
-              (
-                RE.parens
-                (
-                  RegionEnv Nil Nil
-                )
-              )
-            )
-            (
-              env-escape-parents-inner rest name
-              (
-                Cons depth Nil
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn env-escape-scope
-  (
-    scope name
-  )
-  (
-    env-escape-scope-inner scope name Nil 0
-  )
-)
-(
-  defn env-escape-scope-inner
-  (
-    scope name accum found
-  )
-  (
-    match scope
-    (
-      Nil
-      (
-        Pair found Nil
-      )
-    )
-    (
-      (
-        Cons
-        (
-          RB n r esc
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        (
-          let new-r
-          (
-            if
-            (
-              = r RStack
-            )
-            RHeap r
-          )
-          (
-            Pair 1
-            (
-              list-reverse
-              (
-                Cons
-                (
-                  RB n new-r 1
-                )
-                accum
-              )
-            )
-          )
-        )
-        (
-          env-escape-scope-inner rest name
-          (
-            Cons
-            (
-              RB n r esc
-            )
-            accum
-          )
-          found
-        )
-      )
-    )
-  )
-)
-(
-  defn env-enter
-  (
-    env
-  )
-  (
-    RegionEnv Nil
-    (
-      Cons
-      (
-        RE.cur env
-      )
-      (
-        RE.parens env
-      )
-    )
-  )
-)
-(
-  defn env-exit
-  (
-    env
-  )
-  (
-    match
-    (
-      Pair
-      (
-        RE.cur env
-      )
-      (
-        RE.parens env
-      )
-    )
-    (
-      Pair current parens
-      (
-        if
-        (
-          =
-          (
-            list-length current
-          )
-          0
-        )
-        (
-          RegionEnv Nil parens
-        )
-        (
-          if
-          (
-            =
-            (
-              list-length parens
-            )
-            0
-          )
-          (
-            RegionEnv current parens
-          )
-          (
-            env-merge-into-last current parens
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn env-merge-into-last
-  (
-    current parens
-  )
-  (
-    match parens
-    (
-      Nil
-      (
-        RegionEnv current parens
-      )
-    )
-    (
-      (
-        Cons last rest
-      )
-      (
-        RegionEnv Nil
-        (
-          Cons
-          (
-            env-merge-binds current last
-          )
-          rest
-        )
-      )
-    )
-  )
-)
-(
-  defn env-merge-binds
-  (
-    incoming outer
-  )
-  (
-    env-merge-binds-loop incoming outer Nil
-  )
-)
-(
-  defn env-merge-binds-loop
-  (
-    incoming outer acc
-  )
-  (
-    match incoming
-    (
-      Nil
-      (
-        env-add-remaining outer acc
-      )
-    )
-    (
-      (
-        Cons bind rest
-      )
-      (
-        match bind
-        (
-          (
-            RB n r esc
-          )
-          (
-            if
-            (
-              = esc 1
-            )
-            (
-              env-merge-binds-loop rest outer acc
-            )
-            (
-              if
-              (
-                =
-                (
-                  env-list-has outer n
-                )
-                1
-              )
-              (
-                env-merge-binds-loop rest outer acc
-              )
-              (
-                env-merge-binds-loop rest outer
-                (
-                  Cons bind acc
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn env-list-has
-  (
-    binds name
-  )
-  (
-    match binds
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons
-        (
-          RB n d5 d6
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        1
-        (
-          env-list-has rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn env-add-remaining
-  (
-    binds acc
-  )
-  (
-    match binds
-    (
-      Nil acc
-    )
-    (
-      (
-        Cons bind rest
-      )
-      (
-        env-add-remaining rest
-        (
-          Cons bind acc
-        )
-      )
-    )
-  )
-)
-(
-  defn env-snapshot
-  (
-    env
-  )
-  (
-    RegionEnv
-    (
-      RE.cur env
-    )
-    (
-      RE.parens env
-    )
-  )
-)
-(
-  defn env-bindings
-  (
-    env
-  )
-  (
-    env-bindings-cur
-    (
-      RE.cur env
-    )
-    (
-      env-bindings-parents
-      (
-        RE.parens env
-      )
-    )
-  )
-)
-(
-  defn env-bindings-cur
-  (
-    binds names
-  )
-  (
-    match binds
-    (
-      Nil names
-    )
-    (
-      (
-        Cons
-        (
-          RB n d7 d8
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            env-names-has names n
-          )
-          1
-        )
-        (
-          env-bindings-cur rest names
-        )
-        (
-          env-bindings-cur rest
-          (
-            Cons n names
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn env-names-has
-  (
-    names name
-  )
-  (
-    match names
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons h rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq h name
-          )
-          0
-        )
-        1
-        (
-          env-names-has rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn env-bindings-parents
-  (
-    parents
-  )
-  (
-    match parents
-    (
-      Nil Nil
-    )
-    (
-      (
-        Cons scope rest
-      )
-      (
-        env-bindings-cur scope
-        (
-          env-bindings-parents rest
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-new
-  (
-  )
-  (
-    RI
-    (
-      env-new
-    )
-    Nil Nil
-  )
-)
-(
-  defn ri-union-regions
-  (
-    a b
-  )
-  (
-    match
-    (
-      Pair a b
-    )
-    (
-      Pair RGlobal d9
-    )
-    RGlobal
-    (
-      Pair d10 RGlobal RGlobal
-    )
-    (
-      Pair RHeap RCircular
-    )
-    RHeap
-    (
-      Pair RCircular RHeap
-    )
-    RHeap
-    (
-      Pair RHeap d11
-    )
-    RHeap
-    (
-      Pair d12 RHeap RHeap
-    )
-    (
-      Pair RPin RStack
-    )
-    RPin
-    (
-      Pair RStack RPin
-    )
-    RPin
-    (
-      Pair d13 d14
-    )
-    (
-      if
-      (
-        >=
-        (
-          region-rank a
-        )
-        (
-          region-rank b
-        )
-      )
-      a b
-    )
-  )
-)
-(
-  defn region-rank
-  (
-    r
-  )
-  (
-    match r
-    (
-      RStack 0
-    )
-    (
-      RPin 1
-    )
-    (
-      RHeap 2
-    )
-    (
-      RCircular 3
-    )
-    (
-      RGlobal 4
-    )
-  )
-)
-(
-  defn ri-is-literal-const
-  (
-    (
-      ic Icnf
-    )
-  )
-  (
-    match ic
-    (
-      IConst d15 1
-    )
-    (
-      IStr d16 1
-    )
-    (
-      IFlt d17 1
-    )
-    (
-      ILoad d18 0
-    )
-    (
-      IBinop d5 a b
-      (
-        if
-        (
-          =
-          (
-            ri-is-literal-const a
-          )
-          1
-        )
-        (
-          ri-is-literal-const b
-        )
-        0
-      )
-    )
-    (
-      ICall d6 args
-      (
-        ri-is-literal-icnf-list args
-      )
-    )
-    (
-      IFfi d7 args
-      (
-        ri-is-literal-icnf-list args
-      )
-    )
-    (
-      IPrint d
-      (
-        ri-is-literal-const d
-      )
-    )
-    (
-      IIf c t e
-      (
-        if
-        (
-          =
-          (
-            ri-is-literal-const c
-          )
-          1
-        )
-        (
-          if
-          (
-            =
-            (
-              ri-is-literal-const t
-            )
-            1
-          )
-          (
-            ri-is-literal-const e
-          )
-          0
-        )
-        0
-      )
-    )
-    (
-      IWhile d19 d20 0
-    )
-    (
-      ISet d21 d22 0
-    )
-    (
-      ILet d14 val body
-      (
-        if
-        (
-          =
-          (
-            ri-is-literal-const val
-          )
-          1
-        )
-        (
-          ri-is-literal-const body
-        )
-        0
-      )
-    )
-    (
-      ISeq d15
-      (
-        ri-is-literal-icnf-list d15
-      )
-    )
-    (
-      IVariant d16 d23 d18
-      (
-        ri-is-literal-icnf-list d18
-      )
-    )
-    (
-      IMatch d19 scr arms
-      (
-        if
-        (
-          =
-          (
-            ri-is-literal-const scr
-          )
-          1
-        )
-        (
-          ri-is-literal-arms arms
-        )
-        0
-      )
-    )
-    (
-      IFn d20 d21 d22
-      (
-        ri-is-literal-const d22
-      )
-    )
-  )
-)
-(
-  defn ri-is-literal-icnf-list
-  (
-    icnfs
-  )
-  (
-    match icnfs
-    (
-      Nil 1
-    )
-    (
-      (
-        Cons h rest
-      )
-      (
-        if
-        (
-          =
-          (
-            ri-is-literal-const h
-          )
-          1
-        )
-        (
-          ri-is-literal-icnf-list rest
-        )
-        0
-      )
-    )
-  )
-)
-(
-  defn ri-is-literal-arms
-  (
-    arms
-  )
-  (
-    match arms
-    (
-      Nil 1
-    )
-    (
-      (
-        Cons arm rest
-      )
-      (
-        match arm
-        (
-          (
-            IArm d24 d25 d26 body
-          )
-          (
-            if
-            (
-              =
-              (
-                ri-is-literal-const body
-              )
-              1
-            )
-            (
-              ri-is-literal-arms rest
-            )
-            0
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-analyze-captures
-  (
-    outer-env ic
-  )
-  (
-    ri-capture-collect ic outer-env Nil
-  )
-)
-(
-  defn ri-capture-collect
-  (
-    (
-      ic Icnf
-    )
-    captured-refs env
-  )
-  (
-    match ic
-    (
-      ILoad name
-      (
-        if
-        (
-          =
-          (
-            env-contains env name
-          )
-          1
-        )
-        (
-          ri-capture-add name
-          (
-            re-env-get env name
-          )
-          captured-refs
-        )
-        captured-refs
-      )
-    )
-    (
-      IBinop d1 a b
-      (
-        ri-capture-collect a
-        (
-          ri-capture-collect b captured-refs env
-        )
-        env
-      )
-    )
-    (
-      ICall d2 args
-      (
-        ri-capture-collect-list args captured-refs env
-      )
-    )
-    (
-      IFfi d3 args
-      (
-        ri-capture-collect-list args captured-refs env
-      )
-    )
-    (
-      IPrint d
-      (
-        ri-capture-collect d captured-refs env
-      )
-    )
-    (
-      IIf c t e
-      (
-        ri-capture-collect e
-        (
-          ri-capture-collect t
-          (
-            ri-capture-collect c captured-refs env
-          )
-          env
-        )
-        env
-      )
-    )
-    (
-      IWhile c b
-      (
-        ri-capture-collect b
-        (
-          ri-capture-collect c captured-refs env
-        )
-        env
-      )
-    )
-    (
-      ISet d10 val
-      (
-        if
-        (
-          =
-          (
-            env-contains env d10
-          )
-          1
-        )
-        (
-          ri-capture-add d10
-          (
-            re-env-get env d10
-          )
-          (
-            ri-capture-collect val captured-refs env
-          )
-        )
-        (
-          ri-capture-collect val captured-refs env
-        )
-      )
-    )
-    (
-      ILet d11 val body
-      (
-        let new-env
-        (
-          re-env-bind env d11 RStack
-        )
-        (
-          ri-capture-collect body captured-refs new-env
-        )
-      )
-    )
-    (
-      ISeq items
-      (
-        ri-capture-collect-list items captured-refs env
-      )
-    )
-    (
-      IVariant d12 d13 args
-      (
-        ri-capture-collect-list args captured-refs env
-      )
-    )
-    (
-      IMatch d14 scr arms
-      (
-        ri-capture-collect-arms arms
-        (
-          ri-capture-collect scr captured-refs env
-        )
-        env
-      )
-    )
-    (
-      IFn d15 d16 body
-      (
-        ri-capture-collect body captured-refs env
-      )
-    )
-  )
-)
-(
-  defn ri-capture-collect-list
-  (
-    icnfs acc env
-  )
-  (
-    match icnfs
-    (
-      Nil acc
-    )
-    (
-      (
-        Cons h rest
-      )
-      (
-        ri-capture-collect-list rest
-        (
-          ri-capture-collect h acc env
-        )
-        env
-      )
-    )
-  )
-)
-(
-  defn ri-capture-add
-  (
-    name get-result acc
-  )
-  (
-    match get-result
-    (
-      Some
-      (
-        Pair r esc
-      )
-      (
-        if
-        (
-          =
-          (
-            ri-capture-list-has acc name
-          )
-          1
-        )
-        acc
-        (
-          Cons
-          (
-            Pair name r
-          )
-          acc
-        )
-      )
-    )
-    (
-      None acc
-    )
-  )
-)
-(
-  defn ri-capture-list-has
-  (
-    refs name
-  )
-  (
-    match refs
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons
-        (
-          Pair n d27
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        1
-        (
-          ri-capture-list-has rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-capture-collect-arms
-  (
-    arms acc env
-  )
-  (
-    match arms
-    (
-      Nil acc
-    )
-    (
-      (
-        Cons arm rest
-      )
-      (
-        match arm
-        (
-          (
-            IArm d28 d29 binds body
-          )
-          (
-            let arm-env
-            (
-              ri-bind-params binds env RStack
-            )
-            (
-              ri-capture-collect-arms rest
-              (
-                ri-capture-collect body acc arm-env
-              )
-              env
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-bind-params
-  (
-    params env region
-  )
-  (
-    match params
-    (
-      Nil env
-    )
-    (
-      (
-        Cons name rest
-      )
-      (
-        ri-bind-params rest
-        (
-          re-env-bind env name region
-        )
-        region
-      )
-    )
-  )
-)
-(
-  defn ri-infer-expr
-  (
-    ri
-    (
-      ic Icnf
-    )
-  )
-  (
-    match ic
-    (
-      IConst d30
-      (
-        RR RStack None
-      )
-    )
-    (
-      IStr d31
-      (
-        RR RHeap None
-      )
-    )
-    (
-      IFlt d32
-      (
-        RR RHeap None
-      )
-    )
-    (
-      ILoad name
-      (
-        match
-        (
-          re-env-get
-          (
-            RI.env ri
-          )
-          name
-        )
-        (
-          Some
-          (
-            Pair r esc
-          )
-          (
-            RR r None
-          )
-        )
-        (
-          None
-          (
-            RR RStack None
-          )
-        )
-      )
-    )
-    (
-      IBinop d4 left right
-      (
-        let lr
-        (
-          ri-infer-expr ri left
-        )
-        (
-          let rr
-          (
-            ri-infer-expr ri right
-          )
-          (
-            RR
-            (
-              ri-union-regions
-              (
-                RR.reg lr
-              )
-              (
-                RR.reg rr
-              )
-            )
-            None
-          )
-        )
-      )
-    )
-    (
-      ICall d5 args
-      (
-        ri-infer-args ri args
-      )
-      (
-        RR RHeap None
-      )
-    )
-    (
-      IFfi d6 args
-      (
-        ri-infer-args ri args
-      )
-      (
-        RR RPin None
-      )
-    )
-    (
-      IPrint d7
-      (
-        ri-infer-expr ri d7
-      )
-      (
-        RR RStack None
-      )
-    )
-    (
-      IIf d8 cond then_ else_
-      (
-        ri-infer-expr ri cond
-      )
-      (
-        let tr
-        (
-          ri-infer-expr ri then_
-        )
-        (
-          let er
-          (
-            ri-infer-expr ri else_
-          )
-          (
-            RR
-            (
-              ri-union-regions
-              (
-                RR.reg tr
-              )
-              (
-                RR.reg er
-              )
-            )
-            None
-          )
-        )
-      )
-    )
-    (
-      IWhile d9 cond body
-      (
-        ri-infer-expr ri cond
-      )
-      (
-        ri-infer-expr ri body
-      )
-    )
-    (
-      ISet d10 name val
-      (
-        let vr
-        (
-          ri-infer-expr ri val
-        )
-        (
-          if
-          (
-            =
-            (
-              env-contains
-              (
-                RI.env ri
-              )
-              name
-            )
-            0
-          )
-          (
-            RR RStack None
-          )
-          (
-            RR
-            (
-              RR.reg vr
-            )
-            None
-          )
-        )
-      )
-    )
-    (
-      ILet d11 name val body
-      (
-        let env0
-        (
-          RI.env ri
-        )
-        (
-          let d33
-          (
-            ri-infer-expr ri val
-          )
-          (
-            let env1
-            (
-              env-enter env0
-            )
-            (
-              let env2
-              (
-                re-env-bind env1 name RStack
-              )
-              (
-                let ri2
-                (
-                  RI env2
-                  (
-                    RI.sr ri
-                  )
-                  (
-                    RI.fs ri
-                  )
-                )
-                (
-                  let result
-                  (
-                    ri-infer-expr ri2 body
-                  )
-                  (
-                    let env3
-                    (
-                      RI.env ri2
-                    )
-                    (
-                      let env4
-                      (
-                        env-exit env3
-                      )
-                      (
-                        RI env4
-                        (
-                          RI.sr ri
-                        )
-                        (
-                          RI.fs ri
-                        )
-                      )
-                      result
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-    (
-      ISeq d12 items
-      (
-        ri-infer-seq ri items
-      )
-    )
-    (
-      IVariant d13 d14 d15
-      (
-        ri-infer-args ri d15
-      )
-      (
-        RR RHeap None
-      )
-    )
-    (
-      IMatch d16 scrutinee arms
-      (
-        ri-infer-expr ri scrutinee
-      )
-      (
-        ri-infer-match-arms ri arms
-        (
-          RR RStack None
-        )
-      )
-    )
-    (
-      IFn d17 name params body
-      (
-        let env0
-        (
-          RI.env ri
-        )
-        (
-          let env1
-          (
-            env-enter env0
-          )
-          (
-            let env2
-            (
-              ri-bind-params params env1 RStack
-            )
-            (
-              let ri2
-              (
-                RI env2
-                (
-                  RI.sr ri
-                )
-                (
-                  RI.fs ri
-                )
-              )
-              (
-                let d34
-                (
-                  ri-infer-expr ri2 body
-                )
-                (
-                  let env3
-                  (
-                    RI.env ri2
-                  )
-                  (
-                    let env4
-                    (
-                      env-exit env3
-                    )
-                    (
-                      RI env4
-                      (
-                        RI.sr ri
-                      )
-                      (
-                        RI.fs ri
-                      )
-                    )
-                    (
-                      RR RHeap None
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-infer-args
-  (
-    ri icnfs
-  )
-  (
-    ri-infer-args-loop ri icnfs RStack
-  )
-)
-(
-  defn ri-infer-args-loop
-  (
-    ri args region
-  )
-  (
-    match args
-    (
-      Nil region
-    )
-    (
-      (
-        Cons ic rest
-      )
-      (
-        ri-infer-args-loop rest
-        (
-          ri-union-regions region
-          (
-            RR.reg
-            (
-              ri-infer-expr ri ic
-            )
-          )
-        )
-        region
-      )
-    )
-  )
-)
-(
-  defn ri-infer-seq
-  (
-    ri items
-  )
-  (
-    ri-infer-seq-loop ri items
-    (
-      RR RStack None
-    )
-  )
-)
-(
-  defn ri-infer-seq-loop
-  (
-    ri items result
-  )
-  (
-    match items
-    (
-      Nil result
-    )
-    (
-      (
-        Cons ic rest
-      )
-      (
-        ri-infer-seq-loop rest
-        (
-          ri-infer-expr ri ic
-        )
-        result
-      )
-    )
-  )
-)
-(
-  defn ri-infer-match-arms
-  (
-    ri arms acc
-  )
-  (
-    match arms
-    (
-      Nil acc
-    )
-    (
-      (
-        Cons arm rest
-      )
-      (
-        match arm
-        (
-          (
-            IArm d35 d36 binds body
-          )
-          (
-            let env0
-            (
-              RI.env ri
-            )
-            (
-              let env1
-              (
-                env-enter env0
-              )
-              (
-                let env2
-                (
-                  ri-bind-params binds env1 RStack
-                )
-                (
-                  let ri2
-                  (
-                    RI env2
-                    (
-                      RI.sr ri
-                    )
-                    (
-                      RI.fs ri
-                    )
-                  )
-                  (
-                    let arm-result
-                    (
-                      ri-infer-expr ri2 body
-                    )
-                    (
-                      let env3
-                      (
-                        RI.env ri2
-                      )
-                      (
-                        let env4
-                        (
-                          env-exit env3
-                        )
-                        (
-                          let new-acc
-                          (
-                            RR
-                            (
-                              ri-union-regions
-                              (
-                                RR.reg acc
-                              )
-                              (
-                                RR.reg arm-result
-                              )
-                            )
-                            None
-                          )
-                          (
-                            ri-infer-match-arms
-                            (
-                              RI env4
-                              (
-                                RI.sr ri
-                              )
-                              (
-                                RI.fs ri
-                              )
-                            )
-                            rest
-                            new-acc
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-collect-defs
-  (
-    ri items
-  )
-  (
-    ri-collect-defs-loop ri items
-  )
-)
-(
-  defn ri-collect-defs-loop
-  (
-    ri items
-  )
-  (
-    match items
-    (
-      Nil ri
-    )
-    (
-      (
-        Cons ic rest
-      )
-      (
-        let ri2
-        (
-          ri-collect-one ic ri
-        )
-        (
-          ri-collect-defs-loop ri2 rest
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-collect-one
-  (
-    (
-      ic Icnf
-    )
-    ri
-  )
-  (
-    match ic
-    (
-      IFn d1 name params body
-      (
-        let param-regions
-        (
-          ri-make-param-regions
-          (
-            list-length params
-          )
-        )
-        (
-          let fsig
-          (
-            FS name param-regions RHeap
-          )
-          (
-            ri-add-func-sig ri name fsig
-          )
-        )
-      )
-    )
-    (
-      IVariant d2 name d3 args
-      (
-        let field-regions
-        (
-          SR name
-          (
-            Cons
-            (
-              VR
-              "default"
-              (
-                ri-make-field-regions args Nil
-              )
-            )
-            Nil
-          )
-        )
-      )
-      (
-        ri-add-struct-region ri field-regions
-      )
-    )
-    (
-      ISeq d4
-      (
-        ri-collect-defs-loop ri d4
-      )
-    )
-  )
-)
-(
-  defn ri-make-param-regions
-  (
-    count
-  )
-  (
-    ri-make-param-regions-loop count Nil
-  )
-)
-(
-  defn ri-make-param-regions-loop
-  (
-    count acc
-  )
-  (
-    if
-    (
-      = count 0
-    )
-    (
-      list-reverse acc
-    )
-    (
-      ri-make-param-regions-loop
-      (
-        - count 1
-      )
-      (
-        Cons RStack acc
-      )
-    )
-  )
-)
-(
-  defn ri-make-field-regions
-  (
-    args acc
-  )
-  (
-    match args
-    (
-      Nil acc
-    )
-    (
-      (
-        Cons d37 rest
-      )
-      (
-        ri-make-field-regions rest
-        (
-          Cons
-          (
-            FldR
-            ""
-            RStack
-          )
-          acc
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-add-func-sig
-  (
-    ri name fsig
-  )
-  (
-    let fs
-    (
-      RI.fs ri
-    )
-    (
-      if
-      (
-        ri-func-sig-exists fs name
-      )
-      ri
-      (
-        RI
-        (
-          RI.env ri
-        )
-        (
-          RI.sr ri
-        )
-        (
-          Cons
-          (
-            FS name
-            (
-              FS.params fsig
-            )
-            (
-              FS.ret fsig
-            )
-          )
-          fs
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-func-sig-exists
-  (
-    sigs name
-  )
-  (
-    match sigs
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons
-        (
-          FS n d38 d39
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        1
-        (
-          ri-func-sig-exists rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-add-struct-region
-  (
-    ri sr
-  )
-  (
-    let srlist
-    (
-      RI.sr ri
-    )
-    (
-      if
-      (
-        ri-sr-exists srlist
-        (
-          SR.name sr
-        )
-      )
-      ri
-      (
-        RI
-        (
-          RI.env ri
-        )
-        (
-          Cons sr srlist
-        )
-        (
-          RI.fs ri
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-sr-exists
-  (
-    srs name
-  )
-  (
-    match srs
-    (
-      Nil 0
-    )
-    (
-      (
-        Cons
-        (
-          SR n d40
-        )
-        rest
-      )
-      (
-        if
-        (
-          =
-          (
-            str-eq n name
-          )
-          0
-        )
-        1
-        (
-          ri-sr-exists rest name
-        )
-      )
-    )
-  )
-)
-(
-  defn ri-infer
-  (
-    icnf-list ri
-  )
-  (
-    let ri2
-    (
-      ri-collect-defs ri icnf-list
-    )
-    (
-      if
-      (
-        =
-        (
-          list-length icnf-list
-        )
-        0
-      )
-      ri2
-      (
-        ri-infer-expressions ri2 icnf-list
-      )
-    )
-  )
-)
-(
-  defn ri-infer-expressions
-  (
-    ri items
-  )
-  (
-    match items
-    (
-      Nil ri
-    )
-    (
-      (
-        Cons ic rest
-      )
-      (
-        let ri2
-        (
-          ri-infer-expr ri ic
-        )
-        (
-          ri-infer-expressions ri2 rest
-        )
-      )
     )
   )
 )

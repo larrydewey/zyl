@@ -148,7 +148,12 @@ files = [
     'stdlib/compiler/monomorphization.zyl',
     'stdlib/compiler/icnf.zyl',
     'stdlib/compiler/codegen.zyl',
-    'stdlib/compiler/region_inference.zyl',
+    # region_inference.zyl deliberately excluded: it's dead code from the
+    # self-hosted boot pipeline's perspective (driver.zyl's boot-run
+    # never calls anything in it), and it was blocking the boot process
+    # at link time with undefined-symbol errors from bugs in code that
+    # never actually executes. See resolver.zyl's header comment for the
+    # same situation, root-caused there.
     'selfhost/driver.zyl',
 ]
 
