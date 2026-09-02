@@ -804,11 +804,22 @@
 
 (defn infer-expr-while (inferer expr cond body)
     ; unify cond with Bool, infer body, result Unit
+    ;
+    ; Wrapped-form `let` — `(let (name val) body)` — takes exactly ONE
+    ; body expression (matches Rust bootstrap's parser.rs p_let: the
+    ; wrapped-binding-list branch always uses `args[1]` alone, with no
+    ; implicit multi-statement sequencing). Every extra trailing form
+    ; after the first was silently DISCARDED — never parsed, never
+    ; executed — so this used to return unify's UOk/UErr result instead
+    ; of TUnit, and never actually type-checked `body` at all. Wrapping
+    ; the real multi-statement sequence in `begin` makes it one body
+    ; expression again.
     (let
         (ct (infer-expr inferer cond))
-        (unify (ti-subst inferer) ct TBool)
-        (infer-expr inferer body)
-        TUnit))
+        (begin
+            (unify (ti-subst inferer) ct TBool)
+            (infer-expr inferer body)
+            TUnit)))
 
 ; ===========================================================================
 ; INFER-EXPR — for
@@ -816,13 +827,15 @@
 
 (defn infer-expr-for (inferer expr bindings cond body)
     ; bind loop vars, unify cond with Bool, infer body, result Unit
+    ; (see infer-expr-while: wrapped-let takes exactly one body expr)
     (let
         (new-inferer (inferer-bind-for-vars inferer bindings))
         (let
             (ct (infer-expr new-inferer cond))
-            (unify (ti-subst new-inferer) ct TBool)
-            (infer-expr new-inferer body)
-            TUnit)))
+            (begin
+                (unify (ti-subst new-inferer) ct TBool)
+                (infer-expr new-inferer body)
+                TUnit))))
 
 (defn inferer-bind-for-vars (inferer (bindings List))
     ; bind each (name val) pair to TCap TMut of val's type
@@ -872,10 +885,11 @@
                 (Pair pred body
                     (let
                         (pt (infer-expr inferer pred))
+                        (begin
                         (unify (ti-subst inferer) pt TBool)
                         (let
                             (bt (infer-expr inferer body))
-                            (infer-expr-cond-loop inferer rest bt))))))))
+                            (infer-expr-cond-loop inferer rest bt)))))))))
 
 ; ===========================================================================
 ; INFER-EXPR — try/catch
@@ -885,8 +899,9 @@
     ; result is the try-body type
     (let
         (et (infer-expr inferer eh))
-        (infer-expr inferer handler)
-        et))
+        (begin
+            (infer-expr inferer handler)
+            et)))
 
 ; ===========================================================================
 ; INFER-EXPR — match
@@ -1156,14 +1171,15 @@
             (all-vars true)
             (let
                 (types (infer-args inferer args))
-                (infer-binop-check-types types)
-                (if
-                    has-float
-                    TFloat
+                (begin
+                    (infer-binop-check-types types)
                     (if
-                        all-vars
-                        (inferer-return-var inferer)
-                        TInt))))))
+                        has-float
+                        TFloat
+                        (if
+                            all-vars
+                            (inferer-return-var inferer)
+                            TInt)))))))
 
 (defn infer-binop-check-types (types)
     ; walk arg types, tracking float/var flags (via side effects, simplified)
@@ -1194,8 +1210,9 @@
         ((Cons a rest)
             (let
                 (t (infer-expr inferer a))
-                (unify (ti-subst inferer) t TBool)
-                (infer-args-bool-check inferer rest)))))
+                (begin
+                    (unify (ti-subst inferer) t TBool)
+                    (infer-args-bool-check inferer rest))))))
 
 (defn infer-expr-builtin-compare (inferer expr op-name args)
     (infer-args inferer args)
@@ -1289,8 +1306,9 @@
     ; unify cond with Bool, result Unit
     (let
         (ct (infer-expr inferer cond))
-        (unify (ti-subst inferer) ct TBool)
-        TUnit))
+        (begin
+            (unify (ti-subst inferer) ct TBool)
+            TUnit)))
 
 ; ===========================================================================
 ; INFER-EXPR — set!
@@ -1331,8 +1349,9 @@
 (defn infer-expr-struct-get (inferer expr se field-name)
     (let
         (st (infer-expr inferer se))
-        (infer-struct-field-type st field-name)
-        (inferer-return-var inferer)))
+        (begin
+            (infer-struct-field-type st field-name)
+            (inferer-return-var inferer))))
 
 (defn infer-struct-field-type (struct-type field-name)
     (match struct-type
@@ -1346,11 +1365,12 @@
 (defn infer-expr-make-variant (inferer expr adt-name variant-name args)
     (let
         (field-types (infer-get-variant-fields inferer adt-name variant-name))
-        (infer-args inferer args)
-        (infer-variant-record-instantiation inferer adt-name field-types)
-        (TStruct
-            (str-concat adt-name (str-concat "_" variant-name))
-            field-types)))
+        (begin
+            (infer-args inferer args)
+            (infer-variant-record-instantiation inferer adt-name field-types)
+            (TStruct
+                (str-concat adt-name (str-concat "_" variant-name))
+                field-types))))
 
 (defn infer-get-variant-fields (inferer adt-name variant-name)
     ; variant fields of the named variant from the real ADT defs, or Nil
@@ -1411,8 +1431,9 @@
 (defn infer-expr-with-resource (inferer expr init body)
     (let
         (it (infer-expr inferer init))
-        (infer-expr inferer body)
-        it))
+        (begin
+            (infer-expr inferer body)
+            it)))
 
 ; ===========================================================================
 ; INFER-ARGS — helper
