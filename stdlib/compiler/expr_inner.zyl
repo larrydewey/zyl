@@ -330,6 +330,10 @@
     (match (parse-assert-false rest)
       (Some expr expr)
       (None (Expr (EUnknown "assert-false" (convert-ast-list rest)))))
+  (if (> (str-eq n "assert-fail") 0)
+    (match (parse-assert-fail rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "assert-fail" (convert-ast-list rest)))))
   (if (> (str-eq n "spawn") 0)
     (match (parse-spawn rest)
       (Some expr expr)
@@ -457,7 +461,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -1027,6 +1031,15 @@
     (Some
       (Expr
         (EAssertFalse
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          None)))
+    None))
+
+(defn parse-assert-fail (args)
+  (if (ast-has-at-least args 1)
+    (Some
+      (Expr
+        (EAssertFail
           (convert-ast (ast-nth args 0 (AstInt 0)))
           None)))
     None))
