@@ -260,6 +260,10 @@
     (match (parse-defstruct rest)
       (Some expr expr)
       (None (Expr (EUnknown "defstruct+" (convert-ast-list rest)))))
+  (if (> (str-eq n "impl") 0)
+    (match (parse-impl rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "impl" (convert-ast-list rest)))))
   (if (> (str-eq n "def") 0)
     (match (parse-def rest)
       (Some expr expr)
@@ -471,7 +475,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -562,6 +566,33 @@
               (Some "struct")))))
       (d1 None))
     None))
+
+; (impl Trait Type (defn method (params...) body)*): parsed but never
+; constructed anywhere in this pipeline until now -- `dispatch-special`
+; had no "impl" entry at all, so `(impl OutputStream Stdout ...)` fell
+; through to a bare EApply "impl" (silently discarded by ic-toplevel,
+; since it isn't EDefn/ETestDecl/ERunTests), and every method body
+; inside it was lost with no error at all. Each (defn method ...) body
+; is kept as-is (matching the Rust bootstrap's p_impl_block); a non-defn
+; body inside an impl block doesn't occur anywhere in this corpus and is
+; just skipped rather than guessed at.
+(defn parse-impl (args)
+  (if (ast-has-at-least args 3)
+    (Some
+      (Expr
+        (EImplBlock
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d2 "___"))
+          (parse-impl-bodies (ast-list-nth-rest args 2)))))
+    None))
+
+(defn parse-impl-bodies (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (match (Expr.inner (convert-ast f))
+        (EDefn name params body (Cons (IB (DN name params body)) (parse-impl-bodies rest)))
+        (d1 (parse-impl-bodies rest))))))
 
 (defn parse-struct-fields (specs)
   (match specs
