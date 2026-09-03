@@ -26843,7 +26843,7 @@
             let st5
             (
               cg-emit-line st4
-              "    call malloc"
+              "    call zyl_heap_alloc"
             )
             (
               let st6
