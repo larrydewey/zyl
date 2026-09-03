@@ -35,7 +35,7 @@
 
 (test "bigger-struct-30"
   (let s (make-_ls_BiggerStruct 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30)
-    (assert-equal (struct-get s "a01") 1)
+    (assert-equal (struct-get s "a1") 1)
     (assert-equal (struct-get s "a15") 15)
     (assert-equal (struct-get s "a30") 30)))
 
