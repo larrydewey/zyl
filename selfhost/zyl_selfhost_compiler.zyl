@@ -24482,6 +24482,1187 @@
     )
   )
 )
+; ---------- stdlib/compiler/closure_inline.zyl ----------
+(
+  defn ci-expand-program
+  (
+    arena prog
+  )
+  (
+    let vt
+    (
+      ic-collect-vt prog VTNil
+    )
+    (
+      ci-map arena vt prog
+    )
+  )
+)
+(
+  defn ci-map
+  (
+    arena vt forms
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        Cons
+        (
+          ci-expr arena vt e
+        )
+        (
+          ci-map arena vt rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-expr
+  (
+    arena vt e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EDefn name params body
+      (
+        Expr
+        (
+          EDefn name params
+          (
+            ci-expr arena vt body
+          )
+        )
+      )
+    )
+    (
+      ETestDecl name body k
+      (
+        Expr
+        (
+          ETestDecl name
+          (
+            ci-expr arena vt body
+          )
+          k
+        )
+      )
+    )
+    (
+      ELet name val body
+      (
+        ci-let arena vt name val body
+      )
+    )
+    (
+      ELetMut name val body
+      (
+        Expr
+        (
+          ELetMut name
+          (
+            ci-expr arena vt val
+          )
+          (
+            ci-expr arena vt body
+          )
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        Expr
+        (
+          EIf
+          (
+            ci-expr arena vt c
+          )
+          (
+            ci-expr arena vt t
+          )
+          (
+            ci-expr arena vt eb
+          )
+        )
+      )
+    )
+    (
+      EWhile c body
+      (
+        Expr
+        (
+          EWhile
+          (
+            ci-expr arena vt c
+          )
+          (
+            ci-expr arena vt body
+          )
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        Expr
+        (
+          EBegin
+          (
+            ci-map arena vt exprs
+          )
+        )
+      )
+    )
+    (
+      ETryCatch tbody nm handler
+      (
+        Expr
+        (
+          ETryCatch
+          (
+            ci-expr arena vt tbody
+          )
+          nm
+          (
+            ci-expr arena vt handler
+          )
+        )
+      )
+    )
+    (
+      EMatch subj arms
+      (
+        Expr
+        (
+          EMatch
+          (
+            ci-expr arena vt subj
+          )
+          (
+            ci-arms arena vt arms
+          )
+        )
+      )
+    )
+    (
+      d1 e
+    )
+  )
+)
+(
+  defn ci-arms
+  (
+    arena vt arms
+  )
+  (
+    match arms
+    (
+      Nil Nil
+    )
+    (
+      Cons a rest
+      (
+        Cons
+        (
+          ci-arm arena vt a
+        )
+        (
+          ci-arms arena vt rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-arm
+  (
+    arena vt a
+  )
+  (
+    match a
+    (
+      MA v pats body
+      (
+        MA v pats
+        (
+          ci-expr arena vt body
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-let
+  (
+    arena vt name val body
+  )
+  (
+    match
+    (
+      Expr.inner val
+    )
+    (
+      EFn d1 params fbody
+      (
+        ci-let-fn arena vt name params fbody body
+      )
+    )
+    (
+      d2
+      (
+        Expr
+        (
+          ELet name
+          (
+            ci-expr arena vt val
+          )
+          (
+            ci-expr arena vt body
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-let-fn
+  (
+    arena vt name params fbody body
+  )
+  (
+    let fbody2
+    (
+      ci-expr arena vt fbody
+    )
+    (
+      let body2
+      (
+        ci-expr arena vt body
+      )
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena fbody2
+            (
+              param-names params
+              (
+                no-strs
+              )
+            )
+            vt
+          )
+          0
+        )
+        (
+          Expr
+          (
+            ELet name
+            (
+              Expr
+              (
+                EFn
+                ""
+                params fbody2
+              )
+            )
+            body2
+          )
+        )
+        (
+          if
+          (
+            >
+            (
+              ci-references name fbody2
+            )
+            0
+          )
+          (
+            Expr
+            (
+              ELet name
+              (
+                Expr
+                (
+                  EFn
+                  ""
+                  params fbody2
+                )
+              )
+              body2
+            )
+          )
+          (
+            if
+            (
+              >
+              (
+                ci-escapes name body2
+              )
+              0
+            )
+            (
+              Expr
+              (
+                ELet name
+                (
+                  Expr
+                  (
+                    EFn
+                    ""
+                    params fbody2
+                  )
+                )
+                body2
+              )
+            )
+            (
+              ci-inline-calls name params fbody2 body2
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-references
+  (
+    name e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AIdent n
+          (
+            >
+            (
+              str-eq n name
+            )
+            0
+          )
+        )
+        (
+          d1 0
+        )
+      )
+    )
+    (
+      ECall op args
+      (
+        if
+        (
+          >
+          (
+            ci-references name op
+          )
+          0
+        )
+        1
+        (
+          ci-references-list name args
+        )
+      )
+    )
+    (
+      EApply fname args
+      (
+        if
+        (
+          >
+          (
+            str-eq fname name
+          )
+          0
+        )
+        1
+        (
+          ci-references-list name args
+        )
+      )
+    )
+    (
+      ELet d2 val body
+      (
+        if
+        (
+          >
+          (
+            ci-references name val
+          )
+          0
+        )
+        1
+        (
+          ci-references name body
+        )
+      )
+    )
+    (
+      ELetMut d3 val body
+      (
+        if
+        (
+          >
+          (
+            ci-references name val
+          )
+          0
+        )
+        1
+        (
+          ci-references name body
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        if
+        (
+          >
+          (
+            ci-references name c
+          )
+          0
+        )
+        1
+        (
+          if
+          (
+            >
+            (
+              ci-references name t
+            )
+            0
+          )
+          1
+          (
+            ci-references name eb
+          )
+        )
+      )
+    )
+    (
+      EWhile c body
+      (
+        if
+        (
+          >
+          (
+            ci-references name c
+          )
+          0
+        )
+        1
+        (
+          ci-references name body
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        ci-references-list name exprs
+      )
+    )
+    (
+      ETryCatch tbody d4 handler
+      (
+        if
+        (
+          >
+          (
+            ci-references name tbody
+          )
+          0
+        )
+        1
+        (
+          ci-references name handler
+        )
+      )
+    )
+    (
+      EMatch subj arms
+      (
+        if
+        (
+          >
+          (
+            ci-references name subj
+          )
+          0
+        )
+        1
+        (
+          ci-references-arms name arms
+        )
+      )
+    )
+    (
+      d5 0
+    )
+  )
+)
+(
+  defn ci-references-list
+  (
+    name xs
+  )
+  (
+    match xs
+    (
+      Nil 0
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            ci-references name h
+          )
+          0
+        )
+        1
+        (
+          ci-references-list name t
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-references-arms
+  (
+    name arms
+  )
+  (
+    match arms
+    (
+      Nil 0
+    )
+    (
+      Cons a rest
+      (
+        if
+        (
+          >
+          (
+            ci-references name
+            (
+              MA.body a
+            )
+          )
+          0
+        )
+        1
+        (
+          ci-references-arms name rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-is-bare-name
+  (
+    e name
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AIdent n
+          (
+            >
+            (
+              str-eq n name
+            )
+            0
+          )
+        )
+        (
+          d1 0
+        )
+      )
+    )
+    (
+      d2 0
+    )
+  )
+)
+(
+  defn ci-escapes
+  (
+    name e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AIdent n
+          (
+            >
+            (
+              str-eq n name
+            )
+            0
+          )
+        )
+        (
+          d1 0
+        )
+      )
+    )
+    (
+      ECall op args
+      (
+        ci-escapes-call name op args
+      )
+    )
+    (
+      EApply fname args
+      (
+        ci-escapes-list name args
+      )
+    )
+    (
+      ELet d2 val body
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name val
+          )
+          0
+        )
+        1
+        (
+          ci-escapes name body
+        )
+      )
+    )
+    (
+      ELetMut d3 val body
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name val
+          )
+          0
+        )
+        1
+        (
+          ci-escapes name body
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name c
+          )
+          0
+        )
+        1
+        (
+          if
+          (
+            >
+            (
+              ci-escapes name t
+            )
+            0
+          )
+          1
+          (
+            ci-escapes name eb
+          )
+        )
+      )
+    )
+    (
+      EWhile c body
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name c
+          )
+          0
+        )
+        1
+        (
+          ci-escapes name body
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        ci-escapes-list name exprs
+      )
+    )
+    (
+      ETryCatch tbody d4 handler
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name tbody
+          )
+          0
+        )
+        1
+        (
+          ci-escapes name handler
+        )
+      )
+    )
+    (
+      EMatch subj arms
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name subj
+          )
+          0
+        )
+        1
+        (
+          ci-escapes-arms name arms
+        )
+      )
+    )
+    (
+      d5 1
+    )
+  )
+)
+(
+  defn ci-escapes-call
+  (
+    name op args
+  )
+  (
+    if
+    (
+      >
+      (
+        ci-is-bare-name op name
+      )
+      0
+    )
+    (
+      ci-escapes-list name args
+    )
+    (
+      if
+      (
+        >
+        (
+          ci-escapes name op
+        )
+        0
+      )
+      1
+      (
+        ci-escapes-list name args
+      )
+    )
+  )
+)
+(
+  defn ci-escapes-list
+  (
+    name xs
+  )
+  (
+    match xs
+    (
+      Nil 0
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name h
+          )
+          0
+        )
+        1
+        (
+          ci-escapes-list name t
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-escapes-arms
+  (
+    name arms
+  )
+  (
+    match arms
+    (
+      Nil 0
+    )
+    (
+      Cons a rest
+      (
+        if
+        (
+          >
+          (
+            ci-escapes name
+            (
+              MA.body a
+            )
+          )
+          0
+        )
+        1
+        (
+          ci-escapes-arms name rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-inline-calls
+  (
+    name params fbody body
+  )
+  (
+    match
+    (
+      Expr.inner body
+    )
+    (
+      ECall op args
+      (
+        if
+        (
+          >
+          (
+            ci-is-bare-name op name
+          )
+          0
+        )
+        (
+          ci-beta-reduce params
+          (
+            ci-inline-calls-list name params fbody args
+          )
+          fbody
+        )
+        (
+          Expr
+          (
+            ECall
+            (
+              ci-inline-calls name params fbody op
+            )
+            (
+              ci-inline-calls-list name params fbody args
+            )
+          )
+        )
+      )
+    )
+    (
+      EApply fname args
+      (
+        if
+        (
+          >
+          (
+            str-eq fname name
+          )
+          0
+        )
+        (
+          ci-beta-reduce params
+          (
+            ci-inline-calls-list name params fbody args
+          )
+          fbody
+        )
+        (
+          Expr
+          (
+            EApply fname
+            (
+              ci-inline-calls-list name params fbody args
+            )
+          )
+        )
+      )
+    )
+    (
+      ELet lname val bod
+      (
+        Expr
+        (
+          ELet lname
+          (
+            ci-inline-calls name params fbody val
+          )
+          (
+            ci-inline-calls name params fbody bod
+          )
+        )
+      )
+    )
+    (
+      ELetMut lname val bod
+      (
+        Expr
+        (
+          ELetMut lname
+          (
+            ci-inline-calls name params fbody val
+          )
+          (
+            ci-inline-calls name params fbody bod
+          )
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        Expr
+        (
+          EIf
+          (
+            ci-inline-calls name params fbody c
+          )
+          (
+            ci-inline-calls name params fbody t
+          )
+          (
+            ci-inline-calls name params fbody eb
+          )
+        )
+      )
+    )
+    (
+      EWhile c bod
+      (
+        Expr
+        (
+          EWhile
+          (
+            ci-inline-calls name params fbody c
+          )
+          (
+            ci-inline-calls name params fbody bod
+          )
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        Expr
+        (
+          EBegin
+          (
+            ci-inline-calls-list name params fbody exprs
+          )
+        )
+      )
+    )
+    (
+      ETryCatch tbod cname handler
+      (
+        Expr
+        (
+          ETryCatch
+          (
+            ci-inline-calls name params fbody tbod
+          )
+          cname
+          (
+            ci-inline-calls name params fbody handler
+          )
+        )
+      )
+    )
+    (
+      EMatch subj arms
+      (
+        Expr
+        (
+          EMatch
+          (
+            ci-inline-calls name params fbody subj
+          )
+          (
+            ci-inline-calls-arms name params fbody arms
+          )
+        )
+      )
+    )
+    (
+      d1 body
+    )
+  )
+)
+(
+  defn ci-inline-calls-list
+  (
+    name params fbody xs
+  )
+  (
+    match xs
+    (
+      Nil Nil
+    )
+    (
+      Cons h t
+      (
+        Cons
+        (
+          ci-inline-calls name params fbody h
+        )
+        (
+          ci-inline-calls-list name params fbody t
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-inline-calls-arms
+  (
+    name params fbody arms
+  )
+  (
+    match arms
+    (
+      Nil Nil
+    )
+    (
+      Cons a rest
+      (
+        Cons
+        (
+          ci-inline-calls-arm name params fbody a
+        )
+        (
+          ci-inline-calls-arms name params fbody rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-inline-calls-arm
+  (
+    name params fbody a
+  )
+  (
+    match a
+    (
+      MA v pats abody
+      (
+        MA v pats
+        (
+          ci-inline-calls name params fbody abody
+        )
+      )
+    )
+  )
+)
+(
+  defn ci-beta-reduce
+  (
+    params args fbody
+  )
+  (
+    match params
+    (
+      Nil fbody
+    )
+    (
+      Cons p prest
+      (
+        match args
+        (
+          Nil fbody
+        )
+        (
+          Cons a arest
+          (
+            Expr
+            (
+              ELet
+              (
+                P.name p
+              )
+              a
+              (
+                ci-beta-reduce prest arest fbody
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
 ; ---------- stdlib/compiler/assert_lowering.zyl ----------
 (
   defn al-expand-program
@@ -30240,28 +31421,38 @@
                     )
                     (
                       dbg-log
-                      "assert-lowering\n"
+                      "closure-inline\n"
                     )
                     (
-                      let al-exprs
+                      let ci-exprs
                       (
-                        al-expand-program mono-exprs
+                        ci-expand-program arena mono-exprs
                       )
                       (
                         dbg-log
-                        "lower\n"
+                        "assert-lowering\n"
                       )
                       (
-                        let fns
+                        let al-exprs
                         (
-                          ic-program arena al-exprs
+                          al-expand-program ci-exprs
                         )
                         (
                           dbg-log
-                          "codegen\n"
+                          "lower\n"
                         )
                         (
-                          emit-out arena fns
+                          let fns
+                          (
+                            ic-program arena al-exprs
+                          )
+                          (
+                            dbg-log
+                            "codegen\n"
+                          )
+                          (
+                            emit-out arena fns
+                          )
                         )
                       )
                     )
