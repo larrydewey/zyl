@@ -1041,6 +1041,9 @@
     VTable
   )
   (
+    VTFn String VTable
+  )
+  (
     VTNil
   )
 )
@@ -1062,6 +1065,12 @@
         (
           vt-tag-of rest name
         )
+      )
+    )
+    (
+      VTFn d5 rest
+      (
+        vt-tag-of rest name
       )
     )
     (
@@ -1092,7 +1101,44 @@
       )
     )
     (
+      VTFn d6 rest
+      (
+        vt-arity-of rest name
+      )
+    )
+    (
       VTNil -1
+    )
+  )
+)
+(
+  defn vt-is-fn
+  (
+    vt name
+  )
+  (
+    match vt
+    (
+      VTEntry d7 d8 d9 rest
+      (
+        vt-is-fn rest name
+      )
+    )
+    (
+      VTFn n rest
+      (
+        if
+        (
+          str-eq n name
+        )
+        1
+        (
+          vt-is-fn rest name
+        )
+      )
+    )
+    (
+      VTNil 0
     )
   )
 )
@@ -21235,6 +21281,16 @@
           )
         )
         (
+          EDefn name d4 d5
+          (
+            ic-collect-vt-run rest
+            (
+              VTFn name vt
+            )
+            stag
+          )
+        )
+        (
           d3
           (
             ic-collect-vt-run rest vt stag
@@ -22234,7 +22290,7 @@
 (
   defn ic-safe-callee
   (
-    arena fname pnames
+    arena fname pnames vt
   )
   (
     if
@@ -22255,7 +22311,18 @@
         )
         -1
       )
-      1 0
+      1
+      (
+        if
+        (
+          >
+          (
+            vt-is-fn vt fname
+          )
+          0
+        )
+        1 0
+      )
     )
   )
 )
@@ -22299,7 +22366,7 @@
         (
           >
           (
-            ic-safe-callee arena fname pnames
+            ic-safe-callee arena fname pnames vt
           )
           0
         )
@@ -23179,6 +23246,12 @@
     match vt
     (
       VTNil Nil
+    )
+    (
+      VTFn d1 rest
+      (
+        ic-struct-arms arena rest field
+      )
     )
     (
       VTEntry name tag fields rest
