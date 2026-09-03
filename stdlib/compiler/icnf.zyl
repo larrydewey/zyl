@@ -106,11 +106,86 @@
 ; PROGRAM-LEVEL LOWERING
 ; ===========================================================================
 
+; Accumulator threaded through the top-level walk: functions collected so
+; far (defns + synthesized `_test_*` bodies) and leftover top-level
+; statements (test registrations, run-tests) that have no enclosing defn
+; and must land in an implicit `main`.
+(deftype TLAcc (TLAcc (List Icnf) (List Icnf)))
+
+(defn tlacc-push-fn (f acc)
+  (match acc (TLAcc fns stmts (TLAcc (Cons f fns) stmts))))
+
+(defn tlacc-push-fns (newfns acc)
+  (match newfns
+    (Nil acc)
+    (Cons f rest (tlacc-push-fns rest (tlacc-push-fn f acc)))))
+
+(defn tlacc-push-stmt (s acc)
+  (match acc (TLAcc fns stmts (TLAcc fns (Cons s stmts)))))
+
 ; Lower a whole program: collect deftype variant tables and defn bodies.
 ; `prog` is the post-monomorphization (List Expr). Returns: List(IFunc)
+;
+; Top-level (test ...) / (run-tests) forms have no enclosing defn, so a
+; plain "collect EDefn only" walk (the original behavior) silently drops
+; them — leaving no `main` and an `undefined reference to f_main` at link
+; time for every test file. Each (test "name" body) synthesizes a
+; "_test_<name>" function plus a `zyl_register_test` call left in the
+; statement stream; (run-tests) becomes a `zyl_run_tests` call. Leftover
+; statements become an implicit `main` (skipped if the source already
+; defines one explicitly).
 (defn ic-program (arena prog)
   (let vt (ic-collect-vt prog VTNil)
-    (list-reverse (ic-defns arena prog (no-ifuncs) vt))))
+    (match (ic-toplevel arena prog vt (TLAcc (no-ifuncs) Nil))
+      (TLAcc fns stmts (ic-finish-program (list-reverse fns) (list-reverse stmts))))))
+
+(defn ic-toplevel (arena forms vt acc)
+  (match forms
+    (Nil acc)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name params body
+          (ic-toplevel arena rest vt (tlacc-push-fns (ic-defn arena name params body vt) acc)))
+        (ETestDecl name body d1
+          (ic-toplevel arena rest vt (ic-toplevel-test arena name body vt acc)))
+        (ERunTests d2
+          (ic-toplevel arena rest vt (tlacc-push-stmt (IFfi "zyl_run_tests" Nil) acc)))
+        (d3 (ic-toplevel arena rest vt acc))))))
+
+; One (test "name" body) form: synthesize a "_test_<name>" 0-arg function
+; (always returns 0 — assertion failures panic via zyl_panic, matching the
+; Rust bootstrap), and leave a zyl_register_test(name, fnptr) call for the
+; implicit main. The function reference is a plain ILoad of the synthesized
+; name — cg-load-nonslot already resolves any name present in the
+; function table to a `lea rax, [rip+f_<name>]` (used elsewhere for
+; higher-order function values), so no separate function-pointer node kind
+; is needed.
+(defn ic-toplevel-test (arena name body vt acc)
+  (let tname (str-intern arena (str-concat "_test_" name))
+    (let h (ic-hoist (ic-expr arena body vt))
+      (let tbody (ISeq (Cons (hoist-node h) (Cons (IConst 0) Nil)))
+        (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody) (hoist-fns h)) acc)
+          (tlacc-push-stmt (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) acc2))))))
+
+; If there are leftover top-level statements, wrap them in an implicit
+; `main` (the entry stub always calls f_main) unless the source already
+; defines one explicitly — that combination doesn't occur in this
+; codebase, so it's left unsupported rather than guessed at.
+(defn ic-finish-program (fns stmts)
+  (match stmts
+    (Nil fns)
+    (Cons d1 d2
+      (if (> (ic-has-main fns) 0)
+        (ffi-call "f_error" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
+        (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil)))) fns)))))
+
+(defn ic-has-main (fns)
+  (match fns
+    (Nil 0)
+    (Cons f rest
+      (match f
+        (IFn name d1 d2 (if (> (str-eq name "main") 0) 1 (ic-has-main rest)))
+        (d3 (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
 (defn ic-collect-vt (forms vt)
@@ -141,22 +216,17 @@
             (ffi-call "f_error" "E_DUPLICATE_VARIANT: variant name defined by more than one deftype" 1000)
             (VTEntry nm
                      tag
-                     (list-length (AV.fields v))
+                     (AV.fields v)
                      tail)))))))
 
-; Lower all top-level EDefn exprs to IFn records (source order preserved).
-(defn ic-defns (arena forms acc vt)
-  (match forms
-    (Nil acc)
-    (Cons e rest
-      (match (Expr.inner e)
-        (EDefn name params body
-          (ic-defns arena rest (Cons (ic-defn arena name params body vt) acc) vt))
-        (d1 (ic-defns arena rest acc vt))))))
-
-; One top-level function: name, (List Param), body.
+; One top-level function: name, (List Param), body. Returns (List Icnf)
+; of IFns — the function itself plus any lambda helpers hoisted out of
+; its body (see ic-hoist) — rather than a single IFn, since a `(fn ...)`
+; anywhere inside the body lowers to an embedded IFn node that must land
+; in the top-level function list, not stay nested inside an expression.
 (defn ic-defn (arena name params body vt)
-  (IFn (str-intern arena name) (param-names params (no-strs)) (ic-expr arena body vt)))
+  (let h (ic-hoist (ic-expr arena body vt))
+    (Cons (IFn (str-intern arena name) (param-names params (no-strs)) (hoist-node h)) (hoist-fns h))))
 
 (defn param-names (params acc)
   (match params
@@ -199,7 +269,293 @@
     (EPrint exprs (ic-print arena exprs vt))
     (EMatch subj arms (ic-match arena subj arms vt))
     (EFfiCall sym args d1 (IFfi sym (ic-expr-list arena args vt)))
+    ; assert-equal/-true/-false: same `=`-opcode/panic shape as the Rust
+    ; bootstrap's icnf.rs — a bare identifier match here (no dedicated
+    ; Icnf node) means these previously fell through to the (IConst 0)
+    ; wildcard below and silently no-op'd; every "passing" regression test
+    ; that used them was actually asserting nothing.
+    (EAssertEqual l r
+     (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
+          (IConst 0)
+          (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil))))
+    (EAssertTrue e d3
+     (IIf (ic-expr arena e vt)
+          (IConst 0)
+          (IFfi "zyl_panic" (Cons (IStr "assert-true failed") Nil))))
+    (EAssertFalse e d4
+     (IIf (ic-expr arena e vt)
+          (IFfi "zyl_panic" (Cons (IStr "assert-false failed") Nil))
+          (IConst 0)))
+    (EStructGet se field (ic-struct-get arena se field vt))
+    ; (fn (params...) body): lowers to an embedded IFn value — legal
+    ; here only because ic-hoist (called by every top-level-function
+    ; lowering site: ic-defn, ic-toplevel-test) walks the finished Icnf
+    ; tree afterward, lifts every embedded IFn out to the real top-level
+    ; function list, and replaces its occurrence with (ILoad name) — the
+    ; same "load a known function's address" path cg-load-fnref already
+    ; uses for passing a plain named function as a value, which is what
+    ; makes calling through it via a local variable work at all (see
+    ; cg-fire-user's indirect-call branch). No free-variable capture: a
+    ; `fn` referencing a name bound in an ENCLOSING scope (not its own
+    ; params) reads as unbound in the lifted function, same as any other
+    ; out-of-scope reference.
+    (EFn d5 params body (ic-lambda arena params body vt))
     (d2 (IConst 0))))
+
+; Fresh, guaranteed-unique numeric id for naming a lifted lambda: the
+; arena's own bump-allocation pointer (any tiny allocation) is already a
+; monotonically increasing Int distinct from every earlier call, with no
+; separate counter to thread through ic-expr's signature.
+(defn ic-fresh-id (arena)
+  (arena-alloc-zeroed arena 1))
+
+(defn ic-digit-str (d)
+  (if (= d 0) "0"
+  (if (= d 1) "1"
+  (if (= d 2) "2"
+  (if (= d 3) "3"
+  (if (= d 4) "4"
+  (if (= d 5) "5"
+  (if (= d 6) "6"
+  (if (= d 7) "7"
+  (if (= d 8) "8"
+  "9"))))))))))
+
+(defn ic-int-to-str (n)
+  (if (< n 10)
+    (ic-digit-str n)
+    (str-concat (ic-int-to-str (/ n 10)) (ic-digit-str (% n 10)))))
+
+; Hoisting hands a `fn` a NEW top-level scope with only its own params —
+; any bare identifier the body references that ISN'T one of those params
+; (or a known ADT-variant/nullary constructor) is a genuine capture, and
+; a captured name from the ENCLOSING scope simply doesn't exist there,
+; producing an undefined-symbol link error instead of the silent-no-op
+; this whole `fn` used to lower to. core/core.zyl's `compose` — auto-
+; injected by module resolution into nearly every program that `use`s
+; anything — hit exactly this: `(fn (x) (f (g x)))` captures compose's
+; own params `f`/`g`, and got hoisted into a function with neither,
+; undefined-referencing `f_f`/`f_g` even though compose itself is never
+; called by the test. ic-body-safe-to-hoist is a conservative, PARSE-
+; TREE-only safety gate (no scope-tracking threaded through the rest of
+; ic-expr): a lambda hoists only when it references nothing but its own
+; params, literals, and call-head operator/function names — anything
+; else falls back to the old IConst 0. This undershoots (a genuinely
+; non-capturing lambda that calls a real top-level helper by name also
+; won't hoist) but can never overshoot into a new undefined reference.
+(defn ic-lambda (arena params body vt)
+  (let pnames (param-names params (no-strs))
+    (if (> (ic-safe-expr arena body pnames vt) 0)
+      (let lname (str-intern arena (str-concat "_lambda_" (ic-int-to-str (ic-fresh-id arena))))
+        (IFn lname pnames (ic-expr arena body vt)))
+      (IConst 0))))
+
+(defn ic-name-in-list (name xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq name h) 0) 1 (ic-name-in-list name t)))))
+
+(defn ic-safe-atom (atom pnames vt)
+  (match atom
+    (AIdent name (if (> (ic-name-in-list name pnames) 0) 1 (if (> (vt-tag-of vt name) -1) 1 0)))
+    (d1 1)))
+
+(defn ic-safe-list (arena xs pnames vt)
+  (match xs
+    (Nil 1)
+    (Cons h t (if (> (ic-safe-expr arena h pnames vt) 0) (ic-safe-list arena t pnames vt) 0))))
+
+; A call-head name (the `f` in `(f x)`) is safe only when it's a known
+; arithmetic/comparison operator (ic-op-of; these lower via a dedicated
+; opcode path, never an actual name lookup) or one of THIS lambda's own
+; params (calling through a value it was genuinely handed, e.g.
+; "closure-passed-as-arg"'s `(fn (f x) (f x))`). Any other name is
+; exactly as ambiguous as an argument-position reference — it might be a
+; real top-level function (unverifiable here) or an ENCLOSING scope's
+; param captured by name, which is what actually broke: core/core.zyl's
+; `compose` is `(defn compose (f g) (fn (x) (f (g x))))`, and its inner
+; lambda's own params are just `(x)` — "f"/"g" are compose's params, not
+; the lambda's, so treating a call head as automatically safe (the
+; original, wrong version of this check) hoisted it anyway and produced
+; undefined references to `f_f`/`f_g` the moment ANY program pulled in
+; core/core (nearly every `use`-ing program, via module resolution's
+; auto-injection) — compose is never even called by those tests.
+(defn ic-safe-callee (arena fname pnames)
+  (if (> (ic-name-in-list fname pnames) 0)
+    1
+    (if (> (ic-op-of arena fname) -1) 1 0)))
+
+(defn ic-safe-expr (arena e pnames vt)
+  (match (Expr.inner e)
+    (EAtom atom (ic-safe-atom atom pnames vt))
+    (ECall op args
+      (if (> (ic-safe-expr arena op pnames vt) 0) (ic-safe-list arena args pnames vt) 0))
+    (EApply fname args
+      (if (> (ic-safe-callee arena fname pnames) 0) (ic-safe-list arena args pnames vt) 0))
+    (ELet name val body
+      (if (> (ic-safe-expr arena val pnames vt) 0) (ic-safe-expr arena body (Cons name pnames) vt) 0))
+    (ELetMut name val body
+      (if (> (ic-safe-expr arena val pnames vt) 0) (ic-safe-expr arena body (Cons name pnames) vt) 0))
+    (EIf c t eb
+      (if (> (ic-safe-expr arena c pnames vt) 0)
+        (if (> (ic-safe-expr arena t pnames vt) 0) (ic-safe-expr arena eb pnames vt) 0)
+        0))
+    (EWhile c body
+      (if (> (ic-safe-expr arena c pnames vt) 0) (ic-safe-expr arena body pnames vt) 0))
+    (ESetBang name val
+      (if (> (ic-name-in-list name pnames) 0) (ic-safe-expr arena val pnames vt) 0))
+    (EBegin exprs (ic-safe-list arena exprs pnames vt))
+    (EPrint exprs (ic-safe-list arena exprs pnames vt))
+    (EAssertEqual l r
+      (if (> (ic-safe-expr arena l pnames vt) 0) (ic-safe-expr arena r pnames vt) 0))
+    (EAssertTrue e2 d2 (ic-safe-expr arena e2 pnames vt))
+    (EAssertFalse e2 d3 (ic-safe-expr arena e2 pnames vt))
+    (EStructGet se d4 (ic-safe-expr arena se pnames vt))
+    (EFn d5 fparams fbody
+      (ic-safe-expr arena fbody (list-append (param-names fparams (no-strs)) pnames) vt))
+    (d6 0)))
+
+; --- hoist embedded IFn nodes (from `fn`) out to the top level -------------
+;
+; A structural walk of the WHOLE Icnf tree, not the Expr tree: cheaper
+; than threading a lambda accumulator through every one of ic-expr's ~40
+; call sites, and additive (it runs strictly after ic-expr, touching
+; none of that already-working traversal).
+
+(deftype HoistAcc (HoistAcc Icnf (List Icnf)))
+(deftype HoistListAcc (HoistListAcc (List Icnf) (List Icnf)))
+(deftype HoistArmAcc (HoistArmAcc (List IArm) (List Icnf)))
+
+(defn hoist-node (r) (match r (HoistAcc n d1 n)))
+(defn hoist-fns (r) (match r (HoistAcc d1 f f)))
+(defn hoistl-nodes (r) (match r (HoistListAcc n d1 n)))
+(defn hoistl-fns (r) (match r (HoistListAcc d1 f f)))
+(defn hoista-arms (r) (match r (HoistArmAcc a d1 a)))
+(defn hoista-fns (r) (match r (HoistArmAcc d1 f f)))
+
+(defn ic-hoist-list (xs)
+  (match xs
+    (Nil (HoistListAcc Nil Nil))
+    (Cons h t
+      (let hh (ic-hoist h)
+        (let ht (ic-hoist-list t)
+          (HoistListAcc (Cons (hoist-node hh) (hoistl-nodes ht))
+                        (list-append (hoist-fns hh) (hoistl-fns ht))))))))
+
+(defn ic-hoist-arms (arms)
+  (match arms
+    (Nil (HoistArmAcc Nil Nil))
+    (Cons a rest
+      (match a
+        (IArm vname tag binds body
+          (let hb (ic-hoist body)
+            (let hr (ic-hoist-arms rest)
+              (HoistArmAcc (Cons (IArm vname tag binds (hoist-node hb)) (hoista-arms hr))
+                           (list-append (hoist-fns hb) (hoista-fns hr))))))))))
+
+(defn ic-hoist (node)
+  (match node
+    (IConst d1 (HoistAcc node Nil))
+    (IStr d2 (HoistAcc node Nil))
+    (IFlt d3 (HoistAcc node Nil))
+    (ILoad d4 (HoistAcc node Nil))
+    (IBinop op l r
+      (let hl (ic-hoist l)
+        (let hr (ic-hoist r)
+          (HoistAcc (IBinop op (hoist-node hl) (hoist-node hr))
+                    (list-append (hoist-fns hl) (hoist-fns hr))))))
+    (ICall name args
+      (let ha (ic-hoist-list args)
+        (HoistAcc (ICall name (hoistl-nodes ha)) (hoistl-fns ha))))
+    (IFfi name args
+      (let ha (ic-hoist-list args)
+        (HoistAcc (IFfi name (hoistl-nodes ha)) (hoistl-fns ha))))
+    (IPrint a
+      (let ha (ic-hoist a)
+        (HoistAcc (IPrint (hoist-node ha)) (hoist-fns ha))))
+    (IIf c t eb
+      (let hc (ic-hoist c)
+        (let ht (ic-hoist t)
+          (let he (ic-hoist eb)
+            (HoistAcc (IIf (hoist-node hc) (hoist-node ht) (hoist-node he))
+                      (list-append (hoist-fns hc) (list-append (hoist-fns ht) (hoist-fns he))))))))
+    (IWhile c body
+      (let hc (ic-hoist c)
+        (let hb (ic-hoist body)
+          (HoistAcc (IWhile (hoist-node hc) (hoist-node hb)) (list-append (hoist-fns hc) (hoist-fns hb))))))
+    (ISet name v
+      (let hv (ic-hoist v)
+        (HoistAcc (ISet name (hoist-node hv)) (hoist-fns hv))))
+    (ILet name v body
+      (let hv (ic-hoist v)
+        (let hb (ic-hoist body)
+          (HoistAcc (ILet name (hoist-node hv) (hoist-node hb)) (list-append (hoist-fns hv) (hoist-fns hb))))))
+    (ISeq es
+      (let ha (ic-hoist-list es)
+        (HoistAcc (ISeq (hoistl-nodes ha)) (hoistl-fns ha))))
+    (IVariant nm tag fields
+      (let ha (ic-hoist-list fields)
+        (HoistAcc (IVariant nm tag (hoistl-nodes ha)) (hoistl-fns ha))))
+    (IMatch scr arms
+      (let hs (ic-hoist scr)
+        (let ha (ic-hoist-arms arms)
+          (HoistAcc (IMatch (hoist-node hs) (hoista-arms ha)) (list-append (hoist-fns hs) (hoista-fns ha))))))
+    (IFn nm params body
+      (let hb (ic-hoist body)
+        (HoistAcc (ILoad nm) (Cons (IFn nm params (hoist-node hb)) (hoist-fns hb)))))))
+
+; (struct-get obj "field"): self-host has no static type info flowing
+; into ICNF lowering, so which concrete struct `obj` is can't be known
+; here — build one match arm per struct type (in vt) that declares a
+; field with this name, each binding all of that struct's fields and
+; returning the one at the requested position, and let the runtime tag
+; already carried by `obj` (same tag every IVariant construction embeds)
+; pick the right arm, exactly like any other ADT match. No struct having
+; the field at all falls back to the (IConst 0) every unsupported shape
+; in this file already uses.
+(defn ic-struct-get (arena se field vt)
+  (let arms (ic-struct-arms arena vt field)
+    (if (is-nil arms)
+      (IConst 0)
+      (IMatch (ic-expr arena se vt) arms))))
+
+(defn ic-struct-arms (arena vt field)
+  (match vt
+    (VTNil Nil)
+    (VTEntry name tag fields rest
+      (let arms-rest (ic-struct-arms arena rest field)
+        (let idx (ic-field-index fields field 0)
+          (if (>= idx 0)
+            (Cons (ic-struct-arm arena name tag fields idx) arms-rest)
+            arms-rest))))))
+
+(defn ic-struct-arm (arena name tag fields idx)
+  (let binders (ic-struct-binders (list-length fields) 0)
+    (IArm (str-intern arena name) tag binders (ILoad (ic-nth-str binders idx)))))
+
+(defn ic-field-index (fields field i)
+  (match fields
+    (Nil -1)
+    (Cons h t (if (> (str-eq h field) 0) i (ic-field-index t field (+ i 1))))))
+
+(defn ic-nth-str (xs i)
+  (match xs
+    (Nil "")
+    (Cons h t (if (= i 0) h (ic-nth-str t (- i 1))))))
+
+(defn ic-struct-binders (n i)
+  (if (>= i n) Nil (Cons (ic-struct-binder-name i) (ic-struct-binders n (+ i 1)))))
+
+; Built from a repeated-underscore suffix rather than formatting the
+; index as a decimal string: no int-to-string helper exists in this
+; bootstrap, and this only needs to be distinct per position, not
+; readable — struct-stress tests declare structs with 25-30 fields, so a
+; small fixed name pool isn't enough.
+(defn ic-struct-binder-name (i)
+  (str-concat "_sg" (ic-underscores (+ i 1))))
+
+(defn ic-underscores (n)
+  (if (<= n 0) "" (str-concat "_" (ic-underscores (- n 1)))))
 
 ; Atom: nullary variant construction, variable reference, or literal.
 (defn ic-atom (arena atom vt)
@@ -232,10 +588,57 @@
 (defn ic-apply (arena fname args vt)
   (if (> (str-eq fname (str-intern arena "ffi-call")) 0)
     (ic-ffi arena args vt)
-    (let op (ic-op-of arena fname)
-      (if (> op -1)
-        (ic-binop arena op args vt)
+    (let strb (ic-str-builtin-sym arena fname)
+      (if (> (str-length strb) 0)
+        (IFfi strb (ic-expr-list arena args vt))
+        (if (> (ic-starts-with-make fname) 0)
+          (ic-make-struct arena fname args vt)
+          (let op (ic-op-of arena fname)
+            (if (> op -1)
+              (ic-binop arena op args vt)
+              (ic-call-or-variant arena fname args vt))))))))
+
+; Whether `s` starts with "make-". Deliberately NOT reusing
+; monomorphization.zyl's str-starts-with (str-substring + `=`): codegen's
+; cg-param-env hardcodes every function PARAMETER's kind-of to 0 (int),
+; regardless of how it's used, so `=`/`!=` between two STRING parameters
+; silently does raw pointer comparison instead of routing through
+; zyl_cstr_eq — str-starts-with's own `s`/`prefix` are exactly that
+; shape, so it always returns false when self-hosted codegen (not the
+; Rust bootstrap) compiles a call to it. Comparing through zyl_cstr_eq
+; directly via ffi-call, as done here, sidesteps kind-of entirely.
+(defn ic-starts-with-make (s)
+  (if (>= (str-length s) 5)
+    (ffi-call "zyl_cstr_eq" (str-substring s 0 5) "make-" 1000)
+    0))
+
+; (make-<Name> field-vals...): struct constructor call. Structs are
+; single-variant deftypes named after the struct (see expr_inner.zyl's
+; parse-defstruct), so stripping the "make-" prefix and looking that name
+; up in vt is enough to build the same IVariant a direct `(Name ...)` ADT
+; constructor call would. Falls back to a plain call/variant lookup on
+; the untouched name when "make-<rest>" isn't a known struct — so a
+; user-defined function that happens to be named "make-something-else"
+; still works normally.
+(defn ic-make-struct (arena fname args vt)
+  (let sname (str-drop fname 5)
+    (let tag (vt-tag-of vt (str-intern arena sname))
+      (if (> tag -1)
+        (IVariant (str-intern arena sname) tag (ic-expr-list arena args vt))
         (ic-call-or-variant arena fname args vt)))))
+
+; str-concat/str-length/str-substring/str-equal are recognized by name
+; and inlined straight to the runtime C symbol, matching the Rust
+; bootstrap's codegen.rs (which inlines these at every call site rather
+; than requiring a real callable definition) — without this, any program
+; that calls them without also defining its own same-named wrapper
+; function links with an undefined `f_str_*` reference.
+(defn ic-str-builtin-sym (arena fname)
+  (if (> (str-eq fname (str-intern arena "str-concat")) 0) "zyl_cstr_concat"
+  (if (> (str-eq fname (str-intern arena "str-length")) 0) "zyl_cstr_len"
+  (if (> (str-eq fname (str-intern arena "str-substring")) 0) "zyl_cstr_substr"
+  (if (> (str-eq fname (str-intern arena "str-equal")) 0) "zyl_cstr_eq"
+  "")))))
 
 (defn ic-call-or-variant (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))

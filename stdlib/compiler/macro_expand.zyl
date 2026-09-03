@@ -1,0 +1,148 @@
+; === Zyl Standard Library — Compiler Macro Expansion ===
+; Module: compiler/macro_expand
+;
+; expr_inner.zyl recognizes `(macro Name (params) body)` as a distinct
+; node (EMacroDef) but nothing in the self-hosted pipeline ever EXPANDED
+; a call to a defined macro — `defmacro` (the spelling the test corpus
+; actually uses; parsed identically to `macro`, see the dispatch entry
+; below) fell through completely unrecognized as a plain function-call
+; expr, and even a real `(macro ...)` definition's call sites just
+; lowered as an ordinary call to a symbol nothing ever emits, linking
+; with an undefined reference.
+;
+; This module collects every top-level EMacroDef into a table (name ->
+; formal params + body template) and rewrites the whole program,
+; replacing each call to a known macro name with its body — substituting
+; every bare-identifier reference to a formal parameter with the
+; UNEVALUATED argument expression from the call site (true macro
+; semantics: arguments are spliced in as source, not evaluated first).
+; A macro whose body calls another macro (e.g. `when` expanding to
+; `unless`) expands fully: the substituted body is itself re-walked, so
+; the inner call is recognized and expanded too.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+
+(deftype MacroTable
+  (MEntry String (List String) Expr MacroTable)
+  (MNil))
+
+(defn mt-has (mt name)
+  (match mt
+    (MNil 0)
+    (MEntry n d1 d2 rest (if (> (str-eq n name) 0) 1 (mt-has rest name)))))
+
+(defn mt-params (mt name)
+  (match mt
+    (MNil Nil)
+    (MEntry n params d1 rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
+
+(defn mt-body (mt name)
+  (match mt
+    (MNil (Expr (EAtom ANil)))
+    (MEntry n d1 body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
+
+; --- collect top-level macro defs --------------------------------------------
+
+(defn me-collect (forms mt)
+  (match forms
+    (Nil mt)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EMacroDef name params body
+          (me-collect rest (MEntry name (me-param-names params) body mt)))
+        (d1 (me-collect rest mt))))))
+
+(defn me-param-names (params)
+  (match params
+    (Nil Nil)
+    (Cons p rest (Cons (me-expr-ident p "") (me-param-names rest)))))
+
+(defn me-expr-ident (e fb)
+  (match (Expr.inner e)
+    (EAtom atom (match atom (AIdent n n) (d1 fb)))
+    (d2 fb)))
+
+; --- substitution environment: formal param name -> actual arg Expr --------
+
+(deftype SEnv (SBind String Expr SEnv) (SNil))
+
+(defn senv-lookup (env name)
+  (match env
+    (SNil None)
+    (SBind n e rest (if (> (str-eq n name) 0) (Some e) (senv-lookup rest name)))))
+
+(defn senv-from-lists (params args)
+  (match params
+    (Nil SNil)
+    (Cons p prest
+      (match args
+        (Nil SNil)
+        (Cons a arest (SBind p a (senv-from-lists prest arest)))))))
+
+; --- rewrite: substitute params + expand macro calls, recursively ----------
+
+(defn me-rewrite-list (forms senv mt)
+  (match forms
+    (Nil Nil)
+    (Cons e rest (Cons (me-rewrite e senv mt) (me-rewrite-list rest senv mt)))))
+
+(defn me-rewrite (e senv mt)
+  (match (Expr.inner e)
+    (EAtom atom (me-rewrite-atom e atom senv))
+    (ECall op args (Expr (ECall (me-rewrite op senv mt) (me-rewrite-list args senv mt))))
+    (EApply fname args (me-rewrite-apply fname args senv mt))
+    (ELet name val body (Expr (ELet name (me-rewrite val senv mt) (me-rewrite body senv mt))))
+    (ELetMut name val body (Expr (ELetMut name (me-rewrite val senv mt) (me-rewrite body senv mt))))
+    (EIf c t eb (Expr (EIf (me-rewrite c senv mt) (me-rewrite t senv mt) (me-rewrite eb senv mt))))
+    (EWhile c body (Expr (EWhile (me-rewrite c senv mt) (me-rewrite body senv mt))))
+    (ESetBang name val (Expr (ESetBang name (me-rewrite val senv mt))))
+    (EBegin exprs (Expr (EBegin (me-rewrite-list exprs senv mt))))
+    (EPrint exprs (Expr (EPrint (me-rewrite-list exprs senv mt))))
+    (EAssertEqual l r (Expr (EAssertEqual (me-rewrite l senv mt) (me-rewrite r senv mt))))
+    (EAssertTrue ex d3 (Expr (EAssertTrue (me-rewrite ex senv mt) d3)))
+    (EAssertFalse ex d4 (Expr (EAssertFalse (me-rewrite ex senv mt) d4)))
+    (EStructGet se field (Expr (EStructGet (me-rewrite se senv mt) field)))
+    (EDefn name params body (Expr (EDefn name params (me-rewrite body senv mt))))
+    (ETestDecl name body d5 (Expr (ETestDecl name (me-rewrite body senv mt) d5)))
+    (d6 e)))
+
+(defn me-rewrite-atom (e atom senv)
+  (match atom
+    (AIdent name (me-subst-ident e name senv))
+    (d1 e)))
+
+(defn me-subst-ident (e name senv)
+  (match (senv-lookup senv name)
+    (Some e2 e2)
+    (None e)))
+
+; `fname`'s own args are rewritten under the CURRENT senv first (so an
+; outer macro's params used inside a nested macro call are already
+; substituted), then — when fname names a known macro — the macro body
+; is rewritten under a FRESH senv binding its formals to those rewritten
+; args, and the result is returned as-is (no further top-level wrapping)
+; so a body that itself calls another macro keeps expanding: `when`'s
+; body `(unless (not cond) body)` becomes a call to `unless`, which this
+; same function then also matches and expands.
+(defn me-rewrite-apply (fname args senv mt)
+  (let args2 (me-rewrite-list args senv mt)
+    (if (> (mt-has mt fname) 0)
+      (me-rewrite (mt-body mt fname) (senv-from-lists (mt-params mt fname) args2) mt)
+      (Expr (EApply fname args2)))))
+
+; --- entry point --------------------------------------------------------
+
+; Drop EMacroDef forms once collected — pure compile-time constructs with
+; no runtime behavior of their own.
+(defn me-strip (forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EMacroDef d1 d2 d3 (me-strip rest))
+        (d4 (Cons e (me-strip rest)))))))
+
+(defn me-expand-program (forms)
+  (let mt (me-collect forms MNil)
+    (me-rewrite-list (me-strip forms) SNil mt)))

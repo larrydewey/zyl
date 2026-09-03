@@ -74,9 +74,17 @@
 
 ; --- Variant tables ---------------------------------------------------------
 
-; Immutable variant table: variant name -> tag + field count.
+; Immutable variant table: variant name -> tag + field names.
+;
+; Third slot used to be a bare field-count Int (vt-arity-of, its only
+; reader, was itself unused anywhere) — widened to the actual field-name
+; list so struct-get (see icnf.zyl's ic-struct-get) can find which
+; position a named field lives at without a second, separately-threaded
+; table. A struct is just a single-variant deftype (see expr_inner.zyl's
+; parse-defstruct), so this table already has an entry per struct type
+; for free.
 (deftype VTable
-  (VTEntry String Int Int VTable)  ; variant name, tag, arity
+  (VTEntry String Int (List String) VTable)  ; variant name, tag, field names
   (VTNil))
 
 ; Tag for an interned variant name; -1 when absent.
@@ -90,7 +98,7 @@
 ; Returns: Int
 (defn vt-arity-of (vt name)
   (match vt
-    (VTEntry n d4 ar rest (if (str-eq n name) ar (vt-arity-of rest name)))
+    (VTEntry n d4 fields rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
     (VTNil -1)))
 
 ; --- Token stream helpers ----------------------------------------------------
