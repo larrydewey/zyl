@@ -1,0 +1,170 @@
+; === Zyl Standard Library — Compiler trait/impl dispatch ===
+; Module: compiler/trait_dispatch
+;
+; monomorphization.zyl's monomorphize-one ALREADY lifts every impl
+; method body to a real top-level EDefn (monomorphize-push-impl-bodies,
+; named "Trait.method_Type" -- e.g. "OutputStream.write_Stdout",
+; matching the Rust bootstrap's own convention exactly). What it never
+; does is rewrite the CALL SITE: `(OutputStream.write out "test")`
+; lowers through the ordinary EApply path to a plain call to a function
+; named literally "OutputStream.write", which was never itself defined
+; (only the per-type mangled versions were) -- undefined reference at
+; link time.
+;
+; The Rust bootstrap resolves `(Trait.method receiver args...)` to
+; `(Trait.method_Type receiver args...)` using type inference to know
+; receiver's concrete type. This pipeline has no equivalent static type
+; info flowing into lowering (see icnf.zyl's ic-struct-get, which has
+; the identical problem for plain struct field access and solves it by
+; building one match arm per candidate struct type and letting the
+; receiver's own runtime tag pick the right one). Trait dispatch uses
+; the same trick: since every impl type is a real, tagged ADT/struct
+; value, `(Trait.method receiver args...)` becomes a match on receiver
+; that dispatches to Trait_method_Type for whichever impl type's tag
+; the receiver actually carries -- no static type info needed at all.
+;
+; This pass runs after monomorphization (so the Trait.method_Type defns
+; already exist) and before icnf, and rewrites every direct call to a
+; dotted "Trait.method" name into a dispatch match over the receiver,
+; calling whichever Trait.method_Type monomorphization already defined
+; for the receiver's actual runtime type. A call to a name that isn't a
+; known trait method is left completely unchanged.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+
+; One (dotted trait.method name, impl type name, mangled defn name)
+; triple, one per (impl Trait Type (defn method ...)) body.
+(deftype TDEntry (TDEntry String String String))
+
+(defn td-dotted (trait mname) (str-concat trait (str-concat "." mname)))
+
+; Matches monomorphize-push-impl-bodies's own concrete-name convention
+; exactly (monomorphization.zyl) -- e.g. "OutputStream.write_Stdout" --
+; since that's the real name of the EDefn it already created; this pass
+; only needs to call it, never redefine it.
+(defn td-mangle (trait mname type) (str-concat trait (str-concat "." (str-concat mname (str-concat "_" type)))))
+
+; --- entry point ------------------------------------------------------------
+
+(defn td-expand-program (prog)
+  (let entries (td-collect prog)
+    (td-rewrite-list entries prog)))
+
+; --- collect (trait.method, type, mangled-name) triples from every
+; EImplBlock -------------------------------------------------------------
+
+(defn td-collect (prog)
+  (match prog
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EImplBlock trait type bodies (list-append (td-collect-bodies trait type bodies) (td-collect rest)))
+        (d1 (td-collect rest))))))
+
+(defn td-collect-bodies (trait type bodies)
+  (match bodies
+    (Nil Nil)
+    (Cons ib rest
+      (match ib
+        (IB dn
+          (match dn
+            (DN mname d2 d3
+              (Cons (TDEntry (td-dotted trait mname) type (td-mangle trait mname type))
+                    (td-collect-bodies trait type rest)))))))))
+
+; All entries whose dotted name matches `name` -- one per implementing
+; type, e.g. OutputStream.write -> [(Stdout, ...write_Stdout), (StringBuffer, ...write_StringBuffer)].
+(defn td-lookup (name entries)
+  (match entries
+    (Nil Nil)
+    (Cons ent rest
+      (match ent
+        (TDEntry d2 d3 d4
+          (if (> (str-eq d2 name) 0)
+            (Cons ent (td-lookup name rest))
+            (td-lookup name rest)))))))
+
+; --- generic tree walk (same coverage as closure_inline.zyl/assert_lowering.zyl) --
+
+(defn td-rewrite-list (entries forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest (Cons (td-rewrite entries e) (td-rewrite-list entries rest)))))
+
+(defn td-rewrite (entries e)
+  (match (Expr.inner e)
+    (EDefn name params body (Expr (EDefn name params (td-rewrite entries body))))
+    (ETestDecl name body k (Expr (ETestDecl name (td-rewrite entries body) k)))
+    (ELet name val body (Expr (ELet name (td-rewrite entries val) (td-rewrite entries body))))
+    (ELetMut name val body (Expr (ELetMut name (td-rewrite entries val) (td-rewrite entries body))))
+    (EIf c t eb (Expr (EIf (td-rewrite entries c) (td-rewrite entries t) (td-rewrite entries eb))))
+    (EWhile c body (Expr (EWhile (td-rewrite entries c) (td-rewrite entries body))))
+    (EBegin exprs (Expr (EBegin (td-rewrite-list entries exprs))))
+    (ETryCatch tbody nm handler (Expr (ETryCatch (td-rewrite entries tbody) nm (td-rewrite entries handler))))
+    (EMatch subj arms (Expr (EMatch (td-rewrite entries subj) (td-rewrite-arms entries arms))))
+    (EAssertEqual l r (Expr (EAssertEqual (td-rewrite entries l) (td-rewrite entries r))))
+    (EAssertTrue ex k (Expr (EAssertTrue (td-rewrite entries ex) k)))
+    (EAssertFalse ex k (Expr (EAssertFalse (td-rewrite entries ex) k)))
+    (EPrint exprs (Expr (EPrint (td-rewrite-list entries exprs))))
+    (ECall op args (td-rewrite-call entries op args))
+    (EApply fname args (td-rewrite-apply entries fname args))
+    (d1 e)))
+
+(defn td-rewrite-arms (entries arms)
+  (match arms
+    (Nil Nil)
+    (Cons a rest (Cons (td-rewrite-arm entries a) (td-rewrite-arms entries rest)))))
+
+(defn td-rewrite-arm (entries a)
+  (match a (MA v pats body (MA v pats (td-rewrite entries body)))))
+
+(defn td-rewrite-call (entries op args)
+  (let args2 (td-rewrite-list entries args)
+    (let name (expr-ident-name-td op)
+      (let matches (td-lookup name entries)
+        (if (is-nil matches)
+          (Expr (ECall (td-rewrite entries op) args2))
+          (td-dispatch matches args2))))))
+
+(defn td-rewrite-apply (entries fname args)
+  (let args2 (td-rewrite-list entries args)
+    (let matches (td-lookup fname entries)
+      (if (is-nil matches)
+        (Expr (EApply fname args2))
+        (td-dispatch matches args2)))))
+
+; expr-ident-name (icnf.zyl) needs a fallback arg and lives downstream
+; of this module in the driver pipeline -- reimplemented locally rather
+; than adding a (use compiler/icnf) here (icnf.zyl already depends on
+; compiler/expr_inner; this module and icnf.zyl have no relationship
+; otherwise, no need to introduce one just for this one helper).
+(defn expr-ident-name-td (e)
+  (match (Expr.inner e)
+    (EAtom atom (match atom (AIdent n n) (d1 "")))
+    (d2 "")))
+
+; (Trait.method receiver rest-args...) -> (let _td_recv receiver
+;   (match _td_recv (Type1 (Trait_method_Type1 _td_recv rest-args...))
+;                    (Type2 (Trait_method_Type2 _td_recv rest-args...))))
+; `type` doubles as the pattern's variant name here: defstruct sugars a
+; struct to a single-variant deftype whose variant name IS the struct
+; name (see icnf.zyl's ic-collect-vt), so matching on it dispatches
+; exactly on the receiver's real runtime tag. No field patterns needed
+; -- the mangled function re-does its own struct-get internally.
+(defn td-dispatch (matches args2)
+  (match args2
+    (Nil (Expr (EAtom ANil)))
+    (Cons recv rest
+      (Expr (ELet "_td_recv" recv
+        (Expr (EMatch (Expr (EAtom (AIdent "_td_recv")))
+                       (td-dispatch-arms matches rest))))))))
+
+(defn td-dispatch-arms (matches rest)
+  (match matches
+    (Nil Nil)
+    (Cons ent mrest
+      (match ent
+        (TDEntry d2 type mangled
+          (Cons (MA type Nil (Expr (EApply mangled (Cons (Expr (EAtom (AIdent "_td_recv"))) rest))))
+                (td-dispatch-arms mrest rest)))))))

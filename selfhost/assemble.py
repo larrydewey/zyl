@@ -159,6 +159,7 @@ files = [
     'stdlib/compiler/type_inference.zyl',
     'stdlib/compiler/monomorphization.zyl',
     'stdlib/compiler/icnf.zyl',
+    'stdlib/compiler/trait_dispatch.zyl',
     'stdlib/compiler/closure_inline.zyl',
     'stdlib/compiler/assert_lowering.zyl',
     'stdlib/compiler/codegen.zyl',

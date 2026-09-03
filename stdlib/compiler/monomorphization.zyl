@@ -702,15 +702,27 @@
         (list-push result (Expr (MI.body mono)))
         rest))))
 
+; `bodies` is (List ImplBody), i.e. each element is (IB DefnNode), not
+; a bare DefnNode -- calling DN.name/DN.params/DN.body directly on the
+; unwrapped ImplBody was a type confusion (DN.name's own `(match d (DN
+; n d1 d2 n))` pattern has no idea `d` is really an IB, not a DN; with
+; no runtime type tag distinguishing them, whatever tag IB happens to
+; get can alias DN's and this silently reads garbage instead of
+; failing loudly) that went uncaught until now because EImplBlock was
+; never actually constructed by the parser before (see expr_inner.zyl's
+; parse-impl) -- this function had never actually run on a real impl
+; block before.
 (defn monomorphize-push-impl-bodies (result trait_name type_name bodies)
   (match bodies
     (Nil result)
-    (Cons body rest
-      (let concrete-name (str-concat trait_name (str-concat "." (str-concat (DN.name body) (str-concat "_" type_name))))
-        (let mut-params (annotate-first-param (DN.params body) type_name)
-          (monomorphize-push-impl-bodies
-            (list-push result (Expr (EDefn concrete-name mut-params (DN.body body))))
-            trait_name type_name rest))))))
+    (Cons ib rest
+      (match ib
+        (IB body
+          (let concrete-name (str-concat trait_name (str-concat "." (str-concat (DN.name body) (str-concat "_" type_name))))
+            (let mut-params (annotate-first-param (DN.params body) type_name)
+              (monomorphize-push-impl-bodies
+                (list-push result (Expr (EDefn concrete-name mut-params (DN.body body))))
+                trait_name type_name rest))))))))
 
 (defn monomorphize-one (ctx result expr)
   (match (Expr.inner expr)
