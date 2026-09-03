@@ -743,7 +743,7 @@
       (Expr
         (EWhile
           (convert-ast (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-list-last args (AstInt 0))))))
+          (parse-body-from args 1))))
     None))
 
 (defn parse-for (args)

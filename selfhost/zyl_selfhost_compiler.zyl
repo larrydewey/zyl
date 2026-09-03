@@ -4798,13 +4798,7 @@
             )
           )
           (
-            convert-ast
-            (
-              ast-list-last args
-              (
-                AstInt 0
-              )
-            )
+            parse-body-from args 1
           )
         )
       )
