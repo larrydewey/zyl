@@ -21560,6 +21560,46 @@
       )
     )
     (
+      ESpawn body
+      (
+        IFfi
+        "zyl_actor_spawn"
+        (
+          Cons
+          (
+            ic-expr arena body vt
+          )
+          (
+            Cons
+            (
+              IConst 0
+            )
+            Nil
+          )
+        )
+      )
+    )
+    (
+      ESend actor msg
+      (
+        IFfi
+        "zyl_actor_send"
+        (
+          Cons
+          (
+            ic-expr arena actor vt
+          )
+          (
+            Cons
+            (
+              ic-expr arena msg vt
+            )
+            Nil
+          )
+        )
+      )
+    )
+    (
       ETryCatch tbody d6 d7
       (
         ic-expr arena tbody vt
