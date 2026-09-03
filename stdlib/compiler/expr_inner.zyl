@@ -934,14 +934,30 @@
             (d1 (MA "___" Nil (Expr (EAtom ANil))))))))
     (d4 (MA "___" Nil (Expr (EAtom ANil))))))
 
+; (try body (catch name handler)) — exactly 2 top-level args, the
+; second being a NESTED `(catch name handler)` list, matching the Rust
+; bootstrap's p_try. This used to expect a flat 3-arg
+; `(try body name handler)` shape that nothing in the actual language
+; (or this corpus) ever writes — `ast-has-at-least args 3` was false for
+; every real `try`, so parse-try always returned None and every `try`
+; in the codebase fell through as an unrecognized EUnknown form.
 (defn parse-try (args)
-  (if (ast-has-at-least args 3)
-    (Some
-      (Expr
-        (ETryCatch
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "___"))
-          (convert-ast (ast-list-last args (AstInt 0))))))
+  (if (ast-has-at-least args 2)
+    (match (ast-nth args 1 (AstInt 0))
+      (AList catch-kids
+        (match catch-kids
+          (Cons catch-kw catch-rest
+            (match catch-rest
+              (Cons name-ast handler-rest
+                (Some
+                  (Expr
+                    (ETryCatch
+                      (convert-ast (ast-nth args 0 (AstInt 0)))
+                      (match name-ast (AstIdent n n) (d1 "___"))
+                      (convert-ast (ast-list-last handler-rest (AstInt 0)))))))
+              (d2 None)))
+          (d3 None)))
+      (d4 None))
     None))
 
 (defn parse-begin (args)

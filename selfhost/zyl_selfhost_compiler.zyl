@@ -5561,49 +5561,76 @@
   (
     if
     (
-      ast-has-at-least args 3
+      ast-has-at-least args 2
     )
     (
-      Some
+      match
       (
-        Expr
+        ast-nth args 1
         (
-          ETryCatch
+          AstInt 0
+        )
+      )
+      (
+        AList catch-kids
+        (
+          match catch-kids
           (
-            convert-ast
+            Cons catch-kw catch-rest
             (
-              ast-nth args 0
+              match catch-rest
               (
-                AstInt 0
+                Cons name-ast handler-rest
+                (
+                  Some
+                  (
+                    Expr
+                    (
+                      ETryCatch
+                      (
+                        convert-ast
+                        (
+                          ast-nth args 0
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                      (
+                        match name-ast
+                        (
+                          AstIdent n n
+                        )
+                        (
+                          d1
+                          "___"
+                        )
+                      )
+                      (
+                        convert-ast
+                        (
+                          ast-list-last handler-rest
+                          (
+                            AstInt 0
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+              (
+                d2 None
               )
             )
           )
           (
-            match
-            (
-              ast-nth args 1
-              (
-                AstInt 0
-              )
-            )
-            (
-              AstIdent n n
-            )
-            (
-              d1
-              "___"
-            )
-          )
-          (
-            convert-ast
-            (
-              ast-list-last args
-              (
-                AstInt 0
-              )
-            )
+            d3 None
           )
         )
+      )
+      (
+        d4 None
       )
     )
     None
@@ -21222,7 +21249,7 @@
           (
             Cons
             (
-              ic-expr arena mode vt
+              ic-file-mode arena mode vt
             )
             Nil
           )
@@ -21307,29 +21334,55 @@
     (
       EAssertEqual l r
       (
-        IIf
+        if
         (
-          IBinop 9
+          >
           (
-            ic-expr arena l vt
+            ic-looks-float l
           )
-          (
-            ic-expr arena r vt
-          )
+          0
         )
         (
-          IConst 0
+          ic-assert-float-eq arena l r vt
         )
         (
-          IFfi
-          "zyl_panic"
+          if
           (
-            Cons
+            >
             (
-              IStr
-              "assert-equal failed"
+              ic-looks-float r
             )
-            Nil
+            0
+          )
+          (
+            ic-assert-float-eq arena l r vt
+          )
+          (
+            IIf
+            (
+              IBinop 9
+              (
+                ic-expr arena l vt
+              )
+              (
+                ic-expr arena r vt
+              )
+            )
+            (
+              IConst 0
+            )
+            (
+              IFfi
+              "zyl_panic"
+              (
+                Cons
+                (
+                  IStr
+                  "assert-equal failed"
+                )
+                Nil
+              )
+            )
           )
         )
       )
@@ -21392,6 +21445,40 @@
       EFor bindings cond body
       (
         ic-for arena bindings cond body vt
+      )
+    )
+    (
+      EFfiPin e
+      (
+        IFfi
+        "ffi_pin"
+        (
+          Cons
+          (
+            ic-expr arena e vt
+          )
+          Nil
+        )
+      )
+    )
+    (
+      EFfiUnpin e
+      (
+        IFfi
+        "ffi_unpin"
+        (
+          Cons
+          (
+            ic-expr arena e vt
+          )
+          Nil
+        )
+      )
+    )
+    (
+      ETryCatch tbody d6 d7
+      (
+        ic-expr arena tbody vt
       )
     )
     (
@@ -21515,6 +21602,188 @@
         )
       )
     )
+  )
+)
+(
+  defn ic-looks-float
+  (
+    e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AFloat d1 1
+        )
+        (
+          d2 0
+        )
+      )
+    )
+    (
+      EApply fname args
+      (
+        ic-looks-float-any args
+      )
+    )
+    (
+      ECall op args
+      (
+        ic-looks-float-any args
+      )
+    )
+    (
+      d3 0
+    )
+  )
+)
+(
+  defn ic-looks-float-any
+  (
+    args
+  )
+  (
+    match args
+    (
+      Nil 0
+    )
+    (
+      Cons a rest
+      (
+        if
+        (
+          >
+          (
+            ic-looks-float a
+          )
+          0
+        )
+        1
+        (
+          ic-looks-float-any rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-file-mode
+  (
+    arena mode vt
+  )
+  (
+    match
+    (
+      Expr.inner mode
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AStr d1
+          (
+            ic-expr arena mode vt
+          )
+        )
+        (
+          d2
+          (
+            IStr
+            "w"
+          )
+        )
+      )
+    )
+    (
+      d3
+      (
+        IStr
+        "w"
+      )
+    )
+  )
+)
+(
+  defn ic-assert-float-eq
+  (
+    arena l r vt
+  )
+  (
+    ILet
+    "_af_d"
+    (
+      IBinop 1
+      (
+        ic-expr arena l vt
+      )
+      (
+        ic-expr arena r vt
+      )
+    )
+    (
+      IIf
+      (
+        IBinop 7
+        (
+          ic-fabs
+          (
+            ILoad
+            "_af_d"
+          )
+        )
+        (
+          IFlt
+          "0.00001"
+        )
+      )
+      (
+        IConst 0
+      )
+      (
+        IFfi
+        "zyl_panic"
+        (
+          Cons
+          (
+            IStr
+            "assert-equal failed"
+          )
+          Nil
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-fabs
+  (
+    d
+  )
+  (
+    IIf
+    (
+      IBinop 5 d
+      (
+        IFlt
+        "0.0"
+      )
+    )
+    (
+      IBinop 1
+      (
+        IFlt
+        "0.0"
+      )
+      d
+    )
+    d
   )
 )
 (

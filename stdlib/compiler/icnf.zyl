@@ -289,8 +289,18 @@
     (ESetBang name val
       (ISet (str-intern arena name) (ic-expr arena val vt)))
     (EBegin exprs (ISeq (ic-expr-list arena exprs vt)))
+    ; zyl_file_open_c reads mode as a C string pointer ("r"/"a"/else ->
+    ; write) — a non-string mode (e.g. regression/io.zyl's raw integer
+    ; 577, a leftover POSIX-flags-style value) isn't a valid pointer at
+    ; all and crashes dereferencing it. The Rust bootstrap sidesteps this
+    ; entirely: its file-open codegen inspects the mode arg for a STRING
+    ; literal at compile time and, for anything else (integer included),
+    ; silently defaults to write mode without ever using the value — so
+    ; passing 577 "worked" there only because it isn't a recognized read
+    ; mode, not because 577 meant anything. Same fallback here: a
+    ; non-string-literal mode becomes a hardcoded "w".
     (EFileOpen path mode
-      (IFfi "zyl_file_open_c" (Cons (ic-expr arena path vt) (Cons (ic-expr arena mode vt) Nil))))
+      (IFfi "zyl_file_open_c" (Cons (ic-expr arena path vt) (Cons (ic-file-mode arena mode vt) Nil))))
     (EFileRead h c
       (IFfi "zyl_file_read_c" (Cons (ic-expr arena h vt) (Cons (ic-expr arena c vt) Nil))))
     (EFileWrite h d
@@ -305,10 +315,24 @@
     ; Icnf node) means these previously fell through to the (IConst 0)
     ; wildcard below and silently no-op'd; every "passing" regression test
     ; that used them was actually asserting nothing.
+    ; Float equality is approximate: an assert-equal literal like 0.166667
+    ; is written to 6-decimal precision and essentially never matches a
+    ; computed double bit-for-bit (e.g. (/ 1.0 2.0 3.0) is really
+    ; 0.16666666666666666) — exact `=` (IBinop 9) failed every such
+    ; assertion. Mirrors the Rust bootstrap's codegen.rs, which special-
+    ; cases a float-operand Assert{Eq} into |a-b| <= 1e-5. icnf.zyl has
+    ; no "kind" (env-derived, codegen-only) to check here, so it's a
+    ; structural guess on the RAW expression tree instead (ic-looks-
+    ; float: does `l` or `r` contain a float literal anywhere) — enough
+    ; for the common case of comparing a computed expression to a float
+    ; literal, though a bare variable holding a float with no literal in
+    ; sight still falls through to exact `=` unrecognized.
     (EAssertEqual l r
+     (if (> (ic-looks-float l) 0) (ic-assert-float-eq arena l r vt)
+     (if (> (ic-looks-float r) 0) (ic-assert-float-eq arena l r vt)
      (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
           (IConst 0)
-          (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil))))
+          (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil))))))
     (EAssertTrue e d3
      (IIf (ic-expr arena e vt)
           (IConst 0)
@@ -328,6 +352,19 @@
     ; this match at all), silently lowering the whole loop to IConst 0 —
     ; every `for` in the corpus ran zero iterations.
     (EFor bindings cond body (ic-for arena bindings cond body vt))
+    (EFfiPin e (IFfi "ffi_pin" (Cons (ic-expr arena e vt) Nil)))
+    (EFfiUnpin e (IFfi "ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
+    ; KNOWN LIMITATION: this just runs the try-body, unconditionally
+    ; discarding the catch clause — a real `try` needs the runtime's
+    ; setjmp/longjmp panic-frame mechanism (zyl_try_push/zyl_try_pop,
+    ; used by zyl_panic to unwind to the nearest try instead of killing
+    ; the process), which nothing in self-hosted codegen sets up or
+    ; calls anywhere. Correct for every ACTUAL use in this corpus
+    ; (ffi.zyl's ffi-safe-call/ffi-pin-call-unpin wrap a plain value in
+    ; Ok — the try-body can't panic, so the catch branch is unreachable
+    ; regardless), but a for a call that genuinely CAN panic, this skips
+    ; the catch and lets the panic kill the process instead.
+    (ETryCatch tbody d6 d7 (ic-expr arena tbody vt))
     ; (fn (params...) body): lowers to an embedded IFn value — legal
     ; here only because ic-hoist (called by every top-level-function
     ; lowering site: ic-defn, ic-toplevel-test) walks the finished Icnf
@@ -366,6 +403,45 @@
   (if (< n 10)
     (ic-digit-str n)
     (str-concat (ic-int-to-str (/ n 10)) (ic-digit-str (% n 10)))))
+
+; Structural guess, on the raw pre-lowering Expr tree, at whether an
+; expression is float-valued: does it contain a float literal anywhere
+; (as itself, or as an argument to some nested call/operator)? Used only
+; to pick assert-equal's comparison strategy (see EAssertEqual above) —
+; not a real type check, so a bare variable/parameter holding a float
+; with no literal in the expression at all won't be recognized.
+(defn ic-looks-float (e)
+  (match (Expr.inner e)
+    (EAtom atom (match atom (AFloat d1 1) (d2 0)))
+    (EApply fname args (ic-looks-float-any args))
+    (ECall op args (ic-looks-float-any args))
+    (d3 0)))
+
+(defn ic-looks-float-any (args)
+  (match args
+    (Nil 0)
+    (Cons a rest (if (> (ic-looks-float a) 0) 1 (ic-looks-float-any rest)))))
+
+; See EFileOpen above: a literal string mode lowers normally; anything
+; else becomes a hardcoded "w".
+(defn ic-file-mode (arena mode vt)
+  (match (Expr.inner mode)
+    (EAtom atom (match atom (AStr d1 (ic-expr arena mode vt)) (d2 (IStr "w"))))
+    (d3 (IStr "w"))))
+
+; |a - b| <= 1e-5, matching the Rust bootstrap's epsilon exactly. Binds
+; the difference to a slot rather than embedding the (ic-expr l)/(ic-expr
+; r) subtrees directly in all three of ic-fabs's branches — codegen has
+; no common-subexpression elimination, so a bare shared sub-tree would
+; re-evaluate l and r (and any side effect in either) up to 3 times.
+(defn ic-assert-float-eq (arena l r vt)
+  (ILet "_af_d" (IBinop 1 (ic-expr arena l vt) (ic-expr arena r vt))
+    (IIf (IBinop 7 (ic-fabs (ILoad "_af_d")) (IFlt "0.00001"))
+         (IConst 0)
+         (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))))
+
+(defn ic-fabs (d)
+  (IIf (IBinop 5 d (IFlt "0.0")) (IBinop 1 (IFlt "0.0") d) d))
 
 ; Hoisting hands a `fn` a NEW top-level scope with only its own params —
 ; any bare identifier the body references that ISN'T one of those params
