@@ -1,3 +1,15 @@
+; is-generic-param/is-skip-placeholder (type_inference.zyl) are called
+; below (infer-arg-type-atom/infer-arg-type-rest) but were never
+; declared as a real dependency — harmless for the assemble.py bundle
+; (every `use` line is stripped there, and type_inference.zyl is always
+; inlined into the same bundle regardless), but a standalone program
+; that `use`s compiler/monomorphization directly as a library (e.g.
+; integration/selfhost-codegen.zyl, transitively via compiler/icnf) got
+; undefined references to f_is_generic_param/f_is_skip_placeholder at
+; link time since the module resolver had no way to know to pull
+; type_inference.zyl in too.
+(use compiler/type_inference)
+
 (deftype MonoKV (MK String A))
 
 (deftype MonoCtx (MC

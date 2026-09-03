@@ -32,6 +32,16 @@
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/icnf)
+; shd (compiler/resolver.zyl) is called below (cg-bind-one/
+; icnf-binds-slots/cg-param-env) but was never declared as a real
+; dependency -- harmless for the assemble.py bundle (every `use` line
+; is stripped there, and resolver.zyl is always inlined into the same
+; bundle regardless), but a standalone program that `use`s
+; compiler/codegen directly as a library (e.g.
+; integration/selfhost-codegen.zyl) got an undefined reference to
+; f_shd at link time since the module resolver had no way to know to
+; pull resolver.zyl in too.
+(use compiler/resolver)
 
 ; --- Emitter state ----------------------------------------------------------
 

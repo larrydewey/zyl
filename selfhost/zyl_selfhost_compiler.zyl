@@ -9555,6 +9555,27 @@
   )
 )
 (
+  defn mr-prepend-rev
+  (
+    xs acc
+  )
+  (
+    match xs
+    (
+      Nil acc
+    )
+    (
+      Cons h t
+      (
+        mr-prepend-rev t
+        (
+          Cons h acc
+        )
+      )
+    )
+  )
+)
+(
   defn mr-str-in-list
   (
     s xs
@@ -9781,10 +9802,11 @@
                   (
                     MRAcc
                     (
-                      list-append exprs2
+                      mr-prepend-rev
                       (
                         mr-strip-use file-exprs
                       )
+                      exprs2
                     )
                     resolved2
                   )
@@ -9918,11 +9940,15 @@
         (
           match acc
           (
-            MRAcc dep-exprs d1
+            MRAcc dep-exprs-rev d1
             (
-              list-append dep-exprs
+              list-reverse
               (
-                mr-strip-use main-exprs
+                mr-prepend-rev
+                (
+                  mr-strip-use main-exprs
+                )
+                dep-exprs-rev
               )
             )
           )
