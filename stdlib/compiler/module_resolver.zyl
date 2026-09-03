@@ -23,12 +23,30 @@
 (use compiler/expr_inner)
 (use compiler/parser)
 
-; Accumulator threaded through resolution: exprs collected so far
-; (dependency-before-dependent order) and the set of module names
-; already resolved, so a diamond dependency (two stdlib modules both
-; `use`-ing allocator/allocator) doesn't emit the same defn twice —
+; Accumulator threaded through resolution: exprs collected so far, held
+; in REVERSE order (see mr-prepend-rev below), and the set of module
+; names already resolved, so a diamond dependency (two stdlib modules
+; both `use`-ing allocator/allocator) doesn't emit the same defn twice —
 ; which would be a duplicate-symbol link error, not just wasted work.
 (deftype MRAcc (MRAcc (List Expr) (List String)))
+
+; reverse(xs) ++ acc, built by walking xs once and consing each element
+; onto acc in order — O(length xs), not O(length acc). mr-resolve-module
+; used to grow its expr list via `list-append exprs2 (mr-strip-use
+; file-exprs)`, which is O(current accumulator length) per call; doing
+; that once per resolved module made the whole resolution O(n^2) in the
+; total expr count, however small each individual module's own
+; contribution was — a standalone program `use`-ing something with a
+; large transitive dependency graph (e.g. compiler/icnf, which pulls in
+; the rest of the compiler stdlib) could take 40+ seconds just resolving
+; modules, well past this corpus's test-runner timeouts even though the
+; actual compile work was fast (integration/selfhost-codegen). Every
+; accumulator here is now built in reverse via this helper and reversed
+; back to normal order exactly once, at the very end.
+(defn mr-prepend-rev (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (mr-prepend-rev t (Cons h acc)))))
 
 (defn mr-str-in-list (s xs)
   (match xs
@@ -86,7 +104,7 @@
             (let acc2 (mr-resolve-uses arena uses (MRAcc exprs (Cons name resolved)))
               (match acc2
                 (MRAcc exprs2 resolved2
-                  (MRAcc (list-append exprs2 (mr-strip-use file-exprs)) resolved2))))))))))
+                  (MRAcc (mr-prepend-rev (mr-strip-use file-exprs) exprs2) resolved2))))))))))
 
 (defn mr-resolve-uses (arena names acc)
   (match names
@@ -128,5 +146,5 @@
         (if (> (mr-core-loaded uses) 0) uses (Cons "core/core" uses)))
       (let acc (mr-resolve-uses arena uses2 (MRAcc Nil Nil))
         (match acc
-          (MRAcc dep-exprs d1
-            (list-append dep-exprs (mr-strip-use main-exprs))))))))
+          (MRAcc dep-exprs-rev d1
+            (list-reverse (mr-prepend-rev (mr-strip-use main-exprs) dep-exprs-rev))))))))

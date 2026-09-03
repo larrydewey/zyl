@@ -87,7 +87,13 @@ run_test() {
     
     # Run
     local actual exit_code
-    actual=$(timeout "$TIMEOUT" "/tmp/zyl_test_${TOTAL}.bin" 2>/dev/null) || exit_code=$?
+    # setarch -R: every compiled program's entry stub calls
+    # zyl_call_on_big_stack (a 64GB worker-thread stack reservation),
+    # which occasionally collides with an ASLR-randomized mapping and
+    # crashes/hangs nondeterministically -- same root cause as boot.sh's
+    # stage1/stage2 self-compiles, just hitting compiled TEST binaries
+    # here instead of the compiler binary. See boot.sh.
+    actual=$(timeout "$TIMEOUT" setarch -R "/tmp/zyl_test_${TOTAL}.bin" 2>/dev/null) || exit_code=$?
     
     if [ "${exit_code:-0}" -ne 0 ]; then
         echo -e "  ${RED}✗${NC} ${name}: runtime failure (exit ${exit_code:-1})"
