@@ -14,6 +14,14 @@
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/expr_inner)
+; Needed for str-drop (ic-make-struct) — previously missing here
+; entirely. Harmless for the assemble.py bundle (use lines are stripped
+; there regardless), but a standalone program that `use`s compiler/icnf
+; directly as a library (e.g. integration/selfhost-codegen.zyl) needs
+; every real dependency actually declared for the module resolver to
+; pull it in - this was an undefined `f_str_drop` reference at link
+; time otherwise.
+(use compiler/monomorphization)
 
 ; --- Instruction tree -------------------------------------------------------
 

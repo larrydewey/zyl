@@ -14,11 +14,11 @@
   (assert-equal (+ 1.0 2.0) 3.0))
 
 ; Generic ADT instantiation
-(deftype _t_Option (Some Int) None)
+(deftype _t_Option (_t_Some Int) _t_None)
 (test "type-generic-option"
-  (assert-true (match (Some 42)
-    (Some v (== v 42))
-    (None false))))
+  (assert-true (match (_t_Some 42)
+    (_t_Some v (== v 42))
+    (_t_None false))))
 
 ; Struct with typed fields
 (defstruct _t_Person (name String) (age Int))

@@ -4,6 +4,16 @@
 ; The Zyl parser produces raw Ast (AstIdent/AstInt/AList).
 ; type_inference.zyl expects ExprInner (Atom/Call/Defn/.../Apply).
 ; This module bridges that gap.
+
+; Needed for Pair (parse-for-binding/parse-cond-clause construct one) —
+; previously missing here entirely. Harmless for the assemble.py bundle
+; (use lines are stripped there regardless), but a standalone program
+; that `use`s a compiler/* module directly instead of importing the
+; whole bundle (e.g. integration/selfhost-codegen.zyl, using icnf.zyl as
+; a library to compile a nested program at runtime) needs every real
+; dependency actually declared for the module resolver to pull it in -
+; this was an undefined `f_Pair` reference at link time otherwise.
+(use compiler/type_system)
 ;
 ; Structure:
 ;   1. ExprInner ADT mirrors Rust ExprInner (lines 53-115 ast.rs)
