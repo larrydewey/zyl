@@ -888,35 +888,126 @@
 ; One arm: variant name, pattern-bound field names, body — already
 ; separated by expr_inner.zyl's MatchArm (MA variant patterns body).
 ;
-; KNOWN LIMITATION: a NESTED constructor pattern in field position, like
-; the `(A-Int n)` in `(A-Ident (A-Int n) n)`, isn't destructured —
-; bind-names only ever extracts a bare identifier name (expr-ident-name),
-; silently binding "" for anything else, so "n" never actually gets
-; A-Int's field value (regression/adts.zyl's "adt-nested" hits this). A
-; fix exists (bind the outer field to a fresh name, wrap the arm body in
-; an inner match on that name for the nested sub-pattern, recursively)
-; but made self-hosting flaky — different runs of the SAME rebuild
-; crashed at different stages (stage2 once, stage3 another time) with no
-; code difference between runs, pointing at uninitialized memory rather
-; than a clean logic bug — so reverted rather than ship a self-hosting
-; regression that only sometimes reproduces.
+; A NESTED constructor pattern in field position, like the `(A-Int n)`
+; in `(A-Ident (A-Int n) n)`, isn't a bare identifier — bind-names/
+; ic-arm-binds gives it a fresh synthetic field name instead of its own
+; (nonexistent) name, and ic-wrap-nested-all wraps the arm body in an
+; inner IMatch on that fresh name for the sub-pattern, recursively. A
+; previous attempt at this same approach made self-hosting flaky
+; (different runs of the same rebuild crashed at different pipeline
+; stages, no code difference between runs) and was reverted; that
+; flakiness is now understood to be an unrelated ASLR/stack-collision
+; bug in the self-hosted worker thread (see boot.sh's `setarch -R`),
+; not a defect in this lowering — retried now that the real cause is
+; fixed.
 (defn ic-arm (arena arm vt)
   (let iname (str-intern arena (MA.variant arm))
     (let tag (vt-tag-of vt iname)
       ; E_MATCH_ARM_COMPLEX guard: reject the confirmed-failing shape
       ; before lowering (see ic-arm-guard below).
       (let armguard (ic-arm-guard arena (MA.body arm) vt)
-        (IArm iname
-              tag
-              (bind-names arena (MA.patterns arm) (no-strs))
-              (ic-expr arena (MA.body arm) vt))))))
+        (let pats (MA.patterns arm)
+          (let binds (ic-arm-binds arena pats)
+            (let nested (ic-arm-nested pats binds)
+              (IArm iname
+                    tag
+                    binds
+                    (ic-wrap-nested-all arena nested (ic-expr arena (MA.body arm) vt) vt)))))))))
 
-; Pattern binding names ("_"/wildcards kept, skipped by codegen), in
-; source order — MA.patterns is already just the field-binding names.
-(defn bind-names (arena pats acc)
+; Field-binding names in source order: a bare identifier/wildcard keeps
+; its own name; a nested constructor pattern (not a plain EAtom AIdent)
+; gets a fresh synthetic name instead, since it has no name of its own
+; to bind — ic-arm-nested below pairs that synthetic name back up with
+; its pattern for ic-wrap-nested-all to destructure.
+(defn ic-arm-binds (arena pats)
   (match pats
-    (Nil (list-reverse acc))
-    (Cons p rest (bind-names arena rest (Cons (str-intern arena (expr-ident-name p "")) acc)))))
+    (Nil Nil)
+    (Cons p rest (Cons (ic-arm-bind-one arena p) (ic-arm-binds arena rest)))))
+
+(defn ic-arm-bind-one (arena p)
+  (if (> (ic-pat-is-nested p) 0)
+    (str-intern arena (str-concat "_np" (ic-int-to-str (ic-fresh-id arena))))
+    (str-intern arena (expr-ident-name p ""))))
+
+; True when `p` is a constructor-application pattern (needs further
+; destructuring) rather than a bare identifier/wildcard binder.
+(defn ic-pat-is-nested (p)
+  (match (Expr.inner p)
+    (ECall d1 d2 1)
+    (EApply d3 d4 1)
+    (d5 0)))
+
+(defn ic-pat-ctor-name (p)
+  (match (Expr.inner p)
+    (ECall op d1 (expr-ident-name op ""))
+    (EApply fname d2 fname)
+    (d3 "")))
+
+(defn ic-pat-args (p)
+  (match (Expr.inner p)
+    (ECall d1 args args)
+    (EApply d2 args args)
+    (d3 Nil)))
+
+; Pairs each nested pattern (see ic-pat-is-nested) with the synthetic
+; field name ic-arm-binds already assigned it, in the same order —
+; `pats`/`binds` are always the same length (ic-arm-binds produces
+; exactly one name per pattern), so they're walked in lockstep.
+(deftype NPEntry (NPEntry String Expr))
+
+(defn ic-arm-nested (pats binds)
+  (match pats
+    (Nil Nil)
+    (Cons p prest
+      (match binds
+        (Nil Nil)
+        (Cons b brest
+          (if (> (ic-pat-is-nested p) 0)
+            (Cons (NPEntry b p) (ic-arm-nested prest brest))
+            (ic-arm-nested prest brest)))))))
+
+; Wrap `body` in one inner IMatch per nested-pattern entry (innermost
+; entry wraps closest to `body`, matching left-to-right field order —
+; only matters when an arm has more than one nested field, since they
+; don't interact). Each wrap wholly replaces its own sub-pattern's
+; fields/body recursion via a fresh ic-arm-binds/ic-arm-nested pass, so
+; arbitrarily deep nesting (`(A (B (C n)))`) destructures correctly.
+(defn ic-wrap-nested-all (arena nested body vt)
+  (match nested
+    (Nil body)
+    (Cons entry rest (ic-wrap-one arena entry (ic-wrap-nested-all arena rest body vt) vt))))
+
+; codegen.zyl documents (see cg-label-pair) that a match nested inside
+; another match's arm, within the SAME compiled function, miscompiles —
+; "each match is the entire body of its own defn". So the inner match
+; this wrap needs can't be embedded inline; it's built as its own
+; top-level helper IFn instead (one param: the field value to match on)
+; and called from here. The helper is never referenced structurally
+; from this point on — it's stashed as a throwaway ILet's VALUE purely
+; so ic-hoist's existing whole-tree walk (which already knows how to
+; pull an embedded IFn out to the top level and everywhere else in this
+; file relies on for lambdas) finds it and lifts it out; the ILet's
+; body is the real result: an ordinary direct call to that now-top-
+; level helper. Recursive, so a deeper nested sub-pattern's own inner
+; match gets the exact same treatment one level down, never landing two
+; matches deep in any single function regardless of pattern depth.
+(defn ic-wrap-one (arena entry body vt)
+  (match entry
+    (NPEntry bindname pat
+      (let subname (ic-pat-ctor-name pat)
+        (let subtag (vt-tag-of vt (str-intern arena subname))
+          (let subpats (ic-pat-args pat)
+            (let subbinds (ic-arm-binds arena subpats)
+              (let subnested (ic-arm-nested subpats subbinds)
+                (let helper (str-intern arena (str-concat "_npmatch_" (ic-int-to-str (ic-fresh-id arena))))
+                  (let dummy (str-intern arena (str-concat "_npdummy_" (ic-int-to-str (ic-fresh-id arena))))
+                    (ILet dummy
+                          (IFn helper (Cons bindname Nil)
+                               (IMatch (ILoad bindname)
+                                       (Cons (IArm (str-intern arena subname) subtag subbinds
+                                                   (ic-wrap-nested-all arena subnested body vt))
+                                             Nil)))
+                          (ICall helper (Cons (ILoad bindname) Nil)))))))))))))
 
 ; ─── E_MATCH_ARM_COMPLEX guard ────────────────────────────────────────────
 ; A match-arm body whose TOP-LEVEL binop combines a constant with two or

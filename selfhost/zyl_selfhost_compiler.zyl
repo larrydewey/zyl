@@ -15648,17 +15648,23 @@
       Some
       ret
       (
-        infer-args inferer args
+        begin
+        (
+          infer-args inferer args
+        )
+        ret
       )
-      ret
     )
     (
       None
       (
-        infer-args inferer args
-      )
-      (
-        inferer-return-var inferer
+        begin
+        (
+          infer-args inferer args
+        )
+        (
+          inferer-return-var inferer
+        )
       )
     )
   )
@@ -23902,23 +23908,37 @@
           vt
         )
         (
-          IArm iname
-          tag
+          let pats
           (
-            bind-names arena
-            (
-              MA.patterns arm
-            )
-            (
-              no-strs
-            )
+            MA.patterns arm
           )
           (
-            ic-expr arena
+            let binds
             (
-              MA.body arm
+              ic-arm-binds arena pats
             )
-            vt
+            (
+              let nested
+              (
+                ic-arm-nested pats binds
+              )
+              (
+                IArm iname
+                tag
+                binds
+                (
+                  ic-wrap-nested-all arena nested
+                  (
+                    ic-expr arena
+                    (
+                      MA.body arm
+                    )
+                    vt
+                  )
+                  vt
+                )
+              )
+            )
           )
         )
       )
@@ -23926,32 +23946,318 @@
   )
 )
 (
-  defn bind-names
+  defn ic-arm-binds
   (
-    arena pats acc
+    arena pats
   )
   (
     match pats
     (
-      Nil
-      (
-        list-reverse acc
-      )
+      Nil Nil
     )
     (
       Cons p rest
       (
-        bind-names arena rest
+        Cons
         (
-          Cons
+          ic-arm-bind-one arena p
+        )
+        (
+          ic-arm-binds arena rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-arm-bind-one
+  (
+    arena p
+  )
+  (
+    if
+    (
+      >
+      (
+        ic-pat-is-nested p
+      )
+      0
+    )
+    (
+      str-intern arena
+      (
+        str-concat
+        "_np"
+        (
+          ic-int-to-str
           (
-            str-intern arena
+            ic-fresh-id arena
+          )
+        )
+      )
+    )
+    (
+      str-intern arena
+      (
+        expr-ident-name p
+        ""
+      )
+    )
+  )
+)
+(
+  defn ic-pat-is-nested
+  (
+    p
+  )
+  (
+    match
+    (
+      Expr.inner p
+    )
+    (
+      ECall d1 d2 1
+    )
+    (
+      EApply d3 d4 1
+    )
+    (
+      d5 0
+    )
+  )
+)
+(
+  defn ic-pat-ctor-name
+  (
+    p
+  )
+  (
+    match
+    (
+      Expr.inner p
+    )
+    (
+      ECall op d1
+      (
+        expr-ident-name op
+        ""
+      )
+    )
+    (
+      EApply fname d2 fname
+    )
+    (
+      d3
+      ""
+    )
+  )
+)
+(
+  defn ic-pat-args
+  (
+    p
+  )
+  (
+    match
+    (
+      Expr.inner p
+    )
+    (
+      ECall d1 args args
+    )
+    (
+      EApply d2 args args
+    )
+    (
+      d3 Nil
+    )
+  )
+)
+(
+  deftype NPEntry
+  (
+    NPEntry String Expr
+  )
+)
+(
+  defn ic-arm-nested
+  (
+    pats binds
+  )
+  (
+    match pats
+    (
+      Nil Nil
+    )
+    (
+      Cons p prest
+      (
+        match binds
+        (
+          Nil Nil
+        )
+        (
+          Cons b brest
+          (
+            if
             (
-              expr-ident-name p
-              ""
+              >
+              (
+                ic-pat-is-nested p
+              )
+              0
+            )
+            (
+              Cons
+              (
+                NPEntry b p
+              )
+              (
+                ic-arm-nested prest brest
+              )
+            )
+            (
+              ic-arm-nested prest brest
             )
           )
-          acc
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-wrap-nested-all
+  (
+    arena nested body vt
+  )
+  (
+    match nested
+    (
+      Nil body
+    )
+    (
+      Cons entry rest
+      (
+        ic-wrap-one arena entry
+        (
+          ic-wrap-nested-all arena rest body vt
+        )
+        vt
+      )
+    )
+  )
+)
+(
+  defn ic-wrap-one
+  (
+    arena entry body vt
+  )
+  (
+    match entry
+    (
+      NPEntry bindname pat
+      (
+        let subname
+        (
+          ic-pat-ctor-name pat
+        )
+        (
+          let subtag
+          (
+            vt-tag-of vt
+            (
+              str-intern arena subname
+            )
+          )
+          (
+            let subpats
+            (
+              ic-pat-args pat
+            )
+            (
+              let subbinds
+              (
+                ic-arm-binds arena subpats
+              )
+              (
+                let subnested
+                (
+                  ic-arm-nested subpats subbinds
+                )
+                (
+                  let helper
+                  (
+                    str-intern arena
+                    (
+                      str-concat
+                      "_npmatch_"
+                      (
+                        ic-int-to-str
+                        (
+                          ic-fresh-id arena
+                        )
+                      )
+                    )
+                  )
+                  (
+                    let dummy
+                    (
+                      str-intern arena
+                      (
+                        str-concat
+                        "_npdummy_"
+                        (
+                          ic-int-to-str
+                          (
+                            ic-fresh-id arena
+                          )
+                        )
+                      )
+                    )
+                    (
+                      ILet dummy
+                      (
+                        IFn helper
+                        (
+                          Cons bindname Nil
+                        )
+                        (
+                          IMatch
+                          (
+                            ILoad bindname
+                          )
+                          (
+                            Cons
+                            (
+                              IArm
+                              (
+                                str-intern arena subname
+                              )
+                              subtag subbinds
+                              (
+                                ic-wrap-nested-all arena subnested body vt
+                              )
+                            )
+                            Nil
+                          )
+                        )
+                      )
+                      (
+                        ICall helper
+                        (
+                          Cons
+                          (
+                            ILoad bindname
+                          )
+                          Nil
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
         )
       )
     )
