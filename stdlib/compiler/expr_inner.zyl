@@ -242,6 +242,14 @@
     (match (parse-deftype rest)
       (Some expr expr)
       (None (Expr (EUnknown "deftype" (convert-ast-list rest)))))
+  (if (> (str-eq n "defstruct") 0)
+    (match (parse-defstruct rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "defstruct" (convert-ast-list rest)))))
+  (if (> (str-eq n "defstruct+") 0)
+    (match (parse-defstruct rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "defstruct+" (convert-ast-list rest)))))
   (if (> (str-eq n "def") 0)
     (match (parse-def rest)
       (Some expr expr)
@@ -314,6 +322,14 @@
     (match (parse-assert rest)
       (Some expr expr)
       (None (Expr (EUnknown "assert" (convert-ast-list rest)))))
+  (if (> (str-eq n "assert-true") 0)
+    (match (parse-assert-true rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "assert-true" (convert-ast-list rest)))))
+  (if (> (str-eq n "assert-false") 0)
+    (match (parse-assert-false rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "assert-false" (convert-ast-list rest)))))
   (if (> (str-eq n "spawn") 0)
     (match (parse-spawn rest)
       (Some expr expr)
@@ -378,6 +394,10 @@
     (match (parse-macro rest)
       (Some expr expr)
       (None (Expr (EUnknown "macro" (convert-ast-list rest)))))
+  (if (> (str-eq n "defmacro") 0)
+    (match (parse-macro rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "defmacro" (convert-ast-list rest)))))
   (if (> (str-eq n "test") 0)
     (match (parse-test rest)
       (Some expr expr)
@@ -386,6 +406,8 @@
     (match (parse-test-suite rest)
       (Some expr expr)
       (None (Expr (EUnknown "test-suite" (convert-ast-list rest)))))
+  (if (> (str-eq n "run-tests") 0)
+    (Expr (ERunTests None))
   (if (> (str-eq n "setup") 0)
     (match (parse-setup rest)
       (Some expr expr)
@@ -435,7 +457,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  )))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
@@ -453,7 +475,7 @@
             (EDefn
               n
               (parse-params (ast-nth args 1 (AstInt 0)))
-              (convert-ast (ast-list-last args (AstInt 0))))))
+              (parse-body-from args 2))))
         None))
     (d1 None)))
 
@@ -501,6 +523,38 @@
               None))))
       (d1 None))
     None))
+
+; (defstruct Name (field [Type])*): a struct is lowered as sugar for a
+; single-variant deftype whose variant name equals the type name — this
+; lets icnf.zyl/codegen.zyl's existing ADT machinery (tag assignment,
+; IVariant construction, IMatch field binding) build and read struct
+; values with no separate field-offset system. Field type annotations
+; are dropped, same as regular deftype variant fields.
+(defn parse-defstruct (args)
+  (if (ast-has-at-least args 1)
+    (match (ast-nth args 0 (AstInt 0))
+      (AstIdent n
+        (Some
+          (Expr
+            (EDeftype
+              n
+              (Cons (AV n (parse-struct-fields (ast-list-nth-rest args 1))) Nil)
+              Nil
+              None))))
+      (d1 None))
+    None))
+
+(defn parse-struct-fields (specs)
+  (match specs
+    (Nil Nil)
+    (Cons s rest (Cons (parse-struct-field-name s) (parse-struct-fields rest)))))
+
+; A field spec is either a bare ident (untyped field) or `(name Type)`.
+(defn parse-struct-field-name (s)
+  (match s
+    (AstIdent n n)
+    (AList lst (match lst (Cons h d1 (a-ident-to-str h)) (d2 "")))
+    (d3 "")))
 
 ; All elements after the type name are variant specs (no trailing "body").
 (defn ast-list-nth-rest (xs n)
@@ -577,6 +631,20 @@
 ; "return 0", discarding all of its real work — the true cause behind a
 ; whole class of "silently returns garbage/null" bugs chased this
 ; session (e.g. ti-env dereferencing the null inferer-new result).
+; Trailing "body" args (everything from `start` on) as ONE Expr: the lone
+; expr directly when there's exactly one, an implicit EBegin sequence
+; when there's more. A bare `(ast-list-last ...)` picks only the FINAL
+; trailing arg — a 3-statement let/let-mut/defn body silently ran only
+; its last statement, with every earlier one (including side-effecting
+; `set!`s) discarded before it ever reached codegen.
+(defn parse-body-from (args start)
+  (let rest (ast-list-nth-rest args start)
+    (if (<= (list-length rest) 1)
+      (match rest
+        (Nil (Expr (EAtom ANil)))
+        (Cons only d1 (convert-ast only)))
+      (Expr (EBegin (convert-ast-list rest))))))
+
 (defn parse-let (args)
   (match (ast-nth args 0 (AstInt 0))
     (AstIdent n
@@ -586,7 +654,7 @@
             (ELet
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
-              (convert-ast (ast-list-last args (AstInt 0))))))
+              (parse-body-from args 2))))
         (if (ast-has-at-least args 2)
           (Some
             (Expr
@@ -621,7 +689,7 @@
             (ELetMut
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
-              (convert-ast (ast-list-last args (AstInt 0))))))
+              (parse-body-from args 2))))
         (if (ast-has-at-least args 2)
           (Some
             (Expr
@@ -647,6 +715,11 @@
         (d2 None)))
     (d1 None)))
 
+; A 2-arg `(if cond then)` (no else) is common inside macro-expanded
+; unless/when-style bodies (e.g. `(if (not cond) body)`) — it used to
+; require exactly 3 args and fall through to a meaningless EUnknown
+; otherwise, which icnf.zyl's catch-all silently lowers to a constant 0
+; regardless of the condition. Default the missing else to nil/unit.
 (defn parse-if (args)
   (if (ast-has-at-least args 3)
     (Some
@@ -655,7 +728,14 @@
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0))))))
-    None))
+    (if (ast-has-at-least args 2)
+      (Some
+        (Expr
+          (EIf
+            (convert-ast (ast-nth args 0 (AstInt 0)))
+            (convert-ast (ast-nth args 1 (AstInt 0)))
+            (Expr (EAtom ANil)))))
+      None)))
 
 (defn parse-while (args)
   (if (ast-has-at-least args 2)
@@ -912,6 +992,24 @@
             None)))
       None)))
 
+(defn parse-assert-true (args)
+  (if (ast-has-at-least args 1)
+    (Some
+      (Expr
+        (EAssertTrue
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          None)))
+    None))
+
+(defn parse-assert-false (args)
+  (if (ast-has-at-least args 1)
+    (Some
+      (Expr
+        (EAssertFalse
+          (convert-ast (ast-nth args 0 (AstInt 0)))
+          None)))
+    None))
+
 (defn parse-spawn (args)
   (if (nil? args)
     None
@@ -1049,7 +1147,10 @@
     (Some
       (Expr
         (ETestDecl
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (match (ast-nth args 0 (AstInt 0))
+            (AstIdent n n)
+            (AString n n)
+            (d1 "___"))
           (convert-ast (ast-list-last args (AstInt 0)))
           None)))
     None))
@@ -1088,7 +1189,10 @@
       (Expr
         (EStructGet
           (convert-ast (ast-nth args 0 (AstInt 0)))
-          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "")))))
+          (match (ast-nth args 1 (AstInt 0))
+            (AstIdent n n)
+            (AString n n)
+            (d1 "")))))
     None))
 
 (defn parse-make-variant (args)

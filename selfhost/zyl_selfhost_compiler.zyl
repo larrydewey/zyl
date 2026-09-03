@@ -1034,7 +1034,11 @@
 (
   deftype VTable
   (
-    VTEntry String Int Int VTable
+    VTEntry String Int
+    (
+      List String
+    )
+    VTable
   )
   (
     VTNil
@@ -1073,13 +1077,15 @@
   (
     match vt
     (
-      VTEntry n d4 ar rest
+      VTEntry n d4 fields rest
       (
         if
         (
           str-eq n name
         )
-        ar
+        (
+          list-length fields
+        )
         (
           vt-arity-of rest name
         )
@@ -2151,14 +2157,14 @@
           >
           (
             str-eq n
-            "def"
+            "defstruct"
           )
           0
         )
         (
           match
           (
-            parse-def rest
+            parse-defstruct rest
           )
           (
             Some expr expr
@@ -2169,7 +2175,7 @@
               Expr
               (
                 EUnknown
-                "def"
+                "defstruct"
                 (
                   convert-ast-list rest
                 )
@@ -2183,14 +2189,14 @@
             >
             (
               str-eq n
-              "let"
+              "defstruct+"
             )
             0
           )
           (
             match
             (
-              parse-let rest
+              parse-defstruct rest
             )
             (
               Some expr expr
@@ -2201,7 +2207,7 @@
                 Expr
                 (
                   EUnknown
-                  "let"
+                  "defstruct+"
                   (
                     convert-ast-list rest
                   )
@@ -2215,14 +2221,14 @@
               >
               (
                 str-eq n
-                "let-mut"
+                "def"
               )
               0
             )
             (
               match
               (
-                parse-let-mut rest
+                parse-def rest
               )
               (
                 Some expr expr
@@ -2233,7 +2239,7 @@
                   Expr
                   (
                     EUnknown
-                    "let-mut"
+                    "def"
                     (
                       convert-ast-list rest
                     )
@@ -2247,14 +2253,14 @@
                 >
                 (
                   str-eq n
-                  "if"
+                  "let"
                 )
                 0
               )
               (
                 match
                 (
-                  parse-if rest
+                  parse-let rest
                 )
                 (
                   Some expr expr
@@ -2265,7 +2271,7 @@
                     Expr
                     (
                       EUnknown
-                      "if"
+                      "let"
                       (
                         convert-ast-list rest
                       )
@@ -2279,14 +2285,14 @@
                   >
                   (
                     str-eq n
-                    "while"
+                    "let-mut"
                   )
                   0
                 )
                 (
                   match
                   (
-                    parse-while rest
+                    parse-let-mut rest
                   )
                   (
                     Some expr expr
@@ -2297,7 +2303,7 @@
                       Expr
                       (
                         EUnknown
-                        "while"
+                        "let-mut"
                         (
                           convert-ast-list rest
                         )
@@ -2311,14 +2317,14 @@
                     >
                     (
                       str-eq n
-                      "for"
+                      "if"
                     )
                     0
                   )
                   (
                     match
                     (
-                      parse-for rest
+                      parse-if rest
                     )
                     (
                       Some expr expr
@@ -2329,7 +2335,7 @@
                         Expr
                         (
                           EUnknown
-                          "for"
+                          "if"
                           (
                             convert-ast-list rest
                           )
@@ -2343,14 +2349,14 @@
                       >
                       (
                         str-eq n
-                        "cond"
+                        "while"
                       )
                       0
                     )
                     (
                       match
                       (
-                        parse-cond rest
+                        parse-while rest
                       )
                       (
                         Some expr expr
@@ -2361,7 +2367,7 @@
                           Expr
                           (
                             EUnknown
-                            "cond"
+                            "while"
                             (
                               convert-ast-list rest
                             )
@@ -2375,14 +2381,14 @@
                         >
                         (
                           str-eq n
-                          "or"
+                          "for"
                         )
                         0
                       )
                       (
                         match
                         (
-                          parse-or rest
+                          parse-for rest
                         )
                         (
                           Some expr expr
@@ -2393,7 +2399,7 @@
                             Expr
                             (
                               EUnknown
-                              "or"
+                              "for"
                               (
                                 convert-ast-list rest
                               )
@@ -2407,14 +2413,14 @@
                           >
                           (
                             str-eq n
-                            "and"
+                            "cond"
                           )
                           0
                         )
                         (
                           match
                           (
-                            parse-and rest
+                            parse-cond rest
                           )
                           (
                             Some expr expr
@@ -2425,7 +2431,7 @@
                               Expr
                               (
                                 EUnknown
-                                "and"
+                                "cond"
                                 (
                                   convert-ast-list rest
                                 )
@@ -2439,14 +2445,14 @@
                             >
                             (
                               str-eq n
-                              "not"
+                              "or"
                             )
                             0
                           )
                           (
                             match
                             (
-                              parse-not rest
+                              parse-or rest
                             )
                             (
                               Some expr expr
@@ -2457,7 +2463,7 @@
                                 Expr
                                 (
                                   EUnknown
-                                  "not"
+                                  "or"
                                   (
                                     convert-ast-list rest
                                   )
@@ -2471,14 +2477,14 @@
                               >
                               (
                                 str-eq n
-                                "match"
+                                "and"
                               )
                               0
                             )
                             (
                               match
                               (
-                                parse-match rest
+                                parse-and rest
                               )
                               (
                                 Some expr expr
@@ -2489,7 +2495,7 @@
                                   Expr
                                   (
                                     EUnknown
-                                    "match"
+                                    "and"
                                     (
                                       convert-ast-list rest
                                     )
@@ -2503,14 +2509,14 @@
                                 >
                                 (
                                   str-eq n
-                                  "try"
+                                  "not"
                                 )
                                 0
                               )
                               (
                                 match
                                 (
-                                  parse-try rest
+                                  parse-not rest
                                 )
                                 (
                                   Some expr expr
@@ -2521,7 +2527,7 @@
                                     Expr
                                     (
                                       EUnknown
-                                      "try"
+                                      "not"
                                       (
                                         convert-ast-list rest
                                       )
@@ -2535,14 +2541,14 @@
                                   >
                                   (
                                     str-eq n
-                                    "begin"
+                                    "match"
                                   )
                                   0
                                 )
                                 (
                                   match
                                   (
-                                    parse-begin rest
+                                    parse-match rest
                                   )
                                   (
                                     Some expr expr
@@ -2553,7 +2559,7 @@
                                       Expr
                                       (
                                         EUnknown
-                                        "begin"
+                                        "match"
                                         (
                                           convert-ast-list rest
                                         )
@@ -2567,14 +2573,14 @@
                                     >
                                     (
                                       str-eq n
-                                      "lambda"
+                                      "try"
                                     )
                                     0
                                   )
                                   (
                                     match
                                     (
-                                      parse-lambda rest
+                                      parse-try rest
                                     )
                                     (
                                       Some expr expr
@@ -2585,7 +2591,7 @@
                                         Expr
                                         (
                                           EUnknown
-                                          "lambda"
+                                          "try"
                                           (
                                             convert-ast-list rest
                                           )
@@ -2599,14 +2605,14 @@
                                       >
                                       (
                                         str-eq n
-                                        "fn"
+                                        "begin"
                                       )
                                       0
                                     )
                                     (
                                       match
                                       (
-                                        parse-fn rest
+                                        parse-begin rest
                                       )
                                       (
                                         Some expr expr
@@ -2617,7 +2623,7 @@
                                           Expr
                                           (
                                             EUnknown
-                                            "fn"
+                                            "begin"
                                             (
                                               convert-ast-list rest
                                             )
@@ -2631,14 +2637,14 @@
                                         >
                                         (
                                           str-eq n
-                                          "print"
+                                          "lambda"
                                         )
                                         0
                                       )
                                       (
                                         match
                                         (
-                                          parse-print rest
+                                          parse-lambda rest
                                         )
                                         (
                                           Some expr expr
@@ -2649,7 +2655,7 @@
                                             Expr
                                             (
                                               EUnknown
-                                              "print"
+                                              "lambda"
                                               (
                                                 convert-ast-list rest
                                               )
@@ -2663,14 +2669,14 @@
                                           >
                                           (
                                             str-eq n
-                                            "assert-equal"
+                                            "fn"
                                           )
                                           0
                                         )
                                         (
                                           match
                                           (
-                                            parse-assert-equal rest
+                                            parse-fn rest
                                           )
                                           (
                                             Some expr expr
@@ -2681,7 +2687,7 @@
                                               Expr
                                               (
                                                 EUnknown
-                                                "assert-equal"
+                                                "fn"
                                                 (
                                                   convert-ast-list rest
                                                 )
@@ -2695,14 +2701,14 @@
                                             >
                                             (
                                               str-eq n
-                                              "assert"
+                                              "print"
                                             )
                                             0
                                           )
                                           (
                                             match
                                             (
-                                              parse-assert rest
+                                              parse-print rest
                                             )
                                             (
                                               Some expr expr
@@ -2713,7 +2719,7 @@
                                                 Expr
                                                 (
                                                   EUnknown
-                                                  "assert"
+                                                  "print"
                                                   (
                                                     convert-ast-list rest
                                                   )
@@ -2727,14 +2733,14 @@
                                               >
                                               (
                                                 str-eq n
-                                                "spawn"
+                                                "assert-equal"
                                               )
                                               0
                                             )
                                             (
                                               match
                                               (
-                                                parse-spawn rest
+                                                parse-assert-equal rest
                                               )
                                               (
                                                 Some expr expr
@@ -2745,7 +2751,7 @@
                                                   Expr
                                                   (
                                                     EUnknown
-                                                    "spawn"
+                                                    "assert-equal"
                                                     (
                                                       convert-ast-list rest
                                                     )
@@ -2759,14 +2765,14 @@
                                                 >
                                                 (
                                                   str-eq n
-                                                  "send"
+                                                  "assert"
                                                 )
                                                 0
                                               )
                                               (
                                                 match
                                                 (
-                                                  parse-send rest
+                                                  parse-assert rest
                                                 )
                                                 (
                                                   Some expr expr
@@ -2777,7 +2783,7 @@
                                                     Expr
                                                     (
                                                       EUnknown
-                                                      "send"
+                                                      "assert"
                                                       (
                                                         convert-ast-list rest
                                                       )
@@ -2791,14 +2797,14 @@
                                                   >
                                                   (
                                                     str-eq n
-                                                    "ffi-pin"
+                                                    "assert-true"
                                                   )
                                                   0
                                                 )
                                                 (
                                                   match
                                                   (
-                                                    parse-ffi-pin rest
+                                                    parse-assert-true rest
                                                   )
                                                   (
                                                     Some expr expr
@@ -2809,7 +2815,7 @@
                                                       Expr
                                                       (
                                                         EUnknown
-                                                        "ffi-pin"
+                                                        "assert-true"
                                                         (
                                                           convert-ast-list rest
                                                         )
@@ -2823,14 +2829,14 @@
                                                     >
                                                     (
                                                       str-eq n
-                                                      "ffi-unpin"
+                                                      "assert-false"
                                                     )
                                                     0
                                                   )
                                                   (
                                                     match
                                                     (
-                                                      parse-ffi-unpin rest
+                                                      parse-assert-false rest
                                                     )
                                                     (
                                                       Some expr expr
@@ -2841,7 +2847,7 @@
                                                         Expr
                                                         (
                                                           EUnknown
-                                                          "ffi-unpin"
+                                                          "assert-false"
                                                           (
                                                             convert-ast-list rest
                                                           )
@@ -2855,14 +2861,14 @@
                                                       >
                                                       (
                                                         str-eq n
-                                                        "exit"
+                                                        "spawn"
                                                       )
                                                       0
                                                     )
                                                     (
                                                       match
                                                       (
-                                                        parse-exit rest
+                                                        parse-spawn rest
                                                       )
                                                       (
                                                         Some expr expr
@@ -2873,7 +2879,7 @@
                                                           Expr
                                                           (
                                                             EUnknown
-                                                            "exit"
+                                                            "spawn"
                                                             (
                                                               convert-ast-list rest
                                                             )
@@ -2887,14 +2893,14 @@
                                                         >
                                                         (
                                                           str-eq n
-                                                          "close"
+                                                          "send"
                                                         )
                                                         0
                                                       )
                                                       (
                                                         match
                                                         (
-                                                          parse-close rest
+                                                          parse-send rest
                                                         )
                                                         (
                                                           Some expr expr
@@ -2905,7 +2911,7 @@
                                                             Expr
                                                             (
                                                               EUnknown
-                                                              "close"
+                                                              "send"
                                                               (
                                                                 convert-ast-list rest
                                                               )
@@ -2919,14 +2925,14 @@
                                                           >
                                                           (
                                                             str-eq n
-                                                            "file-open"
+                                                            "ffi-pin"
                                                           )
                                                           0
                                                         )
                                                         (
                                                           match
                                                           (
-                                                            parse-file-open rest
+                                                            parse-ffi-pin rest
                                                           )
                                                           (
                                                             Some expr expr
@@ -2937,7 +2943,7 @@
                                                               Expr
                                                               (
                                                                 EUnknown
-                                                                "file-open"
+                                                                "ffi-pin"
                                                                 (
                                                                   convert-ast-list rest
                                                                 )
@@ -2951,14 +2957,14 @@
                                                             >
                                                             (
                                                               str-eq n
-                                                              "file-read"
+                                                              "ffi-unpin"
                                                             )
                                                             0
                                                           )
                                                           (
                                                             match
                                                             (
-                                                              parse-file-read rest
+                                                              parse-ffi-unpin rest
                                                             )
                                                             (
                                                               Some expr expr
@@ -2969,7 +2975,7 @@
                                                                 Expr
                                                                 (
                                                                   EUnknown
-                                                                  "file-read"
+                                                                  "ffi-unpin"
                                                                   (
                                                                     convert-ast-list rest
                                                                   )
@@ -2983,14 +2989,14 @@
                                                               >
                                                               (
                                                                 str-eq n
-                                                                "file-write"
+                                                                "exit"
                                                               )
                                                               0
                                                             )
                                                             (
                                                               match
                                                               (
-                                                                parse-file-write rest
+                                                                parse-exit rest
                                                               )
                                                               (
                                                                 Some expr expr
@@ -3001,7 +3007,7 @@
                                                                   Expr
                                                                   (
                                                                     EUnknown
-                                                                    "file-write"
+                                                                    "exit"
                                                                     (
                                                                       convert-ast-list rest
                                                                     )
@@ -3015,14 +3021,14 @@
                                                                 >
                                                                 (
                                                                   str-eq n
-                                                                  "file-close"
+                                                                  "close"
                                                                 )
                                                                 0
                                                               )
                                                               (
                                                                 match
                                                                 (
-                                                                  parse-file-close rest
+                                                                  parse-close rest
                                                                 )
                                                                 (
                                                                   Some expr expr
@@ -3033,7 +3039,7 @@
                                                                     Expr
                                                                     (
                                                                       EUnknown
-                                                                      "file-close"
+                                                                      "close"
                                                                       (
                                                                         convert-ast-list rest
                                                                       )
@@ -3047,14 +3053,14 @@
                                                                   >
                                                                   (
                                                                     str-eq n
-                                                                    "set!"
+                                                                    "file-open"
                                                                   )
                                                                   0
                                                                 )
                                                                 (
                                                                   match
                                                                   (
-                                                                    parse-set-bang rest
+                                                                    parse-file-open rest
                                                                   )
                                                                   (
                                                                     Some expr expr
@@ -3065,7 +3071,7 @@
                                                                       Expr
                                                                       (
                                                                         EUnknown
-                                                                        "set!"
+                                                                        "file-open"
                                                                         (
                                                                           convert-ast-list rest
                                                                         )
@@ -3079,14 +3085,14 @@
                                                                     >
                                                                     (
                                                                       str-eq n
-                                                                      "module"
+                                                                      "file-read"
                                                                     )
                                                                     0
                                                                   )
                                                                   (
                                                                     match
                                                                     (
-                                                                      parse-module rest
+                                                                      parse-file-read rest
                                                                     )
                                                                     (
                                                                       Some expr expr
@@ -3097,7 +3103,7 @@
                                                                         Expr
                                                                         (
                                                                           EUnknown
-                                                                          "module"
+                                                                          "file-read"
                                                                           (
                                                                             convert-ast-list rest
                                                                           )
@@ -3111,14 +3117,14 @@
                                                                       >
                                                                       (
                                                                         str-eq n
-                                                                        "use"
+                                                                        "file-write"
                                                                       )
                                                                       0
                                                                     )
                                                                     (
                                                                       match
                                                                       (
-                                                                        parse-use rest
+                                                                        parse-file-write rest
                                                                       )
                                                                       (
                                                                         Some expr expr
@@ -3129,7 +3135,7 @@
                                                                           Expr
                                                                           (
                                                                             EUnknown
-                                                                            "use"
+                                                                            "file-write"
                                                                             (
                                                                               convert-ast-list rest
                                                                             )
@@ -3143,14 +3149,14 @@
                                                                         >
                                                                         (
                                                                           str-eq n
-                                                                          "export"
+                                                                          "file-close"
                                                                         )
                                                                         0
                                                                       )
                                                                       (
                                                                         match
                                                                         (
-                                                                          parse-export rest
+                                                                          parse-file-close rest
                                                                         )
                                                                         (
                                                                           Some expr expr
@@ -3161,7 +3167,7 @@
                                                                             Expr
                                                                             (
                                                                               EUnknown
-                                                                              "export"
+                                                                              "file-close"
                                                                               (
                                                                                 convert-ast-list rest
                                                                               )
@@ -3175,14 +3181,14 @@
                                                                           >
                                                                           (
                                                                             str-eq n
-                                                                            "derive"
+                                                                            "set!"
                                                                           )
                                                                           0
                                                                         )
                                                                         (
                                                                           match
                                                                           (
-                                                                            parse-derive rest
+                                                                            parse-set-bang rest
                                                                           )
                                                                           (
                                                                             Some expr expr
@@ -3193,7 +3199,7 @@
                                                                               Expr
                                                                               (
                                                                                 EUnknown
-                                                                                "derive"
+                                                                                "set!"
                                                                                 (
                                                                                   convert-ast-list rest
                                                                                 )
@@ -3207,14 +3213,14 @@
                                                                             >
                                                                             (
                                                                               str-eq n
-                                                                              "macro"
+                                                                              "module"
                                                                             )
                                                                             0
                                                                           )
                                                                           (
                                                                             match
                                                                             (
-                                                                              parse-macro rest
+                                                                              parse-module rest
                                                                             )
                                                                             (
                                                                               Some expr expr
@@ -3225,7 +3231,7 @@
                                                                                 Expr
                                                                                 (
                                                                                   EUnknown
-                                                                                  "macro"
+                                                                                  "module"
                                                                                   (
                                                                                     convert-ast-list rest
                                                                                   )
@@ -3239,14 +3245,14 @@
                                                                               >
                                                                               (
                                                                                 str-eq n
-                                                                                "test"
+                                                                                "use"
                                                                               )
                                                                               0
                                                                             )
                                                                             (
                                                                               match
                                                                               (
-                                                                                parse-test rest
+                                                                                parse-use rest
                                                                               )
                                                                               (
                                                                                 Some expr expr
@@ -3257,7 +3263,7 @@
                                                                                   Expr
                                                                                   (
                                                                                     EUnknown
-                                                                                    "test"
+                                                                                    "use"
                                                                                     (
                                                                                       convert-ast-list rest
                                                                                     )
@@ -3271,14 +3277,14 @@
                                                                                 >
                                                                                 (
                                                                                   str-eq n
-                                                                                  "test-suite"
+                                                                                  "export"
                                                                                 )
                                                                                 0
                                                                               )
                                                                               (
                                                                                 match
                                                                                 (
-                                                                                  parse-test-suite rest
+                                                                                  parse-export rest
                                                                                 )
                                                                                 (
                                                                                   Some expr expr
@@ -3289,7 +3295,7 @@
                                                                                     Expr
                                                                                     (
                                                                                       EUnknown
-                                                                                      "test-suite"
+                                                                                      "export"
                                                                                       (
                                                                                         convert-ast-list rest
                                                                                       )
@@ -3303,14 +3309,14 @@
                                                                                   >
                                                                                   (
                                                                                     str-eq n
-                                                                                    "setup"
+                                                                                    "derive"
                                                                                   )
                                                                                   0
                                                                                 )
                                                                                 (
                                                                                   match
                                                                                   (
-                                                                                    parse-setup rest
+                                                                                    parse-derive rest
                                                                                   )
                                                                                   (
                                                                                     Some expr expr
@@ -3321,7 +3327,7 @@
                                                                                       Expr
                                                                                       (
                                                                                         EUnknown
-                                                                                        "setup"
+                                                                                        "derive"
                                                                                         (
                                                                                           convert-ast-list rest
                                                                                         )
@@ -3335,14 +3341,14 @@
                                                                                     >
                                                                                     (
                                                                                       str-eq n
-                                                                                      "teardown"
+                                                                                      "macro"
                                                                                     )
                                                                                     0
                                                                                   )
                                                                                   (
                                                                                     match
                                                                                     (
-                                                                                      parse-teardown rest
+                                                                                      parse-macro rest
                                                                                     )
                                                                                     (
                                                                                       Some expr expr
@@ -3353,7 +3359,7 @@
                                                                                         Expr
                                                                                         (
                                                                                           EUnknown
-                                                                                          "teardown"
+                                                                                          "macro"
                                                                                           (
                                                                                             convert-ast-list rest
                                                                                           )
@@ -3367,14 +3373,14 @@
                                                                                       >
                                                                                       (
                                                                                         str-eq n
-                                                                                        "with-resource"
+                                                                                        "defmacro"
                                                                                       )
                                                                                       0
                                                                                     )
                                                                                     (
                                                                                       match
                                                                                       (
-                                                                                        parse-with-resource rest
+                                                                                        parse-macro rest
                                                                                       )
                                                                                       (
                                                                                         Some expr expr
@@ -3385,7 +3391,7 @@
                                                                                           Expr
                                                                                           (
                                                                                             EUnknown
-                                                                                            "with-resource"
+                                                                                            "defmacro"
                                                                                             (
                                                                                               convert-ast-list rest
                                                                                             )
@@ -3399,14 +3405,30 @@
                                                                                         >
                                                                                         (
                                                                                           str-eq n
-                                                                                          "read-line"
+                                                                                          "test"
                                                                                         )
                                                                                         0
                                                                                       )
                                                                                       (
-                                                                                        Expr
+                                                                                        match
                                                                                         (
-                                                                                          EReadLine
+                                                                                          parse-test rest
+                                                                                        )
+                                                                                        (
+                                                                                          Some expr expr
+                                                                                        )
+                                                                                        (
+                                                                                          None
+                                                                                          (
+                                                                                            Expr
+                                                                                            (
+                                                                                              EUnknown
+                                                                                              "test"
+                                                                                              (
+                                                                                                convert-ast-list rest
+                                                                                              )
+                                                                                            )
+                                                                                          )
                                                                                         )
                                                                                       )
                                                                                       (
@@ -3415,14 +3437,14 @@
                                                                                           >
                                                                                           (
                                                                                             str-eq n
-                                                                                            "make-struct"
+                                                                                            "test-suite"
                                                                                           )
                                                                                           0
                                                                                         )
                                                                                         (
                                                                                           match
                                                                                           (
-                                                                                            parse-make-struct rest
+                                                                                            parse-test-suite rest
                                                                                           )
                                                                                           (
                                                                                             Some expr expr
@@ -3433,7 +3455,7 @@
                                                                                               Expr
                                                                                               (
                                                                                                 EUnknown
-                                                                                                "make-struct"
+                                                                                                "test-suite"
                                                                                                 (
                                                                                                   convert-ast-list rest
                                                                                                 )
@@ -3447,30 +3469,14 @@
                                                                                             >
                                                                                             (
                                                                                               str-eq n
-                                                                                              "struct-get"
+                                                                                              "run-tests"
                                                                                             )
                                                                                             0
                                                                                           )
                                                                                           (
-                                                                                            match
+                                                                                            Expr
                                                                                             (
-                                                                                              parse-struct-get rest
-                                                                                            )
-                                                                                            (
-                                                                                              Some expr expr
-                                                                                            )
-                                                                                            (
-                                                                                              None
-                                                                                              (
-                                                                                                Expr
-                                                                                                (
-                                                                                                  EUnknown
-                                                                                                  "struct-get"
-                                                                                                  (
-                                                                                                    convert-ast-list rest
-                                                                                                  )
-                                                                                                )
-                                                                                              )
+                                                                                              ERunTests None
                                                                                             )
                                                                                           )
                                                                                           (
@@ -3479,14 +3485,14 @@
                                                                                               >
                                                                                               (
                                                                                                 str-eq n
-                                                                                                "make-variant"
+                                                                                                "setup"
                                                                                               )
                                                                                               0
                                                                                             )
                                                                                             (
                                                                                               match
                                                                                               (
-                                                                                                parse-make-variant rest
+                                                                                                parse-setup rest
                                                                                               )
                                                                                               (
                                                                                                 Some expr expr
@@ -3497,7 +3503,7 @@
                                                                                                   Expr
                                                                                                   (
                                                                                                     EUnknown
-                                                                                                    "make-variant"
+                                                                                                    "setup"
                                                                                                     (
                                                                                                       convert-ast-list rest
                                                                                                     )
@@ -3511,14 +3517,14 @@
                                                                                                 >
                                                                                                 (
                                                                                                   str-eq n
-                                                                                                  "unwrap"
+                                                                                                  "teardown"
                                                                                                 )
                                                                                                 0
                                                                                               )
                                                                                               (
                                                                                                 match
                                                                                                 (
-                                                                                                  parse-unwrap rest
+                                                                                                  parse-teardown rest
                                                                                                 )
                                                                                                 (
                                                                                                   Some expr expr
@@ -3529,7 +3535,7 @@
                                                                                                     Expr
                                                                                                     (
                                                                                                       EUnknown
-                                                                                                      "unwrap"
+                                                                                                      "teardown"
                                                                                                       (
                                                                                                         convert-ast-list rest
                                                                                                       )
@@ -3543,14 +3549,14 @@
                                                                                                   >
                                                                                                   (
                                                                                                     str-eq n
-                                                                                                    "test-property"
+                                                                                                    "with-resource"
                                                                                                   )
                                                                                                   0
                                                                                                 )
                                                                                                 (
                                                                                                   match
                                                                                                   (
-                                                                                                    parse-test-property rest
+                                                                                                    parse-with-resource rest
                                                                                                   )
                                                                                                   (
                                                                                                     Some expr expr
@@ -3561,7 +3567,7 @@
                                                                                                       Expr
                                                                                                       (
                                                                                                         EUnknown
-                                                                                                        "test-property"
+                                                                                                        "with-resource"
                                                                                                         (
                                                                                                           convert-ast-list rest
                                                                                                         )
@@ -3575,38 +3581,220 @@
                                                                                                     >
                                                                                                     (
                                                                                                       str-eq n
-                                                                                                      "test-compile"
+                                                                                                      "read-line"
                                                                                                     )
                                                                                                     0
                                                                                                   )
                                                                                                   (
-                                                                                                    match
+                                                                                                    Expr
                                                                                                     (
-                                                                                                      parse-test-compile rest
+                                                                                                      EReadLine
                                                                                                     )
+                                                                                                  )
+                                                                                                  (
+                                                                                                    if
                                                                                                     (
-                                                                                                      Some expr expr
-                                                                                                    )
-                                                                                                    (
-                                                                                                      None
+                                                                                                      >
                                                                                                       (
-                                                                                                        Expr
+                                                                                                        str-eq n
+                                                                                                        "make-struct"
+                                                                                                      )
+                                                                                                      0
+                                                                                                    )
+                                                                                                    (
+                                                                                                      match
+                                                                                                      (
+                                                                                                        parse-make-struct rest
+                                                                                                      )
+                                                                                                      (
+                                                                                                        Some expr expr
+                                                                                                      )
+                                                                                                      (
+                                                                                                        None
                                                                                                         (
-                                                                                                          EUnknown
-                                                                                                          "test-compile"
+                                                                                                          Expr
                                                                                                           (
-                                                                                                            convert-ast-list rest
+                                                                                                            EUnknown
+                                                                                                            "make-struct"
+                                                                                                            (
+                                                                                                              convert-ast-list rest
+                                                                                                            )
                                                                                                           )
                                                                                                         )
                                                                                                       )
                                                                                                     )
-                                                                                                  )
-                                                                                                  (
-                                                                                                    Expr
                                                                                                     (
-                                                                                                      EApply n
+                                                                                                      if
                                                                                                       (
-                                                                                                        convert-ast-list rest
+                                                                                                        >
+                                                                                                        (
+                                                                                                          str-eq n
+                                                                                                          "struct-get"
+                                                                                                        )
+                                                                                                        0
+                                                                                                      )
+                                                                                                      (
+                                                                                                        match
+                                                                                                        (
+                                                                                                          parse-struct-get rest
+                                                                                                        )
+                                                                                                        (
+                                                                                                          Some expr expr
+                                                                                                        )
+                                                                                                        (
+                                                                                                          None
+                                                                                                          (
+                                                                                                            Expr
+                                                                                                            (
+                                                                                                              EUnknown
+                                                                                                              "struct-get"
+                                                                                                              (
+                                                                                                                convert-ast-list rest
+                                                                                                              )
+                                                                                                            )
+                                                                                                          )
+                                                                                                        )
+                                                                                                      )
+                                                                                                      (
+                                                                                                        if
+                                                                                                        (
+                                                                                                          >
+                                                                                                          (
+                                                                                                            str-eq n
+                                                                                                            "make-variant"
+                                                                                                          )
+                                                                                                          0
+                                                                                                        )
+                                                                                                        (
+                                                                                                          match
+                                                                                                          (
+                                                                                                            parse-make-variant rest
+                                                                                                          )
+                                                                                                          (
+                                                                                                            Some expr expr
+                                                                                                          )
+                                                                                                          (
+                                                                                                            None
+                                                                                                            (
+                                                                                                              Expr
+                                                                                                              (
+                                                                                                                EUnknown
+                                                                                                                "make-variant"
+                                                                                                                (
+                                                                                                                  convert-ast-list rest
+                                                                                                                )
+                                                                                                              )
+                                                                                                            )
+                                                                                                          )
+                                                                                                        )
+                                                                                                        (
+                                                                                                          if
+                                                                                                          (
+                                                                                                            >
+                                                                                                            (
+                                                                                                              str-eq n
+                                                                                                              "unwrap"
+                                                                                                            )
+                                                                                                            0
+                                                                                                          )
+                                                                                                          (
+                                                                                                            match
+                                                                                                            (
+                                                                                                              parse-unwrap rest
+                                                                                                            )
+                                                                                                            (
+                                                                                                              Some expr expr
+                                                                                                            )
+                                                                                                            (
+                                                                                                              None
+                                                                                                              (
+                                                                                                                Expr
+                                                                                                                (
+                                                                                                                  EUnknown
+                                                                                                                  "unwrap"
+                                                                                                                  (
+                                                                                                                    convert-ast-list rest
+                                                                                                                  )
+                                                                                                                )
+                                                                                                              )
+                                                                                                            )
+                                                                                                          )
+                                                                                                          (
+                                                                                                            if
+                                                                                                            (
+                                                                                                              >
+                                                                                                              (
+                                                                                                                str-eq n
+                                                                                                                "test-property"
+                                                                                                              )
+                                                                                                              0
+                                                                                                            )
+                                                                                                            (
+                                                                                                              match
+                                                                                                              (
+                                                                                                                parse-test-property rest
+                                                                                                              )
+                                                                                                              (
+                                                                                                                Some expr expr
+                                                                                                              )
+                                                                                                              (
+                                                                                                                None
+                                                                                                                (
+                                                                                                                  Expr
+                                                                                                                  (
+                                                                                                                    EUnknown
+                                                                                                                    "test-property"
+                                                                                                                    (
+                                                                                                                      convert-ast-list rest
+                                                                                                                    )
+                                                                                                                  )
+                                                                                                                )
+                                                                                                              )
+                                                                                                            )
+                                                                                                            (
+                                                                                                              if
+                                                                                                              (
+                                                                                                                >
+                                                                                                                (
+                                                                                                                  str-eq n
+                                                                                                                  "test-compile"
+                                                                                                                )
+                                                                                                                0
+                                                                                                              )
+                                                                                                              (
+                                                                                                                match
+                                                                                                                (
+                                                                                                                  parse-test-compile rest
+                                                                                                                )
+                                                                                                                (
+                                                                                                                  Some expr expr
+                                                                                                                )
+                                                                                                                (
+                                                                                                                  None
+                                                                                                                  (
+                                                                                                                    Expr
+                                                                                                                    (
+                                                                                                                      EUnknown
+                                                                                                                      "test-compile"
+                                                                                                                      (
+                                                                                                                        convert-ast-list rest
+                                                                                                                      )
+                                                                                                                    )
+                                                                                                                  )
+                                                                                                                )
+                                                                                                              )
+                                                                                                              (
+                                                                                                                Expr
+                                                                                                                (
+                                                                                                                  EApply n
+                                                                                                                  (
+                                                                                                                    convert-ast-list rest
+                                                                                                                  )
+                                                                                                                )
+                                                                                                              )
+                                                                                                            )
+                                                                                                          )
+                                                                                                        )
                                                                                                       )
                                                                                                     )
                                                                                                   )
@@ -3711,13 +3899,7 @@
                 )
               )
               (
-                convert-ast
-                (
-                  ast-list-last args
-                  (
-                    AstInt 0
-                  )
-                )
+                parse-body-from args 2
               )
             )
           )
@@ -3884,6 +4066,115 @@
       )
     )
     None
+  )
+)
+(
+  defn parse-defstruct
+  (
+    args
+  )
+  (
+    if
+    (
+      ast-has-at-least args 1
+    )
+    (
+      match
+      (
+        ast-nth args 0
+        (
+          AstInt 0
+        )
+      )
+      (
+        AstIdent n
+        (
+          Some
+          (
+            Expr
+            (
+              EDeftype
+              n
+              (
+                Cons
+                (
+                  AV n
+                  (
+                    parse-struct-fields
+                    (
+                      ast-list-nth-rest args 1
+                    )
+                  )
+                )
+                Nil
+              )
+              Nil
+              None
+            )
+          )
+        )
+      )
+      (
+        d1 None
+      )
+    )
+    None
+  )
+)
+(
+  defn parse-struct-fields
+  (
+    specs
+  )
+  (
+    match specs
+    (
+      Nil Nil
+    )
+    (
+      Cons s rest
+      (
+        Cons
+        (
+          parse-struct-field-name s
+        )
+        (
+          parse-struct-fields rest
+        )
+      )
+    )
+  )
+)
+(
+  defn parse-struct-field-name
+  (
+    s
+  )
+  (
+    match s
+    (
+      AstIdent n n
+    )
+    (
+      AList lst
+      (
+        match lst
+        (
+          Cons h d1
+          (
+            a-ident-to-str h
+          )
+        )
+        (
+          d2
+          ""
+        )
+      )
+    )
+    (
+      d3
+      ""
+    )
   )
 )
 (
@@ -4063,6 +4354,55 @@
   )
 )
 (
+  defn parse-body-from
+  (
+    args start
+  )
+  (
+    let rest
+    (
+      ast-list-nth-rest args start
+    )
+    (
+      if
+      (
+        <=
+        (
+          list-length rest
+        )
+        1
+      )
+      (
+        match rest
+        (
+          Nil
+          (
+            Expr
+            (
+              EAtom ANil
+            )
+          )
+        )
+        (
+          Cons only d1
+          (
+            convert-ast only
+          )
+        )
+      )
+      (
+        Expr
+        (
+          EBegin
+          (
+            convert-ast-list rest
+          )
+        )
+      )
+    )
+  )
+)
+(
   defn parse-let
   (
     args
@@ -4099,13 +4439,7 @@
                 )
               )
               (
-                convert-ast
-                (
-                  ast-list-last args
-                  (
-                    AstInt 0
-                  )
-                )
+                parse-body-from args 2
               )
             )
           )
@@ -4246,13 +4580,7 @@
                 )
               )
               (
-                convert-ast
-                (
-                  ast-list-last args
-                  (
-                    AstInt 0
-                  )
-                )
+                parse-body-from args 2
               )
             )
           )
@@ -4402,7 +4730,46 @@
         )
       )
     )
-    None
+    (
+      if
+      (
+        ast-has-at-least args 2
+      )
+      (
+        Some
+        (
+          Expr
+          (
+            EIf
+            (
+              convert-ast
+              (
+                ast-nth args 0
+                (
+                  AstInt 0
+                )
+              )
+            )
+            (
+              convert-ast
+              (
+                ast-nth args 1
+                (
+                  AstInt 0
+                )
+              )
+            )
+            (
+              Expr
+              (
+                EAtom ANil
+              )
+            )
+          )
+        )
+      )
+      None
+    )
   )
 )
 (
@@ -5496,6 +5863,70 @@
   )
 )
 (
+  defn parse-assert-true
+  (
+    args
+  )
+  (
+    if
+    (
+      ast-has-at-least args 1
+    )
+    (
+      Some
+      (
+        Expr
+        (
+          EAssertTrue
+          (
+            convert-ast
+            (
+              ast-nth args 0
+              (
+                AstInt 0
+              )
+            )
+          )
+          None
+        )
+      )
+    )
+    None
+  )
+)
+(
+  defn parse-assert-false
+  (
+    args
+  )
+  (
+    if
+    (
+      ast-has-at-least args 1
+    )
+    (
+      Some
+      (
+        Expr
+        (
+          EAssertFalse
+          (
+            convert-ast
+            (
+              ast-nth args 0
+              (
+                AstInt 0
+              )
+            )
+          )
+          None
+        )
+      )
+    )
+    None
+  )
+)
+(
   defn parse-spawn
   (
     args
@@ -6172,6 +6603,9 @@
               AstIdent n n
             )
             (
+              AString n n
+            )
+            (
               d1
               "___"
             )
@@ -6380,6 +6814,9 @@
             )
             (
               AstIdent n n
+            )
+            (
+              AString n n
             )
             (
               d1
@@ -9018,6 +9455,1042 @@
       (
         parse-program arena toks
       )
+    )
+  )
+)
+; ---------- stdlib/compiler/module_resolver.zyl ----------
+(
+  deftype MRAcc
+  (
+    MRAcc
+    (
+      List Expr
+    )
+    (
+      List String
+    )
+  )
+)
+(
+  defn mr-str-in-list
+  (
+    s xs
+  )
+  (
+    match xs
+    (
+      Nil 0
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            str-eq s h
+          )
+          0
+        )
+        1
+        (
+          mr-str-in-list s t
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-use-name
+  (
+    parts
+  )
+  (
+    match parts
+    (
+      Nil
+      ""
+    )
+    (
+      Cons h d1 h
+    )
+  )
+)
+(
+  defn mr-collect-uses
+  (
+    forms
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EUseModule parts d1 d2
+          (
+            Cons
+            (
+              mr-use-name parts
+            )
+            (
+              mr-collect-uses rest
+            )
+          )
+        )
+        (
+          d3
+          (
+            mr-collect-uses rest
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-strip-use
+  (
+    forms
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EUseModule d1 d2 d3
+          (
+            mr-strip-use rest
+          )
+        )
+        (
+          EModuleDecl d4
+          (
+            mr-strip-use rest
+          )
+        )
+        (
+          EExport d5
+          (
+            mr-strip-use rest
+          )
+        )
+        (
+          d6
+          (
+            Cons e
+            (
+              mr-strip-use rest
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-parse-file
+  (
+    arena path
+  )
+  (
+    let fd
+    (
+      file-open path
+      "r"
+    )
+    (
+      let srcbuf
+      (
+        file-read fd 1048576
+      )
+      (
+        let d1
+        (
+          file-close fd
+        )
+        (
+          convert-ast-list
+          (
+            zyl-parse arena srcbuf
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-module-path
+  (
+    name
+  )
+  (
+    str-concat
+    "stdlib/"
+    (
+      str-concat name
+      ".zyl"
+    )
+  )
+)
+(
+  defn mr-resolve-module
+  (
+    arena name acc
+  )
+  (
+    match acc
+    (
+      MRAcc exprs resolved
+      (
+        if
+        (
+          >
+          (
+            mr-str-in-list name resolved
+          )
+          0
+        )
+        acc
+        (
+          let file-exprs
+          (
+            mr-parse-file arena
+            (
+              mr-module-path name
+            )
+          )
+          (
+            let uses
+            (
+              mr-collect-uses file-exprs
+            )
+            (
+              let acc2
+              (
+                mr-resolve-uses arena uses
+                (
+                  MRAcc exprs
+                  (
+                    Cons name resolved
+                  )
+                )
+              )
+              (
+                match acc2
+                (
+                  MRAcc exprs2 resolved2
+                  (
+                    MRAcc
+                    (
+                      list-append exprs2
+                      (
+                        mr-strip-use file-exprs
+                      )
+                    )
+                    resolved2
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-resolve-uses
+  (
+    arena names acc
+  )
+  (
+    match names
+    (
+      Nil acc
+    )
+    (
+      Cons n rest
+      (
+        mr-resolve-uses arena rest
+        (
+          mr-resolve-module arena n acc
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-core-loaded
+  (
+    uses
+  )
+  (
+    match uses
+    (
+      Nil 0
+    )
+    (
+      Cons u rest
+      (
+        if
+        (
+          >
+          (
+            str-eq u
+            "core/core"
+          )
+          0
+        )
+        1
+        (
+          if
+          (
+            >
+            (
+              str-eq u
+              "core/option"
+            )
+            0
+          )
+          1
+          (
+            if
+            (
+              >
+              (
+                str-eq u
+                "core/result"
+              )
+              0
+            )
+            1
+            (
+              mr-core-loaded rest
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mr-resolve-program
+  (
+    arena main-exprs
+  )
+  (
+    let uses
+    (
+      mr-collect-uses main-exprs
+    )
+    (
+      let uses2
+      (
+        if
+        (
+          is-nil uses
+        )
+        uses
+        (
+          if
+          (
+            >
+            (
+              mr-core-loaded uses
+            )
+            0
+          )
+          uses
+          (
+            Cons
+            "core/core"
+            uses
+          )
+        )
+      )
+      (
+        let acc
+        (
+          mr-resolve-uses arena uses2
+          (
+            MRAcc Nil Nil
+          )
+        )
+        (
+          match acc
+          (
+            MRAcc dep-exprs d1
+            (
+              list-append dep-exprs
+              (
+                mr-strip-use main-exprs
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+; ---------- stdlib/compiler/macro_expand.zyl ----------
+(
+  deftype MacroTable
+  (
+    MEntry String
+    (
+      List String
+    )
+    Expr MacroTable
+  )
+  (
+    MNil
+  )
+)
+(
+  defn mt-has
+  (
+    mt name
+  )
+  (
+    match mt
+    (
+      MNil 0
+    )
+    (
+      MEntry n d1 d2 rest
+      (
+        if
+        (
+          >
+          (
+            str-eq n name
+          )
+          0
+        )
+        1
+        (
+          mt-has rest name
+        )
+      )
+    )
+  )
+)
+(
+  defn mt-params
+  (
+    mt name
+  )
+  (
+    match mt
+    (
+      MNil Nil
+    )
+    (
+      MEntry n params d1 rest
+      (
+        if
+        (
+          >
+          (
+            str-eq n name
+          )
+          0
+        )
+        params
+        (
+          mt-params rest name
+        )
+      )
+    )
+  )
+)
+(
+  defn mt-body
+  (
+    mt name
+  )
+  (
+    match mt
+    (
+      MNil
+      (
+        Expr
+        (
+          EAtom ANil
+        )
+      )
+    )
+    (
+      MEntry n d1 body rest
+      (
+        if
+        (
+          >
+          (
+            str-eq n name
+          )
+          0
+        )
+        body
+        (
+          mt-body rest name
+        )
+      )
+    )
+  )
+)
+(
+  defn me-collect
+  (
+    forms mt
+  )
+  (
+    match forms
+    (
+      Nil mt
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EMacroDef name params body
+          (
+            me-collect rest
+            (
+              MEntry name
+              (
+                me-param-names params
+              )
+              body mt
+            )
+          )
+        )
+        (
+          d1
+          (
+            me-collect rest mt
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn me-param-names
+  (
+    params
+  )
+  (
+    match params
+    (
+      Nil Nil
+    )
+    (
+      Cons p rest
+      (
+        Cons
+        (
+          me-expr-ident p
+          ""
+        )
+        (
+          me-param-names rest
+        )
+      )
+    )
+  )
+)
+(
+  defn me-expr-ident
+  (
+    e fb
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AIdent n n
+        )
+        (
+          d1 fb
+        )
+      )
+    )
+    (
+      d2 fb
+    )
+  )
+)
+(
+  deftype SEnv
+  (
+    SBind String Expr SEnv
+  )
+  (
+    SNil
+  )
+)
+(
+  defn senv-lookup
+  (
+    env name
+  )
+  (
+    match env
+    (
+      SNil None
+    )
+    (
+      SBind n e rest
+      (
+        if
+        (
+          >
+          (
+            str-eq n name
+          )
+          0
+        )
+        (
+          Some e
+        )
+        (
+          senv-lookup rest name
+        )
+      )
+    )
+  )
+)
+(
+  defn senv-from-lists
+  (
+    params args
+  )
+  (
+    match params
+    (
+      Nil SNil
+    )
+    (
+      Cons p prest
+      (
+        match args
+        (
+          Nil SNil
+        )
+        (
+          Cons a arest
+          (
+            SBind p a
+            (
+              senv-from-lists prest arest
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn me-rewrite-list
+  (
+    forms senv mt
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        Cons
+        (
+          me-rewrite e senv mt
+        )
+        (
+          me-rewrite-list rest senv mt
+        )
+      )
+    )
+  )
+)
+(
+  defn me-rewrite
+  (
+    e senv mt
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        me-rewrite-atom e atom senv
+      )
+    )
+    (
+      ECall op args
+      (
+        Expr
+        (
+          ECall
+          (
+            me-rewrite op senv mt
+          )
+          (
+            me-rewrite-list args senv mt
+          )
+        )
+      )
+    )
+    (
+      EApply fname args
+      (
+        me-rewrite-apply fname args senv mt
+      )
+    )
+    (
+      ELet name val body
+      (
+        Expr
+        (
+          ELet name
+          (
+            me-rewrite val senv mt
+          )
+          (
+            me-rewrite body senv mt
+          )
+        )
+      )
+    )
+    (
+      ELetMut name val body
+      (
+        Expr
+        (
+          ELetMut name
+          (
+            me-rewrite val senv mt
+          )
+          (
+            me-rewrite body senv mt
+          )
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        Expr
+        (
+          EIf
+          (
+            me-rewrite c senv mt
+          )
+          (
+            me-rewrite t senv mt
+          )
+          (
+            me-rewrite eb senv mt
+          )
+        )
+      )
+    )
+    (
+      EWhile c body
+      (
+        Expr
+        (
+          EWhile
+          (
+            me-rewrite c senv mt
+          )
+          (
+            me-rewrite body senv mt
+          )
+        )
+      )
+    )
+    (
+      ESetBang name val
+      (
+        Expr
+        (
+          ESetBang name
+          (
+            me-rewrite val senv mt
+          )
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        Expr
+        (
+          EBegin
+          (
+            me-rewrite-list exprs senv mt
+          )
+        )
+      )
+    )
+    (
+      EPrint exprs
+      (
+        Expr
+        (
+          EPrint
+          (
+            me-rewrite-list exprs senv mt
+          )
+        )
+      )
+    )
+    (
+      EAssertEqual l r
+      (
+        Expr
+        (
+          EAssertEqual
+          (
+            me-rewrite l senv mt
+          )
+          (
+            me-rewrite r senv mt
+          )
+        )
+      )
+    )
+    (
+      EAssertTrue ex d3
+      (
+        Expr
+        (
+          EAssertTrue
+          (
+            me-rewrite ex senv mt
+          )
+          d3
+        )
+      )
+    )
+    (
+      EAssertFalse ex d4
+      (
+        Expr
+        (
+          EAssertFalse
+          (
+            me-rewrite ex senv mt
+          )
+          d4
+        )
+      )
+    )
+    (
+      EStructGet se field
+      (
+        Expr
+        (
+          EStructGet
+          (
+            me-rewrite se senv mt
+          )
+          field
+        )
+      )
+    )
+    (
+      EDefn name params body
+      (
+        Expr
+        (
+          EDefn name params
+          (
+            me-rewrite body senv mt
+          )
+        )
+      )
+    )
+    (
+      ETestDecl name body d5
+      (
+        Expr
+        (
+          ETestDecl name
+          (
+            me-rewrite body senv mt
+          )
+          d5
+        )
+      )
+    )
+    (
+      d6 e
+    )
+  )
+)
+(
+  defn me-rewrite-atom
+  (
+    e atom senv
+  )
+  (
+    match atom
+    (
+      AIdent name
+      (
+        me-subst-ident e name senv
+      )
+    )
+    (
+      d1 e
+    )
+  )
+)
+(
+  defn me-subst-ident
+  (
+    e name senv
+  )
+  (
+    match
+    (
+      senv-lookup senv name
+    )
+    (
+      Some e2 e2
+    )
+    (
+      None e
+    )
+  )
+)
+(
+  defn me-rewrite-apply
+  (
+    fname args senv mt
+  )
+  (
+    let args2
+    (
+      me-rewrite-list args senv mt
+    )
+    (
+      if
+      (
+        >
+        (
+          mt-has mt fname
+        )
+        0
+      )
+      (
+        me-rewrite
+        (
+          mt-body mt fname
+        )
+        (
+          senv-from-lists
+          (
+            mt-params mt fname
+          )
+          args2
+        )
+        mt
+      )
+      (
+        Expr
+        (
+          EApply fname args2
+        )
+      )
+    )
+  )
+)
+(
+  defn me-strip
+  (
+    forms
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EMacroDef d1 d2 d3
+          (
+            me-strip rest
+          )
+        )
+        (
+          d4
+          (
+            Cons e
+            (
+              me-strip rest
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn me-expand-program
+  (
+    forms
+  )
+  (
+    let mt
+    (
+      me-collect forms MNil
+    )
+    (
+      me-rewrite-list
+      (
+        me-strip forms
+      )
+      SNil mt
     )
   )
 )
@@ -19059,6 +20532,76 @@
   )
 )
 (
+  deftype TLAcc
+  (
+    TLAcc
+    (
+      List Icnf
+    )
+    (
+      List Icnf
+    )
+  )
+)
+(
+  defn tlacc-push-fn
+  (
+    f acc
+  )
+  (
+    match acc
+    (
+      TLAcc fns stmts
+      (
+        TLAcc
+        (
+          Cons f fns
+        )
+        stmts
+      )
+    )
+  )
+)
+(
+  defn tlacc-push-fns
+  (
+    newfns acc
+  )
+  (
+    match newfns
+    (
+      Nil acc
+    )
+    (
+      Cons f rest
+      (
+        tlacc-push-fns rest
+        (
+          tlacc-push-fn f acc
+        )
+      )
+    )
+  )
+)
+(
+  defn tlacc-push-stmt
+  (
+    s acc
+  )
+  (
+    match acc
+    (
+      TLAcc fns stmts
+      (
+        TLAcc fns
+        (
+          Cons s stmts
+        )
+      )
+    )
+  )
+)
+(
   defn ic-program
   (
     arena prog
@@ -19069,13 +20612,275 @@
       ic-collect-vt prog VTNil
     )
     (
-      list-reverse
+      match
       (
-        ic-defns arena prog
+        ic-toplevel arena prog vt
         (
-          no-ifuncs
+          TLAcc
+          (
+            no-ifuncs
+          )
+          Nil
         )
-        vt
+      )
+      (
+        TLAcc fns stmts
+        (
+          ic-finish-program
+          (
+            list-reverse fns
+          )
+          (
+            list-reverse stmts
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-toplevel
+  (
+    arena forms vt acc
+  )
+  (
+    match forms
+    (
+      Nil acc
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EDefn name params body
+          (
+            ic-toplevel arena rest vt
+            (
+              tlacc-push-fns
+              (
+                ic-defn arena name params body vt
+              )
+              acc
+            )
+          )
+        )
+        (
+          ETestDecl name body d1
+          (
+            ic-toplevel arena rest vt
+            (
+              ic-toplevel-test arena name body vt acc
+            )
+          )
+        )
+        (
+          ERunTests d2
+          (
+            ic-toplevel arena rest vt
+            (
+              tlacc-push-stmt
+              (
+                IFfi
+                "zyl_run_tests"
+                Nil
+              )
+              acc
+            )
+          )
+        )
+        (
+          d3
+          (
+            ic-toplevel arena rest vt acc
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-toplevel-test
+  (
+    arena name body vt acc
+  )
+  (
+    let tname
+    (
+      str-intern arena
+      (
+        str-concat
+        "_test_"
+        name
+      )
+    )
+    (
+      let h
+      (
+        ic-hoist
+        (
+          ic-expr arena body vt
+        )
+      )
+      (
+        let tbody
+        (
+          ISeq
+          (
+            Cons
+            (
+              hoist-node h
+            )
+            (
+              Cons
+              (
+                IConst 0
+              )
+              Nil
+            )
+          )
+        )
+        (
+          let acc2
+          (
+            tlacc-push-fns
+            (
+              Cons
+              (
+                IFn tname
+                (
+                  no-strs
+                )
+                tbody
+              )
+              (
+                hoist-fns h
+              )
+            )
+            acc
+          )
+          (
+            tlacc-push-stmt
+            (
+              IFfi
+              "zyl_register_test"
+              (
+                Cons
+                (
+                  IStr name
+                )
+                (
+                  Cons
+                  (
+                    ILoad tname
+                  )
+                  Nil
+                )
+              )
+            )
+            acc2
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-finish-program
+  (
+    fns stmts
+  )
+  (
+    match stmts
+    (
+      Nil fns
+    )
+    (
+      Cons d1 d2
+      (
+        if
+        (
+          >
+          (
+            ic-has-main fns
+          )
+          0
+        )
+        (
+          ffi-call
+          "f_error"
+          "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)"
+          1000
+        )
+        (
+          Cons
+          (
+            IFn
+            "main"
+            (
+              no-strs
+            )
+            (
+              ISeq
+              (
+                list-append stmts
+                (
+                  Cons
+                  (
+                    IConst 0
+                  )
+                  Nil
+                )
+              )
+            )
+          )
+          fns
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-has-main
+  (
+    fns
+  )
+  (
+    match fns
+    (
+      Nil 0
+    )
+    (
+      Cons f rest
+      (
+        match f
+        (
+          IFn name d1 d2
+          (
+            if
+            (
+              >
+              (
+                str-eq name
+                "main"
+              )
+              0
+            )
+            1
+            (
+              ic-has-main rest
+            )
+          )
+        )
+        (
+          d3
+          (
+            ic-has-main rest
+          )
+        )
       )
     )
   )
@@ -19169,54 +20974,10 @@
               VTEntry nm
               tag
               (
-                list-length
-                (
-                  AV.fields v
-                )
+                AV.fields v
               )
               tail
             )
-          )
-        )
-      )
-    )
-  )
-)
-(
-  defn ic-defns
-  (
-    arena forms acc vt
-  )
-  (
-    match forms
-    (
-      Nil acc
-    )
-    (
-      Cons e rest
-      (
-        match
-        (
-          Expr.inner e
-        )
-        (
-          EDefn name params body
-          (
-            ic-defns arena rest
-            (
-              Cons
-              (
-                ic-defn arena name params body vt
-              )
-              acc
-            )
-            vt
-          )
-        )
-        (
-          d1
-          (
-            ic-defns arena rest acc vt
           )
         )
       )
@@ -19229,18 +20990,33 @@
     arena name params body vt
   )
   (
-    IFn
+    let h
     (
-      str-intern arena name
-    )
-    (
-      param-names params
+      ic-hoist
       (
-        no-strs
+        ic-expr arena body vt
       )
     )
     (
-      ic-expr arena body vt
+      Cons
+      (
+        IFn
+        (
+          str-intern arena name
+        )
+        (
+          param-names params
+          (
+            no-strs
+          )
+        )
+        (
+          hoist-node h
+        )
+      )
+      (
+        hoist-fns h
+      )
     )
   )
 )
@@ -19474,9 +21250,1424 @@
       )
     )
     (
+      EAssertEqual l r
+      (
+        IIf
+        (
+          IBinop 9
+          (
+            ic-expr arena l vt
+          )
+          (
+            ic-expr arena r vt
+          )
+        )
+        (
+          IConst 0
+        )
+        (
+          IFfi
+          "zyl_panic"
+          (
+            Cons
+            (
+              IStr
+              "assert-equal failed"
+            )
+            Nil
+          )
+        )
+      )
+    )
+    (
+      EAssertTrue e d3
+      (
+        IIf
+        (
+          ic-expr arena e vt
+        )
+        (
+          IConst 0
+        )
+        (
+          IFfi
+          "zyl_panic"
+          (
+            Cons
+            (
+              IStr
+              "assert-true failed"
+            )
+            Nil
+          )
+        )
+      )
+    )
+    (
+      EAssertFalse e d4
+      (
+        IIf
+        (
+          ic-expr arena e vt
+        )
+        (
+          IFfi
+          "zyl_panic"
+          (
+            Cons
+            (
+              IStr
+              "assert-false failed"
+            )
+            Nil
+          )
+        )
+        (
+          IConst 0
+        )
+      )
+    )
+    (
+      EStructGet se field
+      (
+        ic-struct-get arena se field vt
+      )
+    )
+    (
+      EFn d5 params body
+      (
+        ic-lambda arena params body vt
+      )
+    )
+    (
       d2
       (
         IConst 0
+      )
+    )
+  )
+)
+(
+  defn ic-fresh-id
+  (
+    arena
+  )
+  (
+    arena-alloc-zeroed arena 1
+  )
+)
+(
+  defn ic-digit-str
+  (
+    d
+  )
+  (
+    if
+    (
+      = d 0
+    )
+    "0"
+    (
+      if
+      (
+        = d 1
+      )
+      "1"
+      (
+        if
+        (
+          = d 2
+        )
+        "2"
+        (
+          if
+          (
+            = d 3
+          )
+          "3"
+          (
+            if
+            (
+              = d 4
+            )
+            "4"
+            (
+              if
+              (
+                = d 5
+              )
+              "5"
+              (
+                if
+                (
+                  = d 6
+                )
+                "6"
+                (
+                  if
+                  (
+                    = d 7
+                  )
+                  "7"
+                  (
+                    if
+                    (
+                      = d 8
+                    )
+                    "8"
+                    "9"
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-int-to-str
+  (
+    n
+  )
+  (
+    if
+    (
+      < n 10
+    )
+    (
+      ic-digit-str n
+    )
+    (
+      str-concat
+      (
+        ic-int-to-str
+        (
+          / n 10
+        )
+      )
+      (
+        ic-digit-str
+        (
+          % n 10
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-lambda
+  (
+    arena params body vt
+  )
+  (
+    let pnames
+    (
+      param-names params
+      (
+        no-strs
+      )
+    )
+    (
+      if
+      (
+        >
+        (
+          ic-safe-expr arena body pnames vt
+        )
+        0
+      )
+      (
+        let lname
+        (
+          str-intern arena
+          (
+            str-concat
+            "_lambda_"
+            (
+              ic-int-to-str
+              (
+                ic-fresh-id arena
+              )
+            )
+          )
+        )
+        (
+          IFn lname pnames
+          (
+            ic-expr arena body vt
+          )
+        )
+      )
+      (
+        IConst 0
+      )
+    )
+  )
+)
+(
+  defn ic-name-in-list
+  (
+    name xs
+  )
+  (
+    match xs
+    (
+      Nil 0
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            str-eq name h
+          )
+          0
+        )
+        1
+        (
+          ic-name-in-list name t
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-safe-atom
+  (
+    atom pnames vt
+  )
+  (
+    match atom
+    (
+      AIdent name
+      (
+        if
+        (
+          >
+          (
+            ic-name-in-list name pnames
+          )
+          0
+        )
+        1
+        (
+          if
+          (
+            >
+            (
+              vt-tag-of vt name
+            )
+            -1
+          )
+          1 0
+        )
+      )
+    )
+    (
+      d1 1
+    )
+  )
+)
+(
+  defn ic-safe-list
+  (
+    arena xs pnames vt
+  )
+  (
+    match xs
+    (
+      Nil 1
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena h pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-list arena t pnames vt
+        )
+        0
+      )
+    )
+  )
+)
+(
+  defn ic-safe-callee
+  (
+    arena fname pnames
+  )
+  (
+    if
+    (
+      >
+      (
+        ic-name-in-list fname pnames
+      )
+      0
+    )
+    1
+    (
+      if
+      (
+        >
+        (
+          ic-op-of arena fname
+        )
+        -1
+      )
+      1 0
+    )
+  )
+)
+(
+  defn ic-safe-expr
+  (
+    arena e pnames vt
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        ic-safe-atom atom pnames vt
+      )
+    )
+    (
+      ECall op args
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena op pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-list arena args pnames vt
+        )
+        0
+      )
+    )
+    (
+      EApply fname args
+      (
+        if
+        (
+          >
+          (
+            ic-safe-callee arena fname pnames
+          )
+          0
+        )
+        (
+          ic-safe-list arena args pnames vt
+        )
+        0
+      )
+    )
+    (
+      ELet name val body
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena val pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-expr arena body
+          (
+            Cons name pnames
+          )
+          vt
+        )
+        0
+      )
+    )
+    (
+      ELetMut name val body
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena val pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-expr arena body
+          (
+            Cons name pnames
+          )
+          vt
+        )
+        0
+      )
+    )
+    (
+      EIf c t eb
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena c pnames vt
+          )
+          0
+        )
+        (
+          if
+          (
+            >
+            (
+              ic-safe-expr arena t pnames vt
+            )
+            0
+          )
+          (
+            ic-safe-expr arena eb pnames vt
+          )
+          0
+        )
+        0
+      )
+    )
+    (
+      EWhile c body
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena c pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-expr arena body pnames vt
+        )
+        0
+      )
+    )
+    (
+      ESetBang name val
+      (
+        if
+        (
+          >
+          (
+            ic-name-in-list name pnames
+          )
+          0
+        )
+        (
+          ic-safe-expr arena val pnames vt
+        )
+        0
+      )
+    )
+    (
+      EBegin exprs
+      (
+        ic-safe-list arena exprs pnames vt
+      )
+    )
+    (
+      EPrint exprs
+      (
+        ic-safe-list arena exprs pnames vt
+      )
+    )
+    (
+      EAssertEqual l r
+      (
+        if
+        (
+          >
+          (
+            ic-safe-expr arena l pnames vt
+          )
+          0
+        )
+        (
+          ic-safe-expr arena r pnames vt
+        )
+        0
+      )
+    )
+    (
+      EAssertTrue e2 d2
+      (
+        ic-safe-expr arena e2 pnames vt
+      )
+    )
+    (
+      EAssertFalse e2 d3
+      (
+        ic-safe-expr arena e2 pnames vt
+      )
+    )
+    (
+      EStructGet se d4
+      (
+        ic-safe-expr arena se pnames vt
+      )
+    )
+    (
+      EFn d5 fparams fbody
+      (
+        ic-safe-expr arena fbody
+        (
+          list-append
+          (
+            param-names fparams
+            (
+              no-strs
+            )
+          )
+          pnames
+        )
+        vt
+      )
+    )
+    (
+      d6 0
+    )
+  )
+)
+(
+  deftype HoistAcc
+  (
+    HoistAcc Icnf
+    (
+      List Icnf
+    )
+  )
+)
+(
+  deftype HoistListAcc
+  (
+    HoistListAcc
+    (
+      List Icnf
+    )
+    (
+      List Icnf
+    )
+  )
+)
+(
+  deftype HoistArmAcc
+  (
+    HoistArmAcc
+    (
+      List IArm
+    )
+    (
+      List Icnf
+    )
+  )
+)
+(
+  defn hoist-node
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistAcc n d1 n
+    )
+  )
+)
+(
+  defn hoist-fns
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistAcc d1 f f
+    )
+  )
+)
+(
+  defn hoistl-nodes
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistListAcc n d1 n
+    )
+  )
+)
+(
+  defn hoistl-fns
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistListAcc d1 f f
+    )
+  )
+)
+(
+  defn hoista-arms
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistArmAcc a d1 a
+    )
+  )
+)
+(
+  defn hoista-fns
+  (
+    r
+  )
+  (
+    match r
+    (
+      HoistArmAcc d1 f f
+    )
+  )
+)
+(
+  defn ic-hoist-list
+  (
+    xs
+  )
+  (
+    match xs
+    (
+      Nil
+      (
+        HoistListAcc Nil Nil
+      )
+    )
+    (
+      Cons h t
+      (
+        let hh
+        (
+          ic-hoist h
+        )
+        (
+          let ht
+          (
+            ic-hoist-list t
+          )
+          (
+            HoistListAcc
+            (
+              Cons
+              (
+                hoist-node hh
+              )
+              (
+                hoistl-nodes ht
+              )
+            )
+            (
+              list-append
+              (
+                hoist-fns hh
+              )
+              (
+                hoistl-fns ht
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-hoist-arms
+  (
+    arms
+  )
+  (
+    match arms
+    (
+      Nil
+      (
+        HoistArmAcc Nil Nil
+      )
+    )
+    (
+      Cons a rest
+      (
+        match a
+        (
+          IArm vname tag binds body
+          (
+            let hb
+            (
+              ic-hoist body
+            )
+            (
+              let hr
+              (
+                ic-hoist-arms rest
+              )
+              (
+                HoistArmAcc
+                (
+                  Cons
+                  (
+                    IArm vname tag binds
+                    (
+                      hoist-node hb
+                    )
+                  )
+                  (
+                    hoista-arms hr
+                  )
+                )
+                (
+                  list-append
+                  (
+                    hoist-fns hb
+                  )
+                  (
+                    hoista-fns hr
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-hoist
+  (
+    node
+  )
+  (
+    match node
+    (
+      IConst d1
+      (
+        HoistAcc node Nil
+      )
+    )
+    (
+      IStr d2
+      (
+        HoistAcc node Nil
+      )
+    )
+    (
+      IFlt d3
+      (
+        HoistAcc node Nil
+      )
+    )
+    (
+      ILoad d4
+      (
+        HoistAcc node Nil
+      )
+    )
+    (
+      IBinop op l r
+      (
+        let hl
+        (
+          ic-hoist l
+        )
+        (
+          let hr
+          (
+            ic-hoist r
+          )
+          (
+            HoistAcc
+            (
+              IBinop op
+              (
+                hoist-node hl
+              )
+              (
+                hoist-node hr
+              )
+            )
+            (
+              list-append
+              (
+                hoist-fns hl
+              )
+              (
+                hoist-fns hr
+              )
+            )
+          )
+        )
+      )
+    )
+    (
+      ICall name args
+      (
+        let ha
+        (
+          ic-hoist-list args
+        )
+        (
+          HoistAcc
+          (
+            ICall name
+            (
+              hoistl-nodes ha
+            )
+          )
+          (
+            hoistl-fns ha
+          )
+        )
+      )
+    )
+    (
+      IFfi name args
+      (
+        let ha
+        (
+          ic-hoist-list args
+        )
+        (
+          HoistAcc
+          (
+            IFfi name
+            (
+              hoistl-nodes ha
+            )
+          )
+          (
+            hoistl-fns ha
+          )
+        )
+      )
+    )
+    (
+      IPrint a
+      (
+        let ha
+        (
+          ic-hoist a
+        )
+        (
+          HoistAcc
+          (
+            IPrint
+            (
+              hoist-node ha
+            )
+          )
+          (
+            hoist-fns ha
+          )
+        )
+      )
+    )
+    (
+      IIf c t eb
+      (
+        let hc
+        (
+          ic-hoist c
+        )
+        (
+          let ht
+          (
+            ic-hoist t
+          )
+          (
+            let he
+            (
+              ic-hoist eb
+            )
+            (
+              HoistAcc
+              (
+                IIf
+                (
+                  hoist-node hc
+                )
+                (
+                  hoist-node ht
+                )
+                (
+                  hoist-node he
+                )
+              )
+              (
+                list-append
+                (
+                  hoist-fns hc
+                )
+                (
+                  list-append
+                  (
+                    hoist-fns ht
+                  )
+                  (
+                    hoist-fns he
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    (
+      IWhile c body
+      (
+        let hc
+        (
+          ic-hoist c
+        )
+        (
+          let hb
+          (
+            ic-hoist body
+          )
+          (
+            HoistAcc
+            (
+              IWhile
+              (
+                hoist-node hc
+              )
+              (
+                hoist-node hb
+              )
+            )
+            (
+              list-append
+              (
+                hoist-fns hc
+              )
+              (
+                hoist-fns hb
+              )
+            )
+          )
+        )
+      )
+    )
+    (
+      ISet name v
+      (
+        let hv
+        (
+          ic-hoist v
+        )
+        (
+          HoistAcc
+          (
+            ISet name
+            (
+              hoist-node hv
+            )
+          )
+          (
+            hoist-fns hv
+          )
+        )
+      )
+    )
+    (
+      ILet name v body
+      (
+        let hv
+        (
+          ic-hoist v
+        )
+        (
+          let hb
+          (
+            ic-hoist body
+          )
+          (
+            HoistAcc
+            (
+              ILet name
+              (
+                hoist-node hv
+              )
+              (
+                hoist-node hb
+              )
+            )
+            (
+              list-append
+              (
+                hoist-fns hv
+              )
+              (
+                hoist-fns hb
+              )
+            )
+          )
+        )
+      )
+    )
+    (
+      ISeq es
+      (
+        let ha
+        (
+          ic-hoist-list es
+        )
+        (
+          HoistAcc
+          (
+            ISeq
+            (
+              hoistl-nodes ha
+            )
+          )
+          (
+            hoistl-fns ha
+          )
+        )
+      )
+    )
+    (
+      IVariant nm tag fields
+      (
+        let ha
+        (
+          ic-hoist-list fields
+        )
+        (
+          HoistAcc
+          (
+            IVariant nm tag
+            (
+              hoistl-nodes ha
+            )
+          )
+          (
+            hoistl-fns ha
+          )
+        )
+      )
+    )
+    (
+      IMatch scr arms
+      (
+        let hs
+        (
+          ic-hoist scr
+        )
+        (
+          let ha
+          (
+            ic-hoist-arms arms
+          )
+          (
+            HoistAcc
+            (
+              IMatch
+              (
+                hoist-node hs
+              )
+              (
+                hoista-arms ha
+              )
+            )
+            (
+              list-append
+              (
+                hoist-fns hs
+              )
+              (
+                hoista-fns ha
+              )
+            )
+          )
+        )
+      )
+    )
+    (
+      IFn nm params body
+      (
+        let hb
+        (
+          ic-hoist body
+        )
+        (
+          HoistAcc
+          (
+            ILoad nm
+          )
+          (
+            Cons
+            (
+              IFn nm params
+              (
+                hoist-node hb
+              )
+            )
+            (
+              hoist-fns hb
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-struct-get
+  (
+    arena se field vt
+  )
+  (
+    let arms
+    (
+      ic-struct-arms arena vt field
+    )
+    (
+      if
+      (
+        is-nil arms
+      )
+      (
+        IConst 0
+      )
+      (
+        IMatch
+        (
+          ic-expr arena se vt
+        )
+        arms
+      )
+    )
+  )
+)
+(
+  defn ic-struct-arms
+  (
+    arena vt field
+  )
+  (
+    match vt
+    (
+      VTNil Nil
+    )
+    (
+      VTEntry name tag fields rest
+      (
+        let arms-rest
+        (
+          ic-struct-arms arena rest field
+        )
+        (
+          let idx
+          (
+            ic-field-index fields field 0
+          )
+          (
+            if
+            (
+              >= idx 0
+            )
+            (
+              Cons
+              (
+                ic-struct-arm arena name tag fields idx
+              )
+              arms-rest
+            )
+            arms-rest
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-struct-arm
+  (
+    arena name tag fields idx
+  )
+  (
+    let binders
+    (
+      ic-struct-binders
+      (
+        list-length fields
+      )
+      0
+    )
+    (
+      IArm
+      (
+        str-intern arena name
+      )
+      tag binders
+      (
+        ILoad
+        (
+          ic-nth-str binders idx
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-field-index
+  (
+    fields field i
+  )
+  (
+    match fields
+    (
+      Nil -1
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          >
+          (
+            str-eq h field
+          )
+          0
+        )
+        i
+        (
+          ic-field-index t field
+          (
+            + i 1
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-nth-str
+  (
+    xs i
+  )
+  (
+    match xs
+    (
+      Nil
+      ""
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          = i 0
+        )
+        h
+        (
+          ic-nth-str t
+          (
+            - i 1
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-struct-binders
+  (
+    n i
+  )
+  (
+    if
+    (
+      >= i n
+    )
+    Nil
+    (
+      Cons
+      (
+        ic-struct-binder-name i
+      )
+      (
+        ic-struct-binders n
+        (
+          + i 1
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-struct-binder-name
+  (
+    i
+  )
+  (
+    str-concat
+    "_sg"
+    (
+      ic-underscores
+      (
+        + i 1
+      )
+    )
+  )
+)
+(
+  defn ic-underscores
+  (
+    n
+  )
+  (
+    if
+    (
+      <= n 0
+    )
+    ""
+    (
+      str-concat
+      "_"
+      (
+        ic-underscores
+        (
+          - n 1
+        )
       )
     )
   )
@@ -19614,20 +22805,188 @@
       ic-ffi arena args vt
     )
     (
-      let op
+      let strb
       (
-        ic-op-of arena fname
+        ic-str-builtin-sym arena fname
       )
       (
         if
         (
-          > op -1
+          >
+          (
+            str-length strb
+          )
+          0
         )
         (
-          ic-binop arena op args vt
+          IFfi strb
+          (
+            ic-expr-list arena args vt
+          )
+        )
+        (
+          if
+          (
+            >
+            (
+              ic-starts-with-make fname
+            )
+            0
+          )
+          (
+            ic-make-struct arena fname args vt
+          )
+          (
+            let op
+            (
+              ic-op-of arena fname
+            )
+            (
+              if
+              (
+                > op -1
+              )
+              (
+                ic-binop arena op args vt
+              )
+              (
+                ic-call-or-variant arena fname args vt
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-starts-with-make
+  (
+    s
+  )
+  (
+    if
+    (
+      >=
+      (
+        str-length s
+      )
+      5
+    )
+    (
+      ffi-call
+      "zyl_cstr_eq"
+      (
+        str-substring s 0 5
+      )
+      "make-"
+      1000
+    )
+    0
+  )
+)
+(
+  defn ic-make-struct
+  (
+    arena fname args vt
+  )
+  (
+    let sname
+    (
+      str-drop fname 5
+    )
+    (
+      let tag
+      (
+        vt-tag-of vt
+        (
+          str-intern arena sname
+        )
+      )
+      (
+        if
+        (
+          > tag -1
+        )
+        (
+          IVariant
+          (
+            str-intern arena sname
+          )
+          tag
+          (
+            ic-expr-list arena args vt
+          )
         )
         (
           ic-call-or-variant arena fname args vt
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-str-builtin-sym
+  (
+    arena fname
+  )
+  (
+    if
+    (
+      >
+      (
+        str-eq fname
+        (
+          str-intern arena
+          "str-concat"
+        )
+      )
+      0
+    )
+    "zyl_cstr_concat"
+    (
+      if
+      (
+        >
+        (
+          str-eq fname
+          (
+            str-intern arena
+            "str-length"
+          )
+        )
+        0
+      )
+      "zyl_cstr_len"
+      (
+        if
+        (
+          >
+          (
+            str-eq fname
+            (
+              str-intern arena
+              "str-substring"
+            )
+          )
+          0
+        )
+        "zyl_cstr_substr"
+        (
+          if
+          (
+            >
+            (
+              str-eq fname
+              (
+                str-intern arena
+                "str-equal"
+              )
+            )
+            0
+          )
+          "zyl_cstr_eq"
+          ""
         )
       )
     )
@@ -25327,52 +28686,72 @@
           "bridge\n"
         )
         (
-          let exprs
+          let exprs0
           (
             convert-ast-list prog
           )
           (
             dbg-log
-            "type-infer\n"
+            "modules\n"
           )
           (
-            let inferer
+            let exprs1
             (
-              collect-definitions
-              (
-                inferer-new
-              )
-              exprs
+              mr-resolve-program arena exprs0
             )
             (
               dbg-log
-              "mono\n"
+              "macros\n"
             )
             (
-              let mono-ctx
+              let exprs
               (
-                mono-context-new inferer
+                me-expand-program exprs1
               )
               (
-                let mono-exprs
+                dbg-log
+                "type-infer\n"
+              )
+              (
+                let inferer
                 (
-                  monomorphize mono-ctx exprs
+                  collect-definitions
+                  (
+                    inferer-new
+                  )
+                  exprs
                 )
                 (
                   dbg-log
-                  "lower\n"
+                  "mono\n"
                 )
                 (
-                  let fns
+                  let mono-ctx
                   (
-                    ic-program arena mono-exprs
+                    mono-context-new inferer
                   )
                   (
-                    dbg-log
-                    "codegen\n"
-                  )
-                  (
-                    emit-out arena fns
+                    let mono-exprs
+                    (
+                      monomorphize mono-ctx exprs
+                    )
+                    (
+                      dbg-log
+                      "lower\n"
+                    )
+                    (
+                      let fns
+                      (
+                        ic-program arena mono-exprs
+                      )
+                      (
+                        dbg-log
+                        "codegen\n"
+                      )
+                      (
+                        emit-out arena fns
+                      )
+                    )
                   )
                 )
               )

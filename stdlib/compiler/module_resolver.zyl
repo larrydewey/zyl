@@ -1,0 +1,132 @@
+; === Zyl Standard Library — Compiler Module Resolver ===
+; Module: compiler/module_resolver
+;
+; The self-hosted pipeline used to read only the one source file it was
+; given and hand its raw top-level exprs straight to type inference —
+; every `(use module/path)` form was silently dropped (ic-program simply
+; never matched EUseModule), so any program that relied on collections,
+; actors, ffi helpers, or even the implicitly-auto-loaded core prelude
+; (is-even/abs/square/... — the Rust bootstrap's module_resolver.rs
+; auto-injects core/core for every program) failed to link with
+; undefined references to functions that were never inlined into the
+; compilation unit at all.
+;
+; This module walks the parsed top-level (List Expr), extracts `use`
+; forms, recursively parses+resolves each dependency file under stdlib/,
+; and splices their bodies in (dependency-before-dependent order) ahead
+; of the main program's own body — mirroring module_resolver.rs, minus
+; its per-symbol `use` filtering (unused by anything in this bootstrap's
+; corpus) and its stdlib-shadowing rule (no test in the corpus redefines
+; a stdlib name, so it isn't needed here).
+
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/parser)
+
+; Accumulator threaded through resolution: exprs collected so far
+; (dependency-before-dependent order) and the set of module names
+; already resolved, so a diamond dependency (two stdlib modules both
+; `use`-ing allocator/allocator) doesn't emit the same defn twice —
+; which would be a duplicate-symbol link error, not just wasted work.
+(deftype MRAcc (MRAcc (List Expr) (List String)))
+
+(defn mr-str-in-list (s xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq s h) 0) 1 (mr-str-in-list s t)))))
+
+; EUseModule's single part IS the whole "a/b" path — lexer.zyl treats
+; `/` as an identifier character, so `(use collections/vec)` lexes
+; "collections/vec" as one token, not two idents to join.
+(defn mr-use-name (parts)
+  (match parts
+    (Nil "")
+    (Cons h d1 h)))
+
+; Extract dependency module-path strings from top-level EUseModule forms,
+; source order preserved.
+(defn mr-collect-uses (forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EUseModule parts d1 d2 (Cons (mr-use-name parts) (mr-collect-uses rest)))
+        (d3 (mr-collect-uses rest))))))
+
+; Drop use/module-decl/export forms from a body once dependencies are
+; inlined — they carry no runtime behavior of their own.
+(defn mr-strip-use (forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EUseModule d1 d2 d3 (mr-strip-use rest))
+        (EModuleDecl d4 (mr-strip-use rest))
+        (EExport d5 (mr-strip-use rest))
+        (d6 (Cons e (mr-strip-use rest)))))))
+
+(defn mr-parse-file (arena path)
+  (let fd (file-open path "r")
+    (let srcbuf (file-read fd 1048576)
+      (let d1 (file-close fd)
+        (convert-ast-list (zyl-parse arena srcbuf))))))
+
+(defn mr-module-path (name)
+  (str-concat "stdlib/" (str-concat name ".zyl")))
+
+; Resolve one module by name into acc, recursing into its own `use`
+; dependencies first so the merged list stays dependency-before-dependent.
+(defn mr-resolve-module (arena name acc)
+  (match acc
+    (MRAcc exprs resolved
+      (if (> (mr-str-in-list name resolved) 0)
+        acc
+        (let file-exprs (mr-parse-file arena (mr-module-path name))
+          (let uses (mr-collect-uses file-exprs)
+            (let acc2 (mr-resolve-uses arena uses (MRAcc exprs (Cons name resolved)))
+              (match acc2
+                (MRAcc exprs2 resolved2
+                  (MRAcc (list-append exprs2 (mr-strip-use file-exprs)) resolved2))))))))))
+
+(defn mr-resolve-uses (arena names acc)
+  (match names
+    (Nil acc)
+    (Cons n rest (mr-resolve-uses arena rest (mr-resolve-module arena n acc)))))
+
+(defn mr-core-loaded (uses)
+  (match uses
+    (Nil 0)
+    (Cons u rest
+      (if (> (str-eq u "core/core") 0) 1
+      (if (> (str-eq u "core/option") 0) 1
+      (if (> (str-eq u "core/result") 0) 1
+      (mr-core-loaded rest)))))))
+
+; Entry point: resolve every top-level `use` in `main-exprs` (recursively,
+; dependency-first), auto-injecting core/core when the program already
+; participates in the module system (has at least one `use`) but doesn't
+; load core/core, core/option, or core/result itself — matching the Rust
+; bootstrap's behavior of giving such programs is-even/abs/square/
+; result-ok/etc. for free (e.g. ffi.zyl `use`s only ffi/ffi yet calls
+; result-ok/result-unwrap from core/result).
+;
+; Gated on "has at least one `use`" rather than replicating the Rust
+; bootstrap's unconditional injection: the self-hosted compiler's OWN
+; bundled source (assemble.py's output) has every `use` line stripped
+; during assembly, since core/option, /result, and /list are already
+; inlined directly as bundle files. Unconditional auto-injection would
+; re-parse and re-splice those same definitions a second time, straight
+; into an E_DUPLICATE_VARIANT panic (or a duplicate-symbol link error)
+; the moment the self-hosted compiler tried to compile itself. No test
+; in this corpus needs core's helpers with literally zero `use` lines of
+; its own.
+(defn mr-resolve-program (arena main-exprs)
+  (let uses (mr-collect-uses main-exprs)
+    (let uses2
+      (if (is-nil uses)
+        uses
+        (if (> (mr-core-loaded uses) 0) uses (Cons "core/core" uses)))
+      (let acc (mr-resolve-uses arena uses2 (MRAcc Nil Nil))
+        (match acc
+          (MRAcc dep-exprs d1
+            (list-append dep-exprs (mr-strip-use main-exprs))))))))

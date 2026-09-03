@@ -152,6 +152,8 @@ files = [
     'stdlib/compiler/expr_inner.zyl',
     'stdlib/compiler/lexer.zyl',
     'stdlib/compiler/parser.zyl',
+    'stdlib/compiler/module_resolver.zyl',
+    'stdlib/compiler/macro_expand.zyl',
     'stdlib/compiler/resolver.zyl',
     'stdlib/compiler/type_system.zyl',
     'stdlib/compiler/type_inference.zyl',
