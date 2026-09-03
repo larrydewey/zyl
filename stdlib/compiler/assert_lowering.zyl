@@ -1,0 +1,156 @@
+; === Zyl Standard Library — Compiler assert-equal structural lowering ===
+; Module: compiler/assert_lowering
+;
+; Rewrites (assert-equal l r) into an EAssertTrue over a runtime
+; zyl_variant_eq call whenever either side looks like it produces a
+; heap-allocated ADT/struct value, instead of the default bare `=`
+; comparison (icnf.zyl's EAssertEqual), which compares raw pointers —
+; always false for two separately-allocated-but-equal ADT values (e.g.
+; comparing two independently constructed `Ok 99` results). Mirrors the
+; Rust bootstrap's codegen.rs (node_looks_variant/emit_variant_eq),
+; which already does this over its ICNF/SSA form; this pass does the
+; same analysis over the pre-lowering Expr tree instead, since the
+; self-hosted pipeline has no such SSA/type-annotated stage.
+;
+; zyl_variant_eq (src/runtime/actor_runtime.c) reads a hidden qword-
+; count header that cg-variant now writes via zyl_heap_alloc (see
+; codegen.zyl) before every ADT/struct block — the same mechanism the
+; Rust bootstrap already relies on. It is a SHALLOW comparison: tag plus
+; each field as a raw qword (pointer fields compare by identity, not
+; recursively) — correct for the common case here (a variant wrapping a
+; plain Int/Bool), same limitation the Rust bootstrap already ships.
+;
+; This pass must run after macro expansion/monomorphization (so real
+; function bodies and deftypes are in their final form) and before
+; ic-program. It only ever ADDS coverage: any shape it doesn't
+; recognize keeps the original (EAssertEqual l r), which lowers to a
+; bare `=` exactly as before, so it can't regress an assert that used
+; to pass.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/icnf)
+
+; --- entry point ------------------------------------------------------------
+
+(defn al-expand-program (prog)
+  (let vt (ic-collect-vt prog VTNil)
+    (al-map prog prog vt)))
+
+(defn al-map (all forms vt)
+  (match forms
+    (Nil Nil)
+    (Cons e rest (Cons (al-expr all e vt) (al-map all rest vt)))))
+
+; --- generic tree walk (covers only shapes this corpus actually nests
+; assert-equal calls inside) -------------------------------------------------
+
+(defn al-expr (all e vt)
+  (match (Expr.inner e)
+    (EAssertEqual l r (al-assert-equal all l r vt))
+    (EDefn name params body (Expr (EDefn name params (al-expr all body vt))))
+    (ETestDecl name body k (Expr (ETestDecl name (al-expr all body vt) k)))
+    (ELet name val body (Expr (ELet name (al-expr all val vt) (al-expr all body vt))))
+    (ELetMut name val body (Expr (ELetMut name (al-expr all val vt) (al-expr all body vt))))
+    (EIf c t eb (Expr (EIf (al-expr all c vt) (al-expr all t vt) (al-expr all eb vt))))
+    (EWhile c body (Expr (EWhile (al-expr all c vt) (al-expr all body vt))))
+    (EBegin exprs (Expr (EBegin (al-map all exprs vt))))
+    (ETryCatch tbody nm handler (Expr (ETryCatch (al-expr all tbody vt) nm (al-expr all handler vt))))
+    (EMatch subj arms (Expr (EMatch (al-expr all subj vt) (al-arms all arms vt))))
+    (d1 e)))
+
+(defn al-arms (all arms vt)
+  (match arms
+    (Nil Nil)
+    (Cons a rest (Cons (al-arm all a vt) (al-arms all rest vt)))))
+
+(defn al-arm (all a vt)
+  (match a (MA v pats body (MA v pats (al-expr all body vt)))))
+
+; --- the actual rewrite -------------------------------------------------
+
+(defn al-assert-equal (all l r vt)
+  (let l2 (al-expr all l vt)
+    (let r2 (al-expr all r vt)
+      (if (> (al-should-variant-eq all l2 r2 vt) 0)
+        (Expr (EAssertTrue
+                (Expr (EFfiCall "zyl_variant_eq" (Cons l2 (Cons r2 Nil)) 0))
+                (Some "assert-equal failed")))
+        (Expr (EAssertEqual l2 r2))))))
+
+; Neither side a bare literal, and at least one side looks like it
+; produces an ADT/struct value. The literal guard matters: without it,
+; an assert comparing e.g. a plain Int against something misdetected as
+; "looks variant" could route a non-pointer straight into
+; zyl_variant_eq, which dereferences it unconditionally.
+(defn al-should-variant-eq (all l r vt)
+  (if (> (al-is-primitive-const l) 0) 0
+  (if (> (al-is-primitive-const r) 0) 0
+  (if (> (al-looks-variant all l vt 0) 0) 1
+    (al-looks-variant all r vt 0)))))
+
+(defn al-is-primitive-const (e)
+  (match (Expr.inner e)
+    (EAtom atom
+      (match atom
+        (AInt d1 1)
+        (AFloat d2 1)
+        (ABool d3 1)
+        (d4 0)))
+    (d5 0)))
+
+; Structural guess at whether `e` evaluates to a heap ADT/struct value:
+; does its actual runtime tail (see al-tail) construct a known variant
+; directly, or call a function whose OWN tail does (bounded depth, since
+; a call chain could recurse indefinitely)? Same shape as the Rust
+; bootstrap's node_looks_variant, applied to the raw Expr tree instead
+; of ICNF/SSA — `all` is the whole top-level form list, needed to look
+; up a called function's body by name.
+(defn al-looks-variant (all e vt depth)
+  (if (> depth 4) 0
+    (al-looks-variant-tail all (al-tail e) vt depth)))
+
+; The expr `e` actually evaluates to at runtime — ELet/ELetMut/EBegin
+; thread through to their last piece, ETryCatch only ever runs its
+; try-body (matches icnf.zyl's ETryCatch lowering exactly).
+(defn al-tail (e)
+  (match (Expr.inner e)
+    (ELet d1 d2 body (al-tail body))
+    (ELetMut d1 d2 body (al-tail body))
+    (EBegin exprs (al-tail (last-expr exprs)))
+    (ETryCatch tbody d3 d4 (al-tail tbody))
+    (d5 e)))
+
+(defn al-looks-variant-tail (all e vt depth)
+  (match (Expr.inner e)
+    (ECall op args (al-looks-name all (expr-ident-name op "") vt depth))
+    (EApply fname args (al-looks-name all fname vt depth))
+    (EMatch d1 arms (al-looks-arms all arms vt depth))
+    (EIf d2 t eb
+      (if (> (al-looks-variant all t vt (+ depth 1)) 0) 1
+        (al-looks-variant all eb vt (+ depth 1))))
+    (d3 0)))
+
+(defn al-looks-arms (all arms vt depth)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (if (> (al-looks-variant all (MA.body a) vt (+ depth 1)) 0) 1
+        (al-looks-arms all rest vt depth)))))
+
+; A name is "variant-looking" if it's a known ADT/struct constructor
+; (direct vt hit), or it names a top-level function whose own body's
+; tail looks-variant (one level of the depth budget spent per hop).
+(defn al-looks-name (all name vt depth)
+  (if (> (vt-tag-of vt name) -1) 1
+    (match (al-fn-body all name)
+      (Some body (al-looks-variant all body vt (+ depth 1)))
+      (None 0))))
+
+(defn al-fn-body (all name)
+  (match all
+    (Nil None)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn n d1 body (if (str-eq n name) (Some body) (al-fn-body rest name)))
+        (d2 (al-fn-body rest name))))))
