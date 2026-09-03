@@ -299,6 +299,16 @@
           (IFfi "zyl_panic" (Cons (IStr "assert-false failed") Nil))
           (IConst 0)))
     (EStructGet se field (ic-struct-get arena se field vt))
+    ; (for (name init)... cond body): no separate step clause — the
+    ; corpus's own `for` bodies always `set!` the loop var themselves.
+    ; Lowers to nested lets binding each (name, init) around a plain
+    ; while(cond) body — ILet already backs both ELet and ELetMut
+    ; identically (no real mutability distinction below source level),
+    ; so the loop var is freely `set!`-able inside the while exactly like
+    ; any let-mut local. Previously unhandled entirely (EFor wasn't in
+    ; this match at all), silently lowering the whole loop to IConst 0 —
+    ; every `for` in the corpus ran zero iterations.
+    (EFor bindings cond body (ic-for arena bindings cond body vt))
     ; (fn (params...) body): lowers to an embedded IFn value — legal
     ; here only because ic-hoist (called by every top-level-function
     ; lowering site: ic-defn, ic-toplevel-test) walks the finished Icnf
@@ -525,6 +535,21 @@
 ; pick the right arm, exactly like any other ADT match. No struct having
 ; the field at all falls back to the (IConst 0) every unsupported shape
 ; in this file already uses.
+(defn ic-for (arena bindings cond body vt)
+  (match bindings
+    (Nil (IWhile (ic-expr arena cond vt) (ic-expr arena body vt)))
+    (Cons b rest
+      (match b
+        (Pair name initOpt
+          (ILet (str-intern arena name)
+                (ic-for-init arena initOpt vt)
+                (ic-for arena rest cond body vt)))))))
+
+(defn ic-for-init (arena initOpt vt)
+  (match initOpt
+    (Some e (ic-expr arena e vt))
+    (None (IConst 0))))
+
 (defn ic-struct-get (arena se field vt)
   (let arms (ic-struct-arms arena vt field)
     (if (is-nil arms)
@@ -730,6 +755,19 @@
 
 ; One arm: variant name, pattern-bound field names, body — already
 ; separated by expr_inner.zyl's MatchArm (MA variant patterns body).
+;
+; KNOWN LIMITATION: a NESTED constructor pattern in field position, like
+; the `(A-Int n)` in `(A-Ident (A-Int n) n)`, isn't destructured —
+; bind-names only ever extracts a bare identifier name (expr-ident-name),
+; silently binding "" for anything else, so "n" never actually gets
+; A-Int's field value (regression/adts.zyl's "adt-nested" hits this). A
+; fix exists (bind the outer field to a fresh name, wrap the arm body in
+; an inner match on that name for the nested sub-pattern, recursively)
+; but made self-hosting flaky — different runs of the SAME rebuild
+; crashed at different stages (stage2 once, stage3 another time) with no
+; code difference between runs, pointing at uninitialized memory rather
+; than a clean logic bug — so reverted rather than ship a self-hosting
+; regression that only sometimes reproduces.
 (defn ic-arm (arena arm vt)
   (let iname (str-intern arena (MA.variant arm))
     (let tag (vt-tag-of vt iname)
@@ -740,6 +778,13 @@
               tag
               (bind-names arena (MA.patterns arm) (no-strs))
               (ic-expr arena (MA.body arm) vt))))))
+
+; Pattern binding names ("_"/wildcards kept, skipped by codegen), in
+; source order — MA.patterns is already just the field-binding names.
+(defn bind-names (arena pats acc)
+  (match pats
+    (Nil (list-reverse acc))
+    (Cons p rest (bind-names arena rest (Cons (str-intern arena (expr-ident-name p "")) acc)))))
 
 ; ─── E_MATCH_ARM_COMPLEX guard ────────────────────────────────────────────
 ; A match-arm body whose TOP-LEVEL binop combines a constant with two or
@@ -791,13 +836,6 @@
 (defn ic-arm-guard-call-head (arena fname vt)
   (let tag (vt-tag-of vt (str-intern arena fname))
     (if (> tag -1) 0 1)))
-
-; Pattern binding names ("_"/wildcards kept, skipped by codegen), in
-; source order — MA.patterns is already just the field-binding names.
-(defn bind-names (arena pats acc)
-  (match pats
-    (Nil (list-reverse acc))
-    (Cons p rest (bind-names arena rest (Cons (str-intern arena (expr-ident-name p "")) acc)))))
 
 ; Lower argument lists left-to-right.
 (defn ic-expr-list (arena args vt)

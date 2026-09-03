@@ -336,18 +336,40 @@
                           (cg-emit-label st11 lend))))))))))))))
 
 ; (while c body...)
+; `while` is an expression like everything else here: its value is the
+; BODY's value from the last iteration that ran (0/unit if the condition
+; was false from the start) — used directly by `for`'s desugaring into a
+; plain while (ic-for in icnf.zyl), which some regression tests assert
+; on (e.g. control-flow.zyl's "for-loop-early-exit"). Used to hardcode
+; `xor eax, eax` after the loop regardless, matching a Rust bootstrap
+; that instead threads the last body value through a dedicated slot.
 (defn cg-while-parts (st env c body lstart lend)
-  (let st2 (cg-emit-label st lstart)
-    (let st3 (cg-expr st2 env c)
-      (let st4 (cg-emit st3 "    test rax, rax")
-        (let st5 (cg-nl st4)
-          (let st6 (cg-emit st5 "    je ")
-            (let st7 (cg-nl (cg-emit st6 lend))
-              (let st8 (cg-expr st7 env body)
-                (let st9 (cg-emit st8 "    jmp ")
-                  (let st10 (cg-nl (cg-emit st9 lstart))
-                    (let st11 (cg-emit-label st10 lend)
-                      (cg-emit-line st11 "    xor eax, eax"))))))))))))
+  (match (cg-new-slot st)
+    (CGR st0 off d1 (cg-while-body st0 env c body lstart lend off))))
+
+(defn cg-while-body (st env c body lstart lend off)
+  (let st1 (cg-while-store (cg-emit-line st "    mov rax, 0") off)
+    (let st2 (cg-emit-label st1 lstart)
+      (let st3 (cg-expr st2 env c)
+        (let st4 (cg-emit-line st3 "    test rax, rax")
+          (let st5 (cg-emit st4 "    je ")
+            (let st6 (cg-nl (cg-emit st5 lend))
+              (let st7 (cg-expr st6 env body)
+                (let st8 (cg-while-store st7 off)
+                  (let st9 (cg-emit st8 "    jmp ")
+                    (let st10 (cg-nl (cg-emit st9 lstart))
+                      (let st11 (cg-emit-label st10 lend)
+                        (cg-while-load st11 off)))))))))))))
+
+(defn cg-while-store (st off)
+  (let st1 (cg-emit st "    mov [rbp")
+    (let st2 (cg-emit-int st1 off)
+      (cg-emit-line st2 "], rax"))))
+
+(defn cg-while-load (st off)
+  (let st1 (cg-emit st "    mov rax, [rbp")
+    (let st2 (cg-emit-int st1 off)
+      (cg-emit-line st2 "]"))))
 
 (defn cg-emit-line (st s)
   (cg-nl (cg-emit st s)))
@@ -860,7 +882,7 @@
     (IFfi d86 args (icnf-count-slots-list args))
     (IPrint a (icnf-slot-count a))
     (IIf c t eb (icnf-add3 (icnf-slot-count c) (icnf-slot-count t) (icnf-slot-count eb)))
-    (IWhile c b (icnf-add2 (icnf-slot-count c) (icnf-slot-count b)))
+    (IWhile c b (+ 1 (icnf-add2 (icnf-slot-count c) (icnf-slot-count b))))
     (ISet d87 v (icnf-slot-count v))
     (ILet d88 v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
     (ISeq es (icnf-count-slots-list es))
