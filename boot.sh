@@ -50,7 +50,7 @@ ok "stage1 linked"
 step "stage2: stage1 compiles the selfhost source"
 cp "$SRC" /tmp/zyl_boot_in.zyl
 rm -f /tmp/zyl_boot_out.s
-timeout 600 "${OUT}/stage1.bin" >/dev/null
+timeout 600 setarch -R "${OUT}/stage1.bin" >/dev/null
 [ -f /tmp/zyl_boot_out.s ] || die "stage1 produced no output"
 mv /tmp/zyl_boot_out.s "${OUT}/stage2.s"
 link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
@@ -60,7 +60,7 @@ ok "stage2 linked"
 step "stage3: stage2 compiles the selfhost source"
 cp "$SRC" /tmp/zyl_boot_in.zyl
 rm -f /tmp/zyl_boot_out.s
-timeout 600 "${OUT}/stage2.bin" >/dev/null
+timeout 600 setarch -R "${OUT}/stage2.bin" >/dev/null
 [ -f /tmp/zyl_boot_out.s ] || die "stage2 produced no output"
 mv /tmp/zyl_boot_out.s "${OUT}/stage3.s"
 ok "stage3 emitted"
@@ -78,11 +78,45 @@ fi
 step "Smoke: stage2-compiled program runs"
 printf '(defn dbl (x) (* x 2))\n(defn applyit (f v) (f v))\n(defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))\n' > /tmp/zyl_boot_in.zyl
 rm -f /tmp/zyl_boot_out.s
-timeout 120 "${OUT}/stage2.bin" >/dev/null
+timeout 120 setarch -R "${OUT}/stage2.bin" >/dev/null
 link_cc /tmp/zyl_boot_out.s "${OUT}/smoke.bin"
 RESULT="$("${OUT}/smoke.bin")"
 [ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT', expected '42 3'"
 ok "smoke output correct ($RESULT)"
+
+step "Generating build/boot/zyl-self wrapper"
+cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
+#!/usr/bin/env bash
+# CLI-compatible wrapper around a self-hosted stage-N compiler binary.
+# The self-hosted driver ignores argv entirely and always reads
+# /tmp/zyl_boot_in.zyl / writes /tmp/zyl_boot_out.s, so this shim maps
+# the normal `zyl <src> <out>` calling convention onto that fixed-path
+# protocol and links the result, matching what the Rust `zyl` binary
+# does in one step.
+#
+# setarch -R disables ASLR: the 64GB worker-thread stack reservation in
+# zyl_call_on_big_stack occasionally collides with an ASLR-randomized
+# mapping, causing intermittent crashes/hangs. See boot.sh.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+STAGE_BIN="${ZYL_SELF_STAGE:-${SCRIPT_DIR}/stage2.bin}"
+RUNTIME="${ZYL_SELF_RUNTIME:-${SCRIPT_DIR}/../../src/runtime/actor_runtime.c}"
+
+SRC="$1"
+OUT="$2"
+
+cp "$SRC" /tmp/zyl_boot_in.zyl
+rm -f /tmp/zyl_boot_out.s
+setarch -R "$STAGE_BIN" >/tmp/zyl_self_stdout.log 2>/tmp/zyl_self_stderr.log
+if [ ! -s /tmp/zyl_boot_out.s ]; then
+    cat /tmp/zyl_self_stderr.log >&2
+    echo "zyl-self: no assembly produced" >&2
+    exit 1
+fi
+cc -no-pie /tmp/zyl_boot_out.s "$RUNTIME" -o "$OUT" -lpthread
+WRAPPER_EOF
+chmod +x "${OUT}/zyl-self"
+ok "zyl-self wrapper written"
 
 echo ""
 echo "Self-hosting verified: fixed point holds."
