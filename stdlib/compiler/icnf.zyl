@@ -234,6 +234,20 @@
                                   (vt-from-adtvariants variants vt stag)
                                   (+ stag (list-length variants))))
             (None (ic-collect-vt-run rest (ic-vt-deftype name variants vt) stag))))
+        ; Registered so ic-safe-callee (a lambda's call-head safety
+        ; check) can tell "this name is a genuine existing top-level
+        ; function" from "this name is unresolvable, might be an
+        ; enclosing scope's param" -- see ic-safe-callee's own comment.
+        ; Without this, ANY non-capturing lambda that calls a real
+        ; top-level helper by name (not through one of its own params)
+        ; was undershoot-rejected as "unsafe" and silently hoisted to
+        ; (IConst 0) instead of a real function value -- e.g.
+        ; option-flatmap's `(f v)` where `f` is `(fn (x) (option-some
+        ; (* x 2)))`: calling the real function `option-some` isn't a
+        ; capture at all, but ic-safe-callee had no way to know that,
+        ; so `f` silently became 0 and `(f v)` crashed jumping to
+        ; address 0.
+        (EDefn name d4 d5 (ic-collect-vt-run rest (VTFn name vt) stag))
         (d3 (ic-collect-vt-run rest vt stag))))))
 
 ; Add one deftype's variants. `variants` is already a (List ADTVariant) —
@@ -519,25 +533,35 @@
     (Nil 1)
     (Cons h t (if (> (ic-safe-expr arena h pnames vt) 0) (ic-safe-list arena t pnames vt) 0))))
 
-; A call-head name (the `f` in `(f x)`) is safe only when it's a known
+; A call-head name (the `f` in `(f x)`) is safe when it's a known
 ; arithmetic/comparison operator (ic-op-of; these lower via a dedicated
-; opcode path, never an actual name lookup) or one of THIS lambda's own
+; opcode path, never an actual name lookup), one of THIS lambda's own
 ; params (calling through a value it was genuinely handed, e.g.
-; "closure-passed-as-arg"'s `(fn (f x) (f x))`). Any other name is
-; exactly as ambiguous as an argument-position reference — it might be a
-; real top-level function (unverifiable here) or an ENCLOSING scope's
-; param captured by name, which is what actually broke: core/core.zyl's
-; `compose` is `(defn compose (f g) (fn (x) (f (g x))))`, and its inner
-; lambda's own params are just `(x)` — "f"/"g" are compose's params, not
-; the lambda's, so treating a call head as automatically safe (the
-; original, wrong version of this check) hoisted it anyway and produced
-; undefined references to `f_f`/`f_g` the moment ANY program pulled in
-; core/core (nearly every `use`-ing program, via module resolution's
-; auto-injection) — compose is never even called by those tests.
-(defn ic-safe-callee (arena fname pnames)
+; "closure-passed-as-arg"'s `(fn (f x) (f x))`), or a genuine, already-
+; registered top-level function name (vt-is-fn — see ic-collect-vt).
+; Any OTHER name is exactly as ambiguous as an argument-position
+; reference — it might be an ENCLOSING scope's param captured by name,
+; which is what actually broke: core/core.zyl's `compose` is `(defn
+; compose (f g) (fn (x) (f (g x))))`, and its inner lambda's own params
+; are just `(x)` — "f"/"g" are compose's params, not the lambda's (and
+; critically, never registered as VTFn entries either, since they're
+; params, not defns), so treating a call head as automatically safe
+; (the original, wrong version of this check) hoisted it anyway and
+; produced undefined references to `f_f`/`f_g` the moment ANY program
+; pulled in core/core (nearly every `use`-ing program, via module
+; resolution's auto-injection) — compose is never even called by those
+; tests. vt-is-fn only ever matches a REAL EDefn name, so it can't
+; misfire on compose's "f"/"g" the same way — but it DOES correctly
+; recognize a lambda calling an actual helper by name, like
+; option-flatmap's `(fn (x) (option-some (* x 2)))`: "option-some" is a
+; real top-level function, not a capture, so this lambda is safe to
+; hoist as an ordinary top-level function too (previously undershot
+; into a useless `(IConst 0)`, later called as a null function pointer).
+(defn ic-safe-callee (arena fname pnames vt)
   (if (> (ic-name-in-list fname pnames) 0)
     1
-    (if (> (ic-op-of arena fname) -1) 1 0)))
+    (if (> (ic-op-of arena fname) -1) 1
+      (if (> (vt-is-fn vt fname) 0) 1 0))))
 
 (defn ic-safe-expr (arena e pnames vt)
   (match (Expr.inner e)
@@ -545,7 +569,7 @@
     (ECall op args
       (if (> (ic-safe-expr arena op pnames vt) 0) (ic-safe-list arena args pnames vt) 0))
     (EApply fname args
-      (if (> (ic-safe-callee arena fname pnames) 0) (ic-safe-list arena args pnames vt) 0))
+      (if (> (ic-safe-callee arena fname pnames vt) 0) (ic-safe-list arena args pnames vt) 0))
     (ELet name val body
       (if (> (ic-safe-expr arena val pnames vt) 0) (ic-safe-expr arena body (Cons name pnames) vt) 0))
     (ELetMut name val body
@@ -691,6 +715,7 @@
 (defn ic-struct-arms (arena vt field)
   (match vt
     (VTNil Nil)
+    (VTFn d1 rest (ic-struct-arms arena rest field))
     (VTEntry name tag fields rest
       (let arms-rest (ic-struct-arms arena rest field)
         (let idx (ic-field-index fields field 0)

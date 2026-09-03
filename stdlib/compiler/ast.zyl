@@ -83,8 +83,17 @@
 ; table. A struct is just a single-variant deftype (see expr_inner.zyl's
 ; parse-defstruct), so this table already has an entry per struct type
 ; for free.
+; VTFn: a plain top-level function's name (not a constructor) — see
+; icnf.zyl's ic-collect-vt, which also walks EDefn forms to register
+; these so ic-safe-callee can tell "this call-head is a genuine
+; existing top-level function" from "this call-head is an unresolvable
+; name that might be a capture" without conflating it with vt-tag-of's
+; ADT-dispatch lookup (a VTFn entry is invisible to vt-tag-of/
+; vt-arity-of, which only ever see VTEntry — no risk of a plain
+; function name aliasing a real constructor's tag).
 (deftype VTable
   (VTEntry String Int (List String) VTable)  ; variant name, tag, field names
+  (VTFn String VTable)                       ; plain top-level function name
   (VTNil))
 
 ; Tag for an interned variant name; -1 when absent.
@@ -92,6 +101,7 @@
 (defn vt-tag-of (vt name)
   (match vt
     (VTEntry n tag d3 rest (if (str-eq n name) tag (vt-tag-of rest name)))
+    (VTFn d5 rest (vt-tag-of rest name))
     (VTNil -1)))
 
 ; Field count for an interned variant name; -1 when absent.
@@ -99,7 +109,15 @@
 (defn vt-arity-of (vt name)
   (match vt
     (VTEntry n d4 fields rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
+    (VTFn d6 rest (vt-arity-of rest name))
     (VTNil -1)))
+
+; True when `name` is a registered plain top-level function name.
+(defn vt-is-fn (vt name)
+  (match vt
+    (VTEntry d7 d8 d9 rest (vt-is-fn rest name))
+    (VTFn n rest (if (str-eq n name) 1 (vt-is-fn rest name)))
+    (VTNil 0)))
 
 ; --- Token stream helpers ----------------------------------------------------
 
