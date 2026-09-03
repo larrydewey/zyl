@@ -540,7 +540,12 @@
               n
               (Cons (AV n (parse-struct-fields (ast-list-nth-rest args 1))) Nil)
               Nil
-              None))))
+              ; Marks this EDeftype as struct-sugar, not a real ADT — see
+              ; icnf.zyl's ic-collect-vt, which gives ONLY structs a
+              ; globally-unique tag (regular deftypes keep their existing
+              ; per-deftype-from-0 numbering, unchanged, since renumbering
+              ; those broke self-hosting outright).
+              (Some "struct")))))
       (d1 None))
     None))
 

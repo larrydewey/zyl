@@ -4109,7 +4109,10 @@
                 Nil
               )
               Nil
-              None
+              (
+                Some
+                "struct"
+              )
             )
           )
         )
@@ -14138,6 +14141,24 @@
   )
 )
 (
+  defn infer-for-binding-type
+  (
+    inferer val-opt
+  )
+  (
+    match val-opt
+    (
+      Some e
+      (
+        infer-expr inferer e
+      )
+    )
+    (
+      None TInt
+    )
+  )
+)
+(
   defn inferer-bind-for-vars
   (
     inferer
@@ -14162,7 +14183,7 @@
             (
               vt
               (
-                infer-expr inferer val
+                infer-for-binding-type inferer val
               )
             )
             (
@@ -20879,9 +20900,33 @@
     forms vt
   )
   (
+    match
+    (
+      ic-collect-vt-run forms vt 100000
+    )
+    (
+      VTAcc v d1 v
+    )
+  )
+)
+(
+  deftype VTAcc
+  (
+    VTAcc VTable Int
+  )
+)
+(
+  defn ic-collect-vt-run
+  (
+    forms vt stag
+  )
+  (
     match forms
     (
-      Nil vt
+      Nil
+      (
+        VTAcc vt stag
+      )
     )
     (
       Cons e rest
@@ -20891,18 +20936,40 @@
           Expr.inner e
         )
         (
-          EDeftype name variants d1 d2
+          EDeftype name variants d1 structmark
           (
-            ic-collect-vt rest
+            match structmark
             (
-              ic-vt-deftype name variants vt
+              Some d2
+              (
+                ic-collect-vt-run rest
+                (
+                  vt-from-adtvariants variants vt stag
+                )
+                (
+                  + stag
+                  (
+                    list-length variants
+                  )
+                )
+              )
+            )
+            (
+              None
+              (
+                ic-collect-vt-run rest
+                (
+                  ic-vt-deftype name variants vt
+                )
+                stag
+              )
             )
           )
         )
         (
           d3
           (
-            ic-collect-vt rest vt
+            ic-collect-vt-run rest vt stag
           )
         )
       )

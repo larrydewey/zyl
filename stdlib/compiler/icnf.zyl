@@ -188,29 +188,48 @@
         (d3 (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
+;
+; Structs (parse-defstruct's EDeftype, 4th field `Some "struct"`) get a
+; tag from a dedicated, globally-increasing counter (starting well above
+; any realistic regular-ADT variant count) instead of the usual per-
+; deftype-starts-at-0 numbering. Two unrelated struct types sharing a
+; field name at different positions (e.g. Color's "b" at index 2 vs
+; Flag's/Quad's "b" at index 1) used to collide on tag 0 — every struct
+; is its own single-variant deftype — and struct-get's dynamic dispatch
+; (ic-struct-arms, which has no static type to resolve which struct a
+; value actually is) picked whichever colliding arm came first in vt,
+; silently reading through the wrong layout — invisible when the field
+; happened to sit at the same position in both (Point/Vec3's "x"/"y"), a
+; wrong VALUE once it didn't. A first attempt used a fresh arena address
+; as the tag (globally unique with no counter to thread) — arena
+; addresses routinely exceed 32 bits, and `cmp reg, <tag>`/`mov` need an
+; imm32, so the assembler rejected every struct match arm. A second
+; attempt renumbered ALL deftypes globally (regular ADTs included),
+; which broke self-hosting outright. This counter only ever advances for
+; structs — regular deftypes keep their existing per-deftype-from-0
+; numbering, completely unaffected — and stays small enough for imm32.
 (defn ic-collect-vt (forms vt)
+  (match (ic-collect-vt-run forms vt 100000)
+    (VTAcc v d1 v)))
+
+(deftype VTAcc (VTAcc VTable Int))
+
+(defn ic-collect-vt-run (forms vt stag)
   (match forms
-    (Nil vt)
+    (Nil (VTAcc vt stag))
     (Cons e rest
       (match (Expr.inner e)
-        (EDeftype name variants d1 d2
-          (ic-collect-vt rest (ic-vt-deftype name variants vt)))
-        (d3 (ic-collect-vt rest vt))))))
+        (EDeftype name variants d1 structmark
+          (match structmark
+            (Some d2
+              (ic-collect-vt-run rest
+                                  (vt-from-adtvariants variants vt stag)
+                                  (+ stag (list-length variants))))
+            (None (ic-collect-vt-run rest (ic-vt-deftype name variants vt) stag))))
+        (d3 (ic-collect-vt-run rest vt stag))))))
 
 ; Add one deftype's variants. `variants` is already a (List ADTVariant) —
 ; ExprInner parsed field structure once, upstream.
-; KNOWN LIMITATION: tags restart at 0 for every deftype (struct or ADT),
-; so two unrelated struct types sharing a field name can collide and
-; struct-get's dynamic dispatch (ic-struct-arms) picks whichever
-; colliding arm comes first in vt — invisible when the field sits at the
-; same position in both (e.g. Point/Vec3's "x"/"y"), a wrong VALUE once
-; it doesn't (Color's "b" is index 2; Flag's/Quad's "b" is index 1;
-; regression/structs.zyl's "struct-color-b" hits exactly this). Making
-; tags global (start each new deftype after vt's current max) fixes it
-; but broke self-hosting outright — stage2 segfaulted compiling itself,
-; presumably from something elsewhere assuming small/bounded tag values
-; across this bundle's several dozen deftypes — so left as a known gap
-; rather than risk that again this late.
 (defn ic-vt-deftype (name variants vt)
   (vt-from-adtvariants variants vt 0))
 

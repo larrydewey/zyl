@@ -837,6 +837,22 @@
                 (infer-expr new-inferer body)
                 TUnit))))
 
+; `val` is `(Option Expr)`, not `Expr` — a for-binding's init is optional
+; (`(for (i) cond body)` with no init is valid surface syntax even
+; though nothing in this corpus omits one). Calling infer-expr directly
+; on the Option itself — its unfixed original form — fed infer-expr a
+; value whose runtime shape doesn't match what it pattern-matches on
+; (Expr.inner), and self-hosted codegen's miscompilation of that
+; mismatch crashed unpredictably depending on unrelated surrounding
+; code (observed: identical `for` loop crashed or not purely based on
+; whether the enclosing binding used `let` vs `let-mut`, though both
+; lower to the same ILet — the difference must be upstream, in
+; whichever type-inference path each one exercises for a sibling `for`).
+(defn infer-for-binding-type (inferer val-opt)
+    (match val-opt
+        (Some e (infer-expr inferer e))
+        (None TInt)))
+
 (defn inferer-bind-for-vars (inferer (bindings List))
     ; bind each (name val) pair to TCap TMut of val's type
     (match bindings
@@ -846,7 +862,7 @@
             (match pair
                 (Pair name val
                     (let
-                        (vt (infer-expr inferer val))
+                        (vt (infer-for-binding-type inferer val))
                         (let
                             (new-env
                                 (env-bind
