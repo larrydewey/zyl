@@ -657,16 +657,20 @@
               (let st5 (cg-emit-line st4 "    xor eax, eax")
                 (cg-emit-line st5 "    call printf")))))))))
 
-; Variant construction: malloc'd block [tag][f0]..[fn-1].
-; Fields are evaluated and pushed, then popped into the block (right to
-; left). An odd field count gets 8 bytes of pad to keep rsp 16-aligned
-; across malloc.
+; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
+; (not raw malloc) so the runtime's hidden qword-count header lands
+; before the block — the same mechanism the Rust bootstrap already uses,
+; which zyl_variant_eq (actor_runtime.c) reads to do structural equality
+; on two separately-allocated ADT/struct values without a runtime type
+; tag. Fields are evaluated and pushed, then popped into the block
+; (right to left). An odd field count gets 8 bytes of pad to keep rsp
+; 16-aligned across the call.
 (defn cg-variant (st env tag fields)
   (let n (list-length fields)
     (let st2 (cg-push-fields st env fields)
       (let st3 (if (= (% n 2) 1) (cg-emit-line st2 "    sub rsp, 8") st2)
         (let st4 (cg-nl (cg-emit-int (cg-emit st3 "    mov rdi, ") (* 8 (+ n 1))))
-          (let st5 (cg-emit-line st4 "    call malloc")
+          (let st5 (cg-emit-line st4 "    call zyl_heap_alloc")
             (let st6 (cg-emit-line st5 "    mov rbx, rax")
               (let st7 (cg-emit-int (cg-emit st6 "    mov qword ptr [rbx], ") tag)
                 (let st8 (cg-nl st7)
