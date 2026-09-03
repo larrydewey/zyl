@@ -370,6 +370,27 @@
     (EFor bindings cond body (ic-for arena bindings cond body vt))
     (EFfiPin e (IFfi "ffi_pin" (Cons (ic-expr arena e vt) Nil)))
     (EFfiUnpin e (IFfi "ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
+    ; (spawn (fn () body)): had NO icnf.zyl lowering at all (unlike
+    ; EFfiPin/EFor before their own fixes, ESpawn wasn't even mentioned
+    ; as a known gap) — silently fell to the universal (IConst 0)
+    ; fallback, so `spawn` always returned 0 instead of a real actor id;
+    ; every actor test that "passed" was operating on actor slot 0 by
+    ; coincidence, not a genuinely spawned actor. zyl_actor_spawn wants a
+    ; plain `void(*)(void*)` entry point plus a state pointer (used for
+    ; captures) — every spawn body in this corpus is non-capturing, so
+    ; state is always a hardcoded 0/null; (ic-expr body) for an EFn
+    ; already goes through ic-lambda/ic-hoist exactly like a plain `fn`
+    ; value would (see EFn below), no separate spawn-specific closure-
+    ; conversion needed. A CAPTURING spawn body would still just hoist
+    ; to IConst 0 via ic-lambda's existing safety check and crash the
+    ; same way a captured plain `fn` value does — not attempted here,
+    ; matching the closures KNOWN LIMITATION elsewhere in this file.
+    (ESpawn body (IFfi "zyl_actor_spawn" (Cons (ic-expr arena body vt) (Cons (IConst 0) Nil))))
+    ; (send actor msg): same gap, no lowering at all. Mirrors the Rust
+    ; bootstrap exactly — msg is passed straight through as an opaque
+    ; value, never boxed/heap-allocated, since none of this corpus's
+    ; send calls need to survive being freed on an error path.
+    (ESend actor msg (IFfi "zyl_actor_send" (Cons (ic-expr arena actor vt) (Cons (ic-expr arena msg vt) Nil))))
     ; KNOWN LIMITATION: this just runs the try-body, unconditionally
     ; discarding the catch clause — a real `try` needs the runtime's
     ; setjmp/longjmp panic-frame mechanism (zyl_try_push/zyl_try_pop,
