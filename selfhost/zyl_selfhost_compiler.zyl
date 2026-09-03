@@ -4841,13 +4841,7 @@
             )
           )
           (
-            convert-ast
-            (
-              ast-list-last args
-              (
-                AstInt 0
-              )
-            )
+            parse-body-from args 2
           )
         )
       )
@@ -21328,6 +21322,12 @@
       )
     )
     (
+      EFor bindings cond body
+      (
+        ic-for arena bindings cond body vt
+      )
+    )
+    (
       EFn d5 params body
       (
         ic-lambda arena params body vt
@@ -22444,6 +22444,69 @@
   )
 )
 (
+  defn ic-for
+  (
+    arena bindings cond body vt
+  )
+  (
+    match bindings
+    (
+      Nil
+      (
+        IWhile
+        (
+          ic-expr arena cond vt
+        )
+        (
+          ic-expr arena body vt
+        )
+      )
+    )
+    (
+      Cons b rest
+      (
+        match b
+        (
+          Pair name initOpt
+          (
+            ILet
+            (
+              str-intern arena name
+            )
+            (
+              ic-for-init arena initOpt vt
+            )
+            (
+              ic-for arena rest cond body vt
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-for-init
+  (
+    arena initOpt vt
+  )
+  (
+    match initOpt
+    (
+      Some e
+      (
+        ic-expr arena e vt
+      )
+    )
+    (
+      None
+      (
+        IConst 0
+      )
+    )
+  )
+)
+(
   defn ic-struct-get
   (
     arena se field vt
@@ -23403,6 +23466,38 @@
   )
 )
 (
+  defn bind-names
+  (
+    arena pats acc
+  )
+  (
+    match pats
+    (
+      Nil
+      (
+        list-reverse acc
+      )
+    )
+    (
+      Cons p rest
+      (
+        bind-names arena rest
+        (
+          Cons
+          (
+            str-intern arena
+            (
+              expr-ident-name p
+              ""
+            )
+          )
+          acc
+        )
+      )
+    )
+  )
+)
+(
   defn ic-arm-guard
   (
     arena body vt
@@ -23578,38 +23673,6 @@
         > tag -1
       )
       0 1
-    )
-  )
-)
-(
-  defn bind-names
-  (
-    arena pats acc
-  )
-  (
-    match pats
-    (
-      Nil
-      (
-        list-reverse acc
-      )
-    )
-    (
-      Cons p rest
-      (
-        bind-names arena rest
-        (
-          Cons
-          (
-            str-intern arena
-            (
-              expr-ident-name p
-              ""
-            )
-          )
-          acc
-        )
-      )
     )
   )
 )
@@ -24810,67 +24873,95 @@
     st env c body lstart lend
   )
   (
-    let st2
+    match
     (
-      cg-emit-label st lstart
+      cg-new-slot st
     )
     (
-      let st3
+      CGR st0 off d1
       (
-        cg-expr st2 env c
+        cg-while-body st0 env c body lstart lend off
+      )
+    )
+  )
+)
+(
+  defn cg-while-body
+  (
+    st env c body lstart lend off
+  )
+  (
+    let st1
+    (
+      cg-while-store
+      (
+        cg-emit-line st
+        "    mov rax, 0"
+      )
+      off
+    )
+    (
+      let st2
+      (
+        cg-emit-label st1 lstart
       )
       (
-        let st4
+        let st3
         (
-          cg-emit st3
-          "    test rax, rax"
+          cg-expr st2 env c
         )
         (
-          let st5
+          let st4
           (
-            cg-nl st4
+            cg-emit-line st3
+            "    test rax, rax"
           )
           (
-            let st6
+            let st5
             (
-              cg-emit st5
+              cg-emit st4
               "    je "
             )
             (
-              let st7
+              let st6
               (
                 cg-nl
                 (
-                  cg-emit st6 lend
+                  cg-emit st5 lend
                 )
               )
               (
-                let st8
+                let st7
                 (
-                  cg-expr st7 env body
+                  cg-expr st6 env body
                 )
                 (
-                  let st9
+                  let st8
                   (
-                    cg-emit st8
-                    "    jmp "
+                    cg-while-store st7 off
                   )
                   (
-                    let st10
+                    let st9
                     (
-                      cg-nl
-                      (
-                        cg-emit st9 lstart
-                      )
+                      cg-emit st8
+                      "    jmp "
                     )
                     (
-                      let st11
+                      let st10
                       (
-                        cg-emit-label st10 lend
+                        cg-nl
+                        (
+                          cg-emit st9 lstart
+                        )
                       )
                       (
-                        cg-emit-line st11
-                        "    xor eax, eax"
+                        let st11
+                        (
+                          cg-emit-label st10 lend
+                        )
+                        (
+                          cg-while-load st11 off
+                        )
                       )
                     )
                   )
@@ -24879,6 +24970,52 @@
             )
           )
         )
+      )
+    )
+  )
+)
+(
+  defn cg-while-store
+  (
+    st off
+  )
+  (
+    let st1
+    (
+      cg-emit st
+      "    mov [rbp"
+    )
+    (
+      let st2
+      (
+        cg-emit-int st1 off
+      )
+      (
+        cg-emit-line st2
+        "], rax"
+      )
+    )
+  )
+)
+(
+  defn cg-while-load
+  (
+    st off
+  )
+  (
+    let st1
+    (
+      cg-emit st
+      "    mov rax, [rbp"
+    )
+    (
+      let st2
+      (
+        cg-emit-int st1 off
+      )
+      (
+        cg-emit-line st2
+        "]"
       )
     )
   )
@@ -27177,12 +27314,15 @@
     (
       IWhile c b
       (
-        icnf-add2
+        + 1
         (
-          icnf-slot-count c
-        )
-        (
-          icnf-slot-count b
+          icnf-add2
+          (
+            icnf-slot-count c
+          )
+          (
+            icnf-slot-count b
+          )
         )
       )
     )

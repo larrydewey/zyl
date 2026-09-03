@@ -753,7 +753,7 @@
         (EFor
           (parse-for-bindings (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
-          (convert-ast (ast-list-last args (AstInt 0))))))
+          (parse-body-from args 2))))
     None))
 
 (defn parse-for-bindings (bindings)
