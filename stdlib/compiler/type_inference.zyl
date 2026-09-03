@@ -1278,13 +1278,24 @@
                 (ti-inferring-fns inferer)
                 (ti-body-cache inferer))
             op-name)
+        ; parse-match-arm has no arity info at parse time, so anything
+        ; after a variant's declared fields is taken as MORE pattern
+        ; fields, not further body statements — a bare
+        ; "(Some ret (infer-args inferer args) ret)" arm here silently
+        ; misparsed "(infer-args inferer args)" as a second, bogus
+        ; pattern field on a 1-field variant (and similarly for None's
+        ; 0 fields), which old bind-names quietly bound to "" and
+        ; ic-arm's nested-pattern support (see icnf.zyl) now tries to
+        ; genuinely destructure as a constructor pattern, crashing —
+        ; either way the infer-args call never actually ran. Wrap
+        ; explicitly in begin so each arm has exactly its real field
+        ; count and one body expression, matching every other
+        ; multi-statement fix in this session (let/while/defn bodies).
         (Some
             ret
-            (infer-args inferer args)
-            ret)
+            (begin (infer-args inferer args) ret))
         (None
-            (infer-args inferer args)
-            (inferer-return-var inferer))))
+            (begin (infer-args inferer args) (inferer-return-var inferer)))))
 
 ; ===========================================================================
 ; INFER-EXPR — apply (Apply form)
