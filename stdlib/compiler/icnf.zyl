@@ -199,6 +199,18 @@
 
 ; Add one deftype's variants. `variants` is already a (List ADTVariant) —
 ; ExprInner parsed field structure once, upstream.
+; KNOWN LIMITATION: tags restart at 0 for every deftype (struct or ADT),
+; so two unrelated struct types sharing a field name can collide and
+; struct-get's dynamic dispatch (ic-struct-arms) picks whichever
+; colliding arm comes first in vt — invisible when the field sits at the
+; same position in both (e.g. Point/Vec3's "x"/"y"), a wrong VALUE once
+; it doesn't (Color's "b" is index 2; Flag's/Quad's "b" is index 1;
+; regression/structs.zyl's "struct-color-b" hits exactly this). Making
+; tags global (start each new deftype after vt's current max) fixes it
+; but broke self-hosting outright — stage2 segfaulted compiling itself,
+; presumably from something elsewhere assuming small/bounded tag values
+; across this bundle's several dozen deftypes — so left as a known gap
+; rather than risk that again this late.
 (defn ic-vt-deftype (name variants vt)
   (vt-from-adtvariants variants vt 0))
 
