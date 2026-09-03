@@ -341,6 +341,14 @@
      (IIf (ic-expr arena e vt)
           (IFfi "zyl_panic" (Cons (IStr "assert-false failed") Nil))
           (IConst 0)))
+    ; assert-fail: "assert that this would fail" — the Rust bootstrap
+    ; just evaluates the expr and discards it too (a real check needs
+    ; the same setjmp/longjmp panic-catching this backend doesn't have,
+    ; per ETryCatch above). Not dispatched at parse time at all until
+    ; now — testing/testing.zyl's assert-fail-expr called a plain
+    ; "assert-fail" function that was never defined anywhere, an
+    ; undefined-reference link error rather than a silent no-op.
+    (EAssertFail e d8 (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
     (EStructGet se field (ic-struct-get arena se field vt))
     ; (for (name init)... cond body): no separate step clause — the
     ; corpus's own `for` bodies always `set!` the loop var themselves.
