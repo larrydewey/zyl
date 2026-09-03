@@ -11,6 +11,7 @@
 (use compiler/macro_expand)
 (use compiler/monomorphization)
 (use compiler/icnf)
+(use compiler/assert_lowering)
 (use compiler/codegen)
 
 ; Pipeline: lexer → parser → Ast → ExprInner → type inference
@@ -48,10 +49,12 @@
             (dbg-log "mono\n")
             (let mono-ctx (mono-context-new inferer)
               (let mono-exprs (monomorphize mono-ctx exprs)
+                (dbg-log "assert-lowering\n")
+                (let al-exprs (al-expand-program mono-exprs)
                 (dbg-log "lower\n")
-                (let fns (ic-program arena mono-exprs)
+                (let fns (ic-program arena al-exprs)
                   (dbg-log "codegen\n")
-                  (emit-out arena fns))))))))))))
+                  (emit-out arena fns)))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)

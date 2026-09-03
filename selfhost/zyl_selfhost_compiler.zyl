@@ -24176,6 +24176,609 @@
     )
   )
 )
+; ---------- stdlib/compiler/assert_lowering.zyl ----------
+(
+  defn al-expand-program
+  (
+    prog
+  )
+  (
+    let vt
+    (
+      ic-collect-vt prog VTNil
+    )
+    (
+      al-map prog prog vt
+    )
+  )
+)
+(
+  defn al-map
+  (
+    all forms vt
+  )
+  (
+    match forms
+    (
+      Nil Nil
+    )
+    (
+      Cons e rest
+      (
+        Cons
+        (
+          al-expr all e vt
+        )
+        (
+          al-map all rest vt
+        )
+      )
+    )
+  )
+)
+(
+  defn al-expr
+  (
+    all e vt
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAssertEqual l r
+      (
+        al-assert-equal all l r vt
+      )
+    )
+    (
+      EDefn name params body
+      (
+        Expr
+        (
+          EDefn name params
+          (
+            al-expr all body vt
+          )
+        )
+      )
+    )
+    (
+      ETestDecl name body k
+      (
+        Expr
+        (
+          ETestDecl name
+          (
+            al-expr all body vt
+          )
+          k
+        )
+      )
+    )
+    (
+      ELet name val body
+      (
+        Expr
+        (
+          ELet name
+          (
+            al-expr all val vt
+          )
+          (
+            al-expr all body vt
+          )
+        )
+      )
+    )
+    (
+      ELetMut name val body
+      (
+        Expr
+        (
+          ELetMut name
+          (
+            al-expr all val vt
+          )
+          (
+            al-expr all body vt
+          )
+        )
+      )
+    )
+    (
+      EIf c t eb
+      (
+        Expr
+        (
+          EIf
+          (
+            al-expr all c vt
+          )
+          (
+            al-expr all t vt
+          )
+          (
+            al-expr all eb vt
+          )
+        )
+      )
+    )
+    (
+      EWhile c body
+      (
+        Expr
+        (
+          EWhile
+          (
+            al-expr all c vt
+          )
+          (
+            al-expr all body vt
+          )
+        )
+      )
+    )
+    (
+      EBegin exprs
+      (
+        Expr
+        (
+          EBegin
+          (
+            al-map all exprs vt
+          )
+        )
+      )
+    )
+    (
+      ETryCatch tbody nm handler
+      (
+        Expr
+        (
+          ETryCatch
+          (
+            al-expr all tbody vt
+          )
+          nm
+          (
+            al-expr all handler vt
+          )
+        )
+      )
+    )
+    (
+      EMatch subj arms
+      (
+        Expr
+        (
+          EMatch
+          (
+            al-expr all subj vt
+          )
+          (
+            al-arms all arms vt
+          )
+        )
+      )
+    )
+    (
+      d1 e
+    )
+  )
+)
+(
+  defn al-arms
+  (
+    all arms vt
+  )
+  (
+    match arms
+    (
+      Nil Nil
+    )
+    (
+      Cons a rest
+      (
+        Cons
+        (
+          al-arm all a vt
+        )
+        (
+          al-arms all rest vt
+        )
+      )
+    )
+  )
+)
+(
+  defn al-arm
+  (
+    all a vt
+  )
+  (
+    match a
+    (
+      MA v pats body
+      (
+        MA v pats
+        (
+          al-expr all body vt
+        )
+      )
+    )
+  )
+)
+(
+  defn al-assert-equal
+  (
+    all l r vt
+  )
+  (
+    let l2
+    (
+      al-expr all l vt
+    )
+    (
+      let r2
+      (
+        al-expr all r vt
+      )
+      (
+        if
+        (
+          >
+          (
+            al-should-variant-eq all l2 r2 vt
+          )
+          0
+        )
+        (
+          Expr
+          (
+            EAssertTrue
+            (
+              Expr
+              (
+                EFfiCall
+                "zyl_variant_eq"
+                (
+                  Cons l2
+                  (
+                    Cons r2 Nil
+                  )
+                )
+                0
+              )
+            )
+            (
+              Some
+              "assert-equal failed"
+            )
+          )
+        )
+        (
+          Expr
+          (
+            EAssertEqual l2 r2
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn al-should-variant-eq
+  (
+    all l r vt
+  )
+  (
+    if
+    (
+      >
+      (
+        al-is-primitive-const l
+      )
+      0
+    )
+    0
+    (
+      if
+      (
+        >
+        (
+          al-is-primitive-const r
+        )
+        0
+      )
+      0
+      (
+        if
+        (
+          >
+          (
+            al-looks-variant all l vt 0
+          )
+          0
+        )
+        1
+        (
+          al-looks-variant all r vt 0
+        )
+      )
+    )
+  )
+)
+(
+  defn al-is-primitive-const
+  (
+    e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      EAtom atom
+      (
+        match atom
+        (
+          AInt d1 1
+        )
+        (
+          AFloat d2 1
+        )
+        (
+          ABool d3 1
+        )
+        (
+          d4 0
+        )
+      )
+    )
+    (
+      d5 0
+    )
+  )
+)
+(
+  defn al-looks-variant
+  (
+    all e vt depth
+  )
+  (
+    if
+    (
+      > depth 4
+    )
+    0
+    (
+      al-looks-variant-tail all
+      (
+        al-tail e
+      )
+      vt depth
+    )
+  )
+)
+(
+  defn al-tail
+  (
+    e
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      ELet d1 d2 body
+      (
+        al-tail body
+      )
+    )
+    (
+      ELetMut d1 d2 body
+      (
+        al-tail body
+      )
+    )
+    (
+      EBegin exprs
+      (
+        al-tail
+        (
+          last-expr exprs
+        )
+      )
+    )
+    (
+      ETryCatch tbody d3 d4
+      (
+        al-tail tbody
+      )
+    )
+    (
+      d5 e
+    )
+  )
+)
+(
+  defn al-looks-variant-tail
+  (
+    all e vt depth
+  )
+  (
+    match
+    (
+      Expr.inner e
+    )
+    (
+      ECall op args
+      (
+        al-looks-name all
+        (
+          expr-ident-name op
+          ""
+        )
+        vt depth
+      )
+    )
+    (
+      EApply fname args
+      (
+        al-looks-name all fname vt depth
+      )
+    )
+    (
+      EMatch d1 arms
+      (
+        al-looks-arms all arms vt depth
+      )
+    )
+    (
+      EIf d2 t eb
+      (
+        if
+        (
+          >
+          (
+            al-looks-variant all t vt
+            (
+              + depth 1
+            )
+          )
+          0
+        )
+        1
+        (
+          al-looks-variant all eb vt
+          (
+            + depth 1
+          )
+        )
+      )
+    )
+    (
+      d3 0
+    )
+  )
+)
+(
+  defn al-looks-arms
+  (
+    all arms vt depth
+  )
+  (
+    match arms
+    (
+      Nil 0
+    )
+    (
+      Cons a rest
+      (
+        if
+        (
+          >
+          (
+            al-looks-variant all
+            (
+              MA.body a
+            )
+            vt
+            (
+              + depth 1
+            )
+          )
+          0
+        )
+        1
+        (
+          al-looks-arms all rest vt depth
+        )
+      )
+    )
+  )
+)
+(
+  defn al-looks-name
+  (
+    all name vt depth
+  )
+  (
+    if
+    (
+      >
+      (
+        vt-tag-of vt name
+      )
+      -1
+    )
+    1
+    (
+      match
+      (
+        al-fn-body all name
+      )
+      (
+        Some body
+        (
+          al-looks-variant all body vt
+          (
+            + depth 1
+          )
+        )
+      )
+      (
+        None 0
+      )
+    )
+  )
+)
+(
+  defn al-fn-body
+  (
+    all name
+  )
+  (
+    match all
+    (
+      Nil None
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EDefn n d1 body
+          (
+            if
+            (
+              str-eq n name
+            )
+            (
+              Some body
+            )
+            (
+              al-fn-body rest name
+            )
+          )
+        )
+        (
+          d2
+          (
+            al-fn-body rest name
+          )
+        )
+      )
+    )
+  )
+)
 ; ---------- stdlib/compiler/codegen.zyl ----------
 (
   deftype REntry
@@ -29331,19 +29934,29 @@
                     )
                     (
                       dbg-log
-                      "lower\n"
+                      "assert-lowering\n"
                     )
                     (
-                      let fns
+                      let al-exprs
                       (
-                        ic-program arena mono-exprs
+                        al-expand-program mono-exprs
                       )
                       (
                         dbg-log
-                        "codegen\n"
+                        "lower\n"
                       )
                       (
-                        emit-out arena fns
+                        let fns
+                        (
+                          ic-program arena al-exprs
+                        )
+                        (
+                          dbg-log
+                          "codegen\n"
+                        )
+                        (
+                          emit-out arena fns
+                        )
                       )
                     )
                   )
