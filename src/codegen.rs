@@ -76,6 +76,11 @@ pub struct CodeGen {
     value_slots: crate::deterministic::HashMap<usize, usize>,
     /// Frame size (bytes) implied by value_slots; used by all prologues.
     spill_frame: usize,
+    /// Actual frame bytes allocated by every regular function prologue
+    /// (uniform so TCO works): spill_frame plus one extra 8-byte slot at
+    /// spill_frame-1 that holds the caller's rsp pre-call for C-helper
+    /// alignment restore.
+    frame_bytes: usize,
 }
 
 #[allow(dead_code)]
@@ -109,7 +114,37 @@ impl CodeGen {
             closure_name_map: crate::deterministic::HashMap::default(),
             value_slots: crate::deterministic::HashMap::default(),
             spill_frame: 256,
+            frame_bytes: 256,
         }
+    }
+
+    /// Byte offset from rbp that reserves the rsp-stash slot: 8 bytes above
+    /// the spill region (`spill_frame`), reserved in every frame so it is
+    /// never a spill or parameter slot and so a nested callee's frames (which
+    /// grow strictly below our current rsp) can never reach it.
+    #[inline]
+    fn rsp_stash_rel(&self) -> usize {
+        self.spill_frame.max(256) + 8
+    }
+
+    /// Emit the opening of an aligned C-helper call: stash the pre-call rsp
+    /// in the frame's rsp-stash slot instead of r15. r15 is clobbered by
+    /// nested generated code reached through the zyl_callN dynamic
+    /// dispatchers (each of which uses r15 as its own scratch), so a
+    /// register save/restore would tear; the slot at [rbp-(F+8)] sits at the
+    /// very bottom of this frame, above every nested callee's writes, and is
+    /// LIFO-safe under recursion (each invocation uses its own frame).
+    fn emit_align_save_rsp(&mut self) {
+        self.asm_push_align();
+        self.asm.push(format!("    mov [rbp-{}], rsp", self.rsp_stash_rel()));
+    }
+
+    /// Emit the closing of an aligned C-helper call: restore rsp from the
+    /// frame's rsp-stash slot.
+    fn emit_align_restore_rsp(&mut self) {
+        self.asm_push_align();
+        self.asm
+            .push(format!("    mov rsp, [rbp-{}]", self.rsp_stash_rel()));
     }
 
     /// Set function return types for codegen (from type inference).
@@ -441,14 +476,14 @@ impl CodeGen {
         // Allocate stack space for locals + always-spill value slots.
         self.asm_push_align();
         self.asm
-            .push(format!("    sub rsp, {}", self.spill_frame.max(256)));
+            .push(format!("    sub rsp, {}", self.spill_frame.max(256) + 8));
 
         // Ensure Heap/Pin arenas are initialized before any allocations.
         self.asm_push_align();
-        self.asm.push("    mov r15, rsp".to_string());
+        self.emit_align_save_rsp();
         self.asm.push("    and rsp, -16".to_string());
         self.asm.push("    call zyl_ensure_arenas@plt".to_string());
-        self.asm.push("    mov rsp, r15".to_string());
+        self.emit_align_restore_rsp();
 
         if !program.statements.is_empty() {
             let mut local_vars: HashMap<String, usize> = HashMap::default();
@@ -844,22 +879,20 @@ impl CodeGen {
             self.asm_push_align();
             self.asm
                 .push("    lea rdi, [rip+_ZYL_main]".to_string());
-            self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_call_on_big_stack@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
         }
 
         // Call exit(0).
         self.asm_push_align();
         self.asm
             .push("    xor edi, edi           # exit code 0".to_string());
-        self.asm_push_align();
-        self.asm.push("    mov r15, rsp".to_string());
+        self.emit_align_save_rsp();
         self.asm.push("    and rsp, -16".to_string());
         self.asm.push("    call exit@plt".to_string());
-        self.asm.push("    mov rsp, r15".to_string());
+        self.emit_align_restore_rsp();
 
         // Restore stack frame and return.
         self.asm_push_align();
@@ -903,7 +936,7 @@ impl CodeGen {
             // Reserve stack space for locals + always-spill value slots.
             self.asm_push_align();
             self.asm
-                .push(format!("    sub rsp, {}", self.spill_frame.max(256)));
+                .push(format!("    sub rsp, {}", self.spill_frame.max(256) + 8));
 
             // Store function parameters from registers to known stack slots.
             // Float params come in XMM registers (as bit patterns), non-floats in GPRs.
@@ -1412,10 +1445,10 @@ impl CodeGen {
             // otherwise (P1: no phantom waits).
             if func.name == "main" && self.spawn_wrappers.len() > 0 {
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_actor_wait_all@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
             }
 
             // Return result: re-materialize the body's tail expression into
@@ -1451,7 +1484,7 @@ impl CodeGen {
                 }
             }
             self.asm_push_align();
-            self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256)));
+            self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256) + 8));
             self.asm_push_align();
             self.asm.push("    pop rbp".to_string());
             self.asm_push_align();
@@ -1492,7 +1525,7 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov rbp, rsp".to_string());
                 self.asm_push_align();
-                self.asm.push(format!("    sub rsp, {}", self.spill_frame.max(256)));
+                self.asm.push(format!("    sub rsp, {}", self.spill_frame.max(256) + 8));
 
                 // Emit prologue. Capturing closures use the env convention:
                 // rdi = env block ([env]=code, [env+8+8i]=capture i), params
@@ -1671,7 +1704,7 @@ impl CodeGen {
 
                 // Epilogue.
                 self.asm_push_align();
-                self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256)));
+                self.asm.push(format!("    add rsp, {}", self.spill_frame.max(256) + 8));
                 self.asm_push_align();
                 self.asm.push("    pop rbp".to_string());
                 self.asm_push_align();
@@ -1877,10 +1910,10 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    pop rdi".to_string());
         self.asm_push_align();
-        self.asm.push("    mov r15, rsp".to_string());
+        self.emit_align_save_rsp();
         self.asm.push("    and rsp, -16".to_string());
         self.asm.push("    call zyl_variant_eq@plt".to_string());
-        self.asm.push("    mov rsp, r15".to_string());
+        self.emit_align_restore_rsp();
         self.asm_push_align();
         self.asm
             .push(format!("    mov {}, rax", reg_to_64(target_reg)));
@@ -1987,10 +2020,10 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    pop rdi".to_string());
         self.asm_push_align();
-        self.asm.push("    mov r15, rsp".to_string());
+        self.emit_align_save_rsp();
         self.asm.push("    and rsp, -16".to_string());
         self.asm.push("    call zyl_cstr_eq@plt".to_string());
-        self.asm.push("    mov rsp, r15".to_string());
+        self.emit_align_restore_rsp();
         self.asm_push_align();
         self.asm
             .push(format!("    mov {}, rax", reg_to_64(target_reg)));
@@ -2918,10 +2951,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string());
                 // Fields were pushed in order; pop in REVERSE so field i lands
@@ -3366,10 +3399,10 @@ impl CodeGen {
 
         // Call the external C function (with plt stub for dynamic linking).
         self.asm_push_align();
-        self.asm.push("    mov r15, rsp".to_string());
+        self.emit_align_save_rsp();
         self.asm.push("    and rsp, -16".to_string());
         self.asm.push(format!("    call {}@plt", name));
-        self.asm.push("    mov rsp, r15".to_string());
+        self.emit_align_restore_rsp();
 
         emitted_ids.insert(node_id);
 
@@ -3655,10 +3688,10 @@ impl CodeGen {
                 self.asm.push("    xor edi, edi".to_string());
             }
             self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_cstr_len@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
             self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             emitted_ids.insert(node_id);
             return;
@@ -3675,10 +3708,10 @@ impl CodeGen {
                 &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_cstr_concat@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
             self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             emitted_ids.insert(node_id);
             return;
@@ -3697,10 +3730,10 @@ impl CodeGen {
                 );
             }
             self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_cstr_eq@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
             self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             emitted_ids.insert(node_id);
             return;
@@ -3722,10 +3755,10 @@ impl CodeGen {
                 &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
             );
             self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_cstr_substr@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
             self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
             emitted_ids.insert(node_id);
             return;
@@ -3744,10 +3777,10 @@ impl CodeGen {
                 self.asm.push("    xor edi, edi".to_string());
             }
             self.asm_push_align();
-            self.asm.push("    mov r15, rsp".to_string());
+            self.emit_align_save_rsp();
             self.asm.push("    and rsp, -16".to_string());
             self.asm.push("    call zyl_panic@plt".to_string());
-            self.asm.push("    mov rsp, r15".to_string());
+            self.emit_align_restore_rsp();
             self.asm_push_align();
             self.asm.push(format!("    mov {}, -1", reg_to_64(target_reg)));
             emitted_ids.insert(node_id);
@@ -3873,10 +3906,10 @@ impl CodeGen {
                 self.asm.push("    mov rdi, rax".to_string());
                 self.asm_push_align();
                 let helper = format!("zyl_call{}@plt", num_args);
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push(format!("    call {}", helper));
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
             } else if env_call {
                 self.asm.push("    mov rdi, rax".to_string());
                 self.asm_push_align();
@@ -5078,10 +5111,10 @@ impl CodeGen {
           self.asm_push_align();
           self.asm.push("    xor eax, eax".to_string()); // no xmm args
           self.asm_push_align();
-          self.asm.push("    mov r15, rsp".to_string());
+          self.emit_align_save_rsp();
           self.asm.push("    and rsp, -16".to_string());
           self.asm.push("    call printf@plt".to_string());
-          self.asm.push("    mov rsp, r15".to_string());
+          self.emit_align_restore_rsp();
     }
 
     // ─── Node Emission ──────────────────────────────────────────────
@@ -6461,10 +6494,10 @@ impl CodeGen {
                         self.asm
                             .push("    xor eax, eax           # No xmm args to printf".to_string());
                         self.asm_push_align();
-                        self.asm.push("    mov r15, rsp".to_string());
+                        self.emit_align_save_rsp();
                         self.asm.push("    and rsp, -16".to_string());
                         self.asm.push("    call printf@plt".to_string());
-                        self.asm.push("    mov rsp, r15".to_string());
+                        self.emit_align_restore_rsp();
 
                         // Restore xmm0 after printf.
                         self.asm_push_align();
@@ -6502,14 +6535,14 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push("    mov eax, 1".to_string());
                         self.asm_push_align();
-                        self.asm.push("    mov r15, rsp".to_string());
+                        self.emit_align_save_rsp();
                         self.asm.push("    and rsp, -16".to_string());
                         self.asm.push("    call printf@plt".to_string());
-                        self.asm.push("    mov rsp, r15".to_string());
+                        self.emit_align_restore_rsp();
                         self.asm_push_align();
                         self.asm.push(format!(
                             "    lea rsp, [rbp-{}]",
-                            self.spill_frame.max(256)
+                            self.spill_frame.max(256) + 8
                         ));
                     } else {
                         self.emit_load_into(
@@ -7110,10 +7143,10 @@ impl CodeGen {
                             self.asm.push("    mov rdi, rax".to_string());
                             self.asm_push_align();
                             let helper = format!("zyl_call{}@plt", num_args);
-                            self.asm.push("    mov r15, rsp".to_string());
+                            self.emit_align_save_rsp();
                             self.asm.push("    and rsp, -16".to_string());
                             self.asm.push(format!("    call {}", helper));
-                            self.asm.push("    mov rsp, r15".to_string());
+                            self.emit_align_restore_rsp();
                         } else if env_call {
                             self.asm.push("    mov rdi, rax".to_string());
                             self.asm_push_align();
@@ -7130,10 +7163,10 @@ impl CodeGen {
                         let helper = format!("zyl_call{}@plt", num_args);
                         self.asm.push("    mov rdi, rax".to_string());
                         self.asm_push_align();
-                        self.asm.push("    mov r15, rsp".to_string());
+                        self.emit_align_save_rsp();
                         self.asm.push("    and rsp, -16".to_string());
                         self.asm.push(format!("    call {}", helper));
-                        self.asm.push("    mov rsp, r15".to_string());
+                        self.emit_align_restore_rsp();
                     }
                 } else {
                     // No name resolved: load SSA directly and use dynamic dispatch.
@@ -7142,10 +7175,10 @@ impl CodeGen {
                     let helper = format!("zyl_call{}@plt", num_args);
                     self.asm.push("    mov rdi, rax".to_string());
                     self.asm_push_align();
-                    self.asm.push("    mov r15, rsp".to_string());
+                    self.emit_align_save_rsp();
                     self.asm.push("    and rsp, -16".to_string());
                     self.asm.push(format!("    call {}", helper));
-                    self.asm.push("    mov rsp, r15".to_string());
+                    self.emit_align_restore_rsp();
                 }
 
                 if is_float {
@@ -7165,10 +7198,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov edi, eax".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call exit@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
             }
 
             ICNFInner::Eq { left, right } => {
@@ -7261,10 +7294,10 @@ impl CodeGen {
                 self.asm.push(format!("{}:", label));
                 let str_label = self.emit_string_literal(msg);
                 self.asm.push(format!("    lea rdi, [{}]", str_label));
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_panic@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm.push(format!("{}:", after_panic_label));
             }
 
@@ -7317,17 +7350,17 @@ impl CodeGen {
                 }
 
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_try_push@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    mov rdi, rax".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call setjmp@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    test eax, eax".to_string());
                 self.asm_push_align();
@@ -7352,10 +7385,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    sub rsp, 8".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_try_pop@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    add rsp, 8".to_string());
                 self.asm_push_align();
@@ -7367,10 +7400,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("{}:", catch_label));
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_try_last_msg@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 if let Some(&slot_idx) = tc_local.get(catch_var) {
                     let offset = (slot_idx + 1) * 8;
@@ -7393,10 +7426,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    sub rsp, 8".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_try_pop@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    add rsp, 8".to_string());
                 self.asm_push_align();
@@ -7425,10 +7458,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", 8 * (n + 1)));
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string());
                 self.asm_push_align();
@@ -7587,10 +7620,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string()); // Save struct base pointer in r10.
 
@@ -7705,10 +7738,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push(format!("    mov edi, {}", total_size));
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
                 self.asm_push_align();
                 self.asm.push("    mov r10, rax".to_string());
 
@@ -7784,10 +7817,10 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push(format!("    mov edi, {}", env_size));
                         self.asm_push_align();
-                        self.asm.push("    mov r15, rsp".to_string());
+                        self.emit_align_save_rsp();
                         self.asm.push("    and rsp, -16".to_string());
                         self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                        self.asm.push("    mov rsp, r15".to_string());
+                        self.emit_align_restore_rsp();
 
                         // Copy captured values into env struct.
                         // Save env ptr in r10 once (before the loop) so it isn't overwritten.
@@ -7830,6 +7863,7 @@ impl CodeGen {
                         // Buffer the wrapper as a standalone function (not inline).
                         let wrapper_stack = 256 + captures.len() * 8;
                         let start_len = self.asm.len();
+                        let saved_spill_frame = self.spill_frame;
                         self.asm_push_align();
                         self.asm.push(format!("{}:", wrapper_name));
                         self.asm_push_align();
@@ -7837,7 +7871,7 @@ impl CodeGen {
                         self.asm_push_align();
                         self.asm.push("    mov rbp, rsp".to_string());
                         self.asm_push_align();
-                        self.asm.push(format!("    sub rsp, {}", wrapper_stack));
+                        self.asm.push(format!("    sub rsp, {}", wrapper_stack + 8));
 
                          // Load captured values from env struct (rsi) into stack slots.
                         // Build a wrapper-local variable map so captured vars use consistent
@@ -7857,6 +7891,10 @@ impl CodeGen {
                         }
 
                         // Emit the closure body statements from closure_bodies.
+                        // The wrapper's rsp-stash slot must sit at this wrapper's
+                        // frame bottom (wrapper_stack+8), not the program-wide
+                        // spill_frame, so point rsp_stash_rel here for the body.
+                        self.spill_frame = wrapper_stack;
                         let body_clone = self.closure_bodies.get(closure_id).cloned();
                         if let Some(ref body_stmts) = body_clone {
                             for stmt in body_stmts {
@@ -7884,6 +7922,7 @@ impl CodeGen {
                         let wrapper_lines: Vec<String> = self.asm[start_len..].to_vec();
                         self.asm.truncate(start_len);
                         self.spawn_wrappers.extend(wrapper_lines);
+                        self.spill_frame = saved_spill_frame;
 
                         // Load the wrapper address into rdi.
                         self.asm_push_align();
@@ -7902,19 +7941,19 @@ impl CodeGen {
 
                     // Call zyl_actor_spawn(entry, state) -> returns actor_id in rax.
                     self.asm_push_align();
-                    self.asm.push("    mov r15, rsp".to_string());
+                    self.emit_align_save_rsp();
                     self.asm.push("    and rsp, -16".to_string());
                     self.asm.push("    call zyl_actor_spawn@plt".to_string());
-                    self.asm.push("    mov rsp, r15".to_string());
+                    self.emit_align_restore_rsp();
                 } else {
                     // Unknown closure — emit a stub.
                     self.asm_push_align();
                     self.asm.push("    xor rax, rax".to_string());
                     self.asm_push_align();
-                    self.asm.push("    mov r15, rsp".to_string());
+                    self.emit_align_save_rsp();
                     self.asm.push("    and rsp, -16".to_string());
                     self.asm.push("    call zyl_actor_spawn@plt".to_string());
-                    self.asm.push("    mov rsp, r15".to_string());
+                    self.emit_align_restore_rsp();
                 }
                 emitted_ids.insert(node.id);
             }
@@ -7971,10 +8010,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov rdi, r12".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_actor_send@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
 
                 // Return Unit (eax = 0).
                 self.asm_push_align();
@@ -8064,10 +8103,10 @@ impl CodeGen {
                     self.asm_push_align();
                     self.asm.push(format!("    mov edi, {}", state_size));
                     self.asm_push_align();
-                    self.asm.push("    mov r15, rsp".to_string());
+                    self.emit_align_save_rsp();
                     self.asm.push("    and rsp, -16".to_string());
                     self.asm.push("    call zyl_heap_alloc@plt".to_string());
-                    self.asm.push("    mov rsp, r15".to_string());
+                    self.emit_align_restore_rsp();
                     // Save state ptr in r10.
                     self.asm_push_align();
                     self.asm.push("    mov r10, rax".to_string());
@@ -8105,10 +8144,10 @@ impl CodeGen {
                 self.asm_push_align();
                 self.asm.push("    mov rsi, r13".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov r15, rsp".to_string());
+                self.emit_align_save_rsp();
                 self.asm.push("    and rsp, -16".to_string());
                 self.asm.push("    call zyl_actor_send_closure@plt".to_string());
-                self.asm.push("    mov rsp, r15".to_string());
+                self.emit_align_restore_rsp();
 
                 // Return Unit (eax = 0).
                 self.asm_push_align();
