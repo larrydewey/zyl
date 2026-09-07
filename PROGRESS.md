@@ -1,6 +1,58 @@
 # Zyl Progress Tracker
 
-## Current State (2026-08-27)
+## Current State (2026-09-06)
+
+**Self-hosting: COMPLETE, deterministic, verified. Regression suite: 26/27**
+**in `--full` (only `integration/selfhost-codegen` fails — pre-existing**
+**latent crash in the selfhosted icnf path, see Known Limitations).**
+
+```
+./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
+```
+
+**Latest session (2026-09-06): two Rust-compiler codegen fixes, two tests green.**
+
+1. **`unit_test` option-flatmap SIGSEGV (exit 139) fixed** — root cause:
+   codegen's C-helper alignment pattern `mov r15, rsp / and rsp,-16 / call /
+   mov rsp, r15` assumed r15 survives the call. It survives pure C helpers
+   (SysV callee-saved) but `zyl_callN` dispatches into Zyl-generated code,
+   whose own nested align block uses r15 as scratch, clobbering the outer
+   save. Verified in gdb: after `zyl_call1` rsp was correct but r15 had been
+   overwritten with the inner dispatch's frame offset; `mov rsp,r15` tore the
+   stack and the match join's `add rsp,+pop rbp;ret` jumped to 0xa.
+   Fix in `src/codegen.rs`: every align site now stashes the pre-call rsp in
+   a dedicated **rsp-stash slot at the bottom of every frame**,
+   `[rbp-(spill_frame.max(256)+8)]`, instead of r15. All frames (main, user
+   fns, closures) extended uniformly by 8 bytes to reserve the slot — TCO's
+   uniform-frame invariant is preserved. Wrapper frames (`_ZYL_actor_*`,
+   spawn/send) use `wrapper_stack+8` via a temporary `spill_frame` override
+   so their bodies' align sites point at their own slot. Slots are LIFO-safe
+   (callee frames grow strictly below the current rsp and can never
+   underflow the stash) and spill/param slots never collide with it.
+2. **`regression/types` link failure (`_ZYL__t_Some` undefined) fixed** —
+   constructor calls to underscore-prefixed ADT variants (`_t_Some`,
+   `_t_None`) were never lowered to `MakeVariant`: the PostProcessor's
+   constructor-detection guards required `is_uppercase_ident` (first char),
+   which fails for `_t_*` names even though they are registered, known
+   variants. Relaxed the three guards (`Call`, bare-ident unit variants,
+   `Apply`) in `src/ast.rs` to also fire when `find_adt_for_variant` matches,
+   matching the documented "Priority 1: known ADT variant converts regardless
+   of builtin exclusion".
+
+**Verified (with `ulimit -c 0`):** `unit_test`, all of `regression/*`,
+`stress/*` (incl. deep-recursion, balanced-parens), `integration/*` except
+selfhost-codegen, and `boot/fixed-point` all pass. Selfhosted compiler
+unchanged (`stdlib/compiler/codegen.zyl`, `selfhost/` have no r15 pattern).
+
+### Known Limitations
+- **`integration/selfhost-codegen` (pre-existing)** — the test runs the
+  selfhosted parser+icnf+codegen on a tiny in-memory source; the generated
+  binary SIGSEGVs with `forms == -1` reaching `ic-collect-vt`'s match on
+  the parsed List (`___match_arm_List_162_0: mov (%rax),%eax` with
+  rax=0xffffffff). Present in the baseline commit `dd44182` unchanged;
+  unrelated to the r15/`_t_` fixes above. Likely a selfhosted
+  reader/`zyl-parse` -> `ic-program` handoff bug. `boot/fixed-point` does
+  NOT exercise this path and remains green.
 
 **Self-hosting: COMPLETE, deterministic, verified. Regression suite 182/182 (unit_test) + 6/6 smoke.**
 
@@ -316,6 +368,8 @@ constraints; the boot fixed point is the arbiter.
 | Clean-room self-host front end | 2026-08-24 | recursive ADTs + structural match end-to-end |
 | stage1 compiles own source | 2026-08-24 | first boot build |
 | **Self-hosting fixed point** | **2026-08-25** | **stage1→stage2→stage3, deterministic** |
+| r15-align SIGSEGV fix (codegen) | 2026-09-06 | rsp-stash frame slot replaces r15 save/restore; option-flatmap green |
+| `_t_` constructor lowering fix (ast) | 2026-09-06 | underscore-prefixed ADT variants lower to MakeVariant; regression/types green |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 
