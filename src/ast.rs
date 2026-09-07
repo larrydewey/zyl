@@ -2429,7 +2429,7 @@ impl PostProcessor {
             // Priority 2: uppercase heuristic for unknown names, excluding builtins.
             // Dotted names (Trait.method) are trait-method calls, never constructors.
             ExprInner::Call(first, ref args)
-                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if is_uppercase_ident(n) && !n.contains('.')) =>
+                if matches!(&first.inner, ExprInner::Atom(Atom::Ident(n)) if (is_uppercase_ident(n) || self.find_adt_for_variant(n).is_some()) && !n.contains('.')) =>
             {
                 let variant_name = match &first.inner {
                     ExprInner::Atom(Atom::Ident(v)) => v.clone(),
@@ -2460,7 +2460,7 @@ impl PostProcessor {
             // Recognize bare identifier variant constructors (unit variants like None).
             // Priority: if known ADT variant, convert regardless of builtin exclusion.
             // Otherwise: uppercase heuristic, excluding builtins and type parameters.
-            ExprInner::Atom(Atom::Ident(ref n)) if is_uppercase_ident(n) && !n.contains('.') => {
+            ExprInner::Atom(Atom::Ident(ref n)) if (is_uppercase_ident(n) || self.find_adt_for_variant(n).is_some()) && !n.contains('.') => {
                 if !self.is_type_param(n) {
                     if self.find_adt_for_variant(n).is_some() {
                         // Known ADT variant — convert regardless of builtin status
@@ -2474,7 +2474,7 @@ impl PostProcessor {
                 }
             }
 
-            ExprInner::Apply(ref name, ref args) if is_uppercase_ident(name) && !name.contains('.') => {
+            ExprInner::Apply(ref name, ref args) if (is_uppercase_ident(name) || self.find_adt_for_variant(name).is_some()) && !name.contains('.') => {
                 // Skip if this name is a type parameter of any known ADT.
                 if self.is_type_param(name) {
                     return expr;
