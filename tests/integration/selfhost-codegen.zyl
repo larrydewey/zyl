@@ -11,6 +11,7 @@
 (use compiler/lexer)
 (use compiler/parser)
 (use compiler/ast)
+(use compiler/expr_inner)
 (use compiler/icnf)
 (use compiler/codegen)
 (use testing/testing)
@@ -27,13 +28,14 @@
   (let arena (arena-create 1048576)
     (let src "(defn main () (begin (print (+ 1 2)) (print (* 10 4)) (if true (print \"hello\") (print \"no\")) (print (+ 1.5 2.25)) (print (ffi-call \"strlen\" \"abc\" 1000)) 0))"
       (let prog (zyl-parse arena src)
-        (let fns (ic-program arena prog)
-          (begin
-            ; one top-level defn lowered
-            (assert-equal (list-length fns) 1)
-            (assert-true (> (write-asm (cg-program (cg-new arena) fns) "/tmp/zyl_selfhost.s") 100))
-            (print "selfhost: wrote /tmp/zyl_selfhost.s")
-            0))))))
+        (let exprs (convert-ast-list prog)
+          (let fns (ic-program arena exprs)
+            (begin
+              ; one top-level defn lowered
+              (assert-equal (list-length fns) 1)
+              (assert-true (> (write-asm (cg-program (cg-new arena) fns) "/tmp/zyl_selfhost.s") 100))
+              (print "selfhost: wrote /tmp/zyl_selfhost.s")
+              0)))))))
 
 (test "selfhost-codegen"
   (run-selfhost-codegen))
