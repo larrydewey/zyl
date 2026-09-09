@@ -592,6 +592,56 @@ impl Parser {
                 inner: ExprInner::Export(ident),
             })
         }
+        // Contracts & recovery.
+        else if op == "requires" {
+            check_arity!("requires", 1, 1, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Requires(Box::new(args[0].clone())),
+            })
+        } else if op == "ensures" {
+            check_arity!("ensures", 1, 1, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Ensures(Box::new(args[0].clone())),
+            })
+        } else if op == "invariant" {
+            check_arity!("invariant", 1, 1, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Invariant(Box::new(args[0].clone())),
+            })
+        } else if op == "recover" {
+            check_arity!("recover", 1, 256, args);
+            let mut arms = Vec::new();
+            for arm in &args[1..] {
+                let (err_type, fallback) = self.parse_recover_arm(arm)?;
+                arms.push((err_type, fallback));
+            }
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Recover(Box::new(args[0].clone()), arms),
+            })
+        } else if op == "checkpoint" {
+            check_arity!("checkpoint", 1, 1, args);
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::Checkpoint(Box::new(args[0].clone())),
+            })
+        } else if op == "contracts" {
+            check_arity!("contracts", 2, 2, args);
+            let mode = args[0].try_ident()?;
+            if mode != "off" {
+                return Err(ZylError::E_EXPECTED_EXPRESSION(
+                    args[0].span.clone(),
+                    "expected 'off'".into(),
+                ));
+            }
+            Ok(Expr {
+                span: span.clone(),
+                inner: ExprInner::ContractsOff(Box::new(args[1].clone())),
+            })
+        }
         // Built-in operations.
         else {
             self.p_builtin(span, op, args)
@@ -793,6 +843,19 @@ impl Parser {
                 Box::new(catch_clause[1].clone()),
             ),
         })
+    }
+
+    fn parse_recover_arm(&self, arm: &Expr) -> Result<(String, Box<Expr>), ZylError> {
+        match &arm.inner {
+            ExprInner::Call(_, ref inner) if inner.len() == 2 => {
+                let err_type = inner[0].try_ident()?;
+                Ok((err_type, Box::new(inner[1].clone())))
+            }
+            _ => Err(ZylError::E_EXPECTED_EXPRESSION(
+                arm.span.clone(),
+                "(ErrorType fallback)".into(),
+            )),
+        }
     }
 
     fn p_match(&self, args: &[Expr]) -> Result<Expr, ZylError> {

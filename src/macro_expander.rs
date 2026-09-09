@@ -790,6 +790,16 @@ fn sub_complex(ctx: &SubstContext, expr: &Expr) -> ExprInner {
         ReadLine => ExprInner::ReadLine,
         FileOpen(..) | FileRead(..) | FileWrite(..) | FileClose(..) | BufAppend(..) => expr.inner.clone(),
         Atom(_) | Error(_) | Apply(_, _) => expr.inner.clone(),
+        // Contract forms pass through unchanged during macro expansion.
+        Requires(e) => Requires(Box::new(sub_expr(ctx, e))),
+        Ensures(e) => Ensures(Box::new(sub_expr(ctx, e))),
+        Invariant(e) => Invariant(Box::new(sub_expr(ctx, e))),
+        Recover(e, arms) => {
+            let new_arms: Vec<_> = arms.iter().map(|(t, f)| (t.clone(), Box::new(sub_expr(ctx, f)))).collect();
+            Recover(Box::new(sub_expr(ctx, e)), new_arms)
+        }
+        Checkpoint(e) => Checkpoint(Box::new(sub_expr(ctx, e))),
+        ContractsOff(e) => ContractsOff(Box::new(sub_expr(ctx, e))),
     }
 }
 

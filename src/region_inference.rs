@@ -840,6 +840,23 @@ impl RegionInferer {
                     captures: None,
                 })
             }
+
+            // Contract forms — delegate to inner expression.
+            ExprInner::Requires(e) => self.infer_expr(e),
+            ExprInner::Ensures(e) => self.infer_expr(e),
+            ExprInner::Invariant(e) => self.infer_expr(e),
+            ExprInner::Recover(e, arms) => {
+                let _ = self.infer_expr(e)?;
+                for (_, fallback) in arms {
+                    let _ = self.infer_expr(fallback)?;
+                }
+                Ok(RegionResult {
+                    result_region: Region::Heap,
+                    captures: None,
+                })
+            }
+            ExprInner::Checkpoint(e) => self.infer_expr(e),
+            ExprInner::ContractsOff(e) => self.infer_expr(e),
         }
     }
 }

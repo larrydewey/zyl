@@ -170,7 +170,13 @@ fn collect_expr_vars(expr: &Expr, vars: &mut crate::deterministic::HashSet<Strin
         | ExprInner::FileRead(_, _)
         | ExprInner::FileWrite(_, _)
         | ExprInner::FileClose(_)
-        | ExprInner::BufAppend(_, _) => {}
+        | ExprInner::BufAppend(_, _)
+        | ExprInner::Requires(_)
+        | ExprInner::Ensures(_)
+        | ExprInner::Invariant(_)
+        | ExprInner::Recover(_, _)
+        | ExprInner::Checkpoint(_)
+        | ExprInner::ContractsOff(_) => {}
     }
 }
 

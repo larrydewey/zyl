@@ -333,7 +333,7 @@ Until then, selfhost sources must respect the stricter-of-the-two
 constraints; the boot fixed point is the arbiter.
 
 ### P4 — Feature completeness & polish
-- [ ] Contract injection overlay (spec §23, Phase 10) — last unimplemented
+- [x] Contract injection overlay (spec §23, Phase 10) — last unimplemented
       optional phase.
 - [ ] Fix top-level `(def Name Expr)` misprint noted in REPL limitations.
 - [ ] Warnings sweep (~160 → 0).
@@ -371,6 +371,7 @@ constraints; the boot fixed point is the arbiter.
 | r15-align SIGSEGV fix (codegen) | 2026-09-06 | rsp-stash frame slot replaces r15 save/restore; option-flatmap green |
 | `_t_` constructor lowering fix (ast) | 2026-09-06 | underscore-prefixed ADT variants lower to MakeVariant; regression/types green |
 | **selfhost-codegen test fixed** | **2026-09-06** | **passes with self-hosted compiler; Rust bootstrap too slow for test runner** |
+| Contract injection (Phase 10) | 2026-09-09 | parser + contract_injection.rs + pipeline integration complete |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 
