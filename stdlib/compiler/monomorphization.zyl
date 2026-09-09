@@ -20,7 +20,8 @@
   (MCStructs (List (MonoKV (List (MonoKV Type)))))   ; name → [(field, Type)]
   (MCAdtDefs (List (MonoKV (List (MonoKV (List String)))))) ; name → [(variant, [fields])]
   (MCAdtInsts (List (MonoKV (List AdtInstantiation))))   ; name → [AdtInstantiation]
-  (MCTImpls (List (MonoKV (List Type))))))             ; trait → [impl_type]
+  (MCTImpls (List (MonoKV (List Type))))             ; trait → [impl_type]
+  (MCAdtParamOrder (List (MonoKV (List String)))))       ; name → [param names in order]
 
 (deftype MonoParam (MP String (List String)))
 (defn MP.name (p) (match p (MP n d1 n)))
@@ -40,8 +41,9 @@
 (defn mc-ktypes (ctx) (match ctx (MC d1 d2 d3 kt d4 d5 d6 d7 kt)))
 (defn mc-structs (ctx) (match ctx (MC d1 d2 d3 d4 sd d5 d6 d7 sd)))
 (defn mc-adt-defs (ctx) (match ctx (MC d1 d2 d3 d4 d5 adt d6 d7 adt)))
-(defn mc-adt-insts (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 ai d7 ai)))
-(defn mc-timpls (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 ti ti)))
+(defn mc-adt-insts (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 ai d7 d8 ai)))
+(defn mc-timpls (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 d8 ti ti)))
+(defn mc-adt-param-order (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 d8 d9 d9)))
 
 ; ===========================================================================
 ; Helpers — list ops (no stdlib)
@@ -459,6 +461,24 @@
     (let unique-sorted (str-sort (str-dedup (kv-type-names type-map sorted-keys)))
       (str-concat base-name (str-concat "_" (str-join unique-sorted "_"))))))
 
+; Positional naming: uses ADT's declared generic param order to build
+; canonical name (e.g., Result_Int_String vs Result_String_Int).
+(defn canonical-name-positional (base-name type-map param-order)
+  (let type-strs (map-param-order-param param-order type-map)
+    (if (nil? type-strs)
+      base-name
+      (str-concat base-name (str-concat "_" (str-join type-strs "_"))))))
+
+(defn map-param-order-param (param-order type-map)
+  (match param-order
+    (Nil Nil)
+    (Cons pname rest
+      (let found (kv-get type-map pname (TVar 0 TUnit))
+        (let type-str (type-to-string found)
+          (if (or (= type-str "") (= type-str "Var"))
+            (map-param-order-param rest type-map)
+            (Cons type-str (map-param-order-param rest type-map))))))))
+
 (defn resolve-call-site-collect (ctx known args i)
   (match args
     (Nil Nil)
@@ -782,7 +802,34 @@
   ; MonoKV-keyed stores MonoCtx expects here — the two aren't the same
   ; shape, so start empty; discover-from-ast/generate-instantiations
   ; populate these via kv-set as monomorphization actually runs.
-  (MC Nil Nil Nil Nil Nil Nil Nil Nil))
+  (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
+
+; Populate mono context with adt_param_order from type inferer
+(defn mono-context-populate-adt-order (ctx inferer)
+  (let (param-order (ti-adt-param-order inferer))
+    (match param-order
+      (Nil ctx)
+      (Cons hd rest
+        (mono-context-populate-adt-order-loop ctx param-order)))))
+
+(defn mono-context-populate-adt-order-loop (ctx param-order)
+  (match param-order
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (Pair name params
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (mc-known-fns ctx)
+              (mc-returns ctx)
+              (mc-ktypes ctx)
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (mc-timpls ctx)
+              (Cons (MK name params) (mc-adt-param-order ctx))))
+            (mono-context-populate-adt-order-loop new-ctx rest)))
+        (d1 (mono-context-populate-adt-order-loop ctx rest))))))
 
 ; ===========================================================================
 ; kv-keys — extract keys from List (MonoKV K V)

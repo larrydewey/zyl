@@ -49,7 +49,7 @@
           (dbg-log "type-infer\n")
           (let inferer (collect-definitions (inferer-new) exprs)
             (dbg-log "mono\n")
-            (let mono-ctx (mono-context-new inferer)
+            (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
               (let mono-exprs (monomorphize mono-ctx exprs)
                 (dbg-log "trait-dispatch\n")
                 (let td-exprs (td-expand-program mono-exprs)

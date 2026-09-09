@@ -165,6 +165,60 @@
                         (lookup-adt-binds rest name)))))))
 
 (defn insert-adt-def (inferer name variants)
+    ; Extract generic parameter names from variant fields in declaration order
+    ; (first appearance across variants).
+    (let (param-order (extract-generic-params variants))
+        (let (with-adt (TypeInferer
+            (ti-env inferer)
+            (ti-subst inferer)
+            (ti-next inferer)
+            (ti-known-types inferer)
+            (ti-known-fns inferer)
+            (ti-func-returns inferer)
+            (Cons
+                (AD name variants)
+                (ti-adt-defs inferer))
+            (ti-variant-to-adt inferer)
+            (ti-string-match-vars inferer)
+            (ti-inferring-fns inferer)
+            (ti-body-cache inferer)
+            (ti-adt-param-order inferer)
+            (ti-adt-instantiations inferer)
+            (ti-arg-type-observations inferer)
+            (ti-function-bodies inferer)
+            (ti-skip-generic-def-names inferer)))
+        (let (with-order (insert-adt-param-order with-adt name param-order))
+            (populate-variant-to-adt with-order name variants)))))
+
+(defn extract-generic-params (variants)
+    ; Walk variants, collect generic param names (uppercase identifiers)
+    ; in first-appearance order.
+    (extract-generic-params-loop variants Nil))
+
+(defn extract-generic-params-loop (variants acc)
+    (match variants
+        (Nil (list-reverse acc))
+        (Cons v rest
+            (match v
+                (V name fields
+                    (let (new-acc (extract-generic-fields fields acc))
+                        (extract-generic-params-loop rest new-acc)))
+                (d1 (extract-generic-params-loop rest acc))))))
+
+(defn extract-generic-fields (fields acc)
+    (match fields
+        (Nil acc)
+        (Cons f rest
+            (match f
+                (F fname ftype
+                    (if (is-generic-param ftype)
+                        (if (mem-string-list acc fname)
+                            (extract-generic-fields rest acc)
+                            (extract-generic-fields rest (Cons fname acc)))
+                        (extract-generic-fields rest acc)))
+                (d1 (extract-generic-fields rest acc))))))
+
+(defn insert-adt-param-order (inferer name param-order)
     (TypeInferer
         (ti-env inferer)
         (ti-subst inferer)
@@ -172,13 +226,43 @@
         (ti-known-types inferer)
         (ti-known-fns inferer)
         (ti-func-returns inferer)
-        (Cons
-            (AD name variants)
-            (ti-adt-defs inferer))
+        (ti-adt-defs inferer)
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+        (Cons
+            (Pair name param-order)
+            (ti-adt-param-order inferer))
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)))
+
+(defn lookup-adt-param-order (inferer name)
+    (lookup-param-order-binds (ti-adt-param-order inferer) name))
+
+(defn lookup-param-order-binds (binds name)
+    (match binds
+        (Nil Nil)
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k name)
+                        v
+                        (lookup-param-order-binds rest name)))))))
+
+(defn populate-variant-to-adt (inferer name variants)
+    (match variants
+        (Nil inferer)
+        (Cons v rest
+            (match v
+                (V vname fields
+                    (populate-variant-to-adt
+                        (insert-variant-to-adt inferer vname name)
+                        name
+                        rest))
+                (d1 (populate-variant-to-adt inferer name rest))))))
 
 ; ===========================================================================
 ; VARIANT -> ADT HELPERS
@@ -304,7 +388,192 @@
             name
             (ti-string-match-vars inferer))
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)))
+
+; ===========================================================================
+; ADT INSTANTIATIONS HELPERS
+; ===========================================================================
+
+(defn insert-adt-instantiation (inferer adt-name inst)
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (insert-adt-inst-bind (ti-adt-instantiations inferer) adt-name inst)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)))
+
+(defn insert-adt-inst-bind (insts adt-name inst)
+    (match insts
+        (Nil
+            (Cons (Pair adt-name (Cons inst Nil)) Nil))
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k adt-name)
+                        (Cons (Pair k (insert-inst-dedup v inst)) rest)
+                        (Cons (Pair k v) (insert-adt-inst-bind rest adt-name inst))))))))
+
+(defn insert-inst-dedup (insts inst)
+    ; deduplicate: only add if not already present (by param mapping equality)
+    (match insts
+        (Nil (Cons inst Nil))
+        (Cons hd rest
+            (if (inst-equal hd inst)
+                insts
+                (Cons hd (insert-inst-dedup rest inst))))))
+
+(defn inst-equal (inst1 inst2)
+    ; compare two AdtInstantiation by their param mappings
+    (match inst1
+        (AI params1
+            (match inst2
+                (AI params2 (params-equal params1 params2))
+                (d1 false)))
+        (d1 false)))
+
+(defn params-equal (p1 p2)
+    (match p1
+        (Nil (match p2 (Nil true) (d1 false)))
+        (Cons h1 t1
+            (match p2
+                (Cons h2 t2
+                    (match h1
+                        (Pair k1 v1
+                            (match h2
+                                (Pair k2 v2
+                                    (if (and (= k1 k2) (= v1 v2))
+                                        (params-equal t1 t2)
+                                        false)))
+                                (d1 false)))
+                (d1 false)))
+        (d1 false)))
+
+; ===========================================================================
+; ARG TYPE OBSERVATIONS HELPERS
+; ===========================================================================
+
+(defn record-arg-observation (inferer fname arg-types)
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (insert-obs-bind (ti-arg-type-observations inferer) fname arg-types)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)))
+
+(defn insert-obs-bind (obs fname arg-types)
+    (match obs
+        (Nil
+            (Cons (Pair fname (Cons arg-types Nil)) Nil))
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k fname)
+                        (Cons (Pair k (Cons arg-types v)) rest)
+                        (Cons (Pair k v) (insert-obs-bind rest fname arg-types))))))))
+
+(defn lookup-arg-observations (inferer fname)
+    (lookup-obs-binds (ti-arg-type-observations inferer) fname))
+
+(defn lookup-obs-binds (obs fname)
+    (match obs
+        (Nil Nil)
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k fname)
+                        v
+                        (lookup-obs-binds rest fname)))))))
+
+; ===========================================================================
+; FUNCTION BODIES HELPERS
+; ===========================================================================
+
+(defn insert-function-body (inferer fname body)
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (Cons
+            (Pair fname body)
+            (ti-function-bodies inferer))
+        (ti-skip-generic-def-names inferer)))
+
+(defn lookup-function-body (inferer fname)
+    (lookup-body-binds (ti-function-bodies inferer) fname))
+
+(defn lookup-body-binds (bodies fname)
+    (match bodies
+        (Nil None)
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k fname)
+                        (Some v)
+                        (lookup-body-binds rest fname)))))))
+
+; ===========================================================================
+; SKIP GENERIC DEF NAMES HELPERS
+; ===========================================================================
+
+(defn insert-skip-generic (inferer name)
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (Cons name (ti-skip-generic-def-names inferer))))
+
+(defn is-skip-generic (inferer name)
+    (mem-string-list (ti-skip-generic-def-names inferer) name))
 
 ; ===========================================================================
 ; UTILITY HELPERS
@@ -379,6 +648,11 @@
             (subst-empty)
             0
             known
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
             Nil
             Nil
             Nil
@@ -1092,7 +1366,9 @@
                 (let
                     (new-inferer
                         (TypeInferer
-                            (env-bind (ti-env inferer) name pt)
+                            ; SHADOW binding for match-arm pattern vars: common
+                            ; short names (a, v, x) must win over outer scopes.
+                            (env-bind-param (ti-env inferer) name pt)
                             (ti-subst inferer)
                             (ti-next inferer)
                             (ti-known-types inferer)
@@ -1105,7 +1381,12 @@
                                 (Cons name (ti-string-match-vars inferer))
                                 (ti-string-match-vars inferer))
                             (ti-inferring-fns inferer)
-                            (ti-body-cache inferer)))
+                            (ti-body-cache inferer)
+                            (ti-adt-param-order inferer)
+                            (ti-adt-instantiations inferer)
+                            (ti-arg-type-observations inferer)
+                            (ti-function-bodies inferer)
+                            (ti-skip-generic-def-names inferer)))
                     (inferer-bind-pattern-vars-loop new-inferer prest frest))))
         (d2 (inferer-bind-pattern-vars-loop inferer prest frest))))
 
@@ -1258,44 +1539,264 @@
                                                     TUnit)))))))))))))
 
 (defn infer-expr-call-fn (inferer expr op-name args)
-    ; register fn return placeholder, infer args, return its type
-    (match
-        (lookup-fn-ret
-            (TypeInferer
-                (ti-env inferer)
-                (ti-subst inferer)
-                (ti-next inferer)
-                (ti-known-types inferer)
-                (ti-known-fns inferer)
-                (Cons
-                    (FR
-                        op-name
-                        (inferer-return-var inferer))
-                    (ti-func-returns inferer))
-                (ti-adt-defs inferer)
-                (ti-variant-to-adt inferer)
-                (ti-string-match-vars inferer)
-                (ti-inferring-fns inferer)
-                (ti-body-cache inferer))
-            op-name)
-        ; parse-match-arm has no arity info at parse time, so anything
-        ; after a variant's declared fields is taken as MORE pattern
-        ; fields, not further body statements — a bare
-        ; "(Some ret (infer-args inferer args) ret)" arm here silently
-        ; misparsed "(infer-args inferer args)" as a second, bogus
-        ; pattern field on a 1-field variant (and similarly for None's
-        ; 0 fields), which old bind-names quietly bound to "" and
-        ; ic-arm's nested-pattern support (see icnf.zyl) now tries to
-        ; genuinely destructure as a constructor pattern, crashing —
-        ; either way the infer-args call never actually ran. Wrap
-        ; explicitly in begin so each arm has exactly its real field
-        ; count and one body expression, matching every other
-        ; multi-statement fix in this session (let/while/defn bodies).
-        (Some
-            ret
-            (begin (infer-args inferer args) ret))
-        (None
-            (begin (infer-args inferer args) (inferer-return-var inferer)))))
+    ; Check if this is a constructor call (known variant)
+    (let (adt-name (lookup-variant-to-adt inferer op-name))
+        (if (nil? adt-name)
+            ; Not a constructor: regular function call with per-site polymorphism
+            (infer-expr-call-fn-regular inferer expr op-name args)
+            ; Constructor call: unify fields, record instantiation, return monomorphized type
+            (infer-expr-call-constructor inferer expr op-name args adt-name))))
+
+(defn infer-expr-call-constructor (inferer expr variant-name args adt-name)
+    ; Look up variant field types from ADT definition
+    (let (variant-fields (lookup-variant-fields inferer adt-name variant-name))
+        (let (infered (infer-constructor-args inferer args variant-fields))
+            ; Record instantiation if generic params were resolved
+            (let (inferer-with-inst (record-constructor-instantiation
+                infered adt-name variant-name args variant-fields))
+            ; Return the monomorphized ADT type name
+            (let (mono-name (compute-mono-name inferer-with-inst adt-name variant-name args variant-fields))
+                (if (nil? mono-name)
+                    (TNominal adt-name)
+                    (TNominal mono-name)))))))
+
+(defn lookup-variant-fields (inferer adt-name variant-name)
+    (match (lookup-adt-def inferer adt-name)
+        (Nil Nil)
+        (variants
+            (find-variant-fields variants variant-name))))
+
+(defn find-variant-fields (variants variant-name)
+    (match variants
+        (Nil Nil)
+        (Cons v rest
+            (match v
+                (V n fields
+                    (if (= n variant-name)
+                        fields
+                        (find-variant-fields rest variant-name)))
+                (d1 (find-variant-fields rest variant-name))))))
+
+(defn infer-constructor-args (inferer args fields)
+    ; infer each arg type and unify with expected field type
+    (match args
+        (Nil inferer)
+        ((Cons arg rest
+            (match fields
+                (Nil inferer)
+                (Cons field rest-fields
+                    (let (arg-type (infer-expr inferer arg))
+                        (let (expected (match field (F fname ftype ftype) (d1 TUnit)))
+                            (let (unified (unify (ti-subst inferer) arg-type expected))
+                                (match unified
+                                    (UOk new-subst
+                                        (infer-constructor-args
+                                            (TypeInferer
+                                                (ti-env inferer)
+                                                new-subst
+                                                (ti-next inferer)
+                                                (ti-known-types inferer)
+                                                (ti-known-fns inferer)
+                                                (ti-func-returns inferer)
+                                                (ti-adt-defs inferer)
+                                                (ti-variant-to-adt inferer)
+                                                (ti-string-match-vars inferer)
+                                                (ti-inferring-fns inferer)
+                                                (ti-body-cache inferer)
+                                                (ti-adt-param-order inferer)
+                                                (ti-adt-instantiations inferer)
+                                                (ti-arg-type-observations inferer)
+                                                (ti-function-bodies inferer)
+                                                (ti-skip-generic-def-names inferer))
+                                            rest rest-fields))
+                                    (UErr msg
+                                        inferer))))))))))
+
+(defn record-constructor-instantiation (inferer adt-name variant-name args variant-fields)
+    ; Extract generic param -> concrete type mappings from args
+    (let (mapping (extract-constructor-mapping inferer args variant-fields))
+        (if (nil? mapping)
+            inferer
+            (let (inst (AI mapping))
+                (insert-adt-instantiation inferer adt-name inst)))))
+
+(defn extract-constructor-mapping (inferer args fields)
+    (extract-mapping-loop inferer args fields Nil))
+
+(defn extract-mapping-loop (inferer args fields acc)
+    (match args
+        (Nil (if (nil? acc) Nil (list-reverse acc)))
+        (Cons arg rest-args
+            (match fields
+                (Nil (if (nil? acc) Nil (list-reverse acc)))
+                (Cons field rest-fields
+                    (match field
+                        (F fname ftype
+                            (if (is-generic-param ftype)
+                                (let (arg-type (infer-expr inferer arg))
+                                    (let (type-str (type-to-string arg-type))
+                                        (if (or (= type-str "") (str-contains type-str "?"))
+                                            (extract-mapping-loop inferer rest-args rest-fields acc)
+                                            (extract-mapping-loop inferer rest-args rest-fields
+                                                (Cons (Pair fname type-str) acc)))))
+                                (extract-mapping-loop inferer rest-args rest-fields acc)))
+                        (d1 (extract-mapping-loop inferer rest-args rest-fields acc))))))))
+
+(defn compute-mono-name (inferer adt-name variant-name args fields)
+    ; Use positional naming if adt_param_order is available
+    (let (param-order (lookup-adt-param-order inferer adt-name))
+        (if (nil? param-order)
+            ""
+            (let (mapping (extract-constructor-mapping inferer args fields))
+                (if (nil? mapping)
+                    ""
+                    (build-positional-name adt-name param-order mapping))))))
+
+(defn build-positional-name (adt-name param-order mapping)
+    ; Build {ADT}_{type1}_{type2}... from param-order and mapping
+    (let (type-strs (map-param-order param-order mapping))
+        (if (nil? type-strs)
+            ""
+            (str-concat adt-name (str-concat "_" (str-join type-strs "_"))))))
+
+(defn map-param-order (param-order mapping)
+    (match param-order
+        (Nil Nil)
+        (Cons pname rest
+            (let (found (lookup-mapping mapping pname))
+                (if (nil? found)
+                    (map-param-order rest mapping)
+                    (Cons found (map-param-order rest mapping)))))))
+
+(defn lookup-mapping (mapping key)
+    (match mapping
+        (Nil None)
+        (Cons hd rest
+            (match hd
+                (Pair k v
+                    (if (= k key)
+                        (Some v)
+                        (lookup-mapping rest key)))))))
+
+(defn infer-expr-call-fn-regular (inferer expr op-name args)
+    ; Regular function call with per-call-site polymorphism
+    ; 1. Record arg type observations
+    ; 2. If function has untyped params and body, do per-site body inference
+    ; 3. Return appropriate type
+    (let (arg-types (infer-args inferer args))
+        (let (inferer-with-obs (record-arg-observation inferer op-name arg-types))
+            ; Check if we have a function body to infer return type for this call site
+            (let (body (lookup-function-body inferer-with-obs op-name))
+                (if (nil? body)
+                    ; No body stored: return existing return type or fresh var
+                    (let (ret-type (lookup-fn-ret inferer-with-obs op-name))
+                        (if (nil? ret-type)
+                            (inferer-return-var inferer-with-obs)
+                            ret-type))
+                    ; Have body: do per-call-site inference if not already inferring
+                    (if (is-inferring inferer-with-obs op-name)
+                        ; Recursive call: return fresh var
+                        (inferer-return-var inferer-with-obs)
+                        (infer-call-site-body inferer-with-obs op-name arg-types body)))))))
+
+(defn infer-call-site-body (inferer fname arg-types body)
+    ; Per-call-site body inference with cached results
+    (let (site-key (make-site-key fname arg-types))
+        (let (cached (lookup-body-cache inferer site-key))
+            (if (nil? cached)
+                (let (inferer-with-site (mark-inferring inferer fname))
+                    (let (expected-params (lookup-known-fn inferer-with-site fname))
+                        (let (param-names (extract-param-names expected-params))
+                            (let (new-env (bind-call-site-params (ti-env inferer-with-site) param-names arg-types))
+                                (let (inferer-with-env
+                                    (TypeInferer
+                                        new-env
+                                        (ti-subst inferer-with-site)
+                                        (ti-next inferer-with-site)
+                                        (ti-known-types inferer-with-site)
+                                        (ti-known-fns inferer-with-site)
+                                        (ti-func-returns inferer-with-site)
+                                        (ti-adt-defs inferer-with-site)
+                                        (ti-variant-to-adt inferer-with-site)
+                                        (ti-string-match-vars inferer-with-site)
+                                        (ti-inferring-fns inferer-with-site)
+                                        (ti-body-cache inferer-with-site)
+                                        (ti-adt-param-order inferer-with-site)
+                                        (ti-adt-instantiations inferer-with-site)
+                                        (ti-arg-type-observations inferer-with-site)
+                                        (ti-function-bodies inferer-with-site)
+                                        (ti-skip-generic-def-names inferer-with-site)))
+                                    (let (site-ret (inferer-return-var inferer-with-env))
+                                        (let (inferer-with-ret
+                                            (TypeInferer
+                                                (ti-env inferer-with-env)
+                                                (ti-subst inferer-with-env)
+                                                (ti-next inferer-with-env)
+                                                (ti-known-types inferer-with-env)
+                                                (ti-known-fns inferer-with-env)
+                                                (Cons
+                                                    (FR fname site-ret)
+                                                    (ti-func-returns inferer-with-env))
+                                                (ti-adt-defs inferer-with-env)
+                                                (ti-variant-to-adt inferer-with-env)
+                                                (ti-string-match-vars inferer-with-env)
+                                                (ti-inferring-fns inferer-with-env)
+                                                (ti-body-cache inferer-with-env)
+                                                (ti-adt-param-order inferer-with-env)
+                                                (ti-adt-instantiations inferer-with-env)
+                                                (ti-arg-type-observations inferer-with-env)
+                                                (ti-function-bodies inferer-with-env)
+                                                (ti-skip-generic-def-names inferer-with-env)))
+                                            (let (inferred-ret (infer-expr inferer-with-ret body))
+                                                (let (unified (unify (ti-subst inferer-with-ret) site-ret inferred-ret))
+                                                    (match unified
+                                                        (UOk final-subst
+                                                            (let (final-ret (subst-apply final-subst inferred-ret))
+                                                                (let (with-cache (insert-body-cache inferer site-key final-ret))
+                                                                    final-ret)))
+                                                        (UErr msg
+                                                            (inferer-return-var inferer)))))))))))
+                cached))))
+
+(defn make-site-key (fname arg-types)
+    (str-concat fname (str-concat "::" (join-type-strs arg-types))))
+
+(defn join-type-strs (types)
+    (match types
+        (Nil "")
+        (Cons t rest
+            (let (s (type-to-string t))
+                (str-concat s (if (nil? rest) "" (str-concat "," (join-type-strs rest))))))))
+
+(defn extract-param-names (params)
+    (match params
+        (Nil Nil)
+        (Cons hd rest
+            (match hd
+                (FNS name ptypes
+                    (extract-param-names-ptypes ptypes))
+                (d1 (extract-param-names rest))))))
+
+(defn extract-param-names-ptypes (ptypes)
+    (match ptypes
+        (Nil Nil)
+        (Cons hd rest
+            (match hd
+                (PT name ptype
+                    (Cons name (extract-param-names-ptypes rest)))
+                (d1 (extract-param-names-ptypes rest))))))
+
+(defn bind-call-site-params (env param-names arg-types)
+    (match param-names
+        (Nil env)
+        (Cons pname rest-names
+            (match arg-types
+                (Nil env)
+                (Cons atype rest-types
+                    (bind-call-site-params
+                        (env-bind env pname atype)
+                        rest-names
+                        rest-types))))))
 
 ; ===========================================================================
 ; INFER-EXPR — apply (Apply form)
@@ -1498,12 +1999,31 @@
         ((Cons expr rest)
             (match (Expr.inner expr)
                 (EDefn name params body
-                    (let (param-types (collect-defn-params inferer params))
-                        (let (infered (infer-defn-body inferer name params param-types body))
-                            (collect-definitions infered rest))))
+                    (let (has-untyped (has-untyped-params params))
+                        (let (param-types (collect-defn-params inferer params))
+                            (let (infered (infer-defn-body inferer name params param-types body))
+                                (if has-untyped
+                                    (collect-definitions
+                                        (insert-function-body
+                                            (insert-skip-generic infered name)
+                                            name
+                                            body)
+                                        rest)
+                                    (collect-definitions infered rest))))))
                 (EDeftype name variants generic-params d28
                     (collect-definitions (insert-adt-def inferer name variants) rest))
                 (d1 (collect-definitions inferer rest))))))
+
+(defn has-untyped-params (params)
+    (match params
+        (Nil false)
+        ((Cons p rest
+            (match p
+                (P name typ
+                    (if (nil? typ)
+                        true
+                        (has-untyped-params rest)))
+                (d1 (has-untyped-params rest)))))))
 
 (defn collect-defn-params (inferer params)
     ; extract param types from Defn params list
@@ -1571,20 +2091,26 @@
 ; ===========================================================================
 
 (defn finalize-param-types (inferer)
-    ; For each function in known_functions, look up its return type
-    ; from function_returns and use call-site observations to resolve
-    ; type vars in parameter types. This restores param types for
-    ; downstream code (struct layouts, float detection, etc.)
-    (let (known-fns (ti-known-fns inferer))
-        (match
-            known-fns
-            (Nil inferer)
-            (Cons hd rest
-                (match hd
-                    (FNS name params
-                        (let (ret-type (lookup-fn-ret inferer name))
-                            (let (resolved-params (resolve-param-types inferer params ret-type))
-                                (let (new-inferer (finalize-param-types
+    ; For each function with arg observations, check if all call sites
+    ; agree on concrete types for untyped params. If so, update the
+    ; function signature in known_functions.
+    ; This replaces the old first-site write-back that poisoned generics.
+    (let (observations (ti-arg-type-observations inferer))
+        (let (known-fns (ti-known-fns inferer))
+            (finalize-param-types-loop inferer observations known-fns)))
+
+(defn finalize-param-types-loop (inferer observations known-fns)
+    (match known-fns
+        (Nil inferer)
+        (Cons hd rest
+            (match hd
+                (FNS name params
+                    (let (site-observations (lookup-arg-observations inferer name))
+                        (if (nil? site-observations)
+                            ; No observations for this function, recurse
+                            (finalize-param-types-loop inferer observations rest)
+                            (let (resolved-params (resolve-params-from-obs inferer params site-observations))
+                                (let (new-inferer (finalize-param-types-loop
                                                     (TypeInferer
                                                         (ti-env inferer)
                                                         (ti-subst inferer)
@@ -1596,8 +2122,86 @@
                                                         (ti-variant-to-adt inferer)
                                                         (ti-string-match-vars inferer)
                                                         (ti-inferring-fns inferer)
-                                                        (ti-body-cache inferer))))
-                                    new-inferer)))))))))
+                                                        (ti-body-cache inferer)
+                                                        (ti-adt-param-order inferer)
+                                                        (ti-adt-instantiations inferer)
+                                                        (ti-arg-type-observations inferer)
+                                                        (ti-function-bodies inferer)
+                                                        (ti-skip-generic-def-names inferer))
+                                                    observations
+                                                    rest))
+                                new-inferer))))))))
+
+(defn resolve-params-from-obs (inferer params site-observations)
+    ; site-observations is a (List (List String)) - each inner list is arg types at one call site
+    ; Return new params with type vars resolved if all sites agree
+    (let (arity (list-length params))
+        (if (or (= arity 0) (not (all-sites-same-arity site-observations arity)))
+            params
+            (let (resolved (compute-resolved-types site-observations arity))
+                (apply-resolved-types params resolved)))))
+
+(defn all-sites-same-arity (sites arity)
+    (match sites
+        (Nil true)
+        (Cons site rest
+            (if (= (list-length site) arity)
+                (all-sites-same-arity rest arity)
+                false))))
+
+(defn compute-resolved-types (sites arity)
+    ; For each param position, check if all sites have the same concrete type
+    (compute-resolved-loop sites arity 0 Nil))
+
+(defn compute-resolved-loop (sites arity pos acc)
+    (if (>= pos arity)
+        (list-reverse acc)
+        (let (type-at-pos (get-type-at-pos sites pos))
+            (compute-resolved-loop sites arity (+ pos 1)
+                (Cons type-at-pos acc)))))
+
+(defn get-type-at-pos (sites pos)
+    ; Get the type string at position pos from all sites.
+    ; If all agree and it's concrete (not a type var), return Some type.
+    ; Otherwise return None (keep as type var).
+    (get-type-at-pos-loop sites pos None))
+
+(defn get-type-at-pos-loop (sites pos current)
+    (match sites
+        (Nil current)
+        (Cons site rest
+            (let (t (list-nth site pos))
+                (if (or (= t "") (str-contains t "?"))
+                    None
+                    (match current
+                        (None (get-type-at-pos-loop rest pos (Some t)))
+                        (Some prev
+                            (if (= prev t)
+                                (get-type-at-pos-loop rest pos current)
+                                None))))))))
+
+(defn apply-resolved-types (params resolved)
+    ; params: (List ParamType) - PT name type
+    ; resolved: (List (Option String)) - concrete types or None
+    (match params
+        (Nil Nil)
+        (Cons hd rest
+            (match resolved
+                (Nil
+                    (Cons hd (apply-resolved-types rest Nil)))
+                (Cons r rest-resolved
+                    (match hd
+                        (PT name ptype
+                            (Cons
+                                (PT name (if (nil? r) ptype (type-from-display r)))
+                                (apply-resolved-types rest rest-resolved)))
+                        (d1 (Cons hd (apply-resolved-types rest rest-resolved))))))))
+
+(defn list-nth (lst i)
+    (match lst
+        (Nil (TVar 0 TUnit))
+        (Cons h t
+            (if (= i 0) h (list-nth t (- i 1))))))
 
 (defn resolve-param-types (inferer params ret-type)
     ; resolve type vars in param types using return type evidence.
