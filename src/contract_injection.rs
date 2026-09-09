@@ -37,15 +37,15 @@ impl ContractInjector {
             }
             ExprInner::Requires(inner) => {
                 // Precondition: evaluate condition, trap on false
-                *expr = self.make_precondition_check(inner)?;
+                *expr = self.make_precondition_check(inner.as_ref())?;
             }
             ExprInner::Ensures(inner) => {
                 // Postcondition: will be handled at return sites
-                *expr = self.make_postcondition_check(inner)?;
+                *expr = self.make_postcondition_check(inner.as_ref())?;
             }
             ExprInner::Invariant(inner) => {
                 // Invariant: emit check at this program point
-                *expr = self.make_invariant_check(inner)?;
+                *expr = self.make_invariant_check(inner.as_ref())?;
             }
             ExprInner::Recover(expr, arms) => {
                 // Recovery: transform to try/catch
@@ -53,11 +53,11 @@ impl ContractInjector {
             }
             ExprInner::Checkpoint(inner) => {
                 // Checkpoint: emit observable state
-                *expr = self.make_checkpoint(inner)?;
+                *expr = self.make_checkpoint(inner.as_ref())?;
             }
             ExprInner::ContractsOff(inner) => {
                 // Contracts off: strip contract forms from inner
-                *expr = self.strip_contracts(inner)?;
+                *expr = self.strip_contracts(inner.as_ref())?;
             }
             _ => {
                 self.walk_expr(expr)?;
@@ -277,9 +277,29 @@ impl ContractInjector {
                 Ok(())
             }
             ExprInner::MacroDef(_, _, template) => self.walk_expr_mut(template),
-            // Contract forms handled at top level
-            ExprInner::Requires(_) | ExprInner::Ensures(_) | ExprInner::Invariant(_)
-            | ExprInner::Recover(_, _) | ExprInner::Checkpoint(_) | ExprInner::ContractsOff(_) => {
+            // Contract forms: transform in place during walk
+            ExprInner::Requires(inner) => {
+                *expr = self.make_precondition_check(inner.as_ref())?;
+                Ok(())
+            }
+            ExprInner::Ensures(inner) => {
+                *expr = self.make_postcondition_check(inner.as_ref())?;
+                Ok(())
+            }
+            ExprInner::Invariant(inner) => {
+                *expr = self.make_invariant_check(inner.as_ref())?;
+                Ok(())
+            }
+            ExprInner::Recover(expr, arms) => {
+                *expr = self.make_recovery(expr, arms)?;
+                Ok(())
+            }
+            ExprInner::Checkpoint(inner) => {
+                *expr = self.make_checkpoint(inner.as_ref())?;
+                Ok(())
+            }
+            ExprInner::ContractsOff(inner) => {
+                *expr = self.strip_contracts(inner.as_ref())?;
                 Ok(())
             }
             _ => Ok(()),
