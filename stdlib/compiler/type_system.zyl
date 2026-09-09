@@ -130,39 +130,49 @@
 
 ; Full inference-context record owned by the type system (see
 ; stdlib/compiler/type_inference.zyl for the inference logic that uses it).
-; A record with 11 fields, NOT 11 variants — every "TIxxx" name below used
+; A record with 16 fields, NOT 16 variants — every "TIxxx" name below used
 ; to be its own single-field variant (nonsensical for a record: each
-; `(TypeInferer ...)` construction call names none of those 11 variants, so
+; `(TypeInferer ...)` construction call names none of those 16 variants, so
 ; it always resolved to the wildcard sentinel discriminant; and no ti-env/
 ; ti-subst/... accessor functions existed at all, despite being called
 ; throughout type_inference.zyl as if they extracted a field). Fixed to one
-; variant with all 11 fields, with real accessor functions defined below
+; variant with all 16 fields, with real accessor functions defined below
 ; (same convention as Expr.inner / P.name elsewhere in this codebase).
 (deftype TypeInferer
   (TypeInferer
-    TypeEnv
-    Subst
-    Int
-    (List TypeBind)
-    (List FnSig)
-    (List FnReturn)
-    (List AdtDef)
-    (List TypeBind)
-    (List String)
-    (List String)
-    (List BodyCache)))
+    TypeEnv                ; ti-env
+    Subst                  ; ti-subst
+    Int                    ; ti-next
+    (List TypeBind)        ; ti-known-types
+    (List FnSig)           ; ti-known-fns
+    (List FnReturn)        ; ti-func-returns
+    (List AdtDef)          ; ti-adt-defs
+    (List TypeBind)        ; ti-variant-to-adt
+    (List String)          ; ti-string-match-vars
+    (List String)          ; ti-inferring-fns
+    (List BodyCache)       ; ti-body-cache
+    (List (Pair String (List String))) ; ti-adt-param-order
+    (List AdtInstantiation)            ; ti-adt-instantiations
+    (List (Pair String (List (List String)))) ; ti-arg-type-observations
+    (List (Pair String Expr))           ; ti-function-bodies
+    (List String)))                    ; ti-skip-generic-def-names
 
-(defn ti-env (ti) (match ti (TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 v)))
-(defn ti-subst (ti) (match ti (TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 v)))
-(defn ti-next (ti) (match ti (TypeInferer tic1 tic2 v tic4 tic5 tic6 tic7 tic8 tic9 tic10 tic11 v)))
-(defn ti-known-types (ti) (match ti (TypeInferer tid1 tid2 tid3 v tid5 tid6 tid7 tid8 tid9 tid10 tid11 v)))
-(defn ti-known-fns (ti) (match ti (TypeInferer tie1 tie2 tie3 tie4 v tie6 tie7 tie8 tie9 tie10 tie11 v)))
-(defn ti-func-returns (ti) (match ti (TypeInferer tif1 tif2 tif3 tif4 tif5 v tif7 tif8 tif9 tif10 tif11 v)))
-(defn ti-adt-defs (ti) (match ti (TypeInferer tig1 tig2 tig3 tig4 tig5 tig6 v tig8 tig9 tig10 tig11 v)))
-(defn ti-variant-to-adt (ti) (match ti (TypeInferer tih1 tih2 tih3 tih4 tih5 tih6 tih7 v tih9 tih10 tih11 v)))
-(defn ti-string-match-vars (ti) (match ti (TypeInferer tii1 tii2 tii3 tii4 tii5 tii6 tii7 tii8 v tii10 tii11 v)))
-(defn ti-inferring-fns (ti) (match ti (TypeInferer tij1 tij2 tij3 tij4 tij5 tij6 tij7 tij8 tij9 v tij11 v)))
-(defn ti-body-cache (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 v v)))
+(defn ti-env (ti) (match ti (TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 tia12 tia13 tia14 tia15 tia16 v)))
+(defn ti-subst (ti) (match ti (TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 tib12 tib13 tib14 tib15 tib16 v)))
+(defn ti-next (ti) (match ti (TypeInferer tic1 tic2 v tic4 tic5 tic6 tic7 tic8 tic9 tic10 tic11 tic12 tic13 tic14 tic15 tic16 v)))
+(defn ti-known-types (ti) (match ti (TypeInferer tid1 tid2 tid3 v tid5 tid6 tid7 tid8 tid9 tid10 tid11 tid12 tid13 tid14 tid15 tid16 v)))
+(defn ti-known-fns (ti) (match ti (TypeInferer tie1 tie2 tie3 tie4 v tie6 tie7 tie8 tie9 tie10 tie11 tie12 tie13 tie14 tie15 tie16 v)))
+(defn ti-func-returns (ti) (match ti (TypeInferer tif1 tif2 tif3 tif4 tif5 v tif7 tif8 tif9 tif10 tif11 tif12 tif13 tif14 tif15 tif16 v)))
+(defn ti-adt-defs (ti) (match ti (TypeInferer tig1 tig2 tig3 tig4 tig5 tig6 v tig8 tig9 tig10 tig11 tig12 tig13 tig14 tig15 tig16 v)))
+(defn ti-variant-to-adt (ti) (match ti (TypeInferer tih1 tih2 tih3 tih4 tih5 tih6 tih7 v tih9 tih10 tih11 tih12 tih13 tih14 tih15 tih16 v)))
+(defn ti-string-match-vars (ti) (match ti (TypeInferer tii1 tii2 tii3 tii4 tii5 tii6 tii7 tii8 v tii10 tii11 tii12 tii13 tii14 tii15 tii16 v)))
+(defn ti-inferring-fns (ti) (match ti (TypeInferer tij1 tij2 tij3 tij4 tij5 tij6 tij7 tij8 tij9 v tij11 tij12 tij13 tij14 tij15 tij16 v)))
+(defn ti-body-cache (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 v tik12 tik13 tik14 tik15 tik16 v)))
+(defn ti-adt-param-order (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 tik11 v tik13 tik14 tik15 tik16 v)))
+(defn ti-adt-instantiations (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 tik11 tik12 v tik14 tik15 tik16 v)))
+(defn ti-arg-type-observations (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 tik11 tik12 tik13 v tik15 tik16 v)))
+(defn ti-function-bodies (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 tik11 tik12 tik13 tik14 v tik16 v)))
+(defn ti-skip-generic-def-names (ti) (match ti (TypeInferer tik1 tik2 tik3 tik4 tik5 tik6 tik7 tik8 tik9 tik10 tik11 tik12 tik13 tik14 tik15 v v)))
 
 ; Inference support ADTs (function signatures, return types, ADT defs,
 ; variant fields, per-site body cache, string-match vars).
@@ -174,6 +184,50 @@
 (deftype Field (F Name Type))
 (deftype BodyCache (BC Key Type))
 (deftype VarPair (VP Index Int))
+
+; ADT instantiation records for positional monomorphization naming.
+; Mirrors Rust AdtInstantiation: {param -> concrete} mapping.
+(deftype AdtInstantiation (AI (List (Pair String String))))
+
+; Helper to extract the param-concrete pairs from an AdtInstantiation.
+(defn AI.params (ai) (match ai (AI p p)))
+
+; ===========================================================================
+; TYPE ENV — shadowing bind for match-arm pattern variables
+; ===========================================================================
+
+; Bind a name to a type in a TypeEnv, SHADOWING any existing binding.
+; Unlike env-bind (which prepends), this REPLACES the first matching
+; binding for the same name. Used for match-arm pattern vars so that
+; common short names (a, v, x) don't collide with outer scopes — the
+; arm's field type must win.
+(defn env-bind-param (env bind-name typ)
+  (let
+      (binds (TEBindings.binds env))
+      (new-binds (env-bind-param-replace binds bind-name typ))
+      (TEBindings new-binds)))
+
+(defn env-bind-param-replace (binds bind-name typ)
+  (match binds
+    (Nil
+      (Cons (EB bind-name typ) Nil))
+    (Cons hd rest
+      (match hd
+        (EB k v
+          (if (= k bind-name)
+            (Cons (EB bind-name typ) rest)
+            (Cons (EB k v) (env-bind-param-replace rest bind-name typ))))))))
+
+; ===========================================================================
+; NOMINAL TYPE RESOLUTION — mirror Rust resolve_nominal
+; ===========================================================================
+
+; Apply substitution then, if the resolved type is nominal (TStruct),
+; return its name; else None.
+(defn resolve-nominal (subst t)
+  (match (subst-apply subst t)
+    (TStruct n d1 (Some n))
+    (d1 None)))
 
 ; ===========================================================================
 ; UNIFICATION RESULT
@@ -442,4 +496,162 @@
             (UOk sx (unify-args sx t1 t2))
             (UErr e (UErr e))))
         (d2 (UErr "argument count mismatch"))))))
+
+; ===========================================================================
+; ICNF — SSA IR with Region Annotations (spec §18)
+; ===========================================================================
+
+; Memory regions (spec §9)
+(deftype Region
+  (RStack)
+  (RHeap)
+  (RGlobal)
+  (RCircular)
+  (RPin))
+
+(defn is-default-region (r)
+  (match r (RStack true) (d1 false)))
+
+; BinOpKind (spec §18.2)
+(deftype BinOpKind
+  (BAdd)
+  (BSub)
+  (BMul)
+  (BDiv)
+  (BRem)
+  (BEq)
+  (BNeq)
+  (BLt)
+  (BGt)
+  (BLe)
+  (BGe)
+  (BAnd)
+  (BOr))
+
+(defn binop-kind-from-int (i)
+  (match i
+    (0 BAdd)
+    (1 BSub)
+    (2 BMul)
+    (3 BDiv)
+    (4 BRem)
+    (5 BEq)
+    (6 BNeq)
+    (7 BLt)
+    (8 BGt)
+    (9 BLe)
+    (10 BGe)
+    (11 BAnd)
+    (12 BOr)
+    (d1 BAdd)))
+
+(defn binop-kind-to-int (k)
+  (match k
+    (BAdd 0)
+    (BSub 1)
+    (BMul 2)
+    (BDiv 3)
+    (BRem 4)
+    (BEq 5)
+    (BNeq 6)
+    (BLt 7)
+    (BGt 8)
+    (BLe 9)
+    (BGe 10)
+    (BAnd 11)
+    (BOr 12)
+    (d1 0)))
+
+; UnOpKind (spec §18.2)
+(deftype UnOpKind
+  (UNot)
+  (UNegate))
+
+; CaptureField (spec §18.3)
+(deftype CaptureField (CF String Int))  ; name, ssa_id
+
+(defn CF.name (cf) (match cf (CF n d1 n)))
+(defn CF.ssa-id (cf) (match cf (CF d1 s s)))
+
+; MatchArmICNF (spec §18.4)
+(deftype MatchArmICNF
+  (MAI String Int (List String) (List String) (List ICNFNode))) ; variant_name, discriminant, field_names, field_types, body
+
+(defn MAI.variant-name (a) (match a (MAI n d1 d2 d3 d4 n)))
+(defn MAI.discriminant (a) (match a (MAI d1 d d2 d3 d4 d)))
+(defn MAI.field-names (a) (match a (MAI d1 d2 n d3 d4 n)))
+(defn MAI.field-types (a) (match a (MAI d1 d2 d3 n d4 n)))
+(defn MAI.body (a) (match a (MAI d1 d2 d3 d4 b b)))
+
+; ICNFInner — the actual IR operations (spec §18)
+(deftype ICNFInner
+  (ICConst Atom)                                    ; constant value
+  (ICLoad String)                                   ; variable reference
+  (ICAssign String Int)                             ; bind ssa_id to value
+  (ICBinop BinOpKind Int Int)                       ; binop(left_ssa, right_ssa)
+  (ICUnop UnOpKind Int)                             ; unop(operand_ssa)
+  (ICCall String (List Int))                        ; direct call(name, arg_ssa_ids...)
+  (ICCallIndirect Int (List Int))                   ; indirect call(callee_ssa, arg_ssa_ids...)
+  (ICIf Int (List ICNFNode) (List ICNFNode) String) ; cond_ssa, then_body, else_body, result_var
+  (ICWhile (List ICNFNode) (List ICNFNode) String)  ; cond_body, body, result_var
+  (ICFor (List (Pair String (Option Int))) (List ICNFNode) (List ICNFNode) String) ; init_bindings, cond_nodes, body, result_var
+  (ICClosure String (List CaptureField) (List String)) ; name, captures, params
+  (ICMakeVariant String String Int (List Int))      ; type_name, variant_name, discriminant, field_ids
+  (ICMatch Int String (List MatchArmICNF) String)   ; scrutinee_ssa, type_name, arms, result_var
+  (ICTryCatch (List ICNFNode) String (List ICNFNode)) ; try_body, catch_var, catch_body
+  (ICBegin (List ICNFNode))
+  (ICMakeStruct String (List Int))                  ; name, field_ids
+  (ICStructGet Int Int)                             ; struct_value_ssa, field_byte_offset
+  (ICFfiCall String (List Int) Int)                 ; name, args, timeout
+  (ICSpawn Int)                                     ; closure_ssa
+  (ICSend Int Int)                                  ; actor_ssa, msg_ssa
+  (ICSendClosure Int String String (List Int))      ; actor_ssa, wrapper_name, handler_name, captured_ids
+  (ICErrValue Int)                                  ; error value ssa
+  (ICOkValue Int)                                   ; ok value ssa
+  (ICUnit)
+  (ICPrint (List Int))
+  (ICReadLine)
+  (ICExit Int)
+  (ICClose Int)
+  (ICFileOpen Int Int)                              ; path_ssa, mode_ssa
+  (ICFileRead Int Int)                              ; handle_ssa, count_ssa
+  (ICFileWrite Int Int)                             ; handle_ssa, data_ssa
+  (ICFileClose Int)                                 ; handle_ssa
+  (ICBufAppend Int Int)                             ; dst_ssa, src_ssa
+  (ICWithResource String Int)                       ; var_name, init_ssa
+  (ICSetBang String Int)                            ; var_name, value_ssa
+  (ICUnwrap Int)
+  (ICAssert Int (Option String))                    ; cond_ssa, msg
+  (ICFnPtrImm String)                               ; function symbol
+  (ICI32Imm Int)                                    ; 32-bit immediate
+  (ICStrImm String)                                 ; string literal
+  (ICReturn Int)                                    ; return value ssa
+  (ICEq Int Int))                                   ; left_ssa, right_ssa
+
+; ICNFNode — single SSA statement with id, region, type, branch flag
+(deftype ICNFNode
+  (ICN Int Region (Option Type) Bool ICNFInner)) ; id, region, typ, is_branch_body, node
+
+(defn ICN.id (n) (match n (ICN i d1 d2 d3 d4 i)))
+(defn ICN.region (n) (match n (ICN d1 r d2 d3 d4 r)))
+(defn ICN.typ (n) (match n (ICN d1 d2 t d3 d4 t)))
+(defn ICN.is-branch (n) (match n (ICN d1 d2 d3 b d4 b)))
+(defn ICN.node (n) (match n (ICN d1 d2 d2 d4 n n)))
+
+; ICNFFuncSig — function signature with SSA body
+(deftype ICNFFuncSig
+  (IFS String (List (Pair String Type)) (Option Type) (List ICNFNode) Int)) ; name, params, return_type, body, result_id
+
+(defn IFS.name (f) (match f (IFS n d1 d2 d3 d4 n)))
+(defn IFS.params (f) (match f (IFS d1 p d2 d3 d4 p)))
+(defn IFS.return-type (f) (match f (IFS d1 d2 r d3 d4 r)))
+(defn IFS.body (f) (match f (IFS d1 d2 d3 b d4 b)))
+(defn IFS.result-id (f) (match f (IFS d1 d2 d3 d4 r r)))
+
+; ICNFProgram — complete output
+(deftype ICNFProgram
+  (IP (List ICNFFuncSig) (List ICNFNode))) ; functions, top-level stmts
+
+(defn IP.functions (p) (match p (IP f d1 f)))
+(defn IP.stmts (p) (match p (IP d1 s s)))
 
