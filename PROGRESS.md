@@ -372,6 +372,7 @@ constraints; the boot fixed point is the arbiter.
 | `_t_` constructor lowering fix (ast) | 2026-09-06 | underscore-prefixed ADT variants lower to MakeVariant; regression/types green |
 | **selfhost-codegen test fixed** | **2026-09-06** | **passes with self-hosted compiler; Rust bootstrap too slow for test runner** |
 | Contract injection (Phase 10) | 2026-09-09 | parser + contract_injection.rs + pipeline integration complete |
+| Contract injection (Zyl) | 2026-09-09 | stdlib/compiler/contract_injection.zyl in structural form; used by selfhost driver |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 
