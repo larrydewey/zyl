@@ -333,8 +333,8 @@ Until then, selfhost sources must respect the stricter-of-the-two
 constraints; the boot fixed point is the arbiter.
 
 ### P4 — Feature completeness & polish
-- [x] Contract injection overlay (spec §23, Phase 10) — last unimplemented
-      optional phase.
+- [x] Contract injection overlay (spec §23, Phase 10) — implemented
+      in Rust → Zyl; integrated into selfhost driver.
 - [ ] Fix top-level `(def Name Expr)` misprint noted in REPL limitations.
 - [ ] Warnings sweep (~160 → 0).
 - [ ] Boot-binary CLI parity (`-o`, `--emit-asm`) and error messages with
