@@ -1,0 +1,369 @@
+; === Contract Injection (Phase 10, spec §23) ===
+; Transforms contract forms into runtime checks:
+; - (requires cond)     -> if cond Unit (error "precondition failed")
+; - (ensures cond)      -> if cond Unit (error "postcondition failed")
+; - (invariant cond)    -> if cond Unit (error "invariant violated")
+; - (recover expr ...)  -> try/catch transformation
+; - (checkpoint expr)   -> pass-through (MVP)
+; - (contracts off expr) -> strip contract forms from expr
+
+(use compiler/ast)
+(use compiler/expr_inner)
+
+(defn ci-make-precondition (cond)
+  (
+    if cond
+    Unit
+    (
+      error "precondition failed"
+    )
+  ))
+
+(defn ci-make-postcondition (cond)
+  (
+    if cond
+    Unit
+    (
+      error "postcondition failed"
+    )
+  ))
+
+(defn ci-make-invariant (cond)
+  (
+    if cond
+    Unit
+    (
+      error "invariant violated"
+    )
+  ))
+
+(defn ci-make-recovery (expr arms)
+  (
+    if (is-nil arms)
+    expr
+    (
+      let arm (list-car arms)
+      (
+        let err-type (list-car arm)
+        (
+          let fallback (list-car (list-cdr arm))
+          (
+            try expr
+            (
+              catch err-type fallback
+            )
+          )
+        )
+      )
+    )
+  ))
+
+(defn ci-make-checkpoint (expr)
+  expr)
+
+(defn ci-strip-contracts (expr)
+  (
+    match expr
+    (Requires _) Unit
+    (Ensures _) Unit
+    (Invariant _) Unit
+    (Recover _ _) Unit
+    (Checkpoint _) Unit
+    (ContractsOff inner) (ci-strip-contracts inner)
+    (Def name val) (Def name (ci-strip-contracts val))
+    (Defn name params body) (Defn name params (ci-strip-contracts body))
+    (Let name val body) (Let name (ci-strip-contracts val) (ci-strip-contracts body))
+    (LetMut name val body) (LetMut name (ci-strip-contracts val) (ci-strip-contracts body))
+    (If cond then_ else_) (If (ci-strip-contracts cond) (ci-strip-contracts then_) (ci-strip-contracts else_))
+    (Begin exprs) (Begin (list-map ci-strip-contracts exprs))
+    (Call op args) (Call (ci-strip-contracts op) (list-map ci-strip-contracts args))
+    (Apply name args) (Apply name (list-map ci-strip-contracts args))
+    (Lambda params body) (Lambda params (ci-strip-contracts body))
+    (Match scrut arms)
+    (
+      Match (ci-strip-contracts scrut)
+      (
+        list-map
+        (
+          fn arm
+          (
+            MatchArm (arm-variant arm) (arm-patterns arm) (ci-strip-contracts (arm-body arm))
+          )
+        )
+        arms
+      )
+    )
+    (TryCatch try_e catch_var catch_e) (TryCatch (ci-strip-contracts try_e) catch_var (ci-strip-contracts catch_e))
+    (Spawn e) (Spawn (ci-strip-contracts e))
+    (Send a m) (Send (ci-strip-contracts a) (ci-strip-contracts m))
+    (StructGet s f) (StructGet (ci-strip-contracts s) f)
+    (MakeStruct name args) (MakeStruct name (list-map ci-strip-contracts args))
+    (MakeVariant name variant args) (MakeVariant name variant (list-map ci-strip-contracts args))
+    (SetBang name val) (SetBang name (ci-strip-contracts val))
+    (Print exprs) (Print (list-map ci-strip-contracts exprs))
+    (Exit e) (Exit (ci-strip-contracts e))
+    (Close e) (Close (ci-strip-contracts e))
+    (FileOpen p m) (FileOpen (ci-strip-contracts p) (ci-strip-contracts m))
+    (FileRead h c) (FileRead (ci-strip-contracts h) (ci-strip-contracts c))
+    (FileWrite h d) (FileWrite (ci-strip-contracts h) (ci-strip-contracts d))
+    (FileClose h) (FileClose (ci-strip-contracts h))
+    (BufAppend d s) (BufAppend (ci-strip-contracts d) (ci-strip-contracts s))
+    (WithResource n i b) (WithResource n (ci-strip-contracts i) (ci-strip-contracts b))
+    (FfiCall n a t) (FfiCall n (list-map ci-strip-contracts a) t)
+    (FfiPin e) (FfiPin (ci-strip-contracts e))
+    (FfiUnpin e) (FfiUnpin (ci-strip-contracts e))
+    (Assert c m) (Assert (ci-strip-contracts c) m)
+    (Unwrap e) (Unwrap (ci-strip-contracts e))
+    (ReadLine) ReadLine
+    (AliasDecl n t) (AliasDecl n (ci-strip-contracts t))
+    (StructDef sd) (StructDef sd)
+    (StructDefPlus sd) (StructDefPlus sd)
+    (Deftype n v t w) (Deftype n v t w)
+    (TraitDecl n m w) (TraitDecl n m w)
+    (ImplBlock tn tn2 b)
+    (
+      ImplBlock tn tn2
+      (
+        list-map
+        (
+          fn d
+          (
+            DefnNode (d-name d) (d-params d) (ci-strip-contracts (d-body d))
+          )
+        )
+        b
+      )
+    )
+    (TestSuite n t k)
+    (
+      TestSuite n
+      (
+        list-map
+        (
+          fn ts
+          (
+            match ts
+            (Test t2)
+            (
+              Test
+              (
+                TestNode (t-name t2) (ci-strip-contracts (t-body t2)) (t-keywords t2)
+              )
+            )
+            (Suite s)
+            (
+              Suite
+              (
+                TestSuiteNode (ts-name s)
+                (
+                  list-map
+                  (
+                    fn ts2
+                    (
+                      match ts2
+                      (Test t2)
+                      (
+                        Test
+                        (
+                          TestNode (t-name t2) (ci-strip-contracts (t-body t2)) (t-keywords t2)
+                        )
+                      )
+                      (Suite s2)
+                      (
+                        Suite (ci-strip-contracts s2)
+                      )
+                    )
+                  )
+                  (ts-tests s)
+                )
+                (ts-keywords s)
+              )
+            )
+          )
+        )
+        t
+      )
+      k
+    )
+    (TestDecl n b k) (TestDecl n (ci-strip-contracts b) k)
+    (AssertEqual a b) (AssertEqual (ci-strip-contracts a) (ci-strip-contracts b))
+    (AssertFail e m) (AssertFail (ci-strip-contracts e) m)
+    (AssertTrue e m) (AssertTrue (ci-strip-contracts e) m)
+    (AssertFalse e m) (AssertFalse (ci-strip-contracts e) m)
+    (TestProperty n g b) (TestProperty n g (ci-strip-contracts b))
+    (Setup exprs) (Setup (list-map ci-strip-contracts exprs))
+    (Teardown exprs) (Teardown (list-map ci-strip-contracts exprs))
+    (RunTests k) (RunTests k)
+    (TestCompile e m) (TestCompile (ci-strip-contracts e) m)
+    (MacroDef n p t) (MacroDef n (list-map ci-strip-contracts p) (ci-strip-contracts t))
+    (ModuleDecl n) (ModuleDecl n)
+    (Export n) (Export n)
+    (UseModule p s u) (UseModule p s u)
+    (Derive t tr) (Derive t tr)
+    (Requires _) Unit
+    (Ensures _) Unit
+    (Invariant _) Unit
+    (Recover _ _) Unit
+    (Checkpoint _) Unit
+    (ContractsOff _) Unit
+    (Atom a) (Atom a)
+    (Error e) (Error e)
+    _ Unit
+  ))
+
+(defn ci-inject-expr (expr)
+  (
+    match expr
+    (Defn name params body)
+    (
+      Defn name params (ci-inject-function-body body)
+    )
+    (Requires cond) (ci-make-precondition cond)
+    (Ensures cond) (ci-make-postcondition cond)
+    (Invariant cond) (ci-make-invariant cond)
+    (Recover expr arms) (ci-make-recovery expr arms)
+    (Checkpoint expr) (ci-make-checkpoint expr)
+    (ContractsOff expr) (ci-strip-contracts expr)
+    (Def name val) (Def name (ci-inject-expr val))
+    (Let name val body) (Let name (ci-inject-expr val) (ci-inject-expr body))
+    (LetMut name val body) (LetMut name (ci-inject-expr val) (ci-inject-expr body))
+    (If cond then_ else_) (If (ci-inject-expr cond) (ci-inject-expr then_) (ci-inject-expr else_))
+    (Begin exprs) (Begin (list-map ci-inject-expr exprs))
+    (Call op args) (Call (ci-inject-expr op) (list-map ci-inject-expr args))
+    (Apply name args) (Apply name (list-map ci-inject-expr args))
+    (Lambda params body) (Lambda params (ci-inject-expr body))
+    (Match scrut arms)
+    (
+      Match (ci-inject-expr scrut)
+      (
+        list-map
+        (
+          fn arm
+          (
+            MatchArm (arm-variant arm) (arm-patterns arm) (ci-inject-expr (arm-body arm))
+          )
+        )
+        arms
+      )
+    )
+    (TryCatch try_e catch_var catch_e) (TryCatch (ci-inject-expr try_e) catch_var (ci-inject-expr catch_e))
+    (Spawn e) (Spawn (ci-inject-expr e))
+    (Send a m) (Send (ci-inject-expr a) (ci-inject-expr m))
+    (StructGet s f) (StructGet (ci-inject-expr s) f)
+    (MakeStruct name args) (MakeStruct name (list-map ci-inject-expr args))
+    (MakeVariant name variant args) (MakeVariant name variant (list-map ci-inject-expr args))
+    (SetBang name val) (SetBang name (ci-inject-expr val))
+    (Print exprs) (Print (list-map ci-inject-expr exprs))
+    (Exit e) (Exit (ci-inject-expr e))
+    (Close e) (Close (ci-inject-expr e))
+    (FileOpen p m) (FileOpen (ci-inject-expr p) (ci-inject-expr m))
+    (FileRead h c) (FileRead (ci-inject-expr h) (ci-inject-expr c))
+    (FileWrite h d) (FileWrite (ci-inject-expr h) (ci-inject-expr d))
+    (FileClose h) (FileClose (ci-inject-expr h))
+    (BufAppend d s) (BufAppend (ci-inject-expr d) (ci-inject-expr s))
+    (WithResource n i b) (WithResource n (ci-inject-expr i) (ci-inject-expr b))
+    (FfiCall n a t) (FfiCall n (list-map ci-inject-expr a) t)
+    (FfiPin e) (FfiPin (ci-inject-expr e))
+    (FfiUnpin e) (FfiUnpin (ci-inject-expr e))
+    (Assert c m) (Assert (ci-inject-expr c) m)
+    (Unwrap e) (Unwrap (ci-inject-expr e))
+    (ReadLine) ReadLine
+    (AliasDecl n t) (AliasDecl n (ci-inject-expr t))
+    (StructDef sd) (StructDef sd)
+    (StructDefPlus sd) (StructDefPlus sd)
+    (Deftype n v t w) (Deftype n v t w)
+    (TraitDecl n m w) (TraitDecl n m w)
+    (ImplBlock tn tn2 b)
+    (
+      ImplBlock tn tn2
+      (
+        list-map
+        (
+          fn d
+          (
+            DefnNode (d-name d) (d-params d) (ci-inject-expr (d-body d))
+          )
+        )
+        b
+      )
+    )
+    (TestSuite n t k)
+    (
+      TestSuite n
+      (
+        list-map
+        (
+          fn ts
+          (
+            match ts
+            (Test t2)
+            (
+              Test
+              (
+                TestNode (t-name t2) (ci-inject-expr (t-body t2)) (t-keywords t2)
+              )
+            )
+            (Suite s)
+            (
+              Suite
+              (
+                TestSuiteNode (ts-name s)
+                (
+                  list-map
+                  (
+                    fn ts2
+                    (
+                      match ts2
+                      (Test t2)
+                      (
+                        Test
+                        (
+                          TestNode (t-name t2) (ci-inject-expr (t-body t2)) (t-keywords t2)
+                        )
+                      )
+                      (Suite s2)
+                      (
+                        Suite (ci-inject-expr s2)
+                      )
+                    )
+                  )
+                  (ts-tests s)
+                )
+                (ts-keywords s)
+              )
+            )
+          )
+        )
+        t
+      )
+      k
+    )
+    (TestDecl n b k) (TestDecl n (ci-inject-expr b) k)
+    (AssertEqual a b) (AssertEqual (ci-inject-expr a) (ci-inject-expr b))
+    (AssertFail e m) (AssertFail (ci-inject-expr e) m)
+    (AssertTrue e m) (AssertTrue (ci-inject-expr e) m)
+    (AssertFalse e m) (AssertFalse (ci-inject-expr e) m)
+    (TestProperty n g b) (TestProperty n g (ci-inject-expr b))
+    (Setup exprs) (Setup (list-map ci-inject-expr exprs))
+    (Teardown exprs) (Teardown (list-map ci-inject-expr exprs))
+    (RunTests k) (RunTests k)
+    (TestCompile e m) (TestCompile (ci-inject-expr e) m)
+    (MacroDef n p t) (MacroDef n (list-map ci-inject-expr p) (ci-inject-expr t))
+    (ModuleDecl n) (ModuleDecl n)
+    (Export n) (Export n)
+    (UseModule p s u) (UseModule p s u)
+    (Derive t tr) (Derive t tr)
+    (Atom a) (Atom a)
+    (Error e) (Error e)
+    _ expr
+  ))
+
+(defn ci-inject-function-body (body)
+  (ci-inject-expr body))
+
+(defn ci-inject-program (exprs)
+  (list-map ci-inject-expr exprs))
+
+; Public API
+(defn ci-expand-program (exprs)
+  (ci-inject-program exprs))
