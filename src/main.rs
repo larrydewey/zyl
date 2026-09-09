@@ -1,4 +1,5 @@
 mod ast;
+mod contract_injection;
 mod deterministic;
 mod codegen;
 mod error;
@@ -163,6 +164,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         typed_exprs.len()
     );
 
+    // Phase 10: Contract Injection (optional overlay, spec §23).
+    println!("[Phase 10] Contract injection ...");
+    let mut contract_injector = contract_injection::ContractInjector::new();
+    let mut exprs_for_icnf = typed_exprs.clone();
+    match contract_injector.inject(&mut exprs_for_icnf) {
+        Ok(()) => {}
+        Err(err) => return Err(Box::new(err)),
+    };
+    println!(
+        "  Contract injection complete: {} expressions.",
+        exprs_for_icnf.len()
+    );
+
     // Phase 7: ICNF Generation (SSA IR with region annotations).
     // Uses the monomorphized AST which has full structure intact.
     println!("[Phase 7] ICNF generation ...");
@@ -171,7 +185,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Untyped fields use the type inferred from constructor call sites.
     let resolved_struct_defs = inferer.get_resolved_struct_defs();
     let mut struct_layouts: codegen::StructLayout = std::collections::BTreeMap::new();
-    for expr in &regioned_for_mono {
+    for expr in &exprs_for_icnf {
         if let ast::ExprInner::StructDef(sd) | ast::ExprInner::StructDefPlus(sd) = &expr.inner {
             let inferred = resolved_struct_defs.get(&sd.name);
             let layout: Vec<(String, usize, String)> = sd.fields.iter().enumerate().map(|(i, (fname, typ))| {
@@ -202,7 +216,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .with_struct_layouts(struct_layouts.clone())
         .with_resolved_func_params(resolved_params.clone())
         .with_resolved_func_returns(resolved_returns.clone());
-    let icnf_program = match icnf_converter.convert(&regioned_for_mono) {
+    let icnf_program = match icnf_converter.convert(&exprs_for_icnf) {
         Ok(p) => p,
         Err(err) => return Err(Box::new(err)),
     };
@@ -249,7 +263,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("[Phase 9] Generating x86_64 assembly ...");
     // Build ADT definitions from AST for codegen.
     let mut adt_defs: std::collections::BTreeMap<String, Vec<(String, usize)>> = std::collections::BTreeMap::new();
-    for expr in &regioned_for_mono {
+    for expr in &exprs_for_icnf {
         if let ast::ExprInner::Deftype(name, variants, _, _) = &expr.inner {
             let variant_info: Vec<(String, usize)> = variants
                 .iter()

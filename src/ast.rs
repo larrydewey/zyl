@@ -112,6 +112,12 @@ pub enum ExprInner {
     TestCompile(Box<Expr>, Option<bool>),
     Apply(String, Vec<Expr>),
     MacroDef(String, Vec<Expr>, Box<Expr>),
+    Requires(Box<Expr>),
+    Ensures(Box<Expr>),
+    Invariant(Box<Expr>),
+    Recover(Box<Expr>, Vec<(String, Box<Expr>)>),
+    Checkpoint(Box<Expr>),
+    ContractsOff(Box<Expr>),
 }
 
 /// Capture info for send-closure: tracks captured variable names.
@@ -744,6 +750,41 @@ fn write_sexpr(f: &mut std::fmt::Formatter<'_>, expr: &Expr) -> std::fmt::Result
             f.write_str(" ")?;
             let _ = write_sexpr(f, template);
             Ok(())
+        }
+        ExprInner::Requires(e) => {
+            f.write_str("(requires ")?;
+            write_sexpr(f, e)?;
+            f.write_str(")")
+        }
+        ExprInner::Ensures(e) => {
+            f.write_str("(ensures ")?;
+            write_sexpr(f, e)?;
+            f.write_str(")")
+        }
+        ExprInner::Invariant(e) => {
+            f.write_str("(invariant ")?;
+            write_sexpr(f, e)?;
+            f.write_str(")")
+        }
+        ExprInner::Recover(e, arms) => {
+            f.write_str("(recover ")?;
+            write_sexpr(f, e)?;
+            for (err_type, fallback) in arms {
+                write!(f, " ({} ", err_type)?;
+                write_sexpr(f, fallback)?;
+                f.write_str(")")?;
+            }
+            f.write_str(")")
+        }
+        ExprInner::Checkpoint(e) => {
+            f.write_str("(checkpoint ")?;
+            write_sexpr(f, e)?;
+            f.write_str(")")
+        }
+        ExprInner::ContractsOff(e) => {
+            f.write_str("(contracts off ")?;
+            write_sexpr(f, e)?;
+            f.write_str(")")
         }
     }
 }
@@ -2455,6 +2496,28 @@ impl PostProcessor {
                     expr.inner = ExprInner::MakeVariant(adt_name, variant_name, new_args);
                 }
                 // else: known builtin name that's not an ADT variant — fall through to Call processing
+            }
+
+            // contracts off expr → ContractsOff (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "contracts") && args.len() == 2 => {
+                let mode = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(m)) => m.clone(),
+                    _ => return expr,
+                };
+                if mode == "off" {
+                    expr.inner = ExprInner::ContractsOff(Box::new(self.post_process_expr(args[1].clone())));
+                }
+            }
+
+            // contracts off expr → ContractsOff (Apply form).
+            ExprInner::Apply(name, args) if name == "contracts" && args.len() == 2 => {
+                let mode = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(m)) => m.clone(),
+                    _ => return expr,
+                };
+                if mode == "off" {
+                    expr.inner = ExprInner::ContractsOff(Box::new(self.post_process_expr(args[1].clone())));
+                }
             }
 
             // Recognize bare identifier variant constructors (unit variants like None).
