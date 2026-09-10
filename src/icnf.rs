@@ -1895,7 +1895,6 @@ impl IcnfConverter {
 
             // Let binding.
             ExprInner::Let(name, val, body) => {
-                eprintln!("ICNF LET: name={:?}, val_inner={:?}", name, std::mem::discriminant(&val.inner));
                 // Defer all global pushes to ensure correct ordering:
                 // value intermediates → Assign → body statements.
                 let saved_scope = std::mem::take(&mut self.current_scope);

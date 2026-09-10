@@ -13,6 +13,8 @@ indexmap = { version = "2", features = ["serde"] }
 smallvec = "1"
 hashbrown = "0.17"
 crossbeam-channel = "0.5"
+rustyline = "13"
+dirs = "5"
 
 [dev-dependencies]
 criterion = "0.8"
