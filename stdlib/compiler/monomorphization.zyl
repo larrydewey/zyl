@@ -797,14 +797,22 @@
 ; ===========================================================================
 
 (defn mono-context-new (inferer)
-  ; TypeInferer's own bookkeeping (TIKnownFns/TIFuncReturns/TIKnownTypes/
-  ; TIAdtDefs) uses flat FnSig/FnReturn/TypeBind/AdtDef records, not the
-  ; MonoKV-keyed stores MonoCtx expects here — the two aren't the same
-  ; shape, so start empty; discover-from-ast/generate-instantiations
-  ; populate these via kv-set as monomorphization actually runs.
-  (let (vta (ti-variant-to-adt inferer))
-    (let (base-ctx (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
-      (populate-variant-to-adt base-ctx vta))))
+  ; Build MonoCtx from TypeInferer's collected data.
+  ; TypeInferer has: known_functions (TIKnownFns), function_returns (TIFuncReturns),
+  ; known_types (TIKnownTypes), adt_defs (TIAdtDefs), variant_to_adt,
+  ; adt_param_order, adt_instantiations, arg_type_observations, function_bodies,
+  ; struct_defs, trait_ctx.
+  ; We convert these flat lists into the MonoKV-keyed stores MonoCtx expects.
+  (let (base-ctx (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
+    (let (ctx1 (populate-variant-to-adt base-ctx (ti-variant-to-adt inferer)))
+      (let (ctx2 (populate-known-fns ctx1 (ti-known-fns inferer)))
+        (let (ctx3 (populate-func-returns ctx2 (ti-func-returns inferer)))
+          (let (ctx4 (populate-known-types ctx3 (ti-known-types inferer)))
+            (let (ctx5 (populate-adt-defs ctx4 (ti-adt-defs inferer)))
+              (let (ctx6 (populate-adt-insts ctx5 (ti-adt-instantiations inferer)))
+                (let (ctx7 (populate-struct-defs ctx6 (ti-struct-defs inferer)))
+                  (let (ctx8 (populate-trait-impls ctx7 (ti-trait-ctx inferer)))
+                    (mono-context-populate-adt-order ctx8 inferer))))))))))
 
 (defn populate-variant-to-adt (ctx vta)
   (match vta
@@ -825,6 +833,197 @@
               (Cons (MK variant adt) Nil)))
             (populate-variant-to-adt new-ctx rest)))
         (d1 (populate-variant-to-adt ctx rest))))))
+
+(defn populate-known-fns (ctx known-fns)
+  ; known-fns is (List FnSig) where FnSig = (FNS Name (List ParamType))
+  ; Convert to MonoCtx's format: name → [(param, Type)]
+  (match known-fns
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (FNS name params
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (Cons (MK name (fn-sig-params-to-mono params)) (mc-known-fns ctx))
+              (mc-returns ctx)
+              (mc-ktypes ctx)
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (mc-timpls ctx)
+              (mc-adt-param-order ctx)))
+            (populate-known-fns new-ctx rest)))
+        (d1 (populate-known-fns ctx rest))))))
+
+(defn fn-sig-params-to-mono (params)
+  ; Convert (List ParamType) to (List (MonoKV Type))
+  ; ParamType = (PT Name Type)
+  (match params
+    (Nil Nil)
+    (Cons hd rest
+      (match hd
+        (PT pname ptype
+          (Cons (MK pname (Cons ptype Nil)) (fn-sig-params-to-mono rest)))
+        (d1 (fn-sig-params-to-mono rest))))))
+
+(defn populate-func-returns (ctx func-returns)
+  ; func-returns is (List FnReturn) where FnReturn = (FR Name Type)
+  (match func-returns
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (FR name ret-type
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (mc-known-fns ctx)
+              (Cons (MK name ret-type) (mc-returns ctx))
+              (mc-ktypes ctx)
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (mc-timpls ctx)
+              (mc-adt-param-order ctx)))
+            (populate-func-returns new-ctx rest)))
+        (d1 (populate-func-returns ctx rest))))))
+
+(defn populate-known-types (ctx known-types)
+  ; known-types is (List TypeBind) where TypeBind = (TB Name Type)
+  (match known-types
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (TB name typ
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (mc-known-fns ctx)
+              (mc-returns ctx)
+              (Cons (MK name typ) (mc-ktypes ctx))
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (mc-timpls ctx)
+              (mc-adt-param-order ctx)))
+            (populate-known-types new-ctx rest)))
+        (d1 (populate-known-types ctx rest))))))
+
+(defn populate-adt-defs (ctx adt-defs)
+  ; adt-defs is (List AdtDef) where AdtDef = (AD Name (List Variant))
+  ; Variant = (V Name (List Field))
+  ; Field = (F Name Type)
+  ; Convert to MonoCtx: name → [(variant, [fields])]
+  (match adt-defs
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (AD name variants
+          (let (variant-fields (adt-variants-to-fields variants))
+            (let (new-ctx (MC
+                (mc-gen-fns ctx)
+                (mc-known-fns ctx)
+                (mc-returns ctx)
+                (mc-ktypes ctx)
+                (mc-structs ctx)
+                (Cons (MK name variant-fields) (mc-adt-defs ctx))
+                (mc-adt-insts ctx)
+                (mc-timpls ctx)
+                (mc-adt-param-order ctx)))
+              (populate-adt-defs new-ctx rest))))
+        (d1 (populate-adt-defs ctx rest))))))
+
+(defn adt-variants-to-fields (variants)
+  ; Convert (List Variant) to (List (MonoKV (List String)))
+  ; Each variant becomes (MK variant-name (List field-type-strings))
+  (match variants
+    (Nil Nil)
+    (Cons hd rest
+      (match hd
+        (V vname fields
+          (let (field-types (fields-to-type-strings fields))
+            (Cons (MK vname field-types) (adt-variants-to-fields rest))))
+        (d1 (adt-variants-to-fields rest))))))
+
+(defn fields-to-type-strings (fields)
+  ; Convert (List Field) to (List String) of type names
+  (match fields
+    (Nil Nil)
+    (Cons hd rest
+      (match hd
+        (F fname ftype
+          (Cons (type-to-string ftype) (fields-to-type-strings rest)))
+        (d1 (fields-to-type-strings rest))))))
+
+(defn populate-adt-insts (ctx adt-insts)
+  ; adt-insts is (List AdtInstantiation) where AdtInstantiation = (AI (List (Pair String String)))
+  ; Group by ADT name and store in MonoCtx: name → [AdtInstantiation]
+  (match adt-insts
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (AI pairs
+          ; pairs is (List (Pair String String)) - param -> concrete mapping
+          ; We need to know which ADT this belongs to. For now, skip since
+          ; we don't have ADT name in AdtInstantiation.
+          ; This is a limitation - Rust has AdtInstantiation with adt name.
+          (populate-adt-insts ctx rest)))
+        (d1 (populate-adt-insts ctx rest))))))
+
+(defn populate-struct-defs (ctx struct-defs)
+  ; struct-defs is (List StructDef) where StructDef = (SD Name (List (Pair String (Option Type))))
+  ; Convert to MonoCtx: name → [(field, Type)]
+  (match struct-defs
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (SD name fields
+          (let (field-types (struct-fields-to-mono fields))
+            (let (new-ctx (MC
+                (mc-gen-fns ctx)
+                (mc-known-fns ctx)
+                (mc-returns ctx)
+                (mc-ktypes ctx)
+                (Cons (MK name field-types) (mc-structs ctx))
+                (mc-adt-defs ctx)
+                (mc-adt-insts ctx)
+                (mc-timpls ctx)
+                (mc-adt-param-order ctx)))
+              (populate-struct-defs new-ctx rest))))
+        (d1 (populate-struct-defs ctx rest))))))
+
+(defn struct-fields-to-mono (fields)
+  ; Convert (List (Pair String (Option Type))) to (List (MonoKV Type))
+  (match fields
+    (Nil Nil)
+    (Cons hd rest
+      (match hd
+        (Pair fname opt-type
+          (match opt-type
+            (Some typ
+              (Cons (MK fname (Cons typ Nil)) (struct-fields-to-mono rest)))
+            (None
+              (Cons (MK fname (Cons (TVar 0 TUnit) Nil)) (struct-fields-to-mono rest)))))
+        (d1 (struct-fields-to-mono rest))))))
+
+(defn populate-trait-impls (ctx trait-ctx)
+  ; trait-ctx is (TC (List TraitInfo) (List ImplInfo))
+  ; ImplInfo = (II String Type (List (Pair String (List Type))))
+  ; Extract impls: trait_name → [impl_type]
+  (match (TC.impls trait-ctx)
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (II trait-name impl-type methods
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (mc-known-fns ctx)
+              (mc-returns ctx)
+              (mc-ktypes ctx)
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (Cons (MK trait-name (Cons impl-type Nil)) (mc-timpls ctx))
+              (mc-adt-param-order ctx)))
+            (populate-trait-impls new-ctx rest)))
+        (d1 (populate-trait-impls ctx rest))))))
 
 ; Populate mono context with adt_param_order from type inferer
 (defn mono-context-populate-adt-order (ctx inferer)
