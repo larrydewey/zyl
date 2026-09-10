@@ -870,7 +870,11 @@ impl TypeInferer {
                 }
             }
 
-            ExprInner::Def(_, val) => self.infer_expr(val),
+            ExprInner::Def(name, val) => {
+                let vt = self.infer_expr(val)?;
+                drop(self.env.bind(name.clone(), vt.clone()));
+                Ok(vt)
+            },
 
             ExprInner::Let(name, val, body) => {
                 let vt = self.infer_expr(val)?;

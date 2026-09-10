@@ -15,30 +15,77 @@ mod error;
 mod runtime;
 mod zyl_source_gen;
 
-use std::io::{self, Write, BufRead};
+use std::io::{self, Write};
 use std::fs;
 use std::path::Path;
+use rustyline::Editor;
+use rustyline::history::DefaultHistory;
 
-// REPL state: tracks defined variables and their types
+/// REPL state: tracks defined variables and their bindings
 struct ReplState {
-    // Variable names mapped to their inferred types
-    vars: crate::deterministic::HashMap<String, String>,
-    // Last evaluated result for implicit printing
+    /// Source code of all definitions entered so far
+    definitions: String,
+    /// Last evaluated result for implicit printing
     last_result: Option<String>,
 }
 
 impl ReplState {
     fn new() -> Self {
         ReplState {
-            vars: crate::deterministic::HashMap::default(),
+            definitions: String::new(),
             last_result: None,
+        }
+    }
+
+    /// Add a definition to the state
+    fn add_definition(&mut self, def: &str) {
+        if !self.definitions.is_empty() {
+            self.definitions.push('\n');
+        }
+        self.definitions.push_str(def);
+    }
+
+    /// Get the full source with all definitions prepended
+    fn get_full_source(&self, new_expr: &str) -> String {
+        if self.definitions.is_empty() {
+            new_expr.to_string()
+        } else {
+            format!("{}\n{}", self.definitions, new_expr)
         }
     }
 }
 
+/// Check if an expression is a top-level definition (def, defn, struct, deftype, etc.)
+/// let/let-mut are expressions that return values, not top-level definitions.
+fn is_definition(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    trimmed.starts_with("(def ") ||
+    trimmed.starts_with("(defn ") ||
+    trimmed.starts_with("(struct ") ||
+    trimmed.starts_with("(deftype ") ||
+    trimmed.starts_with("(use ") ||
+    trimmed.starts_with("(impl ") ||
+    trimmed.starts_with("(trait ") ||
+    trimmed.starts_with("(macro ")
+}
+
+/// Check if an expression is a print-like call that already produces output
+fn is_print_call(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    trimmed.starts_with("(print ") ||
+    trimmed.starts_with("(io-print ") ||
+    trimmed.starts_with("(print-int ") ||
+    trimmed.starts_with("(print-string ") ||
+    trimmed.starts_with("(print-float ") ||
+    trimmed.starts_with("(print-bool ") ||
+    trimmed.starts_with("(io-print-int ") ||
+    trimmed.starts_with("(io-print-string ") ||
+    trimmed.starts_with("(io-print-float ") ||
+    trimmed.starts_with("(io-newline")
+}
+
 /// Compile and run a Zyl source string, returning (stdout, stderr, exit_code)
-/// Also updates the REPL state with any defined variables
-fn compile_and_run(source: &str, repl_state: &mut ReplState) -> Result<(String, String, i32), String> {
+fn compile_and_run(source: &str) -> Result<(String, String, i32), String> {
     let tokens = lexer::tokenize(source).map_err(|e| format!("{}", e))?;
     let mut p = parser::Parser::new(tokens);
     p.no_dispatch = true;
@@ -51,22 +98,6 @@ fn compile_and_run(source: &str, repl_state: &mut ReplState) -> Result<(String, 
     let mut resolver = module_resolver::ModuleResolver::new();
     let exprs = resolver.resolve(&exprs, source, module_name, Path::new("repl.zyl"))
         .map_err(|e| format!("{}", e))?;
-
-    // Collect variable definitions from the expressions
-    for expr in &exprs {
-        // Handle Defn (def name ...)
-        if let ast::ExprInner::Defn(ref name, _, _) = expr.inner {
-            repl_state.vars.insert(name.clone(), "Int".to_string());
-        }
-        // Handle Let bindings
-        if let ast::ExprInner::Let(ref name, _, _) = expr.inner {
-            repl_state.vars.insert(name.clone(), "Int".to_string());
-        }
-        // Handle Def (old style)
-        if let ast::ExprInner::Def(ref name, _) = expr.inner {
-            repl_state.vars.insert(name.clone(), "Int".to_string());
-        }
-    }
 
     let mut expander = macro_expander::MacroExpander::new();
     let non_macro_exprs = expander.register(&exprs);
@@ -177,106 +208,116 @@ fn main() {
     println!("Last result is automatically printed.");
     println!();
 
-    let stdin = io::stdin();
-    let mut out = io::stdout();
-    let mut history: Vec<String> = Vec::new();
     let mut repl_state = ReplState::new();
+    let mut rl: Editor<(), DefaultHistory> = Editor::new().expect("Failed to create line editor");
+    
+    // Load history from file if it exists
+    let history_path = dirs::home_dir()
+        .map(|p| p.join(".zyl_history"))
+        .unwrap_or_else(|| Path::new("/tmp/.zyl_history").to_path_buf());
+    let _ = rl.load_history(&history_path);
 
     loop {
-        // Print prompt
-        write!(out, "> ").unwrap();
-        out.flush().unwrap();
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(line) => {
+                let line = line.trim();
+                if line.is_empty() {
+                    // Print last result if available
+                    if let Some(ref result) = repl_state.last_result {
+                        println!("{}", result);
+                    }
+                    continue;
+                }
 
-        // Read line
-        let mut line = String::new();
-        match stdin.read_line(&mut line) {
-            Ok(0) => break, // EOF
-            Err(e) => {
-                eprintln!("Error reading input: {}", e);
-                break;
+                // Add to history
+                let _ = rl.add_history_entry(line);
+                
+                // Handle REPL commands
+                if line == "quit" || line == "exit" {
+                    break;
+                }
+
+                if line == "help" {
+                    println!("Zyl REPL commands:");
+                    println!("  quit, exit   - Exit the REPL");
+                    println!("  help         - Show this help");
+                    println!("  clear        - Clear screen (not implemented)");
+                    println!();
+                    println!("Variables defined in the REPL persist across commands:");
+                    println!("  (def x 42)   - Define variable x = 42");
+                    println!("  x            - Use defined variable");
+                    println!("  (+ x 1)      - Use x in expression");
+                    println!("  (print x)    - Print a value explicitly");
+                    continue;
+                }
+
+                if line == "clear" {
+                    print!("\x1B[2J\x1B[1;1H");
+                    io::stdout().flush().unwrap();
+                    continue;
+                }
+
+                // Check if this is a single identifier variable lookup
+                let is_single_identifier = !line.starts_with('(') && !line.starts_with(')') 
+                    && !line.contains(' ') && !line.is_empty();
+                if is_single_identifier {
+                    println!("; Variable '{}' (use in expressions)", line);
+                    continue;
+                }
+
+                // Determine if we need to wrap in print for implicit result printing
+                let is_def = is_definition(line);
+                let is_print = is_print_call(line);
+                
+                // Build the source to compile
+                let source = if is_def || is_print {
+                    // Definitions and explicit prints don't need wrapping
+                    repl_state.get_full_source(line)
+                } else {
+                    // Wrap the last expression in print for implicit result printing
+                    format!("{}\n(print {})", repl_state.definitions, line)
+                };
+
+                // Compile and run
+                match compile_and_run(&source) {
+                    Ok((stdout, stderr, _exit_code)) => {
+                        // Print stdout if there's output
+                        if !stdout.is_empty() {
+                            print!("{}", stdout);
+                            // Store last result for implicit printing on empty line
+                            repl_state.last_result = Some(stdout.trim().to_string());
+                        }
+                        // Print stderr if there's output
+                        if !stderr.is_empty() {
+                            eprintln!("{}", stderr);
+                        }
+                        
+                        // If this was a definition, add it to our state
+                        if is_def {
+                            repl_state.add_definition(line);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                    }
+                }
             }
-            Ok(_) => {}
-        }
-
-        let line = line.trim();
-        if line.is_empty() {
-            // Print last result if available
-            if let Some(ref result) = repl_state.last_result {
-                print!("{}", result);
-            }
-            continue;
-        }
-
-        // Add to history
-        history.push(line.to_string());
-        if history.len() > 100 {
-            history.remove(0);
-        }
-
-        // Handle history navigation with !n
-        if line.starts_with("!") {
-            let n = line[1..].trim().parse::<usize>().unwrap_or(0);
-            if n > 0 && n <= history.len() {
-                let recalled = &history[n - 1];
-                print!("{}", recalled);
-                out.flush().unwrap();
+            Err(rustyline::error::ReadlineError::Interrupted) => {
+                println!("^C");
                 continue;
             }
-            println!("History index out of range");
-            continue;
-        }
-
-        if line == "quit" || line == "exit" {
-            break;
-        }
-
-        if line == "help" {
-            println!("Zyl REPL commands:");
-            println!("  quit, exit   - Exit the REPL");
-            println!("  help         - Show this help");
-            println!("  !n           - Recall nth history entry");
-            println!("  clear        - Clear screen (not implemented)");
-            println!();
-            println!("Variables defined in the REPL persist across commands:");
-            println!("  (def x 42)   - Define variable x = 42");
-            println!("  x            - Use defined variable");
-            println!("  (+ x 1)      - Use x in expression");
-            println!("  (print x)    - Print a value explicitly");
-            continue;
-        }
-
-        // Check if this is just a variable name lookup
-        // Simple heuristic: single identifier that's in our variable state
-        if repl_state.vars.contains_key(line) {
-            // Variable lookup - print a representation
-            println!("; Variable '{}' of type {}", line, repl_state.vars[line]);
-            continue;
-        }
-
-        // Compile and run
-        match compile_and_run(line, &mut repl_state) {
-            Ok((stdout, stderr, _exit_code)) => {
-                // Print stdout if there's output
-                if !stdout.is_empty() {
-                    print!("{}", stdout);
-                }
-                // Print stderr if there's output
-                if !stderr.is_empty() {
-                    eprintln!("{}", stderr);
-                }
-                // Store last result if there was output (for implicit printing)
-                if stdout.is_empty() && repl_state.last_result.is_none() {
-                    // The compile_and_run captures stdout from print statements
-                    // If there's no stdout, we store nothing (result will be implicit)
-                }
+            Err(rustyline::error::ReadlineError::Eof) => {
+                break;
             }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                // Try to update state from the error source
-                let _ = compile_and_run(line, &mut repl_state);
+            Err(err) => {
+                eprintln!("Error reading input: {}", err);
+                break;
             }
         }
     }
 
+    // Save history
+    let _ = rl.save_history(&history_path);
     println!("\nGoodbye!");
 }
