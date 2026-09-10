@@ -802,7 +802,29 @@
   ; MonoKV-keyed stores MonoCtx expects here — the two aren't the same
   ; shape, so start empty; discover-from-ast/generate-instantiations
   ; populate these via kv-set as monomorphization actually runs.
-  (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
+  (let (vta (ti-variant-to-adt inferer))
+    (let (base-ctx (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
+      (populate-variant-to-adt base-ctx vta))))
+
+(defn populate-variant-to-adt (ctx vta)
+  (match vta
+    (Nil ctx)
+    (Cons hd rest
+      (match hd
+        (TB variant adt
+          (let (new-ctx (MC
+              (mc-gen-fns ctx)
+              (mc-known-fns ctx)
+              (mc-returns ctx)
+              (mc-ktypes ctx)
+              (mc-structs ctx)
+              (mc-adt-defs ctx)
+              (mc-adt-insts ctx)
+              (mc-timpls ctx)
+              (mc-adt-param-order ctx)
+              (Cons (MK variant adt) Nil)))
+            (populate-variant-to-adt new-ctx rest)))
+        (d1 (populate-variant-to-adt ctx rest))))))
 
 ; Populate mono context with adt_param_order from type inferer
 (defn mono-context-populate-adt-order (ctx inferer)
