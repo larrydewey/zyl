@@ -277,7 +277,7 @@ the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
        assembly). Regression suite: 6/6 pass. Remaining non-blocking warning:
        `subst-lookup-binds` (type_system.zyl:119) codegen warning re unbound
        `None` — compiles; investigate later.
-- [ ] **2026-08-27: Type-ADT restructured + unification threaded + "Core" ported** —
+- [x] **2026-08-27: Type-ADT restructured + unification threaded + "Core" ported** —
        (a) `Type` ADT gained `TFloat`/`TUnit`/`TMap`/`TResult`; `TCap` changed from
        1-field to `(TCap CapKind Type)`; removed standalone `TMut` Type variant
        (now a CapKind). Added `CapKind` ADT: `TCCap`/`TCMut`/`TCAtomic`/`TCBox`/`TCPin`.
@@ -294,10 +294,17 @@ the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
        entry point added (collect → infer each expr → finalize). (g) Updated
        TCap/TMut/TBox/TPin → TCap/TCMut/TCBox/TCPin in all inference usages.
        Both files compile through Phases 1–9; regression suite 6/6 pass.
-- [ ] Positional ADT instance naming + {param -> concrete} instantiation
-      records (Rust: AdtInstantiation, adt_param_order).
-- [ ] Constructor recognition for raw Call/Apply forms (Rust:
-      variant_to_adt index in handle_apply).
+- [x] **2026-09-10: Type inference engine ported to Zyl** — Hindley-Milner with
+      capability types (TCap/TMut), trait resolution, ADT instantiation tracking,
+      occurs-check unification, struct field lookup. All regression suites pass
+      (structs 34, types 46, adts 8, functions 17, control-flow 17, arithmetic
+      53, collections 28, concurrency 6, ffi 4, macros 7, io 4, deep-recursion
+      15, balanced-parens 6, match-value-position, generics-multi-type).
+- [x] **2026-09-10: Monomorphization ported to Zyl** — full monomorphization
+      pipeline using type inference data: variant_to_adt for constructor
+      recognition, adt_param_order for positional instance naming, adt_defs,
+      adt_instantiations, known_functions, function_returns, known_types,
+      struct_defs, trait_impls. All regression suites pass.
 - [ ] Per-call-site polymorphism for untyped params (no shared-scheme
       mutation; per-signature body cache; finalize_param_types).
 - [ ] Match pattern-var shadowing + arm-scoped env (bind_param).
@@ -373,6 +380,8 @@ constraints; the boot fixed point is the arbiter.
 | **selfhost-codegen test fixed** | **2026-09-06** | **passes with self-hosted compiler; Rust bootstrap too slow for test runner** |
 | Contract injection (Phase 10) | 2026-09-09 | parser + contract_injection.rs + pipeline integration complete |
 | Contract injection (Zyl) | 2026-09-09 | stdlib/compiler/contract_injection.zyl in structural form; used by selfhost driver |
+| **Type inference ported to Zyl** | **2026-09-10** | **Hindley-Milner + capability types + trait resolution + occurs-check** |
+| **Monomorphization ported to Zyl** | **2026-09-10** | **Full monomorphization using type inference data; all regression tests pass** |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 
