@@ -305,10 +305,14 @@ the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
       recognition, adt_param_order for positional instance naming, adt_defs,
       adt_instantiations, known_functions, function_returns, known_types,
       struct_defs, trait_impls. All regression suites pass.
-- [ ] Per-call-site polymorphism for untyped params (no shared-scheme
-      mutation; per-signature body cache; finalize_param_types).
-- [ ] Match pattern-var shadowing + arm-scoped env (bind_param).
-- [ ] Epilogue result materialization from a declared result id.
+- [x] **Per-call-site polymorphism for untyped params** — body_infer_cache keyed by
+      call-site signature, inferring_functions for recursion guard, finalize_param_types
+      for consistent-site refinement. Verified by generics-multi-type test.
+- [x] **Match pattern-var shadowing + arm-scoped env** — env_bind_param used in
+      inferer_bind_pattern_vars_atom; each arm gets fresh env snapshot.
+- [x] **Epilogue result materialization** — Zyl codegen uses IFn directly; last
+      expression value in rax via standard epilogue (mov rsp,rbp; pop rbp; ret).
+      No separate result_id needed; verified by all regression tests.
 
 **Self-hosting gap analysis (2026-08-27):**
 
