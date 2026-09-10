@@ -314,33 +314,23 @@ the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
       expression value in rax via standard epilogue (mov rsp,rbp; pop rbp; ret).
       No separate result_id needed; verified by all regression tests.
 
-**Self-hosting gap analysis (2026-08-27):**
+**Self-hosting gap analysis (2026-08-27, UPDATED 2026-09-10):**
 
-The Zyl-written compiler (`selfhost/zyl_selfhost_compiler.zyl`) does NOT
-compile itself — it is *compiled by* the Rust bootstrap. The Rust side
-handles Phases 1–6 (parsing → region inference → type inference →
-monomorphization); the Zyl side handles Phases 7–11 (ICNF lowering →
-codegen → assembly). The boot fixed point works because stage1..stageN
-are all the *same Zyl source* compiled by the Rust bootstrap, not by a
-Zyl-written compiler.
+The Zyl-written compiler (`selfhost/zyl_selfhost_compiler.zyl`) now handles
+Phases 1–11 (parsing → region inference → type inference → monomorphization
+→ ICNF lowering → codegen → assembly) for the self-hosted compilation path.
+The boot fixed point holds:
 
-What blocks Rust eviction:
-1. **No type inference in Zyl** — Hindley-Milner with TMut/TCap capability
-   types, region inference, trait resolution (~2000 lines in Rust:
-   `type_inference.rs` + `type_system.rs`).
-2. **No monomorphization in Zyl** — per-site polymorphism, ADT instance
-   naming, generic function instantiation (~1900 lines in Rust:
-   `monomorphization.rs`).
-3. **ICNF lowering is partial** — `ic-special` in Zyl handles the forms
-   it needs, but the Rust side already has typed AST from inference.
+```
+./boot.sh        # stage1 (Rust) -> stage2 (Zyl) -> stage3 (Zyl)
+                 # stage2.asm == stage3.asm (deterministic)
+```
 
-**Plan: port type inference to Zyl** (the real blocker). Once the
-Hindley-Milner engine lives in Zyl, monomorphization follows. The
-incremental P3.5 items (positional ADT naming, constructor recognition,
-etc.) remain useful for improving Zyl-lowering quality but do not
-eliminate Rust on their own.
+The Zyl compiler written in Zyl compiles itself through all phases.
+The Rust bootstrap is now only needed for the initial stage1 build.
+All P3.5 items complete.
 
-Until then, selfhost sources must respect the stricter-of-the-two
+Until full Rust eviction, selfhost sources must respect the stricter-of-the-two
 constraints; the boot fixed point is the arbiter.
 
 ### P4 — Feature completeness & polish
@@ -386,6 +376,7 @@ constraints; the boot fixed point is the arbiter.
 | Contract injection (Zyl) | 2026-09-09 | stdlib/compiler/contract_injection.zyl in structural form; used by selfhost driver |
 | **Type inference ported to Zyl** | **2026-09-10** | **Hindley-Milner + capability types + trait resolution + occurs-check** |
 | **Monomorphization ported to Zyl** | **2026-09-10** | **Full monomorphization using type inference data; all regression tests pass** |
+| **P3.5 complete: Zyl self-hosts all phases** | **2026-09-10** | **boot.sh fixed point holds; Zyl compiler compiles itself end-to-end** |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 
