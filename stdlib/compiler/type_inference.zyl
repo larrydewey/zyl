@@ -35,7 +35,16 @@
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; KNOWN TYPES HELPERS
@@ -73,7 +82,16 @@
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; KNOWN FUNCTIONS HELPERS
@@ -108,7 +126,16 @@
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; FUNCTION RETURNS HELPERS
@@ -143,7 +170,16 @@
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; ADT DEFINITIONS HELPERS
@@ -186,7 +222,11 @@
             (ti-adt-instantiations inferer)
             (ti-arg-type-observations inferer)
             (ti-function-bodies inferer)
-            (ti-skip-generic-def-names inferer)))
+            (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
         (let (with-order (insert-adt-param-order with-adt name param-order))
             (populate-variant-to-adt with-order name variants)))))
 
@@ -237,7 +277,143 @@
         (ti-adt-instantiations inferer)
         (ti-arg-type-observations inferer)
         (ti-function-bodies inferer)
-        (ti-skip-generic-def-names inferer)))
+        (ti-skip-generic-def-names inferer)
+        (tc-new)
+        Nil
+        Nil
+        Nil)))
+
+; ===========================================================================
+; TRAIT / STRUCT / ALIAS HELPERS
+; ===========================================================================
+
+(defn insert-trait-decl (inferer trait_name methods derives)
+    ; Register trait in trait context
+    (let (trait_info (TI trait_name
+        (method-params-from-methods methods)
+        (method-rets-from-methods methods)))
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)
+        (tc-register-trait (ti-trait-ctx inferer) trait_info)
+        (ti-struct-defs inferer)
+        (ti-generics-in-scope inferer)
+        (ti-var-type-map inferer))))
+
+(defn method-params-from-methods (methods)
+    (match methods
+        (Nil Nil)
+        (Cons m rest
+            (Cons
+                (Pair (M.name m) (M.params m))
+                (method-params-from-methods rest)))))
+
+(defn method-rets-from-methods (methods)
+    (match methods
+        (Nil Nil)
+        (Cons m rest
+            (Cons
+                (Pair (M.name m) (M.return_type m))
+                (method-rets-from-methods rest)))))
+
+(defn insert-impl-block (inferer trait_name type_name bodies)
+    ; Register impl in trait context
+    (let (impl_info (II trait_name (TNominal type_name) Nil))
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)
+        (tc-register-impl (ti-trait-ctx inferer) impl_info)
+        (ti-struct-defs inferer)
+        (ti-generics-in-scope inferer)
+        (ti-var-type-map inferer))))
+
+(defn insert-struct-def (inferer sd)
+    ; Register struct definition
+    (let (typed_fields (struct-fields-to-typed sd))
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)
+        (ti-trait-ctx inferer)
+        (Cons (SD (SD.name sd) typed_fields) (ti-struct-defs inferer))
+        (ti-generics-in-scope inferer)
+        (ti-var-type-map inferer))))
+
+(defn struct-fields-to-typed (sd)
+    (match (SD.fields sd)
+        (Nil Nil)
+        (Cons f rest
+            (Cons
+                (Pair (SF.name f) (SF.type f))
+                (struct-fields-to-typed rest)))))
+
+(defn insert-alias-decl (inferer name target)
+    (TypeInferer
+        (ti-env inferer)
+        (ti-subst inferer)
+        (ti-next inferer)
+        (ti-known-types inferer)
+        (ti-known-fns inferer)
+        (ti-func-returns inferer)
+        (ti-adt-defs inferer)
+        (ti-variant-to-adt inferer)
+        (ti-string-match-vars inferer)
+        (ti-inferring-fns inferer)
+        (ti-body-cache inferer)
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)
+        (ti-trait-ctx inferer)
+        (ti-struct-defs inferer)
+        (ti-generics-in-scope inferer)
+        (ti-var-type-map inferer)))
+
+(defn insert-derive (inferer type_name traits)
+    ; For now just return inferer unchanged - derive is handled later
+    inferer)
 
 (defn lookup-adt-param-order (inferer name)
     (lookup-param-order-binds (ti-adt-param-order inferer) name))
@@ -297,7 +473,16 @@
             (ti-variant-to-adt inferer))
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
-        (ti-body-cache inferer)))
+        (ti-body-cache inferer)
+        Nil
+        Nil
+        Nil
+        Nil
+        Nil
+        (tc-new)
+        Nil
+        Nil
+        Nil)))
 
 ; ===========================================================================
 ; BODY CACHE HELPERS
@@ -345,7 +530,16 @@
         (ti-inferring-fns inferer)
         (Cons
             (BC key typ)
-            (ti-body-cache inferer))))
+            (ti-body-cache inferer))
+        Nil
+        Nil
+        Nil
+        Nil
+        Nil
+        (tc-new)
+        Nil
+        Nil
+        Nil)))
 
 ; ===========================================================================
 ; INFERRING FUNCTIONS HELPERS
@@ -354,7 +548,17 @@
 (defn is-inferring (inferer name)
     (mem-string-list (ti-inferring-fns inferer) name))
 
-(defn mark-inferring (inferer name)
+(defn
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil mark-inferring (inferer name)
     (TypeInferer
         (ti-env inferer)
         (ti-subst inferer)
@@ -367,8 +571,26 @@
         (ti-string-match-vars inferer)
         (Cons
             name
-            (ti-inferring-fns inferer))
-        (ti-body-cache inferer)))
+            (ti-infer
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nilring-fns inferer))
+        (ti-body-cache inferer)
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; STRING MATCH VARS HELPERS
@@ -393,7 +615,11 @@
         (ti-adt-instantiations inferer)
         (ti-arg-type-observations inferer)
         (ti-function-bodies inferer)
-        (ti-skip-generic-def-names inferer)))
+        (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 ; ===========================================================================
 ; ADT INSTANTIATIONS HELPERS
@@ -416,7 +642,11 @@
         (insert-adt-inst-bind (ti-adt-instantiations inferer) adt-name inst)
         (ti-arg-type-observations inferer)
         (ti-function-bodies inferer)
-        (ti-skip-generic-def-names inferer)))
+        (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 (defn insert-adt-inst-bind (insts adt-name inst)
     (match insts
@@ -485,7 +715,11 @@
         (ti-adt-instantiations inferer)
         (insert-obs-bind (ti-arg-type-observations inferer) fname arg-types)
         (ti-function-bodies inferer)
-        (ti-skip-generic-def-names inferer)))
+        (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 (defn insert-obs-bind (obs fname arg-types)
     (match obs
@@ -534,7 +768,11 @@
         (Cons
             (Pair fname body)
             (ti-function-bodies inferer))
-        (ti-skip-generic-def-names inferer)))
+        (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
 
 (defn lookup-function-body (inferer fname)
     (lookup-body-binds (ti-function-bodies inferer) fname))
@@ -570,10 +808,149 @@
         (ti-adt-instantiations inferer)
         (ti-arg-type-observations inferer)
         (ti-function-bodies inferer)
-        (Cons name (ti-skip-generic-def-names inferer))))
+        (Cons name (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil))))
 
 (defn is-skip-generic (inferer name)
     (mem-string-list (ti-skip-generic-def-names inferer) name))
+
+; ===========================================================================
+; ADT INSTANTIATION COLLECTION
+; ===========================================================================
+
+(defn collect_adt_instantiations_expr (inferer expr)
+    ; Walk an expression and record concrete types used with generic ADT constructors
+    (match (Expr.inner expr)
+        (EMakeVariant adt_name variant_name args
+            (let (inferer-with-inst (record_make_variant inferer adt_name variant_name args))
+                (collect_adt_instantiations_expr_list inferer-with-inst args)))
+        (ECall op args
+            (let (inferer1 (collect_adt_instantiations_expr inferer op))
+                (collect_adt_instantiations_expr_list inferer1 args)))
+        (EApply _ args
+            (collect_adt_instantiations_expr_list inferer args))
+        (EDefn _ _ body
+            (collect_adt_instantiations_expr inferer body))
+        (ELet _ val body
+            (let (inferer1 (collect_adt_instantiations_expr inferer val))
+                (collect_adt_instantiations_expr inferer1 body)))
+        (EIf cond then_ else_
+            (let (inferer1 (collect_adt_instantiations_expr inferer cond))
+                (let (inferer2 (collect_adt_instantiations_expr inferer1 then_))
+                    (collect_adt_instantiations_expr inferer2 else_))))
+        (EMatch scrutinee arms
+            (let (inferer1 (collect_adt_instantiations_expr inferer scrutinee))
+                (collect_adt_instantiations_expr_arms inferer1 arms)))
+        (EBegin exprs
+            (collect_adt_instantiations_expr_list inferer exprs))
+        (ECond clauses
+            (collect_adt_instantiations_expr_cond inferer clauses))
+        (EWhile cond body
+            (let (inferer1 (collect_adt_instantiations_expr inferer cond))
+                (collect_adt_instantiations_expr inferer1 body)))
+        (EFor _ cond body
+            (let (inferer1 (collect_adt_instantiations_expr inferer cond))
+                (collect_adt_instantiations_expr inferer1 body)))
+        (ELambda _ _ body
+            (collect_adt_instantiations_expr inferer body))
+        (EFn _ _ body
+            (collect_adt_instantiations_expr inferer body))
+        (EFfiCall _ args _
+            (collect_adt_instantiations_expr_list inferer args))
+        (EPrint exprs
+            (collect_adt_instantiations_expr_list inferer exprs))
+        (ESetBang _ val
+            (collect_adt_instantiations_expr inferer val))
+        (EMakeStruct _ fields
+            (collect_adt_instantiations_expr_list inferer fields))
+        (EStructGet se _
+            (collect_adt_instantiations_expr inferer se))
+        (ETryCatch eh _ handler
+            (let (inferer1 (collect_adt_instantiations_expr inferer eh))
+                (collect_adt_instantiations_expr inferer1 handler)))
+        (ESpawn closure
+            (collect_adt_instantiations_expr inferer closure))
+        (ESend _ msg
+            (collect_adt_instantiations_expr inferer msg))
+        (EWithResource _ init body
+            (let (inferer1 (collect_adt_instantiations_expr inferer init))
+                (collect_adt_instantiations_expr inferer1 body)))
+        (EAssert cond _
+            (collect_adt_instantiations_expr inferer cond))
+        (EFileOpen path mode
+            (let (inferer1 (collect_adt_instantiations_expr inferer path))
+                (collect_adt_instantiations_expr inferer1 mode)))
+        (EFileRead handle count
+            (let (inferer1 (collect_adt_instantiations_expr inferer handle))
+                (collect_adt_instantiations_expr inferer1 count)))
+        (EFileWrite handle data
+            (let (inferer1 (collect_adt_instantiations_expr inferer handle))
+                (collect_adt_instantiations_expr inferer1 data)))
+        (EBufAppend dst src
+            (let (inferer1 (collect_adt_instantiations_expr inferer dst))
+                (collect_adt_instantiations_expr inferer1 src)))
+        (d1 inferer)))
+
+(defn collect_adt_instantiations_expr_list (inferer exprs)
+    (match exprs
+        (Nil inferer)
+        (Cons e rest
+            (let (inferer1 (collect_adt_instantiations_expr inferer e))
+                (collect_adt_instantiations_expr_list inferer1 rest)))))
+
+(defn collect_adt_instantiations_expr_arms (inferer arms)
+    (match arms
+        (Nil inferer)
+        (Cons arm rest
+            (let (inferer1 (collect_adt_instantiations_expr inferer (MA.body arm)))
+                (collect_adt_instantiations_expr_arms inferer1 rest)))))
+
+(defn collect_adt_instantiations_expr_cond (inferer clauses)
+    (match clauses
+        (Nil inferer)
+        (Cons clause rest
+            (match clause
+                (Pair pred body
+                    (let (inferer1 (collect_adt_instantiations_expr inferer pred))
+                        (let (inferer2 (collect_adt_instantiations_expr inferer1 body))
+                            (collect_adt_instantiations_expr_cond inferer2 rest)))))))
+
+; record_make_variant mirrors the logic from infer-expr-make-variant
+; but just records the instantiation without doing full type checking
+(defn record_make_variant (inferer adt_name variant_name args)
+    (let (variant_fields (infer_get_variant_fields inferer adt_name variant_name))
+        (if (nil? variant_fields)
+            inferer
+            (let (mapping (extract_constructor_mapping inferer args variant_fields))
+                (if (nil? mapping)
+                    inferer
+                    (let (inst (AI mapping))
+                        (insert_adt_instantiation inferer adt_name inst))))))
+
+(defn extract_constructor_mapping (inferer args fields)
+    (extract_mapping_loop inferer args fields Nil))
+
+(defn extract_mapping_loop (inferer args fields acc)
+    (match args
+        (Nil (if (nil? acc) Nil (list-reverse acc)))
+        (Cons arg rest_args
+            (match fields
+                (Nil (if (nil? acc) Nil (list-reverse acc)))
+                (Cons field rest_fields
+                    (match field
+                        (F fname ftype
+                            (if (is_generic_param ftype)
+                                (let (arg_type (infer_expr inferer arg))
+                                    (let (type_str (type_to_string arg_type))
+                                        (if (or (= type_str "") (str_contains type_str "?"))
+                                            (extract_mapping_loop inferer rest_args rest_fields acc)
+                                            (extract_mapping_loop inferer rest_args rest_fields
+                                                (Cons (Pair fname type_str) acc)))))
+                                (extract_mapping_loop inferer rest_args rest_fields acc)))
+                        (d1 (extract_mapping_loop inferer rest_args rest_fields acc))))))))
 
 ; ===========================================================================
 ; UTILITY HELPERS
@@ -657,6 +1034,11 @@
             Nil
             Nil
             Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
             Nil
             Nil
             Nil)))
@@ -940,7 +1322,11 @@
                     (ti-string-match-vars inferer)
                     (ti-inferring-fns inferer)
                     (ti-body-cache inferer))
-                body))))
+
+            (tc-new)
+            Nil
+            Nil
+            Nil                body))))
 
 ; ===========================================================================
 ; INFER-EXPR — if
@@ -955,7 +1341,16 @@
             (match unified
                 (UOk
                     new-s
-                    (let
+    
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil                (let
                         (tt (infer-expr inferer then-))
                         (let
                             (et (infer-expr inferer else-))
@@ -1048,7 +1443,11 @@
                         (ti-string-match-vars inferer)
                         (ti-inferring-fns inferer)
                         (ti-body-cache inferer))
-                    rest)))))
+
+            (tc-new)
+            Nil
+            Nil
+            Nil                    rest)))))
 
 (defn inferer-params-types (params)
     ; one TVar per param (placeholder; refined later). TVar is a 2-field
@@ -1056,7 +1455,16 @@
     ; all; it fell through to whatever garbage happened to occupy the
     ; hash-fallback stack slot for an unrecognized identifier.
     (match params
-        (Nil
+ 
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil       (Nil
             Nil)
         ((Cons p rest)
             (Cons
@@ -1156,11 +1564,24 @@
                                     (ti-string-match-vars inferer)
                                     (ti-inferring-fns inferer)
                                     (ti-body-cache inferer))
-                                rest))))))))
+
+            (tc-new)
+            Nil
+            Nil
+            Nil                                rest))))))))
 
 ; ===========================================================================
 ; INFER-EXPR — cond
-; ===========================================================================
+; ========================================================================
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil===
 
 (defn infer-expr-cond (inferer expr clauses)
     ; infer each clause, unify pred with Bool; result is last body type
@@ -1251,8 +1672,21 @@
                                                 (ti-string-match-vars new-inferer)
                                                 (ti-inferring-fns new-inferer)
                                                 (ti-body-cache new-inferer))
-                                            rest
-                                            subject-type
+
+            (tc-new)
+            Nil
+            Nil
+            Nil                                            rest
+                    
+            Nil
+            Nil
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil                        subject-type
                                             new-type))
                                     rest-type)))))))))
 
@@ -1386,7 +1820,11 @@
                             (ti-adt-instantiations inferer)
                             (ti-arg-type-observations inferer)
                             (ti-function-bodies inferer)
-                            (ti-skip-generic-def-names inferer)))
+                            (ti-skip-generic-def-names inferer)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
                     (inferer-bind-pattern-vars-loop new-inferer prest frest))))
         (d2 (inferer-bind-pattern-vars-loop inferer prest frest))))
 
@@ -1608,6 +2046,15 @@
                                                 (ti-arg-type-observations inferer)
                                                 (ti-function-bodies inferer)
                                                 (ti-skip-generic-def-names inferer))
+
+            (tc-new)
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil
                                             rest rest-fields))
                                     (UErr msg
                                         inferer))))))))))
@@ -1725,7 +2172,11 @@
                                         (ti-adt-instantiations inferer-with-site)
                                         (ti-arg-type-observations inferer-with-site)
                                         (ti-function-bodies inferer-with-site)
-                                        (ti-skip-generic-def-names inferer-with-site)))
+                                        (ti-skip-generic-def-names inferer-with-site)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
                                     (let (site-ret (inferer-return-var inferer-with-env))
                                         (let (inferer-with-ret
                                             (TypeInferer
@@ -1746,7 +2197,11 @@
                                                 (ti-adt-instantiations inferer-with-env)
                                                 (ti-arg-type-observations inferer-with-env)
                                                 (ti-function-bodies inferer-with-env)
-                                                (ti-skip-generic-def-names inferer-with-env)))
+                                                (ti-skip-generic-def-names inferer-with-env)
+            (tc-new)
+            Nil
+            Nil
+            Nil)))
                                             (let (inferred-ret (infer-expr inferer-with-ret body))
                                                 (let (unified (unify (ti-subst inferer-with-ret) site-ret inferred-ret))
                                                     (match unified
@@ -2012,6 +2467,18 @@
                                     (collect-definitions infered rest))))))
                 (EDeftype name variants generic-params d28
                     (collect-definitions (insert-adt-def inferer name variants) rest))
+                (ETraitDecl trait_name methods derives
+                    (collect-definitions (insert-trait-decl inferer trait_name methods derives) rest))
+                (EImplBlock trait_name type_name bodies
+                    (collect-definitions (insert-impl-block inferer trait_name type_name bodies) rest))
+                (EStructDef sd extra
+                    (collect-definitions (insert-struct-def inferer sd) rest))
+                (EStructDefPlus sd extra
+                    (collect-definitions (insert-struct-def inferer sd) rest))
+                (EAliasDecl name target
+                    (collect-definitions (insert-alias-decl inferer name target) rest))
+                (EDerive type_name traits
+                    (collect-definitions (insert-derive inferer type_name traits) rest))
                 (d1 (collect-definitions inferer rest))))))
 
 (defn has-untyped-params (params)
@@ -2128,6 +2595,15 @@
                                                         (ti-arg-type-observations inferer)
                                                         (ti-function-bodies inferer)
                                                         (ti-skip-generic-def-names inferer))
+
+            (tc-new)
+            Nil
+            Nil
+            Nil
+            (tc-new)
+            Nil
+            Nil
+            Nil
                                                     observations
                                                     rest))
                                 new-inferer))))))))
