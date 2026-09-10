@@ -30,6 +30,20 @@ zyl hello.zyl
 zyl-repl
 ```
 
+## Self-Hosting Status (2026-09-10)
+
+**Self-hosting: COMPLETE** — The Zyl compiler written in Zyl compiles itself end-to-end with a strict byte-identical fixed point.
+
+```bash
+./boot.sh    # stage1 (Rust) -> stage2 (Zyl) -> stage3 (Zyl); stage2.asm == stage3.asm
+```
+
+The Zyl-written compiler (`stdlib/compiler/*.zyl`, `selfhost/`) handles all 11 compilation phases:
+- Phases 1–6: Parsing → Macro Expansion → Type Inference → Monomorphization (ported from Rust)
+- Phases 7–11: ICNF → Optimization → Code Generation → Linking → Contract Injection
+
+The Rust bootstrap is now only needed for the initial stage1 build.
+
 ## Features
 
 - **S-expression syntax** — homoiconic Lisp with S-expressions targeting x86_64 native code
@@ -47,6 +61,7 @@ zyl-repl
 - **Closures** — fn/lambda syntax with capture analysis and env struct allocation
 - **Try/catch** — error handling with catch variable binding
 - **I/O** — read-line via sys_read syscall
+- **Contract Injection (Phase 10)** — optional overlay for requires/ensures/invariant/recover/checkpoint
 
 ## Compilation Pipeline
 
@@ -56,35 +71,65 @@ zyl-repl
 | 2. Post-Processing | ✅ | Raw Call/Apply → specialized ExprInner |
 | 3. Macro Expansion | ✅ | Gensym hygiene, innermost-first |
 | 4. Region Inference | ✅ | Two-pass algorithm, escape analysis |
-| 5. Type Inference | ✅ | HM inference, trait resolution |
-| 6. Monomorphization | ✅ | Canonical naming, trait bounds |
-| 7. ICNF Generation | ✅ | SSA IR with region annotations |
+| 5. Type Inference | ✅ | HM inference + trait resolution (Zyl) |
+| 6. Monomorphization | ✅ | Canonical naming, trait bounds (Zyl) |
+| 7. ICNF Generation | ✅ | SSA IR with region annotations (Zyl) |
 | 8. Optimization | ✅ | Constant folding, DCE |
-| 9. Code Generation | ✅ | x86_64, System V AMD64 ABI |
+| 9. Code Generation | ✅ | x86_64, System V AMD64 ABI (Zyl) |
 | 10. Linking | ✅ | cc + actor_runtime.c + pthread |
+| 11. Contract Injection | ✅ | Optional overlay (Zyl) |
 
 ## Project Structure
 
 ```
-src/
-├── main.rs            # Compiler entry point, pipeline orchestration
-├── repl.rs            # REPL entry point
-├── ast.rs             # AST definitions + PostProcessor
-├── lexer.rs           # Tokenizer
-├── parser.rs          # Recursive descent parser
-├── macro_expander.rs  # Macro expansion with gensym hygiene
-├── type_system.rs     # Type definitions
-├── type_inference.rs  # HM type inference + trait resolution
-├── region_inference.rs# Region inference + capture analysis
-├── monomorphization.rs# Generic type instantiation
-├── icnf.rs            # SSA IR (ICNF)
-├── optimization.rs    # IR optimizations
-├── codegen.rs         # x86_64 code generation
-├── error.rs           # Error model
-├── runtime.rs         # Actor runtime path re-export
+src/                          # Rust bootstrap compiler (stages 1 only)
+├── main.rs                   # Compiler entry point, pipeline orchestration
+├── repl.rs                   # REPL entry point
+├── ast.rs                    # AST definitions + PostProcessor
+├── lexer.rs                  # Tokenizer
+├── parser.rs                 # Recursive descent parser
+├── macro_expander.rs         # Macro expansion with gensym hygiene
+├── type_system.rs            # Type definitions
+├── type_inference.rs         # HM type inference + trait resolution
+├── region_inference.rs       # Region inference + capture analysis
+├── monomorphization.rs       # Generic type instantiation
+├── icnf.rs                   # SSA IR (ICNF)
+├── optimization.rs           # IR optimizations
+├── codegen.rs                # x86_64 code generation
+├── error.rs                  # Error model
+├── runtime.rs                # Actor runtime path re-export
 └── runtime/
-    ├── actor_runtime.c  # pthread-based actor runtime
-    └── actor_runtime.h  # Actor runtime header
+    ├── actor_runtime.c       # pthread-based actor runtime
+    └── actor_runtime.h       # Actor runtime header
+
+stdlib/compiler/              # Zyl-written compiler (self-hosted)
+├── lexer.zyl
+├── parser.zyl
+├── ast.zyl
+├── expr_inner.zyl
+├── macro_expand.zyl
+├── type_system.zyl           # Type ADT, Subst, TypeEnv, TraitContext, TypeInferer
+├── type_inference.zyl        # Full HM inference engine
+├── region_inference.zyl      # Region inference + capture analysis
+├── monomorphization.zyl      # Full monomorphization pipeline
+├── icnf.zyl                  # ICNF lowering from ExprInner
+├── codegen.zyl               # x86_64 code generation
+├── contract_injection.zyl    # Phase 10 contract overlay
+├── trait_dispatch.zyl        # Trait method dispatch
+├── closure_inline.zyl        # Closure inlining
+├── assert_lowering.zyl       # Assert lowering
+├── module_resolver.zyl       # Module resolution
+└── resolver.zyl              # Name resolution
+
+selfhost/                     # Self-hosting driver
+├── driver.zyl                # Boot pipeline entry point
+└── zyl_selfhost_compiler.zyl # Assembled self-hosted compiler
+
+tests/                        # Regression test suite
+├── smoke/                    # Basic smoke tests
+├── regression/               # Feature regression tests
+├── stress/                   # Stress tests (deep recursion, balanced parens)
+└── integration/              # Integration tests (selfhost-codegen)
 ```
 
 ## Requirements
@@ -94,7 +139,7 @@ src/
 
 ## Examples
 
-See `stdlib_test.zyl` and source files in the root for example Zyl programs.
+See `tests/regression/` for example Zyl programs covering all language features.
 
 ## Specification
 
