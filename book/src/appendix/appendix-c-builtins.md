@@ -40,7 +40,11 @@ Complete reference for all built-in operators and special forms.
 | `<=` | `(<= a b)` → `Bool` | Less or equal |
 | `>=` | `(>= a b)` → `Bool` | Greater or equal |
 
-**Structural equality** works on all types: primitives, tuples, structs, ADTs, Vec, Map.
+**Structural equality** works on primitives — `Int`, `Float`, `Bool`, `String` —
+and on values compared field-by-field. For structs and ADTs, `==` compares
+identity (pointer), **not** structure: two separately-constructed equal structs
+are *not* equal. Compare struct fields individually instead
+(e.g. `(== (struct-get p "x") (struct-get q "x"))`).
 
 ## C.3 Boolean Operators (Short-Circuiting)
 
@@ -70,9 +74,11 @@ Complete reference for all built-in operators and special forms.
 | `len` | `(len Vec/Map/String)` → `Int` | Length |
 | `vec` | `(vec Elem...)` → `Vec` | **Not a builtin** — use `vec-create` |
 | `map` | `(map K V...)` → `Map` | **Not a builtin** — use `map-create` |
-| `tuple` | `(tuple Elem...)` → `Tuple` | Construct tuple |
+| `tuple` | `(tuple Elem...)` → `Tuple` | **Not implemented** — reserved name |
 
-**Note**: `vec` and `map` literals not yet implemented — use stdlib functions.
+**Note**: `vec`, `map`, and `tuple` are reserved identifiers but the literal
+forms themselves are not implemented yet — use the stdlib collection functions
+and structs for grouping values.
 
 ## C.6 Mutation
 
@@ -90,6 +96,10 @@ Complete reference for all built-in operators and special forms.
 | `read-line` | `(read-line)` → `Result<String, String>` | Read stdin line |
 | `exit` | `(exit Int)` → `Never` | Terminate program |
 | `close` | `(close Handle)` → `Unit` | Close resource |
+| `file-open` | `(file-open Path Mode)` → `Int` | Open file (Mode: `"r"`, `"w"`, `"a"`) |
+| `file-read` | `(file-read Handle Count)` → `String` | Read bytes from file |
+| `file-write` | `(file-write Handle Data)` → `Int` | Write data to file |
+| `file-close` | `(file-close Handle)` → `Unit` | Close file |
 
 ## C.8 Error Operations
 
@@ -175,6 +185,11 @@ Complete reference for all built-in operators and special forms.
 | `:macroexpand-all <expr>` | Full macro expansion |
 
 ## C.13 Compiler Flags
+
+> **Status**: `-o` is implemented; the `--emit-*` family, `--test`,
+> `--filter`, and `--boot`/`--no-boot` flags are on the compiler roadmap. For
+> phase dumps today, the Rust bootstrap accepts `--dump-icnf <path>` (ICNF
+> JSON) and `--emit-zyl <path>`.
 
 | Flag | Description |
 |------|-------------|

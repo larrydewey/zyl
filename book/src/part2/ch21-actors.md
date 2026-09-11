@@ -288,7 +288,7 @@ Actor stops when:
 | Isolation | Process | Goroutine + channels | Actor + mutex | Actor (no shared state) |
 | Scheduling | Preemptive | Cooperative | Cooperative | Deterministic round-robin |
 | FIFO per actor | ✅ | Channel | ✅ | ✅ |
-| Shared memory | ❌ | Yes (mutex) | Yes (Arc<Mutex>) | ❌ |
+| Shared memory | ❌ | Yes (`Arc<Mutex>`) | ❌ |
 | Supervision | Built-in | Manual | Built-in | Manual pattern |
 | Determinism | ❌ | ❌ | ❌ | ✅ |
 | Hot code reload | ✅ | ❌ | ❌ | ❌ |

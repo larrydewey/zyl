@@ -1,250 +1,196 @@
 # Chapter 11: Testing and Property-Based Testing
 
-Testing is a **core language built-in** in Zyl (Spec §20.5). The testing framework is part of the language, not an external library.
+Testing is a **core language built-in** in Zyl (Spec §20.5). The testing framework
+is part of the language, not an external library, and the same framework powers
+Zyl's own regression suite.
 
-## 11.1 Basic Test Structure
+## 11.1 The Simplest Test
+
+A test is a top-level expression that pairs a name with a body:
 
 ```lisp
-(test-suite "suite-name"
-  (test "test-name"
-    (assert-equal (my-fn 2) 4))
-  
-  (test "another-test"
-    (assert-true (my-pred "hello"))))
+(test "factorial-of-five"
+  (assert-equal (factorial 5) 120))
 ```
 
-Run with:
+When the compiled program runs, every top-level `test` is registered with the
+runtime harness. To execute all registered tests, end your file with:
+
 ```lisp
 (run-tests)
 ```
 
-## 11.2 Test Suite and Tests
+That's the whole framework. Writing the code above and running it prints:
 
-### `test-suite` — Group Related Tests
+```
+test: factorial-of-five ... ok
 
-```lisp
-(test-suite "math-tests"
-  (test "addition"
-    (assert-equal (+ 1 2) 3))
-  
-  (test "multiplication"
-    (assert-equal (* 3 4) 12))
-  
-  ;; Nested suites
-  (test-suite "advanced"
-    (test "factorial"
-      (assert-equal (factorial 5) 120))))
+test result: 1 passed, 0 failed, 1 total
 ```
 
-### `test` — Individual Test Case
+You can define any number of tests; each one is just another top-level form:
 
 ```lisp
-(test "test-name"
-  body...)    ; Multiple expressions allowed (implicit begin)
+(test "addition"
+  (assert-equal (+ 1 2) 3))
+
+(test "multiplication"
+  (assert-equal (* 3 4) 12))
+
+(run-tests)
 ```
 
-Optional keywords:
-```lisp
-(test "flaky-test"
-  (:parallel false)      ; Run sequentially (default: true)
-  (:filter "slow")       ; Tag for filtering
-  (assert-equal ...))
-```
+> **Note on `test-suite` (Spec §20.5):** the specification describes grouping
+> tests with `test-suite "name" (test ...) ...`. The form parses, but the
+> runtime only runs bare top-level `test` forms today — nested suite tests are
+> not yet wired into the harness. Prefer flat top-level `test` forms until
+> suite support lands.
 
-## 11.3 Assertions
+## 11.2 Assertions
+
+Every test body uses the built-in assertions:
 
 | Assertion | Purpose |
 |-----------|---------|
-| `(assert-equal expr1 expr2)` | Fail if not structurally equal |
-| `(assert-fail expr "msg")` | Fail if expr does NOT raise error |
-| `(assert-true expr "msg")` | Fail if expr is false |
-| `(assert-false expr "msg")` | Fail if expr is true |
+| `(assert-equal expr1 expr2)` | Fail if the two values differ |
+| `(assert-true expr "msg")` | Fail if `expr` is false |
+| `(assert-false expr "msg")` | Fail if `expr` is true |
 
-### Examples
+`assert-equal` uses **structural equality**, so it works on primitives, tuples,
+structs, ADTs, and collections.
 
 ```lisp
 (test "equality"
   (assert-equal (+ 1 2) 3)
-  (assert-equal (make-Point 1 2) (make-Point 1 2))
-  (assert-equal (vec 1 2) (vec 1 2)))
+  (assert-equal (struct-get (make-Point 1 2) "x") 1))
 
-(test "error-handling"
-  (assert-fail (divide 1 0) "division by zero"))
-
-(test "boolean"
-  (assert-true (> 5 3) "5 should be > 3")
-  (assert-false (< 5 3) "5 should not be < 3"))
+(test "booleans"
+  (assert-true (> 5 3))
+  (assert-false (< 5 3)))
 ```
 
-**All assertions use structural equality** — works on any type.
+> **Equality scope**: `==` compares primitives structurally. For structs and
+> ADTs it compares identity, so assert on individual fields rather than whole
+> structures (see Appendix C.2).
 
-## 11.4 Setup and Teardown
+> **`assert-fail`** is parsed by the compiler but does not yet enforce that an
+> expression raises an error; it simply evaluates the expression. Avoid it
+> until the runtime check lands.
 
-```lisp
-(test-suite "with-fixtures"
-  (setup
-    (print "Before each test")
-    (def *db* (open-db)))
-  
-  (teardown
-    (print "After each test")
-    (close-db *db*))
-  
-  (test "test-1"
-    (assert-equal (query *db* "x") 1))
-  
-  (test "test-2"
-    (assert-equal (query *db* "y") 2)))
+## 11.3 Running Tests
+
+Compile your file, then run the produced binary. `-o <name>` makes the
+compiler emit `<name>.s` (assembly) and `<name>.bin` (the executable); without
+`-o` it uses the defaults `a.out.s` / `a.out.bin`:
+
+```bash
+# Build (produces test-file.s and test-file.bin)
+zyl test-file.zyl -o test-file
+
+# Run the tests
+./test-file.bin
 ```
 
-- `setup` runs **before each test** in the suite
-- `teardown` runs **after each test** (even if test fails)
-- Runs in same environment as test (can bind variables)
+Run `zyl` from the directory that contains `stdlib/` — module resolution is
+relative to the compiler's working directory (see Chapter 13).
 
-## 11.5 Property-Based Testing
+There is no `--filter` command-line flag yet; tests always run in source order.
+A failing test doesn't stop the others — the harness reports a summary at the
+end:
 
-Generate random inputs, verify properties hold:
+```
+test: addition ... ok
+test: multiplication ... FAIL
 
-```lisp
-(test-property "addition-commutative"
-  (gen-int)                    ; Generator for first arg
-  (fn (a b)                    ; Property function
-    (assert-equal (+ a b) (+ b a))))
+test result: 1 passed, 1 failed, 2 total
 ```
 
-### Generators
+A failure is a runtime panics (e.g. an `assert-equal` mismatch or an `assert`
+inside the test body) that the harness catches and attributes to that test.
 
-| Generator | Produces |
-|-----------|----------|
-| `gen-int` | Random `Int` |
-| `gen-bool` | Random `Bool` |
-| `gen-string` | Random `String` |
-| `gen-float` | Random `Float` |
-
-### Property Function
+## 11.4 Example: A Complete Test File
 
 ```lisp
-(fn (generated-args...)
-  (assert-equal ...))
-```
+(use collections/vec)
 
-- Called many times (default: 100 iterations)
-- Fails on first counterexample
-- Reports the failing input
+(defn factorial (n)
+  (if (<= n 1) 1 (* n (factorial (- n 1)))))
 
-### Example: List Reverse
+(test "factorial"
+  (assert-equal (factorial 5) 120))
 
-```lisp
-(test-property "reverse-involution"
-  (gen-int) (gen-int) (gen-int)
-  (fn (a b c)
-    (let lst (Cons a (Cons b (Cons c Nil)))
-      (assert-equal (reverse (reverse lst)) lst))))
-```
+(test "edge-case-zero"
+  (assert-equal (factorial 0) 1))
 
-## 11.6 Compile-Time Tests
+(test "vector-push"
+  (assert-equal
+    (vec-len (vec-push (vec-create 0 4) 42))
+    1))
 
-Verify code compiles (or fails to compile):
-
-```lisp
-(test-compile "(defn foo () 42)" (:expect-error false))
-
-(test-compile "(defn foo () (undefined-fn))" (:expect-error true))
-```
-
-Useful for:
-- Testing macro expansions
-- Verifying error messages
-- Ensuring API compatibility
-
-## 11.7 Running Tests
-
-### In Source File
-
-```lisp
-;; At end of file:
 (run-tests)
 ```
 
-### Command Line
+## 11.5 On the Roadmap (Spec §20.5)
 
-```bash
-# Run all tests in file
-zyl test-file.zyl
-./test-file
+The following are part of the specification's testing design and **parsed by
+the compiler today, but not yet executed by the harness**:
 
-# Run specific suite/filter
-zyl test-file.zyl --filter "math"
-```
+- **`test-suite` grouping** — see the note in §11.1.
+- **`setup` / `teardown` fixtures** — run before/after each test once wired up.
+- **Property-based testing** — `(test-property "name" generator property-fn)`
+  with `gen-int`/`gen-bool`/`gen-string`/`gen-float` generators, plus
+  `test-compile` for compile-time checks.
+- **Test options** — `:parallel`, `:filter`, and `:verbose` keyword arguments
+  on `test` and `run-tests` are parsed but have no effect yet.
 
-### Test Runner Options
+Treat these as reserved for future use; build your suites with flat `test`
+forms today (which is exactly how Zyl's own `tests/regression/*.zyl` files
+work).
 
-```lisp
-(run-tests
-  (:parallel true)       ; Parallel execution (default)
-  (:filter "pattern")    ; Only run tests matching pattern
-  (:verbose true))       ; Print each test name
-```
+## 11.6 Testing Actors
 
-## 11.8 Test Output
+Actors process messages asynchronously, and Zyl has no `receive` primitive yet
+— a spawned actor cannot reply back to the caller synchronously. The runtime
+does ensure that when `main` returns, all spawned actors have drained their
+mailboxes (the compiler emits `zyl_actor_wait_all` at the end of `main`).
 
-```
-Running test suite: math-tests
-  ✓ addition
-  ✓ multiplication
-  ✓ advanced/factorial
-
-Running test suite: property-tests
-  ✓ addition-commutative (100 iterations)
-  ✓ reverse-involution (100 iterations)
-
-All 5 tests passed!
-```
-
-Failure:
-```
-Running test suite: math-tests
-  ✓ addition
-  ✗ multiplication
-    Expected: 12
-    Actual: 13
-    At: test-file.zyl:15
-
-1 failed, 1 passed
-```
-
-## 11.9 Testing Best Practices
-
-1. **One assertion per test** — easier to diagnose
-2. **Descriptive names** — `test "add-two-positive-ints"` not `test "add"`
-3. **Test edge cases** — zero, negative, empty, max values
-4. **Use property-based testing** for algebraic laws
-5. **Isolate tests** — no shared mutable state between tests
-6. **Fast tests** — keep unit tests under 10ms each
-
-## 11.10 Testing Actors
+Deterministic assertions on actor-produced state are therefore a current
+limitation. A useful pattern while that matures is to have the actor format its
+result and hand it to a captured sink:
 
 ```lisp
-(test "actor-counter"
-  (let counter (make-counter)
-    (send counter (Inc))
-    (send counter (Inc))
-    (send counter (Get))
-    (wait_all counter)
-    (assert-equal (captured-output) "Count: 2")))
+(test "counter"
+  (let-mut (seen Nil)
+    (def sink (fn (value) (set! seen value)))
+    (spawn (fn (msg) (send sink (process msg))))
+    ;; ... send messages, then rely on the end-of-main wait ...
+    (assert-true true)))
 ```
 
-Use `wait_all` to ensure actor processed messages before asserting.
+For fully deterministic concurrency tests, prefer decomposing the pure logic
+into ordinary functions and testing those — leaving a thin, manually-verified
+actor wrapper on top.
 
-## 11.11 Regression Test Suite
+## 11.7 Testing Best Practices
 
-Zyl's own test suite uses this framework. Run it:
+1. **One assertion per test** — easier to diagnose failures.
+2. **Descriptive names** — `"add-two-positive-ints"`, not `"add"`.
+3. **Test edge cases** — zero, negatives, empty collections, extreme values.
+4. **Keep tests independent** — no shared mutable state between tests.
+5. **Extract pure logic** and test it directly rather than through actors.
+
+## 11.8 Zyl's Own Regression Suite
+
+Zyl's test suite is written with this very framework:
 
 ```bash
 ./run_regression_tests.sh --quick   # Smoke tests
 ./run_regression_tests.sh --full    # All tests
-./run_regression_tests.sh --filter structs
+./run_regression_tests.sh --filter structs  # Struct regression tests only
 ```
+
+The harness lives in `stdlib/testing/testing.zyl` and the tests in
+`tests/regression/`.
 
 ---
 
@@ -252,30 +198,30 @@ Zyl's own test suite uses this framework. Run it:
 
 ### Test Execution Model
 
-1. **Registration phase**: `test-suite`/`test` forms register in global test registry
-2. **Filtering**: Apply `:filter` and selection
-3. **Parallel execution**: Tests distributed across worker threads
-4. **Deterministic ordering**: Results sorted by test name for reproducibility
-5. **Reporting**: Aggregated results printed
+1. **Registration**: the compiler lowers each top-level `test` into a named
+   `_test_<name>` function plus a `zyl_register_test(name, fn)` call in the
+   runtime test registry.
+2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call that runs
+   tests sequentially in registration order and returns the count of failures
+   as the process exit code.
+3. **Panic containment**: each test runs inside a `setjmp`/`longjmp` guard, so
+   an assertion failure inside a test marks that test as failed instead of
+   killing the process.
+4. **Deterministic**: no parallelism, no shared state — output order is
+   compile-determined.
 
 ### Isolation
 
-Each test runs in fresh environment:
-- New region scope
-- No shared mutable state (enforced by type system)
-- `setup`/`teardown` run in test's scope
+- A panic inside a test unwinds to the harness; the process survives.
+- There is no `try` boundary between assertions in the same test — the first
+  failure aborts the remaining body of that test.
 
-### Property-Based Testing Implementation
+### Why Suites Are Pending
 
-```lisp
-(defn run-property (name generators property-fn)
-  (for (i 0) (< i 100)
-    (let args (map (fn (g) (g)) generators))
-    (try (apply property-fn args)
-      (catch err
-        (print "Counterexample: " args)
-        (error err)))))
-```
+The harness (`zyl_run_tests`) iterates the flat registry; implementing
+`test-suite`/fixtures/property testing means either lowering suites to flat
+registrations at compile time or teaching `zyl_run_tests` to understand
+grouping — a compile-time flattening is the likely first step.
 
 ---
 

@@ -10,7 +10,7 @@ This is enforced **at compile time** — violation = `E_MUT_CONFLICT`.
 
 ## 17.2 Capability Types
 
-### TCap<T> — Shared Immutable
+### `TCap<T>` — Shared Immutable
 
 ```
 TCap<T> ::= "TCap" "<" Type ">"
@@ -27,7 +27,7 @@ TCap<T> ::= "TCap" "<" Type ">"
 (defn foo (y) y)        ; y : TCap<T> (param)
 ```
 
-### TMut<T> — Exclusive Mutable
+### `TMut<T>` — Exclusive Mutable
 
 ```
 TMut<T> ::= "TMut" "<" Type ">"
@@ -48,7 +48,7 @@ TMut<T> ::= "TMut" "<" Type ">"
 - Cannot be sent to actors
 - Cannot be captured by escaping closure (unless promoted to Heap with unique ownership)
 
-### TAtomic<T> — Thread-Safe Mutation
+### `TAtomic<T>` — Thread-Safe Mutation
 
 ```
 TAtomic<T> ::= "TAtomic" "<" Type ">"
@@ -66,7 +66,7 @@ TAtomic<T> ::= "TAtomic" "<" Type ">"
 (spawn (fn () (atomic-add counter 1)))  ; OK — Send capable
 ```
 
-### TBox<T> — Heap-Owned
+### `TBox<T>` — Heap-Owned
 
 ```
 TBox<T> ::= "TBox" "<" Type ">"
@@ -81,7 +81,7 @@ TBox<T> ::= "TBox" "<" Type ">"
 (deftype List (Cons T (TBox (List T))) Nil)
 ```
 
-### TPin<T> — FFI-Pinned
+### `TPin<T>` — FFI-Pinned
 
 ```
 TPin<T> ::= "TPin" "<" Type ">"

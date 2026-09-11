@@ -54,6 +54,56 @@ no r15 pattern).
   is a Rust bootstrap performance issue, not a correctness bug.
   `boot/fixed-point` exercises the same path and remains green.
 
+**Latest session (2026-09-10): Book documentation verity pass.**
+
+1. **`book/src/part1/ch13-project-walkthrough.md` rewritten from scratch** — the
+   old walkthrough used non-existent APIs (`string-split`, `vec-slice`,
+   `string-join`, `list-literal`, struct-carrying `ProcessorMsg` actors) and
+   would not compile. The new chapter is a single-file **log processor** built
+   exclusively from constructs verified at runtime against `./target/debug/zyl`
+   (recursive tokenizer over `str-substring` + arena `str-intern`, recursion
+   with 4 Int accumulator args, `Stats` struct assembled once at the end,
+   built-in `file-open`/`file-read`, built-in test harness). Every code block
+   was re-extracted from the chapter text and recompiled, reproducing the real
+   output (`Total:4 Error:2 Warn:1 Info:1` on `sample2.log`).
+2. **New runnable example project**: `book/examples/log-processor/`
+   (`log-processor.zyl`, `log-processor-tests.zyl` — 4/4 tests pass,
+   `sample.log`).
+3. **Verified current-bootstrap behaviors documented honestly** (ch13 notes):
+   modules resolve relative to the compiler's CWD (build from repo root);
+   user modules outside stdlib are not resolvable (single-file programs only);
+   `{ }` brace blocks in `use` are invalid; `str-eq` returns `Int` 0/1;
+   `print` writes each argument on its own line; `str-substring` returns
+   scratch-buffer pointers (must `str-intern`); `struct-get` requires a
+   pre-bound struct; structs passed through stacked recursion mis-stage
+   (counts double) — use Int args; `(list ...)` literal is unimplemented
+   (`_ZYL_list` link error); `vec-push` in `while`+`set!` segfaults;
+   `(run-tests)` suppresses `main`; the test harness mis-stages the *first*
+   token-operations run under it (order tests so simple ones run first);
+   actor `spawn`/`send` value staging is broken (actor variant presented as
+   a design sketch, not runnable code).
+4. **`book/src/appendix/appendix-b-stdlib.md` recovered and fixed** — the
+   working-tree copy (richer uncommitted revision) was accidentally reverted
+   during this session (`git checkout`); no git object held it, so it was
+   reconstructed from the in-session read, then re-synced. All `(use core {
+   ... })` brace blocks converted to bare `(use core)` + `;` comment
+   inventories (brace form is a parse error).
+5. **`book/src/part1/ch11-testing.md` §11.3** — build command corrected to
+   `zyl test-file.zyl -o test-file` then `./test-file.bin` (no `-o` yields
+   `a.out.s` / `a.out.bin`, not `test-file.bin`); notes CWD-relative module
+   resolution.
+6. **`book/book.toml` fixed for the installed mdbook** — removed unknown keys
+   (`copy-fonts`, `theme`, `curly-quotes`, old `[output.html.css]` section,
+   `fa-github` icon) that failed the whole HTML backend; `mdbook build` now
+   completes with zero warnings (also fixed `<t>`/`<mutex>` HTML-tag warnings
+   in ch17/ch21 by backticking `TCap<T>` headings and `Arc<Mutex>`).
+
+**Known limitations recorded in the book (2026-09-10):**
+- Runnable actor example blocked on `spawn`/`send` message-staging fix.
+- Multi-file user modules blocked (confirmed unsupported).
+- Test-harness first-use token-operation mis-staging: keep harness tests free
+  of token ops, or order simple tests first.
+
 **Self-hosting: COMPLETE, deterministic, verified. Regression suite 182/182 (unit_test) + 6/6 smoke.**
 
 ```
@@ -377,6 +427,7 @@ constraints; the boot fixed point is the arbiter.
 | **Type inference ported to Zyl** | **2026-09-10** | **Hindley-Milner + capability types + trait resolution + occurs-check** |
 | **Monomorphization ported to Zyl** | **2026-09-10** | **Full monomorphization using type inference data; all regression tests pass** |
 | **P3.5 complete: Zyl self-hosts all phases** | **2026-09-10** | **boot.sh fixed point holds; Zyl compiler compiles itself end-to-end** |
+| Book documentation verity pass | 2026-09-10 | ch13 rewritten from runtime-verified constructs; appendix B braces fixed; ch11 §11.3 corrected; book.toml builds with zero warnings |
 
 ### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
 

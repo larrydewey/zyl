@@ -10,16 +10,14 @@ build-dir = "../book-build"
 create-missing = false
 
 [output.html]
-theme = "theme"
 default-theme = "light"
 preferred-dark-theme = "dark"
-curly-quotes = true
+smart-punctuation = true
 mathjax-support = false
 no-section-label = false
 git-repository-url = "https://github.com/larrydewey/zyl"
-git-repository-icon = "fa-github"
+git-repository-icon = "fab-github"
 edit-url-template = "https://github.com/larrydewey/zyl/edit/main/book/src/{path}"
-copy-fonts = true
 
 [output.html.fold]
 enable = true
@@ -38,6 +36,3 @@ heading-split-level = 3
 
 [output.html.print]
 enable = true
-
-[output.html.css]
-additional = ["custom.css"]

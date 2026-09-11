@@ -1,0 +1,4 @@
+2024-01-15 [INFO] auth login ok
+2024-01-15 [ERROR] auth failed login
+2024-01-15 [WARN] db slow query
+2024-01-15 [ERROR] db timeout

@@ -161,17 +161,21 @@ Special Forms   ::= (let (Name Expr) Body)
 | Module | Key Exports |
 |--------|-------------|
 | `core` | + - * / %, == != < >, and or not, print, read-line, int? float? bool? string?, struct-get, len, begin, if, let, let-mut, try, match, error, unwrap, assert |
-| `option` | Option, Some, None, is-some, unwrap, map, bind |
-| `result` | Result, Ok, Err, is-ok, unwrap, map, bind |
-| `collections/vec` | vec-create, vec-push, vec-pop, vec-get, vec-len, vec-cap |
+| `option` | Option, Some, None, option-is-some, option-unwrap, option-map, option-flatmap |
+| `result` | Result, Ok, Err, result-is-ok, result-unwrap, result-map, result-ok, result-err |
+| `collections/vec` | vec-create, vec-push, vec-pop, vec-get, vec-set, vec-len, vec-cap, vec-last |
 | `collections/map` | map-create, map-put, map-get, map-len, map-has, map-remove |
 | `collections/set` | set-create, set-add, set-remove, set-len, set-contains |
-| `actor` | spawn, send, wait_all |
-| `ffi` | ffi-call, ffi-pin, ffi-unpin |
-| `allocator` | alloc-malloc, alloc-free, buf-append, cstr-to-string |
-| `testing` | test-suite, test, assert-equal, run-tests |
+| `actor` | spawn, send (special forms); actor-spawn, actor-send, actor-wait, actor-is-alive |
+| `ffi` | ffi-call, ffi-pin, ffi-unpin (special forms); ffi-safe-call |
+| `io` | file-open, file-read, file-write, file-close, read-line (special forms) |
+| `allocator` | alloc-malloc, alloc-free, arena-create, arena-alloc, str-concat, buf-append |
+| `testing` | test-suite, test, assert-equal, run-tests (special forms) |
 
 ## F.7 Compiler Flags Summary
+
+> **Status**: `-o` is implemented today; the `--emit-*`, `--test`, and
+> `--filter` flags are roadmap items (see Appendix C.13).
 
 | Flag | Phase Output |
 |------|-------------|
