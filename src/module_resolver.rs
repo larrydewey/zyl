@@ -23,6 +23,47 @@ pub struct ModuleResolver {
     adt_info: IndexMap<String, Vec<String>>,
 }
 
+const EMBEDDED_PREFIX: &str = "embedded://";
+
+fn embedded_module_source(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "actor/actor" => include_str!("../stdlib/actor/actor.zyl"),
+        "allocator/allocator" => include_str!("../stdlib/allocator/allocator.zyl"),
+        "atomic/atomic" => include_str!("../stdlib/atomic/atomic.zyl"),
+        "collections/collections" => include_str!("../stdlib/collections/collections.zyl"),
+        "collections/map" => include_str!("../stdlib/collections/map.zyl"),
+        "collections/set" => include_str!("../stdlib/collections/set.zyl"),
+        "collections/vec" => include_str!("../stdlib/collections/vec.zyl"),
+        "compiler/assert_lowering" => include_str!("../stdlib/compiler/assert_lowering.zyl"),
+        "compiler/ast" => include_str!("../stdlib/compiler/ast.zyl"),
+        "compiler/closure_inline" => include_str!("../stdlib/compiler/closure_inline.zyl"),
+        "compiler/codegen" => include_str!("../stdlib/compiler/codegen.zyl"),
+        "compiler/contract_injection" => include_str!("../stdlib/compiler/contract_injection.zyl"),
+        "compiler/expr_inner" => include_str!("../stdlib/compiler/expr_inner.zyl"),
+        "compiler/icnf" => include_str!("../stdlib/compiler/icnf.zyl"),
+        "compiler/lexer" => include_str!("../stdlib/compiler/lexer.zyl"),
+        "compiler/macro_expand" => include_str!("../stdlib/compiler/macro_expand.zyl"),
+        "compiler/module_resolver" => include_str!("../stdlib/compiler/module_resolver.zyl"),
+        "compiler/monomorphization" => include_str!("../stdlib/compiler/monomorphization.zyl"),
+        "compiler/parser" => include_str!("../stdlib/compiler/parser.zyl"),
+        "compiler/region_inference" => include_str!("../stdlib/compiler/region_inference.zyl"),
+        "compiler/resolver" => include_str!("../stdlib/compiler/resolver.zyl"),
+        "compiler/trait_dispatch" => include_str!("../stdlib/compiler/trait_dispatch.zyl"),
+        "compiler/type_inference" => include_str!("../stdlib/compiler/type_inference.zyl"),
+        "compiler/type_system" => include_str!("../stdlib/compiler/type_system.zyl"),
+        "core/core" => include_str!("../stdlib/core/core.zyl"),
+        "core/list" => include_str!("../stdlib/core/list.zyl"),
+        "core/option" => include_str!("../stdlib/core/option.zyl"),
+        "core/result" => include_str!("../stdlib/core/result.zyl"),
+        "ffi/ffi" => include_str!("../stdlib/ffi/ffi.zyl"),
+        "io/io" => include_str!("../stdlib/io/io.zyl"),
+        "mlib/deep" => include_str!("../stdlib/mlib/deep.zyl"),
+        "testing/test_test_harness" => include_str!("../stdlib/testing/test_test_harness.zyl"),
+        "testing/testing" => include_str!("../stdlib/testing/testing.zyl"),
+        _ => return None,
+    })
+}
+
 impl ModuleResolver {
     pub fn new() -> Self {
         Self {
@@ -91,18 +132,21 @@ impl ModuleResolver {
             }
         }
 
-        // Auto-link core modules.
-        let core_loaded = use_stmts.iter().any(|(name, _, _)| name == "core/core" || name == "core/option" || name == "core/result");
+        // Core is the language prelude: make it available even when a program
+        // has no explicit imports. Explicit core/core imports are still
+        // honored, while the resolver's resolved-module set prevents repeats.
+        let core_loaded = use_stmts.iter().any(|(name, _, _)| name == "core/core");
         let mut core_dep_exprs: Vec<Expr> = Vec::new();
         if !core_loaded {
-            if let Ok(core_path) = self.find_dependency("core/core", main_file) {
-                if let Ok(core_source) = fs::read_to_string(&core_path) {
-                    let mut dep_stack = vec![_module_name.into(), "core/core".into()];
-                    if let Ok(resolved) = self.resolve_module_from_source(&core_source, "core/core", &core_path, &mut dep_stack) {
-                        core_dep_exprs = resolved;
-                    }
-                }
-            }
+            let core_path = self.find_dependency("core/core", main_file)?;
+            let core_source = self.read_module_source("core/core", &core_path)?;
+            let mut dep_stack = vec![_module_name.into(), "core/core".into()];
+            core_dep_exprs = self.resolve_module_from_source(
+                &core_source,
+                "core/core",
+                &core_path,
+                &mut dep_stack,
+            )?;
         }
 
         // Resolve all use dependencies.
@@ -111,8 +155,7 @@ impl ModuleResolver {
             let (dep_name, symbols, _unsafe_) = use_stmt;
 
             let dep_path = self.find_dependency(dep_name, main_file)?;
-            let dep_source = fs::read_to_string(&dep_path)
-                .map_err(|_| ZylModuleError::NotFound(dep_name.clone(), dep_path.display().to_string()))?;
+            let dep_source = self.read_module_source(dep_name, &dep_path)?;
 
             let mut dep_stack = vec![_module_name.into(), dep_name.clone()];
             let resolved_dep = self.resolve_module_from_source(&dep_source, dep_name, &dep_path, &mut dep_stack)?;
@@ -198,8 +241,7 @@ impl ModuleResolver {
             let (dep_name, symbols, _unsafe_) = use_stmt;
 
             let dep_path = self.find_dependency(dep_name, file_path)?;
-            let dep_source = fs::read_to_string(&dep_path)
-                .map_err(|_| ZylModuleError::NotFound(dep_name.clone(), dep_path.display().to_string()))?;
+            let dep_source = self.read_module_source(dep_name, &dep_path)?;
 
             dep_stack.push(dep_name.clone());
 
@@ -355,7 +397,15 @@ impl ModuleResolver {
     fn find_dependency(&self, name: &str, _from_file: &Path) -> Result<PathBuf, ZylModuleError> {
         let zyl_path = format!("{}.zyl", name);
 
-        // Try as-is first.
+        // A source-local module takes precedence over the installed prelude.
+        if let Some(parent) = _from_file.parent() {
+            let candidate = parent.join(&zyl_path);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+
+        // Try as-is for callers running from a project root.
         if PathBuf::from(&zyl_path).exists() {
             return Ok(PathBuf::from(&zyl_path));
         }
@@ -368,7 +418,21 @@ impl ModuleResolver {
             }
         }
 
+        if embedded_module_source(name).is_some() {
+            return Ok(PathBuf::from(format!("{}{}", EMBEDDED_PREFIX, zyl_path)));
+        }
+
         Err(ZylModuleError::NotFound(name.into(), zyl_path))
+    }
+
+    fn read_module_source(&self, name: &str, path: &Path) -> Result<String, ZylModuleError> {
+        if path.to_string_lossy().starts_with(EMBEDDED_PREFIX) {
+            return embedded_module_source(name)
+                .map(str::to_owned)
+                .ok_or_else(|| ZylModuleError::NotFound(name.into(), path.display().to_string()));
+        }
+        fs::read_to_string(path)
+            .map_err(|_| ZylModuleError::NotFound(name.into(), path.display().to_string()))
     }
 
     /// Check if an expression matches a symbol name.

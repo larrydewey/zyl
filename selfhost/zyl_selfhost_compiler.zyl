@@ -10079,6 +10079,50 @@
   )
 )
 (
+  defn mr-bundle-source
+  (
+    forms
+  )
+  (
+    match forms
+    (
+      Nil 0
+    )
+    (
+      Cons e rest
+      (
+        match
+        (
+          Expr.inner e
+        )
+        (
+          EDef name d1
+          (
+            if
+            (
+              >
+              (
+                str-eq name "__zyl_boot_bundle"
+              )
+              0
+            )
+            1
+            (
+              mr-bundle-source rest
+            )
+          )
+        )
+        (
+          d2
+          (
+            mr-bundle-source rest
+          )
+        )
+      )
+    )
+  )
+)
+(
   defn mr-resolve-program
   (
     arena main-exprs
@@ -10093,7 +10137,11 @@
       (
         if
         (
-          is-nil uses
+          >
+          (
+            mr-bundle-source main-exprs
+          )
+          0
         )
         uses
         (
@@ -32159,6 +32207,9 @@
   )
 )
 ; ---------- selfhost/driver.zyl ----------
+(
+  def __zyl_boot_bundle 1
+)
 (
   defn dbg-log
   (

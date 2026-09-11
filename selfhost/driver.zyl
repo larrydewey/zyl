@@ -17,6 +17,8 @@
 (use compiler/assert_lowering)
 (use compiler/codegen)
 
+(def __zyl_boot_bundle 1)
+
 ; Pipeline: lexer → parser → Ast → ExprInner → type inference
 ;           → monomorphization → ICNF → codegen
 

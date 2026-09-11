@@ -30,6 +30,23 @@ zyl hello.zyl
 zyl-repl
 ```
 
+The compiler embeds the Zyl standard library and actor runtime, so an
+installed binary does not need to be run from a repository checkout or have a
+`stdlib/` directory on the current working-directory path. Core facilities
+(`Option`, `Result`, `List`, and core helpers) are available automatically.
+Additional libraries remain opt-in, for example:
+
+```lisp
+(use testing/testing)
+```
+
+Project-local modules are still resolved relative to the source file, allowing
+applications to keep their own libraries alongside their source.
+
+The self-hosted compiler produced by `./boot.sh` is packaged the same way:
+`build/boot/zyl-self` includes its standard-library bundle and runtime, and
+can be invoked from any working directory.
+
 ## Self-Hosting Status (2026-09-10)
 
 **Self-hosting: COMPLETE** — The Zyl compiler written in Zyl compiles itself end-to-end with a strict byte-identical fixed point.
