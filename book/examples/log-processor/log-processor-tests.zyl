@@ -1,0 +1,46 @@
+(use allocator/allocator)
+(use core/list)
+
+(defstruct LogEntry (timestamp) (level) (service) (message))
+(defstruct Stats (total) (errors) (warnings) (infos))
+
+(defn tokenize-h (arena s n i start acc sep)
+  (if (>= i n)
+    (if (>= i start)
+      (Cons (str-intern arena (str-substring s start (- i start))) acc)
+      acc)
+    (if (str-eq (str-substring s i 1) sep)
+      (tokenize-h arena s n (+ i 1) (+ i 1)
+        (Cons (str-intern arena (str-substring s start (- i start))) acc) sep)
+      (tokenize-h arena s n (+ i 1) start acc sep))))
+
+(defn rev (l acc)
+  (match l
+    (Nil acc)
+    (Cons h t (rev t (Cons h acc)))))
+
+(defn tokenize (s sep)
+  (let a (arena-create 4096)
+    (rev (tokenize-h a s (str-length s) 0 0 Nil sep) Nil)))
+
+(defn list-nth (l k)
+  (match l
+    (Nil 0)
+    (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
+
+(defn add-line (line t e w i0)
+  (let toks (tokenize line " ")
+  (let lvl (list-nth toks 1)
+    (if (= lvl 0)
+      (Cons t (Cons e (Cons w (Cons i0 Nil))))
+      (Cons (+ t 1)
+            (Cons (+ e (if (> (str-eq lvl "[ERROR]") 0) 1 0))
+                  (Cons (+ w (if (> (str-eq lvl "[WARN]") 0) 1 0))
+                        (Cons (+ i0 (if (> (str-eq lvl "[INFO]") 0) 1 0))
+                              Nil))))))))
+
+(test "eq-lit" (assert-equal 1 (str-eq "[INFO]" "[INFO]")))
+(test "short" (assert-equal 0 (list-nth (add-line "x" 0 0 0 0) 0)))
+(test "nth1" (assert-equal 3 (str-length (list-nth (tokenize "a bbb ccc" " ") 1))))
+(test "nth2" (assert-equal 3 (str-length (list-nth (tokenize "a bbb ccc" " ") 2))))
+(run-tests)

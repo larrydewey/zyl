@@ -1,0 +1,68 @@
+(use allocator/allocator)
+(use core/list)
+
+(defstruct LogEntry (timestamp) (level) (service) (message))
+(defstruct Stats (total) (errors) (warnings) (infos))
+
+(deftype ParseResult
+  (Parsed)
+  (Unparsed String))
+
+(defn tokenize-h (arena s n i start acc sep)
+  (if (>= i n)
+    (if (>= i start)
+      (Cons (str-intern arena (str-substring s start (- i start))) acc)
+      acc)
+    (if (str-eq (str-substring s i 1) sep)
+      (tokenize-h arena s n (+ i 1) (+ i 1)
+        (Cons (str-intern arena (str-substring s start (- i start))) acc) sep)
+      (tokenize-h arena s n (+ i 1) start acc sep))))
+
+(defn rev (l acc)
+  (match l
+    (Nil acc)
+    (Cons h t (rev t (Cons h acc)))))
+
+(defn tokenize (s sep)
+  (let a (arena-create 4096)
+    (rev (tokenize-h a s (str-length s) 0 0 Nil sep) Nil)))
+
+(defn list-nth (l k)
+  (match l
+    (Nil 0)
+    (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
+
+(defn add-line (line t e w i0)
+  (let toks (tokenize line " ")
+  (let lvl (list-nth toks 1)
+    (if (= lvl 0)
+      (Cons t (Cons e (Cons w (Cons i0 Nil))))
+      (Cons (+ t 1)
+            (Cons (+ e (if (> (str-eq lvl "[ERROR]") 0) 1 0))
+                  (Cons (+ w (if (> (str-eq lvl "[WARN]") 0) 1 0))
+                        (Cons (+ i0 (if (> (str-eq lvl "[INFO]") 0) 1 0))
+                              Nil))))))))
+
+(defn scan (s n i start t e w i0)
+  (if (>= i n)
+    (if (>= i start)
+      (let r (add-line (str-substring s start (- i start)) t e w i0)
+        (make-Stats (list-nth r 0) (list-nth r 1) (list-nth r 2) (list-nth r 3)))
+      (make-Stats t e w i0))
+    (if (str-eq (str-substring s i 1) "\n")
+      (let r (add-line (str-substring s start (- i start)) t e w i0)
+        (scan s n (+ i 1) (+ i 1)
+          (list-nth r 0) (list-nth r 1) (list-nth r 2) (list-nth r 3)))
+      (scan s n (+ i 1) start t e w i0))))
+
+(defn process-file (path)
+  (let content (file-read (file-open path "r") 1000000)
+    (scan content (str-length content) 0 0 0 0 0 0)))
+
+(defn main ()
+  (let st (process-file "sample.log")
+    (begin
+      (print "Total:" (struct-get st "total"))
+      (print "Error:" (struct-get st "errors"))
+      (print "Warn:" (struct-get st "warnings"))
+      (print "Info:" (struct-get st "infos")))))
