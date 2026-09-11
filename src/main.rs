@@ -312,9 +312,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("  Assembling {} → {}", asm_path, bin_path);
 
-    // Get the path to the actor runtime C file.
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    let runtime_c = format!("{}/{}", manifest_dir, runtime::RUNTIME_C);
+    // Materialize the embedded runtime next to the assembly for this link.
+    // This keeps `zyl` self-contained after `cargo install`.
+    let runtime_c = format!("{}.runtime.c", asm_path);
+    fs::write(&runtime_c, runtime::embedded_runtime_source())
+        .map_err(|e| format!("Failed to write embedded runtime '{}': {}", runtime_c, e))?;
 
     // Try to assemble and link using cc (which handles as + ld automatically).
     // Include the actor runtime C file for spawn/send support.

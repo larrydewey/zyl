@@ -1,5 +1,25 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-11)
+
+**Compiler library packaging fixed.** The Rust compiler now embeds all
+stdlib modules and the actor runtime/header at build time. Installed `zyl` and
+`zyl-repl` no longer depend on the repository checkout or the caller's
+working directory for standard-library resolution or runtime linking. Core
+(`core/core`, including Option, Result, and List) is an automatic prelude;
+testing and other non-core libraries remain explicit imports.
+
+The self-hosted `zyl-self` wrapper now packages its own `stdlib/` bundle and
+actor runtime, runs from that bundle directory, and works outside the
+repository. The bootstrap fixed-point check and an external self-hosted
+allocator test both pass. Its resolver also injects the core prelude by
+default while recognizing the bundled bootstrap marker to avoid duplicate
+definitions during self-compilation.
+
+Verified with a compiler invoked from `/tmp`, embedded `core` and
+`allocator` programs, and `./run_regression_tests.sh --quick --no-boot`
+(6/6).
+
 ## Current State (2026-09-06)
 
 **Self-hosting: COMPLETE, deterministic, verified. Regression suite: 27/27**

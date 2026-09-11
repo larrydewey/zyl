@@ -120,6 +120,15 @@
       (if (> (str-eq u "core/result") 0) 1
       (mr-core-loaded rest)))))))
 
+(defn mr-bundle-source (forms)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (match (Expr.inner e)
+       (EDef name d1
+         (if (> (str-eq name "__zyl_boot_bundle") 0) 1 (mr-bundle-source rest)))
+       (d2 (mr-bundle-source rest))))))
+
 ; Entry point: resolve every top-level `use` in `main-exprs` (recursively,
 ; dependency-first), auto-injecting core/core when the program already
 ; participates in the module system (has at least one `use`) but doesn't
@@ -141,7 +150,7 @@
 (defn mr-resolve-program (arena main-exprs)
   (let uses (mr-collect-uses main-exprs)
     (let uses2
-      (if (is-nil uses)
+      (if (> (mr-bundle-source main-exprs) 0)
         uses
         (if (> (mr-core-loaded uses) 0) uses (Cons "core/core" uses)))
       (let acc (mr-resolve-uses arena uses2 (MRAcc Nil Nil))

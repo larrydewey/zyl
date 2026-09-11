@@ -153,8 +153,9 @@ fn compile_and_run(source: &str) -> Result<(String, String, i32), String> {
     let asm_content = if cg.asm.is_empty() { String::new() } else { format!("{}\n", cg.asm.join("\n")) };
     fs::write(&asm_path, &asm_content).map_err(|e| format!("Failed to write asm: {}", e))?;
 
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let runtime_c = format!("{}/{}", manifest_dir, runtime::RUNTIME_C);
+    let runtime_c = format!("{}.runtime.c", asm_path);
+    fs::write(&runtime_c, runtime::embedded_runtime_source())
+        .map_err(|e| format!("Failed to write embedded runtime: {}", e))?;
 
     // Assemble
     let assemble = std::process::Command::new("as")

@@ -85,6 +85,9 @@ RESULT="$("${OUT}/smoke.bin")"
 ok "smoke output correct ($RESULT)"
 
 step "Generating build/boot/zyl-self wrapper"
+cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
+cp "${SCRIPT_DIR}/src/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
+cp "${SCRIPT_DIR}/src/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
 cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
 # CLI-compatible wrapper around a self-hosted stage-N compiler binary.
@@ -100,14 +103,17 @@ cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STAGE_BIN="${ZYL_SELF_STAGE:-${SCRIPT_DIR}/stage2.bin}"
-RUNTIME="${ZYL_SELF_RUNTIME:-${SCRIPT_DIR}/../../src/runtime/actor_runtime.c}"
+RUNTIME="${ZYL_SELF_RUNTIME:-${SCRIPT_DIR}/actor_runtime.c}"
 
 SRC="$1"
 OUT="$2"
 
 cp "$SRC" /tmp/zyl_boot_in.zyl
 rm -f /tmp/zyl_boot_out.s
-setarch -R "$STAGE_BIN" >/tmp/zyl_self_stdout.log 2>/tmp/zyl_self_stderr.log
+(
+    cd "$SCRIPT_DIR"
+    setarch -R "$STAGE_BIN"
+) >/tmp/zyl_self_stdout.log 2>/tmp/zyl_self_stderr.log
 if [ ! -s /tmp/zyl_boot_out.s ]; then
     cat /tmp/zyl_self_stderr.log >&2
     echo "zyl-self: no assembly produced" >&2
