@@ -1919,6 +1919,285 @@ impl CodeGen {
             .push(format!("    mov {}, rax", reg_to_64(target_reg)));
     }
 
+    /// Get the Type of a node by ID, if available.
+    fn node_type(
+        &self,
+        id: usize,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+    ) -> Option<Type> {
+        let node = lookup.get(&id)
+            .copied()
+            .or_else(|| stmts.iter().find(|n| n.id == id))?;
+        
+        // If the node has a type, return it.
+        if let Some(typ) = &node.typ {
+            return Some(typ.clone());
+        }
+        
+        // For MakeStruct nodes, return the struct type.
+        if let ICNFInner::MakeStruct(name, _) = &node.node {
+            return Some(Type::Nominal(name.clone()));
+        }
+        
+        // For Load nodes, find the defining Assign and get its type.
+        if let ICNFInner::Load(name) = &node.node {
+            for s in stmts {
+                if let ICNFInner::Assign(var_name, val_id) = &s.node {
+                    if var_name == name {
+                        // Recursively get the type of the assigned value.
+                        return self.node_type(*val_id, lookup, stmts);
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Check if a node's type is a struct (has layout in struct_layouts).
+    /// This resolves Load nodes to their defining Assign/MakeStruct.
+    fn is_struct_type(
+        &self,
+        id: usize,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+    ) -> bool {
+        // Direct check for MakeStruct node.
+        if let Some(node) = lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            if let ICNFInner::MakeStruct(name, _) = &node.node {
+                return self.struct_layouts.contains_key(name);
+            }
+        }
+        
+        // For Load nodes, find the defining Assign and check if it assigns a MakeStruct.
+        let node = match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            Some(n) => n,
+            None => return false,
+        };
+        if let ICNFInner::Load(name) = &node.node {
+            for s in stmts {
+                if let ICNFInner::Assign(var_name, val_id) = &s.node {
+                    if var_name == name {
+                        // Check if the assigned value is a MakeStruct for a known struct.
+                        if let Some(val_node) = lookup.get(val_id).copied().or_else(|| stmts.iter().find(|n| n.id == *val_id)) {
+                            if let ICNFInner::MakeStruct(struct_name, _) = &val_node.node {
+                                return self.struct_layouts.contains_key(struct_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Check if a node's type is an ADT variant (has hidden size header).
+    /// This resolves Load nodes to their defining Assign/MakeVariant.
+    fn is_variant_type(
+        &self,
+        id: usize,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        stmts: &[ICNFNode],
+    ) -> bool {
+        // Direct check for MakeVariant node.
+        if let Some(node) = lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            if let ICNFInner::MakeVariant { type_name, .. } = &node.node {
+                return self.adt_defs.contains_key(type_name);
+            }
+        }
+        
+        // For Load nodes, find the defining Assign and check if it assigns a MakeVariant.
+        let node = match lookup.get(&id).copied().or_else(|| stmts.iter().find(|n| n.id == id)) {
+            Some(n) => n,
+            None => return false,
+        };
+        if let ICNFInner::Load(name) = &node.node {
+            for s in stmts {
+                if let ICNFInner::Assign(var_name, val_id) = &s.node {
+                    if var_name == name {
+                        // Check if the assigned value is a MakeVariant for a known ADT.
+                        if let Some(val_node) = lookup.get(val_id).copied().or_else(|| stmts.iter().find(|n| n.id == *val_id)) {
+                            if let ICNFInner::MakeVariant { type_name, .. } = &val_node.node {
+                                return self.adt_defs.contains_key(type_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+
+    /// Emit field-by-field structural equality for stack-allocated structs.
+    fn emit_struct_eq(
+        &mut self,
+        left_id: usize,
+        right_id: usize,
+        target_reg: &str,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+    ) {
+        let left_type = self.node_type(left_id, lookup, stmts);
+        let struct_name = match left_type {
+            Some(Type::Nominal(n)) => n,
+            _ => return,
+        };
+        let layout = match self.struct_layouts.get(&struct_name) {
+            Some(l) => l.clone(),
+            None => return,
+        };
+
+        // Load both struct addresses into registers.
+        self.emit_load_into(
+            left_id, "rax", stmts, local_vars, lookup, emitted_ids,
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+        );
+        self.asm_push_align();
+        self.asm.push("    push rax".to_string());
+        self.emit_load_into(
+            right_id, "rsi", stmts, local_vars, lookup, emitted_ids,
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+        );
+        self.asm_push_align();
+        self.asm.push("    pop rdi".to_string());
+
+        // rdi = left struct addr, rsi = right struct addr
+        // Compare each field. If any differs, return 0.
+        let eq_label = self.new_label();
+        let neq_label = self.new_label();
+
+        self.asm_push_align();
+        self.asm.push("    mov rax, 1".to_string()); // Default: equal.
+
+        for (field_name, offset, _field_type) in layout {
+            // Load left field
+            self.asm_push_align();
+            self.asm.push(format!("    mov rcx, [rdi + {}]", offset));
+            // Load right field
+            self.asm_push_align();
+            self.asm.push(format!("    mov rdx, [rsi + {}]", offset));
+            // Compare
+            self.asm_push_align();
+            self.asm.push("    cmp rcx, rdx".to_string());
+            self.asm_push_align();
+            self.asm.push(format!("    jne {}", neq_label));
+        }
+
+        // All fields equal - jump to end
+        self.asm_push_align();
+        self.asm.push(format!("    jmp {}", eq_label));
+
+        // Not equal
+        self.asm_push_align();
+        self.asm.push(format!("{}:", neq_label));
+        self.asm_push_align();
+        self.asm.push("    mov rax, 0".to_string());
+
+        // End
+        self.asm_push_align();
+        self.asm.push(format!("{}:", eq_label));
+
+        // Move result to target register
+        if target_reg != "rax" {
+            self.asm_push_align();
+            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+        }
+    }
+
+    /// Emit field-by-field structural comparison for structs (for Lt/Gt/Le/Ge).
+    /// Returns -1, 0, or 1 in rax (like strcmp).
+    fn emit_struct_cmp(
+        &mut self,
+        left_id: usize,
+        right_id: usize,
+        target_reg: &str,
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+    ) {
+        let left_type = self.node_type(left_id, lookup, stmts);
+        let struct_name = match left_type {
+            Some(Type::Nominal(n)) => n,
+            _ => return,
+        };
+        let layout = match self.struct_layouts.get(&struct_name) {
+            Some(l) => l.clone(),
+            None => return,
+        };
+
+        // Load both struct addresses into registers.
+        self.emit_load_into(
+            left_id, "rax", stmts, local_vars, lookup, emitted_ids,
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+        );
+        self.asm_push_align();
+        self.asm.push("    push rax".to_string());
+        self.emit_load_into(
+            right_id, "rsi", stmts, local_vars, lookup, emitted_ids,
+            &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+        );
+        self.asm_push_align();
+        self.asm.push("    pop rdi".to_string());
+
+        // rdi = left struct addr, rsi = right struct addr
+        // Lexicographic comparison: compare fields in order.
+        // Return -1 if left < right, 0 if equal, 1 if left > right.
+        let end_label = self.new_label();
+
+        self.asm_push_align();
+        self.asm.push("    xor rax, rax".to_string()); // Default: equal (0).
+
+        for (i, (field_name, offset, _field_type)) in layout.iter().enumerate() {
+            let continue_label = self.new_label();
+            let field_end_label = self.new_label();
+
+            // Load left field
+            self.asm_push_align();
+            self.asm.push(format!("    mov rcx, [rdi + {}]", offset));
+            // Load right field
+            self.asm_push_align();
+            self.asm.push(format!("    mov rdx, [rsi + {}]", offset));
+            // Compare
+            self.asm_push_align();
+            self.asm.push("    cmp rcx, rdx".to_string());
+            // If equal, continue to next field
+            self.asm_push_align();
+            self.asm.push(format!("    je {}", continue_label));
+            // If not equal, set result based on comparison
+            self.asm_push_align();
+            self.asm.push("    setg al".to_string()); // al = 1 if left > right
+            self.asm_push_align();
+            self.asm.push("    movzx rax, al".to_string()); // rax = 1 if left > right
+            self.asm_push_align();
+            self.asm.push("    setl cl".to_string()); // cl = 1 if left < right
+            self.asm_push_align();
+            self.asm.push("    movzx rcx, cl".to_string()); // rcx = 1 if left < right
+            self.asm_push_align();
+            self.asm.push("    sub rax, rcx".to_string()); // rax = 1 (left>right), -1 (left<right), 0 (equal)
+            self.asm_push_align();
+            self.asm.push(format!("    jmp {}", end_label));
+            // Continue to next field
+            self.asm_push_align();
+            self.asm.push(format!("{}:", continue_label));
+        }
+
+        // All fields equal - rax is already 0
+        self.asm_push_align();
+        self.asm.push(format!("{}:", end_label));
+
+        // Move result to target register
+        if target_reg != "rax" {
+            self.asm_push_align();
+            self.asm.push(format!("    mov {}, rax", reg_to_64(target_reg)));
+        }
+    }
+
     /// True when the node statically looks like a string value (string
     /// literal or call to a known str-* builtin).
     fn node_looks_string(
@@ -3620,12 +3899,59 @@ impl CodeGen {
                         .push(format!("    mov {}, rdx", reg_to_64(target_reg)));
                 }
             }
-            BinOpKind::Eq
+BinOpKind::Eq
             | BinOpKind::Neq
             | BinOpKind::Lt
             | BinOpKind::Gt
             | BinOpKind::Le
             | BinOpKind::Ge => {
+                // Check if operands are aggregate types (structs or variants) for structural comparison.
+                // Both are heap-allocated (Region::Heap) and have hidden size headers,
+                // so we can use zyl_variant_eq for structural equality.
+                let left_is_struct = self.is_struct_type(left_id, lookup, stmts);
+                let right_is_struct = self.is_struct_type(right_id, lookup, stmts);
+                let left_is_variant = self.is_variant_type(left_id, lookup, stmts);
+                let right_is_variant = self.is_variant_type(right_id, lookup, stmts);
+                let left_is_aggregate = left_is_struct || left_is_variant;
+                let right_is_aggregate = right_is_struct || right_is_variant;
+                if left_is_aggregate && right_is_aggregate {
+                    // For Eq/Neq, use structural equality via zyl_variant_eq.
+                    if matches!(op, BinOpKind::Eq | BinOpKind::Neq) {
+                        self.emit_variant_eq(
+                            left_id, right_id, target_reg, stmts, local_vars, lookup, emitted_ids,
+                        );
+                        if matches!(op, BinOpKind::Neq) {
+                            self.asm_push_align();
+                            self.asm.push(format!("    xor {}, 1", reg_to_64(target_reg)));
+                        }
+                        emitted_ids.insert(node_id);
+                        return;
+                    }
+                    // For Lt/Gt/Le/Ge on structs, use structural comparison (lexicographic).
+                    // For variants, fall through to pointer comparison (no ordering defined).
+                    if left_is_struct && right_is_struct {
+                        self.emit_struct_cmp(
+                            left_id, right_id, target_reg, stmts, local_vars, lookup, emitted_ids,
+                        );
+                        // Convert cmp result (-1/0/1) to boolean based on the operator.
+                        let d = reg_to_64(target_reg);
+                        self.asm_push_align();
+                        self.asm.push("    test rax, rax".to_string());
+                        let set_instr = match op {
+                            BinOpKind::Lt => "setl",    // rax < 0
+                            BinOpKind::Gt => "setg",    // rax > 0
+                            BinOpKind::Le => "setle",   // rax <= 0
+                            BinOpKind::Ge => "setge",   // rax >= 0
+                            _ => unreachable!(),
+                        };
+                        self.asm_push_align();
+                        self.asm.push(format!("    {} al", set_instr));
+                        self.asm_push_align();
+                        self.asm.push(format!("    movzx {}, al", d));
+                        emitted_ids.insert(node_id);
+                        return;
+                    }
+                }
                 let d = reg_to_64(target_reg);
                 self.asm_push_align();
                 self.asm.push("    cmp rbx, rdx".to_string());
