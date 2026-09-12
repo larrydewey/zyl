@@ -1632,7 +1632,7 @@ ExprInner::WithResource(name, init, body) => {
 
             ExprInner::Derive(type_name, traits) => {
                 let ty = self
-                    .resolve_type_name(type_name)
+                    .resolve_type_name(&type_name)
                     .unwrap_or(Type::Nominal(type_name.clone()));
                 for tn in traits.iter() {
                     if !self.trait_ctx.check_derivable(&ty, tn) {
@@ -1641,6 +1641,16 @@ ExprInner::WithResource(name, init, body) => {
                             tn.clone(),
                             type_name.clone(),
                         ));
+                    }
+                    // Register derived impl with generated methods
+                    let impl_type = ty.clone();
+                    let methods = self.generate_derive_methods(&type_name, tn);
+                    if let Err(e) = self.trait_ctx.register_impl(ImplInfo {
+                        trait_name: tn.clone(),
+                        impl_type,
+                        methods,
+                    }) {
+                        drop(e);
                     }
                 }
                 Ok(Type::Prim(PrimType::Unit))
@@ -2252,6 +2262,59 @@ ExprInner::WithResource(name, init, body) => {
     None
 }
 
+/// Generate method implementations for derived traits.
+fn generate_derive_methods(&self, type_name: &str, trait_name: &str) -> IndexMap<String, Type> {
+    let mut methods = IndexMap::new();
+    let struct_fields = self.struct_defs.get(type_name).cloned().unwrap_or_default();
+
+    match trait_name {
+        "Eq" => {
+            // Eq: (self T) (other T) -> Bool
+            let params = vec![
+                Type::Nominal(type_name.to_string()),
+                Type::Nominal(type_name.to_string()),
+            ];
+            let ret = Type::Prim(PrimType::Bool);
+            methods.insert("eq".to_string(), Type::Fun(params, Box::new(ret)));
+        }
+        "Ord" => {
+            // Ord: (self T) (other T) -> Int (-1/0/1)
+            let params = vec![
+                Type::Nominal(type_name.to_string()),
+                Type::Nominal(type_name.to_string()),
+            ];
+            let ret = Type::Prim(PrimType::Int);
+            methods.insert("cmp".to_string(), Type::Fun(params, Box::new(ret)));
+        }
+        "Debug" => {
+            // Debug: (self T) -> Unit (prints)
+            let params = vec![
+                Type::Nominal(type_name.to_string()),
+            ];
+            let ret = Type::Prim(PrimType::Unit);
+            methods.insert("debug".to_string(), Type::Fun(params, Box::new(ret)));
+        }
+        "Clone" => {
+            // Clone: (self T) -> T
+            let params = vec![
+                Type::Nominal(type_name.to_string()),
+            ];
+            let ret = Type::Nominal(type_name.to_string());
+            methods.insert("clone".to_string(), Type::Fun(params, Box::new(ret)));
+        }
+        "Hash" => {
+            // Hash: (self T) -> Int
+            let params = vec![
+                Type::Nominal(type_name.to_string()),
+            ];
+            let ret = Type::Prim(PrimType::Int);
+            methods.insert("hash".to_string(), Type::Fun(params, Box::new(ret)));
+        }
+        _ => {}
+}
+    methods
+}
+
 /// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
 #[allow(dead_code)]
 fn is_skip_placeholder(expr: &Expr) -> bool {
@@ -2766,28 +2829,8 @@ fn parse_map_type(s: &str) -> Option<(String, String)> {
     None
 }
 
-#[allow(dead_code)]
-fn parse_result_type(s: &str) -> Option<(String, String)> {
-    if let Some(rest) = s.strip_prefix("Result<") {
-        let mut depth = 1;
-        for (j, c) in rest.char_indices() {
-            match c {
-                '<' => depth += 1,
-                '>' => depth -= 1,
-                ',' if depth == 1 => {
-                    return Some((
-                        rest[..j].to_string(),
-                        rest[j + c.len_utf8()..].strip_suffix('>')?.to_string(),
-                    ));
-                }
-                _ => {}
-            }
-        }
-    }
-    None
-}
-
 /// Check if an expression is a `___skip_` keyword placeholder (intentionally omitted branch).
+#[allow(dead_code)]
 fn is_skip_placeholder(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(Atom::Keyword(kw)) if kw == "___skip_")
 }
