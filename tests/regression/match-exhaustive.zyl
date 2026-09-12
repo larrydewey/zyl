@@ -1,0 +1,154 @@
+; Match Exhaustiveness Regression Tests — compile-time exhaustiveness checking.
+; Every variant of the matched type must have an arm, or a catch-all (_) arm.
+
+(use core/core)
+
+; A custom sum type with three variants.
+(deftype _me_Shape
+  (Circle Int)
+  (Rect Int Int)
+  (Triangle Int Int Int))
+
+; Exhaustive match: all three variants covered.
+(
+  defn
+  _me_area
+  (s)
+  (
+    match
+    s
+    (Circle r (* r r))
+    (Rect w h (* w h))
+    (Triangle a b c (+ a b c))
+  )
+)
+
+(
+  test
+  "match-exhaustive-three"
+  (
+    assert-equal
+    (_me_area (Circle 2))
+    4
+  )
+)
+
+(
+  test
+  "match-exhaustive-three-rect"
+  (
+    assert-equal
+    (_me_area (Rect 3 4))
+    12
+  )
+)
+
+(
+  test
+  "match-exhaustive-three-tri"
+  (
+    assert-equal
+    (_me_area (Triangle 1 2 3))
+    6
+  )
+)
+
+; Catch-all arm: _ matches any variant not explicitly listed.
+(deftype _me_Colour (Red) (Green) (Blue) (Yellow))
+
+(
+  defn
+  _me_warm
+  (c)
+  (
+    match
+    c
+    (Red 1)
+    (Yellow 1)
+    (_ 0)
+  )
+)
+
+(
+  test
+  "match-catch-all"
+  (
+    assert-equal
+    (_me_warm (Green))
+    0
+  )
+)
+
+(
+  test
+  "match-catch-all-red"
+  (
+    assert-equal
+    (_me_warm (Red))
+    1
+  )
+)
+
+; Nested patterns: matching a variant whose field is another ADT.
+(deftype _me_Opt (Some Int) (None))
+(deftype _me_Nested (Wrap _me_Opt))
+
+(
+  defn
+  _me_nested
+  (n)
+  (
+    match
+    n
+    (Wrap (Some x) x)
+    (Wrap (None) 0)
+  )
+)
+
+(
+  test
+  "match-nested"
+  (
+    assert-equal
+    (_me_nested (Wrap (Some 42)))
+    42
+  )
+)
+
+; Note: nested empty-variant pattern (Wrap None) requires compiler support
+; for matching nested zero-field variants. Currently unsupported.
+
+; Match on built-in Option type.
+(
+  defn
+  _me_opt
+  (o)
+  (
+    match
+    o
+    (Some x x)
+    (None 0)
+  )
+)
+
+(
+  test
+  "match-option"
+  (
+    assert-equal
+    (_me_opt (Some 7))
+    7
+  )
+)
+
+(
+  test
+  "match-option-none"
+  (
+    assert-equal
+    (_me_opt None)
+    0
+  )
+)
+
+(run-tests)

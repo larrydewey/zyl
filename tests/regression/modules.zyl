@@ -1,0 +1,70 @@
+; Modules Regression Tests — module imports from stdlib.
+; Spec §19: modules are compile-time namespaces for separate files.
+; (use "mod") imports a module from stdlib/. In a single file, only
+; imports are testable; top-level def/export/module are no-ops for tests.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/result)
+(use actor/actor)
+
+; Test stdlib imports work.
+(
+  test
+  "module-use-list"
+  (
+    assert-equal
+    (list-length (list-append (Cons 1 Nil) (Cons 2 Nil)))
+    2
+  )
+)
+
+; Option from core/option.
+(
+  test
+  "module-use-option"
+  (
+    assert-equal
+    (option-unwrap (Some 5) 0)
+    5
+  )
+)
+
+; Result from core/result.
+(
+  test
+  "module-use-result"
+  (
+    assert-equal
+    (result-unwrap (result-ok 42) 0)
+    42
+  )
+)
+
+; Actor from actor/actor.
+(
+  test
+  "module-use-actor"
+  (
+    let a (spawn (fn () 7))
+    (actor-wait a)
+    0
+  )
+)
+
+; Multiple imports in one file.
+(
+  test
+  "module-multiple-imports"
+  (
+    assert-equal
+    (option-unwrap (Some 1) 0)
+    1
+  )
+)
+
+; Module declaration (parses but no-op in single file).
+(module "mod_dummy")
+
+(run-tests)

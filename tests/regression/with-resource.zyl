@@ -1,0 +1,133 @@
+; with-resource Regression Tests — lexical scoped resource binding
+; (with-resource (name init) body): name is bound to init's value for NESTED
+; body evaluation only; the binding is invisible after the form exits.
+
+(use core/core)
+
+; Basic: bound name is visible inside the body.
+(
+  test
+  "wr-basic"
+  (
+    assert-equal
+    (
+      with-resource
+      (h 42)
+      (
+        +
+        h
+        1
+      )
+    )
+    43
+  )
+)
+
+; The body VALUE is the result of the form (with-resource is not a void op).
+(
+  test
+  "wr-value"
+  (
+    assert-equal
+    (
+      with-resource
+      (f 7)
+      f
+    )
+    7
+  )
+)
+
+; Init expression is evaluated (not lazy).
+(
+  test
+  "wr-init-eval"
+  (
+    assert-equal
+    (
+      with-resource
+      (x (* 6 7))
+      x
+    )
+    42
+  )
+)
+
+; Nested with-resources: inner can shadow-close over outer binding.
+(
+  test
+  "wr-nested"
+  (
+    assert-equal
+    (
+      with-resource
+      (a 1)
+      (
+        with-resource
+        (b 2)
+        (
+          +
+          a
+          b
+        )
+      )
+    )
+    3
+  )
+)
+
+; The binding does not leak past the form boundary: a use of the same name
+; outside refers to a fresh let-bound value, not the resource.
+(
+  test
+  "wr-scope"
+  (
+    assert-equal
+    (
+      begin
+      (
+        let
+        h
+        99
+        (
+          with-resource
+          (h 5)
+          h
+        )
+      )
+      (
+        let
+        h
+        11
+        h
+      )
+    )
+    11
+  )
+)
+
+; Body may use the same name as a outer let — resource wins inside.
+(
+  test
+  "wr-shadows"
+  (
+    assert-equal
+    (
+      let
+      v
+      100
+      (
+        with-resource
+        (v 2)
+        (
+          *
+          v
+          v
+        )
+      )
+    )
+    4
+  )
+)
+
+(run-tests)

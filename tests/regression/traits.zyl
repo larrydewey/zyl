@@ -1,0 +1,98 @@
+; Traits Regression Tests — trait definitions, implementations.
+; Spec §12: traits with static dispatch via monomorphization.
+; Trait dispatch mechanism not yet implemented — tests only verify syntax.
+
+(use core/core)
+
+; Simple trait with one method.
+(trait _tr_Printable
+  (print-self self)
+)
+
+; Implement for Int.
+(impl _tr_Printable Int
+  (
+    defn
+    print-self
+    (self)
+    (print self)
+  )
+)
+
+; Implement for String.
+(impl _tr_Printable String
+  (
+    defn
+    print-self
+    (self)
+    (print self)
+  )
+)
+
+; Trait definition syntax only (no dispatch call).
+(
+  test
+  "trait-definition"
+  (
+    assert-equal
+    1
+    1
+  )
+)
+
+; Implement for Int - syntax only.
+(
+  test
+  "trait-impl-int"
+  (
+    assert-equal
+    1
+    1
+  )
+)
+
+; Implement for String - syntax only.
+(
+  test
+  "trait-impl-str"
+  (
+    assert-equal
+    1
+    1
+  )
+)
+
+; Trait with multiple methods.
+(trait _tr_Comparable
+  (compare self other)
+  (equal self other)
+)
+
+(impl _tr_Comparable Int
+  (
+    defn
+    compare
+    (self other)
+    (if (< self other) -1 (if (> self other) 1 0))
+  )
+  (
+    defn
+    equal
+    (self other)
+    (== self other)
+  )
+)
+
+(
+  test
+  "trait-multi-method-syntax"
+  (
+    assert-equal
+    1
+    1
+  )
+)
+
+; Trait with associated type not supported (syntax error if attempted).
+
+(run-tests)

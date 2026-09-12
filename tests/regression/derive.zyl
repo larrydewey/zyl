@@ -1,0 +1,122 @@
+; Derive Regression Tests — automatic trait derivation for structs.
+; (derive TypeName Trait1 Trait2 ...) — space-separated trait names.
+
+(use core/core)
+
+; Struct with Eq derivation.
+(defstruct _dr_Point (x) (y))
+(derive _dr_Point Eq)
+
+(
+  test
+  "derive-eq-struct"
+  (
+    let
+    p1
+    (make-_dr_Point 1 2)
+    (
+      let
+      p2
+      (make-_dr_Point 1 2)
+      (
+        assert-equal
+        (== p1 p2)
+        1
+      )
+    )
+  )
+)
+
+; Struct with Ord derivation.
+(defstruct _dr_Box (w) (h))
+(derive _dr_Box Ord)
+
+(
+  test
+  "derive-ord-struct"
+  (
+    let
+    b1
+    (make-_dr_Box 2 3)
+    (
+      let
+      b2
+      (make-_dr_Box 3 4)
+      (
+        assert-equal
+        (< b1 b2)
+        1
+      )
+    )
+  )
+)
+
+; Struct with Debug derivation (prints via print).
+(defstruct _dr_Name (first) (last))
+(derive _dr_Name Debug)
+
+(
+  test
+  "derive-debug-struct"
+  (
+    let
+    n
+    (make-_dr_Name "John" "Doe")
+    (
+      begin
+      (print n)
+      1
+    )
+  )
+)
+
+; Multiple traits on one struct.
+(defstruct _dr_Multi (a) (b))
+(derive _dr_Multi Eq Ord Debug)
+
+(
+  test
+  "derive-multi-trait"
+  (
+    let
+    m1
+    (make-_dr_Multi 1 2)
+    (
+      let
+      m2
+      (make-_dr_Multi 1 2)
+      (
+        begin
+        (assert-equal (== m1 m2) 1)
+        (assert-equal (< m1 m2) 0)
+        1
+      )
+    )
+  )
+)
+
+; Derive on generic struct (instantiated).
+(deftype _dr_Container (Box T))
+(derive _dr_Container Eq)
+
+(
+  test
+  "derive-generic-struct"
+  (
+    let
+    c1
+    (Box 42)
+    (
+      let
+      c2
+      (Box 42)
+      (
+        assert-equal
+        (== c1 c2)
+        1
+      )
+    )
+  )
+)
+
+(run-tests)

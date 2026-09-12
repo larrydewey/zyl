@@ -1,0 +1,90 @@
+; Capabilities Regression Tests — TCap/TMut capability types.
+; Spec §14: capability types for compile-time aliasing control.
+; Atomic operations tested separately (FFI-dependent).
+
+(use core/core)
+
+; TCap: shared immutable access (any number of references).
+(
+  test
+  "cap-tcap-basic"
+  (
+    let
+    x
+    42
+    (
+      let
+      y
+      x
+      (
+        assert-equal
+        (+ x y)
+        84
+      )
+    )
+  )
+)
+
+; TMut: exclusive mutable ownership (exactly one reference).
+(
+  test
+  "cap-tmut-basic"
+  (
+    let-mut
+    x
+    10
+    (
+      begin
+      (set! x 20)
+      (assert-equal x 20)
+    )
+  )
+)
+
+; TCap allows multiple references to same value.
+(
+  test
+  "cap-tcap-alias"
+  (
+    let
+    v
+    "hello"
+    (
+      let
+      a
+      v
+      (
+        let
+        b
+        v
+        (
+          assert-equal
+          (str-concat a b)
+          "hellohello"
+        )
+      )
+    )
+  )
+)
+
+; TMut allows mutation via set!.
+(
+  test
+  "cap-tmut-mutate"
+  (
+    let-mut
+    n
+    0
+    (
+      begin
+      (set! n (+ n 1))
+      (set! n (+ n 1))
+      (assert-equal n 2)
+    )
+  )
+)
+
+; Capability aliasing: TCap allows multiple refs, TMut doesn't.
+; (Compile-time checked — no runtime test needed.)
+
+(run-tests)

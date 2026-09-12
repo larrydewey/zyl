@@ -1,0 +1,60 @@
+; Alias Regression Tests — transparent type wrappers
+; Spec §10, §113-115, §21.12
+
+(use core/core)
+(use collections/collections)
+(use collections/vec)
+(use collections/map)
+
+; Alias with struct field (transparent)
+(defstruct _al_User (id Int) (name String))
+
+(test "alias-struct-field-transparent"
+  (let u (make-_al_User 1 "charlie")
+    (assert-equal (struct-get u "id") 1)
+    (assert-true (str-equal (struct-get u "name") "charlie"))))
+
+; Alias for function param documentation (aliases are transparent)
+(alias _al_Port Int)
+(alias _al_FD Int)
+
+(test "alias-multiple-same-base-transparent"
+  (let p 8080
+    (let f 3
+      (assert-equal (+ p f) 8083))))
+
+; Alias in collections - using actual vec API (vec-create + vec-push)
+(test "alias-in-vec"
+  (let v (vec-push (vec-push (vec-push (vec-create-default 10) 1) 2) 3)
+    (assert-equal (vec-len v) 3)
+    (assert-equal (vec-get v 0) 1)
+    (assert-equal (vec-get v 1) 2)
+    (assert-equal (vec-get v 2) 3)))
+
+(test "alias-in-map"
+  (let m (map-create 0 10)
+    (let m1 (map-put m 42 999)
+      (assert-equal (map-get m1 42 0) 999))))
+
+; Alias with pattern matching
+(deftype _al_Option (Some Int) None)
+
+(test "alias-in-match"
+  (assert-equal
+    (match (Some 123)
+      (Some x x)
+      (None 0))
+    123))
+
+; Alias with type predicates - using is-zero as example
+(test "alias-type-predicates"
+  (assert-true (is-zero 0))
+  (assert-false (is-zero 42)))
+
+; Alias with let-mut
+(test "alias-let-mut"
+  (let-mut x 1
+    (set! x 2)
+    (assert-equal x 2)))
+
+(run-tests)

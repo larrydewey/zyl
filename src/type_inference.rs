@@ -1274,6 +1274,16 @@ impl TypeInferer {
                 Ok(Type::Prim(PrimType::Unit))
             }
 
+            // Raw alias.
+            ExprInner::Call(op, args) if is_ident_op(op, "alias") && args.len() >= 2 => {
+                drop(self.infer_expr(&args[1])?);
+                Ok(Type::Prim(PrimType::Unit))
+            }
+            ExprInner::Apply(name, args) if name == "alias" && args.len() >= 2 => {
+                drop(self.infer_expr(&args[1])?);
+                Ok(Type::Prim(PrimType::Unit))
+            }
+
             // Raw struct-get (Call form).
             ExprInner::Call(op, args) if is_ident_op(op, "struct-get") && args.len() >= 2 => {
                 let struct_type = self.infer_expr(&args[0])?;
@@ -1582,9 +1592,13 @@ impl TypeInferer {
                 Ok(Type::Prim(PrimType::Unit))
             }
 
-            ExprInner::WithResource(_name, init, body) => {
-                drop(self.infer_expr(init)?);
-                self.infer_expr(body)
+ExprInner::WithResource(name, init, body) => {
+                let vtype = self.infer_expr(init)?;
+                self.env.enter_scope();
+                self.env.bind_param(name.clone(), vtype);
+                let result = self.infer_expr(body);
+                let _ = self.env.exit_scope();
+                result
             }
             ExprInner::Deftype(_name, _variants, _, bound) => {
                 if let Some(b) = bound {
@@ -1602,7 +1616,17 @@ impl TypeInferer {
                 Ok(Type::Prim(PrimType::Unit))
             }
             ExprInner::AliasDecl(_, target) => {
-                drop(self.infer_expr(target)?);
+                // Alias target is a type name, not a value expression.
+                // Resolve it using resolve_type_name (which handles primitives, aliases, etc.)
+                if let ExprInner::Atom(Atom::Ident(type_name)) = &target.inner {
+                    let _ = self.resolve_type_name(type_name).ok_or_else(|| ZylError::E_UNKNOWN_TYPE(
+                        target.span.clone(),
+                        type_name.clone(),
+                    ))?;
+                } else {
+                    // Fallback: try infer_expr for complex type expressions
+                    drop(self.infer_expr(target)?);
+                }
                 Ok(Type::Prim(PrimType::Unit))
             }
 
