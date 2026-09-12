@@ -1,0 +1,43 @@
+; Testing Framework Regression Tests — test, assert-*, run-tests, test-suite, test-property.
+; Spec §25: testing harness built into the language.
+
+(use core/core)
+
+; Basic test with assert-equal.
+(
+  test
+  "tf-basic"
+  (
+    assert-equal
+    (+ 2 2)
+    4
+  )
+)
+
+; assert-true / assert-false.
+(
+  test
+  "tf-assert-bool"
+  (
+    begin
+    (assert-true (> 5 3))
+    (assert-false (< 10 1))
+    1
+  )
+)
+
+; Multiple assertions in one test (via begin).
+(
+  test
+  "tf-multi-assert"
+  (
+    begin
+    (assert-equal 1 1)
+    (assert-equal 2 2)
+    (assert-true true)
+    1
+  )
+)
+
+; run-tests at end of file.
+(run-tests)

@@ -1298,6 +1298,16 @@ impl PostProcessor {
                 expr.inner = ExprInner::MacroDef(name, patterns, template);
             }
 
+            // module → Unit (declaration, no-op at runtime).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "module") && args.len() == 1 => {
+                expr.inner = ExprInner::Atom(Atom::Ident("Unit".into()));
+            }
+
+            // export → Unit (declaration, no-op at runtime).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "export") && args.len() == 1 => {
+                expr.inner = ExprInner::Atom(Atom::Ident("Unit".into()));
+            }
+
             // read-line → ReadLine (Call form).
             ExprInner::Call(op, args) if Self::is_ident_op(op, "read-line") && args.is_empty() => {
                 expr.inner = ExprInner::ReadLine;
@@ -1780,30 +1790,206 @@ impl PostProcessor {
                 );
             }
 
-            // with-resource → WithResource (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "with-resource") && args.len() >= 3 => {
-                let name = match &args[0].inner {
+            // with-resource → WithResource (Call form): (with-resource (name init) body)
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "with-resource") && !args.is_empty() => {
+                // Binding pair (name init) — first arg is itself a Call from no-dispatch.
+                if args.len() >= 2 {
+                    if let ExprInner::Call(bop, bargs) = &args[0].inner {
+                        if let ExprInner::Atom(Atom::Ident(n)) = &bop.inner {
+                            if !bargs.is_empty() {
+                                expr.inner = ExprInner::WithResource(
+                                    n.clone(),
+                                    Box::new(self.post_process_expr(bargs[0].clone())),
+                                    Box::new(self.post_process_expr(args[1].clone())),
+                                );
+                                return expr;
+                            }
+                        }
+                    }
+                    // Plain (name init body) spread form.
+                    if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
+                        expr.inner = ExprInner::WithResource(
+                            n.clone(),
+                            Box::new(self.post_process_expr(args[1].clone())),
+                            Box::new(self.post_process_expr(args[2].clone())),
+                        );
+                    }
+                } else if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
+                    expr.inner = ExprInner::WithResource(
+                        n.clone(),
+                        Box::new(self.post_process_expr(args[1].clone())),
+                        Box::new(self.post_process_expr(args[2].clone())),
+                    );
+                }
+            }
+
+            // with-resource → WithResource (Apply form): (with-resource (name init) body)
+            ExprInner::Apply(name, args) if name == "with-resource" && !args.is_empty() => {
+                if args.len() >= 2 {
+                    if let ExprInner::Call(bop, bargs) = &args[0].inner {
+                        if let ExprInner::Atom(Atom::Ident(n)) = &bop.inner {
+                            if !bargs.is_empty() {
+                                expr.inner = ExprInner::WithResource(
+                                    n.clone(),
+                                    Box::new(self.post_process_expr(bargs[0].clone())),
+                                    Box::new(self.post_process_expr(args[1].clone())),
+                                );
+                                return expr;
+                            }
+                        }
+                    }
+                    if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
+                        expr.inner = ExprInner::WithResource(
+                            n.clone(),
+                            Box::new(self.post_process_expr(args[1].clone())),
+                            Box::new(self.post_process_expr(args[2].clone())),
+                        );
+                    }
+                }
+            }
+
+            // alias → AliasDecl (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "alias") && args.len() >= 2 => {
+                let alias_name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => return expr,
                 };
-                expr.inner = ExprInner::WithResource(
-                    name,
+                expr.inner = ExprInner::AliasDecl(
+                    alias_name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    Box::new(self.post_process_expr(args[2].clone())),
                 );
             }
 
-            // with-resource → WithResource (Apply form).
-            ExprInner::Apply(name, args) if name == "with-resource" && args.len() >= 3 => {
-                let n = match &args[0].inner {
+            // alias → AliasDecl (Apply form).
+            ExprInner::Apply(name, args) if name == "alias" && args.len() >= 2 => {
+                let alias_name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => return expr,
                 };
-                expr.inner = ExprInner::WithResource(
-                    n,
+                expr.inner = ExprInner::AliasDecl(
+                    alias_name,
                     Box::new(self.post_process_expr(args[1].clone())),
-                    Box::new(self.post_process_expr(args[2].clone())),
                 );
+            }
+
+            // derive → Derive (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "derive") && args.len() >= 2 => {
+                let type_name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let traits: Vec<String> = args[1..]
+                    .iter()
+                    .filter_map(|e| match &e.inner {
+                        ExprInner::Atom(Atom::Ident(t)) | ExprInner::Atom(Atom::Keyword(t)) => {
+                            Some(t.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                expr.inner = ExprInner::Derive(type_name, traits);
+            }
+
+            // derive → Derive (Apply form).
+            ExprInner::Apply(name, args) if name == "derive" && args.len() >= 2 => {
+                let type_name = match &args[0].inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => return expr,
+                };
+                let traits: Vec<String> = args[1..]
+                    .iter()
+                    .filter_map(|e| match &e.inner {
+                        ExprInner::Atom(Atom::Ident(t)) | ExprInner::Atom(Atom::Keyword(t)) => {
+                            Some(t.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                expr.inner = ExprInner::Derive(type_name, traits);
+            }
+
+            // requires → Requires (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "requires") && !args.is_empty() => {
+                expr.inner = ExprInner::Requires(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // requires → Requires (Apply form).
+            ExprInner::Apply(name, args) if name == "requires" && !args.is_empty() => {
+                expr.inner = ExprInner::Requires(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // ensures → Ensures (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "ensures") && !args.is_empty() => {
+                expr.inner = ExprInner::Ensures(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // ensures → Ensures (Apply form).
+            ExprInner::Apply(name, args) if name == "ensures" && !args.is_empty() => {
+                expr.inner = ExprInner::Ensures(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // invariant → Invariant (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "invariant") && !args.is_empty() => {
+                expr.inner = ExprInner::Invariant(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // invariant → Invariant (Apply form).
+            ExprInner::Apply(name, args) if name == "invariant" && !args.is_empty() => {
+                expr.inner = ExprInner::Invariant(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // checkpoint → Checkpoint (Call form).
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "checkpoint") && !args.is_empty() => {
+                expr.inner = ExprInner::Checkpoint(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // checkpoint → Checkpoint (Apply form).
+            ExprInner::Apply(name, args) if name == "checkpoint" && !args.is_empty() => {
+                expr.inner = ExprInner::Checkpoint(Box::new(self.post_process_expr(args[0].clone())));
+            }
+
+            // recover → Recover (Call form): (recover (ErrType fallback) body)
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "recover") && !args.is_empty() => {
+                let body = Box::new(self.post_process_expr(args[0].clone()));
+                let arms: Vec<(String, Box<Expr>)> = args[1..]
+                    .iter()
+                    .filter_map(|arm| match &arm.inner {
+                        ExprInner::Call(arm_op, arm_args) if arm_args.len() == 1 => {
+                            if let ExprInner::Atom(Atom::Ident(err_type)) = &arm_op.inner {
+                                Some((
+                                    err_type.clone(),
+                                    Box::new(self.post_process_expr(arm_args[0].clone())),
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                expr.inner = ExprInner::Recover(body, arms);
+            }
+
+            // recover → Recover (Apply form).
+            ExprInner::Apply(name, args) if name == "recover" && !args.is_empty() => {
+                let body = Box::new(self.post_process_expr(args[0].clone()));
+                let arms: Vec<(String, Box<Expr>)> = args[1..]
+                    .iter()
+                    .filter_map(|arm| match &arm.inner {
+                        ExprInner::Call(arm_op, arm_args) if arm_args.len() == 1 => {
+                            if let ExprInner::Atom(Atom::Ident(err_type)) = &arm_op.inner {
+                                Some((
+                                    err_type.clone(),
+                                    Box::new(self.post_process_expr(arm_args[0].clone())),
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                expr.inner = ExprInner::Recover(body, arms);
             }
 
             // if → If (Call form).
@@ -1955,8 +2141,9 @@ impl PostProcessor {
 
             // for → For (Call form): (for (init-bindings) cond body)
             ExprInner::Call(op, args) if Self::is_ident_op(op, "for") && args.len() >= 3 => {
-                // Parse init-bindings: args[0] should be a list of (name [value]) pairs
-                // With no_dispatch, (i 0) becomes Call(Ident("i"), [0]), so we need to handle both.
+                // Parse init-bindings: args[0] should be a list of (name [value]) pairs.
+                // With no_dispatch, (i 0) becomes Call(Ident("i"), [0]).
+                // Multiple bindings ((i 0) (j 10)) becomes Call(Call(Ident("i"), [0]), [Call(Ident("j"), [10])]).
                 let bindings: Vec<(String, Option<Box<Expr>>)> = match &args[0].inner {
                     ExprInner::Begin(items) => items.iter().map(|item| {
                         match &item.inner {
@@ -1981,17 +2168,42 @@ impl PostProcessor {
                         // Single binding pair: (name) or (name value)
                         if let ExprInner::Atom(Atom::Ident(n)) = &inner_op.inner {
                             if inner_args.is_empty() {
-                                // Just a variable name
                                 vec![(n.clone(), None)]
                             } else if inner_args.len() == 1 {
-                                // Variable with initial value
-                                vec![(n.clone(), Some(Box::new(self.post_process_expr(inner_args[0].clone()))) )]
+                                vec![(n.clone(), Some(Box::new(self.post_process_expr(inner_args[0].clone()))))]
                             } else {
                                 Vec::new()
                             }
                         } else {
                             Vec::new()
                         }
+                    }
+                    ExprInner::Call(first_pair, rest_pairs) => {
+                        // Multiple bindings: ((i 0) (j 10) ...) - first_pair is (i 0), rest_pairs is [(j 10), ...]
+                        let mut result = Vec::new();
+                        // Process first pair
+                        if let ExprInner::Call(op2, args2) = &first_pair.inner {
+                            if let ExprInner::Atom(Atom::Ident(n)) = &op2.inner {
+                                if args2.len() == 1 {
+                                    result.push((n.clone(), Some(Box::new(self.post_process_expr(args2[0].clone())))));
+                                } else if args2.is_empty() {
+                                    result.push((n.clone(), None));
+                                }
+                            }
+                        }
+                        // Process remaining pairs
+                        for pair in rest_pairs {
+                            if let ExprInner::Call(op3, args3) = &pair.inner {
+                                if let ExprInner::Atom(Atom::Ident(n)) = &op3.inner {
+                                    if args3.len() == 1 {
+                                        result.push((n.clone(), Some(Box::new(self.post_process_expr(args3[0].clone())))));
+                                    } else if args3.is_empty() {
+                                        result.push((n.clone(), None));
+                                    }
+                                }
+                            }
+                        }
+                        result
                     }
                     _ => Vec::new(),
                 };
@@ -2024,6 +2236,30 @@ impl PostProcessor {
                             _ => (String::new(), None),
                         }
                     }).collect::<Vec<_>>(),
+                    ExprInner::Call(first_pair, rest_pairs) => {
+                        let mut result = Vec::new();
+                        if let ExprInner::Call(op2, args2) = &first_pair.inner {
+                            if let ExprInner::Atom(Atom::Ident(n)) = &op2.inner {
+                                if args2.len() == 1 {
+                                    result.push((n.clone(), Some(Box::new(self.post_process_expr(args2[0].clone())))));
+                                } else if args2.is_empty() {
+                                    result.push((n.clone(), None));
+                                }
+                            }
+                        }
+                        for pair in rest_pairs {
+                            if let ExprInner::Call(op3, args3) = &pair.inner {
+                                if let ExprInner::Atom(Atom::Ident(n)) = &op3.inner {
+                                    if args3.len() == 1 {
+                                        result.push((n.clone(), Some(Box::new(self.post_process_expr(args3[0].clone())))));
+                                    } else if args3.is_empty() {
+                                        result.push((n.clone(), None));
+                                    }
+                                }
+                            }
+                        }
+                        result
+                    }
                     _ => Vec::new(),
                 };
                 expr.inner = ExprInner::For(

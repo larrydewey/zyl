@@ -1,0 +1,190 @@
+; Unwrap/Error Regression Tests — Result/Option unwrapping, error propagation.
+; Spec §22: Result/Option types with unwrap, map, and_then, etc.
+
+(use core/core)
+(use core/result)
+(use core/option)
+
+; Result unwrap with default.
+(
+  test
+  "unwrap-result-ok"
+  (
+    assert-equal
+    (result-unwrap (result-ok 42) 0)
+    42
+  )
+)
+
+(
+  test
+  "unwrap-result-err"
+  (
+    assert-equal
+    (result-unwrap (result-err "fail") 99)
+    99
+  )
+)
+
+; Option unwrap with default.
+(
+  test
+  "unwrap-option-some"
+  (
+    assert-equal
+    (option-unwrap (option-some 7) 0)
+    7
+  )
+)
+
+(
+  test
+  "unwrap-option-none"
+  (
+    assert-equal
+    (option-unwrap (option-none) 42)
+    42
+  )
+)
+
+; Result map.
+(
+  test
+  "result-map"
+  (
+    let
+    r
+    (result-map (result-ok 5) (fn (x) (* x x)))
+    (
+      assert-equal
+      (result-unwrap r 0)
+      25
+    )
+  )
+)
+
+; Result and_then (flatmap).
+(
+  test
+  "result-and-then"
+  (
+    let
+    r
+    (result-and-then (result-ok 3) (fn (x) (result-ok (* x 10))))
+    (
+      assert-equal
+      (result-unwrap r 0)
+      30
+    )
+  )
+)
+
+; Option map.
+(
+  test
+  "option-map"
+  (
+    let
+    o
+    (option-map (option-some 4) (fn (x) (+ x 1)))
+    (
+      assert-equal
+      (option-unwrap o 0)
+      5
+    )
+  )
+)
+
+; Option flatmap.
+(
+  test
+  "option-flatmap"
+  (
+    let
+    o
+    (option-flatmap (option-some 2) (fn (x) (option-some (* x 5))))
+    (
+      assert-equal
+      (option-unwrap o 0)
+      10
+    )
+  )
+)
+
+; Option unwrap_or.
+(
+  test
+  "option-unwrap-or"
+  (
+    assert-equal
+    (option-unwrap-or (option-none) 42)
+    42
+  )
+)
+
+(
+  test
+  "option-unwrap-or-some"
+  (
+    assert-equal
+    (option-unwrap-or (option-some 7) 99)
+    7
+  )
+)
+
+; Result unwrap_or.
+(
+  test
+  "result-unwrap-or"
+  (
+    assert-equal
+    (result-unwrap-or (result-err "fail") 42)
+    42
+  )
+)
+
+(
+  test
+  "result-unwrap-or-ok"
+  (
+    assert-equal
+    (result-unwrap-or (result-ok 8) 99)
+    8
+  )
+)
+
+; Error propagation via try/catch.
+(
+  test
+  "try-catch"
+  (
+    let
+    r
+    (try
+      (result-ok 100)
+      (catch e (result-err e)))
+    (
+      assert-equal
+      (result-unwrap r 0)
+      100
+    )
+  )
+)
+
+(
+  test
+  "try-catch-err"
+  (
+    let
+    r
+    (try
+      (error "boom")
+      (catch e (result-err e)))
+    (
+      assert-true
+      (result-is-err r)
+    )
+  )
+)
+
+(run-tests)

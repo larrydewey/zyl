@@ -12,16 +12,17 @@
 
 (deftype MonoKV (MK String A))
 
-(deftype MonoCtx (MC
-  (MCGenFns (List (MonoKV (List MonoParam))))       ; name → [MonoParam]
-  (MCKnownFns (List (MonoKV (List (MonoKV Type))))) ; name → [(param, Type)]
-  (MCReturns (List (MonoKV Type)))                   ; name → ret Type
-  (MCKTypes (List (MonoKV Type)))                    ; name → Type
-  (MCStructs (List (MonoKV (List (MonoKV Type)))))   ; name → [(field, Type)]
-  (MCAdtDefs (List (MonoKV (List (MonoKV (List String)))))) ; name → [(variant, [fields])]
-  (MCAdtInsts (List (MonoKV (List AdtInstantiation))))   ; name → [AdtInstantiation]
-  (MCTImpls (List (MonoKV (List Type))))             ; trait → [impl_type]
-  (MCAdtParamOrder (List (MonoKV (List String)))))       ; name → [param names in order]
+(deftype MonoCtx 
+  (MC 
+    (MCGenFns (List (MonoKV (List MonoParam))))      ; name → [MonoParam]
+    (MCKnownFns (List (MonoKV (List (MonoKV Type))))) ; name → [(param, Type)]
+    (MCReturns (List (MonoKV Type)))                   ; name → ret Type
+    (MCKTypes (List (MonoKV Type)))                    ; name → Type
+    (MCStructs (List (MonoKV (List (MonoKV Type)))))   ; name → [(field, Type)]
+    (MCAdtDefs (List (MonoKV (List (MonoKV (List String)))))) ; name → [(variant, [fields])]
+    (MCAdtInsts (List (MonoKV (List AdtInstantiation))))   ; name → [AdtInstantiation]
+    (MCTImpls (List (MonoKV (List Type))))             ; trait → [impl_type]
+    (MCAdtParamOrder (List (MonoKV (List String))))))
 
 (deftype MonoParam (MP String (List String)))
 (defn MP.name (p) (match p (MP n d1 n)))
@@ -35,14 +36,14 @@
 ; Field accessors
 ; ===========================================================================
 
-(defn mc-gen-fns (ctx) (match ctx (MC g d1 d2 d3 d4 d5 d6 d7 g)))
-(defn mc-known-fns (ctx) (match ctx (MC d1 f d2 d3 d4 d5 d6 d7 f)))
-(defn mc-returns (ctx) (match ctx (MC d1 d2 r d3 d4 d5 d6 d7 r)))
-(defn mc-ktypes (ctx) (match ctx (MC d1 d2 d3 kt d4 d5 d6 d7 kt)))
-(defn mc-structs (ctx) (match ctx (MC d1 d2 d3 d4 sd d5 d6 d7 sd)))
-(defn mc-adt-defs (ctx) (match ctx (MC d1 d2 d3 d4 d5 adt d6 d7 adt)))
+(defn mc-gen-fns (ctx) (match ctx (MC g d1 d2 d3 d4 d5 d6 d7 d8 g)))
+(defn mc-known-fns (ctx) (match ctx (MC d1 f d2 d3 d4 d5 d6 d7 d8 f)))
+(defn mc-returns (ctx) (match ctx (MC d1 d2 r d3 d4 d5 d6 d7 d8 r)))
+(defn mc-ktypes (ctx) (match ctx (MC d1 d2 d3 kt d4 d5 d6 d7 d8 kt)))
+(defn mc-structs (ctx) (match ctx (MC d1 d2 d3 d4 sd d5 d6 d7 d8 sd)))
+(defn mc-adt-defs (ctx) (match ctx (MC d1 d2 d3 d4 d5 adt d6 d7 d8 adt)))
 (defn mc-adt-insts (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 ai d7 d8 ai)))
-(defn mc-timpls (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 d8 ti ti)))
+(defn mc-timpls (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 ti d8 ti)))
 (defn mc-adt-param-order (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 d8 d9 d9)))
 
 ; ===========================================================================
@@ -1056,10 +1057,41 @@
 ; kv-keys — extract keys from List (MonoKV K V)
 ; ===========================================================================
 
-(defn kv-keys (binds)
-  ; same Cons-cell nested-head-plus-tail-binding bug as kv-get/etc above.
-  (match binds
-    (Nil Nil)
-    (Cons hd rest
-      (match hd
-        (MK k d24 (Cons k (kv-keys rest)))))))
+(
+  defn
+  kv-keys
+  (
+    binds
+  )
+  (
+    ; same Cons-cell nested-head-plus-tail-binding bug as kv-get/etc above.
+    match
+    binds
+    (
+      Nil
+      Nil
+    )
+    (
+      Cons
+      hd
+      rest
+      (
+        match
+        hd
+        (
+          MK
+          k
+          d24
+          (
+            Cons
+            k
+            (
+              kv-keys
+              rest
+)
+  )
+)
+)
+  )
+)
+)

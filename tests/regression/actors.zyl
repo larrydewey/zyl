@@ -1,0 +1,93 @@
+; Actor Concurrency Regression Tests — spawn, send, message patterns
+; Spec §15, §513-524
+
+(use core/core)
+(use actor/actor)
+
+; Basic spawn returns actor ref
+(test "actor-spawn"
+  (let a (spawn (fn () 42))
+    (assert-true (actor-is-alive a))))
+
+; Actor terminates automatically when body returns
+(test "actor-auto-terminate"
+  (let a (spawn (fn () 0))
+    (actor-wait a)
+    0))
+
+; Send message to actor
+(test "actor-send-basic"
+  (let a (spawn (fn () 0))
+    (send a 42)
+    (actor-wait a)
+    0))
+
+; Multiple actors
+(test "actor-multiple"
+  (let a1 (spawn (fn () 1))
+    (let a2 (spawn (fn () 2))
+      (actor-wait a1)
+      (actor-wait a2)
+      0)))
+
+; Actor with computation
+(test "actor-computation"
+  (let a (spawn (fn () (+ 1 2 3 4 5)))
+    (actor-wait a)
+    0))
+
+; Send multiple messages
+(test "actor-multiple-send"
+  (let a (spawn (fn () 0))
+    (send a 1)
+    (send a 2)
+    (send a 3)
+    (actor-wait a)
+    0))
+
+; Actor that spawns another actor
+(test "actor-spawn-nested"
+  (let outer (spawn
+    (fn ()
+      (let inner (spawn (fn () 99))
+        (actor-wait inner)
+        0)))
+    (actor-wait outer)
+    0))
+
+; Actor with Int message (Send-capable)
+(test "actor-int-message"
+  (let a (spawn (fn () 0))
+    (send a 123)
+    (actor-wait a)
+    0))
+
+; Actor with Float message (Send-capable)
+(test "actor-float-message"
+  (let a (spawn (fn () 0))
+    (send a 3.14)
+    (actor-wait a)
+    0))
+
+; Actor with Bool message (Send-capable)
+(test "actor-bool-message"
+  (let a (spawn (fn () 0))
+    (send a true)
+    (actor-wait a)
+    0))
+
+; Actor termination
+(test "actor-terminate"
+  (let a (spawn (fn () 0))
+    (actor-terminate a)
+    0))
+
+; Actor wait returns
+(test "actor-wait-returns"
+  (let a (spawn (fn () 42))
+    (actor-wait a)
+    0))
+
+
+
+(run-tests)

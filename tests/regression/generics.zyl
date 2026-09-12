@@ -1,0 +1,95 @@
+; Generics Regression Tests — generic ADTs, per-site instantiation.
+; Spec §11: generic ADTs via deftype params. Generic functions NOT supported.
+
+(use core/core)
+
+; Generic ADT with one type parameter.
+(deftype _gn_Option (Some T) (None))
+
+; Concrete function for Option<Int>.
+(
+  defn
+  _gn_opt_int_get
+  (o)
+  (
+    match
+    o
+    (Some x x)
+    (None 0)
+  )
+)
+
+(
+  test
+  "generic-option-int"
+  (
+    assert-equal
+    (_gn_opt_int_get (Some 42))
+    42
+  )
+)
+
+(
+  test
+  "generic-option-none"
+  (
+    assert-equal
+    (_gn_opt_int_get None)
+    0
+  )
+)
+
+; Concrete function for Option<String>.
+(
+  defn
+  _gn_opt_str_get
+  (o)
+  (
+    match
+    o
+    (Some s s)
+    (None "")
+  )
+)
+
+(
+  test
+  "generic-option-str"
+  (
+    assert-equal
+    (_gn_opt_str_get (Some "hello"))
+    "hello"
+  )
+)
+
+; Generic ADT with multiple type parameters.
+(deftype _gn_Pair (Pair A B))
+
+; Concrete function for Pair<Int, Int>.
+(
+  defn
+  _gn_pair_int_int
+  (p)
+  (
+    match
+    p
+    (Pair x y (+ x y))
+  )
+)
+
+(
+  test
+  "generic-pair"
+  (
+    assert-equal
+    (_gn_pair_int_int (Pair 10 20))
+    30
+  )
+)
+
+; Multiple instantiations of same generic ADT coexist.
+; (Tested by having _gn_opt_int_get and _gn_opt_str_get both use _gn_Option)
+
+; Higher-kinded not supported.
+
+(run-tests)

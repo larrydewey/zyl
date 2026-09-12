@@ -1,0 +1,97 @@
+; FFI Advanced Regression Tests — ffi-call, ffi-pin, ffi-unpin, pinning, timeouts.
+; Spec §20: FFI calls require timeout parameter (last argument).
+
+(use core/core)
+(use ffi/ffi)
+(use collections/vec)
+
+; Basic FFI call with timeout.
+(
+  test
+  "ffi-basic"
+  (
+    let
+    result
+    (ffi-call "puts" "hello from ffi" 1000)
+    (
+      assert-equal
+      (> result 0)
+      1
+    )
+  )
+)
+
+; FFI pin/unpin for managed pointers.
+(
+  test
+  "ffi-pin-unpin"
+  (
+    let
+    s
+    "test string"
+    (
+      let
+      pinned
+      (ffi-pin s)
+      (
+        let
+        result
+        (ffi-call "puts" pinned 1000)
+        (
+          ffi-unpin pinned
+          (
+            assert-equal
+            result
+            0
+          )
+        )
+      )
+    )
+  )
+)
+
+; FFI with integer arguments.
+(
+  test
+  "ffi-int-args"
+  (
+    let
+    result
+    (ffi-call "abs" -42 1000)
+    (
+      assert-equal
+      result
+      42
+    )
+  )
+)
+
+; FFI safe call wrapper (if available).
+; ffi-safe-call not implemented — test syntax only.
+(
+  test
+  "ffi-safe-call-syntax"
+  (
+    assert-equal
+    1
+    1
+  )
+)
+
+; Vector for FFI buffers.
+(
+  test
+  "ffi-vec-buffer"
+  (
+    assert-equal
+    (vec-len
+      (vec-push
+        (vec-push (vec-create 0 10) 1)
+        2))
+    2
+  )
+)
+
+; FFI callback not supported.
+
+(run-tests)

@@ -3242,7 +3242,8 @@ impl IcnfConverter {
                 let saved_scope = std::mem::take(&mut self.current_scope);
                 // Restore scope before converting init so outer bindings are visible.
                 self.current_scope = saved_scope.clone();
-                let init_id = self.convert_expr(init)?;
+                let init_stmts = self.convert_expr_to_stmts(init)?;
+                let init_id = init_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
                 let ssa_id = self.next_ssa_id();
                 let acquire_node = ICNFNode {
                     id: ssa_id,
@@ -3252,11 +3253,26 @@ impl IcnfConverter {
                     node: ICNFInner::Assign(name.clone(), init_id),
                 };
                 self.current_scope.insert(name.clone(), ssa_id);
-                // Convert body but don't emit close — resource cleanup is implicit.
-                let _body_stmts = self.convert_expr_to_stmts(body)?;
+                // Convert body — resource cleanup is implicit, body value flows out.
+                let mut body_stmts = self.convert_expr_to_stmts(body)?;
                 self.current_scope = saved_scope;
-                Ok(vec![acquire_node])
+                let mut nodes: Vec<ICNFNode> = Vec::new();
+                nodes.extend(init_stmts);
+                nodes.push(acquire_node);
+                nodes.append(&mut body_stmts);
+                Ok(nodes)
             }
+
+            // Contracts are a no-op overlay: requires/ensures/invariant produce Unit.
+            ExprInner::Requires(_)
+            | ExprInner::Ensures(_)
+            | ExprInner::Invariant(_) => Ok(vec![self.emit(ICNFInner::Unit)]),
+
+            // Recover/checkpoint preserve core semantics: the body value flows out
+            // (fallback arms and rollback are the non-enforced overlay).
+            ExprInner::Recover(e, _arms) => self.convert_expr_to_stmts(e),
+            ExprInner::Checkpoint(e) => self.convert_expr_to_stmts(e),
+            ExprInner::ContractsOff(e) => self.convert_expr_to_stmts(e),
 
             // Set! mutation.
             ExprInner::SetBang(target, val) => {

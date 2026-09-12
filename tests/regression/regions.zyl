@@ -1,0 +1,122 @@
+; Region Inference Regression Tests — region annotations, escape analysis.
+; Spec §9–10: regions (Stack, Heap, Global, Circular, Pin), region promotion.
+
+(use core/core)
+
+; Stack allocation for local let bindings.
+(
+  test
+  "region-stack-let"
+  (
+    let
+    x
+    42
+    (
+      assert-equal
+      x
+      42
+    )
+  )
+)
+
+; Heap allocation for escaping closures.
+(
+  test
+  "region-heap-closure"
+  (
+    let
+    make-adder
+    (fn (n) (fn (m) (+ n m)))
+    (
+      let
+      add5
+      (make-adder 5)
+      (
+        assert-equal
+        (add5 3)
+        8
+      )
+    )
+  )
+)
+
+; Global region for top-level constants (use let in test).
+(
+  test
+  "region-global-def"
+  (
+    let
+    global-const
+    100
+    (
+      assert-equal
+      global-const
+      100
+    )
+  )
+)
+
+; Region promotion: Stack → Heap when value escapes (immutable capture).
+(
+  test
+  "region-promotion"
+  (
+    let
+    make-adder
+    (fn (n) (fn (m) (+ n m)))
+    (
+      let
+      add10
+      (make-adder 10)
+      (
+        assert-equal
+        (add10 5)
+        15
+      )
+    )
+  )
+)
+
+; Pin region for FFI values.
+; (Requires FFI, tested in ffi tests)
+
+; Circular region for recursive structures.
+(deftype _rg_List (Cons Int _rg_List) (Nil))
+
+(
+  test
+  "region-circular-list"
+  (
+    let
+    lst
+    (Cons 1 (Cons 2 Nil))
+    (
+      assert-equal
+      (list-length lst)
+      2
+    )
+  )
+)
+
+; Region inference on nested scopes.
+(
+  test
+  "region-nested-scopes"
+  (
+    let
+    outer
+    1
+    (
+      let
+      inner
+      2
+      (
+        assert-equal
+        (+ outer inner)
+        3
+      )
+    )
+  )
+)
+
+(run-tests)

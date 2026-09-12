@@ -1,0 +1,35 @@
+(use core/core)
+(use testing/testing)
+
+(defn mono-index-letter-match (i IndexLetter)
+  (match (i)
+    (0 "A")
+    (1 "B")
+    (2 "C")
+    (3 "D")
+    (4 "E")
+    (5 "F")
+    (6 "G")
+    (7 "H")
+    (8 "I")
+    (_ "X")
+  ))
+
+(defn mono-index-letter-if (i)
+  (if (= i 0) "A"
+    (if (= i 1) "B"
+      (if (= i 2) "C"
+        (if (= i 3) "D"
+          (if (= i 4) "E"
+            (if (= i 5) "F"
+              (if (= i 6) "G"
+                (if (= i 7) "H"
+                  (if (= i 8) "I"
+                    "X"))))))))))
+
+(test "Verify index lookup"
+(let val-m (mono-index-letter-match 0)
+    (let val-i (mono-index-letter-if 0)
+        (assert-equal val-m val-i))))
+
+(run-tests)

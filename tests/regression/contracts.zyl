@@ -1,0 +1,164 @@
+; Contract System Regression Tests — requires, ensures, invariant, recover, checkpoint
+; Spec §23 (contracts are a compile-time overlay; core semantics are preserved)
+
+(use core/core)
+(use core/result)
+
+; Struct invariant (declared, non-enforcing overlay)
+(defstruct _ct_Counter
+  (value Int))
+(
+  invariant
+  (
+    >= 0 0
+  )
+)
+
+; requires + ensures in a function body (both no-op overlays)
+(
+  defn
+  _ct-with-requires
+  (x)
+  (
+    begin
+    (
+      requires
+      (
+        >= x 0
+      )
+    )
+    (
+      ensures
+      (
+        >= x 0
+      )
+    )
+    (
+      *
+      x
+      x
+    )
+  )
+)
+
+(
+  test
+  "contract-requires"
+  (
+    assert-equal
+    (_ct-with-requires 3)
+    9
+  )
+)
+
+; recover keeps the body value (fallback arm is the overlay)
+(
+  defn
+  _ct-with-recover
+  ()
+(
+  recover
+  (
+    try
+    (result-ok 5)
+    (
+      catch
+      e
+      (result-err e)
+    )
+  )
+  (
+    String
+    (result-err "fallback")
+  )
+)
+)
+
+(
+  test
+  "contract-recover"
+  (
+    assert-true
+    (result-is-ok (_ct-with-recover))
+  )
+)
+
+; checkpoint preserves the body value
+(
+  defn
+  _ct-checkpoint-test
+  ()
+  (
+    let-mut
+    x
+    10
+    (
+      checkpoint
+      (
+        begin
+        (
+          set!
+          x
+          20
+        )
+        x
+      )
+    )
+  )
+)
+
+(
+  test
+  "contract-checkpoint"
+  (
+    assert-equal
+    (_ct-checkpoint-test)
+    20
+  )
+)
+
+; Local contract off wraps a single body
+(
+  contracts
+  off
+  (
+    defn
+    _ct-no-contract
+    (a b)
+    (
+      /
+      a
+      b
+    )
+  )
+)
+
+(
+  test
+  "contract-local-off"
+  (
+    assert-equal
+    (_ct-no-contract 10 2)
+    5
+  )
+)
+
+; Plain function with no contracts
+(
+  defn
+  _ct-empty-contract
+  (x)
+  x
+)
+
+(
+  test
+  "contract-empty"
+  (
+    assert-equal
+    (_ct-empty-contract 42)
+    42
+  )
+)
+
+(run-tests)
