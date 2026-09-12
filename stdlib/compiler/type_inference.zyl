@@ -36,15 +36,15 @@
         (ti-string-match-vars inferer)
         (ti-inferring-fns inferer)
         (ti-body-cache inferer)
-            Nil
-            Nil
-            Nil
-            Nil
-            Nil
-            (tc-new)
-            Nil
-            Nil
-            Nil)))
+        Nil
+        Nil
+        Nil
+        Nil
+        Nil
+        (tc-new)
+        Nil
+        Nil
+        Nil))
 
 ; ===========================================================================
 ; KNOWN TYPES HELPERS
