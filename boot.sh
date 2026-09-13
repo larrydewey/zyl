@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="${SCRIPT_DIR}/selfhost/zyl_selfhost_compiler.zyl"
 OUT="${SCRIPT_DIR}/build/boot"
-RUNTIME="${SCRIPT_DIR}/src/runtime/actor_runtime.c"
+RUNTIME="${SCRIPT_DIR}/runtime/actor_runtime.c"
 SKIP_RUST=0
 [ "${1:-}" = "--skip-rust" ] && SKIP_RUST=1
 
@@ -86,8 +86,8 @@ ok "smoke output correct ($RESULT)"
 
 step "Generating build/boot/zyl-self wrapper"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
-cp "${SCRIPT_DIR}/src/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
-cp "${SCRIPT_DIR}/src/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
+cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
+cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
 cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
 # CLI-compatible wrapper around a self-hosted stage-N compiler binary.

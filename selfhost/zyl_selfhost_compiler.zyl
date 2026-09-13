@@ -27828,6 +27828,9 @@
     (
       IMatch d39 d40 0
     )
+    (
+      IFn d41 d42 d43 0
+    )
   )
 )
 (
@@ -28041,6 +28044,9 @@
       (
         cg-match st env scr arms
       )
+    )
+    (
+      IFn d41 d42 d43 st
     )
   )
 )
@@ -30721,6 +30727,18 @@
         )
       )
     )
+    (
+      ICall d65 d66 1
+    )
+    (
+      IFfi d67 d68 1
+    )
+    (
+      IPrint d69 1
+    )
+    (
+      IFn d70 d71 d72 1
+    )
   )
 )
 (
@@ -30870,6 +30888,9 @@
           icnf-count-arm-slots arms
         )
       )
+    )
+    (
+      IFn d91 d92 d93 0
     )
   )
 )
@@ -31059,7 +31080,7 @@
   )
   (
     match f
-    (
+(
       IFn name params body
       (
         let env
@@ -31078,6 +31099,9 @@
             )
             (
               +
+              (
+                icnf-slot-count body
+              )
               (
                 icnf-slot-count body
               )
@@ -31204,6 +31228,9 @@
           )
         )
       )
+    )
+    (
+      dN st
     )
   )
 )
@@ -31475,6 +31502,12 @@
         rest
       )
     )
+    (
+      dN
+      (
+        cg-collect-fnnames st rest
+      )
+    )
   )
 )
 (
@@ -31612,42 +31645,56 @@
           "    mov rbp, rsp"
         )
         (
-          let st3b
+          let st3a
           (
             cg-emit-line st3
-            "    call zyl_ensure_arenas"
+            "    mov dword ptr [rip+zyl_saved_argc], edi"
           )
           (
-            let st4
+            let st3b
             (
-              cg-emit-line st3b
-              "    lea rdi, [rip+f_main]"
+              cg-emit-line st3a
+              "    mov qword ptr [rip+zyl_saved_argv], rsi"
             )
             (
-              let st5
+              let st3c
               (
-                cg-emit-line st4
-                "    call zyl_call_on_big_stack"
+                cg-emit-line st3b
+                "    call zyl_ensure_arenas"
               )
               (
-                let st6
+                let st4
                 (
-                  cg-emit-line st5
-                  "    xor eax, eax"
+                  cg-emit-line st3c
+                  "    lea rdi, [rip+f_main]"
                 )
                 (
-                  let st7
+                  let st5
                   (
-                    cg-emit-line st6
-                    "    pop rbp"
+                    cg-emit-line st4
+                    "    call zyl_call_on_big_stack"
                   )
                   (
-                    let st8
+                    let st6
                     (
-                      cg-emit-line st7
-                      "    ret"
+                      cg-emit-line st5
+                      "    xor eax, eax"
                     )
-                    st8
+                    (
+                      let st7
+                      (
+                        cg-emit-line st6
+                        "    pop rbp"
+                      )
+                      (
+                        let st8
+                        (
+                          cg-emit-line st7
+                          "    ret"
+                        )
+                        st8
+                      )
+                    )
                   )
                 )
               )
@@ -31766,6 +31813,12 @@
       IFn nm params body
       (
         cg-functions-go st nm f rest
+      )
+    )
+    (
+      dN
+      (
+        cg-functions st rest
       )
     )
   )
@@ -32216,27 +32269,13 @@
     msg
   )
   (
-    let f
-    (
-      file-open
-      "/tmp/dbg"
-      "a"
-    )
-    (
-      let d1
-      (
-        file-write f msg
-      )
-      (
-        file-close f
-      )
-    )
+    file-write 2 msg
   )
 )
 (
   defn emit-out
   (
-    arena fns
+    arena fns outpath
   )
   (
     let st
@@ -32271,9 +32310,7 @@
           (
             let out
             (
-              file-open
-              "/tmp/zyl_boot_out.s"
-              "w"
+              file-open outpath "w"
             )
             (
               let n
@@ -32297,7 +32334,7 @@
 (
   defn boot-run
   (
-    arena fd
+    arena fd asmpath
   )
   (
     let srcbuf
@@ -32410,10 +32447,10 @@
                             )
                             (
                               dbg-log
-                              "codegen\n"
+                              "emit\n"
                             )
                             (
-                              emit-out arena fns
+                              emit-out arena fns asmpath
                             )
                           )
                         )
@@ -32430,6 +32467,245 @@
   )
 )
 (
+  defn argv-i
+  (
+    i
+  )
+  (
+    ffi-call
+    "zyl_arg_str"
+    i 1000
+  )
+)
+(
+  defn argc-of
+  (
+  )
+  (
+    ffi-call
+    "zyl_argc"
+    1000
+  )
+)
+(
+  defn cat2
+  (
+    a b
+  )
+  (
+    str-concat a b
+  )
+)
+(
+  defn cat3
+  (
+    a b c
+  )
+  (
+    str-concat
+    (
+      str-concat a b
+    )
+    c
+  )
+)
+(
+  defn cli-collect-opts
+  (
+    i argc out emit
+  )
+  (
+    if
+    (
+      >= i argc
+    )
+    (
+      Cons out
+      (
+        Cons emit Nil
+      )
+    )
+    (
+      let a
+      (
+        argv-i i
+      )
+      (
+        if
+        (
+          >
+          (
+            str-eq a "-o"
+          )
+          0
+        )
+        (
+          if
+          (
+            >=
+            (
+              + i 1
+            )
+            argc
+          )
+          (
+            ffi-call
+            "f_error"
+            "E_CLI_MISSING_ARG: -o requires a path"
+            1000
+          )
+          (
+            cli-collect-opts
+            (
+              + i 2
+            )
+            argc
+            (
+              argv-i
+              (
+                + i 1
+              )
+            )
+            emit
+          )
+        )
+        (
+          if
+          (
+            >
+            (
+              str-eq a "--emit-asm"
+            )
+            0
+          )
+          (
+            cli-collect-opts
+            (
+              + i 1
+            )
+            argc out 1
+          )
+          (
+            cli-collect-opts
+            (
+              + i 1
+            )
+            argc a emit
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn cli-go
+  (
+    arena src outpath emitflag
+  )
+  (
+    let fd
+    (
+      file-open src "r"
+    )
+    (
+      if
+      (
+        > fd 0
+      )
+      (
+        if
+        (
+          > emitflag 0
+        )
+        (
+          boot-run arena fd outpath
+        )
+        (
+          let d0
+          (
+            boot-run arena fd "a.s"
+          )
+          (
+            let cmd
+            (
+              cat3
+              (
+                cat2
+                "cc -no-pie a.s actor_runtime.c -o "
+                outpath
+              )
+              " -lpthread"
+              ""
+            )
+            (
+              let rc
+              (
+                ffi-call
+                "zyl_system_cmd"
+                cmd 1000
+              )
+              (
+                if
+                (
+                  = rc 0
+                )
+                0
+                (
+                  ffi-call
+                  "f_error"
+                  "E_CLI_LINK_FAILED: link step failed"
+                  1000
+                )
+              )
+            )
+          )
+        )
+      )
+      (
+        ffi-call
+        "f_error"
+        (
+          cat2
+          "E_CLI_NO_SRC: cannot open source file: "
+          src
+        )
+        1000
+      )
+    )
+  )
+)
+(
+  defn legacy-boot
+  (
+    arena
+  )
+  (
+    let fd
+    (
+      file-open
+      "/tmp/zyl_boot_in.zyl"
+      "r"
+    )
+    (
+      if
+      (
+        > fd 0
+      )
+      (
+        boot-run arena fd "/tmp/zyl_boot_out.s"
+      )
+      (
+        begin
+        (
+          dbg-log
+          "legacy-boot: no /tmp/zyl_boot_in.zyl\n"
+        )
+        1
+      )
+    )
+  )
+)
+(
   defn main
   (
   )
@@ -32439,27 +32715,66 @@
       arena-create 1073741824
     )
     (
-      let fd
+      let argc
       (
-        file-open
-        "/tmp/zyl_boot_in.zyl"
-        "r"
+        argc-of
       )
       (
         if
         (
-          > fd 0
+          < argc 2
         )
         (
-          boot-run arena fd
+          legacy-boot arena
         )
         (
-          begin
+          let argv0
           (
-            dbg-log
-            "no input\n"
+            argv-i 0
           )
-          1
+          (
+            let base
+            (
+              ffi-call
+              "zyl_dirname_cstr"
+              argv0 1000
+            )
+            (
+              let d1
+              (
+                ffi-call
+                "zyl_chdir"
+                base 1000
+              )
+              (
+                let src
+                (
+                  argv-i 1
+                )
+                (
+                  let opts
+                  (
+                    cli-collect-opts 2 argc "a.out" 0
+                  )
+                  (
+                    let outpath
+                    (
+                      list-nth opts 0
+                    )
+                    (
+                      let emitflag
+                      (
+                        list-nth opts 1
+                      )
+                      (
+                        cli-go arena src outpath emitflag
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
         )
       )
     )

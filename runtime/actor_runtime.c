@@ -1002,3 +1002,51 @@ long long zyl_str_append(long long dst, long long src) {
     *d = 0;
     return dst;
 }
+
+/* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
+#include <unistd.h>
+int zyl_saved_argc = 0;
+char** zyl_saved_argv = NULL;
+
+void zyl_save_args(int argc, char** argv) {
+    zyl_saved_argc = argc;
+    zyl_saved_argv = argv;
+}
+
+long long zyl_argc(void) {
+    return (long long)zyl_saved_argc;
+}
+
+long long zyl_arg_str(long long i) {
+    if (i < 0 || i >= (long long)zyl_saved_argc) return 0;
+    return (long long)(size_t)zyl_saved_argv[(int)i];
+}
+
+long long zyl_dirname_cstr(long long path) {
+    const char* p = (const char*)(size_t)path;
+    if (!p) return 0;
+    /* Find last '/'; dirname is everything up to and including it. */
+    const char* slash = NULL;
+    for (const char* s = p; *s; s++) {
+        if (*s == '/') slash = s;
+    }
+    size_t len;
+    if (!slash) {
+        len = (p[0] == 0) ? 0 : 1;
+    } else {
+        len = (size_t)(slash - p) + 1;
+    }
+    /* Use a static buffer sized generously; contents valid until next call. */
+    static char buf[4096];
+    memcpy(buf, p, len);
+    buf[len] = 0;
+    return (long long)(size_t)buf;
+}
+
+long long zyl_chdir(long long path) {
+    return (long long)chdir((const char*)(size_t)path);
+}
+
+long long zyl_system_cmd(long long cmd) {
+    return (long long)system((const char*)(size_t)cmd);
+}
