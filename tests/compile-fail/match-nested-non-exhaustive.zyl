@@ -1,0 +1,15 @@
+; Compile-fail: nested match is non-exhaustive — the second level of the
+; Wrap/Shape match omits the Rect variant.
+
+(use core/core)
+
+(deftype _cf_Shape (Circle Int) (Rect Int Int))
+(deftype _cf_Wrap (WShape _cf_Shape))
+
+(defn _cf_radius (n)
+  (match n
+    (WShape s
+      (match s
+        (Circle r r)))))
+
+(defn main () (_cf_radius (WShape (Circle 2))))

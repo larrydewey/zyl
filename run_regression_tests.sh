@@ -109,6 +109,34 @@ run_test() {
     PASS=$((PASS + 1))
 }
 
+# Compile-fail test: compilation is EXPECTED to fail (e.g. exhaustiveness,
+# type errors, unbalanced parens). A successful compile is a regression.
+run_fail_test() {
+    local name="$1"
+    local file="$2"
+    
+    TOTAL=$((TOTAL + 1))
+    
+    if [ ! -f "$file" ]; then
+        echo -e "  ${RED}✗${NC} ${name}: source file not found (${file})"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    
+    local output
+    if output=$("${ZYL_BIN}" "$file" "/tmp/zyl_test_${TOTAL}.bin" 2>&1); then
+        echo -e "  ${RED}✗${NC} ${name}: expected compilation to fail, but it succeeded"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $output"
+        fi
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    
+    echo -e "  ${GREEN}✓${NC} ${name}"
+    PASS=$((PASS + 1))
+}
+
 echo "=== Zyl Regression Test Suite ==="
 echo ""
 
@@ -124,6 +152,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
             for f in "${TESTS_DIR}"/${dir}/*.zyl; do
                 [ -f "$f" ] && echo "  - ${dir}/$(basename "$f" .zyl)"
             done
+        done
+        for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
+            [ -f "$f" ] && echo "  - compile-fail/$(basename "$f" .zyl)"
         done
         echo "  - unit_test"
     fi
@@ -182,6 +213,17 @@ if [ "$MODE" = "full" ]; then
         local_name=$(basename "$f" .zyl)
         if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
             run_test "integration/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Run compile-fail tests (must-fail compilation)
+if [ "$MODE" = "full" ]; then
+    for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+            run_fail_test "compile-fail/${local_name}" "$f"
         fi
     done
 fi

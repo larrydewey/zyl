@@ -1,0 +1,13 @@
+; Compile-fail: match is non-exhaustive — the Triangle arm is missing.
+; The compiler must reject this with E_MATCH_NONEXHAUSTIVE.
+
+(use core/core)
+
+(deftype _cf_Shape (Circle Int) (Rect Int Int) (Triangle Int Int Int))
+
+(defn _cf_area (s)
+  (match s
+    (Circle r (* r r))
+    (Rect w h (* w h))))
+
+(defn main () (_cf_area (Circle 2)))

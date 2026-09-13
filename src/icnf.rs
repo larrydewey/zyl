@@ -2840,6 +2840,10 @@ impl IcnfConverter {
                 // Resolve the type name from scrutinee expression (or use first arm's type).
                 let type_name = self.resolve_match_type(scrutinee, arms);
 
+                // Compile-time exhaustiveness (spec §8.3): every variant of the
+                // matched ADT must have an arm unless a catch-all arm is present.
+                self.check_match_exhaustive(&match_span, &type_name, arms)?;
+
                 // Collect the scrutinee's statements (not just its id) so they
                 // can be emitted before the dispatch even in non-pushing
                 // contexts (match inside a let value / branch body).
@@ -4272,6 +4276,66 @@ impl IcnfConverter {
         }
         // Ultimate fallback — use empty string (codegen will handle generically).
         String::new()
+    }
+
+    /// Compile-time match exhaustiveness (spec §8.3): every variant of the
+    /// scrutinee's ADT must have an arm unless a catch-all arm is present.
+    /// A catch-all arm is one whose head names no constructor of any deftype
+    /// (`(d2 ...)` fallback, `(_ ...)` wildcard) — it covers the remaining
+    /// variants, so the check is satisfied regardless of coverage.
+    fn check_match_exhaustive(
+        &self,
+        match_span: &crate::error::Span,
+        type_name: &str,
+        arms: &[MatchArm],
+    ) -> Result<(), ZylError> {
+        // Constructor names across every deftype.
+        let all_known: crate::deterministic::HashSet<String> = self
+            .adt_defs
+            .values()
+            .flat_map(|vs| vs.iter().map(|(vn, _)| vn.clone()))
+            .collect();
+        if arms.iter().any(|a| !all_known.contains(&a.variant)) {
+            return Ok(());
+        }
+        if type_name.is_empty() {
+            // Unresolved scrutinee — diagnosed by the arm-resolution path below.
+            return Ok(());
+        }
+        // Variant list of the matched ADT. Prefer the exact entry; fall back
+        // to whichever deftype contains every arm's constructor (covers
+        // monomorphized scrutinee names like `Shape_Float`, which are not
+        // adt_defs keys).
+        let variants: Vec<String> = match self.adt_defs.get(type_name) {
+            Some(vs) => vs.iter().map(|(v, _)| v.clone()).collect(),
+            None => {
+                match self.adt_defs.iter().find(|(_, vs)| {
+                    arms.iter().all(|a| vs.iter().any(|(v, _)| v == &a.variant))
+                }) {
+                    Some((_, vs)) => vs.iter().map(|(v, _)| v.clone()).collect(),
+                    None => return Ok(()),
+                }
+            }
+        };
+        let covered: crate::deterministic::HashSet<&str> =
+            arms.iter().map(|a| a.variant.as_str()).collect();
+        let missing: Vec<&String> = variants
+            .iter()
+            .filter(|v| !covered.contains(v.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(ZylError::E_MATCH_NONEXHAUSTIVE(
+            match_span.clone(),
+            format!(
+                "missing arm{} for variant{} {} of `{}`; every constructor must have an arm, or add a catch-all `_` arm",
+                if missing.len() == 1 { "" } else { "s" },
+                if missing.len() == 1 { "" } else { "s" },
+                missing.iter().map(|v| format!("`{}`", v)).collect::<Vec<_>>().join(", "),
+                type_name,
+            ),
+        ))
     }
 }
 

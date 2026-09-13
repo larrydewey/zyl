@@ -1,5 +1,35 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-12)
+
+**Match exhaustiveness enforced at compile time (Rust bootstrap).**
+
+`src/icnf.rs` now checks, at ICNF generation, that every variant of the
+matched ADT has an arm (`check_match_exhaustive`, called from the
+`ExprInner::Match` handler). A match missing a constructor fails with
+`E_MATCH_NONEXHAUSTIVE` listing the absent variant(s); a catch-all arm
+(`(_ body)` wildcard, or any arm whose head names no constructor of any
+deftype, e.g. the `(d2 ...)` fallback) explicitly satisfies the check.
+Monomorphized scrutinee names (e.g. `Shape_Float`) fall back to whichever
+deftype's variant list covers every arm. Nested-desugar matches (generated
+by `desugar_arm_raw`) enumerate all variants and remain green.
+
+New harness capability: `tests/compile-fail/*.zyl` are "must-fail"
+regressions — compilation must fail or the test is marked failed
+(`run_fail_test`). Added `match-non-exhaustive.zyl` (missing `Triangle`
+arm) and `match-nested-non-exhaustive.zyl` (nested match omitting `Rect`).
+Positive coverage in `regression/match-exhaustive.zyl` unchanged.
+
+Full suite: **43/44** (only the pre-existing `integration/selfhost-codegen`
+Rust-bootstrap timeout fails; it passes under the self-hosted compiler and
+`boot/fixed-point` stays green).
+
+Note: the earlier in-flight refactor (restructured `MatchPattern`, added
+`MatchPattern::Identifier`, reworked arm parsing) was a regression against
+a green baseline — combined-syntax arms like `(Circle r (* r r))` already
+functioned via `decompose_match_arm`. It remains preserved in `stash@{0}`
+but is not needed for exhaustiveness.
+
 ## Current Session (2026-09-11)
 
 **Compiler library packaging fixed.** The Rust compiler now embeds all
