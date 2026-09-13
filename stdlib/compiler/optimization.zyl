@@ -69,7 +69,7 @@
         (let fold-result (opt-fold-constants-pass os stmts binop-indices 0 False)
           (match fold-result
             (Pair new-os
-              (Pair folded_any new-stmts)
+              (Pair folded_any new-stmts))
               (if folded_any
                 (opt-fold-constants-loop new-os new-stmts (+ iter 1))
                 (Pair new-os new-stmts)))
@@ -87,9 +87,9 @@
       (list-reverse acc))
     (Cons hd rest
       (match hd
-        (ICN id region typ is_branch node
+        (ICN id region typ is_branch inner
           (let new-acc
-            (if (opt-is-binop-or-unop node)
+            (if (opt-is-binop-or-unop inner)
               (Cons idx acc)
               acc)
             (opt-collect-binop-indices-loop rest (+ idx 1) new-acc))
@@ -535,8 +535,7 @@
             (let new-live (opt-add-new-live live-set deps)
               (let new-queue (opt-add-new-queue rest deps new-live)
                 (opt-compute-live-bfs-loop id-to-node new-live new-queue))))
-          (opt-compute-live-bfs-loop id-to-node live-set rest))
-        (opt-compute-live-bfs-loop id-to-node live-set rest))))
+          (opt-compute-live-bfs-loop id-to-node live-set rest))))))
 
 (
   defn opt-get-deps (inner)
