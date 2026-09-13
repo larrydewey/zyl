@@ -10,22 +10,30 @@
 ; OPTIMIZATION STATE
 ; ===========================================================================
 
-(deftype OptState
-  (OS (List (Pair String Int)))) ; stats: (name . count)
+(
+  deftype OptState
+  (OS (List (Pair String Int))))
 
-(defn OS.stats (os) (match os (OS s s)))
+(
+  defn OS.stats (os)
+  (match os
+    (OS s s)))
 
-(defn opt-new ()
+(
+  defn opt-new ()
   (OS Nil))
 
-(defn opt-add-stat (os name)
+(
+  defn opt-add-stat (os name)
   (let stats (OS.stats os)
     (let new-stats (opt-stat-add stats name)
-      (OS new-stats)))
+      (OS new-stats))))
 
-(defn opt-stat-add (stats name)
+(
+  defn opt-stat-add (stats name)
   (match stats
-    (Nil (Cons (Pair name 1) Nil))
+    (Nil
+      (Cons (Pair name 1) Nil))
     (Cons hd rest
       (match hd
         (Pair k v
@@ -33,7 +41,8 @@
             (Cons (Pair k (+ v 1)) rest)
             (Cons hd (opt-stat-add rest name))))))))
 
-(defn opt-stats (os)
+(
+  defn opt-stats (os)
   (OS.stats os))
 
 ; ===========================================================================
@@ -41,14 +50,17 @@
 ; Fold BinOp/UnOp with constant operands. Iterate to fixed-point (max 100).
 ; ===========================================================================
 
-(defn opt-fold-constants (os stmts)
+(
+  defn opt-fold-constants (os stmts)
   (let result (opt-fold-constants-loop os stmts 0)
     (match result
       (Pair new-os new-stmts
         (opt-add-stat new-os "constant_folding"))
-      (d1 (opt-add-stat os "constant_folding")))))
+      (d1
+        (opt-add-stat os "constant_folding")))))
 
-(defn opt-fold-constants-loop (os stmts iter)
+(
+  defn opt-fold-constants-loop (os stmts iter)
   (if (> iter 100)
     (Pair os stmts)
     (let binop-indices (opt-collect-binop-indices stmts)
@@ -56,36 +68,49 @@
         (Pair os stmts)
         (let fold-result (opt-fold-constants-pass os stmts binop-indices 0 False)
           (match fold-result
-            (Pair new-os Pair folded_any new-stmts)
+            (Pair new-os
+              (Pair folded_any new-stmts)
               (if folded_any
                 (opt-fold-constants-loop new-os new-stmts (+ iter 1))
-                (Pair new-os new-stmts))
-            (d1 (Pair os stmts))))))))
+                (Pair new-os new-stmts)))
+            (d1
+              (Pair os stmts)))))))
 
-(defn opt-collect-binop-indices (stmts)
+(
+  defn opt-collect-binop-indices (stmts)
   (opt-collect-binop-indices-loop stmts 0 Nil))
 
-(defn opt-collect-binop-indices-loop (stmts idx acc)
+(
+  defn opt-collect-binop-indices-loop (stmts idx acc)
   (match stmts
-    (Nil (list-reverse acc))
+    (Nil
+      (list-reverse acc))
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch node
-          (let new-acc (if (opt-is-binop-or-unop node)
-            (Cons idx acc)
-            acc)
-          (opt-collect-binop-indices-loop rest (+ idx 1) new-acc))
-        (d1 (opt-collect-binop-indices-loop rest (+ idx 1) acc))))))
+          (let new-acc
+            (if (opt-is-binop-or-unop node)
+              (Cons idx acc)
+              acc)
+            (opt-collect-binop-indices-loop rest (+ idx 1) new-acc))
+        (d1
+          (opt-collect-binop-indices-loop rest (+ idx 1) acc))))))
 
-(defn opt-is-binop-or-unop (node)
+(
+  defn opt-is-binop-or-unop (node)
   (match node
-    (ICBinop d1 d2 d3 1)
-    (ICUnop d1 d2 1)
-    (d1 0)))
+    (ICBinop d1 d2 d3
+      1)
+    (ICUnop d1 d2
+      1)
+    (d1
+      0)))
 
-(defn opt-fold-constants-pass (os stmts indices folded_any)
+(
+  defn opt-fold-constants-pass (os stmts indices folded_any)
   (match indices
-    (Nil (Pair (Pair os folded_any) stmts))
+    (Nil
+      (Pair (Pair os folded_any) stmts))
     (Cons idx rest
       (if (>= idx (list-length stmts))
         (opt-fold-constants-pass os stmts rest folded_any)
@@ -101,8 +126,8 @@
                           (if folded
                             (let new-node (ICN id region typ is_branch folded)
                               (let new-stmts (list-set stmts idx new-node)
-                                (opt-fold-constants-pass os new-stmts rest True))
-                            (opt-fold-constants-pass os stmts rest folded_any))
+                                (opt-fold-constants-pass os new-stmts rest True)))
+                            (opt-fold-constants-pass os stmts rest folded_any)))
                         (opt-fold-constants-pass os stmts rest folded_any)))
                     (opt-fold-constants-pass os stmts rest folded_any)))
                 (ICUnop op arg
@@ -112,77 +137,109 @@
                         (if folded
                           (let new-node (ICN id region typ is_branch folded)
                             (let new-stmts (list-set stmts idx new-node)
-                              (opt-fold-constants-pass os new-stmts rest True))
-                          (opt-fold-constants-pass os stmts rest folded_any))
-                      (opt-fold-constants-pass os stmts rest folded_any)))
+                              (opt-fold-constants-pass os new-stmts rest True)))
+                          (opt-fold-constants-pass os stmts rest folded_any)))
+                        (opt-fold-constants-pass os stmts rest folded_any)))
                     (opt-fold-constants-pass os stmts rest folded_any)))
                 (ICBegin body
                   (let fold-result (opt-fold-constants-pass os body rest folded_any)
                     (match fold-result
                       (Pair new-os new-stmts
                         (opt-fold-constants-pass new-os stmts rest (or folded_any (opt-stmts-changed new-stmts))))
-                      (d1 (opt-fold-constants-pass os stmts rest folded_any))))
-                (d1 (opt-fold-constants-pass os stmts rest folded_any)))
-            (d1 (opt-fold-constants-pass os stmts rest folded_any))))
-        (d1 (opt-fold-constants-pass os stmts rest folded_any)))))))
+                      (_
+                        (opt-fold-constants-pass os stmts rest folded_any)))))
+                (_
+                  (opt-fold-constants-pass os stmts rest folded_any))))
+            (d1
+              (opt-fold-constants-pass os stmts rest folded_any)))))
+        (d1
+          (opt-fold-constants-pass os stmts rest folded_any))))))
 
-(defn opt-resolve-atom (ssa-id stmts)
+(
+  defn opt-resolve-atom (ssa-id stmts)
   (opt-resolve-atom-loop stmts ssa-id))
 
-(defn opt-resolve-atom-loop (stmts ssa-id)
+(
+  defn opt-resolve-atom-loop (stmts ssa-id)
   (match stmts
-    (Nil None)
+    (Nil
+      None)
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
           (if (= id ssa-id)
             (match inner
-              (ICConst atom (Some atom))
-              (d1 None))
+              (ICConst atom
+                (Some atom))
+              (d1
+                None))
             (opt-resolve-atom-loop rest ssa-id))
-        (d1 (opt-resolve-atom-loop rest ssa-id))))))
+        (d1
+          (opt-resolve-atom-loop rest ssa-id))))))
 
-(defn opt-fold-binop (op left right)
+(
+  defn opt-fold-binop (op left right)
   (match op
     (BAdd
       (match left
         (AInt a
           (match right
-            (AInt b (Some (ICConst (AInt (+ a b)))))
-            (AFloat b (Some (ICConst (AFloat (+ a b)))))
-            (d1 None)))
+            (AInt b
+              (Some (ICConst (AInt (+ a b)))))
+            (AFloat b
+              (Some (ICConst (AFloat (+ a b)))))
+            (d1
+              None)))
         (AFloat a
           (match right
-            (AFloat b (Some (ICConst (AFloat (+ a b)))))
-            (AInt b (Some (ICConst (AFloat (+ a b)))))
-            (d1 None)))
-        (d1 None)))
+            (AFloat b
+              (Some (ICConst (AFloat (+ a b)))))
+            (AInt b
+              (Some (ICConst (AFloat (+ a b)))))
+            (d1
+              None)))
+        (d1
+          None)))
     (BSub
       (match left
         (AInt a
           (match right
-            (AInt b (Some (ICConst (AInt (- a b)))))
-            (AFloat b (Some (ICConst (AFloat (- a b)))))
-            (d1 None)))
+            (AInt b
+              (Some (ICConst (AInt (- a b)))))
+            (AFloat b
+              (Some (ICConst (AFloat (- a b)))))
+            (d1
+              None)))
         (AFloat a
           (match right
-            (AFloat b (Some (ICConst (AFloat (- a b)))))
-            (AInt b (Some (ICConst (AFloat (- a b)))))
-            (d1 None)))
-        (d1 None)))
+            (AFloat b
+              (Some (ICConst (AFloat (- a b)))))
+            (AInt b
+              (Some (ICConst (AFloat (- a b)))))
+            (d1
+              None)))
+        (d1
+          None)))
     (BMul
       (match left
         (AInt a
           (match right
-            (AInt b (Some (ICConst (AInt (* a b)))))
-            (AFloat b (Some (ICConst (AFloat (* a b)))))
-            (d1 None)))
+            (AInt b
+              (Some (ICConst (AInt (* a b)))))
+            (AFloat b
+              (Some (ICConst (AFloat (* a b)))))
+            (d1
+              None)))
         (AFloat a
           (match right
-            (AFloat b (Some (ICConst (AFloat (* a b)))))
-            (AInt b (Some (ICConst (AFloat (* a b)))))
-            (d1 None)))
-        (d1 None)))
+            (AFloat b
+              (Some (ICConst (AFloat (* a b)))))
+            (AInt b
+              (Some (ICConst (AFloat (* a b)))))
+            (d1
+              None)))
+        (d1
+          None)))
     (BDiv
       (match left
         (AInt a
@@ -193,15 +250,18 @@
                 None))
             (AFloat b
               (Some (ICConst (AFloat (/ a b)))))
-            (d1 None)))
+            (d1
+              None)))
         (AFloat a
           (match right
             (AFloat b
               (Some (ICConst (AFloat (/ a b)))))
             (AInt b
               (Some (ICConst (AFloat (/ a b)))))
-            (d1 None)))
-        (d1 None)))
+            (d1
+              None)))
+        (d1
+          None)))
     (BRem
       (match left
         (AInt a
@@ -210,66 +270,93 @@
               (if (> b 0)
                 (Some (ICConst (AInt (% a b))))
                 None))
-            (d1 None)))
-        (d1 None)))
+            (d1
+              None)))
+        (d1
+          None)))
     (BEq
       (match left
         (AInt a
           (match right
-            (AInt b (Some (ICConst (ABool (= a b)))))
-            (d1 None)))
+            (AInt b
+              (Some (ICConst (ABool (= a b)))))
+            (d1
+              None)))
         (AFloat a
           (match right
-            (AFloat b (Some (ICConst (ABool (= a b)))))
-            (d1 None)))
+            (AFloat b
+              (Some (ICConst (ABool (= a b)))))
+            (d1
+              None)))
         (ABool a
           (match right
-            (ABool b (Some (ICConst (ABool (= a b)))))
-            (d1 None)))
-        (d1 None)))
+            (ABool b
+              (Some (ICConst (ABool (= a b)))))
+            (d1
+              None)))
+        (d1
+          None)))
     (BNeq
       (match left
         (AInt a
           (match right
-            (AInt b (Some (ICConst (ABool (/= a b)))))
-            (d1 None)))
+            (AInt b
+              (Some (ICConst (ABool (/= a b)))))
+            (d1
+              None)))
         (AFloat a
           (match right
-            (AFloat b (Some (ICConst (ABool (/= a b)))))
-            (d1 None)))
+            (AFloat b
+              (Some (ICConst (ABool (/= a b)))))
+            (d1
+              None)))
         (ABool a
           (match right
-            (ABool b (Some (ICConst (ABool (/= a b)))))
-            (d1 None)))
-        (d1 None)))
-    (d1 None)))
+            (ABool b
+              (Some (ICConst (ABool (/= a b)))))
+            (d1
+              None)))
+        (d1
+          None)))
+    (d1
+      None)))
 
-(defn opt-fold-unop (op arg)
+(
+  defn opt-fold-unop (op arg)
   (match op
     (UNot
       (match arg
-        (ABool b (Some (ICConst (ABool (not b)))))
-        (d1 None)))
+        (ABool b
+          (Some (ICConst (ABool (not b)))))
+        (d1
+          None)))
     (UNegate
       (match arg
-        (AInt i (Some (ICConst (AInt (- 0 i)))))
-        (AFloat f (Some (ICConst (AFloat (- 0 f)))))
-        (d1 None)))
-    (d1 None)))
+        (AInt i
+          (Some (ICConst (AInt (- 0 i)))))
+        (AFloat f
+          (Some (ICConst (AFloat (- 0 f)))))
+        (d1
+          None)))
+    (d1
+      None)))
 
 ; ===========================================================================
 ; DEAD CODE ELIMINATION — Pass 2
 ; Remove SSA assignments whose results are not used (except side effects).
 ; ===========================================================================
 
-(defn opt-dce (os stmts)
+(
+  defn opt-dce (os stmts)
   (let dce-result (opt-dce-pass os stmts)
     (match dce-result
       (Pair new-os new-stmts
         (opt-add-stat new-os "dead_code_elimination"))
-      (d1 (opt-add-stat os "dead_code_elimination")))))
+      (d1
+        (opt-add-stat os "dead_code_elimination")))))
 
-(defn opt-dce-pass (os stmts)
+(
+  defn opt-dce-pass (os stmts)
   (let id-to-node (opt-build-id-map stmts)
     (let referenced (opt-collect-referenced stmts)
       (let live (opt-compute-live id-to-node referenced)
@@ -277,32 +364,41 @@
           (let new-stmts2 (opt-dce-recurse new-stmts live)
             (Pair os new-stmts2))))))
 
-(defn opt-build-id-map (stmts)
+(
+  defn opt-build-id-map (stmts)
   (opt-build-id-map-loop stmts Nil))
 
-(defn opt-build-id-map-loop (stmts acc)
+(
+  defn opt-build-id-map-loop (stmts acc)
   (match stmts
-    (Nil acc)
+    (Nil
+      acc)
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
           (opt-build-id-map-loop rest (Cons (Pair id inner) acc))
-        (d1 (opt-build-id-map-loop rest acc))))))
+        (d1
+          (opt-build-id-map-loop rest acc))))))
 
-(defn opt-collect-referenced (stmts)
+(
+  defn opt-collect-referenced (stmts)
   (opt-collect-referenced-loop stmts Nil))
 
-(defn opt-collect-referenced-loop (stmts acc)
+(
+  defn opt-collect-referenced-loop (stmts acc)
   (match stmts
-    (Nil acc)
+    (Nil
+      acc)
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
           (let new-acc (opt-collect-refs inner acc)
             (opt-collect-referenced-loop rest new-acc))
-        (d1 (opt-collect-referenced-loop rest acc))))))
+        (d1
+          (opt-collect-referenced-loop rest acc))))))
 
-(defn opt-collect-refs (inner acc)
+(
+  defn opt-collect-refs (inner acc)
   (match inner
     (ICBinop d1 left right
       (opt-collect-refs-2 left right acc))
@@ -315,16 +411,16 @@
     (ICIf cond then_body else_body
       (let acc1 (Cons cond acc)
         (let acc2 (opt-collect-refs-list then_body acc1)
-          (opt-collect-refs-list else_body acc2)))
+          (opt-collect-refs-list else_body acc2))))
     (ICWhile cond_body body
       (let acc1 (opt-collect-refs-list cond_body acc)
-        (opt-collect-refs-list body acc1))
+        (opt-collect-refs-list body acc1)))
     (ICFor cond_nodes body
       (let acc1 (opt-collect-refs-list cond_nodes acc)
-        (opt-collect-refs-list body acc1))
+        (opt-collect-refs-list body acc1)))
     (ICMatch scrutinee arms
       (let acc1 (Cons scrutinee acc)
-        (opt-collect-refs-arms arms acc1))
+        (opt-collect-refs-arms arms acc1)))
     (ICMakeVariant d1 d2 d3 field_ids
       (opt-collect-refs-list field_ids acc))
     (ICAssign d1 src
@@ -363,41 +459,53 @@
       (Cons cond acc))
     (ICBegin body
       (opt-collect-refs-list body acc))
-    (d1 acc)))
+    (d1
+      acc)))
 
-(defn opt-collect-refs-2 (a b acc)
+(
+  defn opt-collect-refs-2 (a b acc)
   (Cons a (Cons b acc)))
 
-(defn opt-collect-refs-list (items acc)
+(
+  defn opt-collect-refs-list (items acc)
   (match items
-    (Nil acc)
+    (Nil
+      acc)
     (Cons hd rest
       (opt-collect-refs-list rest (Cons hd acc)))))
 
-(defn opt-collect-refs-arms (arms acc)
+(
+  defn opt-collect-refs-arms (arms acc)
   (match arms
-    (Nil acc)
+    (Nil
+      acc)
     (Cons arm rest
       (match arm
         (MAI variant_name discriminant field_names field_types body
           (let acc1 (opt-collect-refs-list body acc)
             (opt-collect-refs-arms rest acc1))
-        (d1 (opt-collect-refs-arms rest acc))))))
+        (d1
+          (opt-collect-refs-arms rest acc))))))
 
-(defn opt-compute-live (id-to-node referenced)
+(
+  defn opt-compute-live (id-to-node referenced)
   (let root-live (opt-root-live id-to-node referenced)
-    (opt-compute-live-bfs id-to-node root-live))
+    (opt-compute-live-bfs id-to-node root-live)))
 
-(defn opt-root-live (id-to-node referenced)
+(
+  defn opt-root-live (id-to-node referenced)
   (let root-live (opt-find-root-live id-to-node referenced)
     root-live))
 
-(defn opt-find-root-live (id-to-node referenced)
+(
+  defn opt-find-root-live (id-to-node referenced)
   (opt-find-root-live-loop id-to-node referenced Nil))
 
-(defn opt-find-root-live-loop (id-to-node referenced acc)
+(
+  defn opt-find-root-live-loop (id-to-node referenced acc)
   (match id-to-node
-    (Nil acc)
+    (Nil
+      acc)
     (Cons hd rest
       (match hd
         (Pair id inner
@@ -406,84 +514,105 @@
               (let new-acc (if (or has-effect is-referenced)
                 (Cons id acc)
                 acc)
-              (opt-find-root-live-loop rest referenced new-acc)))
-        (d1 (opt-find-root-live-loop rest referenced acc))))))
+                (opt-find-root-live-loop rest referenced new-acc))))
+        (d1
+          (opt-find-root-live-loop rest referenced acc))))))
 
-(defn opt-compute-live-bfs (id-to-node live-set)
+(
+  defn opt-compute-live-bfs (id-to-node live-set)
   (let queue (opt-list-to-vec live-set)
-    (opt-compute-live-bfs-loop id-to-node live-set queue))
+    (opt-compute-live-bfs-loop id-to-node live-set queue)))
 
-(defn opt-compute-live-bfs-loop (id-to-node live-set queue)
+(
+  defn opt-compute-live-bfs-loop (id-to-node live-set queue)
   (match queue
-    (Nil live-set)
+    (Nil
+      live-set)
     (Cons id rest
       (let inner (opt-lookup-id-map id-to-node id)
         (if inner
           (let deps (opt-get-deps inner)
             (let new-live (opt-add-new-live live-set deps)
               (let new-queue (opt-add-new-queue rest deps new-live)
-                (opt-compute-live-bfs-loop id-to-node new-live new-queue)))
+                (opt-compute-live-bfs-loop id-to-node new-live new-queue))))
           (opt-compute-live-bfs-loop id-to-node live-set rest))
         (opt-compute-live-bfs-loop id-to-node live-set rest))))
 
-(defn opt-get-deps (inner)
+(
+  defn opt-get-deps (inner)
   (let deps Nil
     (opt-collect-refs inner deps)
-    deps)
+    deps))
 
-(defn opt-add-new-live (live-set deps)
+(
+  defn opt-add-new-live (live-set deps)
   (opt-add-new-live-loop live-set deps))
 
-(defn opt-add-new-live-loop (live-set deps)
+(
+  defn opt-add-new-live-loop (live-set deps)
   (match deps
-    (Nil live-set)
+    (Nil
+      live-set)
     (Cons dep rest
       (if (opt-list-has live-set dep)
         (opt-add-new-live-loop live-set rest)
         (opt-add-new-live-loop (Cons dep live-set) rest)))))
 
-(defn opt-add-new-queue (queue deps live-set)
+(
+  defn opt-add-new-queue (queue deps live-set)
   (opt-add-new-queue-loop queue deps live-set))
 
-(defn opt-add-new-queue-loop (queue deps live-set)
+(
+  defn opt-add-new-queue-loop (queue deps live-set)
   (match deps
-    (Nil queue)
+    (Nil
+      queue)
     (Cons dep rest
       (if (opt-list-has live-set dep)
         (opt-add-new-queue-loop queue rest live-set)
         (opt-add-new-queue-loop (Cons dep queue) rest live-set)))))
 
-(defn opt-lookup-id-map (id-map id)
+(
+  defn opt-lookup-id-map (id-map id)
   (match id-map
-    (Nil None)
+    (Nil
+      None)
     (Cons hd rest
       (match hd
         (Pair map-id inner
           (if (= map-id id)
             (Some inner)
             (opt-lookup-id-map rest id))
-        (d1 (opt-lookup-id-map rest id))))))
+        (d1
+          (opt-lookup-id-map rest id))))))
 
-(defn opt-filter-live (stmts live-set)
+(
+  defn opt-filter-live (stmts live-set)
   (opt-filter-live-loop stmts live-set Nil))
 
-(defn opt-filter-live-loop (stmts live-set acc)
+(
+  defn opt-filter-live-loop (stmts live-set acc)
   (match stmts
-    (Nil (list-reverse acc))
+    (Nil
+      (list-reverse acc))
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
           (if (opt-list-has live-set id)
             (opt-filter-live-loop rest live-set (Cons hd acc))
             (opt-filter-live-loop rest live-set acc))
-        (d1 (opt-filter-live-loop rest live-set acc))))))
+        (d1
+          (opt-filter-live-loop rest live-set acc))))))
 
-(defn opt-dce-recurse (stmts live-set)
+(
+  defn opt-dce-recurse (stmts live-set)
   (opt-dce-recurse-loop stmts live-set Nil))
 
-(defn opt-dce-recurse-loop (stmts live-set acc)
+(
+  defn opt-dce-recurse-loop (stmts live-set acc)
   (match stmts
-    (Nil (list-reverse acc))
+    (Nil
+      (list-reverse acc))
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
@@ -493,60 +622,93 @@
                 (let new-body (opt-dce-recurse body live-set)
                   (let new-node (ICN id region typ is_branch (ICBegin new-body))
                     (opt-dce-recurse-loop rest live-set (Cons new-node acc))))
-              (d1 (opt-dce-recurse-loop rest live-set (Cons hd acc))))
+              (d1
+                (opt-dce-recurse-loop rest live-set (Cons hd acc))))
             (opt-dce-recurse-loop rest live-set (Cons hd acc)))
-        (d1 (opt-dce-recurse-loop rest live-set acc))))))
+        (d1
+          (opt-dce-recurse-loop rest live-set acc))))))
 
-(defn opt-has-side-effect (inner)
+(
+  defn opt-has-side-effect (inner)
   (match inner
-    (ICPrint d1 1)
-    (ICFfiCall d1 d2 d3 1)
-    (ICSpawn d1 1)
-    (ICSend d1 d2 1)
-    (ICSendClosure d1 d2 d3 d4 1)
-    (ICExit d1 1)
-    (ICClose d1 1)
-    (ICReadLine 1)
-    (ICFileOpen d1 d2 1)
-    (ICFileRead d1 d2 1)
-    (ICFileWrite d1 d2 1)
-    (ICBufAppend d1 d2 1)
-    (ICFileClose d1 1)
-    (ICAssert d1 d2 1)
-    (ICIf d1 d2 d3 d4 1)
-    (ICWhile d1 d2 d3 1)
-    (ICFor d1 d2 d3 d4 1)
-    (d1 0)))
+    (ICPrint d1
+      1)
+    (ICFfiCall d1 d2 d3
+      1)
+    (ICSpawn d1
+      1)
+    (ICSend d1 d2
+      1)
+    (ICSendClosure d1 d2 d3 d4
+      1)
+    (ICExit d1
+      1)
+    (ICClose d1
+      1)
+    (ICReadLine
+      1)
+    (ICFileOpen d1 d2
+      1)
+    (ICFileRead d1 d2
+      1)
+    (ICFileWrite d1 d2
+      1)
+    (ICBufAppend d1 d2
+      1)
+    (ICFileClose d1
+      1)
+    (ICAssert d1 d2
+      1)
+    (ICIf d1 d2 d3 d4
+      1)
+    (ICWhile d1 d2 d3
+      1)
+    (ICFor d1 d2 d3 d4
+      1)
+    (d1
+      0)))
 
-(defn opt-list-has (list item)
+(
+  defn opt-list-has (list item)
   (match list
-    (Nil 0)
+    (Nil
+      0)
     (Cons hd rest
-      (if (= hd item) 1 (opt-list-has rest item)))))
+      (if (= hd item)
+        1
+        (opt-list-has rest item)))))
 
-(defn opt-list-to-vec (list)
+(
+  defn opt-list-to-vec (list)
   (list-reverse list))
 
-(defn opt-stmts-changed (stmts)
+(
+  defn opt-stmts-changed (stmts)
   False)
 
 ; ===========================================================================
 ; OPTIMIZE FUNCTION BODIES
 ; ===========================================================================
 
-(defn opt-optimize-fn-body (os body)
+(
+  defn opt-optimize-fn-body (os body)
   (let fold-result (opt-fold-constants os body)
     (match fold-result
       (Pair new-os folded-body
         (let dce-result (opt-dce new-os folded-body)
           (match dce-result
-            (Pair final-os final-body final-body)
-            (d1 folded-body)))
-      (d1 body))))
+            (Pair final-os final-body
+              final-body)
+            (d1
+              folded-body)))
+      (d1
+        body))))
 
-(defn opt-optimize-fns (os fns)
+(
+  defn opt-optimize-fns (os fns)
   (match fns
-    (Nil (Pair os Nil))
+    (Nil
+      (Pair os Nil))
     (Cons hd rest
       (match hd
         (IFS name params ret_type body result_id
@@ -555,15 +717,18 @@
               (let rest-result (opt-optimize-fns os rest)
                 (match rest-result
                   (Pair new-os new-rest
-                    (Pair new-os (Cons new-fn new-rest))
-                  (d1 (Pair os (Cons new-fn rest))))))
-        (d1 (opt-optimize-fns os rest))))))
+                    (Pair new-os (Cons new-fn new-rest)))
+                  (d1
+                    (Pair os (Cons new-fn rest))))))
+        (d1
+          (opt-optimize-fns os rest))))))
 
 ; ===========================================================================
 ; MAIN ENTRY — optimize ICNFProgram
 ; ===========================================================================
 
-(defn opt-optimize-program (program)
+(
+  defn opt-optimize-program (program)
   (match program
     (IP fns stmts
       (let os (opt-new)
@@ -576,16 +741,22 @@
                     (let dce-result (opt-dce final-os opt-stmts)
                       (match dce-result
                         (Pair final-os2 final-stmts
-                          (IP opt-fns final-stmts)
-                        (d1 (IP opt-fns opt-stmts))))
-                    (d1 (IP opt-fns opt-stmts))))
-                (d1 program))))
-      (d1 program))))
+                          (IP opt-fns final-stmts))
+                        (d1
+                          (IP opt-fns opt-stmts))))
+                    (d1
+                      (IP opt-fns opt-stmts))))
+                (d1
+                  program))))
+            (d1
+              program))))
+      (d1
+        program)))
 
-; Alias for driver compatibility
-(defn opt-optimize (fns)
+(
+  defn opt-optimize (fns)
   (match fns
     (IP fns2 stmts
       (opt-optimize-program (IP fns2 stmts)))
-    (d1 (opt-optimize-fns (opt-new) fns))))
-
+    (d1
+      (opt-optimize-fns (opt-new) fns))))
