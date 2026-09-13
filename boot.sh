@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Zyl boot build + self-hosting fixed-point verification.
+# Zyl boot build + self-hosting fixed-point verification (cargo-free).
 #
-# Builds the full bootstrap chain and verifies determinism:
-#   1. Rust bootstrap compiles the selfhost source  -> stage1 (binary)
-#   2. stage1 compiles the selfhost source          -> stage2 (binary)
-#   3. stage2 compiles the selfhost source          -> stage3 asm
-#   4. stage3 asm must be byte-identical to stage2's asm (fixed point)
+# Default flow — no Rust anywhere:
+#   1. cc-links the committed seed build/boot/stage2.s -> stage1.bin
+#   2. stage1 compiles the selfhost source  -> stage2.s (must byte-match seed)
+#   3. stage2 compiles the selfhost source  -> stage3.s
+#   4. stage3.s must be byte-identical to stage2.s (fixed point)
+#   5. CLI smoke-test + cargo-free zyl-self wrapper
 #
-# Usage:
-#   ./boot.sh              full build + verification
-#   ./boot.sh --skip-rust  reuse existing target/release/zyl
+# Re-seeding (only needed when the compiler source changes the fixed point):
+#   ./boot.sh --bootstrap-from-rust   rebuild stage2.s/ stage2.bin via the
+#                                     still-archived Rust bootstrap, verify,
+#                                     then re-commit the new seed.
 #
 # Artifacts land in build/boot/. Exit 0 only if the fixed point holds.
 set -euo pipefail
@@ -18,8 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="${SCRIPT_DIR}/selfhost/zyl_selfhost_compiler.zyl"
 OUT="${SCRIPT_DIR}/build/boot"
 RUNTIME="${SCRIPT_DIR}/runtime/actor_runtime.c"
-SKIP_RUST=0
-[ "${1:-}" = "--skip-rust" ] && SKIP_RUST=1
+BOOTSTRAP=0
+[ "${1:-}" = "--bootstrap-from-rust" ] && BOOTSTRAP=1
 
 mkdir -p "$OUT"
 cd "$SCRIPT_DIR"
@@ -32,37 +34,55 @@ link_cc() { # link_cc <asm> <out-bin>
     cc -no-pie "$1" "$RUNTIME" -o "$2" -lpthread
 }
 
-# ── 1. Rust bootstrap -> stage1 ──────────────────────────────────────────
-if [ "$SKIP_RUST" -eq 0 ]; then
-    step "Building Rust bootstrap compiler"
+# ── Re-seed path: Rust bootstrap -> fresh stage2 ─────────────────────────
+if [ "$BOOTSTRAP" -eq 1 ]; then
+    step "Bootstrap: rebuilding stage2 seed from the Rust bootstrap"
     cargo build --release --quiet
+    ZYL="${SCRIPT_DIR}/target/release/zyl"
+    [ -x "$ZYL" ] || die "Rust bootstrap not found at $ZYL"
+    step "stage1: Rust bootstrap -> selfhost binary"
+    "$ZYL" "$SRC" -o "$OUT/stage1" >/dev/null
+    [ -f "${OUT}/stage1.s" ] || die "stage1 did not emit ${OUT}/stage1.s"
+    link_cc "${OUT}/stage1.s" "${OUT}/stage1.bin"
+    ok "stage1 linked (Rust-built entry is argv-blind; uses legacy /tmp protocol)"
+    # Rust-built stage1 has no argv plumbing yet, so feed it via the legacy
+    # fixed-path protocol. The generated stage2/s carries the real CLI stub.
+    cp "$SRC" /tmp/zyl_boot_in.zyl
+    rm -f /tmp/zyl_boot_out.s
+    timeout 600 setarch -R "${OUT}/stage1.bin" >/dev/null
+    [ -f /tmp/zyl_boot_out.s ] || die "stage1 produced no output"
+    mv /tmp/zyl_boot_out.s "${OUT}/stage2.s"
+    link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
+    ok "stage2 seeded from Rust bootstrap"
+    echo ""
+    echo "Verify with a clean ./boot.sh (no args) and commit the new seed:"
+    echo "  git add -f build/boot/stage2.s build/boot/stage2.bin && git commit"
+    exit 0
 fi
-ZYL="${SCRIPT_DIR}/target/release/zyl"
-[ -x "$ZYL" ] || die "Rust compiler not found at $ZYL"
 
-step "stage1: Rust compiler -> selfhost binary"
-"$ZYL" "$SRC" -o "$OUT/stage1" >/dev/null
-[ -f "${OUT}/stage1.s" ] || die "stage1 did not emit ${OUT}/stage1.s"
-link_cc "${OUT}/stage1.s" "${OUT}/stage1.bin"
+# ── 1. stage1 from committed seed ────────────────────────────────────────
+step "stage1: cc from committed stage2.s"
+[ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — run ./boot.sh --bootstrap-from-rust first"
+link_cc "${OUT}/stage2.s" "${OUT}/stage1.bin"
 ok "stage1 linked"
 
-# ── 2. stage1 -> stage2 ─────────────────────────────────────────────────
+# ── 2. stage1 -> stage2 (must reproduce the committed seed) ──────────────
 step "stage2: stage1 compiles the selfhost source"
-cp "$SRC" /tmp/zyl_boot_in.zyl
-rm -f /tmp/zyl_boot_out.s
-timeout 600 setarch -R "${OUT}/stage1.bin" >/dev/null
-[ -f /tmp/zyl_boot_out.s ] || die "stage1 produced no output"
-mv /tmp/zyl_boot_out.s "${OUT}/stage2.s"
+timeout 600 setarch -R "${OUT}/stage1.bin" "$SRC" -o "${OUT}/stage2_gen.s" --emit-asm
+[ -f "${OUT}/stage2_gen.s" ] || die "stage1 produced no output"
+if cmp -s "${OUT}/stage2_gen.s" "${OUT}/stage2.s"; then
+    HASH=$(sha256sum "${OUT}/stage2.s" | cut -c1-16)
+    ok "reproduced committed seed exactly (sha256 ${HASH})"
+else
+    die "reproduced asm differs from committed seed — compiler source changed; re-seed with --bootstrap-from-rust and commit the new seed"
+fi
 link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
 ok "stage2 linked"
 
-# ── 3+4. stage2 -> stage3, fixed-point check ────────────────────────────
+# ── 3+4. stage2 -> stage3, fixed-point check ─────────────────────────────
 step "stage3: stage2 compiles the selfhost source"
-cp "$SRC" /tmp/zyl_boot_in.zyl
-rm -f /tmp/zyl_boot_out.s
-timeout 600 setarch -R "${OUT}/stage2.bin" >/dev/null
-[ -f /tmp/zyl_boot_out.s ] || die "stage2 produced no output"
-mv /tmp/zyl_boot_out.s "${OUT}/stage3.s"
+timeout 600 setarch -R "${OUT}/stage2.bin" "$SRC" -o "${OUT}/stage3.s" --emit-asm
+[ -f "${OUT}/stage3.s" ] || die "stage2 produced no output"
 ok "stage3 emitted"
 
 step "Fixed-point check: stage2 output == stage3 output"
@@ -74,14 +94,17 @@ else
     die "FIXED POINT BROKEN: stage2 and stage3 outputs differ"
 fi
 
-# ── smoke: compiled-by-stage2 program runs correctly ─────────────────────
-step "Smoke: stage2-compiled program runs"
-printf '(defn dbl (x) (* x 2))\n(defn applyit (f v) (f v))\n(defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))\n' > /tmp/zyl_boot_in.zyl
-rm -f /tmp/zyl_boot_out.s
-timeout 120 setarch -R "${OUT}/stage2.bin" >/dev/null
-link_cc /tmp/zyl_boot_out.s "${OUT}/smoke.bin"
-RESULT="$("${OUT}/smoke.bin")"
-[ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT', expected '42 3'"
+# ── smoke: stage2 CLI compiles, links and runs a program ─────────────────
+step "Smoke: stage2 CLI compiles + links + runs"
+cat > /tmp/zyl_smoke.zyl <<'SMOKE_EOF'
+(defn dbl (x) (* x 2))
+(defn applyit (f v) (f v))
+(defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))
+SMOKE_EOF
+timeout 120 setarch -R "${OUT}/stage2.bin" /tmp/zyl_smoke.zyl -o "${OUT}/smoke.bin" >/dev/null
+[ -x "${OUT}/smoke.bin" ] || die "smoke did not produce a linked binary"
+RESULT="$(setarch -R "${OUT}/smoke.bin")"
+[ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT'"
 ok "smoke output correct ($RESULT)"
 
 step "Generating build/boot/zyl-self wrapper"
@@ -90,39 +113,17 @@ cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
 cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
-# CLI-compatible wrapper around a self-hosted stage-N compiler binary.
-# The self-hosted driver ignores argv entirely and always reads
-# /tmp/zyl_boot_in.zyl / writes /tmp/zyl_boot_out.s, so this shim maps
-# the normal `zyl <src> <out>` calling convention onto that fixed-path
-# protocol and links the result, matching what the Rust `zyl` binary
-# does in one step.
-#
-# setarch -R disables ASLR: the 64GB worker-thread stack reservation in
-# zyl_call_on_big_stack occasionally collides with an ASLR-randomized
-# mapping, causing intermittent crashes/hangs. See boot.sh.
+# Cargo-free CLI wrapper: passes arguments straight to the self-hosted
+# stage2 compiler, which handles compilation, linking and its own stdlib
+# resolution (it chdirs to this directory).
+# setarch -R disables ASLR for the big worker stack (see runtime/README or
+# docs/rust-eviction-plan.md).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-STAGE_BIN="${ZYL_SELF_STAGE:-${SCRIPT_DIR}/stage2.bin}"
-RUNTIME="${ZYL_SELF_RUNTIME:-${SCRIPT_DIR}/actor_runtime.c}"
-
-SRC="$1"
-OUT="$2"
-
-cp "$SRC" /tmp/zyl_boot_in.zyl
-rm -f /tmp/zyl_boot_out.s
-(
-    cd "$SCRIPT_DIR"
-    setarch -R "$STAGE_BIN"
-) >/tmp/zyl_self_stdout.log 2>/tmp/zyl_self_stderr.log
-if [ ! -s /tmp/zyl_boot_out.s ]; then
-    cat /tmp/zyl_self_stderr.log >&2
-    echo "zyl-self: no assembly produced" >&2
-    exit 1
-fi
-cc -no-pie /tmp/zyl_boot_out.s "$RUNTIME" -o "$OUT" -lpthread
+exec setarch -R "$SCRIPT_DIR/stage2.bin" "$@"
 WRAPPER_EOF
 chmod +x "${OUT}/zyl-self"
 ok "zyl-self wrapper written"
 
 echo ""
-echo "Self-hosting verified: fixed point holds."
+echo "Self-hosting verified: fixed point holds (no Rust in the build path)."

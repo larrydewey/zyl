@@ -1047,6 +1047,14 @@ long long zyl_chdir(long long path) {
     return (long long)chdir((const char*)(size_t)path);
 }
 
+long long zyl_getcwd(void) {
+    static char buf[4096];
+    if (getcwd(buf, sizeof(buf)) == NULL) {
+        return 0;
+    }
+    return (long long)(size_t)buf;
+}
+
 long long zyl_system_cmd(long long cmd) {
     return (long long)system((const char*)(size_t)cmd);
 }

@@ -32675,6 +32675,33 @@
   )
 )
 (
+  defn abs-path
+  (
+    p
+  )
+  (
+    if
+    (
+      =
+      (
+        byte-at p 0
+      )
+      47
+    )
+    p
+    (
+      cat3
+      (
+        ffi-call
+        "zyl_getcwd"
+        1000
+      )
+      "/"
+      p
+    )
+  )
+)
+(
   defn legacy-boot
   (
     arena
@@ -32740,31 +32767,37 @@
               argv0 1000
             )
             (
-              let d1
+              let src
               (
-                ffi-call
-                "zyl_chdir"
-                base 1000
-              )
-              (
-                let src
+                abs-path
                 (
                   argv-i 1
                 )
+              )
+              (
+                let opts
                 (
-                  let opts
+                  cli-collect-opts 2 argc "a.out" 0
+                )
+                (
+                  let outpath
                   (
-                    cli-collect-opts 2 argc "a.out" 0
-                  )
-                  (
-                    let outpath
+                    abs-path
                     (
                       list-nth opts 0
                     )
+                  )
+                  (
+                    let emitflag
                     (
-                      let emitflag
+                      list-nth opts 1
+                    )
+                    (
+                      let d1
                       (
-                        list-nth opts 1
+                        ffi-call
+                        "zyl_chdir"
+                        base 1000
                       )
                       (
                         cli-go arena src outpath emitflag

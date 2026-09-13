@@ -83821,15 +83821,62 @@ call f_error
     mov rsp, rbp
     pop rbp
     ret
+f_abs_path:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 80
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call f_byte_at
+    add rsp, 16
+    push rax
+    mov rax, 47
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L3966
+    mov rax, [rbp-8]
+    jmp .L3967
+.L3966:
+    sub rsp, 8
+call zyl_getcwd
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L3968]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call f_cat3
+    add rsp, 32
+.L3967:
+    mov rsp, rbp
+    pop rbp
+    ret
 f_legacy_boot:
     push rbp
     mov rbp, rsp
     sub rsp, 96
     mov [rbp-8], rdi
-    lea rax, [rip+.L3966]
+    lea rax, [rip+.L3969]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L3967]
+    lea rax, [rip+.L3970]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -83846,7 +83893,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L3968
+    je .L3971
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -83854,7 +83901,7 @@ call zyl_file_open_c
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L3970]
+    lea rax, [rip+.L3973]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -83862,17 +83909,17 @@ call zyl_file_open_c
     mov rdi, [rsp+16]
 call f_boot_run
     add rsp, 32
-    jmp .L3969
-.L3968:
+    jmp .L3972
+.L3971:
     sub rsp, 8
-    lea rax, [rip+.L3971]
+    lea rax, [rip+.L3974]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call f_dbg_log
     add rsp, 16
     mov rax, 1
-.L3969:
+.L3972:
     mov rsp, rbp
     pop rbp
     ret
@@ -83900,7 +83947,7 @@ call f_argc_of
     setl al
     movzx rax, al
     test rax, rax
-    je .L3972
+    je .L3975
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -83908,8 +83955,8 @@ call f_argc_of
     mov rdi, [rsp+0]
 call f_legacy_boot
     add rsp, 16
-    jmp .L3973
-.L3972:
+    jmp .L3976
+.L3975:
     sub rsp, 8
     mov rax, 0
     sub rsp, 8
@@ -83927,13 +83974,6 @@ call zyl_dirname_cstr
     add rsp, 16
     mov [rbp-32], rax
     sub rsp, 8
-    mov rax, [rbp-32]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zyl_chdir
-    add rsp, 16
-    mov [rbp-40], rax
     sub rsp, 8
     mov rax, 1
     sub rsp, 8
@@ -83941,14 +83981,19 @@ call zyl_chdir
     mov rdi, [rsp+0]
 call f_argv_i
     add rsp, 16
-    mov [rbp-48], rax
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call f_abs_path
+    add rsp, 16
+    mov [rbp-40], rax
     mov rax, 2
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L3974]
+    lea rax, [rip+.L3977]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -83960,8 +84005,9 @@ call f_argv_i
     mov rdi, [rsp+24]
 call f_cli_collect_opts
     add rsp, 32
-    mov [rbp-56], rax
-    mov rax, [rbp-56]
+    mov [rbp-48], rax
+    sub rsp, 8
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -83971,8 +84017,13 @@ call f_cli_collect_opts
     mov rdi, [rsp+8]
 call f_list_nth
     add rsp, 16
-    mov [rbp-64], rax
-    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call f_abs_path
+    add rsp, 16
+    mov [rbp-56], rax
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 1
@@ -83982,17 +84033,25 @@ call f_list_nth
     mov rdi, [rsp+8]
 call f_list_nth
     add rsp, 16
+    mov [rbp-64], rax
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zyl_chdir
+    add rsp, 16
     mov [rbp-72], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-48]
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-64]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -84001,7 +84060,7 @@ call f_list_nth
     mov rdi, [rsp+24]
 call f_cli_go
     add rsp, 32
-.L3973:
+.L3976:
     mov rsp, rbp
     pop rbp
     ret
@@ -85231,13 +85290,15 @@ main:
     .string "E_CLI_LINK_FAILED: link step failed"
 .L3965:
     .string "E_CLI_NO_SRC: cannot open source file: "
-.L3966:
+.L3968:
+    .string "/"
+.L3969:
     .string "/tmp/zyl_boot_in.zyl"
-.L3967:
-    .string "r"
 .L3970:
+    .string "r"
+.L3973:
     .string "/tmp/zyl_boot_out.s"
-.L3971:
-    .string "legacy-boot: no /tmp/zyl_boot_in.zyl\n"
 .L3974:
+    .string "legacy-boot: no /tmp/zyl_boot_in.zyl\n"
+.L3977:
     .string "a.out"
