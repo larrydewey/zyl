@@ -11,6 +11,7 @@
 (use compiler/macro_expand)
 (use compiler/monomorphization)
 (use compiler/contract_injection)
+(use compiler/region_inference)
 (use compiler/icnf)
 (use compiler/trait_dispatch)
 (use compiler/closure_inline)
@@ -64,8 +65,13 @@
                 (let al-exprs (al-expand-program ci-exprs)
                 (dbg-log "lower\n")
                 (let fns (ic-program arena al-exprs)
-                  (dbg-log "codegen\n")
-                  (emit-out arena fns)))))))))))))))
+                    (dbg-log "region-infer
+")
+                    (let ri (ri-new)
+                      (let ri2 (ri-infer fns ri)
+                        (dbg-log "codegen
+")
+                        (emit-out arena fns)))))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)
