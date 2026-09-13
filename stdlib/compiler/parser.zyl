@@ -240,7 +240,7 @@
 (defn check-balanced (toks)
   (if (= (bal-walk toks 0) 0)
     0
-    (ffi-call "f_error" "E_UNBALANCED_PARENS: '(' and ')' counts differ" 1000)))
+    (ffi-call "zyl_f_error" "E_UNBALANCED_PARENS: '(' and ')' counts differ" 1000)))
 
 (defn zyl-parse (arena src)
   (let toks (zyl-lex arena src)

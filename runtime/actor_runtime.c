@@ -970,8 +970,10 @@ long long zyl_file_close_c(long long fd) {
     return (long long)close((int)fd);
 }
 
-/* Stub: Zyl-level (error msg) — print and exit(1). */
-long long f_error(long long msg) {
+/* Stub: Zyl-level (error msg) — print and exit(1).
+   Named zyl_f_error (not f_error) so the codegen label `f_error` for a
+   user Zyl function named `error` cannot shadow/self-recursively bind it. */
+long long zyl_f_error(long long msg) {
     if (msg) fprintf(stderr, "error: %s\n", (const char*)(size_t)msg);
     else fprintf(stderr, "error\n");
     exit(1);

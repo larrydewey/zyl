@@ -120,7 +120,6 @@
 ; TRAIT CONTEXT — List of (String (List Type)) bounds
 ; ===========================================================================
 
-(deftype TraitContext (TCTraitBounds (List TraitBound)))
 
 (deftype TraitBound (TRB String (List Type)))
 
@@ -159,7 +158,7 @@
     TraitContext             ; ti-trait-ctx
     (List StructDef)         ; ti-struct-defs
     (List String)            ; ti-generics-in-scope
-    (List (Pair String String)))))    ; ti-var-type-map (for occurs-check tracking)
+    (List (Pair String String))))    ; ti-var-type-map (for occurs-check tracking)
 
 (defn ti-env (ti) (match ti (TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 tia12 tia13 tia14 tia15 tia16 tia17 tia18 tia19 tia20 v)))
 (defn ti-subst (ti) (match ti (TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 tib12 tib13 tib14 tib15 tib16 tib17 tib18 tib19 tib20 v)))
@@ -261,10 +260,9 @@
 ; common short names (a, v, x) don't collide with outer scopes — the
 ; arm's field type must win.
 (defn env-bind-param (env bind-name typ)
-  (let
-      (binds (TEBindings.binds env))
-      (new-binds (env-bind-param-replace binds bind-name typ))
-      (TEBindings new-binds)))
+  (let (binds (TEBindings.binds env))
+    (let (new-binds (env-bind-param-replace binds bind-name typ))
+      (TEBindings new-binds))))
 
 (defn env-bind-param-replace (binds bind-name typ)
   (match binds

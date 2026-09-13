@@ -184,7 +184,7 @@
     (Nil fns)
     (Cons d1 d2
       (if (> (ic-has-main fns) 0)
-        (ffi-call "f_error" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
+        (ffi-call "zyl_f_error" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
         (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil)))) fns)))))
 
 (defn ic-has-main (fns)
@@ -266,7 +266,7 @@
           ; Duplicate variant names across deftypes create incompatible
           ; constructor identities whose pattern matches silently fail.
           (if (> (vt-tag-of tail nm) -1)
-            (ffi-call "f_error" "E_DUPLICATE_VARIANT: variant name defined by more than one deftype" 1000)
+            (ffi-call "zyl_f_error" "E_DUPLICATE_VARIANT: variant name defined by more than one deftype" 1000)
             (VTEntry nm
                      tag
                      (AV.fields v)
@@ -1055,7 +1055,7 @@
   (if (is-nil args)
     (if (> consts 0)
       (if (> calls 1)
-        (ffi-call "f_error" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
+        (ffi-call "zyl_f_error" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
         0)
       0)
     (ic-arm-guard-count arena (rest-expr args) vt

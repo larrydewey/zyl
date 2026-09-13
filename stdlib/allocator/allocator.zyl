@@ -146,7 +146,7 @@
 
 ; Zyl-level error: print and exit.
 (defn error (msg)
-  (ffi-call "f_error" msg 1000))
+  (ffi-call "zyl_f_error" msg 1000))
 
 (defn str-intern (arena s)
   (let n (alloc-strlen s)

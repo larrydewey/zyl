@@ -32,7 +32,7 @@
     (let buf (cg-buffer st)
       (let blen (alloc-strlen buf)
         (if (> blen 66060288)
-          (ffi-call "f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
+          (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
           (let out (file-open "/tmp/zyl_boot_out.s" "w")
             (let n (file-write out buf)
               (let d3 (file-close out)

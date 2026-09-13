@@ -823,7 +823,7 @@
   )
   (
     ffi-call
-    "f_error"
+    "zyl_f_error"
     msg 1000
   )
 )
@@ -1044,6 +1044,9 @@
     VTFn String VTable
   )
   (
+    VTGroup String VTable
+  )
+  (
     VTNil
   )
 )
@@ -1069,6 +1072,12 @@
     )
     (
       VTFn d5 rest
+      (
+        vt-tag-of rest name
+      )
+    )
+    (
+      VTGroup d5g rest
       (
         vt-tag-of rest name
       )
@@ -1107,6 +1116,12 @@
       )
     )
     (
+      VTGroup d6g rest
+      (
+        vt-arity-of rest name
+      )
+    )
+    (
       VTNil -1
     )
   )
@@ -1135,6 +1150,12 @@
         (
           vt-is-fn rest name
         )
+      )
+    )
+    (
+      VTGroup tgn rest
+      (
+        vt-is-fn rest name
       )
     )
     (
@@ -9698,7 +9719,7 @@
     0
     (
       ffi-call
-      "f_error"
+      "zyl_f_error"
       "E_UNBALANCED_PARENS: '(' and ')' counts differ"
       1000
     )
@@ -17192,7 +17213,7 @@
   )
   (
     ffi-call
-    "f_error"
+    "zyl_f_error"
     "E_LIST_NTH_OOB: list-nth called with an out-of-range index"
     1000
   )
@@ -21182,7 +21203,7 @@
         )
         (
           ffi-call
-          "f_error"
+          "zyl_f_error"
           "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)"
           1000
         )
@@ -21321,7 +21342,10 @@
               (
                 ic-collect-vt-run rest
                 (
-                  ic-vt-deftype name variants vt
+                  VTGroup name
+                  (
+                    ic-vt-deftype name variants vt
+                  )
                 )
                 stag
               )
@@ -21393,7 +21417,7 @@
             )
             (
               ffi-call
-              "f_error"
+              "zyl_f_error"
               "E_DUPLICATE_VARIANT: variant name defined by more than one deftype"
               1000
             )
@@ -23302,6 +23326,12 @@
       )
     )
     (
+      VTGroup g1 rest
+      (
+        ic-struct-arms arena rest field
+      )
+    )
+    (
       VTEntry name tag fields rest
       (
         let arms-rest
@@ -24124,23 +24154,296 @@
   )
 )
 (
+  defn ic-arms-heads
+  (
+    arena arms acc
+  )
+  (
+    match arms
+    (
+      Nil acc
+    )
+    (
+      Cons arm rest
+      (
+        ic-arms-heads arena rest
+        (
+          Cons
+          (
+            str-intern arena
+            (
+              MA.variant arm
+            )
+          )
+          acc
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-all-known
+  (
+    arena vt heads
+  )
+  (
+    match heads
+    (
+      Nil 1
+    )
+    (
+      Cons h rest
+      (
+        if
+        (
+          <
+          (
+            vt-tag-of vt h
+          )
+          0
+        )
+        0
+        (
+          ic-all-known arena vt rest
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-first-missing
+  (
+    arena names heads
+  )
+  (
+    match names
+    (
+      Nil Nil
+    )
+    (
+      Cons n rest
+      (
+        if
+        (
+          >
+          (
+            mr-str-in-list n heads
+          )
+          0
+        )
+        (
+          ic-first-missing arena rest heads
+        )
+        n
+      )
+    )
+  )
+)
+(
+  defn ic-group-until
+  (
+    arena vt acc
+  )
+  (
+    match vt
+    (
+      VTEntry n d50 d51 rest
+      (
+        ic-group-until arena rest
+        (
+          Cons n acc
+        )
+      )
+    )
+    (
+      VTFn d52 rest acc
+    )
+    (
+      VTGroup d53 rest acc
+    )
+    (
+      VTNil acc
+    )
+  )
+)
+(
+  defn ic-groups
+  (
+    arena vt acc
+  )
+  (
+    match vt
+    (
+      VTNil acc
+    )
+    (
+      VTGroup d54 rest
+      (
+        ic-groups arena rest
+        (
+          Cons
+          (
+            ic-group-until arena rest Nil
+          )
+          acc
+        )
+      )
+    )
+    (
+      VTEntry d55 d56 d57 rest
+      (
+        ic-groups arena rest acc
+      )
+    )
+    (
+      VTFn d58 rest
+      (
+        ic-groups arena rest acc
+      )
+    )
+  )
+)
+(
+  defn ic-list-covers
+  (
+    arena g heads
+  )
+  (
+    match heads
+    (
+      Nil 1
+    )
+    (
+      Cons h rest
+      (
+        if
+        (
+          >
+          (
+            mr-str-in-list h g
+          )
+          0
+        )
+        (
+          ic-list-covers arena g rest
+        )
+        0
+      )
+    )
+  )
+)
+(
+  defn ic-first-group
+  (
+    arena groups heads
+  )
+  (
+    match groups
+    (
+      Nil Nil
+    )
+    (
+      Cons g rest
+      (
+        if
+        (
+          ic-list-covers arena g heads
+        )
+        g
+        (
+          ic-first-group arena rest heads
+        )
+      )
+    )
+  )
+)
+(
+  defn ic-check-exhaustive
+  (
+    arena vt arms
+  )
+  (
+    let heads
+    (
+      ic-arms-heads arena arms Nil
+    )
+    (
+      if
+      (
+        ic-all-known arena vt heads
+      )
+      (
+        let gnames
+        (
+          ic-first-group arena
+          (
+            ic-groups arena vt Nil
+          )
+          heads
+        )
+        (
+          if
+          (
+            is-nil gnames
+          )
+          0
+          (
+            let miss
+            (
+              ic-first-missing arena gnames heads
+            )
+            (
+              if
+              (
+                is-nil miss
+              )
+              0
+              (
+                ffi-call
+                "zyl_f_error"
+                (
+                  str-concat
+                  "E_MATCH_NONEXHAUSTIVE: missing arm for variant `"
+                  (
+                    str-concat
+                    miss
+                    "`; every constructor must have an arm, or add a catch-all `_` arm"
+                  )
+                )
+                1000
+              )
+            )
+          )
+        )
+      )
+      0
+    )
+  )
+)
+(
   defn ic-match
   (
     arena subj arms vt
   )
   (
-    IMatch
+    let ck0
     (
-      ic-expr arena subj vt
+      ic-check-exhaustive arena vt arms
     )
     (
-      list-reverse
+      IMatch
       (
-        ic-arms arena arms
+        ic-expr arena subj vt
+      )
+      (
+        list-reverse
         (
-          no-iarms
+          ic-arms arena arms
+          (
+            no-iarms
+          )
+          vt
         )
-        vt
       )
     )
   )
@@ -24610,7 +24913,7 @@
         )
         (
           ffi-call
-          "f_error"
+          "zyl_f_error"
           "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions"
           1000
         )
@@ -32303,7 +32606,7 @@
           )
           (
             ffi-call
-            "f_error"
+            "zyl_f_error"
             "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer"
             1000
           )
@@ -32550,7 +32853,7 @@
           )
           (
             ffi-call
-            "f_error"
+            "zyl_f_error"
             "E_CLI_MISSING_ARG: -o requires a path"
             1000
           )
@@ -32652,7 +32955,7 @@
                 0
                 (
                   ffi-call
-                  "f_error"
+                  "zyl_f_error"
                   "E_CLI_LINK_FAILED: link step failed"
                   1000
                 )
@@ -32663,7 +32966,7 @@
       )
       (
         ffi-call
-        "f_error"
+        "zyl_f_error"
         (
           cat2
           "E_CLI_NO_SRC: cannot open source file: "
