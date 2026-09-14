@@ -1,5 +1,72 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-13)
+
+**Native error system Phase 1 modules landed (`error_codes.zyl`, `error_report.zyl`).**
+
+`stdlib/compiler/error_codes.zyl`: 52-code catalog (`ErrorCode` = `(EC name
+String phase Int severity Int message String)`), `error-codes`, `ec-name` /
+`ec-phase` / `ec-severity` / `ec-message`, `ec-contains`, `ec-lookup`
+(`ErrorFind found/code`), `ec-count`. Mirrors `src/error.rs` + self-hosted
+extras (`E_UNBALANCED_PARENS`, `E_MATCH_ARM_COMPLEX`, `E_DUPLICATE_VARIANT`,
+`E_CODEGEN_BUFFER_LIMIT`, `E_LIST_NTH_OOB`,
+`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`). Verified: count 52, lookups resolve,
+bogus name → found 0, phases/severities correct.
+
+`stdlib/compiler/error_report.zyl`: `ErrorLocation` (Int-first field order),
+`ErrorSnippet`, `int-to-str` (table-slice digits, zero-ffi/arena), `space-run`,
+`pointer-line`, `make-loc`, `el-path`/`el-line`/`el-col`, `loc-string`,
+`err-header`, `make-snippet`, `es-col`/`es-line`, `arrow-line`. Verified via
+str-eq probes: `int-to-str` 0/7/52/1024, pointer-line cols 1/3, loc-string
+`tests/example.zyl:12:4`, header, arrow — all correct.
+
+Two more Rust-bootstrap codegen constraints discovered and encoded in
+`error_report.zyl`:
+
+- **Inline `zyl_cstr_concat` with a call operand (especially 2nd position)
+  miscompiles**; nested concat chains too. Rule: every `str-concat` takes only
+  pre-bound lets/literals; all intermediate values go through `let`. (The
+  self-hosted compiler calls the real `str-concat` body, so this is
+  belt-and-braces — but it keeps every result provable via `str-eq`.)
+- **String-first fields in a `make-variant` record mis-layout** — reading a
+  later Int field yields garbage. Put Int fields first (like `CheckState` in
+  `sexp_balance.zyl`); `EL` is `(line Int col Int file-path String)`.
+
+## Current Session (2026-09-13)
+
+**Native S-expression balance validator works (Rust bootstrap, `stdlib/compiler/sexp_balance.zyl`).**
+
+The phase A.8 error-system first milestone: `sexp_balance.zyl` now correctly
+classifies all nine smoke cases (`(` unbalanced; `(a (b (c)))` balanced; `)`
+unbalanced; `(]` mismatched; `()`/`[]{}`/`; (comment (`/`(a(b)())` balanced;
+`(a (b c)` unbalanced). Compiles clean (Phases 1-9) via the Rust bootstrap and
+verifies through the `/tmp/sbtest.zyl` module harness.
+
+Root causes found and fixed in the rewrite:
+
+- **Duplicate variant names break `match` dispatch** — all four `BalanceResult`
+  variants were named `BR`, so the first arm always matched and every input
+  reported "balanced". Distinct variant names (`Balanced`, `UnbalancedOpenString`,
+  `UnbalancedClose`, `MismatchedPair`) required.
+- **Rust-bootstrap Bool fields in record ctors mis-store** — `False`/`True`
+  literals in a 9-field `CheckState` ctor compiled to non-zero box pointers, so
+  every flag read back truthy (everything entered "in-string").  Flag fields
+  converted to `Int` 0/1; literal `0`/`1` store correctly (line/col Ints always
+  did). Rule: prefer `Int` 0/1 over `True`/`False` in record fields.
+- **ffi-call results type as fresh type vars** (`src/type_inference.rs:1513`) —
+  a `zyl_cstr_from_int` result is typed `Int`, so `print` emits the int path and
+  prints a raw pointer. CLI reports must print string literals + Int values only.
+- **`zyl_cstr_byte_at(ptr, i)`** (not `ffi-call "zyl_cstr_to_int"`) is the correct
+  char-byte primitive; `zyl_cstr_from_int` segfaults with a null arena.
+- **ffi-call trailing `1000`** is the FFI timeout parameter (mirrors
+  `icnf.rs timeout: 1000`).
+
+Known Rust-bootstrap gaps recorded for the driver work: `zyl_argc()` always
+returns 0 (`zyl_save_args` defined in `runtime/actor_runtime.c` but never
+called), so CLI `main` argument reading is dead under the Rust bootstrap; the
+self-hosted driver must consume `BalanceResult` fields directly instead of
+relying on `zyl_arg_str`.
+
 ## Current Session (2026-09-12)
 
 **Match exhaustiveness enforced at compile time (Rust bootstrap).**

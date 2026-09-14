@@ -1,0 +1,124 @@
+; ===========================================================================
+; error_codes.zyl — Error code catalog
+;
+; Single-source-of-truth error codes for the native error system (Phase A.8).
+; Phase: 1 lexer | 2 parser | 3 macro | 4 type | 5 mono | 6 region | 7 icnf
+;        8 codegen | 9 module | 10 runtime | 11 test | 12 trait | 13 cap
+;        14 contract | 15 numeric | 16 ffi | 17 match | 18 misc/user
+; Severity: 1 error | 2 warning | 3 note
+;
+; Every code name, phase, and default message mirrors src/error.rs (Rust
+; bootstrap) plus the self-hosted-only codes from parser.zyl / icnf.zyl /
+; monomorphization.zyl. Structural format: one form per line.
+; ===========================================================================
+
+(deftype ErrorCode
+  (EC name String phase Int severity Int message String))
+
+(deftype ErrorFind
+  (EFound found Int code ErrorCode))
+
+(deftype ECatalog
+  (ECat list (List ErrorCode)))
+
+; ---------------------------------------------------------------------------
+; CATALOG
+; ---------------------------------------------------------------------------
+
+(defn error-codes ()
+  (Cons (EC "E_ARITY_MISMATCH" 4 1 "type: function arity mismatch for F at S: expected E arguments, found G")
+    (Cons (EC "E_ASSERT_FAIL" 10 1 "assertion: condition failed - M at S")
+      (Cons (EC "E_ATOM_AS_OPERATOR" 2 1 "parser: atom cannot be used as operator in prefix position at S")
+        (Cons (EC "E_CANNOT_INFER" 5 1 "type: cannot infer concrete type for generic parameter G at S - no call-site evidence")
+          (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: TMut leaked across boundary at S")
+            (Cons (EC "E_CIRCULAR_MODULE" 9 1 "module: circular dependency: M")
+              (Cons (EC "E_CODEGEN" 8 1 "codegen: M")
+                (Cons (EC "E_CODEGEN_BUFFER_FULL" 8 1 "codegen: output buffer full at S")
+                  (Cons (EC "E_CODEGEN_BUFFER_LIMIT" 8 1 "codegen: buffer limit reached: M")
+                    (Cons (EC "E_CONTRACT_VIOLATION" 14 1 "contract: contract violation - M at S")
+                      (Cons (EC "E_DIVISION_BY_ZERO" 15 1 "numeric: division by zero at S")
+                        (Cons (EC "E_DUPLICATE_DEFINITION" 4 1 "type: duplicate definition of N at S. previously defined at P")
+                          (Cons (EC "E_DUPLICATE_IMPL" 12 1 "trait: duplicate impl of T for U at S")
+                            (Cons (EC "E_DUPLICATE_VARIANT" 4 1 "type: duplicate variant V in deftype at S")
+                              (Cons (EC "E_EMPTY_LIST" 2 1 "parser: empty list is not a valid expression at S")
+                                (Cons (EC "E_EXPECTED_EXPRESSION" 2 1 "parser: expected an expression but found T at S")
+                                  (Cons (EC "E_EXPECTED_RBRACKET" 2 1 "parser: expected ] but found T at S")
+                                    (Cons (EC "E_EXPECTED_RCURLY" 2 1 "parser: expected } but found T at S")
+                                      (Cons (EC "E_EXPECTED_RPAREN" 2 1 "parser: expected ) at S but found T")
+                                        (Cons (EC "E_FFI_TIMEOUT" 16 1 "ffi: call exceeded timeout of M ms at S")
+                                          (Cons (EC "E_FLOAT_OVERFLOW" 1 1 "lexer: float overflow in literal L at S")
+                                            (Cons (EC "E_INTEGER_OVERFLOW" 1 1 "lexer: integer overflow in literal L at S")
+                                              (Cons (EC "E_INVALID_CAPABILITY" 13 1 "type: invalid capability usage for F - M at S")
+                                                (Cons (EC "E_INVALID_CHAR" 1 1 "lexer: invalid character C at S")
+                                                  (Cons (EC "E_LIST_NTH_OOB" 10 1 "runtime: list-nth index out of bounds at S")
+                                                    (Cons (EC "E_MACRO_ILLEGAL_ACCESS" 3 1 "macro: illegal runtime access in macro expansion")
+                                                      (Cons (EC "E_MACRO_NON_TERMINATION" 3 1 "macro: expansion loop detected (max depth exceeded)")
+                                                        (Cons (EC "E_MATCH_ARM_COMPLEX" 7 1 "match: arm combines a constant with multiple calls - bind to lets first")
+                                                          (Cons (EC "E_MATCH_NONEXHAUSTIVE" 17 1 "match: non-exhaustive pattern match at S - missing cases: M")
+                                                            (Cons (EC "E_MODULE_NOT_FOUND" 9 1 "module: module M not found at P")
+                                                              (Cons (EC "E_MUT_CONFLICT" 13 1 "aliasing: mutable reference conflict at S")
+                                                                (Cons (EC "E_OVERFLOW" 15 1 "numeric: integer overflow at S")
+                                                                  (Cons (EC "E_REGION_ESCAPE" 6 1 "region: value escapes region constraint at S")
+                                                                    (Cons (EC "E_RESERVED_KEYWORD" 2 1 "parser: reserved keyword K cannot be used as identifier at S")
+                                                                      (Cons (EC "E_RETURN_TYPE_MISMATCH" 4 1 "type: return type mismatch in F - expected T, got U at S")
+                                                                        (Cons (EC "E_SYMBOL_NOT_EXPORTED" 9 1 "module: symbol N not exported by M")
+                                                                          (Cons (EC "E_TEST_FAILURE" 11 1 "test: assertion failed - M")
+                                                                            (Cons (EC "E_TEST_RUNNER_ERROR" 11 1 "test: runner error - M")
+                                                                              (Cons (EC "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN" 7 1 "icnf: top-level statements combined with explicit main")
+                                                                                (Cons (EC "E_TRAIT_BOUND_NOT_SATISFIED" 12 1 "type: unsatisfied trait bound T : U at S")
+                                                                                  (Cons (EC "E_TRAIT_NOT_DERIVABLE" 12 1 "trait: cannot derive T for type U at S")
+                                                                                    (Cons (EC "E_TRAIT_NOT_FOUND" 12 1 "trait: no implementation found for T at S")
+                                                                                      (Cons (EC "E_TYPE_MISMATCH" 4 1 "type: type mismatch at S - expected E, found F")
+                                                                                        (Cons (EC "E_UNBALANCED_PARENS" 2 1 "parser: unbalanced parens - open and close counts differ")
+                                                                                          (Cons (EC "E_UNBOUND_VARIABLE" 4 1 "type: unbound variable V at S")
+                                                                                            (Cons (EC "E_UNEXPECTED_EOF" 1 1 "lexer: unexpected EOF while expecting C at S")
+                                                                                              (Cons (EC "E_UNEXPECTED_TOKEN_IN_EXPR" 2 1 "parser: unexpected token T in expression context at S")
+                                                                                                (Cons (EC "E_UNINITIALIZED_USE" 6 1 "variable: use of uninitialized variable V at S")
+                                                                                                  (Cons (EC "E_UNKNOWN_GENERIC_PARAM" 4 1 "type: unknown generic parameter G at S")
+                                                                                                    (Cons (EC "E_UNKNOWN_TYPE" 4 1 "type: unknown type T at S")
+                                                                                                      (Cons (EC "E_UNTERMINATED_STRING" 1 1 "lexer: unterminated string at S")
+                                                                                                        (Cons (EC "E_USER_ERROR" 10 1 "runtime: user error - M at S")
+                                                                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))
+; ---------------------------------------------------------------------------
+; ACCESSORS
+; ---------------------------------------------------------------------------
+
+(defn ec-name (code)
+  (match code
+    (EC name phase severity message name)))
+
+(defn ec-phase (code)
+  (match code
+    (EC name phase severity message phase)))
+
+(defn ec-severity (code)
+  (match code
+    (EC name phase severity message severity)))
+
+(defn ec-message (code)
+  (match code
+    (EC name phase severity message message)))
+
+; True (1) if code-name appears in the catalog.
+(defn ec-contains (code-name codes)
+  (match codes
+    (Nil 0)
+    (Cons head rest
+      (if (= (str-eq (ec-name head) code-name) 1)
+        1
+        (ec-contains code-name rest)))))
+
+; First catalog entry matching code-name; EFound found=0 with an empty code
+; when absent.
+(defn ec-lookup (code-name codes)
+  (match codes
+    (Nil (EFound 0 (EC "" 0 0 "")))
+    (Cons head rest
+      (if (= (str-eq (ec-name head) code-name) 1)
+        (EFound 1 head)
+        (ec-lookup code-name rest)))))
+
+(defn ec-count (codes)
+  (match codes
+    (Nil 0)
+    (Cons head rest (+ 1 (ec-count rest)))))

@@ -85,7 +85,7 @@ def compact_to_structural(text):
         else:
             # atom
             j = i
-            while j < len(text) and text[j] not in '()\n;'"\"":
+            while j < len(text) and text[j] not in '()\n;"':
                 j += 1
             atom = text[i:j].strip()
             if atom:
@@ -124,6 +124,50 @@ def compact_to_structural(text):
     return '\n'.join(output_lines)
 
 
+def deduplicate_defns(text, seen_defns):
+    """Remove duplicate defn definitions, keeping the first occurrence."""
+    lines = text.split('\n')
+    out = []
+    i = 0
+    global_depth = 0
+    while i < len(lines):
+        line = lines[i]
+        for ch in line:
+            if ch == '(':
+                global_depth += 1
+            elif ch == ')':
+                global_depth -= 1
+        stripped = line.strip()
+        if stripped.startswith('defn '):
+            parts = stripped.split()
+            if len(parts) >= 2:
+                fn_name = parts[1]
+                if fn_name in seen_defns:
+                    # Skip this defn and its outer wrapper.
+                    # The outer '(' is the previous output line (at depth-1).
+                    # Remove it from output if it's a lone '('.
+                    if out and out[-1].strip() == '(':
+                        out.pop()
+                    target_depth = global_depth - 1
+                    i += 1
+                    while i < len(lines):
+                        l = lines[i]
+                        for ch in l:
+                            if ch == '(':
+                                global_depth += 1
+                            elif ch == ')':
+                                global_depth -= 1
+                        if global_depth == target_depth:
+                            i += 1
+                            break
+                        i += 1
+                    continue
+                seen_defns.add(fn_name)
+        out.append(line)
+        i += 1
+    return '\n'.join(out)
+
+
 def file_to_structural(filepath):
     """Read a Zyl file, strip use lines, convert to structural form."""
     txt = open(filepath).read()
@@ -147,6 +191,7 @@ files = [
     # back.
     'stdlib/core/result.zyl',
     'stdlib/core/list.zyl',
+    'stdlib/collections/collections.zyl',
     'stdlib/allocator/allocator.zyl',
     'stdlib/compiler/ast.zyl',
     'stdlib/compiler/expr_inner.zyl',
@@ -163,21 +208,22 @@ files = [
     'stdlib/compiler/closure_inline.zyl',
     'stdlib/compiler/assert_lowering.zyl',
     'stdlib/compiler/codegen.zyl',
-    # region_inference.zyl deliberately excluded: it's dead code from the
-    # self-hosted boot pipeline's perspective (driver.zyl's boot-run
-    # never calls anything in it), and it was blocking the boot process
-    # at link time with undefined-symbol errors from bugs in code that
-    # never actually executes. See resolver.zyl's header comment for the
-    # same situation, root-caused there.
+    'stdlib/compiler/region_inference.zyl',
+    'stdlib/compiler/optimization.zyl',
+    # region_inference/optimization were previously excluded as "dead code"
+    # with link errors; tools/repl.zyl (the self-hosted REPL) calls them,
+    # so they now ship in the boot source.
     'selfhost/driver.zyl',
 ]
 
 
 out = []
 out.append('; ===== AUTO-ASSEMBLED SELF-HOSTED COMPILER (boot source) =====\n')
+seen_defns = set()
 for f in files:
     out.append(f'\n; ---------- {f} ----------\n')
     txt = file_to_structural(f)
+    txt = deduplicate_defns(txt, seen_defns)
     out.append(txt)
 src = ''.join(out)
 open('selfhost/zyl_selfhost_compiler.zyl', 'w').write(src)

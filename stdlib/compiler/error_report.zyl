@@ -1,0 +1,108 @@
+; ===========================================================================
+; error_report.zyl — Rich error formatting (Phase A.8 / Phase 1)
+;
+; Builds ErrorLocation + source-snippet rendering primitives used by the
+; native pipeline. All builders return plain Strings; Int-accessible
+; components (line, col) are the testable surface under the Rust bootstrap,
+; where dynamic strings cannot be printed. The self-hosted driver consumes
+; the fields directly for its renderer.
+;
+; CODEGEN RULE (Rust bootstrap): zyl_cstr_concat is inlined at every call
+; site, and an inline operand that is ITSELF a call (especially in the
+; second position) miscompiles. Every str-concat therefore receives only
+; pre-bound variables or literals; all intermediate values go through let.
+; The self-hosted compiler calls the real str-concat body, so this is
+; belt-and-braces, but it keeps every result provable via str-eq tests.
+; ===========================================================================
+
+(use compiler/error_codes)
+
+; Int-first field order: the Rust bootstrap mis-lays records whose FIRST
+; field is a String/pointer in the inline make-variant path. Ints first
+; (like CheckState in sexp_balance) match correctly.
+(deftype ErrorLocation
+  (EL line Int col Int file-path String))
+
+(deftype ErrorSnippet
+  (ES pointer-col Int error-line String))
+
+; ---------------------------------------------------------------------------
+; INTEGER -> DECIMAL STRING (no ffi, no arena): digit chars pulled from a
+; literal index table via str-substring (match-on-Int is not supported).
+; ---------------------------------------------------------------------------
+
+(defn int-to-str (n)
+  (if (< n 10)
+    (str-substring "0123456789" n 1)
+    (let hi (int-to-str (/ n 10))
+      (let lo (str-substring "0123456789" (% n 10) 1)
+        (str-concat hi lo)))))
+
+(defn space-run (n)
+  (if (<= n 0)
+    ""
+    (let s (space-run (- n 1))
+      (str-concat s " "))))
+
+; Caret line: col-1 spaces then ^. col is 1-based.
+(defn pointer-line (col)
+  (let s (space-run (- col 1))
+    (str-concat s "^")))
+
+; ---------------------------------------------------------------------------
+; LOCATION
+; ---------------------------------------------------------------------------
+
+(defn make-loc (file-path line col)
+  (EL line col file-path))
+
+(defn el-path (loc)
+  (match loc
+    (EL line col file-path file-path)))
+
+(defn el-line (loc)
+  (match loc
+    (EL line col file-path line)))
+
+(defn el-col (loc)
+  (match loc
+    (EL line col file-path col)))
+
+; file-path is the last field in the record, but the rendered form is
+; path:line:col.
+(defn loc-string (loc)
+  (match loc
+    (EL line col file-path
+      (let ls (int-to-str line)
+        (let cs (int-to-str col)
+          (let c1 (str-concat ":" cs)
+            (let c2 (str-concat ls c1)
+              (let c3 (str-concat ":" c2)
+                (str-concat file-path c3)))))))))
+
+; Rust-style header: error[E_CODE]: message
+(defn err-header (code-name message)
+  (let open (str-concat "error[" code-name)
+    (let inner (str-concat open "]: ")
+      (str-concat inner message))))
+
+; ---------------------------------------------------------------------------
+; SNIPPET
+; ---------------------------------------------------------------------------
+
+; Build an ErrorSnippet for pointer-col over a single error line.
+(defn make-snippet (pointer-col error-line)
+  (ES pointer-col error-line))
+
+(defn es-col (snippet)
+  (match snippet
+    (ES pointer-col error-line pointer-col)))
+
+(defn es-line (snippet)
+  (match snippet
+    (ES pointer-col error-line error-line)))
+
+; The "  --> loc" arrow line.
+(defn arrow-line (loc)
+  (let ls (loc-string loc)
+    (str-concat "  " ls)))

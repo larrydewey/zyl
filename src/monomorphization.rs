@@ -566,6 +566,20 @@ impl MonoContext {
             }
         }
 
+        // Deduplicate function definitions by name (monomorphization can
+        // produce duplicate non-generic defns due to type-variable bindings).
+        {
+            use std::collections::HashSet;
+            let mut seen = HashSet::new();
+            result.retain(|e| {
+                if let ExprInner::Defn(name, _, _) = &e.inner {
+                    seen.insert(name.clone())
+                } else {
+                    true
+                }
+            });
+        }
+
         Ok(result)
     }
 

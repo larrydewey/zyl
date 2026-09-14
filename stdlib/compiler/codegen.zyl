@@ -220,7 +220,8 @@
     (ILet d32 d33 d34 0)
     (ISeq d35 0)
     (IVariant d36 d37 d38 0)
-    (IMatch d39 d40 0)))
+    (IMatch d39 d40 0)
+    (IFn d41 0)))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -265,7 +266,9 @@
     (ILet n v body (cg-let-dispatch st env n v body))
     (ISeq es (cg-seq st env es))
     (IVariant d46 tag fields (cg-variant st env tag fields))
-    (IMatch scr arms (cg-match st env scr arms))))
+    (IMatch scr arms (cg-match st env scr arms))
+    ; A bare function node is never emitted as a value expression; keep st.
+    (IFn d47 d48 d49 st)))
 
 ; Load a variable / function value into rax.
 (defn cg-load-value (st env n)
@@ -874,7 +877,8 @@
     (ILet d62 v b (icnf-add3 3 (icnf-size v) (icnf-size b)))
     (ISeq es (+ 1 (icnf-count-list es)))
     (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
-    (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))))
+    (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
+    (IFn d65 d66 d67 1)))
 
 (defn icnf-count-list (xs)
   (match xs
@@ -901,7 +905,8 @@
     (ILet d88 v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
     (ISeq es (icnf-count-slots-list es))
     (IVariant d89 d90 fields (icnf-count-slots-list fields))
-    (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))))
+    (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
+    (IFn d91 d92 d93 0))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)
@@ -946,8 +951,14 @@
       (icnf-add2 1 (icnf-add2 (icnf-size body) (icnf-count-arms rest))))))
 
 (defn cg-function (st f)
-  (match f
-    (IFn name params body
+  ; Extract the IFn fields via tiny two-arm helpers: a trailing catch-all
+  ; arm on this single large IFn arm was dropped between macro expand and
+  ; icnf, leaving only the first arm and tripping exhaustiveness.
+  (if
+    (ifn-tag-p f)
+    (let name (ifn-tag-name f)
+      (let params (ifn-tag-params f)
+        (let body (ifn-tag-body f)
      (let env (cg-param-env params 0 (EnvNil))
        ; Frame sized from actual slot usage: param slots + one per ILet /
        ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
@@ -970,6 +981,27 @@
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))
+    st)))
+
+(defn ifn-tag-p (f)
+  (match f
+    (IFn a b c 1)
+    (d1 0)))
+
+(defn ifn-tag-name (f)
+  (match f
+    (IFn a b c a)
+    (d1 "a-name")))
+
+(defn ifn-tag-params (f)
+  (match f
+    (IFn a b c b)
+    (d1 (no-strs))))
+
+(defn ifn-tag-body (f)
+  (match f
+    (IFn a b c c)
+    (d1 (no-icnfs))))
 
 (defn cg-reset-slots (st next-off)
   (match st
@@ -1025,7 +1057,8 @@
 
 (defn cg-collect-one (st f rest)
   (match f
-    (IFn nm d78 d79 (cg-collect-fnnames (cg-with-fnname st nm) rest))))
+    (IFn nm d78 d79 (cg-collect-fnnames (cg-with-fnname st nm) rest))
+    (d80 (cg-collect-fnnames st rest))))
 
 (defn cg-program (st fns)
   (let st0 (cg-collect-fnnames st fns)
@@ -1100,7 +1133,8 @@
 (defn cg-functions-step (st f rest)
   (match f
     (IFn nm params body
-      (cg-functions-go st nm f rest))))
+      (cg-functions-go st nm f rest))
+    (d96 (cg-functions st rest))))
 
 (defn cg-functions-go (st nm f rest)
   (cg-functions (cg-function st f) rest))

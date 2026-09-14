@@ -1,0 +1,293 @@
+; === Zyl Standard Library — S-Expression Balance Validator ===
+; Module: compiler/sexp_balance
+; Provides: native structural balance validation with precise location.
+; Replaces: Python paren-counting scripts.
+;
+; Deterministic, pure-functional single pass over a NUL-terminated buffer.
+; Tracks a stack of expected closers (each with its open position); a
+; serial error slot captures the FIRST fatal deviation (unexpected
+; closer / mismatched pair) so the scan can stop early. Delegates the
+; deep machinery to small single-purpose helpers so every form stays
+; short enough to count parens by eye.
+
+(use allocator/allocator)
+
+; ===========================================================================
+; RESULT TYPES
+; ===========================================================================
+
+(deftype BalanceResult
+  (Balanced)
+  (UnbalancedOpenString)
+  (UnbalancedClose String Int Int)
+  (MismatchedPair String String Int Int))
+
+; line col stack ctx ctx-col in-string in-comment escape-next err
+;   stack :: (List (Pair expected-closer (Pair open-line open-col)))
+;   ctx   :: current partial line (last line seen so far)
+;   err   :: BalanceResult if a fatal deviation was recorded, else balanced
+(deftype CheckState
+  (CS Int Int (List (Pair String (Pair Int Int))) String Int Int Int Int BalanceResult))
+
+; ===========================================================================
+; CHARACTER CLASSIFICATION (byte values, ASCII)
+; ===========================================================================
+
+(defn sb-char-code (c)
+  (ffi-call "zyl_cstr_byte_at" c 0 1000))
+
+(defn sb-is-paren-open (c)
+  (= (sb-char-code c) 40))
+
+(defn sb-is-paren-close (c)
+  (= (sb-char-code c) 41))
+
+(defn sb-is-bracket-open (c)
+  (= (sb-char-code c) 91))
+
+(defn sb-is-bracket-close (c)
+  (= (sb-char-code c) 93))
+
+(defn sb-is-brace-open (c)
+  (= (sb-char-code c) 123))
+
+(defn sb-is-brace-close (c)
+  (= (sb-char-code c) 125))
+
+(defn sb-is-quote (c)
+  (= (sb-char-code c) 34))
+
+(defn sb-is-semicolon (c)
+  (= (sb-char-code c) 59))
+
+(defn sb-is-backslash (c)
+  (= (sb-char-code c) 92))
+
+(defn sb-is-newline (c)
+  (= (sb-char-code c) 10))
+
+; ===========================================================================
+; STATE SHAPE-ONLY HELPERS
+; ===========================================================================
+
+; Advance past a character: append to current context line, bump column.
+; `escape-next` falls back to False. All other flags are preserved.
+(defn sb-advance (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+
+; Advance and set escape-next so the following character is consumed raw.
+(defn sb-advance-escape (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 1 err))))
+
+; Enter string context on a quote.
+(defn sb-enter-string (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col 1 in-comment 0 err))))
+
+; Leave string context on a closing quote.
+(defn sb-exit-string (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col 0 in-comment 0 err))))
+
+; Enter line-comment context on a semicolon.
+(defn sb-enter-comment (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string 1 0 err))))
+
+; End-of-line: new line number, reset column and context line, exit comment.
+; String context is preserved (multi-line strings stay inside a string).
+(defn sb-new-line (state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS (+ line 1) 1 stack "" 1 in-string 0 0 err))))
+
+; Opening bracket: push expected closer with its position.
+(defn sb-open-bracket (c state closer)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1)
+          (Cons (Pair closer (Pair line col)) stack)
+          (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+
+; Closing bracket: verify against the stack head.
+(defn sb-close-bracket (c state closer)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (match stack
+        (Nil
+          (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0
+            (UnbalancedClose closer line col)))
+        (Cons top rest
+          (match top
+            (Pair expected (Pair ol oc)
+              (if (= (str-eq expected closer) 1)
+                (CS line (+ col 1) rest (str-concat ctx c) ctx-col in-string in-comment 0 err)
+                (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0
+                  (MismatchedPair expected closer line col))))))))))
+
+; ===========================================================================
+; CHARACTER DISPATCH (context-aware)
+; ===========================================================================
+
+; Top dispatcher: honor escape/comment/string first, else normal scanning.
+(defn sb-process-char (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (if (= escape-next 1)
+        (sb-advance-escape c state)
+        (if (= in-comment 1)
+          (sb-process-comment-char c state)
+          (if (= in-string 1)
+            (sb-process-string-char c state)
+            (sb-process-normal-char c state)))))))
+
+(defn sb-process-comment-char (c state)
+  (if (sb-is-newline c)
+    (sb-new-line state)
+    (sb-advance c state)))
+
+; In a string: escapes toggle, a quote ends the string, a newline bumps
+; the line, any other char is consumed.
+(defn sb-process-string-char (c state)
+  (if (sb-is-backslash c)
+    (sb-advance-escape c state)
+    (if (sb-is-quote c)
+      (sb-exit-string c state)
+      (if (sb-is-newline c)
+        (sb-new-line state)
+        (sb-advance c state)))))
+
+; Normal context: brackets push/pop, quotes/comments enter their context,
+; newlines bump the line, anything else is consumed.
+(defn sb-process-normal-char (c state)
+  (if (sb-is-paren-open c)
+    (sb-open-bracket c state ")")
+    (if (sb-is-bracket-open c)
+      (sb-open-bracket c state "]")
+      (if (sb-is-brace-open c)
+        (sb-open-bracket c state "}")
+        (if (sb-is-paren-close c)
+          (sb-close-bracket c state ")")
+          (if (sb-is-bracket-close c)
+            (sb-close-bracket c state "]")
+            (if (sb-is-brace-close c)
+              (sb-close-bracket c state "}")
+              (if (sb-is-quote c)
+                (sb-enter-string c state)
+                (if (sb-is-semicolon c)
+                  (sb-enter-comment c state)
+                  (if (sb-is-newline c)
+                    (sb-new-line state)
+                    (sb-advance c state)))))))))))
+
+; ===========================================================================
+; DRIVER: ONE-PASS SCAN + FINALIZE
+; ===========================================================================
+
+; Scan a NUL-terminated buffer by index. Stops early once the error slot
+; is filled (fatal deviation), otherwise advances one frame per char.
+(defn sb-check-string (src)
+  (let len (str-length src)
+    (let final-state (sb-scan-index src 0 len (CS 1 1 Nil "" 1 0 0 0 Balanced))
+      (sb-finalize final-state))))
+
+(defn sb-scan-index (src idx len state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (if (>= idx len)
+        state
+        (if (= (sb-result-balanced err) 1)
+          (let next (sb-process-char (str-substring src idx 1) state)
+            (sb-scan-index src (+ idx 1) len next))
+          state)))))
+
+; Resolve the terminal diagnosis from the final state.
+(defn sb-finalize (state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (if (= (sb-result-balanced err) 1)
+        (if (= in-string 1)
+          UnbalancedOpenString
+          (match stack
+            (Nil Balanced)
+            (Cons top rest UnbalancedOpenString)))
+        err))))
+
+; ===========================================================================
+; RESULT QUERIES
+; ===========================================================================
+
+(defn sb-result-balanced (r)
+  (match r
+    (Balanced 1)
+    (UnbalancedOpenString 0)
+    (UnbalancedClose closer line col 0)
+    (MismatchedPair opener closer line col 0)))
+
+(defn sb-result-error (r)
+  (match r
+    (Balanced 0)
+    (UnbalancedOpenString 1)
+    (UnbalancedClose closer line col 1)
+    (MismatchedPair opener closer line col 1)))
+
+; CLI friendly status: 0 balanced, 1 fatal deviation. Prints only literal
+; strings and Int values — the Rust-bootstrap print path can only emit
+; string literals (dynamic strings print as raw pointers), and the
+; self-hosted driver will consume the BalanceResult fields directly.
+(defn sb-cli-status (r)
+  (match r
+    (Balanced 0)
+    (UnbalancedOpenString 1)
+    (UnbalancedClose closer line col 1)
+    (MismatchedPair opener closer line col 1)))
+
+(defn sb-report (r)
+  (match r
+    (Balanced
+      (print "balanced"))
+    (UnbalancedOpenString
+      (print "unbalanced: reached end of input inside open pair/string"))
+    (UnbalancedClose closer line col
+      (begin
+        (print "unbalanced: unexpected closer")
+        (print line)
+        (print col)))
+    (MismatchedPair opener closer line col
+      (begin
+        (print "mismatched pair")
+        (print line)
+        (print col)))
+  )
+)
+
+; ===========================================================================
+; FILE VALIDATION + CLI ENTRY
+; ===========================================================================
+
+(defn sb-validate-file (path)
+  (let fd (file-open path "r")
+    (if (> fd 0)
+      (let srcbuf (file-read fd 1048576)
+        (let d1 (file-close fd)
+          (sb-check-string srcbuf)))
+      (UnbalancedClose "file-open" 0 0))))
+
+(defn main ()
+  (let argc (ffi-call "zyl_argc" 0)
+    (if (< argc 2)
+      (begin
+        (print "usage: sexp_balance <file.zyl>")
+        2)
+      (let path (ffi-call "zyl_arg_str" 1 1000)
+        (let result (sb-validate-file path)
+          (begin
+            (sb-report result)
+            (sb-cli-status result)))))))

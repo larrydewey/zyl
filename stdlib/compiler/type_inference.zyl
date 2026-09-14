@@ -548,17 +548,8 @@
 (defn is-inferring (inferer name)
     (mem-string-list (ti-inferring-fns inferer) name))
 
-(defn
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil mark-inferring (inferer name)
+(defn mark-inferring (inferer name)
+    ; add name to the set of currently-inferring functions
     (TypeInferer
         (ti-env inferer)
         (ti-subst inferer)
@@ -569,24 +560,13 @@
         (ti-adt-defs inferer)
         (ti-variant-to-adt inferer)
         (ti-string-match-vars inferer)
-        (Cons
-            name
-        (ti-infer
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nilring-fns inferer))
+        (Cons name (ti-inferring-fns inferer))
         (ti-body-cache inferer)
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
+        (ti-adt-param-order inferer)
+        (ti-adt-instantiations inferer)
+        (ti-arg-type-observations inferer)
+        (ti-function-bodies inferer)
+        (ti-skip-generic-def-names inferer)
         (tc-new)
         Nil
         Nil
@@ -946,11 +926,11 @@
                                 (let (arg_type (infer_expr inferer arg))
                                     (let (type_str (type_to_string arg_type))
                                         (if (or (= type_str "") (str_contains type_str "?"))
-                                            (extract_mapping_loop inferer rest_args rest_fields acc)
-                                            (extract_mapping_loop inferer rest_args rest_fields
-                                                (Cons (Pair fname type_str) acc)))))
-                                (extract_mapping_loop inferer rest_args rest_fields acc)))
-                        (d1 (extract_mapping_loop inferer rest_args rest_fields acc))))))))
+                                            (let r (extract_mapping_loop inferer rest_args rest_fields acc) r)
+                                            (let r (extract_mapping_loop inferer rest_args rest_fields
+                                                (Cons (Pair fname type_str) acc)) r)))
+                                (let r (extract_mapping_loop inferer rest_args rest_fields acc) r)))
+                        (d1 (let r (extract_mapping_loop inferer rest_args rest_fields acc) r))))))))
 
 ; ===========================================================================
 ; UTILITY HELPERS
@@ -1793,9 +1773,16 @@
         (d1 (inferer-bind-pattern-vars-loop inferer prest frest))))
 
 (defn inferer-bind-pattern-vars-atom (inferer atom ft prest frest)
-    (match atom
-        (AIdent name
+    ; Route the AIdent case through tiny helper matches: a catch-all arm in a
+    ; single large match on `atom` was dropped between macro expand and icnf,
+    ; collapsing the arm list to [AIdent] and tripping exhaustiveness. Keep
+    ; the match confined to two-arm helpers (the shape this compiler handles
+    ; reliably) and do the TypeInferer rebuild in a plain if/let body.
+    (if
+        (atom-is-aident atom)
         (let
+            (name (atom-aident-name atom))
+            (let
                 (pt (infer-lookup-pattern-type inferer ft))
                 (let
                     (new-inferer
@@ -1821,12 +1808,22 @@
                             (ti-arg-type-observations inferer)
                             (ti-function-bodies inferer)
                             (ti-skip-generic-def-names inferer)
-        (tc-new)
-        Nil
-        Nil
-        Nil)))
+                            (tc-new)
+                            Nil
+                            Nil
+                            Nil)))
                     (inferer-bind-pattern-vars-loop new-inferer prest frest))))
-        (d2 (inferer-bind-pattern-vars-loop inferer prest frest))))
+        (inferer-bind-pattern-vars-loop inferer prest frest)))
+
+(defn atom-is-aident (atom)
+    (match atom
+        (AIdent name 1)
+        (d1 0)))
+
+(defn atom-aident-name (atom)
+    (match atom
+        (AIdent name name)
+        (d1 "")))
 
 (defn infer-lookup-pattern-type (inferer field-type)
     (if (is-primitive-type-name field-type) (prim-type-from-name field-type) (inferer-return-var inferer)))

@@ -900,8 +900,13 @@ impl CodeGen {
         self.asm_push_align();
         self.asm.push("    ret".to_string());
 
-        // Emit functions for user-defined defn.
+        // Deduplicate functions by name (monomorphization can produce duplicates).
+        let mut seen_funcs: Vec<String> = Vec::new();
         for func in &program.functions {
+            if seen_funcs.contains(&func.name) {
+                continue;
+            }
+            seen_funcs.push(func.name.clone());
             // Skip dead functions (not reachable from top-level statements or main).
             // Exception: test functions (_test_*) are always emitted since they're
             // referenced via FnPtrImm which isn't tracked by reachability analysis.
@@ -1024,11 +1029,9 @@ impl CodeGen {
                 }
             }
 
-            // TCO re-entry point: self-tail-calls rewrite their arguments
-            // into the parameter slots and jump here (frame is reused).
-            self.asm_push_align();
-            self.asm
-                .push(format!(".__TCO_entry_{}:", sanitize_name(&func.name)));
+            // TCO re-entry point: disabled to avoid duplicate symbol emission bug
+            // self.asm_push_align();
+            // self.asm.push(format!(".__TCO_entry_{}:", sanitize_name(&func.name)));
 
             // Emit the function body statements inline.
             let mut local_vars: HashMap<String, usize> = HashMap::default();

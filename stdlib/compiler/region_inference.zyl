@@ -330,6 +330,9 @@
       (let new-env (re-env-bind env d11 RStack)
         (ri-capture-collect body captured-refs new-env)))
     (ISeq items (ri-capture-collect-list items captured-refs env))
+    (IConst d17 captured-refs)
+    (IStr d18 captured-refs)
+    (IFlt d19 captured-refs)
     (IVariant d12 d13 args (ri-capture-collect-list args captured-refs env))
     (IMatch d14 scr arms
       (ri-capture-collect-arms arms
@@ -513,7 +516,8 @@
           (ri-make-field-regions args Nil)) Nil)))
       (ri-add-struct-region ri field-regions))
     (ISeq d4
-      (ri-collect-defs-loop ri d4))))
+      (ri-collect-defs-loop ri d4))
+    (d5 ri)))
 
 (defn ri-make-param-regions (count)
   (ri-make-param-regions-loop count Nil))

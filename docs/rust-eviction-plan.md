@@ -40,6 +40,9 @@ Decisions locked (all "recommended" options):
 7. Rewrite `boot.sh` (`--skip-rust` becomes the default/no option; cc from
    committed stage2.s; argv-based smoke; new `zyl-self` = `exec stage2.bin
    "$@"`).
+8. **Error System (native Zyl)**: implement `stdlib/compiler/sexp_balance.zyl`,
+   `error_codes.zyl`, `error_report.zyl`; integrate into driver pipeline;
+   replace Python balance scripts; verify fixed point.
 
 ### Phase B — Pipeline parity
 8. Wire region inference: fix link-broken `stdlib/compiler/region_inference.zyl`
@@ -48,9 +51,14 @@ Decisions locked (all "recommended" options):
 9. Write `stdlib/compiler/optimization.zyl` (safe constant-folding + DCE
    over ICNF); add to driver pipeline; verify.
 
-### Phase C — REPL
+### Phase C — REPL (BLOCKED by Phase A.8: Error System)
 10. `tools/repl.zyl` (or stdlib): read stdin, write snippet file, invoke
     self-compile via argv CLI, run, print result.
+
+**Blocking dependency**: REPL requires native error system (Phase A.8) for:
+- Live S-expression balance feedback
+- Rich error reporting in interactive mode
+- "Did you mean?" suggestions for typo recovery
 
 ### Phase D — Eviction & docs
 11. `git mv src archive/rust-bootstrap-2026`; write archive README; delete
