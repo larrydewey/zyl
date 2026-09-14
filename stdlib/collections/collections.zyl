@@ -132,6 +132,13 @@
     (Nil (None))
     (Cons h t (if (== n 0) (Some h) (list-nth (- n 1) t)))))
 
+; Update element at index n (0-based), returning new list.
+; Returns: List<T>
+(defn list-set (idx val xs)
+  (match xs
+    (Nil (Nil))
+    (Cons h t (if (== idx 0) (Cons val t) (Cons h (list-set (- idx 1) val t))))))
+
 ; Whether an element is present (uses ==).
 ; Returns: Bool
 (defn list-contains (x xs)
