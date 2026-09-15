@@ -1,5 +1,82 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-15, continued)
+
+**stage1.bin self-hosted segfault: root-caused two duplicate-symbol collisions and one more deep-match codegen bug; bootstrap now gets much further.**
+
+Followed up on the "remaining blocker" from the previous entry below
+(`build/boot/stage1.bin` segfaulting nondeterministically) by bisecting
+with `gdb` down to a **minimal repro**: `(defn main () (print "hi"))`
+segfaults `stage1.bin` deterministically and immediately (the earlier
+"nondeterminism" was illusory — different inputs just die at different
+points in the same broken pipeline, not true memory corruption).
+
+Root causes found via gdb (breakpoint on the crashing call target, inspect
+register/tag values, cross-reference against the source's `match` arms
+and `deftype` declarations):
+
+1. **`stdlib/compiler/contract_injection.zyl` was never added to
+   `selfhost/assemble.py`'s bundle file list** (missed when the module was
+   ported — commit `33235c4`). It independently defines
+   `ci-expand-program(exprs)` (1-arg), which collides by name with
+   `closure_inline.zyl`'s unrelated `ci-expand-program(arena, prog)`
+   (2-arg). `driver.zyl`'s contract-injection pipeline step called
+   `(ci-expand-program exprs)` expecting the 1-arg version, but since that
+   module was never assembled in, it silently linked against
+   closure_inline's 2-arg function instead — an arity-mismatched call
+   feeding garbage through the unset second argument register. Worse:
+   `contract_injection.zyl` itself doesn't even compile correctly if
+   added — it references accessors/constructors (`d-name`, `t-name`,
+   `TestNode`, ...) that don't match the real `DefnNode`/`TestDecl`/
+   `TestSuiteNode` shapes in `expr_inner.zyl` (written against a stale
+   data model, never finished). Fix: leave it out of the bundle, make
+   `driver.zyl`'s contract-injection step an explicit identity
+   pass-through (`(let ci-exprs exprs ...)`) instead of accidentally
+   calling the wrong function.
+2. **`populate-variant-to-adt` defined in both `monomorphization.zyl`
+   (2-arg) and `type_inference.zyl` (3-arg)** — same collision class.
+   Renamed monomorphization.zyl's copy to `mc-populate-variant-to-adt`.
+3. **`list-nth` defined in both `type_inference.zyl` and
+   `monomorphization.zyl`** with different failure semantics (silent
+   `TVar` sentinel vs. loud `zyl_f_error`/`E_LIST_NTH_OOB`) — same
+   collision class. Renamed type_inference.zyl's copy to `ti-list-nth`.
+4. **`ic-collect-vt-run` (icnf.zyl) and `opt-optimize-fns`
+   (optimization.zyl) both had a 3-level nested match** (matching one
+   value, then a field of it, then a helper call's result) — the same
+   Rust-bootstrap codegen hazard documented in the previous session's
+   entry below (silently returns a bogus `-1` sentinel instead of the real
+   result). Split both into flat top-level helper functions
+   (`ic-collect-vt-inner`/`ic-collect-vt-deftype`,
+   `opt-optimize-fns-ifs`) to dodge it.
+
+**Net effect:** `build/boot/stage1.bin` used to crash inside
+`ic-collect-vt-run` on essentially any input. It now progresses through
+parse → bridge → modules → macros → type-infer → contract-injection →
+mono → trait-dispatch → closure-inline → assert-lowering → lower →
+optimize before crashing during region-infer, in a **currently
+undiagnosed tag-mismatch** inside `opt-optimize-fns`'s dispatch on
+`ICNFFuncSig` (a single-constructor type — its sole arm didn't match at
+runtime, tag was neither the expected `Cons`/`Nil` values for the
+enclosing `List` either; suspect a monomorphized `List` instantiation
+getting a different tag numbering than the hardcoded `cmp` immediates
+expect, but not yet confirmed). This is a new, narrower, and much better
+understood problem than the vague "nondeterministic segfault" reported
+previously — worth another dedicated debugging pass.
+
+Verification after each fix: `./target/release/zyl
+selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes all 9
+phases cleanly, and `./run_regression_tests.sh --full --no-boot` is still
+green through every test up to the already-known-slow
+`integration/selfhost-codegen` (which the runner's timeout doesn't reach —
+matches pre-existing documented behavior, not a new regression).
+
+Given how many of these bugs stem from *silent* same-name/different-arity
+collisions across `stdlib/compiler/*.zyl` files that only bite once every
+file is bundled together, a standing lint (`grep`-based duplicate-`defn`-name
+scan across `selfhost/assemble.py`'s file list, ignoring string/comment
+false positives) would be worth adding to catch the next one before it
+costs another multi-hour bisection.
+
 ## Current Session (2026-09-15)
 
 **Paren-imbalance corruption sweep: `--emit-asm` via Rust bootstrap now works end-to-end again.**
