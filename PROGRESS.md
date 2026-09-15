@@ -77,6 +77,67 @@ scan across `selfhost/assemble.py`'s file list, ignoring string/comment
 false positives) would be worth adding to catch the next one before it
 costs another multi-hour bisection.
 
+**Follow-up (same session): two more bugs found, `stage1.bin` now runs to
+completion on the minimal repro but still emits incomplete output.**
+
+Kept bisecting past the `opt-optimize-fns`/`ICNFFuncSig` tag-mismatch
+noted above:
+
+5. **The `-1` sentinel was itself a red herring from a *third* collision**:
+   `opt-optimize`'s `(match fns (IP fns2 stmts ...) (d1 ...))` dispatches
+   purely on the tag byte at offset 0 with no runtime type identity. `IP`
+   (`ICNFProgram`'s only constructor) always has tag 0 — which is *also*
+   `List`'s `Cons` tag (`(deftype List (Cons T (List T)) Nil)` — Cons
+   declared first). `driver.zyl`'s only caller of `opt-optimize` always
+   passes the raw `(List IFn)` from `ic-program`, never an actual `IP`
+   value, so any non-empty list was silently misinterpreted as an `IP`
+   struct (its head/tail cells reinterpreted as `fns2`/`stmts`) — the real
+   source of the `ic-collect-vt-run`/`opt-optimize-fns` crashes chased
+   above. Fixed by always calling `opt-optimize-fns` directly (see commit
+   after `b29e2c6`).
+6. **`opt-optimize-fns-ifs` (the split introduced to dodge the deep-match
+   codegen bug) took 7 arguments** (`os rest name params ret_type
+   opt-body result_id`). The bootstrap has a documented arity <= 6 limit
+   (see `lexer.zyl`'s own comments: "arity <= 6"). Exceeding it silently
+   miscompiled the function — no error, but the whole functions list
+   collapsed to `Nil` by the time it reached codegen. `stage1.bin` would
+   run to completion and report success while emitting an assembly file
+   missing every function body. Fixed by pre-building the `IFS` struct
+   once in the caller and passing it as a single argument (3 args total).
+
+After both fixes, `stage1.bin` runs the minimal `(defn main () (print
+"hi"))` repro **to completion (exit 0)** instead of segfaulting, and
+writes `/tmp/zyl_boot_out.s` — real forward progress. But the output is
+still missing the function body (just the `main` -> `zyl_call_on_big_stack`
+entry stub, no `f_main`). Root cause, confirmed via gdb inspecting the
+actual heap struct tags: **`ic-program` (icnf.zyl) produces a `(List
+IFn)`** — `IFn` = `(String, List String, Icnf)`, 3 fields, tag varies
+(observed tag 15 in one instance) — **but `opt-optimize-fns` pattern-matches
+for `IFS`/`ICNFFuncSig`** (`type_system.zyl`) — `(String, List (Pair
+String Type), Option Type, List ICNFNode, Int)`, 5 fields, single
+constructor always tag 0. These are two completely different, unrelated
+data shapes from different modules that happen to share a superficial
+"function record" role. Since a real `IFn`'s tag never equals 0, it never
+matches `opt-optimize-fns`'s `IFS` pattern, so every function silently
+fails to match, falls through the recursion, and the list winds up empty
+by the time codegen runs. **This means `optimization.zyl`'s
+`opt-optimize`/`opt-optimize-fns` has probably never correctly processed
+real pipeline output** — masked all along by the tag-collision bug fixed
+in item 5 above (which meant this code path was never actually reached
+for non-trivial input before now). Needs a proper fix — either rewrite
+`opt-optimize-fns` against the real `IFn`/`Icnf` shapes, or add an
+explicit `IFn` -> `IFS` conversion step in the driver pipeline before
+optimization — rather than another quick patch. This is the next concrete
+blocker for a working self-hosted `stage1.bin`.
+
+Verified after every fix in this follow-up: `./target/release/zyl
+selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes cleanly
+(takes ~2 minutes now — this is pre-existing Rust-bootstrap slowness on
+the ~690KB self-host source, not a regression; see the already-documented
+"Rust bootstrap too slow for test runner" note elsewhere in this file),
+and `./run_regression_tests.sh --full --no-boot` is still green through
+every test up to the already-known-slow `integration/selfhost-codegen`.
+
 ## Current Session (2026-09-15)
 
 **Paren-imbalance corruption sweep: `--emit-asm` via Rust bootstrap now works end-to-end again.**
