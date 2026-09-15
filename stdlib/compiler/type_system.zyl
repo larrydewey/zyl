@@ -579,16 +579,15 @@
 ; ICNF — SSA IR with Region Annotations (spec §18)
 ; ===========================================================================
 
-; Memory regions (spec §9)
-(deftype Region
-  (RStack)
-  (RHeap)
-  (RGlobal)
-  (RCircular)
-  (RPin))
-
-(defn is-default-region (r)
-  (match r (RStack true) (d1 false)))
+; Memory regions (spec §9) -- the real, actively-used `Region` deftype
+; lives in region_inference.zyl (RStack/RHeap/RGlobal/RCircular/RPin,
+; same names). This used to be a second, dead-code duplicate declaration
+; of the exact same type here -- harmless when the self-hosted compiler
+; was itself built by the Rust bootstrap (which doesn't care about
+; duplicate deftype names), but a genuine E_DUPLICATE_VARIANT error the
+; moment stage1.bin tried to compile its own bundled source, since both
+; files get concatenated into one flat namespace. Its only consumer,
+; is-default-region, was never called anywhere either. Removed.
 
 ; BinOpKind (spec §18.2)
 (deftype BinOpKind

@@ -83,10 +83,36 @@
                 (let fns (ic-program arena al-exprs)
                     (dbg-log "optimize
 ")
-                    (let opt-fns (opt-optimize fns)
+                    ; compiler/optimization.zyl is NOT wired in here: it's a
+                    ; self-hosted port of src/optimization.rs's constant-
+                    ; folding/DCE passes, written against that Rust module's
+                    ; SSA-form ICNFNode representation (ICN id/region/typ/
+                    ; is_branch/inner, ICNFFuncSig "IFS" with 5 fields,
+                    ; ICNFProgram "IP" wrapping fns+stmts -- all defined in
+                    ; type_system.zyl). The self-hosting pipeline's own ICNF
+                    ; lowering (compiler/icnf.zyl, ic-program above) produces
+                    ; a completely different, simpler tree-shaped `Icnf` (IFn
+                    ; name params body, no SSA ids at all) that codegen.zyl
+                    ; consumes directly. These two "ICNF"s share a name but
+                    ; not a single constructor shape.
+                    ;
+                    ; Because Zyl's structural `match` dispatches purely on
+                    ; the per-deftype tag byte with no runtime type identity,
+                    ; feeding a real `(List IFn)` into opt-optimize-fns's
+                    ; `(IFS name params ret_type body result_id)` pattern
+                    ; never actually matches (a real IFn's tag is 15; IFS's
+                    ; is 0) -- every function silently falls through the "no
+                    ; match" catch-all and gets dropped, so opt-optimize
+                    ; always returned Nil, an empty function list, which is
+                    ; why stage1.bin used to link with no f_main at all. Pass
+                    ; fns through unchanged: optimization is a performance
+                    ; pass, not required for correctness, and nothing in the
+                    ; real self-hosting pipeline produces the shape
+                    ; compiler/optimization.zyl expects.
+                    (let opt-fns fns
                       (dbg-log "region-infer
 ")
-                      (let ri (ri-new)
+                          (let ri (ri-new)
                         (let ri2 (ri-infer opt-fns ri)
                           (dbg-log "codegen
 ")

@@ -774,6 +774,149 @@ whenever new code enters the boot source.
 
 ---
 
+## Session N+1: stage1.bin now correctly self-compiles its own bundled
+source end-to-end (major milestone). Full list of bugs found and fixed,
+roughly in the order hit:
+
+1. **`region_inference.zyl` had systematic `IFn`/`IIf`/`IWhile`/`ISet`/
+   `ILet`/`ISeq`/`IMatch` arity mismatches** in `ri-infer-expr` and
+   friends — off-by-one extra leading capture vars vs the real 3-field
+   `Icnf.IFn`/2-field `IWhile`/etc, apparently left over from an earlier,
+   richer Icnf shape that no longer exists. Reading adjacent heap memory
+   as bogus extra fields. Fixed every mismatched arm to the real arities.
+2. **`region_inference.zyl`'s `env-get-cur` referenced a free variable
+   `env`** that wasn't one of its own parameters (only `binds`/`name`
+   were) — undefined-identifier compiles to a garbage sentinel, crashing
+   the moment a `let` inside any function needed to look up a parent
+   scope. Fixed by threading `parents` through explicitly.
+3. **`ri-infer-seq-loop`/`ri-infer-args-loop` passed recursive args in
+   the wrong order** (`(ri-infer-seq-loop rest (ri-infer-expr ri ic)
+   result)` instead of `(ri-infer-seq-loop ri rest (ri-infer-expr ri
+   ic))`) — corrupted region-inference state for any `begin`/multi-arg
+   call, in any function.
+4. **`type_inference.zyl`'s `TypeInferer` struct grew from 11 to 20
+   fields at some point, but ~10 constructor call sites across
+   `infer-expr-let`/`infer-expr-if`/`inferer-bind-params`/
+   `inferer-bind-for-vars`/`infer-expr-match-arms`/`lookup-body-cache`/
+   `insert-body-cache` were never updated** — some supplied only 11 args
+   (missing the last 9 fields entirely), others had stray garbage tokens
+   apparently left over from a botched migration (extra `Nil`/`(tc-new)`
+   args bleeding into the *next* function call's argument list). Any
+   `let`, `if`, `for`, `match`, or cached function body anywhere in a
+   real program triggered this — i.e. every real program. Fixed all
+   call sites to supply the real 20 fields via their own accessors.
+5. **`type_inference.zyl`/`monomorphization.zyl` confused `ADTVariant`/
+   (`AV` name `(List String)` of raw type-display strings, from
+   `expr_inner.zyl`, EDeftype's actual shape) with the unrelated, never-
+   actually-produced `Variant`/`Field` (`V`/`F`, from `type_system.zyl`)
+   — a same-arity (2-field) tag collision, so matching `V`/`F` against
+   real `AV` values "worked" structurally but silently misread a field-
+   type string's raw bytes as if it were an `F` struct's pointers,
+   segfaulting the instant type inference reached a real generic ADT
+   (e.g. core/list.zyl's `List T`). Fixed `extract-generic-params-loop`,
+   `populate-variant-to-adt`, `infer-find-variant-fields`,
+   `find-variant-fields`, `infer-constructor-args`,
+   `adt-variants-to-fields` to match `AV` and treat fields as raw
+   strings directly (no `F`/`fname`/`ftype` unwrap needed).
+6. **Duplicate `deftype Region`** in both `type_system.zyl` (dead,
+   unused) and `region_inference.zyl` (the real one) — harmless when
+   Rust-compiled, but a hard `E_DUPLICATE_VARIANT` panic the moment
+   stage1.bin tried to compile its own bundled source (both files
+   concatenated into one namespace). Removed the dead duplicate.
+7. **Rust bootstrap register-clobbering bug in `str-concat`/`str-equal`/
+   `str-substring`'s special-cased intrinsic codegen** (`src/
+   codegen.rs`'s `emit_call_direct`): loaded arg0 directly into its
+   fixed ABI register (e.g. rdi) *before* evaluating arg1, and arg1's
+   evaluation can itself contain a call (e.g. `(str-concat "stdlib/"
+   (str-concat name ".zyl"))`) — every call clobbers every caller-saved
+   register per the SysV ABI, silently discarding arg0's value with no
+   diagnostic. This was the actual root cause of module_resolver.zyl's
+   "core/core.zyl" path resolving to garbage and stage1.bin
+   mysteriously re-reading its own input file for "module content".
+   Fixed via a new `emit_args_into_abi_regs_safely` helper (spill every
+   arg to its own scratch stack slot before loading any into a
+   register), reused for all three intrinsics.
+8. **`assemble.py`'s structural-form output (one paren/token per line)
+   made stage1.bin crash while parsing its own ~690KB source**, purely
+   from *whitespace volume* (confirmed empirically: collapsing all
+   whitespace in an otherwise-identical file made the exact same crash
+   disappear). Root cause not fully fixed (tracked as follow-up below):
+   `stdlib/compiler/lexer.zyl`'s whitespace-skipping path bounces
+   between `lex-loop` and `lex-c1` (mutual recursion, not a single
+   self-tail-recursive loop), and the Rust bootstrap's TCO apparently
+   only reliably eliminates a restricted set of tail-call shapes — this
+   mutual hop leaks a real stack frame per whitespace character. gdb
+   confirmed the crash's rbp had descended to within ~64KB of the very
+   bottom of the 64GB worker-thread stack (`zyl_call_on_big_stack`) —
+   genuine, enormous, whitespace-proportional recursion, not corruption.
+   **Mitigation applied** (per explicit instruction: "get it working for
+   now, document as needed fix for later"): `assemble.py` still
+   generates structural form for its own reliable paren-balance
+   verification pass, then collapses every whitespace run down to a
+   single space before writing the final `zyl_selfhost_compiler.zyl` —
+   same token stream, ~2.5x fewer characters, comfortably clear of
+   where this was observed to crash. **Root-level fix still needed**:
+   make `lexer.zyl`'s whitespace-skip genuinely O(1) stack (true self-
+   tail-recursion within one function), or teach the Rust bootstrap's
+   TCO to eliminate this specific mutual-hop shape.
+9. **Rust bootstrap 32-bit truncation of large integers, three separate
+   spots in `src/codegen.rs`**:
+   - `emit_const_into`'s `Atom::Int` case only sign-extended *negative*
+     literals to 64-bit (`mov r64, imm`); any positive literal ≥ 2^31
+     used a 32-bit `mov r32, imm`, silently truncating (GAS just keeps
+     the low 32 bits) — `123456789012` came out as `-1097262572`.
+   - `emit_int_to_str` (the runtime `print`-an-integer conversion) used
+     32-bit `eax`/`ebx`/`ecx`/`idiv ebx` throughout — any integer needing
+     more than 32 bits printed wrong once the division loop truncated it.
+   - `emit_condition_inline`'s general `BinOp` comparison case (the
+     `(if (< a b) ...)` fast path) loaded both operands into 32-bit
+     `ecx`/`edx` before comparing — a large value reinterpreted as
+     negative 32-bit could make `(if (< n 10) ...)` wrongly take the
+     "true" branch for `n` in the billions, breaking any recursive
+     function that compares a large parameter against a small constant
+     (e.g. int-to-string implementations, hash functions, ID counters).
+   This 3rd one was the ACTUAL blocker for `icnf.zyl`'s `ic-fresh-id`
+   (uses a large arena address as a "guaranteed unique" id for naming
+   lifted match-arm helper functions) — large addresses' `<` comparisons
+   against small thresholds elsewhere in generic numeric code were
+   silently wrong, eventually producing colliding/duplicate helper
+   names and an assembler "already defined" error. Fixed all three to
+   use full 64-bit registers throughout.
+
+**Result**: after all of the above, `build/boot/stage1.bin` (Rust-
+bootstrapped) now runs `python3 selfhost/assemble.py` bundle
+(`selfhost/zyl_selfhost_compiler.zyl`, its own full source) through
+every phase — parse, bridge, modules, macros, type-infer, contract-
+injection, mono, trait-dispatch, closure-inline, assert-lowering, lower,
+optimize, region-infer, codegen — to completion (exit 0), and the
+resulting `build/boot/stage2.s` links successfully into a runnable
+`stage2.bin`. **This is the first time the self-hosted compiler has
+correctly compiled its own complete bundled source.**
+
+**Not yet fixed — stage2.bin itself has a distinct, separate bug**:
+running `stage2.bin` (i.e. code generated *by* the self-hosted
+`codegen.zyl`, as opposed to `stage1.bin`'s Rust-generated code) on even
+a trivial input (`(defn main () (print "hi"))`, which still auto-injects
+core/core same as any program with no `use` lines) segfaults inside
+`Expr.inner` (a null/bad-pointer struct-field read), reached through
+deep (~70-100+ frame) recursion in `collect-definitions`. Not yet root-
+caused: could be an actual logic bug reached only through self-hosted-
+generated code (i.e. `codegen.zyl` and `codegen.rs` don't produce
+behaviorally identical output for some construct exercised along this
+path), or something else entirely — the visible recursion depth (~100
+frames) is nowhere near enough on its own to exhaust even a modest
+stack, so this does NOT look like the "missing TCO" class of bug once
+you check `codegen.zyl` for tail-call handling and find it has **none
+at all** (grep for "TCO"/"tail-call" in `stdlib/compiler/codegen.zyl`:
+zero hits) -- worth confirming directly whether this specific crash is
+starved by that gap or is a separate, unrelated bug before doing any
+deeper work here. This is the next blocker standing between "stage1
+compiles itself" (now working) and full self-hosting fixed point
+(stage2 producing byte-identical-behavior stage3 output, `boot.sh`'s
+actual pass condition).
+
+## Pointers
+
 ## Pointers
 
 - Architecture decisions: `docs/architecture-decisions.md`

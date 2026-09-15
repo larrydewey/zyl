@@ -3983,6 +3983,74 @@ BinOpKind::Eq
         emitted_ids.insert(node_id);
     }
 
+    /// Evaluate each of `arg_ids` in order and load the result directly into
+    /// its corresponding fixed ABI register in `regs` (same length) — safely.
+    ///
+    /// Loading arg 0 straight into its target register (e.g. rdi) and then
+    /// evaluating arg 1 into its own register (e.g. rsi) is only safe if
+    /// arg 1's evaluation can't clobber rdi. But arg expressions can
+    /// themselves be calls (e.g. `(str-concat "a" (str-concat b c))`), and
+    /// every call clobbers every caller-saved register (rdi/rsi/rax/...)
+    /// per the SysV ABI — nothing guarantees a callee preserves them. A
+    /// naive "load arg0 into rdi, then load arg1 into rsi" sequence silently
+    /// loses arg0's value the moment arg1's evaluation contains a call,
+    /// with no diagnostic: the final call just receives whatever garbage
+    /// was last left in rdi. This hit exactly that shape in self-hosting:
+    /// `(str-concat "stdlib/" (str-concat name ".zyl"))` computed the inner
+    /// concat correctly, then silently discarded the outer "stdlib/" arg
+    /// and used stale register contents in its place.
+    ///
+    /// Evaluate every argument first and spill it to its own 8-byte scratch
+    /// stack slot (push order = arg 0 first / deepest, matching the
+    /// existing safe multi-arg user-call path below), THEN load the
+    /// registers from those slots in reverse order once every argument
+    /// expression (including any nested calls) has finished evaluating.
+    fn emit_args_into_abi_regs_safely(
+        &mut self,
+        arg_ids: &[usize],
+        regs: &[&str],
+        stmts: &[ICNFNode],
+        local_vars: &HashMap<String, usize>,
+        lookup: &crate::deterministic::HashMap<usize, &ICNFNode>,
+        emitted_ids: &mut crate::deterministic::HashSet<usize>,
+    ) {
+        debug_assert_eq!(arg_ids.len(), regs.len());
+        let n = arg_ids.len();
+        if n == 0 {
+            return;
+        }
+        if n == 1 {
+            // Nothing to protect against: only one argument, no other
+            // fixed-register load can happen before its own use.
+            self.emit_load_into(
+                arg_ids[0], regs[0], stmts, local_vars, lookup, emitted_ids,
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+            );
+            return;
+        }
+        // Phase 1: evaluate each argument once, spill into its own scratch
+        // slot (arg 0 pushed first/deepest).
+        for &arg_id in arg_ids {
+            self.emit_load_into(
+                arg_id, "rax", stmts, local_vars, lookup, emitted_ids,
+                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+            );
+            self.asm_push_align();
+            self.asm.push("    sub rsp, 8".to_string());
+            self.asm_push_align();
+            self.asm.push("    mov [rsp], rax".to_string());
+        }
+        // Phase 2: load each register from its scratch slot, in reverse
+        // order (top of stack is the last-pushed arg, n-1).
+        for i in (0..n).rev() {
+            let off = 8 * (n - 1 - i);
+            self.asm_push_align();
+            self.asm.push(format!("    mov {}, [rsp+{}]", regs[i], off));
+        }
+        self.asm_push_align();
+        self.asm.push(format!("    add rsp, {}", 8 * n));
+    }
+
     /// Emit a Call directly: load args into ABI regs, call, result in target_reg.
     /// Marks the node's ID in emitted_ids so it won't be re-emitted.
     #[expect(clippy::too_many_arguments)]
@@ -4025,13 +4093,8 @@ BinOpKind::Eq
 
         // Built-in (str-concat a b): new heap-allocated concatenated string.
         if (name == "str-concat" || name == "str_concat") && args.len() == 2 {
-            self.emit_load_into(
-                args[0], "rdi", stmts, local_vars, lookup, emitted_ids,
-                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
-            );
-            self.emit_load_into(
-                args[1], "rsi", stmts, local_vars, lookup, emitted_ids,
-                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+            self.emit_args_into_abi_regs_safely(
+                &[args[0], args[1]], &["rdi", "rsi"], stmts, local_vars, lookup, emitted_ids,
             );
             self.asm_push_align();
             self.emit_align_save_rsp();
@@ -4046,13 +4109,8 @@ BinOpKind::Eq
         // Built-in (str-equal a b): byte-identical comparison.
         if name == "str-equal" || name == "str_equal" {
             if let (Some(&a_id), Some(&b_id)) = (args.first(), args.get(1)) {
-                self.emit_load_into(
-                    a_id, "rdi", stmts, local_vars, lookup, emitted_ids,
-                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
-                );
-                self.emit_load_into(
-                    b_id, "rsi", stmts, local_vars, lookup, emitted_ids,
-                    &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+                self.emit_args_into_abi_regs_safely(
+                    &[a_id, b_id], &["rdi", "rsi"], stmts, local_vars, lookup, emitted_ids,
                 );
             }
             self.asm_push_align();
@@ -4068,17 +4126,8 @@ BinOpKind::Eq
         // Built-in (str-substring s start len): heap-allocated copy of the
         // requested range.
         if (name == "str-substring" || name == "str_substring") && args.len() == 3 {
-            self.emit_load_into(
-                args[0], "rdi", stmts, local_vars, lookup, emitted_ids,
-                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
-            );
-            self.emit_load_into(
-                args[1], "rsi", stmts, local_vars, lookup, emitted_ids,
-                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
-            );
-            self.emit_load_into(
-                args[2], "rdx", stmts, local_vars, lookup, emitted_ids,
-                &crate::deterministic::HashSet::default(), &crate::deterministic::HashMap::default(),
+            self.emit_args_into_abi_regs_safely(
+                &[args[0], args[1], args[2]], &["rdi", "rsi", "rdx"], stmts, local_vars, lookup, emitted_ids,
             );
             self.asm_push_align();
             self.emit_align_save_rsp();
@@ -4532,11 +4581,25 @@ BinOpKind::Eq
     fn emit_const_into(&mut self, dest_reg: &str, atom: &Atom) {
         match atom {
             Atom::Int(v) => {
-                // Negative values must be sign-extended to 64 bit: a 32-bit
-                // `mov r32, imm` zero-fills the upper half, so a value like
-                // -5 becomes 0x00000000FFFFFFFB and breaks any 64-bit
-                // consumer (e.g. stack-passed call arguments).
-                if *v < 0 && !dest_reg.starts_with("xmm") {
+                // Values outside the i32 range need a real 64-bit `mov
+                // r64, imm64`: a 32-bit `mov r32, imm` only ever encodes a
+                // 32-bit immediate, so any value that doesn't fit gets
+                // silently truncated (GAS just keeps the low 32 bits) --
+                // e.g. 123456789012 (needs 37 bits) came out as
+                // -1097262572 once loaded, corrupting anything relying on
+                // integer literals bigger than ~2.1 billion (arena
+                // addresses used as "fresh unique id" sources for
+                // generated labels, `ic-fresh-id` in icnf.zyl, hit this
+                // constantly once truncated addresses started colliding).
+                // Negative values need the same 64-bit treatment for a
+                // different reason: a 32-bit `mov r32, imm` zero-fills the
+                // upper half, so -5 becomes 0x00000000FFFFFFFB instead of
+                // sign-extending to 0xFFFFFFFFFFFFFFFB, breaking any
+                // 64-bit consumer (e.g. stack-passed call arguments).
+                if (*v < i32::MIN as i64 || *v > i32::MAX as i64) && !dest_reg.starts_with("xmm") {
+                    self.asm
+                        .push(format!("    mov {}, {}", reg_to_64(dest_reg), v));
+                } else if *v < 0 && !dest_reg.starts_with("xmm") {
                     self.asm
                         .push(format!("    mov {}, {}", reg_to_64(dest_reg), v));
                 } else {
@@ -4950,11 +5013,18 @@ BinOpKind::Eq
             }
             ICNFInner::BinOp(op, left_id, right_id) => {
                 // Use emit_load_into to properly handle all operand types
-                // (Load, Const, StructGet, Call, BinOp results, etc.)
-                self.emit_load_into(*left_id, "ecx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
-                self.emit_load_into(*right_id, "edx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
+                // (Load, Const, StructGet, Call, BinOp results, etc.).
+                // Compare using full 64-bit registers: loading operands into
+                // ecx/edx (32-bit) truncated any value outside i32 range
+                // before the comparison ever ran, and a truncated large
+                // positive value can come out negative once reinterpreted
+                // as signed 32-bit -- e.g. `(if (< n 10) ...)` for
+                // n=12345678901 wrongly took the "true" branch, since
+                // 12345678901 truncated to 32 bits is negative.
+                self.emit_load_into(*left_id, "rcx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
+                self.emit_load_into(*right_id, "rdx", stmts, local_vars, lookup, emitted_ids, &operand_ids, &crate::deterministic::HashMap::default());
                 // Emit the comparison into eax.
-                self.emit_cmp_and_set(op, "ecx", "edx", "eax");
+                self.emit_cmp_and_set(op, "rcx", "rdx", "eax");
             }
             ICNFInner::Load(name) => {
                 if let Some(&slot_idx) = local_vars.get(name) {
@@ -5290,18 +5360,27 @@ BinOpKind::Eq
     // ─── Integer-to-String Conversion ────────────────────────────────
 
     /// Emit integer-to-string conversion: result in rax as pointer to null-terminated string.
-    /// Uses 32-bit registers throughout for GNU as compatibility with .intel_syntax noprefix.
+    /// Uses full 64-bit registers throughout (see the div-loop below): this
+    /// used to use 32-bit eax/ebx/ecx/idiv-ebx for the whole conversion,
+    /// silently truncating any value outside i32 range before ever
+    /// dividing it -- e.g. printing 123456789012 (needs 37 bits) came out
+    /// as -1097262572 (its low 32 bits reinterpreted as signed), and a
+    /// self-hosted compiler pass that used a large arena address as a
+    /// "guaranteed unique" numeric id (icnf.zyl's ic-fresh-id, used to
+    /// name lifted match-arm helper functions) got frequent name
+    /// collisions once truncated down to the same 32-bit remainder,
+    /// producing duplicate-symbol assembler errors.
     fn emit_int_to_str(&mut self, int_reg_64: &str) {
         let buf_label = ".hexbuf";
         // hexbuf is now always pre-defined in .bss section before any code.
 
-        // Copy value to ecx (zero-extends from any input register).
-        let tmp = "ecx";
+        // Copy the full 64-bit value into rcx.
+        let tmp = "rcx";
         self.asm_push_align();
         self.asm.push(format!(
             "    mov {}, {}",
-            reg_to_32(tmp),
-            reg_to_32(int_reg_64)
+            tmp,
+            reg_to_64(int_reg_64)
         ));
 
         // Handle negative numbers: check sign, negate if negative, clear/set r8 flag.
@@ -5369,20 +5448,20 @@ BinOpKind::Eq
         self.asm_push_align();
         self.asm.push(format!("    je {}", div_done));
 
-        // Load value into eax for division. Use ebx as temp divisor register (edi is our buffer pointer).
+        // Load value into rax for division. Use rbx as temp divisor register (rdi is our buffer pointer).
         self.asm_push_align();
-        self.asm.push("    xor edx, edx".to_string()); // clear high half (value is positive after negation)
+        self.asm.push("    xor rdx, rdx".to_string()); // clear high half (value is positive after negation)
         self.asm_push_align();
-        self.asm.push(format!("    mov eax, {}", tmp)); // load value into eax
+        self.asm.push(format!("    mov rax, {}", tmp)); // load value into rax
 
         self.asm_push_align();
-        self.asm.push("    mov ebx, 10".to_string()); // divisor in EBX (edi holds buffer pointer!)
+        self.asm.push("    mov rbx, 10".to_string()); // divisor in RBX (rdi holds buffer pointer!)
         self.asm_push_align();
-        self.asm.push("    idiv ebx".to_string()); // eax = quotient, edx = remainder (digit)
+        self.asm.push("    idiv rbx".to_string()); // rax = quotient, rdx = remainder (digit)
 
-        // Move quotient back to ecx for next iteration check.
+        // Move quotient back to rcx for next iteration check.
         self.asm_push_align();
-        self.asm.push(format!("    mov {}, eax", tmp)); // update working register with new quotient
+        self.asm.push(format!("    mov {}, rax", tmp)); // update working register with new quotient
 
         // Store digit at current RDI position, then move pointer left for next digit.
         let digit = "dl"; // remainder is in dl after div

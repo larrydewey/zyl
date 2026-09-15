@@ -217,6 +217,72 @@ files = [
 ]
 
 
+def collapse_whitespace(text):
+    """Collapse every run of whitespace (spaces/tabs/newlines) down to a
+    single space, preserving string-literal contents untouched.
+
+    assemble.py deliberately emits one paren/token per line (structural
+    form) so the depth-verification pass below can catch imbalances
+    reliably -- but shipping that structural form AS THE ACTUAL BOOT
+    SOURCE turned out to make stage1.bin (the self-hosted binary built
+    from this file) crash while parsing its own ~690KB source, once the
+    file grew past a certain size. Root cause: stdlib/compiler/lexer.zyl's
+    whitespace-skipping path is mutually recursive between lex-loop and
+    lex-c1 (one call each per character) rather than a single self-
+    recursive loop -- the Rust bootstrap's tail-call optimization only
+    reliably eliminates a restricted set of tail-position call shapes,
+    and this mutual hop leaks a real (non-eliminated) stack frame per
+    whitespace character skipped. Structural form's one-token-per-line
+    style has vastly more whitespace (indentation + newlines) than
+    compact form for the exact same token stream, so it needs far more
+    of these leaking hops -- for a large enough file this genuinely
+    exhausts even the 64GB worker-thread stack set up in
+    zyl_call_on_big_stack (confirmed via gdb: rbp had descended to
+    within ~64KB of the very bottom of that mapped 64GB region).
+    Collapsing every whitespace run down to one space after verification
+    keeps the exact same token stream (so nothing about program meaning
+    changes) while cutting the character-count driving this recursion by
+    roughly 2.5x -- comfortably below where it was observed to crash.
+    The real, root-level fix (making lexer.zyl's whitespace-skip path
+    genuinely O(1) stack via true self-tail-recursion, or teaching the
+    Rust bootstrap's TCO to eliminate this mutual-hop shape) is tracked
+    as follow-up work; this is the safe, low-risk mitigation for now.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    in_str = False
+    last_was_space = False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == '\\' and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            last_was_space = False
+            continue
+        if c in ' \t\n\r':
+            if not last_was_space:
+                out.append(' ')
+            last_was_space = True
+            i += 1
+            continue
+        out.append(c)
+        last_was_space = False
+        i += 1
+    return ''.join(out)
+
+
 out = []
 out.append('; ===== AUTO-ASSEMBLED SELF-HOSTED COMPILER (boot source) =====\n')
 seen_defns = set()
@@ -226,10 +292,10 @@ for f in files:
     txt = deduplicate_defns(txt, seen_defns)
     out.append(txt)
 src = ''.join(out)
-open('selfhost/zyl_selfhost_compiler.zyl', 'w').write(src)
-print('wrote', len(src), 'bytes')
 
-# Verify depth (strip comments first for accurate count)
+# Verify depth on the structural form first (strip comments for an
+# accurate count) -- this is the reliable, easy-to-eyeball check the
+# structural form exists for in the first place.
 def strip_comments(t):
     lines = t.split('\n')
     out = []
@@ -251,3 +317,35 @@ for c in txt:
     if c == '(': d += 1
     elif c == ')': d -= 1
 print('Final depth (comments stripped):', d, '(should be 0)')
+
+# Collapse whitespace for the actual written boot source -- see
+# collapse_whitespace's docstring above for why. Re-verify depth on the
+# collapsed output too (comments are gone by construction: collapsing
+# would otherwise merge a ";..." comment with following code onto one
+# line, so strip comments before collapsing, not after).
+src_nocomments = strip_comments(src)
+collapsed = collapse_whitespace(src_nocomments)
+d2 = 0
+in_str = False
+i = 0
+while i < len(collapsed):
+    c = collapsed[i]
+    if in_str:
+        if c == '\\':
+            i += 2
+            continue
+        if c == '"':
+            in_str = False
+        i += 1
+        continue
+    if c == '"':
+        in_str = True
+    elif c == '(':
+        d2 += 1
+    elif c == ')':
+        d2 -= 1
+    i += 1
+print('Collapsed depth:', d2, '(should be 0)')
+
+open('selfhost/zyl_selfhost_compiler.zyl', 'w').write(collapsed)
+print('wrote', len(collapsed), 'bytes (collapsed from', len(src), ')')

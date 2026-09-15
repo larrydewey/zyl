@@ -235,28 +235,38 @@
     ; in first-appearance order.
     (extract-generic-params-loop variants Nil))
 
+; `variants` here is a (List ADTVariant) straight from EDeftype -- ADTVariant
+; is (AV String (List String)): a variant name plus its fields' raw
+; TYPE-DISPLAY STRINGS (e.g. "T", "Int", "(List T)"), parsed but not yet
+; resolved to a real `Type`. This used to match against type_system.zyl's
+; unrelated `Variant`/`Field` shape (V name (List (F fname ftype))) instead
+; -- a different, incompatible ADT-representation pair (same class of bug
+; as Icnf/ICNFNode and IFn/IFS elsewhere in this codebase). Since AV and V
+; are both 2-field single-constructor types, they silently collided on the
+; same tag and "fields" ended up holding raw strings being matched as if
+; they were F structs, so `is-generic-param` got called on a bare string's
+; raw bytes reinterpreted as a struct field -- a wild pointer, segfaulting
+; deep inside zyl_cstr_len once type inference finally started running
+; over real ADTs (e.g. core/list.zyl's generic `List T`).
 (defn extract-generic-params-loop (variants acc)
     (match variants
         (Nil (list-reverse acc))
         (Cons v rest
         (match v
-                (V name fields
-                    (let (new-acc (extract-generic-fields fields acc))
+                (AV name field-types
+                    (let (new-acc (extract-generic-fields field-types acc))
                         (extract-generic-params-loop rest new-acc)))
                 (d1 (extract-generic-params-loop rest acc))))))
 
-(defn extract-generic-fields (fields acc)
-    (match fields
+(defn extract-generic-fields (field-types acc)
+    (match field-types
         (Nil acc)
-        (Cons f rest
-        (match f
-                (F fname ftype
-                    (if (is-generic-param ftype)
-                        (if (mem-string-list acc fname)
-                            (extract-generic-fields rest acc)
-                            (extract-generic-fields rest (Cons fname acc)))
-                        (extract-generic-fields rest acc)))
-                (d1 (extract-generic-fields rest acc))))))
+        (Cons ftype rest
+        (if (is-generic-param ftype)
+            (if (mem-string-list acc ftype)
+                (extract-generic-fields rest acc)
+                (extract-generic-fields rest (Cons ftype acc)))
+            (extract-generic-fields rest acc)))))
 
 (defn insert-adt-param-order (inferer name param-order)
     (TypeInferer
@@ -438,12 +448,15 @@
                         v
                         (lookup-param-order-binds rest name)))))))
 
+; Same EDeftype-shape as extract-generic-params-loop above: `variants` is a
+; (List ADTVariant) = (List (AV String (List String))), not the unrelated
+; type_system.zyl `Variant`/(V name fields).
 (defn populate-variant-to-adt (inferer name variants)
     (match variants
         (Nil inferer)
         (Cons v rest
         (match v
-                (V vname fields
+                (AV vname field-types
                     (populate-variant-to-adt
                         (insert-variant-to-adt inferer vname name)
                         name
@@ -523,7 +536,16 @@
                                 (ti-variant-to-adt inferer)
                                 (ti-string-match-vars inferer)
                                 (ti-inferring-fns inferer)
-                                rest)
+                                rest
+                                (ti-adt-param-order inferer)
+                                (ti-adt-instantiations inferer)
+                                (ti-arg-type-observations inferer)
+                                (ti-function-bodies inferer)
+                                (ti-skip-generic-def-names inferer)
+                                (ti-trait-ctx inferer)
+                                (ti-struct-defs inferer)
+                                (ti-generics-in-scope inferer)
+                                (ti-var-type-map inferer))
                             key)))))))
 
 (defn insert-body-cache (inferer key typ)
@@ -928,18 +950,20 @@
 (defn extract_constructor_mapping (inferer args fields)
     (extract_mapping_loop inferer args fields Nil))
 
+; `field` here is one raw type-display STRING from an ADTVariant's field
+; list (e.g. "T", "Int", "(List T)") -- ADTVariant fields have no separate
+; per-field name, unlike type_system.zyl's unrelated `Field`/(F fname
+; ftype). A field whose OWN type string is a bare generic param (e.g. "T")
+; uses that string itself as both the param name and the lookup key.
 (defn extract_mapping_field (inferer arg field rest_args rest_fields acc)
-    (match field
-        (F fname ftype
-            (if (is_generic_param ftype)
-                (let (arg_type (infer_expr inferer arg))
-                    (let (type_str (type_to_string arg_type))
-                        (if (or (= type_str "") (str_contains type_str "?"))
-                            (extract_mapping_loop inferer rest_args rest_fields acc)
-                            (extract_mapping_loop inferer rest_args rest_fields
-                                (Cons (Pair fname type_str) acc)))))
-                (extract_mapping_loop inferer rest_args rest_fields acc)))
-        (d1 (extract_mapping_loop inferer rest_args rest_fields acc))))
+    (if (is_generic_param field)
+        (let (arg_type (infer_expr inferer arg))
+            (let (type_str (type_to_string arg_type))
+                (if (or (= type_str "") (str_contains type_str "?"))
+                    (extract_mapping_loop inferer rest_args rest_fields acc)
+                    (extract_mapping_loop inferer rest_args rest_fields
+                        (Cons (Pair field type_str) acc)))))
+        (extract_mapping_loop inferer rest_args rest_fields acc)))
 
 (defn extract_mapping_cons (inferer arg rest_args fields acc)
     (match fields
@@ -1032,7 +1056,6 @@
             Nil
             Nil
             Nil
-        Nil
         Nil
         Nil
         Nil
@@ -1321,12 +1344,17 @@
                     (ti-variant-to-adt inferer)
                     (ti-string-match-vars inferer)
                     (ti-inferring-fns inferer)
-                    (ti-body-cache inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil                body))))
+                    (ti-body-cache inferer)
+                    (ti-adt-param-order inferer)
+                    (ti-adt-instantiations inferer)
+                    (ti-arg-type-observations inferer)
+                    (ti-function-bodies inferer)
+                    (ti-skip-generic-def-names inferer)
+                    (ti-trait-ctx inferer)
+                    (ti-struct-defs inferer)
+                    (ti-generics-in-scope inferer)
+                    (ti-var-type-map inferer))
+                body))))
 
 ; ===========================================================================
 ; INFER-EXPR — if
@@ -1442,12 +1470,17 @@
                         (ti-variant-to-adt inferer)
                         (ti-string-match-vars inferer)
                         (ti-inferring-fns inferer)
-                        (ti-body-cache inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil                    rest)))))
+                        (ti-body-cache inferer)
+                        (ti-adt-param-order inferer)
+                        (ti-adt-instantiations inferer)
+                        (ti-arg-type-observations inferer)
+                        (ti-function-bodies inferer)
+                        (ti-skip-generic-def-names inferer)
+                        (ti-trait-ctx inferer)
+                        (ti-struct-defs inferer)
+                        (ti-generics-in-scope inferer)
+                        (ti-var-type-map inferer))
+                    rest)))))
 
 (defn inferer-params-types (params)
     ; one TVar per param (placeholder; refined later). TVar is a 2-field
@@ -1553,12 +1586,17 @@
                                     (ti-variant-to-adt inferer)
                                     (ti-string-match-vars inferer)
                                     (ti-inferring-fns inferer)
-                                    (ti-body-cache inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil                                rest))))))))
+                                    (ti-body-cache inferer)
+                                    (ti-adt-param-order inferer)
+                                    (ti-adt-instantiations inferer)
+                                    (ti-arg-type-observations inferer)
+                                    (ti-function-bodies inferer)
+                                    (ti-skip-generic-def-names inferer)
+                                    (ti-trait-ctx inferer)
+                                    (ti-struct-defs inferer)
+                                    (ti-generics-in-scope inferer)
+                                    (ti-var-type-map inferer))
+                                rest))))))))
 
 ; ===========================================================================
 ; INFER-EXPR — cond
@@ -1661,22 +1699,18 @@
                                                 (ti-variant-to-adt new-inferer)
                                                 (ti-string-match-vars new-inferer)
                                                 (ti-inferring-fns new-inferer)
-                                                (ti-body-cache new-inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil                                            rest
-                    
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil                        subject-type
+                                                (ti-body-cache new-inferer)
+                                                (ti-adt-param-order new-inferer)
+                                                (ti-adt-instantiations new-inferer)
+                                                (ti-arg-type-observations new-inferer)
+                                                (ti-function-bodies new-inferer)
+                                                (ti-skip-generic-def-names new-inferer)
+                                                (ti-trait-ctx new-inferer)
+                                                (ti-struct-defs new-inferer)
+                                                (ti-generics-in-scope new-inferer)
+                                                (ti-var-type-map new-inferer))
+                                            rest
+                                            subject-type
                                             new-type))
                                     rest-type)))))))))
 
@@ -1737,14 +1771,14 @@
         (infer-find-variant-fields variants variant-name))))
 
 (defn infer-find-variant-fields (variants variant-name)
-    ; walk a (List Variant); return the named variant's fields or Nil.
-    ; Same Cons-cell nested-head-plus-tail-binding bug fixed elsewhere.
+    ; walk a (List ADTVariant) -- see extract-generic-params-loop's note on
+    ; why this matches AV, not type_system.zyl's unrelated Variant/(V ...).
     (match variants
         (Nil
         Nil)
         (Cons hd rest
         (match hd
-                (V n fields
+                (AV n fields
                     (if
                         (= n variant-name)
                         fields
@@ -2011,12 +2045,14 @@
         (variants
         (find-variant-fields variants variant-name))))
 
+; `variants` is a (List ADTVariant) -- see extract-generic-params-loop's
+; note above on why this matches AV, not the unrelated Variant/(V ...).
 (defn find-variant-fields (variants variant-name)
     (match variants
         (Nil Nil)
         (Cons v rest
         (match v
-                (V n fields
+                (AV n fields
                     (if (= n variant-name)
                         fields
                         (find-variant-fields rest variant-name)))
@@ -2031,7 +2067,10 @@
                 (Nil inferer)
                 (Cons field rest-fields
                     (let (arg-type (infer-expr inferer arg))
-                        (let (expected (match field (F fname ftype ftype) (d1 TUnit)))
+                        ; `field` is a raw type-display string from an
+                        ; ADTVariant's field list (see find-variant-fields),
+                        ; not a type_system.zyl Field/(F fname ftype).
+                        (let (expected (type-from-display field))
                             (let (unified (unify (ti-subst inferer) arg-type expected))
                                 (match unified
                                     (UOk new-subst

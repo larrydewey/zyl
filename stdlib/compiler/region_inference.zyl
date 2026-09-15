@@ -71,20 +71,21 @@
 (defn env-new ()
   (RE Nil Nil))
 (defn re-env-get (env name)
-  (env-get-cur (RE.cur env) name))
-(defn env-get-cur (binds name)
+  (env-get-cur (RE.cur env) (RE.parens env) name))
+(defn env-get-cur (binds parents name)
   (match binds
-    (Nil (env-get-parents (RE.parens env) name))
+    (Nil (env-get-parents parents name))
     ((RB n r esc) rest
       (if (= (str-eq n name) 0)
         (Some (Pair r esc))
-        (env-get-cur rest name)))))
+        (env-get-cur rest parents name)))))
 (defn env-get-parents (parents name)
   (match parents
     (Nil None)
     ((Cons scope rest)
-      (re-env-get-binds scope name))
-    (Nil None)))
+      (match (re-env-get-binds scope name)
+        (Some pr (Some pr))
+        (None (env-get-parents rest name))))))
 (defn re-env-get-binds (binds name)
   (match binds
     (Nil None)
@@ -267,7 +268,7 @@
         0))
     (ISeq d15 (ri-is-literal-icnf-list d15))
     (IVariant d16 d23 d18 (ri-is-literal-icnf-list d18))
-    (IMatch d19 scr arms
+    (IMatch scr arms
       (if (= (ri-is-literal-const scr) 1)
         (ri-is-literal-arms arms)
         0))
@@ -334,7 +335,7 @@
     (IStr d18 captured-refs)
     (IFlt d19 captured-refs)
     (IVariant d12 d13 args (ri-capture-collect-list args captured-refs env))
-    (IMatch d14 scr arms
+    (IMatch scr arms
       (ri-capture-collect-arms arms
         (ri-capture-collect scr captured-refs env)
         env))
@@ -406,20 +407,20 @@
     (IPrint d7
       (ri-infer-expr ri d7)
       (RR RStack None))
-    (IIf d8 cond then_ else_
+    (IIf cond then_ else_
       (ri-infer-expr ri cond)
       (let tr (ri-infer-expr ri then_)
         (let er (ri-infer-expr ri else_)
           (RR (ri-union-regions (RR.reg tr) (RR.reg er)) None))))
-    (IWhile d9 cond body
+    (IWhile cond body
       (ri-infer-expr ri cond)
       (ri-infer-expr ri body))
-    (ISet d10 name val
+    (ISet name val
       (let vr (ri-infer-expr ri val)
         (if (= (env-contains (RI.env ri) name) 0)
           (RR RStack None)
           (RR (RR.reg vr) None))))
-    (ILet d11 name val body
+    (ILet name val body
       (let env0 (RI.env ri)
         (let d33 (ri-infer-expr ri val)
           (let env1 (env-enter env0)
@@ -430,15 +431,15 @@
                     (let env4 (env-exit env3)
                       (RI env4 (RI.sr ri) (RI.fs ri))
                       result)))))))))
-    (ISeq d12 items
+    (ISeq items
       (ri-infer-seq ri items))
     (IVariant d13 d14 d15
       (ri-infer-args ri d15)
       (RR RHeap None))
-    (IMatch d16 scrutinee arms
+    (IMatch scrutinee arms
       (ri-infer-expr ri scrutinee)
       (ri-infer-match-arms ri arms (RR RStack None)))
-    (IFn d17 name params body
+    (IFn name params body
       (let env0 (RI.env ri)
         (let env1 (env-enter env0)
           (let env2 (ri-bind-params params env1 RStack)
@@ -456,9 +457,9 @@
   (match args
     (Nil region)
     ((Cons ic rest)
-      (ri-infer-args-loop rest
-        (ri-union-regions region (RR.reg (ri-infer-expr ri ic)))
-        region))))
+      (ri-infer-args-loop ri
+        rest
+        (ri-union-regions region (RR.reg (ri-infer-expr ri ic)))))))
 
 (defn ri-infer-seq (ri items)
   (ri-infer-seq-loop ri items (RR RStack None)))
@@ -467,9 +468,9 @@
   (match items
     (Nil result)
     ((Cons ic rest)
-      (ri-infer-seq-loop rest
-        (ri-infer-expr ri ic)
-        result))))
+      (ri-infer-seq-loop ri
+        rest
+        (ri-infer-expr ri ic)))))
 
 (defn ri-infer-match-arms (ri arms acc)
   (match arms
@@ -506,11 +507,11 @@
 
 (defn ri-collect-one ((ic Icnf) ri)
   (match ic
-    (IFn d1 name params body
+    (IFn name params body
       (let param-regions (ri-make-param-regions (list-length params))
         (let fsig (FS name param-regions RHeap)
           (ri-add-func-sig ri name fsig))))
-    (IVariant d2 name d3 args
+    (IVariant name d3 args
       (let field-regions (SR name
         (Cons (VR "default"
           (ri-make-field-regions args Nil)) Nil)))
@@ -574,5 +575,5 @@
   (match items
     (Nil ri)
     ((Cons ic rest)
-      (let ri2 (ri-infer-expr ri ic)
-        (ri-infer-expressions ri2 rest)))))
+      (let d1 (ri-infer-expr ri ic)
+        (ri-infer-expressions ri rest)))))

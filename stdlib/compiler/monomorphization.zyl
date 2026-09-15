@@ -932,27 +932,26 @@
               (populate-adt-defs new-ctx rest))))
         (d1 (populate-adt-defs ctx rest))))))
 
+; `variants` comes straight from a TypeInferer's `(AD name variants)` ADT
+; def entry, which stores the raw (List ADTVariant) EDeftype gave it --
+; ADTVariant = (AV String (List String)): a variant name plus its fields'
+; raw type-display strings directly (e.g. "T", "Int"), not the unrelated
+; type_system.zyl `Variant`/(V name (List Field)). Matching V/F here (same
+; class of bug fixed in type_inference.zyl's extract-generic-params-loop
+; and friends) silently misread AV's own (List String) fields as if each
+; element were an F struct, corrupting downstream field-type strings.
+; Since the fields are already (List String), no per-field conversion is
+; needed at all.
 (defn adt-variants-to-fields (variants)
-  ; Convert (List Variant) to (List (MonoKV (List String)))
+  ; Convert (List ADTVariant) to (List (MonoKV (List String)))
   ; Each variant becomes (MK variant-name (List field-type-strings))
   (match variants
     (Nil Nil)
     (Cons hd rest
       (match hd
-        (V vname fields
-          (let (field-types (fields-to-type-strings fields))
-            (Cons (MK vname field-types) (adt-variants-to-fields rest))))
+        (AV vname field-types
+          (Cons (MK vname field-types) (adt-variants-to-fields rest)))
         (d1 (adt-variants-to-fields rest))))))
-
-(defn fields-to-type-strings (fields)
-  ; Convert (List Field) to (List String) of type names
-  (match fields
-    (Nil Nil)
-    (Cons hd rest
-      (match hd
-        (F fname ftype
-          (Cons (type-to-string ftype) (fields-to-type-strings rest)))
-        (d1 (fields-to-type-strings rest))))))
 
 (defn populate-adt-insts (ctx adt-insts)
   ; adt-insts is (List AdtInstantiation) where AdtInstantiation = (AI (List (Pair String String)))
