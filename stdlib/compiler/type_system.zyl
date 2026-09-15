@@ -156,7 +156,7 @@
     (List (Pair String Expr))           ; ti-function-bodies
     (List String)                    ; ti-skip-generic-def-names
     TraitContext             ; ti-trait-ctx
-    (List StructDef)         ; ti-struct-defs
+    (List TIStructDef)         ; ti-struct-defs
     (List String)            ; ti-generics-in-scope
     (List (Pair String String))))    ; ti-var-type-map (for occurs-check tracking)
 
@@ -247,8 +247,8 @@
 ; STRUCT DEFINITIONS
 ; ===========================================================================
 
-(deftype StructDef
-  (SD String (List (Pair String (Option Type)))))
+(deftype TIStructDef
+  (TISD String (List (Pair String (Option Type)))))
 
 ; ===========================================================================
 ; TYPE ENV — shadowing bind for match-arm pattern variables

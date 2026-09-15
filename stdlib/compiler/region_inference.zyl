@@ -224,15 +224,15 @@
 
 (defn ri-union-regions (a b)
   (match (Pair a b)
-    (Pair RGlobal d9) RGlobal
-    (Pair d10 RGlobal RGlobal)
-    (Pair RHeap RCircular) RHeap
-    (Pair RCircular RHeap) RHeap
-    (Pair RHeap d11) RHeap
-    (Pair d12 RHeap RHeap)
-    (Pair RPin RStack) RPin
-    (Pair RStack RPin) RPin
-    (Pair d13 d14) (if (>= (region-rank a) (region-rank b)) a b)))
+    ((Pair RGlobal d9) RGlobal)
+    ((Pair d10 RGlobal) RGlobal)
+    ((Pair RHeap RCircular) RHeap)
+    ((Pair RCircular RHeap) RHeap)
+    ((Pair RHeap d11) RHeap)
+    ((Pair d12 RHeap) RHeap)
+    ((Pair RPin RStack) RPin)
+    ((Pair RStack RPin) RPin)
+    ((Pair d13 d14) (if (>= (region-rank a) (region-rank b)) a b))))
 
 (defn region-rank (r)
   (match r

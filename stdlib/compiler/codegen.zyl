@@ -906,7 +906,7 @@
     (ISeq es (icnf-count-slots-list es))
     (IVariant d89 d90 fields (icnf-count-slots-list fields))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
-    (IFn d91 d92 d93 0))
+    (IFn d91 d92 d93 0)))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)
@@ -981,7 +981,7 @@
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))
-    st)))
+    st))
 
 (defn ifn-tag-p (f)
   (match f

@@ -226,7 +226,7 @@
         Nil
         Nil
         Nil
-      )
+      ))
       (let (with-order (insert-adt-param-order with-adt name param-order))
         (populate-variant-to-adt with-order name variants)))))
 
@@ -281,7 +281,7 @@
         (tc-new)
         Nil
         Nil
-        Nil)))
+        Nil))
 
 ; ===========================================================================
 ; TRAIT / STRUCT / ALIAS HELPERS
@@ -318,17 +318,21 @@
     (match methods
         (Nil Nil)
         (Cons m rest
-        (Cons
-                (Pair (M.name m) (M.params m))
-                (method-params-from-methods rest)))))
+        (match m
+            (TM name params ret
+                (Cons
+                    (Pair name params)
+                    (method-params-from-methods rest)))))))
 
 (defn method-rets-from-methods (methods)
     (match methods
         (Nil Nil)
         (Cons m rest
-        (Cons
-                (Pair (M.name m) (M.return_type m))
-                (method-rets-from-methods rest)))))
+        (match m
+            (TM name params ret
+                (Cons
+                    (Pair name ret)
+                    (method-rets-from-methods rest)))))))
 
 (defn insert-impl-block (inferer trait_name type_name bodies)
     ; Register impl in trait context
@@ -357,36 +361,42 @@
 
 (defn insert-struct-def (inferer sd)
     ; Register struct definition
-    (let (typed_fields (struct-fields-to-typed sd))
-    (TypeInferer
-        (ti-env inferer)
-        (ti-subst inferer)
-        (ti-next inferer)
-        (ti-known-types inferer)
-        (ti-known-fns inferer)
-        (ti-func-returns inferer)
-        (ti-adt-defs inferer)
-        (ti-variant-to-adt inferer)
-        (ti-string-match-vars inferer)
-        (ti-inferring-fns inferer)
-        (ti-body-cache inferer)
-        (ti-adt-param-order inferer)
-        (ti-adt-instantiations inferer)
-        (ti-arg-type-observations inferer)
-        (ti-function-bodies inferer)
-        (ti-skip-generic-def-names inferer)
-        (ti-trait-ctx inferer)
-        (Cons (SD (SD.name sd) typed_fields) (ti-struct-defs inferer))
-        (ti-generics-in-scope inferer)
-        (ti-var-type-map inferer))))
+    (match sd
+        (SD name fields
+            (TypeInferer
+                (ti-env inferer)
+                (ti-subst inferer)
+                (ti-next inferer)
+                (ti-known-types inferer)
+                (ti-known-fns inferer)
+                (ti-func-returns inferer)
+                (ti-adt-defs inferer)
+                (ti-variant-to-adt inferer)
+                (ti-string-match-vars inferer)
+                (ti-inferring-fns inferer)
+                (ti-body-cache inferer)
+                (ti-adt-param-order inferer)
+                (ti-adt-instantiations inferer)
+                (ti-arg-type-observations inferer)
+                (ti-function-bodies inferer)
+                (ti-skip-generic-def-names inferer)
+                (ti-trait-ctx inferer)
+                (Cons (TISD name (struct-fields-to-typed fields)) (ti-struct-defs inferer))
+                (ti-generics-in-scope inferer)
+                (ti-var-type-map inferer)))))
 
-(defn struct-fields-to-typed (sd)
-    (match (SD.fields sd)
+(defn struct-fields-to-typed (fields)
+    (match fields
         (Nil Nil)
         (Cons f rest
-        (Cons
-                (Pair (SF.name f) (SF.type f))
-                (struct-fields-to-typed rest)))))
+        (match f
+            (Pair fname opt-type
+                (Cons
+                    (Pair fname
+                        (match opt-type
+                            (Some t (Some (type-from-display t)))
+                            (None None)))
+                    (struct-fields-to-typed rest)))))))
 
 (defn insert-alias-decl (inferer name target)
     (TypeInferer
@@ -657,21 +667,26 @@
                 (d1 false)))
         (d1 false)))
 
+(defn pair-eq (h1 h2)
+    (match h1
+        (Pair k1 v1
+            (match h2
+                (Pair k2 v2 (and (= k1 k2) (= v1 v2)))
+                (d1 false)))
+        (d1 false)))
+
+(defn params-equal-cons (h1 t1 p2)
+    (match p2
+        (Cons h2 t2
+            (if (pair-eq h1 h2)
+                (params-equal t1 t2)
+                false))
+        (d1 false)))
+
 (defn params-equal (p1 p2)
     (match p1
         (Nil (match p2 (Nil true) (d1 false)))
-        (Cons h1 t1
-        (match p2
-                (Cons h2 t2
-                    (match h1
-                        (Pair k1 v1
-                            (match h2
-                                (Pair k2 v2
-                                    (if (and (= k1 k2) (= v1 v2))
-                                        (params-equal t1 t2)
-                                        false)))
-                                (d1 false)))
-                (d1 false)))
+        (Cons h1 t1 (params-equal-cons h1 t1 p2))
         (d1 false)))
 
 ; ===========================================================================
@@ -752,7 +767,7 @@
         (tc-new)
         Nil
         Nil
-        Nil)))
+        Nil))
 
 (defn lookup-function-body (inferer fname)
     (lookup-body-binds (ti-function-bodies inferer) fname))
@@ -896,7 +911,7 @@
                 (Pair pred body
                     (let (inferer1 (collect_adt_instantiations_expr inferer pred))
                         (let (inferer2 (collect_adt_instantiations_expr inferer1 body))
-                            (collect_adt_instantiations_expr_cond inferer2 rest)))))))
+                            (collect_adt_instantiations_expr_cond inferer2 rest))))))))
 
 ; record_make_variant mirrors the logic from infer-expr-make-variant
 ; but just records the instantiation without doing full type checking
@@ -908,29 +923,34 @@
                 (if (nil? mapping)
                     inferer
                     (let (inst (AI mapping))
-                        (insert_adt_instantiation inferer adt_name inst))))))
+                        (insert_adt_instantiation inferer adt_name inst)))))))
 
 (defn extract_constructor_mapping (inferer args fields)
     (extract_mapping_loop inferer args fields Nil))
 
+(defn extract_mapping_field (inferer arg field rest_args rest_fields acc)
+    (match field
+        (F fname ftype
+            (if (is_generic_param ftype)
+                (let (arg_type (infer_expr inferer arg))
+                    (let (type_str (type_to_string arg_type))
+                        (if (or (= type_str "") (str_contains type_str "?"))
+                            (extract_mapping_loop inferer rest_args rest_fields acc)
+                            (extract_mapping_loop inferer rest_args rest_fields
+                                (Cons (Pair fname type_str) acc)))))
+                (extract_mapping_loop inferer rest_args rest_fields acc)))
+        (d1 (extract_mapping_loop inferer rest_args rest_fields acc))))
+
+(defn extract_mapping_cons (inferer arg rest_args fields acc)
+    (match fields
+        (Nil (if (nil? acc) Nil (list-reverse acc)))
+        (Cons field rest_fields
+            (extract_mapping_field inferer arg field rest_args rest_fields acc))))
+
 (defn extract_mapping_loop (inferer args fields acc)
     (match args
         (Nil (if (nil? acc) Nil (list-reverse acc)))
-        (Cons arg rest_args
-        (match fields
-                (Nil (if (nil? acc) Nil (list-reverse acc)))
-                (Cons field rest_fields
-                    (match field
-                        (F fname ftype
-                            (if (is_generic_param ftype)
-                                (let (arg_type (infer_expr inferer arg))
-                                    (let (type_str (type_to_string arg_type))
-                                        (if (or (= type_str "") (str_contains type_str "?"))
-                                            (let r (extract_mapping_loop inferer rest_args rest_fields acc) r)
-                                            (let r (extract_mapping_loop inferer rest_args rest_fields
-                                                (Cons (Pair fname type_str) acc)) r)))
-                                (let r (extract_mapping_loop inferer rest_args rest_fields acc) r)))
-                        (d1 (let r (extract_mapping_loop inferer rest_args rest_fields acc) r))))))))
+        (Cons arg rest_args (extract_mapping_cons inferer arg rest_args fields acc))))
 
 ; ===========================================================================
 ; UTILITY HELPERS
@@ -1435,17 +1455,7 @@
     ; all; it fell through to whatever garbage happened to occupy the
     ; hash-fallback stack slot for an unrecognized identifier.
     (match params
- 
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil       (Nil
-        Nil)
+        (Nil Nil)
         ((Cons p rest)
         (Cons
                 (TVar 0 TUnit)
@@ -1811,7 +1821,7 @@
                             (tc-new)
                             Nil
                             Nil
-                            Nil)))
+                            Nil))
                     (inferer-bind-pattern-vars-loop new-inferer prest frest))))
         (inferer-bind-pattern-vars-loop inferer prest frest)))
 
@@ -2016,7 +2026,7 @@
     ; infer each arg type and unify with expected field type
     (match args
         (Nil inferer)
-        ((Cons arg rest
+        (Cons arg rest
         (match fields
                 (Nil inferer)
                 (Cons field rest-fields
@@ -2042,56 +2052,29 @@
                                                 (ti-adt-instantiations inferer)
                                                 (ti-arg-type-observations inferer)
                                                 (ti-function-bodies inferer)
-                                                (ti-skip-generic-def-names inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil
+                                                (ti-skip-generic-def-names inferer)
+                                                (tc-new)
+                                                Nil
+                                                Nil
+                                                Nil)
                                             rest rest-fields))
                                     (UErr msg
                                         inferer))))))))))
 
 (defn record-constructor-instantiation (inferer adt-name variant-name args variant-fields)
     ; Extract generic param -> concrete type mappings from args
-    (let (mapping (extract-constructor-mapping inferer args variant-fields))
+    (let (mapping (extract_constructor_mapping inferer args variant-fields))
         (if (nil? mapping)
         inferer
         (let (inst (AI mapping))
                 (insert-adt-instantiation inferer adt-name inst)))))
-
-(defn extract-constructor-mapping (inferer args fields)
-    (extract-mapping-loop inferer args fields Nil))
-
-(defn extract-mapping-loop (inferer args fields acc)
-    (match args
-        (Nil (if (nil? acc) Nil (list-reverse acc)))
-        (Cons arg rest-args
-        (match fields
-                (Nil (if (nil? acc) Nil (list-reverse acc)))
-                (Cons field rest-fields
-                    (match field
-                        (F fname ftype
-                            (if (is-generic-param ftype)
-                                (let (arg-type (infer-expr inferer arg))
-                                    (let (type-str (type-to-string arg-type))
-                                        (if (or (= type-str "") (str-contains type-str "?"))
-                                            (extract-mapping-loop inferer rest-args rest-fields acc)
-                                            (extract-mapping-loop inferer rest-args rest-fields
-                                                (Cons (Pair fname type-str) acc)))))
-                                (extract-mapping-loop inferer rest-args rest-fields acc)))
-                        (d1 (extract-mapping-loop inferer rest-args rest-fields acc))))))))
 
 (defn compute-mono-name (inferer adt-name variant-name args fields)
     ; Use positional naming if adt_param_order is available
     (let (param-order (lookup-adt-param-order inferer adt-name))
         (if (nil? param-order)
         ""
-        (let (mapping (extract-constructor-mapping inferer args fields))
+        (let (mapping (extract_constructor_mapping inferer args fields))
                 (if (nil? mapping)
                     ""
                     (build-positional-name adt-name param-order mapping))))))
@@ -2173,7 +2156,7 @@
         (tc-new)
         Nil
         Nil
-        Nil)))
+        Nil))
                                     (let (site-ret (inferer-return-var inferer-with-env))
                                         (let (inferer-with-ret
                                             (TypeInferer
@@ -2198,7 +2181,7 @@
         (tc-new)
         Nil
         Nil
-        Nil)))
+        Nil))
                                             (let (inferred-ret (infer-expr inferer-with-ret body))
                                                 (let (unified (unify (ti-subst inferer-with-ret) site-ret inferred-ret))
                                                     (match unified
@@ -2207,7 +2190,7 @@
                                                                 (let (with-cache (insert-body-cache inferer site-key final-ret))
                                                                     final-ret)))
                                                         (UErr msg
-                                                            (inferer-return-var inferer)))))))))))
+                                                            (inferer-return-var inferer))))))))))))
                 cached))))
 
 (defn make-site-key (fname arg-types)
@@ -2481,13 +2464,13 @@
 (defn has-untyped-params (params)
     (match params
         (Nil false)
-        ((Cons p rest
+        (Cons p rest
         (match p
                 (P name typ
                     (if (nil? typ)
                         true
                         (has-untyped-params rest)))
-                (d1 (has-untyped-params rest)))))))
+                (d1 (has-untyped-params rest))))))
 
 (defn collect-defn-params (inferer params)
     ; extract param types from Defn params list
@@ -2561,7 +2544,7 @@
     ; This replaces the old first-site write-back that poisoned generics.
     (let (observations (ti-arg-type-observations inferer))
         (let (known-fns (ti-known-fns inferer))
-        (finalize-param-types-loop inferer observations known-fns)))
+        (finalize-param-types-loop inferer observations known-fns))))
 
 (defn finalize-param-types-loop (inferer observations known-fns)
     (match known-fns
@@ -2591,19 +2574,14 @@
                                                         (ti-adt-instantiations inferer)
                                                         (ti-arg-type-observations inferer)
                                                         (ti-function-bodies inferer)
-                                                        (ti-skip-generic-def-names inferer))
-
-        (tc-new)
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil
+                                                        (ti-skip-generic-def-names inferer)
+                                                        (tc-new)
+                                                        Nil
+                                                        Nil
+                                                        Nil)
                                                     observations
                                                     rest))
-                                new-inferer))))))))
+                                new-inferer)))))))))
 
 (defn resolve-params-from-obs (inferer params site-observations)
     ; site-observations is a (List (List String)) - each inner list is arg types at one call site
@@ -2668,7 +2646,7 @@
                             (Cons
                                 (PT name (if (nil? r) ptype (type-from-display r)))
                                 (apply-resolved-types rest rest-resolved)))
-                        (d1 (Cons hd (apply-resolved-types rest rest-resolved))))))))
+                        (d1 (Cons hd (apply-resolved-types rest rest-resolved)))))))))
 
 (defn list-nth (lst i)
     (match lst
@@ -2756,8 +2734,3 @@
         (EStructDef d33 d33b true)
         (EStructDefPlus d34 d34b true)
         (d1 false)))
-
-)
-)
-)
-)

@@ -465,7 +465,7 @@
         (AInt a
           (match right
             (AInt b
-              (Some (ICConst (ABool (/= a b))))
+              (Some (ICConst (ABool (!= a b))))
             )
             (d1
               None
@@ -475,7 +475,7 @@
         (AFloat a
           (match right
             (AFloat b
-              (Some (ICConst (ABool (/= a b))))
+              (Some (ICConst (ABool (!= a b))))
             )
             (d1
               None
@@ -485,7 +485,7 @@
         (ABool a
           (match right
             (ABool b
-              (Some (ICConst (ABool (/= a b))))
+              (Some (ICConst (ABool (!= a b))))
             )
             (d1
               None
@@ -946,7 +946,6 @@
     (Cons hd rest
       (match hd
         (ICN id region typ is_branch inner
-          (if (eq inner ICBegin)
             (match inner
               (ICBegin body
                 (let new-body (opt-dce-recurse body live-set)
@@ -959,8 +958,6 @@
                 (opt-dce-recurse-loop rest live-set (Cons hd acc))
               )
             )
-            (opt-dce-recurse-loop rest live-set (Cons hd acc))
-          )
         )
         (d1
           (opt-dce-recurse-loop rest live-set acc)
@@ -1119,6 +1116,34 @@
 ; ===========================================================================
 
 (
+  defn opt-optimize-program-dce (final-os opt-fns opt-stmts)
+  (let dce-result (opt-dce final-os opt-stmts)
+    (match dce-result
+      (Pair final-os2 final-stmts
+        (IP opt-fns final-stmts)
+      )
+      (d1
+        (IP opt-fns opt-stmts)
+      )
+    )
+  )
+)
+
+(
+  defn opt-optimize-program-stmts (new-os opt-fns stmts)
+  (let stmts-result (opt-fold-constants new-os stmts)
+    (match stmts-result
+      (Pair final-os opt-stmts
+        (opt-optimize-program-dce final-os opt-fns opt-stmts)
+      )
+      (d1
+        (IP opt-fns stmts)
+      )
+    )
+  )
+)
+
+(
   defn opt-optimize-program (program)
   (match program
     (IP fns stmts
@@ -1126,28 +1151,7 @@
         (let fns-result (opt-optimize-fns os fns)
           (match fns-result
             (Pair new-os opt-fns
-              (let stmts-result (opt-fold-constants new-os stmts)
-                (match stmts-result
-                  (Pair final-os opt-stmts
-                    (let dce-result (opt-dce final-os opt-stmts)
-                      (match dce-result
-                        (Pair final-os2 final-stmts
-                          (IP opt-fns final-stmts)
-                        )
-                        (d1
-                          (IP opt-fns opt-stmts)
-                        )
-                      )
-                    )
-                    (d1
-                      (IP opt-fns opt-stmts)
-                    )
-                  )
-                  (d1
-                    program
-                  )
-                )
-              )
+              (opt-optimize-program-stmts new-os opt-fns stmts)
             )
             (d1
               program

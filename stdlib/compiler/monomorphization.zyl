@@ -20,7 +20,7 @@
     (MCKTypes (List (MonoKV Type)))                    ; name → Type
     (MCStructs (List (MonoKV (List (MonoKV Type)))))   ; name → [(field, Type)]
     (MCAdtDefs (List (MonoKV (List (MonoKV (List String)))))) ; name → [(variant, [fields])]
-    (MCAdtInsts (List (MonoKV (List AdtInstantiation))))   ; name → [AdtInstantiation]
+    (MCAdtInsts (List (MonoKV (List MAdtInstantiation))))   ; name → [MAdtInstantiation]
     (MCTImpls (List (MonoKV (List Type))))             ; trait → [impl_type]
     (MCAdtParamOrder (List (MonoKV (List String))))))
 
@@ -30,7 +30,8 @@
 (deftype MonoInstance (MI String Expr (List MonoParam)))
 
 (defn MI.body (mono) (match mono (MI d1 b d2 b)))
-(deftype AdtInstantiation (AI (List String) (List Type)))
+
+(deftype MAdtInstantiation (MADI (List String) (List Type)))
 
 ; ===========================================================================
 ; Field accessors
@@ -813,7 +814,7 @@
               (let (ctx6 (populate-adt-insts ctx5 (ti-adt-instantiations inferer)))
                 (let (ctx7 (populate-struct-defs ctx6 (ti-struct-defs inferer)))
                   (let (ctx8 (populate-trait-impls ctx7 (ti-trait-ctx inferer)))
-                    (mono-context-populate-adt-order ctx8 inferer))))))))))
+                    (mono-context-populate-adt-order ctx8 inferer)))))))))))
 
 (defn populate-variant-to-adt (ctx vta)
   (match vta
@@ -965,7 +966,7 @@
           ; We need to know which ADT this belongs to. For now, skip since
           ; we don't have ADT name in AdtInstantiation.
           ; This is a limitation - Rust has AdtInstantiation with adt name.
-          (populate-adt-insts ctx rest)))
+          (populate-adt-insts ctx rest))
         (d1 (populate-adt-insts ctx rest))))))
 
 (defn populate-struct-defs (ctx struct-defs)

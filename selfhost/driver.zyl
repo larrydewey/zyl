@@ -75,7 +75,7 @@
                         (let ri2 (ri-infer opt-fns ri)
                           (dbg-log "codegen
 ")
-                          (emit-out arena opt-fns)))))))))))))))
+                          (emit-out arena opt-fns)))))))))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)
