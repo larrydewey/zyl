@@ -1843,6 +1843,58 @@ impl IcnfConverter {
                 Ok(stmts)
             }
 
+            // Struct field accessors generated from struct field names (SD_name, SD_fields, SF_type, SF_name)
+            // These are emitted as calls but should be field loads.
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(name)) if name.starts_with("SD_") || name.starts_with("SF_"))
+                    && args.len() == 1 =>
+            {
+                let field_name = match &op.inner {
+                    ExprInner::Atom(Atom::Ident(n)) => n.clone(),
+                    _ => String::new(),
+                };
+                let mut result = Vec::new();
+                let struct_stmts = self.convert_expr_collect(&args[0])?;
+                result.extend(struct_stmts);
+                let ssa_id = self.next_ssa_id();
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Load(field_name),
+                });
+                Ok(result)
+            }
+
+            // Pair constructor in Call form: (Pair head tail)
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "Pair")
+                    && args.len() == 2 =>
+            {
+                let mut result = Vec::new();
+                let head_stmts = self.convert_expr_collect(&args[0])?;
+                let head_id = head_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                result.extend(head_stmts);
+                let tail_stmts = self.convert_expr_collect(&args[1])?;
+                let tail_id = tail_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                result.extend(tail_stmts);
+                let ssa_id = self.next_ssa_id();
+                result.push(ICNFNode {
+                    id: ssa_id,
+                    region: Region::Heap,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::MakeVariant {
+                        type_name: "List".to_string(),
+                        variant_name: "Pair".to_string(),
+                        discriminant: 0,
+                        field_ids: vec![head_id, tail_id],
+                    },
+                });
+                Ok(result)
+            }
+
             // If-then-else.
             ExprInner::If(cond, then_, else_) => {
                 // Always push condition to globals so it's visible for operand lookup,
@@ -2632,6 +2684,83 @@ impl IcnfConverter {
                 Ok(result)
             }
 
+            // Match expression (no-dispatch parsing emits Call("match", [scrutinee, arms...])).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "match") =>
+            {
+                if args.len() < 2 {
+                    return Ok(Vec::new());
+                }
+                let scrut_stmts = self.convert_expr_collect(&args[0])?;
+                let scrut_id = scrut_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                let mut result = scrut_stmts;
+                let mut icnf_arms = Vec::new();
+                for arm_expr in args.iter().skip(1) {
+                    if let ExprInner::Call(arm_head, arm_parts) = &arm_expr.inner {
+                        if let ExprInner::Atom(Atom::Ident(variant)) = &arm_head.inner {
+                            let variant = variant.clone();
+                            if arm_parts.is_empty() { continue; }
+                            let body = arm_parts.last().unwrap();
+                            let pattern_parts = &arm_parts[..arm_parts.len()-1];
+                            let mut arm_stmts = self.convert_expr_collect(body)?;
+                            let pattern_names: Vec<String> = pattern_parts.iter().map(|p| {
+                                if let ExprInner::Atom(Atom::Ident(n)) = &p.inner { n.clone() } else { String::new() }
+                            }).collect();
+                            result.append(&mut arm_stmts);
+                            icnf_arms.push(MatchArmICNF {
+                                discriminant: 0,
+                                variant_name: variant,
+                                field_names: pattern_names,
+                                field_types: Vec::new(),
+                                body: arm_stmts,
+                            });
+                        }
+                    }
+                }
+                let type_name = String::new();
+                let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
+                let match_id = self.next_ssa_id();
+                result.push(ICNFNode {
+                    id: match_id,
+                    region: Region::Stack,
+                    typ: None,
+                    is_branch_body: false,
+                    node: ICNFInner::Match { scrutinee_ssa: scrut_id, type_name, arms: icnf_arms, result_var },
+                });
+                Ok(result)
+            }
+
+            // Let binding (no-dispatch parsing emits Call("let", [(name val), body...])).
+            ExprInner::Call(op, args)
+                if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "let" || n == "let-mut") =>
+            {
+                if args.is_empty() { return Ok(Vec::new()); }
+                let mut result = Vec::new();
+                if let ExprInner::Call(_, bind_parts) = &args[0].inner {
+                    if bind_parts.len() >= 2 {
+                        if let ExprInner::Atom(Atom::Ident(name)) = &bind_parts[0].inner {
+                            let name = name.clone();
+                            let val_stmts = self.convert_expr_collect(&bind_parts[1])?;
+                            let val_id = val_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+                            result.extend(val_stmts);
+                            let assign_id = self.next_ssa_id();
+                            result.push(ICNFNode {
+                                id: assign_id,
+                                region: Region::Stack,
+                                typ: None,
+                                is_branch_body: false,
+                                node: ICNFInner::Assign(name, val_id),
+                            });
+                            for e in args.iter().skip(1) {
+                                result.extend(self.convert_expr_to_stmts(e)?);
+                            }
+                            return Ok(result);
+                        }
+                    }
+                }
+                Ok(Vec::new())
+            }
+
             // Function call (Call form with operator as first element — non-arithmetic).
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(_)))
@@ -2914,11 +3043,22 @@ impl IcnfConverter {
                         .values()
                         .flat_map(|vs| vs.iter().map(|(vn, _)| vn.clone()))
                         .collect();
+
+                    // Check if this is a catch-all pattern (wildcard, Rest, d1, d2, etc.).
+                    // These are NOT constructors; they should always get the sentinel
+                    // discriminant usize::MAX regardless of whether they match a
+                    // known constructor name somewhere.
+                    let is_catch_all = matches!(
+                        arm.variant.as_str(),
+                        "_" | "Rest" | "rest" | "REST"
+                    ) || arm.variant.starts_with('d')
+                        && arm.variant[1..].chars().all(|c| c.is_ascii_digit());
+
                     let position = self.adt_defs.get(&type_name)
                         .and_then(|variants| variants.iter().position(|(vname, _)| vname == &arm.variant));
                     let discriminant = match position {
                         Some(pos) => pos,
-                        None if !all_known_here.contains(&arm.variant) => usize::MAX,
+                        None if is_catch_all || !all_known_here.contains(&arm.variant) => usize::MAX,
                         None => {
                             if std::env::var("ZYL_DBG_ADT").is_ok() {
                                 eprintln!(
@@ -2986,7 +3126,52 @@ impl IcnfConverter {
 
                 // Sort arms by discriminant so arm index == discriminant.
                 arm_with_disc.sort_by_key(|(disc, _)| *disc);
-                let icnf_arms = arm_with_disc.into_iter().map(|(_, arm)| arm).collect();
+                let mut icnf_arms = arm_with_disc.into_iter().map(|(_, arm)| arm).collect::<Vec<_>>();
+
+                // If this match is exhaustive (all variants of the resolved type have
+                // explicit arms, no catch-all), add a synthetic wildcard arm with an
+                // error body. This prevents codegen from generating an implicit default
+                // arm that returns -1, which would be unreachable but still emitted.
+                let is_exhaustive = if !type_name.is_empty() {
+                    if let Some(variants) = self.adt_defs.get(&type_name) {
+                        let covered: crate::deterministic::HashSet<&str> = icnf_arms
+                            .iter()
+                            .filter(|a| a.discriminant != usize::MAX)
+                            .map(|a| a.variant_name.as_str())
+                            .collect();
+                        variants.iter().all(|(v, _)| covered.contains(v.as_str()))
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if is_exhaustive {
+                    let wildcard_ssa = self.next_ssa_id();
+                    let msg_id = self.next_ssa_id();
+                    let msg_node = ICNFNode {
+                        id: msg_id,
+                        region: Region::Global,
+                        typ: None,
+                        is_branch_body: true,
+                        node: ICNFInner::Const(Atom::Str("match: unreachable case".to_string())),
+                    };
+                    let call_id = self.next_ssa_id();
+                    let call_node = ICNFNode {
+                        id: call_id,
+                        region: Region::Stack,
+                        typ: None,
+                        is_branch_body: true,
+                        node: ICNFInner::Call("error".to_string(), vec![msg_id]),
+                    };
+                    icnf_arms.push(MatchArmICNF {
+                        variant_name: format!("__wildcard_{}", self.ssa_id_counter.get()),
+                        discriminant: usize::MAX,
+                        field_names: Vec::new(),
+                        field_types: Vec::new(),
+                        body: vec![msg_node, call_node],
+                    });
+                }
 
                 let result_var = format!("___match_result_{}", self.ssa_id_counter.get());
 
@@ -3719,6 +3904,7 @@ impl IcnfConverter {
             "=" => self.convert_binary_only("=", BinOpKind::Eq, args),
             "==" => self.convert_binary_only("==", BinOpKind::Eq, args),
             "!=" => self.convert_binary_only("!=", BinOpKind::Neq, args),
+            "/=" => self.convert_binary_only("/=", BinOpKind::Neq, args),
             "<" => self.convert_binary_only("<", BinOpKind::Lt, args),
             ">" => self.convert_binary_only(">", BinOpKind::Gt, args),
             "<=" => self.convert_binary_only("<=", BinOpKind::Le, args),
@@ -3960,6 +4146,48 @@ impl IcnfConverter {
         // Skip type annotation atoms like T_INT, ?0 etc. — these are from Phase 5's output replacement.
         if is_type_annotation_atom(name) {
             return Ok(Vec::new());
+        }
+
+        // Pair constructor in Apply form: (Pair head tail)
+        if name == "Pair" && args.len() == 2 {
+            let mut result = Vec::new();
+            let head_stmts = self.convert_expr_collect(&args[0])?;
+            let head_id = head_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+            result.extend(head_stmts);
+            let tail_stmts = self.convert_expr_collect(&args[1])?;
+            let tail_id = tail_stmts.last().map(|n| n.id).unwrap_or_else(|| self.next_ssa_id());
+            result.extend(tail_stmts);
+            let ssa_id = self.next_ssa_id();
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Heap,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::MakeVariant {
+                    type_name: "List".to_string(),
+                    variant_name: "Pair".to_string(),
+                    discriminant: 0,
+                    field_ids: vec![head_id, tail_id],
+                },
+            });
+            return Ok(result);
+        }
+
+        // Struct field accessors in Apply form (SD_name, SD_fields, SF_type, SF_name)
+        if (name.starts_with("SD_") || name.starts_with("SF_")) && args.len() == 1 {
+            let field_name = name.to_string();
+            let mut result = Vec::new();
+            let struct_stmts = self.convert_expr_collect(&args[0])?;
+            result.extend(struct_stmts);
+            let ssa_id = self.next_ssa_id();
+            result.push(ICNFNode {
+                id: ssa_id,
+                region: Region::Stack,
+                typ: None,
+                is_branch_body: false,
+                node: ICNFInner::Load(field_name),
+            });
+            return Ok(result);
         }
 
         let mut result = Vec::new();
@@ -4376,7 +4604,7 @@ fn is_arithmetic_or_cmp_expr(op: &Expr) -> bool {
 fn is_arithmetic_or_cmp_name(name: &str) -> bool {
     matches!(
         name,
-        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "=" | "<" | ">" | "<=" | ">=" | "and" | "or"
+        "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "/=" | "=" | "<" | ">" | "<=" | ">=" | "and" | "or"
     )
 }
 
