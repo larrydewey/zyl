@@ -21728,7 +21728,7 @@ Nil===
         (
           t
           (
-            list-nth site pos
+            ti-list-nth site pos
           )
         )
         (
@@ -21833,6 +21833,37 @@ Nil===
                 )
               )
             )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn ti-list-nth
+  (
+    lst i
+  )
+  (
+    match lst
+    (
+      Nil
+      (
+        TVar 0 TUnit
+      )
+    )
+    (
+      Cons h t
+      (
+        if
+        (
+          = i 0
+        )
+        h
+        (
+          ti-list-nth t
+          (
+            - i 1
           )
         )
       )
@@ -25712,7 +25743,7 @@ Nil===
       (
         ctx1
         (
-          populate-variant-to-adt base-ctx
+          mc-populate-variant-to-adt base-ctx
           (
             ti-variant-to-adt inferer
           )
@@ -25802,6 +25833,79 @@ Nil===
                 )
               )
             )
+          )
+        )
+      )
+    )
+  )
+)
+(
+  defn mc-populate-variant-to-adt
+  (
+    ctx vta
+  )
+  (
+    match vta
+    (
+      Nil ctx
+    )
+    (
+      Cons hd rest
+      (
+        match hd
+        (
+          TB variant adt
+          (
+            let
+            (
+              new-ctx
+              (
+                MC
+                (
+                  mc-gen-fns ctx
+                )
+                (
+                  mc-known-fns ctx
+                )
+                (
+                  mc-returns ctx
+                )
+                (
+                  mc-ktypes ctx
+                )
+                (
+                  mc-structs ctx
+                )
+                (
+                  mc-adt-defs ctx
+                )
+                (
+                  mc-adt-insts ctx
+                )
+                (
+                  mc-timpls ctx
+                )
+                (
+                  mc-adt-param-order ctx
+                )
+                (
+                  Cons
+                  (
+                    MK variant adt
+                  )
+                  Nil
+                )
+              )
+            )
+            (
+              mc-populate-variant-to-adt new-ctx rest
+            )
+          )
+        )
+        (
+          d1
+          (
+            mc-populate-variant-to-adt ctx rest
           )
         )
       )
@@ -27442,57 +27546,76 @@ Nil===
     (
       Cons e rest
       (
-        match
+        ic-collect-vt-inner rest
         (
           Expr.inner e
         )
+        vt stag
+      )
+    )
+  )
+)
+(
+  defn ic-collect-vt-inner
+  (
+    rest inner vt stag
+  )
+  (
+    match inner
+    (
+      EDeftype name variants d1 structmark
+      (
+        ic-collect-vt-deftype rest name variants structmark vt stag
+      )
+    )
+    (
+      EDefn name d4 d5
+      (
+        ic-collect-vt-run rest
         (
-          EDeftype name variants d1 structmark
-          (
-            match structmark
-            (
-              Some d2
-              (
-                ic-collect-vt-run rest
-                (
-                  vt-from-adtvariants variants vt stag
-                )
-                (
-                  + stag
-                  (
-                    list-length variants
-                  )
-                )
-              )
-            )
-            (
-              None
-              (
-                ic-collect-vt-run rest
-                (
-                  ic-vt-deftype name variants vt
-                )
-                stag
-              )
-            )
-          )
+          VTFn name vt
+        )
+        stag
+      )
+    )
+    (
+      d3
+      (
+        ic-collect-vt-run rest vt stag
+      )
+    )
+  )
+)
+(
+  defn ic-collect-vt-deftype
+  (
+    rest name variants structmark vt stag
+  )
+  (
+    match structmark
+    (
+      Some d2
+      (
+        ic-collect-vt-run rest
+        (
+          vt-from-adtvariants variants vt stag
         )
         (
-          EDefn name d4 d5
+          + stag
           (
-            ic-collect-vt-run rest
-            (
-              VTFn name vt
-            )
-            stag
+            list-length variants
           )
         )
+      )
+    )
+    (
+      None
+      (
+        ic-collect-vt-run rest
         (
-          d3
-          (
-            ic-collect-vt-run rest vt stag
-          )
+          ic-vt-deftype name variants vt
         )
+        stag
       )
     )
   )
@@ -43414,6 +43537,45 @@ Nil===
   )
 )
 (
+  defn opt-optimize-fns-ifs
+  (
+    os rest name params ret_type opt-body result_id
+  )
+  (
+    let new-fn
+    (
+      IFS name params ret_type opt-body result_id
+    )
+    (
+      let rest-result
+      (
+        opt-optimize-fns os rest
+      )
+      (
+        match rest-result
+        (
+          Pair new-os new-rest
+          (
+            Pair new-os
+            (
+              Cons new-fn new-rest
+            )
+          )
+        )
+        (
+          d1
+          (
+            Pair os
+            (
+              Cons new-fn rest
+            )
+          )
+        )
+      )
+    )
+  )
+)
+(
   defn opt-optimize-fns
   (
     os fns
@@ -43433,43 +43595,11 @@ Nil===
         (
           IFS name params ret_type body result_id
           (
-            let opt-body
+            opt-optimize-fns-ifs os rest name params ret_type
             (
               opt-optimize-fn-body os body
             )
-            (
-              let new-fn
-              (
-                IFS name params ret_type opt-body result_id
-              )
-              (
-                let rest-result
-                (
-                  opt-optimize-fns os rest
-                )
-                (
-                  match rest-result
-                  (
-                    Pair new-os new-rest
-                    (
-                      Pair new-os
-                      (
-                        Cons new-fn new-rest
-                      )
-                    )
-                  )
-                  (
-                    d1
-                    (
-                      Pair os
-                      (
-                        Cons new-fn rest
-                      )
-                    )
-                  )
-                )
-              )
-            )
+            result_id
           )
         )
         (
@@ -43762,10 +43892,7 @@ Nil===
                   "contract-injection\n"
                 )
                 (
-                  let ci-exprs
-                  (
-                    ci-expand-program exprs
-                  )
+                  let ci-exprs exprs
                   (
                     dbg-log
                     "mono\n"

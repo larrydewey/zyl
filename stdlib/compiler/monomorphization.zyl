@@ -806,7 +806,7 @@
   ; struct_defs, trait_ctx.
   ; We convert these flat lists into the MonoKV-keyed stores MonoCtx expects.
   (let (base-ctx (MC Nil Nil Nil Nil Nil Nil Nil Nil Nil))
-    (let (ctx1 (populate-variant-to-adt base-ctx (ti-variant-to-adt inferer)))
+    (let (ctx1 (mc-populate-variant-to-adt base-ctx (ti-variant-to-adt inferer)))
       (let (ctx2 (populate-known-fns ctx1 (ti-known-fns inferer)))
         (let (ctx3 (populate-func-returns ctx2 (ti-func-returns inferer)))
           (let (ctx4 (populate-known-types ctx3 (ti-known-types inferer)))
@@ -816,7 +816,7 @@
                   (let (ctx8 (populate-trait-impls ctx7 (ti-trait-ctx inferer)))
                     (mono-context-populate-adt-order ctx8 inferer)))))))))))
 
-(defn populate-variant-to-adt (ctx vta)
+(defn mc-populate-variant-to-adt (ctx vta)
   (match vta
     (Nil ctx)
     (Cons hd rest
@@ -833,8 +833,8 @@
               (mc-timpls ctx)
               (mc-adt-param-order ctx)
               (Cons (MK variant adt) Nil)))
-            (populate-variant-to-adt new-ctx rest)))
-        (d1 (populate-variant-to-adt ctx rest))))))
+            (mc-populate-variant-to-adt new-ctx rest)))
+        (d1 (mc-populate-variant-to-adt ctx rest))))))
 
 (defn populate-known-fns (ctx known-fns)
   ; known-fns is (List FnSig) where FnSig = (FNS Name (List ParamType))

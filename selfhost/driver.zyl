@@ -54,7 +54,22 @@
 (dbg-log "type-infer\n")
         (let inferer (collect-definitions (inferer-new) exprs)
           (dbg-log "contract-injection\n")
-          (let ci-exprs (ci-expand-program exprs)
+          ; Real contract injection (stdlib/compiler/contract_injection.zyl)
+          ; is NOT wired in here: that module's accessors/constructors
+          ; (d-name, t-name, TestNode, ...) don't match the actual
+          ; DefnNode/TestDecl/TestSuiteNode shapes in expr_inner.zyl, so it
+          ; doesn't compile as part of the bundle. It was silently omitted
+          ; from assemble.py's file list, and this call used to read
+          ; "ci-expand-program" (1 arg) -- which, once the bundle was
+          ; assembled, actually resolved to closure_inline.zyl's SAME-NAMED
+          ; but different-arity `ci-expand-program(arena, prog)` function
+          ; instead (a genuine duplicate-symbol collision), silently
+          ; passing garbage through the mismatched second argument
+          ; register. That corrupted state downstream and crashed the
+          ; self-hosted binary (ic-collect-vt-run) even on trivial input.
+          ; Pass exprs through unchanged until contract injection is
+          ; properly rewritten to match the real deftypes.
+          (let ci-exprs exprs
             (dbg-log "mono\n")
             (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
               (let mono-exprs (monomorphize mono-ctx ci-exprs)

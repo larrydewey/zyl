@@ -1079,6 +1079,26 @@
   )
 )
 
+; Split out of opt-optimize-fns' Cons arm: a 3-level-deep nested match
+; (fns -> hd -> rest-result) miscompiled under the Rust bootstrap (the
+; innermost match silently returned a bogus -1 sentinel instead of its
+; real Pair result, matching the ic-collect-vt-run bug found earlier).
+; Flattening into its own top-level function dodges that codegen bug.
+(defn opt-optimize-fns-ifs (os rest name params ret_type opt-body result_id)
+  (let new-fn (IFS name params ret_type opt-body result_id)
+    (let rest-result (opt-optimize-fns os rest)
+      (match rest-result
+        (Pair new-os new-rest
+          (Pair new-os (Cons new-fn new-rest))
+        )
+        (d1
+          (Pair os (Cons new-fn rest))
+        )
+      )
+    )
+  )
+)
+
 (
   defn opt-optimize-fns (os fns)
   (match fns
@@ -1088,20 +1108,7 @@
     (Cons hd rest
       (match hd
         (IFS name params ret_type body result_id
-          (let opt-body (opt-optimize-fn-body os body)
-            (let new-fn (IFS name params ret_type opt-body result_id)
-              (let rest-result (opt-optimize-fns os rest)
-                (match rest-result
-                  (Pair new-os new-rest
-                    (Pair new-os (Cons new-fn new-rest))
-                  )
-                  (d1
-                    (Pair os (Cons new-fn rest))
-                  )
-                )
-              )
-            )
-          )
+          (opt-optimize-fns-ifs os rest name params ret_type (opt-optimize-fn-body os body) result_id)
         )
         (d1
           (opt-optimize-fns os rest)

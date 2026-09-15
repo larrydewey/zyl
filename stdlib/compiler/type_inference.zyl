@@ -2621,7 +2621,7 @@
     (match sites
         (Nil current)
         (Cons site rest
-        (let (t (list-nth site pos))
+        (let (t (ti-list-nth site pos))
                 (if (or (= t "") (str-contains t "?"))
                     None
                     (match current
@@ -2648,11 +2648,11 @@
                                 (apply-resolved-types rest rest-resolved)))
                         (d1 (Cons hd (apply-resolved-types rest rest-resolved)))))))))
 
-(defn list-nth (lst i)
+(defn ti-list-nth (lst i)
     (match lst
         (Nil (TVar 0 TUnit))
         (Cons h t
-        (if (= i 0) h (list-nth t (- i 1))))))
+        (if (= i 0) h (ti-list-nth t (- i 1))))))
 
 (defn resolve-param-types (inferer params ret-type)
     ; resolve type vars in param types using return type evidence.

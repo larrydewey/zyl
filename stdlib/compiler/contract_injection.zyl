@@ -365,5 +365,13 @@
   (list-map ci-inject-expr exprs))
 
 ; Public API
-(defn ci-expand-program (exprs)
+; Named cinj- (not ci-expand-program) because closure_inline.zyl's
+; ci-expand-program(arena, prog) collides on that exact name once both
+; modules are bundled into the flat selfhost namespace by assemble.py --
+; contract_injection.zyl was omitted from assemble.py's file list for a
+; long time, hiding this collision entirely (driver.zyl's call to
+; "ci-expand-program" with 1 arg for contract injection was silently
+; resolving to closure_inline's 2-arg function instead, since this
+; module's own definition was never assembled in).
+(defn cinj-expand-program (exprs)
   (ci-inject-program exprs))
