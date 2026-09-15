@@ -1,5 +1,58 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-15)
+
+**Paren-imbalance corruption sweep: `--emit-asm` via Rust bootstrap now works end-to-end again.**
+
+`./target/release/zyl selfhost/zyl_selfhost_compiler.zyl -o out --emit-asm` had
+regressed to failing partway through with undefined-symbol link errors
+(`_ZYL_d1`, `_ZYL_eq`, etc.). Root cause was **not** a Rust codegen
+regression as first suspected, but function-level paren mis-nesting inside
+several `stdlib/compiler/*.zyl` files, present since the Hindley-Milner port
+(`452e016`) and invisible to `selfhost/assemble.py`'s per-file global
+depth-zero check (individual function errors can cancel out file-wide).
+Wrote a per-defn-boundary paren-depth-drift analyzer to find them.
+
+Fixed in `stdlib/compiler/type_inference.zyl`, `type_system.zyl`,
+`monomorphization.zyl`, `codegen.zyl`, `region_inference.zyl`,
+`optimization.zyl`, `selfhost/driver.zyl` (see commit `50c6a97` for the full
+list). Notable non-paren bugs found along the way:
+
+- Duplicate hyphen/underscore-case `extract_constructor_mapping` /
+  `extract_mapping_loop` definitions in `type_inference.zyl` — `sanitize_name()`
+  collapses both to one symbol → dup-symbol link error.
+- `/=` used as "not equal" in `optimization.zyl` BNeq const-folding (real
+  operator is `!=`), 3 occurrences.
+- `ri-union-regions` in `region_inference.zyl`: unwrapped match arms + wrong
+  `Pair` arity — genuine logic bug.
+- `opt-dce-recurse-loop` had a redundant `(if (eq inner ICBegin) ...)` wrapper
+  around an already-exhaustive match; `eq` isn't a defined function here.
+- **Confirmed real Rust codegen bug** in `src/icnf.rs` (near commits
+  `282df18`/`a509882`): a catch-all match arm shaped `(d1 BODY)` with a bare
+  literal `BODY`, nested 3+ levels deep inside other matches, miscompiles into
+  `call _ZYL_<boundvar>` instead of treating the binding as unused. Not fixed
+  at the source — worked around per-callsite by refactoring deep match chains
+  into separate top-level helper functions (`params-equal`,
+  `extract_mapping_loop`, `opt-optimize-program`). Other unaudited deep
+  matches may hit this later; a real fix belongs in `src/icnf.rs`'s
+  catch-all/`is_catch_all` codegen path.
+
+Result: `--emit-asm` completes all 9 phases and links a valid ELF binary with
+the Rust-built `zyl`, with no undefined-symbol errors. `cargo build --release`
+confirmed clean.
+
+**Remaining blocker (not fixed): self-hosted bootstrap still fails.**
+`./boot.sh --bootstrap-from-rust` builds stage1 fine (Rust-compiled), but
+running `build/boot/stage1.bin` on `selfhost/zyl_selfhost_compiler.zyl` (the
+self-hosted compiler compiling itself) **segfaults nondeterministically** —
+crash point varies between runs (sometimes progresses through
+parse/bridge/modules/macros/type-infer/contract-injection per `/tmp/dbg`
+before crashing, sometimes crashes right after "parse"). This points to
+memory corruption / uninitialized memory / an allocator bug in the
+self-hosted runtime, distinct from the paren-imbalance issues above and not
+yet root-caused. Until this is fixed, stage2.s/stage2.bin cannot be rebuilt
+via self-hosting and the self-hosting fixed point cannot be re-verified.
+
 ## Current Session (2026-09-13)
 
 **Native error system Phase 1 modules landed (`error_codes.zyl`, `error_report.zyl`).**
