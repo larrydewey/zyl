@@ -43539,36 +43539,30 @@ Nil===
 (
   defn opt-optimize-fns-ifs
   (
-    os rest name params ret_type opt-body result_id
+    os rest new-fn
   )
   (
-    let new-fn
+    let rest-result
     (
-      IFS name params ret_type opt-body result_id
+      opt-optimize-fns os rest
     )
     (
-      let rest-result
+      match rest-result
       (
-        opt-optimize-fns os rest
-      )
-      (
-        match rest-result
+        Pair new-os new-rest
         (
-          Pair new-os new-rest
+          Pair new-os
           (
-            Pair new-os
-            (
-              Cons new-fn new-rest
-            )
+            Cons new-fn new-rest
           )
         )
+      )
+      (
+        d1
         (
-          d1
+          Pair os
           (
-            Pair os
-            (
-              Cons new-fn rest
-            )
+            Cons new-fn rest
           )
         )
       )
@@ -43595,11 +43589,14 @@ Nil===
         (
           IFS name params ret_type body result_id
           (
-            opt-optimize-fns-ifs os rest name params ret_type
+            opt-optimize-fns-ifs os rest
             (
-              opt-optimize-fn-body os body
+              IFS name params ret_type
+              (
+                opt-optimize-fn-body os body
+              )
+              result_id
             )
-            result_id
           )
         )
         (
@@ -43713,25 +43710,19 @@ Nil===
     fns
   )
   (
-    match fns
+    match
     (
-      IP fns2 stmts
+      opt-optimize-fns
       (
-        opt-optimize-program
-        (
-          IP fns2 stmts
-        )
+        opt-new
       )
+      fns
     )
     (
-      d1
-      (
-        opt-optimize-fns
-        (
-          opt-new
-        )
-        fns
-      )
+      Pair new-os new-fns new-fns
+    )
+    (
+      d1 fns
     )
   )
 )

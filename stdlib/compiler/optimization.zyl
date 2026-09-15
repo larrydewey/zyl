@@ -1084,16 +1084,20 @@
 ; innermost match silently returned a bogus -1 sentinel instead of its
 ; real Pair result, matching the ic-collect-vt-run bug found earlier).
 ; Flattening into its own top-level function dodges that codegen bug.
-(defn opt-optimize-fns-ifs (os rest name params ret_type opt-body result_id)
-  (let new-fn (IFS name params ret_type opt-body result_id)
-    (let rest-result (opt-optimize-fns os rest)
-      (match rest-result
-        (Pair new-os new-rest
-          (Pair new-os (Cons new-fn new-rest))
-        )
-        (d1
-          (Pair os (Cons new-fn rest))
-        )
+; Takes the already-built new-fn (not its 5 separate fields) to stay
+; within the bootstrap's arity <= 6 limit -- an earlier version of this
+; helper took (os rest name params ret_type opt-body result_id), 7 args,
+; which silently miscompiled (arity > 6 is a documented bootstrap
+; hazard), dropping the whole functions list down to Nil by the time it
+; reached codegen even though the pipeline reported success.
+(defn opt-optimize-fns-ifs (os rest new-fn)
+  (let rest-result (opt-optimize-fns os rest)
+    (match rest-result
+      (Pair new-os new-rest
+        (Pair new-os (Cons new-fn new-rest))
+      )
+      (d1
+        (Pair os (Cons new-fn rest))
       )
     )
   )
@@ -1108,7 +1112,7 @@
     (Cons hd rest
       (match hd
         (IFS name params ret_type body result_id
-          (opt-optimize-fns-ifs os rest name params ret_type (opt-optimize-fn-body os body) result_id)
+          (opt-optimize-fns-ifs os rest (IFS name params ret_type (opt-optimize-fn-body os body) result_id))
         )
         (d1
           (opt-optimize-fns os rest)
@@ -1173,14 +1177,23 @@
   )
 )
 
-(
-  defn opt-optimize (fns)
-  (match fns
-    (IP fns2 stmts
-      (opt-optimize-program (IP fns2 stmts))
-    )
-    (d1
-      (opt-optimize-fns (opt-new) fns)
-    )
-  )
-)
+; NOTE: this used to `(match fns (IP fns2 stmts ...) (d1 (opt-optimize-fns
+; (opt-new) fns)))` to accept either a raw (List IFn) or an IP-wrapped
+; ICNFProgram. That's unsound: Zyl's structural match dispatches purely on
+; the per-deftype tag byte at offset 0, with no runtime type identity --
+; and IP (ICNFProgram's only constructor) has tag 0, which is *also*
+; List's Cons tag. Since driver.zyl's only caller always passes the raw
+; (List IFn) from ic-program (never an actual IP value), any non-empty
+; list was silently misinterpreted as an IP struct (its head/tail cells
+; reinterpreted as fns2/stmts), corrupting everything downstream and
+; eventually segfaulting stage1.bin's self-hosted run deep inside
+; opt-optimize-fns on a bogus "fns" list. Always treat the input as the
+; raw function list. opt-optimize-fns itself returns (Pair new-os new-fns)
+; -- unwrap to the plain list so callers (driver.zyl's `opt-fns`, fed
+; straight into emit-out/cg-program) get the (List IFn) shape they expect
+; instead of a Pair silently masquerading as one (same tag-0/Cons
+; collision hazard as above, one level further out).
+(defn opt-optimize (fns)
+  (match (opt-optimize-fns (opt-new) fns)
+    (Pair new-os new-fns new-fns)
+    (d1 fns)))
