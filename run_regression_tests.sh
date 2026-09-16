@@ -2,20 +2,25 @@
 # Zyl Regression Test Runner
 # Usage: ./run_regression_tests.sh [OPTIONS]
 #   --quick      Run smoke tests only (~30s)
-#   --full       Run all tests (~5min)
+#   --full       Run all tests (~1min via the self-hosted compiler; was
+#                ~5min+ under target/debug/zyl, and integration/
+#                selfhost-codegen never finished at all within any
+#                practical timeout there -- a Rust-bootstrap
+#                compile-speed issue, not a test problem, see
+#                docs/rust-eviction-plan.md)
 #   --dry-run    List tests without running
 #   --filter N   Run test file N (basename, e.g. "structs")
 #   --verbose    Print compiler output
 #   --depth N    Set nesting depth for stress tests (default: 100)
 #   --timeout N  Per-test timeout in seconds (default: 10)
 #   --boot       Force the self-hosting fixed-point verification
-#                (./boot.sh --skip-rust) in any mode
+#                (./boot.sh) in any mode
 #   --no-boot    Skip the fixed-point verification in --full mode
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ZYL_BIN="${SCRIPT_DIR}/target/debug/zyl"
+ZYL_BIN="${SCRIPT_DIR}/build/boot/zyl-self"
 TESTS_DIR="${SCRIPT_DIR}/tests"
 
 # Defaults
@@ -233,7 +238,7 @@ if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ]; then
     TOTAL=$((TOTAL + 1))
     echo ""
     echo "=== Self-hosting fixed point (boot.sh) ==="
-    if "${SCRIPT_DIR}/boot.sh" --skip-rust > /tmp/zyl_boot_check.log 2>&1; then
+    if "${SCRIPT_DIR}/boot.sh" > /tmp/zyl_boot_check.log 2>&1; then
         PASS=$((PASS + 1))
         echo -e "  ${GREEN}✓${NC} boot/fixed-point"
     else
