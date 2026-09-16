@@ -1,5 +1,132 @@
 # Rust Eviction Plan (2026-09-12)
 
+## Self-hosted compiler feature-parity survey (2026-09-16)
+
+Once `./boot.sh`'s fixed point actually held (see below), switching
+`run_regression_tests.sh` to compile through `build/boot/zyl-self`
+instead of `target/debug/zyl` (commit `e03be5d`) surfaced 17 real
+failures Rust's compiler doesn't have on the exact same test files.
+The fixed point holding proves the self-hosted compiler can compile
+*itself*; it says nothing about whether it can compile everything Rust
+can. This is that gap, measured for the first time, prioritized by
+impact (highest first). Fix as you go; strike through or move to
+"fixed" as each lands, rather than leaving this stale.
+
+### 1. Cross-deftype variant-name collision — FIXED (commit `4404b29`)
+
+Any file declaring its own ADT reusing a name already used elsewhere
+(`Some`/`None` colliding with the stdlib prelude's `Option` being the
+single most common case — and generic ADTs hit this constantly, since
+`Some`/`None`/`Ok`/`Err`/`Pair` are exactly the vocabulary generic code
+reaches for) hard-failed to compile at all with `E_DUPLICATE_VARIANT`.
+Root cause: `icnf.zyl`'s variant table has no type-hint disambiguation
+like Rust's `find_adt_for_variant_hinted`. Fix: allow a later
+declaration to shadow an earlier one under the same name (already
+guaranteed consistent, since deftypes are processed in source order and
+each one's variants get prepended ahead of what came before) instead of
+hard-erroring; a true duplicate *within one deftype's own variant list*
+still errors. Not a full type-aware fix — matches Rust's own no-hint
+fallback ("first ADT found by iteration order") — but real programs
+compile now instead of being rejected outright.
+
+**Impact**: fixed `regression/adts`, `regression/alias`,
+`regression/generics`, `regression/generics-multi-type`,
+`regression/match-exhaustive` end-to-end. Single highest-leverage fix
+found: one collision, five test files, all fixed by removing one error
+check. 26/43 → 31/43 on the full suite.
+
+### 2. Closures crash on nesting/higher-order use — NOT FIXED, highest remaining priority
+
+`unit_test`'s "nested closures" test and `regression/functions`'
+"hof-closure" test both segfault; `regression/regions`'
+"region-heap-closure" test does too (only visible now that fix #1
+stopped `regions` from failing earlier, on the variant collision, for
+an unrelated reason). Three independent test files hitting the same
+crash class on ordinary closure usage (not some obscure edge case)
+means this is very likely a systemic codegen bug in how closures
+capture/call, not three separate small bugs — and since closures are a
+basic, load-bearing feature, it plausibly affects untested code far
+beyond these three files. Not yet root-caused. **Investigate this
+next** — same debugging shape as the `ic-wrap-one` free-variable bug
+found earlier this session (get a coredump, `bt`, work backward from
+the crashing instruction).
+
+### 3. Trait-dispatch compiler crash — NOT FIXED
+
+`regression/traits` doesn't fail at runtime — it crashes the *compiler
+itself* (`_ZYL_populate_trait_impls`, in `stdlib/compiler/
+trait_dispatch.zyl`) while compiling ordinary trait-using code. A
+compiler crash (vs. a wrong-answer bug) blocks 100% of trait-using
+programs outright, so this is high priority despite being only one
+test file. Not yet root-caused.
+
+### 4. Match exhaustiveness checking is incomplete — NOT FIXED
+
+Both `compile-fail/match-non-exhaustive` and `compile-fail/
+match-nested-non-exhaustive` expect compilation to fail and it
+silently succeeds instead. `icnf.zyl`'s `ic-check-exhaustive` (own
+comment: "Full ADT exhaustiveness requires scrutinee [type tracking]")
+only verifies each arm's variant is *some* known variant, not that
+*all* variants of the scrutinee's actual type are covered. Real
+per-scrutinee-type tracking is related to item #1's gap (no
+type-hint/scrutinee-type plumbing exists yet) — likely wants solving
+together with a more general fix there, rather than as its own patch.
+Doesn't crash valid programs, so lower urgency than #2/#3, but it's a
+silently-disabled safety check, not a missing nice-to-have: buggy
+non-exhaustive matches in user code currently compile and misbehave at
+runtime instead of being caught at compile time.
+
+### 5. Missing stdlib piece: `_ct_no_contract` — NOT FIXED, likely quick
+
+`regression/contracts` fails to *link*, not compile: `_ct_no_contract`
+is referenced but genuinely undefined anywhere in the codebase (same
+shape as the missing `str-trim` found earlier fixing `tools/repl.zyl` —
+grep for it, it isn't there). Isolated, mechanical, no architectural
+question to resolve first. Good candidate for a fast follow-up once
+higher-priority items are handled.
+
+### 6. Individual feature bugs, one file each — NOT FIXED
+
+Each of these is its own separate, unrelated bug — no shared root
+cause found, so no single fix helps more than one:
+- `regression/with-resource`: 5/6 sub-tests fail. Root cause found:
+  `EWithResource` (the AST node for `with-resource` blocks) isn't
+  handled anywhere in `icnf.zyl`'s `ic-expr` — confirmed via grep,
+  zero matches. Falls through to whatever the default/wildcard arm
+  does, silently producing wrong behavior instead of an error.
+- `regression/control-flow-ext`: 1/5 sub-tests fail (`while-compound`)
+  — a while-loop-with-compound-body logic bug, not yet isolated
+  further.
+- `regression/derive`: 3/5 sub-tests fail (`derive-eq-struct`,
+  `derive-multi-trait`, `derive-generic-struct`) — derive-macro gaps
+  for Eq, combining multiple derived traits, and generic structs.
+- `regression/unwrap-error`: the deliberate error in its `try-catch-err`
+  sub-test escapes the `try-catch` and kills the process instead of
+  being caught — an exception-propagation bug.
+
+### 7. Unexplained, needs its own investigation — NOT FIXED
+
+- `integration/selfhost-codegen`: reports `E_UNBALANCED_PARENS` on a
+  file that isolates and compiles fine standalone when the suspect
+  string literal (four escaped-quote pairs) is extracted into its own
+  minimal repro — so it isn't the escape-handling bug class already
+  fixed in `sexp_balance.zyl` earlier this session. Genuinely
+  unexplained; needs a fresh repro attempt (try the file as-is with
+  smaller and smaller deletions from the end, rather than a hand-built
+  reproduction of the suspected line, since the isolated version
+  already didn't reproduce it).
+
+### Also noted, not blocking anything specific
+
+Even some *passing* tests have silent, uncaught bugs: `print` on a
+float or string argument sometimes prints the raw bit pattern/pointer
+instead of the formatted value (seen in `unit_test`'s
+`print-float works`/`print-string works` sub-tests), but those
+sub-tests don't assert on the printed content, so they still report
+"ok". Worth a dedicated look — likely a `print`'s type-dispatch bug in
+`codegen.zyl` — but not surfaced by the suite today, so not prioritized
+above the failures that are.
+
 ## Status update (2026-09-16)
 
 **Phase A.8 (native error system / sexp_balance.zyl) is now actually
