@@ -289,7 +289,7 @@
     (cg-load-unresolved st)))
 
 (defn cg-load-fnref (st n)
-  (let st2 (cg-emit st "    lea rax, [rip+_ZYL_")
+  (let st2 (cg-emit st "    lea rax, [rip+f_")
     (let st3 (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000))
       (let st4 (cg-emit st3 "]")
         (cg-nl st4)))))
@@ -584,7 +584,7 @@
 ; inside stage1's own execution (see PROGRESS.md stage2 blocker #3).
 (defn cg-hof-enabled () 1)
 
-; Full call-target symbol: _ZYL_<name> for user fns, <name> otherwise.
+; Full call-target symbol: f_<name> for user fns, <name> otherwise.
 (defn cg-sym-for (arena name mangle)
   (if (> mangle 0)
     (cg-sym-mangled arena name)
@@ -593,7 +593,7 @@
 (defn cg-sym-mangled (arena name)
   (let buf (arena-alloc-zeroed arena 512)
     (begin
-      (buf-append buf (str-intern arena "_ZYL_"))
+      (buf-append buf (str-intern arena "f_"))
       (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
       buf)))
 
@@ -967,8 +967,8 @@
                               (+ (icnf-slot-count body) 8))
          ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
          (let fsz (* 16 (+ 1 (/ nslots 2)))
-(let st1 (cg-emit st "_ZYL_")
-            (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
+          (let st1 (cg-emit st "f_")
+           (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
              (let st3 (cg-emit-line st2 ":")
                (let st4 (cg-emit-line st3 "    push rbp")
                  (let st5 (cg-emit-line st4 "    mov rbp, rsp")
@@ -1109,7 +1109,7 @@
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
         (let st3a (cg-emit-line st3 "    call zyl_save_args")
           (let st3b (cg-emit-line st3a "    call zyl_ensure_arenas")
-            (let st4 (cg-emit-line st3b "    lea rdi, [rip+_ZYL_main]")
+            (let st4 (cg-emit-line st3b "    lea rdi, [rip+f_main]")
               (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
                 (let st6 (cg-emit-line st5 "    xor eax, eax")
                   (let st7 (cg-emit-line st6 "    pop rbp")
