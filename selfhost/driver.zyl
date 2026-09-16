@@ -27,6 +27,9 @@
 (use compiler/assert_lowering)
 (use compiler/optimization)
 (use compiler/codegen)
+(use compiler/sexp_balance)
+(use compiler/error_codes)
+(use compiler/error_report)
 
 (def __zyl_boot_bundle 1)
 
@@ -44,82 +47,92 @@
 ; ===========================================================================
 
 (defn compile-to-asm (arena srcbuf)
-  (dbg-log "parse\n")
-  (let prog (zyl-parse arena srcbuf)
-    (dbg-log "bridge\n")
-    (let exprs0 (convert-ast-list prog)
-      (dbg-log "modules\n")
-      (let exprs1 (mr-resolve-program arena exprs0)
-      (dbg-log "macros\n")
-      (let exprs (me-expand-program exprs1)
-    (dbg-log "type-infer\n")
-    (let inferer (collect-definitions (inferer-new) exprs)
-      (dbg-log "contract-injection\n")
-      ; Real contract injection (stdlib/compiler/contract_injection.zyl)
-      ; is NOT wired in here: that module's accessors/constructors
-      ; (d-name, t-name, TestNode, ...) don't match the actual
-      ; DefnNode/TestDecl/TestSuiteNode shapes in expr_inner.zyl, so it
-      ; doesn't compile as part of the bundle. It was silently omitted
-      ; from assemble.py's file list, and this call used to read
-      ; "ci-expand-program" (1 arg) -- which, once the bundle was
-      ; assembled, actually resolved to closure_inline.zyl's SAME-NAMED
-      ; but different-arity `ci-expand-program(arena, prog)` function
-      ; instead (a genuine duplicate-symbol collision), silently
-      ; passing garbage through the mismatched second argument
-      ; register. That corrupted state downstream and crashed the
-      ; self-hosted binary (ic-collect-vt-run) even on trivial input.
-      ; Pass exprs through unchanged until contract injection is
-      ; properly rewritten to match the real deftypes.
-      (let ci-exprs exprs
-        (dbg-log "mono\n")
-        (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
-          (let mono-exprs (monomorphize mono-ctx ci-exprs)
-            (dbg-log "trait-dispatch\n")
-            (let td-exprs (td-expand-program mono-exprs)
-            (dbg-log "closure-inline\n")
-            (let ci-exprs (ci-expand-program arena td-exprs)
-            (dbg-log "assert-lowering\n")
-            (let al-exprs (al-expand-program ci-exprs)
-            (dbg-log "lower\n")
-            (let fns (ic-program arena al-exprs)
-                (dbg-log "optimize\n")
-                ; compiler/optimization.zyl is NOT wired in here: it's a
-                ; self-hosted port of src/optimization.rs's constant-
-                ; folding/DCE passes, written against that Rust module's
-                ; SSA-form ICNFNode representation (ICN id/region/typ/
-                ; is_branch/inner, ICNFFuncSig "IFS" with 5 fields,
-                ; ICNFProgram "IP" wrapping fns+stmts -- all defined in
-                ; type_system.zyl). The self-hosting pipeline's own ICNF
-                ; lowering (compiler/icnf.zyl, ic-program above) produces
-                ; a completely different, simpler tree-shaped `Icnf` (IFn
-                ; name params body, no SSA ids at all) that codegen.zyl
-                ; consumes directly. These two "ICNF"s share a name but
-                ; not a single constructor shape.
-                ;
-                ; Because Zyl's structural `match` dispatches purely on
-                ; the per-deftype tag byte with no runtime type identity,
-                ; feeding a real `(List IFn)` into opt-optimize-fns's
-                ; `(IFS name params ret_type body result_id)` pattern
-                ; never actually matches (a real IFn's tag is 15; IFS's
-                ; is 0) -- every function silently falls through the "no
-                ; match" catch-all and gets dropped, so opt-optimize
-                ; always returned Nil, an empty function list, which is
-                ; why stage1.bin used to link with no f_main at all. Pass
-                ; fns through unchanged: optimization is a performance
-                ; pass, not required for correctness, and nothing in the
-                ; real self-hosting pipeline produces the shape
-                ; compiler/optimization.zyl expects.
-                (let opt-fns fns
-                  (dbg-log "region-infer\n")
-                  (let ri (ri-new)
-                    (let ri2 (ri-infer opt-fns ri)
-                      (dbg-log "codegen\n")
-                      (let st (cg-program (cg-new arena) opt-fns)
-                        (let buf (cg-buffer st)
-                          (let blen (alloc-strlen buf)
-                            (if (> blen 66060288)
-                              (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
-                              buf))))))))))))))))))))
+  (dbg-log "balance-check\n")
+  (let balance (sb-check-string srcbuf)
+    (if (= (sb-result-balanced balance) 0)
+      (begin
+        (dbg-log "unbalanced\n")
+        (sb-report balance)
+        (ffi-call "zyl_f_error" "E_SEXP_UNBALANCED: source has unbalanced parentheses" 1000))
+      (begin
+        (dbg-log "parse\n")
+        (let prog (zyl-parse arena srcbuf)
+          (dbg-log "bridge\n")
+          (let exprs0 (convert-ast-list prog)
+            (dbg-log "modules\n")
+            (let exprs1 (mr-resolve-program arena exprs0)
+            (dbg-log "macros\n")
+            (let exprs (me-expand-program exprs1)
+      (dbg-log "type-infer\n")
+      (let inferer (collect-definitions (inferer-new) exprs)
+        (dbg-log "contract-injection\n")
+        ; Real contract injection (stdlib/compiler/contract_injection.zyl)
+        ; is NOT wired in here: that module's accessors/constructors
+        ; (d-name, t-name, TestNode, ...) don't match the actual
+        ; DefnNode/TestDecl/TestSuiteNode shapes in expr_inner.zyl, so it
+        ; doesn't compile as part of the bundle. It was silently omitted
+        ; from assemble.py's file list, and this call used to read
+        ; "ci-expand-program" (1 arg) -- which, once the bundle was
+        ; assembled, actually resolved to closure_inline.zyl's SAME-NAMED
+        ; but different-arity `ci-expand-program(arena, prog)` function
+        ; instead (a genuine duplicate-symbol collision), silently
+        ; passing garbage through the mismatched second argument
+        ; register. That corrupted state downstream and crashed the
+        ; self-hosted binary (ic-collect-vt-run) even on trivial input.
+        ; Pass exprs through unchanged until contract injection is
+        ; properly rewritten to match the real deftypes.
+        (let ci-exprs exprs
+          (dbg-log "mono\n")
+          (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
+            (let mono-exprs (monomorphize mono-ctx ci-exprs)
+              (dbg-log "trait-dispatch\n")
+              (let td-exprs (td-expand-program mono-exprs)
+              (dbg-log "closure-inline\n")
+              (let ci-exprs (ci-expand-program arena td-exprs)
+              (dbg-log "assert-lowering\n")
+              (let al-exprs (al-expand-program ci-exprs)
+              (dbg-log "lower\n")
+              (let fns (ic-program arena al-exprs)
+                  (dbg-log "optimize\n")
+                  ; compiler/optimization.zyl is NOT wired in here: it's a
+                  ; self-hosted port of src/optimization.rs's constant-
+                  ; folding/DCE passes, written against that Rust module's
+                  ; SSA-form ICNFNode representation (ICN id/region/typ/
+                  ; is_branch/inner, ICNFFuncSig "IFS" with 5 fields,
+                  ; ICNFProgram "IP" wrapping fns+stmts -- all defined in
+                  ; type_system.zyl). The self-hosting pipeline's own ICNF
+                  ; lowering (compiler/icnf.zyl, ic-program above) produces
+                  ; a completely different, simpler tree-shaped `Icnf` (IFn
+                  ; name params body, no SSA ids at all) that codegen.zyl
+                  ; consumes directly. These two "ICNF"s share a name but
+                  ; not a single constructor shape.
+                  ;
+                  ; Because Zyl's structural `match` dispatches purely on
+                  ; the per-deftype tag byte with no runtime type identity,
+                  ; feeding a real `(List IFn)` into opt-optimize-fns's
+                  ; `(IFS name params ret_type body result_id)` pattern
+                  ; never actually matches (a real IFn's tag is 15; IFS's
+                  ; is 0) -- every function silently falls through the "no
+                  ; match" catch-all and gets dropped, so opt-optimize
+                  ; always returned Nil, an empty function list, which is
+                  ; why stage1.bin used to link with no f_main at all. Pass
+                  ; fns through unchanged: optimization is a performance
+                  ; pass, not required for correctness, and nothing in the
+                  ; real self-hosting pipeline produces the shape
+                  ; compiler/optimization.zyl expects.
+                  (let opt-fns fns
+                    (dbg-log "region-infer\n")
+                    (let ri (ri-new)
+                      (let ri2 (ri-infer opt-fns ri)
+                        (dbg-log "codegen\n")
+                        (let st (cg-program (cg-new arena) opt-fns)
+                          (let buf (cg-buffer st)
+                            (let blen (alloc-strlen buf)
+                              (if (> blen 66060288)
+                                (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
+                                buf))))))))))))))))))))
+        ))
+)
 
 ; ===========================================================================
 ; LEGACY FIXED-PATH PROTOCOL (argc < 2)
@@ -227,7 +240,7 @@
                                         (cli-link asmpath outbase)))))))
                             (begin
                               (print "zyl: error: cannot open source file")
-                              1))))))))))))))
+                              1)))))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)

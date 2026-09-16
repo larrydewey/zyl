@@ -210,6 +210,10 @@ files = [
     'stdlib/compiler/codegen.zyl',
     'stdlib/compiler/region_inference.zyl',
     'stdlib/compiler/optimization.zyl',
+    # Error system (native Zyl): balance validation, error codes, reporting
+    'stdlib/compiler/sexp_balance.zyl',
+    'stdlib/compiler/error_codes.zyl',
+    'stdlib/compiler/error_report.zyl',
     # region_inference/optimization were previously excluded as "dead code"
     # with link errors; tools/repl.zyl (the self-hosted REPL) calls them,
     # so they now ship in the boot source.

@@ -918,10 +918,50 @@
     (EAtom atom (match atom (AStr s s) (d1 "")))
     (d2 "")))
 
+; Collect all variant names from VT that are actual ADT constructors
+; (not function names). VTEntry tags >= 0 are variants; VTFn have
+; negative tags? Actually VTFn uses its own constructor.
+; We'll check if a variant name exists in VT at all (vt-tag-of >= 0).
+(defn ic-vt-has-variant (vt name)
+  (>= (vt-tag-of vt name) 0))
+
+; Check if any arm is a catch-all (wildcard) — variant not in VT.
+(defn ic-arm-is-catchall (vt arm)
+  (let iname (MA.variant arm)
+    (= (ic-vt-has-variant vt iname) 0))
+
+; Check if any arm is catch-all
+(defn ic-has-catchall (arms vt)
+  (match arms
+    (Nil 0)
+    (Cons arm rest
+      (let ca (ic-arm-is-catchall vt arm)
+        (if (> ca 0) 1 (ic-has-catchall rest vt))))))
+
+; Check all arms' variants exist in VT (no typos)
+(defn ic-check-variants-exist (arms vt)
+  (match arms
+    (Nil 0)
+    (Cons arm rest
+      (let iname (MA.variant arm)
+        (if (= (vt-tag-of vt iname) -1)
+          (let msg (str-concat "E_MATCH_NONEXHAUSTIVE: unknown variant `" (str-concat iname "` in match arm"))
+            (ffi-call "zyl_f_error" msg 1000)
+          (ic-check-variants-exist rest vt))))))
+
+; Exhaustiveness check: if no catch-all arm, verify each arm's variant
+; is a known VT variant. (Full ADT exhaustiveness requires scrutinee
+; type info, which we don't have at this lowering stage.)
+(defn ic-check-exhaustive (arms vt)
+  (if (> (ic-has-catchall arms vt) 0)
+    0
+    (ic-check-variants-exist arms vt)))
+
 ; (match scrutinee arm...)
 (defn ic-match (arena subj arms vt)
-  (IMatch (ic-expr arena subj vt)
-          (list-reverse (ic-arms arena arms (no-iarms) vt))))
+  (let _ (ic-check-exhaustive arms vt)
+    (IMatch (ic-expr arena subj vt)
+            (list-reverse (ic-arms arena arms (no-iarms) vt))))
 
 (defn ic-arms (arena arms acc vt)
   (match arms
