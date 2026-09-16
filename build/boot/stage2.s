@@ -70840,9 +70840,12 @@ call _ZYL_struct_fields_to_mono
 _ZYL_populate_trait_impls:
     push rbp
     mov rbp, rsp
-    sub rsp, 144
+    sub rsp, 96
     mov [rbp-8], rdi
     mov [rbp-16], rsi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -70850,6 +70853,22 @@ _ZYL_populate_trait_impls:
     mov rdi, [rsp+0]
 call _ZYL_TC_impls
     add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_populate_trait_impls_list
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_populate_trait_impls_list:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 144
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-16]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
@@ -71043,7 +71062,7 @@ call _ZYL_mc_adt_param_order
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
-call _ZYL_populate_trait_impls
+call _ZYL_populate_trait_impls_list
     add rsp, 16
     mov [rsp], rax
     jmp .L3228
@@ -71056,7 +71075,7 @@ call _ZYL_populate_trait_impls
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
-call _ZYL_populate_trait_impls
+call _ZYL_populate_trait_impls_list
     add rsp, 16
     mov [rsp], rax
     jmp .L3228

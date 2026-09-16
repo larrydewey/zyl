@@ -1004,11 +1004,26 @@
               (Cons (MK fname (Cons (TVar 0 TUnit) Nil)) (struct-fields-to-mono rest)))))
         (d1 (struct-fields-to-mono rest))))))
 
+; trait-ctx is (TC (List TraitInfo) (List ImplInfo)); extracted once here
+; and handed to populate-trait-impls-list, which walks the plain (List
+; ImplInfo) it holds. The two used to be one function that extracted
+; trait-ctx's .impls at the top and then recursed by passing the
+; REMAINING ImplInfo list back in as if it were itself a fresh trait-ctx
+; -- (TC.impls trait-ctx) on that recursive call ran .impls's own match
+; against a List's Cons/Nil tag instead of TC's, which never matches,
+; silently returned the universal "no arm matched" sentinel (0), and
+; the very next line's (match 0 ...) as a list dereferenced a null
+; pointer. Splitting the one-time struct-field extraction from the
+; per-element list recursion (which needs no further contact with
+; trait-ctx at all) makes the mismatch impossible instead of relying on
+; every recursive call reconstructing the same struct shape by hand.
 (defn populate-trait-impls (ctx trait-ctx)
-  ; trait-ctx is (TC (List TraitInfo) (List ImplInfo))
-  ; ImplInfo = (II String Type (List (Pair String (List Type))))
-  ; Extract impls: trait_name → [impl_type]
-  (match (TC.impls trait-ctx)
+  (populate-trait-impls-list ctx (TC.impls trait-ctx)))
+
+; ImplInfo = (II String Type (List (Pair String (List Type))))
+; Extract impls: trait_name → [impl_type]
+(defn populate-trait-impls-list (ctx impls)
+  (match impls
     (Nil ctx)
     (Cons hd rest
       (match hd
@@ -1023,8 +1038,8 @@
               (mc-adt-insts ctx)
               (Cons (MK trait-name (Cons impl-type Nil)) (mc-timpls ctx))
               (mc-adt-param-order ctx)))
-            (populate-trait-impls new-ctx rest)))
-        (d1 (populate-trait-impls ctx rest))))))
+            (populate-trait-impls-list new-ctx rest)))
+        (d1 (populate-trait-impls-list ctx rest))))))
 
 ; Populate mono context with adt_param_order from type inferer
 (defn mono-context-populate-adt-order (ctx inferer)
