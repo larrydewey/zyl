@@ -399,22 +399,27 @@
         (let rr (ri-infer-expr ri right)
           (RR (ri-union-regions (RR.reg lr) (RR.reg rr)) None))))
     (ICall d5 args
-      (ri-infer-args ri args)
-      (RR RHeap None))
+      (begin
+        (ri-infer-args ri args)
+        (RR RHeap None)))
     (IFfi d6 args
-      (ri-infer-args ri args)
-      (RR RPin None))
+      (begin
+        (ri-infer-args ri args)
+        (RR RPin None)))
     (IPrint d7
-      (ri-infer-expr ri d7)
-      (RR RStack None))
+      (begin
+        (ri-infer-expr ri d7)
+        (RR RStack None)))
     (IIf cond then_ else_
-      (ri-infer-expr ri cond)
-      (let tr (ri-infer-expr ri then_)
-        (let er (ri-infer-expr ri else_)
-          (RR (ri-union-regions (RR.reg tr) (RR.reg er)) None))))
+      (begin
+        (ri-infer-expr ri cond)
+        (let tr (ri-infer-expr ri then_)
+          (let er (ri-infer-expr ri else_)
+            (RR (ri-union-regions (RR.reg tr) (RR.reg er)) None)))))
     (IWhile cond body
-      (ri-infer-expr ri cond)
-      (ri-infer-expr ri body))
+      (begin
+        (ri-infer-expr ri cond)
+        (ri-infer-expr ri body)))
     (ISet name val
       (let vr (ri-infer-expr ri val)
         (if (= (env-contains (RI.env ri) name) 0)
@@ -434,11 +439,13 @@
     (ISeq items
       (ri-infer-seq ri items))
     (IVariant d13 d14 d15
-      (ri-infer-args ri d15)
-      (RR RHeap None))
+      (begin
+        (ri-infer-args ri d15)
+        (RR RHeap None)))
     (IMatch scrutinee arms
-      (ri-infer-expr ri scrutinee)
-      (ri-infer-match-arms ri arms (RR RStack None)))
+      (begin
+        (ri-infer-expr ri scrutinee)
+        (ri-infer-match-arms ri arms (RR RStack None))))
     (IFn name params body
       (let env0 (RI.env ri)
         (let env1 (env-enter env0)

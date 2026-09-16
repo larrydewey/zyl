@@ -446,7 +446,15 @@
 ; monotonically increasing Int distinct from every earlier call, with no
 ; separate counter to thread through ic-expr's signature.
 (defn ic-fresh-id (arena)
-  (arena-alloc-zeroed arena 1))
+  ; NOTE: must be a deterministic, monotonically increasing value across
+  ; runs (used to name lifted match-arm/lambda helper functions) so that
+  ; stageN and stage(N+1) emit byte-identical assembly (the self-hosting
+  ; fixed point). A raw heap pointer is NOT deterministic (varies with
+  ; arena base address between runs); arena-used (the bump allocator's
+  ; byte offset from the arena's own base) is — every call still returns
+  ; a fresh, distinct value since it strictly increases with each alloc.
+  (let d1 (arena-alloc-zeroed arena 1)
+    (arena-used arena)))
 
 (defn ic-digit-str (d)
   (if (= d 0) "0"

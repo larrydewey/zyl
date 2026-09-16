@@ -1369,16 +1369,7 @@
         (match unified
                 (UOk
                     new-s
-    
-        Nil
-        Nil
-        Nil
-        Nil
-        Nil
-        (tc-new)
-        Nil
-        Nil
-        Nil                (let
+                    (let
                         (tt (infer-expr inferer then-))
                         (let
                             (et (infer-expr inferer else-))

@@ -1,5 +1,88 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-15, continued further)
+
+**stage2.bin segfault FIXED — true self-hosting fixed point reached (stage1 reproduces committed seed byte-for-byte; stage2==stage3).**
+
+Root-caused and fixed the "stage2.bin itself has a distinct bug" blocker from
+the previous entry below (`Expr.inner` null-deref reached through deep
+recursion in `collect-definitions`). Two separate bugs found via `gdb`
+(breakpoint on the crashing instruction, inspect `rdi`, walk back through
+`bt` to the miscompiled call site, then diff against the actual `deftype`
+arities in `expr_inner.zyl`/`icnf.zyl`):
+
+1. **`infer-expr-if` in `type_inference.zyl`**: its `(match unified (UOk
+   new-s ...))` arm had **9 stray literal tokens** (`Nil Nil Nil Nil Nil
+   (tc-new) Nil Nil Nil`) sitting between the bound name `new-s` and the
+   real body — leftover corruption from some earlier edit. Per the match-arm
+   grammar (`parse-match-arm` in `expr_inner.zyl`: *only the last form is the
+   body; everything else is treated as an additional bound field name*),
+   these 9 extra tokens were compiled as 9 *more* field-destructures off
+   `UOk` — which really has exactly 1 field (`(deftype UnifyResult (UOk
+   Subst) ...)` in `type_system.zyl`) — an out-of-bounds heap read every
+   time an `if` got type-checked. Fixed by deleting the stray tokens.
+2. **Seven arms in `region_inference.zyl`'s `ri-infer-expr`** (`ICall`,
+   `IFfi`, `IPrint`, `IIf`, `IWhile`, `IVariant`, `IMatch`) wrote *correct,
+   intentional* 2-statement bodies (a side-effecting call, then the real
+   result) directly as two trailing forms — e.g. `(IPrint d7 (ri-infer-expr
+   ri d7) (RR RStack None))` — without realizing the same grammar rule above
+   applies: `d7` binds fine, but the first body statement `(ri-infer-expr ri
+   d7)` (a call — i.e. "nested pattern" shaped) got treated as a *second
+   bound field* of `IPrint`, which per `icnf.zyl`'s `deftype Icnf` really
+   has only 1 payload field. Same OOB-read-off-the-end-of-the-struct bug,
+   this time additionally **misdirecting** which value gets passed to the
+   arm's (correctly, separately) lifted `_npmatch_NNN` helper — the bogus
+   OOB-read value stood in for the real last-bound field. Fixed by wrapping
+   each arm's 2-statement body in `(begin ...)` so the grammar sees exactly
+   one trailing body form, matching the working convention used everywhere
+   else in this file (`ISet`, `ILet`, etc., which already had single-body-form
+   arms and were never affected).
+
+After both fixes: `stage2.bin` (self-hosted-codegen'd machine code) compiles
+the trivial `(defn main () (print "hi"))` repro to completion (no crash),
+and — far more importantly — compiling its own full bundled source no
+longer segfaults either.
+
+**Bonus fix, found while verifying the actual self-hosting fixed point**:
+`icnf.zyl`'s `ic-fresh-id` (used to name lifted match-arm/lambda helper
+functions, e.g. `_npmatch_<id>`) returned a raw heap pointer
+(`arena-alloc-zeroed arena 1`) as the "unique id". Pointers are **not**
+deterministic across process runs (heap/arena base address varies), which
+broke run-to-run reproducibility of `stage2.bin`'s own output — confirmed by
+running the identical binary on the identical input twice and diffing
+(`f__npmatch_<pointer1>` vs `f__npmatch_<pointer2>`, otherwise byte-identical).
+Fixed by returning `(arena-used arena)` instead — the bump allocator's byte
+offset from the arena's own base, still monotonically increasing/distinct
+per call, but invariant across runs.
+
+**Verification of the actual self-hosting fixed point** (via the legacy
+`/tmp/zyl_boot_in.zyl` → `/tmp/zyl_boot_out.s` protocol, since `boot.sh`'s
+argv/`-o` CLI plumbing in `driver.zyl` is still a stub — a separate,
+pre-existing, unrelated gap, not touched here):
+- `stage1.bin` (cc-linked from the committed `build/boot/stage2.s` seed)
+  compiling `selfhost/zyl_selfhost_compiler.zyl` reproduces that seed
+  **byte-for-byte**.
+- `stage2.bin` (same seed, re-linked) does too — **stage2 == stage3
+  confirmed, true fixed point reached**, and the same binary run twice on
+  the same input is now byte-identical (the `ic-fresh-id` fix).
+- Re-seeded `build/boot/stage2.s` to this actual fixed point (previously
+  committed seed was only one Rust-cross-compile pass away from a stable
+  fixed point, one iteration short — a pre-existing gap, since nothing
+  before this session had gotten far enough for `stage2.bin` to even run
+  without segfaulting).
+- `run_regression_tests.sh --full --no-boot`: all green through the
+  already-known-slow `integration/selfhost-codegen` cutoff (unchanged/
+  pre-existing, not a new regression).
+- Smoke: `(print (applyit dbl 21)) (print (+ 1 2))` compiled by `stage2.bin`
+  and run → `42` / `3`, correct.
+
+**Still open (separate, pre-existing, out of scope here)**: `driver.zyl`
+has no real argv/CLI support (`-o`, positional source path, `--emit-asm` are
+all silently ignored; it always reads `/tmp/zyl_boot_in.zyl` and writes
+`/tmp/zyl_boot_out.s`), so `boot.sh`'s normal (non-`--bootstrap-from-rust`)
+flow still can't run end-to-end yet. Worth a follow-up session — this is
+purely a missing-feature gap in `driver.zyl`, not a correctness bug.
+
 ## Current Session (2026-09-15, continued)
 
 **stage1.bin self-hosted segfault: root-caused two duplicate-symbol collisions and one more deep-match codegen bug; bootstrap now gets much further.**
