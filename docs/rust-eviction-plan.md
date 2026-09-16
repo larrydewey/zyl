@@ -35,30 +35,60 @@ compile now instead of being rejected outright.
 found: one collision, five test files, all fixed by removing one error
 check. 26/43 → 31/43 on the full suite.
 
-### 2. Closures crash on nesting/higher-order use — NOT FIXED, highest remaining priority
+### 2. Closures crash on nesting/higher-order use — NOT FIXED, deliberately deferred
 
-`unit_test`'s "nested closures" test and `regression/functions`'
-"hof-closure" test both segfault; `regression/regions`'
-"region-heap-closure" test does too (only visible now that fix #1
+**Root-caused, but not a bug — a documented, deliberate architectural
+gap.** `icnf.zyl`'s own comment on `ic-lambda`/`ic-hoist` (~line 462)
+says it outright: "No free-variable capture: a `fn` referencing a name
+bound in an ENCLOSING scope (not its own params) reads as unbound in
+the lifted function, same as any other out-of-scope reference." Every
+`(fn ...)` gets lifted to a top-level function with zero access to its
+defining scope; a captured name resolves via the same
+unbound-name-falls-back-to-offset-0 mechanism that caused the
+`ic-wrap-one` bug, and calling the resulting garbage value crashes.
+
+Implementing this for real is a compiler feature addition, not a
+targeted fix: free-variable analysis over `fn` bodies, heap-allocating
+an environment block for captured values, changing the closure calling
+convention to a (code-pointer, env) pair, rewriting the lifted
+function's body to read captures from the env instead of as bare
+out-of-scope names, and updating every indirect-call site in
+`codegen.zyl` to match — comparable in scope to Rust's own
+`closure_inline.rs`. Deliberately deferred (user decision, 2026-09-16)
+in favor of the smaller, more contained items below; still the
+highest-impact gap once someone has the hours for it, since closures
+are basic and load-bearing, and three independent test files
+(`unit_test`, `regression/functions`, `regression/regions`) hit the
+identical crash on ordinary use, not some obscure edge case
+(`unit_test`'s "nested closures" sub-test, `regression/functions`'
+"hof-closure" sub-test, and `regression/regions`'
+"region-heap-closure" sub-test — the last only visible now that fix #1
 stopped `regions` from failing earlier, on the variant collision, for
-an unrelated reason). Three independent test files hitting the same
-crash class on ordinary closure usage (not some obscure edge case)
-means this is very likely a systemic codegen bug in how closures
-capture/call, not three separate small bugs — and since closures are a
-basic, load-bearing feature, it plausibly affects untested code far
-beyond these three files. Not yet root-caused. **Investigate this
-next** — same debugging shape as the `ic-wrap-one` free-variable bug
-found earlier this session (get a coredump, `bt`, work backward from
-the crashing instruction).
+an unrelated reason).
 
-### 3. Trait-dispatch compiler crash — NOT FIXED
+### 3. Trait-dispatch compiler crash — FIXED (commit `29ef5db`)
 
-`regression/traits` doesn't fail at runtime — it crashes the *compiler
-itself* (`_ZYL_populate_trait_impls`, in `stdlib/compiler/
-trait_dispatch.zyl`) while compiling ordinary trait-using code. A
-compiler crash (vs. a wrong-answer bug) blocks 100% of trait-using
-programs outright, so this is high priority despite being only one
-test file. Not yet root-caused.
+`regression/traits` didn't fail at runtime — it crashed the *compiler
+itself* (`_ZYL_populate_trait_impls`, actually defined in `stdlib/
+compiler/monomorphization.zyl`, not `trait_dispatch.zyl` despite the
+name) while compiling ordinary trait/impl declarations, even completely
+uncalled ones — the crashing test file's own header comment says
+dispatch itself isn't implemented, syntax only. Root cause:
+`populate-trait-impls` extracted `trait-ctx`'s `.impls` list once, then
+recursed by passing the *remaining list* back in as the `trait-ctx`
+parameter — the next call's own `(TC.impls trait-ctx)` ran `.impls`'s
+match against a `List`'s `Cons`/`Nil` tag instead of `TraitContext`'s
+`TC` tag, which never matches, silently returned the universal
+"no arm matched" sentinel (`0`), and matching that `0` as a list
+dereferenced a null pointer. Root-caused with a temporary FFI debug
+hook (`zyl_debug_ptr`, dumped raw tag/field words to `/tmp/dbg`,
+removed once done) that caught the exact moment a valid `TC` tag turned
+into a `List` tag through the same accessor. Fixed by splitting the
+one-time struct-field extraction from the per-element list recursion
+into two functions, so the two shapes can no longer be conflated.
+
+**Impact**: `regression/traits` compiler crash → 4/4 tests pass.
+31/43 → 32/43.
 
 ### 4. Match exhaustiveness checking is incomplete — NOT FIXED
 
