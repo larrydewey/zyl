@@ -136,15 +136,22 @@ real AST nodes nothing downstream would consume.
 **Impact**: `regression/contracts` link failure → 5/5 tests pass.
 32/43 → 33/43.
 
-### 6. Individual feature bugs, one file each — NOT FIXED
+### 6. Individual feature bugs, one file each
 
 Each of these is its own separate, unrelated bug — no shared root
 cause found, so no single fix helps more than one:
-- `regression/with-resource`: 5/6 sub-tests fail. Root cause found:
-  `EWithResource` (the AST node for `with-resource` blocks) isn't
-  handled anywhere in `icnf.zyl`'s `ic-expr` — confirmed via grep,
-  zero matches. Falls through to whatever the default/wildcard arm
-  does, silently producing wrong behavior instead of an error.
+- `regression/with-resource` — FIXED (commit `ff9b4a2`). Two bugs
+  stacked: `parse-with-resource` expected three flat top-level args
+  (name, init, body), but every real call site — including this file's
+  own header comment — uses `(with-resource (name init) body)`, a
+  parenthesized binding pair (same convention as `parse-let`'s
+  `(let (name value) body)` form), so parsing always fell through to
+  `EUnknown` before `icnf.zyl` ever saw a real `EWithResource` node;
+  separately, `ic-expr` had no case for `EWithResource` at all even if
+  one had arrived. The tests only exercise `let`-identical semantics
+  (bind, evaluate body, return body's value, proper shadowing), so
+  fixed by parsing the pair correctly and lowering exactly like `ELet`.
+  0/6 → 6/6; 33/43 → 34/43.
 - `regression/control-flow-ext`: 1/5 sub-tests fail (`while-compound`)
   — a while-loop-with-compound-body logic bug, not yet isolated
   further.
