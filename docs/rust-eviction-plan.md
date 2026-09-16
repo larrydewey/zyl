@@ -152,9 +152,30 @@ cause found, so no single fix helps more than one:
   (bind, evaluate body, return body's value, proper shadowing), so
   fixed by parsing the pair correctly and lowering exactly like `ELet`.
   0/6 → 6/6; 33/43 → 34/43.
-- `regression/control-flow-ext`: 1/5 sub-tests fail (`while-compound`)
-  — a while-loop-with-compound-body logic bug, not yet isolated
-  further.
+- `regression/control-flow-ext` — FIXED (commit `a4aad40`). Not a
+  while/compound-condition bug at all: `while-compound`'s own body has
+  an outer `let-mut i` whose *second* sibling body statement
+  (`assert-equal acc 25`) reads `acc`, bound by an *inner* `let-mut acc`
+  that's the outer's *first* sibling body statement — the original
+  author clearly intended the inner binding to stay in scope for the
+  rest of the sequence. `parse-body-from` (shared by every multi-
+  statement `defn`/`while`/`for`/`let`/`let-mut` body) wrapped multiple
+  trailing statements as flat, independent siblings, so the inner
+  let-mut's own scope for `acc` ended with its own body, and the
+  following sibling read `acc` as unbound — silently wrong, not an
+  error. Confirmed real, intended semantics (not a test bug) by
+  checking that Rust's bootstrap passes this exact test — not from any
+  special-casing at parse time (its parser.rs/ast.rs do the identical
+  flat wrap) but because `src/icnf.rs`'s entire architecture is
+  flat/SSA-style, so a `let` there never creates a disappearing nested
+  scope in the first place; this pipeline's own `icnf.zyl` is
+  tree-shaped with real lexical nesting, so matching that behavior
+  needed an actual fix, not architecture-driven parity. Fixed at the
+  AST level: `parse-body-from` now builds the sequence right-to-left,
+  and a `let`/`let-mut` element absorbs everything after it into its
+  own body instead of leaving it as a sibling — no changes needed to
+  `icnf.zyl`'s already-correct `ELet`/`ELetMut` lowering. 4/5 → 5/5;
+  34/43 → 35/43.
 - `regression/derive`: 3/5 sub-tests fail (`derive-eq-struct`,
   `derive-multi-trait`, `derive-generic-struct`) — derive-macro gaps
   for Eq, combining multiple derived traits, and generic structs.
