@@ -755,13 +755,52 @@
 ; trailing arg — a 3-statement let/let-mut/defn body silently ran only
 ; its last statement, with every earlier one (including side-effecting
 ; `set!`s) discarded before it ever reached codegen.
+; Sequence two already-converted body expressions. `EBegin` nesting is
+; harmless regardless of what `b` itself already is (a bare expr,
+; another EBegin, or an ELet/ELetMut whose own body already absorbed
+; further statements below) -- evaluation order and the final value
+; are the same either way.
+(defn sequence-two (a b)
+  (Expr (EBegin (Cons a (Cons b Nil)))))
+
+; Combine a list of already-converted body expressions into one,
+; letting a let/let-mut at a non-final position absorb everything
+; after it as its own nested body, instead of the flat-sequence
+; default of leaving it as a sibling statement. Matters because a
+; let/let-mut used as a mid-sequence statement (not the sequence's
+; sole/final expression) is meant to introduce a binding for the REST
+; of the enclosing body -- e.g. `(let-mut i 0 (let-mut acc 0 BODY)
+; (assert-equal acc N))`, where the outer let-mut's second body
+; statement still reads `acc`, bound by the inner let-mut's OWN third
+; argument-turned-sibling. Left as flat siblings (the previous
+; behavior), the inner let-mut's own body is exactly its own third
+; argument, its scope for `acc` ends there, and the following sibling
+; statement reads `acc` as an unbound name -- silently wrong (falls
+; back through env-lookup's unbound-name path, same failure shape as
+; every other "reads as unbound" bug found this session) rather than
+; erroring, since nothing here signals a scope violation. Built
+; right-to-left: each element's "rest" is already the fully-built tail,
+; so a let's new body is its own original body followed by that tail.
+(defn build-sequenced-body (exprs)
+  (match exprs
+    (Nil (Expr (EAtom ANil)))
+    (Cons only rest
+      (match rest
+        (Nil only)
+        (Cons d2 d3
+          (let restbody (build-sequenced-body rest)
+            (match (Expr.inner only)
+              (ELet name val body (Expr (ELet name val (sequence-two body restbody))))
+              (ELetMut name val body (Expr (ELetMut name val (sequence-two body restbody))))
+              (d1 (sequence-two only restbody)))))))))
+
 (defn parse-body-from (args start)
   (let rest (ast-list-nth-rest args start)
     (if (<= (list-length rest) 1)
       (match rest
         (Nil (Expr (EAtom ANil)))
         (Cons only d1 (convert-ast only)))
-      (Expr (EBegin (convert-ast-list rest))))))
+      (build-sequenced-body (convert-ast-list rest)))))
 
 (defn parse-let (args)
   (match (ast-nth args 0 (AstInt 0))
