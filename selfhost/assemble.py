@@ -349,26 +349,75 @@ src = ''.join(out)
 # Verify depth on the structural form first (strip comments for an
 # accurate count) -- this is the reliable, easy-to-eyeball check the
 # structural form exists for in the first place.
+#
+# Single-pass, string-aware scanner: tracks whether we're inside a
+# string literal (honoring backslash escapes) and whether we're inside
+# a line comment (a ';' outside a string, running to end of line), so
+# a ';' or a stray '(' / ')' inside a string literal -- e.g. a docstring
+# quoting example syntax like "(a (b (c)))" -- is never mistaken for a
+# real comment starter or a real paren. Per-line quote-parity checks
+# (the previous approach) break the moment a string spans more than one
+# line, since parity resets every line instead of carrying over.
 def strip_comments(t):
-    lines = t.split('\n')
     out = []
-    for l in lines:
-        idx = l.find(';')
-        if idx >= 0:
-            before = l[:idx]
-            if before.count('"') % 2 == 0:
-                out.append(l[:idx])
-            else:
-                out.append(l)
+    in_str = False
+    in_comment = False
+    i = 0
+    n = len(t)
+    while i < n:
+        c = t[i]
+        if in_comment:
+            if c == '\n':
+                in_comment = False
+                out.append(c)
+            i += 1
+            continue
+        if in_str:
+            out.append(c)
+            if c == '\\' and i + 1 < n:
+                out.append(t[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+        elif c == ';':
+            in_comment = True
         else:
-            out.append(l)
-    return '\n'.join(out)
+            out.append(c)
+        i += 1
+    return ''.join(out)
+
+def count_depth(t):
+    d = 0
+    in_str = False
+    i = 0
+    n = len(t)
+    while i < n:
+        c = t[i]
+        if in_str:
+            if c == '\\':
+                i += 2
+                continue
+            if c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+        elif c == '(':
+            d += 1
+        elif c == ')':
+            d -= 1
+        i += 1
+    return d
 
 txt = strip_comments(src)
-d = 0
-for c in txt:
-    if c == '(': d += 1
-    elif c == ')': d -= 1
+d = count_depth(txt)
 print('Final depth (comments stripped):', d, '(should be 0)')
 
 # Collapse whitespace for the actual written boot source -- see
@@ -376,28 +425,8 @@ print('Final depth (comments stripped):', d, '(should be 0)')
 # collapsed output too (comments are gone by construction: collapsing
 # would otherwise merge a ";..." comment with following code onto one
 # line, so strip comments before collapsing, not after).
-src_nocomments = strip_comments(src)
-collapsed = collapse_whitespace(src_nocomments)
-d2 = 0
-in_str = False
-i = 0
-while i < len(collapsed):
-    c = collapsed[i]
-    if in_str:
-        if c == '\\':
-            i += 2
-            continue
-        if c == '"':
-            in_str = False
-        i += 1
-        continue
-    if c == '"':
-        in_str = True
-    elif c == '(':
-        d2 += 1
-    elif c == ')':
-        d2 -= 1
-    i += 1
+collapsed = collapse_whitespace(txt)
+d2 = count_depth(collapsed)
 print('Collapsed depth:', d2, '(should be 0)')
 
 open('selfhost/zyl_selfhost_compiler.zyl', 'w').write(collapsed)
