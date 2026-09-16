@@ -24,7 +24,21 @@
 
 ; line col stack ctx ctx-col in-string in-comment escape-next err
 ;   stack :: (List (Pair expected-closer (Pair open-line open-col)))
-;   ctx   :: current partial line (last line seen so far)
+;   ctx   :: kept for the CheckState shape but never read (sb-report's
+;            output never uses it) and deliberately never re-grown after
+;            the first character -- it used to be rebuilt via str-concat
+;            on every single character (reset only on a newline), which
+;            for a single-line, whitespace-collapsed source of length n
+;            (e.g. the ~280KB assembled compiler bundle, no newlines at
+;            all) allocates and copies an O(n) string n times over: an
+;            O(n^2) blowup that, for a real-sized bundle, allocates on
+;            the order of tens of GB and left the heap arena in a state
+;            that went on to segfault much later, deep in an unrelated
+;            function, in a way that looked disconnected from this and
+;            shifted with unrelated nearby code changes -- confirmed via
+;            gdb backtraces that kept relocating between attempts to
+;            "fix" it elsewhere before this dead field turned out to be
+;            the actual source.
 ;   err   :: BalanceResult if a fatal deviation was recorded, else balanced
 (deftype CheckState
   (CS Int Int (List (Pair String (Pair Int Int))) String Int Int Int Int BalanceResult))
@@ -75,13 +89,13 @@
 (defn sb-advance (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0 err))))
 
 ; Advance and set escape-next so the following character is consumed raw.
 (defn sb-advance-escape (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 1 err))))
+      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 1 err))))
 
 ; Consume a character that was itself escaped (escape-next was 1 coming in):
 ; advance past it and CLEAR escape-next back to 0, so normal dispatch resumes
@@ -94,25 +108,25 @@
 (defn sb-consume-escaped (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0 err))))
 
 ; Enter string context on a quote.
 (defn sb-enter-string (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col 1 in-comment 0 err))))
+      (CS line (+ col 1) stack ctx ctx-col 1 in-comment 0 err))))
 
 ; Leave string context on a closing quote.
 (defn sb-exit-string (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col 0 in-comment 0 err))))
+      (CS line (+ col 1) stack ctx ctx-col 0 in-comment 0 err))))
 
 ; Enter line-comment context on a semicolon.
 (defn sb-enter-comment (c state)
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string 1 0 err))))
+      (CS line (+ col 1) stack ctx ctx-col in-string 1 0 err))))
 
 ; End-of-line: new line number, reset column and context line, exit comment.
 ; String context is preserved (multi-line strings stay inside a string).
@@ -127,7 +141,7 @@
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
       (CS line (+ col 1)
           (Cons (Pair closer (Pair line col)) stack)
-          (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+          ctx ctx-col in-string in-comment 0 err))))
 
 ; Closing bracket: verify against the stack head.
 (defn sb-close-bracket (c state closer)
@@ -135,14 +149,14 @@
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
       (match stack
         (Nil
-          (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0
+          (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0
             (UnbalancedClose closer line col)))
         (Cons top rest
           (match top
             (Pair expected (Pair ol oc)
               (if (= (str-eq expected closer) 1)
-                (CS line (+ col 1) rest (str-concat ctx c) ctx-col in-string in-comment 0 err)
-                (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0
+                (CS line (+ col 1) rest ctx ctx-col in-string in-comment 0 err)
+                (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0
                   (MismatchedPair expected closer line col))))))))))
 
 ; ===========================================================================
