@@ -1,5 +1,65 @@
 # Rust Eviction Plan (2026-09-12)
 
+## Status update (2026-09-16)
+
+**Phase A.8 (native error system / sexp_balance.zyl) is now actually
+done** — not just present, but verified end-to-end for the first time.
+`./boot.sh` (cc-only, no cargo) now holds the fixed point: stage1
+(cc-linked from the committed seed) reproduces `build/boot/stage2.s`
+byte-for-byte, stage2 == stage3, and the CLI smoke test compiles+links+
+runs correctly. See commits `68f53cb` (fix(icnf): pass free variables
+through nested-pattern-match helper, fix cg-variant alignment) and
+`7eb7c2e` (fix(assemble.py): string-aware paren-depth checks).
+
+What was actually wrong, for whoever picks up Phase B next: `sexp_balance
+.zyl`'s `sb-close-bracket` has a constructor pattern nested in field
+position (`(Pair expected (Pair ol oc))`). `icnf.zyl`'s `ic-wrap-one`
+outlined that inner pattern into a separate top-level helper function
+taking only the matched field as its parameter — but the helper's body
+(the arm's original continuation) freely references outer-scope names
+(sibling field bindings, the enclosing function's own parameters, its
+own outer match's bindings), none of which were passed in. This
+compiler has no free-variable/closure capture anywhere else either, so
+every such reference silently resolved via `env-lookup`'s unbound-name
+fallback (offset 0 — the helper's own saved rbp) instead of erroring.
+It read back as a plausible-looking but wrong pointer, correct by
+coincidence often enough (small inputs, shallow recursion) that it
+surfaced as a rare, seemingly-unrelated crash deep in
+`sb-result-balanced` rather than an obvious, immediate failure. Fixed
+by emitting a plain inline `IMatch` for the nested pattern instead of
+outlining it — sequential/chained matches (a match nested in another
+match's *arm body*) already compile and run correctly at three levels
+deep in this codegen (confirmed by tracing `sb-close-bracket`'s own
+compiled output); it was only the field-position-nested-pattern
+outlining path that was broken. If a similar "outlined helper drops
+outer scope" bug shows up elsewhere, `ic-wrap-one`/`ic-wrap-nested-all`
+in `icnf.zyl` is the pattern to check first — this compiler has no
+general free-variable capture mechanism, so anything that manufactures
+a new top-level function on the fly needs the same scrutiny.
+
+Separately, but in the same investigation: `cg-variant` (in
+`codegen.zyl`) padded odd field counts with a fixed `sub rsp, 8`
+assuming rsp was already 16-aligned on entry — wrong whenever the
+construction sat inside an outer field-push (nested variant/call
+arguments), since the outer call's already-pushed word count shifts
+real parity out from under a check that only looks at this call's own
+field count. Fixed by saving rsp, `and`-ing down to 16, and restoring
+after the call — correct regardless of what parity rsp arrived with.
+This was a real, separate defect, but empirically was not the trigger
+for the crash above; not fully ruled out as *a* trigger elsewhere,
+worth keeping an eye on.
+
+**Next up**: Phase B (region inference + `optimization.zyl`) is
+unstarted. Phase C (REPL) is unblocked now that Phase A.8 is real.
+Phase D (archive `src/`, delete Cargo files) has not been touched —
+Rust is still fully present and still what builds the seed via
+`./boot.sh --bootstrap-from-rust`. That reseed step is the *only*
+remaining place Rust is actually invoked in the normal `./boot.sh` flow
+(default `./boot.sh` with no args is already cargo-free); eviction
+still requires it to not be needed for reseeding either, which is
+Phase D/E territory, not started.
+
+
 Goal: remove the Rust bootstrap compiler entirely from Zyl's build/test/use
 path. Zyl is already fully self-hosting (fixed point verified); Rust remains
 only as: the stage1 builder, the standalone CLI, the REPL, the debug/CLI
@@ -78,7 +138,16 @@ Decisions locked (all "recommended" options):
 ## Risk register
 - **Fixed point fragility**: every compiler-source edit changes what
   self-compiled binaries look like. Must re-run assemble.py + boot.sh and
-  see stage2==stage3 before committing each batch.
+  see stage2==stage3 before committing each batch. As of 2026-09-16 this
+  also means: after any `.zyl` stdlib edit, re-run
+  `./boot.sh --bootstrap-from-rust` (reseed) *and then* a clean
+  `./boot.sh` (verify) — reseeding alone proves Rust can still compile
+  the source, not that the self-hosted compiler's own output is correct
+  when it compiles itself again. See the 2026-09-16 status update above
+  for the concrete bug class (`ic-wrap-one`'s dropped free variables)
+  that a reseed-only check would have missed indefinitely, since the
+  small/trivial inputs used for quick sanity checks don't reliably
+  exercise it.
 - **argv plumbing**: entry-stub change touches every compiled binary;
   harmless (two mov) but must be in stage2 before CLI works end-to-end.
 - **Exhaustiveness in selfhost compiler**: without the port, the two
