@@ -1096,3 +1096,56 @@ long long zyl_exec_cmd(long long cmd) {
     execl("/bin/sh", "sh", script_path, (char*)NULL);
     return -1;
 }
+
+#include <spawn.h>
+#include <sys/wait.h>
+extern char** environ;
+
+/* Compile an assembly file into a binary next to it (same path minus
+   ".s") via `cc`, using posix_spawn rather than fork()/system(): fork()
+   from this process's 64GB-stack worker thread is documented to crash
+   (see the system()-replacement note on zyl_exec_cmd above); posix_spawn
+   doesn't duplicate the caller's address space the way fork does, so it
+   doesn't hit that. Unlike zyl_exec_cmd (execl, replaces this process
+   image, never returns), this waits for the child and returns control
+   to the caller -- needed by the REPL, which must keep looping after
+   each compile. Returns the child's exit status (0 on a successful
+   compile), or -1 if the path is malformed or spawning/waiting fails. */
+long long zyl_cc_compile(long long path) {
+    const char* asm_path = (const char*)(size_t)path;
+    if (!asm_path) return -1;
+    size_t len = strlen(asm_path);
+    char out_path[512];
+    if (len >= 2 && asm_path[len - 2] == '.' && asm_path[len - 1] == 's') {
+        size_t base_len = len - 2;
+        if (base_len >= sizeof(out_path)) return -1;
+        memcpy(out_path, asm_path, base_len);
+        out_path[base_len] = 0;
+    } else {
+        if (len + 4 >= sizeof(out_path)) return -1;
+        snprintf(out_path, sizeof(out_path), "%s.bin", asm_path);
+    }
+    char* argv[] = {
+        (char*)"cc", (char*)"-no-pie", (char*)asm_path, (char*)"actor_runtime.c",
+        (char*)"-o", out_path, (char*)"-lpthread", NULL
+    };
+    pid_t pid;
+    if (posix_spawnp(&pid, "cc", NULL, NULL, argv, environ) != 0) return -1;
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
+}
+
+/* Run a compiled binary to completion and return its exit status. Same
+   posix_spawn rationale as zyl_cc_compile: must return control to the
+   caller (the REPL loop) rather than replace this process. */
+long long zyl_run_bin(long long path) {
+    const char* bin_path = (const char*)(size_t)path;
+    if (!bin_path) return -1;
+    char* argv[] = { (char*)bin_path, NULL };
+    pid_t pid;
+    if (posix_spawn(&pid, bin_path, NULL, NULL, argv, environ) != 0) return -1;
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
+}
