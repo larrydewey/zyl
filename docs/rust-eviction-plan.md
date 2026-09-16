@@ -49,15 +49,81 @@ This was a real, separate defect, but empirically was not the trigger
 for the crash above; not fully ruled out as *a* trigger elsewhere,
 worth keeping an eye on.
 
-**Next up**: Phase B (region inference + `optimization.zyl`) is
-unstarted. Phase C (REPL) is unblocked now that Phase A.8 is real.
-Phase D (archive `src/`, delete Cargo files) has not been touched —
+**Correction to an earlier draft of this note**: it originally said
+Phase B was unstarted. That was wrong — checked the actual code, not
+just this plan doc. `region_inference.zyl` and `optimization.zyl` are
+both fully wired into `driver.zyl`'s pipeline and already exercised by
+every self-hosted compile, including the verified fixed point above.
+The nuance worth knowing: `region_inference`'s result (`ri2`) is
+computed but never used — `driver.zyl` calls `ri-infer` for its own
+sake and then codegens straight from the pre-region-inference `fns`,
+so region inference currently has zero effect on generated code.
+`optimization.zyl`'s `opt-optimize` is not called *at all* in the real
+pipeline — `driver.zyl` passes `fns` through unchanged, with a comment
+explaining why: `opt-optimize` is written against `src/optimization.rs`'s
+SSA-form `ICNFNode`/`IFS` representation, while this pipeline's own
+`compiler/icnf.zyl` produces a different, simpler tree-shaped `Icnf`
+that `opt-optimize`'s pattern never matches — it would silently return
+an empty list (see the 2026-09-16 REPL section below for what that
+actually breaks in practice). So: Phase B is "present, compiles
+correctly, exercised on every build" but not "functionally doing
+anything to the compiled output" — both passes are dead code from the
+compiled program's point of view, kept alive only because `tools/
+repl.zyl` (Phase C) references them (see assemble.py's comment on why
+they're in the bundle's file list at all). Actually wiring either pass
+in for real is unstarted, separate work.
+
+**Phase C (REPL), 2026-09-16**: `tools/repl.zyl` existed but had never
+been run successfully by anyone — every attempt to compile it failed at
+link time. Fixed four real bugs (commit `f31d4a1`): a name collision
+between `contract_injection.zyl`'s and `closure_inline.zyl`'s
+same-named, different-arity `ci-expand-program` (repl.zyl imported
+both; driver.zyl deliberately doesn't, for exactly this reason); the
+same `opt-optimize`/ICNF-shape mismatch described above, which silently
+dropped every function including `main`; a call to `str-trim`, which
+doesn't exist anywhere in the codebase (implemented locally in
+repl.zyl); and `repl-is-quit` checking `str-eq ... = 0` (not-equal)
+instead of `= 1` (equal), so it quit on the very first line of input
+regardless of content. Also implemented the two FFI functions
+`repl-codegen` calls (`zyl_cc_compile`, `zyl_run_bin`) — they didn't
+exist in `runtime/actor_runtime.c` at all — using `posix_spawn`+
+`waitpid` rather than `fork()`/`system()`, both already documented
+elsewhere in this file as unsafe from the compiler's 64GB-stack worker
+thread.
+
+With all four fixed, the REPL *still* doesn't work end-to-end, and
+these remaining issues are not quick:
+- A trivial single-function snippet (`(defn main () (print (+ 1 2)))`)
+  compiles correctly through Rust's `codegen.rs` directly, but silently
+  drops `main` when compiled through this same self-hosted `icnf.zyl`/
+  `codegen.zyl` pipeline as executed at runtime by the REPL (i.e. the
+  same code path `./boot.sh`'s fixed-point check exercises — but that
+  check only ever feeds it the full ~280KB bundle, never a trivial
+  single-function program, so this edge case had apparently never been
+  hit before now).
+- Separately, `repl-read-line`'s own `(arena-create 1048576)` /
+  `(arena-alloc-zeroed ... 4096)` call was observed crashing with *both*
+  arguments corrupted to the same small integer (`2`, `2`) — a second,
+  unrelated-looking miscompilation in the same runtime pipeline.
+
+Two new, distinct, previously-unknown bugs surfacing in one session
+strongly suggests `tools/repl.zyl` has never actually been run
+end-to-end by anyone before — treat it as an unfinished skeleton that
+happens to now *link*, not a nearly-working REPL. Whoever picks this up
+next should expect more bugs of the same shape, not just these two.
+
+**Phase D** (archive `src/`, delete Cargo files) has not been touched —
 Rust is still fully present and still what builds the seed via
 `./boot.sh --bootstrap-from-rust`. That reseed step is the *only*
 remaining place Rust is actually invoked in the normal `./boot.sh` flow
 (default `./boot.sh` with no args is already cargo-free); eviction
 still requires it to not be needed for reseeding either, which is
 Phase D/E territory, not started.
+
+**Overall**: the fixed point holding solidly is the *precondition* for
+eviction, not the finish line. None of Phase D (archiving Rust) has
+started, and Phase B/C are both further along than "unstarted" but
+neither is functionally complete. Not close to eviction yet.
 
 
 Goal: remove the Rust bootstrap compiler entirely from Zyl's build/test/use
