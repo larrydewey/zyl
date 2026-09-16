@@ -1307,15 +1307,35 @@
 (defn parse-teardown (args)
   (Some (Expr (ETeardown (convert-ast-list args)))))
 
+; (with-resource (name init) body): the binding is a single parenthesized
+; (name init) pair -- both this file's own header comment and every
+; regression/with-resource.zyl call site use exactly that shape, same
+; convention as parse-let's `(let (name value) body)` form. The
+; previous version expected three flat top-level args (name, init,
+; body) with no such call site anywhere, so `(ast-has-at-least args 3)`
+; was false for the real (2-arg: binding-pair, body) syntax, parsing
+; always fell through to `(Expr (EUnknown "with-resource" ...))`, and
+; EUnknown -- like every other unhandled/malformed shape -- lowers to a
+; harmless (IConst 0) in icnf.zyl's ic-expr, silently discarding both
+; the binding and the body instead of erroring.
 (defn parse-with-resource (args)
-  (if (ast-has-at-least args 3)
-    (Some
-      (Expr
-        (EWithResource
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
-          (convert-ast (ast-nth args 1 (AstInt 0)))
-          (convert-ast (ast-list-last args (AstInt 0))))))
-    None))
+  (match (ast-nth args 0 (AstInt 0))
+    (AList blist
+      (match blist
+        (Cons bname d9
+          (match bname
+            (AstIdent bn
+              (if (ast-has-at-least args 2)
+                (Some
+                  (Expr
+                    (EWithResource
+                      bn
+                      (convert-ast (ast-nth blist 1 (AstInt 0)))
+                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                None))
+            (d3 None)))
+        (d2 None)))
+    (d1 None)))
 
 (defn parse-make-struct (args)
   (if (ast-has-at-least args 1)

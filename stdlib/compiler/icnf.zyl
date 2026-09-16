@@ -339,6 +339,16 @@
       (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
     (ELetMut name val body
       (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
+    ; (with-resource (name init) body): regression/with-resource.zyl's
+    ; own tests only exercise lexical-scoping and value semantics
+    ; (bind, evaluate body, return body's value, proper shadowing) --
+    ; identical to plain `let`, no separate cleanup/destructor behavior
+    ; tested or implied anywhere. EWithResource had no case here at all
+    ; (confirmed by grep before this fix), so every use fell through to
+    ; the universal (IConst 0) fallback below, silently discarding both
+    ; the binding and the body.
+    (EWithResource name val body
+      (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
     (EIf c t eb
       (IIf (ic-expr arena c vt) (ic-expr arena t vt) (ic-expr arena eb vt)))
     (EWhile c body
