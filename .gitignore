@@ -8,6 +8,8 @@
 # Compiler output
 *.bin
 *.s
+!build/boot/stage2.s
+!build/boot/stage2.bin
 
 # REPL / temporary test files
 a.out
