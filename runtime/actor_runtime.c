@@ -994,15 +994,37 @@ long long zyl_strcpy(long long dst, long long src) {
 
 /* Append src at the end of the NUL-terminated string in dst.
    Used by the Zyl-level buf-append wrapper so repeated appends
-   accumulate (matching the Rust bootstrap's StringBuffer backend). */
+   accumulate (matching the Rust bootstrap's StringBuffer backend).
+
+   Codegen re-appends into the same handful of long-lived buffers
+   (chiefly the single ~MB-scale asm output buffer) tens of thousands
+   of times per compile. Re-scanning from byte 0 on every call makes
+   the whole pass O(n^2) in final buffer size -- for a self-hosted
+   compile of its own ~3MB output this never finished in practice
+   (confirmed via gdb: stuck inside this scan). Small direct-mapped
+   cache of (address -> known end pointer) turns the common repeated-
+   same-buffer case O(1) amortized; a miss (new/rare address, or hash
+   collision) just falls back to the original full scan once. */
+#define ZSA_CACHE_SLOTS 64
+static long long zsa_cache_dst[ZSA_CACHE_SLOTS];
+static char* zsa_cache_end[ZSA_CACHE_SLOTS];
+
 long long zyl_str_append(long long dst, long long src) {
     if (!dst) return dst;
     if (!src) return dst;
-    char* d = (char*)(size_t)dst;
-    while (*d) d++;
+    size_t idx = ((size_t)dst >> 4) % ZSA_CACHE_SLOTS;
+    char* d;
+    if (zsa_cache_dst[idx] == dst) {
+        d = zsa_cache_end[idx];
+    } else {
+        d = (char*)(size_t)dst;
+        while (*d) d++;
+    }
     const char* s = (const char*)(size_t)src;
     while (*s) { *d++ = *s++; }
     *d = 0;
+    zsa_cache_dst[idx] = dst;
+    zsa_cache_end[idx] = d;
     return dst;
 }
 

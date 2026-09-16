@@ -124,6 +124,53 @@ def compact_to_structural(text):
     return '\n'.join(output_lines)
 
 
+def strip_named_defn(text, name):
+    """Remove every top-level `(defn <name> ...)` block from text entirely.
+
+    Used for library modules (e.g. sexp_balance.zyl) that define their own
+    standalone-CLI `main` for when they're compiled alone -- bundling them
+    ahead of selfhost/driver.zyl (the bundle's real entry point, always
+    last in `files`) let deduplicate_defns's first-occurrence-wins rule
+    silently keep the LIBRARY's `main` and drop driver.zyl's real one, so
+    a from-source rebuild produced a binary whose entire CLI was
+    sexp_balance's `usage: sexp_balance <file.zyl>` demo instead of the
+    compiler. Stripping the name from every non-driver file up front means
+    only driver.zyl's `main` ever reaches deduplicate_defns.
+    """
+    lines = text.split('\n')
+    out = []
+    i = 0
+    depth = 0
+    while i < len(lines):
+        line = lines[i]
+        for ch in line:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+        stripped = line.strip()
+        if stripped == f'defn {name}' or stripped.startswith(f'defn {name} '):
+            if out and out[-1].strip() == '(':
+                out.pop()
+            target_depth = depth - 1
+            i += 1
+            while i < len(lines):
+                l = lines[i]
+                for ch in l:
+                    if ch == '(':
+                        depth += 1
+                    elif ch == ')':
+                        depth -= 1
+                if depth == target_depth:
+                    i += 1
+                    break
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    return '\n'.join(out)
+
+
 def deduplicate_defns(text, seen_defns):
     """Remove duplicate defn definitions, keeping the first occurrence."""
     lines = text.split('\n')
@@ -293,6 +340,8 @@ seen_defns = set()
 for f in files:
     out.append(f'\n; ---------- {f} ----------\n')
     txt = file_to_structural(f)
+    if f != files[-1]:
+        txt = strip_named_defn(txt, 'main')
     txt = deduplicate_defns(txt, seen_defns)
     out.append(txt)
 src = ''.join(out)

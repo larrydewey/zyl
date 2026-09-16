@@ -117,4 +117,14 @@ long long zyl_atomic_min(long long addr, long long value);
 long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
 long long zyl_atomic_fetch_add(long long addr, long long value);
 
+/* CLI helpers. */
+void zyl_save_args(int argc, char** argv);
+long long zyl_argc(void);
+long long zyl_arg_str(long long i);
+long long zyl_dirname_cstr(long long path);
+long long zyl_chdir(long long path);
+long long zyl_getcwd(void);
+long long zyl_system_cmd(long long cmd);
+long long zyl_exec_cmd(long long cmd);
+
 #endif

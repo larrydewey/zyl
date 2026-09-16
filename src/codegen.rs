@@ -472,6 +472,23 @@ impl CodeGen {
         self.asm
             .push(format!("    sub rsp, {}", self.spill_frame.max(256) + 8));
 
+        // Save argc/argv (SysV: edi/rsi at entry, untouched by the sub rsp
+        // above) before any call clobbers those caller-saved registers.
+        // Without this, the self-hosted driver's CLI parsing (zyl_argc/
+        // zyl_arg_str) always sees argc==0 and silently falls back to its
+        // legacy fixed-path protocol instead of compiling the file actually
+        // named on the command line -- confirmed via test that a Rust-
+        // bootstrap-built binary invoked with real CLI args does exactly
+        // this. codegen.zyl's self-hosted entry stub already makes this same
+        // call first; this mirrors it. Must come after the sub rsp above (not
+        // before): emit_align_save_rsp stashes rsp into a frame-relative
+        // slot that assumes the frame is already allocated.
+        self.asm_push_align();
+        self.emit_align_save_rsp();
+        self.asm.push("    and rsp, -16".to_string());
+        self.asm.push("    call zyl_save_args@plt".to_string());
+        self.emit_align_restore_rsp();
+
         // Ensure Heap/Pin arenas are initialized before any allocations.
         self.asm_push_align();
         self.emit_align_save_rsp();
@@ -7280,119 +7297,54 @@ BinOpKind::Eq
             }
 
             ICNFInner::BufAppend { dst, src } => {
-                // buf-append(dst, src)
-                // dst = null-terminated arena pointer (Int), src = string pointer (String).
-                // Appends src's bytes (including terminator) at the end of dst's content.
-                // Returns the new total content length (Int) in eax.
-                // r12 preserves the dst start pointer across both strlen loops.
-                let strlen_dst_done = self.new_label();
-                let strlen_src_done = self.new_label();
-                let copy_done = self.new_label();
-
-                // buf-append's operands are pointers by contract (dst = arena/heap
-                // buffer, src = NUL-terminated string). Load them full 64-bit
-                // regardless of their inferred type, since an Int-typed variable may
-                // hold a 64-bit heap address (e.g. arena-alloc); 32-bit load truncates.
+                // buf-append(dst, src): append src's bytes (incl. NUL) onto the
+                // end of dst's content, returning dst.
                 //
-                // Load SRC FIRST and save it on the stack. If src is a function-call
-                // result that was already emitted (e.g. pool-str pool id), emit_load_into
-                // leaves that value in rax expecting no intervening code to clobber it;
-                // the dst computation below pushes and loads r12/rax/rsi/rcx, destroying
-                // rax. Saving src first lets us pop it into rdx after computing dst,
-                // and rdx is not clobbered by the dst strlen either.
+                // This used to inline its own strlen(dst)+strlen(src)+copy loops
+                // directly here, re-scanning dst from byte 0 on every single
+                // call. codegen.zyl's own emit path calls buf-append thousands
+                // of times per compile, all appending into the SAME growing
+                // output buffer -- re-scanning it from the start each time made
+                // the whole pass O(n^2) in final buffer size, and a self-hosted
+                // compile of the compiler's own ~3MB output never finished
+                // (confirmed via gdb: stuck inside the inlined dst-strlen loop
+                // for the entire run). Delegating to the runtime zyl_str_append
+                // helper (which now caches the last-seen end-of-buffer per
+                // address, O(1) amortized for the common repeated-same-buffer
+                // case) fixes this without touching the self-hosted pipeline,
+                // which already calls that same helper via ffi-call for buf-
+                // append (see stdlib/compiler/expr_inner.zyl's comment on why
+                // it deliberately does NOT special-case buf-append the way this
+                // Rust bootstrap historically did) -- this also removes a
+                // behavioral difference between the two compilers.
+                //
+                // Argument loading keeps the original hand-rolled choreography
+                // (load src into rax, push it, THEN load dst into rax) rather
+                // than the generic emit_ffi_call_direct helper (which loads
+                // dst into rdi first, then src into rsi): a first attempt
+                // using that helper crashed with rdi==rsi at the call site
+                // (confirmed via gdb) on real self-hosted-compile input,
+                // apparently from src's evaluation clobbering the
+                // already-loaded dst register before the call. Loading src
+                // first and stashing it on the stack, THEN loading dst last
+                // (straight into rdi, right before the call, with nothing
+                // in between that could clobber it) sidesteps that.
                 self.emit_load_into(
                     *src, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
-                // Push order matters: r12 (caller-saved dst-start) is pushed FIRST,
-                // then src on TOP. The pops below must then take src into rdx before
-                // restoring r12 — matching the LIFO order.
-                self.asm_push_align();
-                self.asm.push("    push r12           # preserve dst start".to_string());
                 self.asm_push_align();
                 self.asm.push("    push rax            # save src pointer".to_string());
                 self.emit_load_into(
-                    *dst, "rax", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
+                    *dst, "rdi", stmts, local_vars, lookup, emitted_ids, operand_ids, phi_slots,
                 );
                 self.asm_push_align();
-                self.asm.push("    mov r12, rax        # r12 = dst start".to_string());
+                self.asm.push("    pop rsi             # src pointer".to_string());
                 self.asm_push_align();
-                self.asm.push("    mov rsi, rax        # rsi = dst pointer".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov rax, 0          # strlen counter".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov rcx, rsi        # rcx = scan pointer".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("strlen_dst_{}:", self.label_counter));
-                self.asm_push_align();
-                self.asm.push("    cmp byte ptr [rcx], 0".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    je {}", strlen_dst_done));
-                self.asm_push_align();
-                self.asm.push("    inc rcx".to_string());
-                self.asm_push_align();
-                self.asm.push("    inc rax".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    jmp strlen_dst_{}", self.label_counter));
-                self.label_counter += 1;
-                self.asm_push_align();
-                self.asm.push(format!("{}:", strlen_dst_done));
-                self.asm_push_align();
-                self.asm.push("    mov rdi, rcx        # rdi = copy destination (dst end)".to_string());
-                self.asm_push_align();
-                self.asm.push("    pop rdx             # rdx = src pointer".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov rax, 0          # strlen counter".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov rcx, rdx        # rcx = scan pointer".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("strlen_src_{}:", self.label_counter));
-                self.asm_push_align();
-                self.asm.push("    cmp byte ptr [rcx], 0".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    je {}", strlen_src_done));
-                self.asm_push_align();
-                self.asm.push("    inc rcx".to_string());
-                self.asm_push_align();
-                self.asm.push("    inc rax".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    jmp strlen_src_{}", self.label_counter));
-                self.label_counter += 1;
-                self.asm_push_align();
-                self.asm.push(format!("{}:", strlen_src_done));
-                self.asm_push_align();
-                // rax = src_len. Copy src_len+1 bytes (including null terminator).
-                self.asm.push("    inc rax             # count = src_len + 1".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov rcx, rax        # rcx = byte count".to_string());
-                self.asm_push_align();
-                self.asm.push("    xor rax, rax        # copy index".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("copy_loop_{}:", self.label_counter));
-                self.asm_push_align();
-                self.asm.push("    cmp rax, rcx".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    jge {}", copy_done));
-                self.asm_push_align();
-                self.asm.push("    mov r8b, byte ptr [rdx + rax]".to_string());
-                self.asm_push_align();
-                self.asm.push("    mov byte ptr [rdi + rax], r8b".to_string());
-                self.asm_push_align();
-                self.asm.push("    inc rax".to_string());
-                self.asm_push_align();
-                self.asm.push(format!("    jmp copy_loop_{}", self.label_counter));
-                self.label_counter += 1;
-                self.asm_push_align();
-                self.asm.push(format!("{}:", copy_done));
-                self.asm_push_align();
-                // Return new total length = dst_len + src_len.
-                // rcx = src_len + 1 at this point; rax is a copy index (== count).
-                self.asm.push("    mov rax, rdi".to_string());
-                self.asm_push_align();
-                self.asm.push("    sub rax, r12       # rax = dst_len".to_string());
-                self.asm_push_align();
-                self.asm.push("    lea rax, [rax + rcx - 1]  # + src_len".to_string());
-                self.asm_push_align();
-                self.asm.push("    pop r12             # restore r12".to_string());
+                self.emit_align_save_rsp();
+                self.asm.push("    and rsp, -16".to_string());
+                self.asm.push("    call zyl_str_append@plt".to_string());
+                self.emit_align_restore_rsp();
+                emitted_ids.insert(node.id);
             }
 
             ICNFInner::Call(name, args) => {

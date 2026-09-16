@@ -83,6 +83,19 @@
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 1 err))))
 
+; Consume a character that was itself escaped (escape-next was 1 coming in):
+; advance past it and CLEAR escape-next back to 0, so normal dispatch resumes
+; for the character after it. Reusing sb-advance-escape here (which always
+; sets escape-next to 1) made escape mode permanently sticky after the very
+; first backslash-escape anywhere in the input: every subsequent character
+; for the rest of the file was treated as "still escaped" and never dispatched
+; through the bracket/quote/comment tracking, always landing on an unbalanced
+; result for any real source containing more than one escape sequence.
+(defn sb-consume-escaped (c state)
+  (match state
+    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack (str-concat ctx c) ctx-col in-string in-comment 0 err))))
+
 ; Enter string context on a quote.
 (defn sb-enter-string (c state)
   (match state
@@ -141,7 +154,7 @@
   (match state
     (CS line col stack ctx ctx-col in-string in-comment escape-next err
       (if (= escape-next 1)
-        (sb-advance-escape c state)
+        (sb-consume-escaped c state)
         (if (= in-comment 1)
           (sb-process-comment-char c state)
           (if (= in-string 1)

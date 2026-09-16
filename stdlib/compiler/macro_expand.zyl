@@ -37,22 +37,10 @@
     (MNil Nil)
     (MEntry n params d1 rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
 
-(defn mt-case (mt on-nil on-entry)
-  (match mt
-    (MNil (on-nil))
-    (MEntry n params body rest (on-entry n params body rest))))
-
 (defn mt-body (mt name)
-  (if (> (mt-has mt name) 0)
-    (mt-case mt
-      (fn () (Expr (EAtom ANil)))
-      (fn (n params body rest) body))
-    (mt-body-loop mt name)))
-
-(defn mt-body-loop (mt name)
-  (mt-case mt
-    (fn () (Expr (EAtom ANil)))
-    (fn (n params body rest) (if (> (str-eq n name) 0) body (mt-body-loop rest name)))))
+  (match mt
+    (MNil (Expr (EAtom ANil)))
+    (MEntry n d1 body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
 
 ; --- collect top-level macro defs --------------------------------------------
 
