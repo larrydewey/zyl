@@ -676,20 +676,28 @@
 ; which zyl_variant_eq (actor_runtime.c) reads to do structural equality
 ; on two separately-allocated ADT/struct values without a runtime type
 ; tag. Fields are evaluated and pushed, then popped into the block
-; (right to left). An odd field count gets 8 bytes of pad to keep rsp
-; 16-aligned across the call.
+; (right to left). Alignment for the call is forced via rsp itself
+; (save to r12, AND down to 16, restore after) rather than padding by
+; this call's own field-count parity: that parity-based padding used to
+; assume rsp was already 16-aligned at entry to cg-variant, which broke
+; whenever this construction sat inside an outer field-push (nested
+; variant/call arguments), because the outer call's already-pushed word
+; count shifts the actual parity out from under a check that only looks
+; at n. Saving/restoring rsp around the call sidesteps that regardless
+; of any outer pushes.
 (defn cg-variant (st env tag fields)
   (let n (list-length fields)
     (let st2 (cg-push-fields st env fields)
-      (let st3 (if (= (% n 2) 1) (cg-emit-line st2 "    sub rsp, 8") st2)
-        (let st4 (cg-nl (cg-emit-int (cg-emit st3 "    mov rdi, ") (* 8 (+ n 1))))
-          (let st5 (cg-emit-line st4 "    call zyl_heap_alloc")
-            (let st6 (cg-emit-line st5 "    mov rbx, rax")
-              (let st7 (cg-emit-int (cg-emit st6 "    mov qword ptr [rbx], ") tag)
-                (let st8 (cg-nl st7)
-                  (let st9 (if (= (% n 2) 1) (cg-emit-line st8 "    add rsp, 8") st8)
-                    (let st10 (cg-pop-fields st9 (- n 1))
-                      (cg-emit-line st10 "    mov rax, rbx"))))))))))))
+      (let st3 (cg-emit-line st2 "    mov r12, rsp")
+        (let st4 (cg-emit-line st3 "    and rsp, -16")
+          (let st5 (cg-nl (cg-emit-int (cg-emit st4 "    mov rdi, ") (* 8 (+ n 1))))
+            (let st6 (cg-emit-line st5 "    call zyl_heap_alloc")
+              (let st7 (cg-emit-line st6 "    mov rsp, r12")
+                (let st8 (cg-emit-line st7 "    mov rbx, rax")
+                  (let st9 (cg-emit-int (cg-emit st8 "    mov qword ptr [rbx], ") tag)
+                    (let st10 (cg-nl st9)
+                      (let st11 (cg-pop-fields st10 (- n 1))
+                        (cg-emit-line st11 "    mov rax, rbx")))))))))))))
 
 ; Evaluate each field left-to-right, pushing its value.
 (defn cg-push-fields (st env fields)

@@ -1060,20 +1060,29 @@
     (Nil body)
     (Cons entry rest (ic-wrap-one arena entry (ic-wrap-nested-all arena rest body vt) vt))))
 
-; codegen.zyl documents (see cg-label-pair) that a match nested inside
-; another match's arm, within the SAME compiled function, miscompiles —
-; "each match is the entire body of its own defn". So the inner match
-; this wrap needs can't be embedded inline; it's built as its own
-; top-level helper IFn instead (one param: the field value to match on)
-; and called from here. The helper is never referenced structurally
-; from this point on — it's stashed as a throwaway ILet's VALUE purely
-; so ic-hoist's existing whole-tree walk (which already knows how to
-; pull an embedded IFn out to the top level and everywhere else in this
-; file relies on for lambdas) finds it and lifts it out; the ILet's
-; body is the real result: an ordinary direct call to that now-top-
-; level helper. Recursive, so a deeper nested sub-pattern's own inner
-; match gets the exact same treatment one level down, never landing two
-; matches deep in any single function regardless of pattern depth.
+; Used to outline the inner match into its own top-level helper IFn,
+; called with only the field value to match on, out of a belief that
+; codegen.zyl's cg-label-pair comment ("each match is the entire body
+; of its own defn") meant nested matches miscompile in the same
+; function. That belief was wrong for what actually matters here:
+; sequential/chained matches (a match nested in an *arm body*, as
+; opposed to a constructor pattern nested in *field position*) compile
+; and run correctly at three levels deep and more -- confirmed by
+; tracing sb-close-bracket's own compiled output, which chains exactly
+; that shape. The outlined helper, meanwhile, was a genuine bug: `body`
+; (the arm's continuation) freely references outer-scope names (other
+; sibling field bindings, the enclosing function's own parameters, its
+; own outer match's bindings) that were never among the helper's
+; parameters. Since this compiler has no free-variable/closure capture
+; anywhere else either, every such reference resolved via env-lookup's
+; unbound-name fallback (offset 0, i.e. the helper's own saved rbp) --
+; not a heap value at all, silently. It read back as a plausible-looking
+; but wrong pointer, correct by pure chance often enough (small inputs,
+; shallow recursion) to look like a rare, unrelated, deep crash instead
+; of what it was: every reference to an enclosing-scope name inside a
+; nested-pattern arm being systematically wrong. Emitting a plain
+; inline IMatch instead keeps the whole thing in the same function's
+; scope, where every one of those names is already visible normally.
 (defn ic-wrap-one (arena entry body vt)
   (match entry
     (NPEntry bindname pat
@@ -1082,15 +1091,10 @@
           (let subpats (ic-pat-args pat)
             (let subbinds (ic-arm-binds arena subpats)
               (let subnested (ic-arm-nested subpats subbinds)
-                (let helper (str-intern arena (str-concat "_npmatch_" (ic-int-to-str (ic-fresh-id arena))))
-                  (let dummy (str-intern arena (str-concat "_npdummy_" (ic-int-to-str (ic-fresh-id arena))))
-                    (ILet dummy
-                          (IFn helper (Cons bindname Nil)
-                               (IMatch (ILoad bindname)
-                                       (Cons (IArm (str-intern arena subname) subtag subbinds
-                                                   (ic-wrap-nested-all arena subnested body vt))
-                                             Nil)))
-                          (ICall helper (Cons (ILoad bindname) Nil)))))))))))))
+                (IMatch (ILoad bindname)
+                        (Cons (IArm (str-intern arena subname) subtag subbinds
+                                    (ic-wrap-nested-all arena subnested body vt))
+                              Nil))))))))))
 
 ; ─── E_MATCH_ARM_COMPLEX guard ────────────────────────────────────────────
 ; A match-arm body whose TOP-LEVEL binop combines a constant with two or

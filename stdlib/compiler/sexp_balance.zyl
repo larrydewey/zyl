@@ -22,26 +22,34 @@
   (UnbalancedClose String Int Int)
   (MismatchedPair String String Int Int))
 
-; line col stack ctx ctx-col in-string in-comment escape-next err
-;   stack :: (List (Pair expected-closer (Pair open-line open-col)))
-;   ctx   :: kept for the CheckState shape but never read (sb-report's
-;            output never uses it) and deliberately never re-grown after
-;            the first character -- it used to be rebuilt via str-concat
-;            on every single character (reset only on a newline), which
-;            for a single-line, whitespace-collapsed source of length n
-;            (e.g. the ~280KB assembled compiler bundle, no newlines at
-;            all) allocates and copies an O(n) string n times over: an
-;            O(n^2) blowup that, for a real-sized bundle, allocates on
-;            the order of tens of GB and left the heap arena in a state
-;            that went on to segfault much later, deep in an unrelated
-;            function, in a way that looked disconnected from this and
-;            shifted with unrelated nearby code changes -- confirmed via
-;            gdb backtraces that kept relocating between attempts to
-;            "fix" it elsewhere before this dead field turned out to be
-;            the actual source.
-;   err   :: BalanceResult if a fatal deviation was recorded, else balanced
+; line col stack ctx-col in-string in-comment escape-next err
+;   stack  :: (List (Pair expected-closer (Pair open-line open-col)))
+;   (there used to be a `ctx` field here too -- "current partial line",
+;   rebuilt via str-concat on every single character and only ever reset
+;   on a newline. Nothing read it (sb-report's output never references
+;   it), so it was pure dead weight -- but for a single-line, whitespace-
+;   collapsed source of length n with no newlines at all (e.g. the
+;   ~280KB assembled compiler bundle), rebuilding it via str-concat on
+;   every character is an O(n^2) allocation: for a real-sized bundle,
+;   tens of GB actually allocated, corrupting the heap arena in a way
+;   that only surfaced later as a segfault deep in an unrelated
+;   function -- confirmed via gdb backtraces that kept relocating
+;   between attempts to fix it elsewhere before this dead field turned
+;   out to be the actual source. Removed entirely rather than just
+;   left unused, both because it was genuinely never needed and because
+;   an odd CheckState field count (9, with `ctx` present) turned out to
+;   also trip a separate stack-alignment bug in codegen.zyl's cg-variant
+;   for nested variant construction -- CS's own construction embeds
+;   other 0-field variant constructions (Nil, Balanced) as arguments,
+;   and cg-variant's odd/even alignment padding is computed purely from
+;   the CURRENT call's own field count, not the caller's already-pushed
+;   argument count at the point that nested call happens. Even field
+;   count sidesteps it here; the alignment computation itself is still
+;   wrong in general and is a separate, not-yet-fixed defect in
+;   cg-variant.)
+;   err    :: BalanceResult if a fatal deviation was recorded, else balanced
 (deftype CheckState
-  (CS Int Int (List (Pair String (Pair Int Int))) String Int Int Int Int BalanceResult))
+  (CS Int Int (List (Pair String (Pair Int Int))) Int Int Int Int BalanceResult))
 
 ; ===========================================================================
 ; CHARACTER CLASSIFICATION (byte values, ASCII)
@@ -88,14 +96,14 @@
 ; `escape-next` falls back to False. All other flags are preserved.
 (defn sb-advance (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
 
 ; Advance and set escape-next so the following character is consumed raw.
 (defn sb-advance-escape (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 1 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col in-string in-comment 1 err))))
 
 ; Consume a character that was itself escaped (escape-next was 1 coming in):
 ; advance past it and CLEAR escape-next back to 0, so normal dispatch resumes
@@ -107,57 +115,57 @@
 ; result for any real source containing more than one escape sequence.
 (defn sb-consume-escaped (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
 
 ; Enter string context on a quote.
 (defn sb-enter-string (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col 1 in-comment 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col 1 in-comment 0 err))))
 
 ; Leave string context on a closing quote.
 (defn sb-exit-string (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col 0 in-comment 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col 0 in-comment 0 err))))
 
 ; Enter line-comment context on a semicolon.
 (defn sb-enter-comment (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx ctx-col in-string 1 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS line (+ col 1) stack ctx-col in-string 1 0 err))))
 
 ; End-of-line: new line number, reset column and context line, exit comment.
 ; String context is preserved (multi-line strings stay inside a string).
 (defn sb-new-line (state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
-      (CS (+ line 1) 1 stack "" 1 in-string 0 0 err))))
+    (CS line col stack ctx-col in-string in-comment escape-next err
+      (CS (+ line 1) 1 stack 1 in-string 0 0 err))))
 
 ; Opening bracket: push expected closer with its position.
 (defn sb-open-bracket (c state closer)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+    (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1)
           (Cons (Pair closer (Pair line col)) stack)
-          ctx ctx-col in-string in-comment 0 err))))
+          ctx-col in-string in-comment 0 err))))
 
 ; Closing bracket: verify against the stack head.
 (defn sb-close-bracket (c state closer)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+    (CS line col stack ctx-col in-string in-comment escape-next err
       (match stack
         (Nil
-          (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0
-            (UnbalancedClose closer line col)))
+          (let new-err (UnbalancedClose closer line col)
+            (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err)))
         (Cons top rest
           (match top
             (Pair expected (Pair ol oc)
               (if (= (str-eq expected closer) 1)
-                (CS line (+ col 1) rest ctx ctx-col in-string in-comment 0 err)
-                (CS line (+ col 1) stack ctx ctx-col in-string in-comment 0
-                  (MismatchedPair expected closer line col))))))))))
+                (CS line (+ col 1) rest ctx-col in-string in-comment 0 err)
+                (let new-err (MismatchedPair expected closer line col)
+                  (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err))))))))))
 
 ; ===========================================================================
 ; CHARACTER DISPATCH (context-aware)
@@ -166,7 +174,7 @@
 ; Top dispatcher: honor escape/comment/string first, else normal scanning.
 (defn sb-process-char (c state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+    (CS line col stack ctx-col in-string in-comment escape-next err
       (if (= escape-next 1)
         (sb-consume-escaped c state)
         (if (= in-comment 1)
@@ -220,14 +228,22 @@
 
 ; Scan a NUL-terminated buffer by index. Stops early once the error slot
 ; is filled (fatal deviation), otherwise advances one frame per char.
+; `init-err` is bound before the CS call rather than nesting `Balanced`
+; directly as CS's last argument -- a nested variant construction inline
+; as another constructor's argument miscompiles under the current
+; bootstrap (see the field-count-parity note on CheckState above; the
+; underlying defect survives even after the parity workaround, so every
+; nested construction site is pre-bound through a `let` instead, the
+; same workaround already used for `str-concat` call arguments).
 (defn sb-check-string (src)
-  (let len (str-length src)
-    (let final-state (sb-scan-index src 0 len (CS 1 1 Nil "" 1 0 0 0 Balanced))
-      (sb-finalize final-state))))
+  (let init-err Balanced
+    (let len (str-length src)
+      (let final-state (sb-scan-index src 0 len (CS 1 1 Nil 1 0 0 0 init-err))
+        (sb-finalize final-state)))))
 
 (defn sb-scan-index (src idx len state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+    (CS line col stack ctx-col in-string in-comment escape-next err
       (if (>= idx len)
         state
         (if (= (sb-result-balanced err) 1)
@@ -238,7 +254,7 @@
 ; Resolve the terminal diagnosis from the final state.
 (defn sb-finalize (state)
   (match state
-    (CS line col stack ctx ctx-col in-string in-comment escape-next err
+    (CS line col stack ctx-col in-string in-comment escape-next err
       (if (= (sb-result-balanced err) 1)
         (if (= in-string 1)
           UnbalancedOpenString
