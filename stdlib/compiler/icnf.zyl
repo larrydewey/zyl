@@ -928,7 +928,7 @@
 ; Check if any arm is a catch-all (wildcard) — variant not in VT.
 (defn ic-arm-is-catchall (vt arm)
   (let iname (MA.variant arm)
-    (= (ic-vt-has-variant vt iname) 0))
+    (= (ic-vt-has-variant vt iname) 0)))
 
 ; Check if any arm is catch-all
 (defn ic-has-catchall (arms vt)
@@ -946,7 +946,7 @@
       (let iname (MA.variant arm)
         (if (= (vt-tag-of vt iname) -1)
           (let msg (str-concat "E_MATCH_NONEXHAUSTIVE: unknown variant `" (str-concat iname "` in match arm"))
-            (ffi-call "zyl_f_error" msg 1000)
+            (ffi-call "zyl_f_error" msg 1000))
           (ic-check-variants-exist rest vt))))))
 
 ; Exhaustiveness check: if no catch-all arm, verify each arm's variant
@@ -961,7 +961,7 @@
 (defn ic-match (arena subj arms vt)
   (let _ (ic-check-exhaustive arms vt)
     (IMatch (ic-expr arena subj vt)
-            (list-reverse (ic-arms arena arms (no-iarms) vt))))
+            (list-reverse (ic-arms arena arms (no-iarms) vt)))))
 
 (defn ic-arms (arena arms acc vt)
   (match arms
