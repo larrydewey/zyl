@@ -911,12 +911,12 @@ impl PostProcessor {
                 ExprInner::StructDef(sd) | ExprInner::StructDefPlus(sd) => {
                     self.struct_names.insert(sd.name.clone());
                 }
-                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct") && args.len() >= 1 => {
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct") && !args.is_empty() => {
                     if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
                         self.struct_names.insert(n.clone());
                     }
                 }
-                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct+") && args.len() >= 1 => {
+                ExprInner::Call(op, args) if Self::is_ident_op(op, "defstruct+") && !args.is_empty() => {
                     if let ExprInner::Atom(Atom::Ident(n)) = &args[0].inner {
                         self.struct_names.insert(n.clone());
                     }
@@ -1082,9 +1082,9 @@ impl PostProcessor {
     /// Two surface forms are accepted, since the reader gives them different
     /// shapes depending on whether the field list is empty:
     ///   - combined:  (Variant field1 field2 ... body)
-    ///       parses as Call(head=Variant-ident, args=[field1, field2, ..., body])
+    ///     parses as Call(head=Variant-ident, args=[field1, field2, ..., body])
     ///   - wrapped:   ((Variant field1 field2 ...) body...)
-    ///       parses as Call(head=(Variant field1 field2 ...)-expr, args=[body...])
+    ///     parses as Call(head=(Variant field1 field2 ...)-expr, args=[body...])
     ///     because the reader treats a non-atom first element of a list as an
     ///     ordinary Call head. Here `head` is itself the field-pattern list, and
     ///     the remaining args are the body (wrapped in Begin if there's more
@@ -1141,6 +1141,7 @@ impl PostProcessor {
         let field_hints: Option<&Vec<String>> = outer_adt
             .as_ref()
             .and_then(|adt| self.variant_field_types.get(&(adt.clone(), outer_variant.to_string())));
+        #[allow(clippy::needless_range_loop)]
         for i in 0..pats.len() {
             // Is pattern[i] a variant-shaped pattern? Raw form: Call/Apply
             // headed by a known variant identifier.
@@ -1357,7 +1358,7 @@ impl PostProcessor {
             }
 
             // trait → TraitDecl (Call form).
-            ExprInner::Call(op, args) if Self::is_ident_op(op, "trait") && args.len() >= 1 => {
+            ExprInner::Call(op, args) if Self::is_ident_op(op, "trait") && !args.is_empty() => {
                 let trait_name = match &args[0].inner {
                     ExprInner::Atom(Atom::Ident(n)) => n.clone(),
                     _ => return expr,

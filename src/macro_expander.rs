@@ -1335,7 +1335,6 @@ impl MacroExpander {
                     // No child expressions to expand (or handled inline above).
                     Atom(_)
                     | Error(_)
-                    | Lambda(_, _, _)
                     | ModuleDecl(_)
                     | UseModule(..)
                     | Deftype(..)

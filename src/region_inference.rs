@@ -184,6 +184,7 @@ pub struct RegionInferer {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct FuncSig {
     pub param_regions: Vec<Region>,
     pub return_region: Region,

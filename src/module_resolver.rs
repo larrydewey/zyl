@@ -4,6 +4,9 @@ use indexmap::IndexMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Type alias for use statement tuple to avoid clippy::type_complexity.
+type UseStmt = (String, Option<Vec<String>>, bool);
+
 /// Resolves module declarations and use statements into a flat AST.
 ///
 /// Strategy:
@@ -309,7 +312,7 @@ impl ModuleResolver {
     /// Parse source and extract use statements (without post-processing body).
     /// Use statements are extracted from raw parsed expressions before
     /// dependency resolution, so post-processing isn't needed for this step.
-    fn extract_use_stmts(&self, source: &str) -> Result<(Vec<(String, Option<Vec<String>>, bool)>, Vec<String>), ZylModuleError> {
+    fn extract_use_stmts(&self, source: &str) -> Result<(Vec<UseStmt>, Vec<String>), ZylModuleError> {
         use crate::lexer;
         use crate::parser;
 
@@ -318,7 +321,7 @@ impl ModuleResolver {
         p.no_dispatch = true;
         let exprs = p.parse_exprs(|k| matches!(k, lexer::TokenKind::EOF))?;
 
-        let mut use_stmts: Vec<(String, Option<Vec<String>>, bool)> = Vec::new();
+        let mut use_stmts: Vec<UseStmt> = Vec::new();
         let mut export_stmts: Vec<String> = Vec::new();
 
         for expr in &exprs {
@@ -478,6 +481,7 @@ impl ModuleResolver {
 }
 
 /// Convert module resolution errors to ZylError.
+#[allow(dead_code)]
 pub fn module_error_to_zyl(err: ZylModuleError) -> ZylError {
     match err {
         ZylModuleError::NotFound(name, _path) => ZylError::E_MODULE_NOT_FOUND(name, _path),

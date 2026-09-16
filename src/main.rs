@@ -168,7 +168,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Apply to the monomorphized AST (regioned_for_mono) which has full structure,
     // NOT the typed AST which replaces expressions with type annotations.
     println!("[Phase 10] Contract injection ...");
-    let mut contract_injector = contract_injection::ContractInjector::new();
+    let contract_injector = contract_injection::ContractInjector::new();
     let mut exprs_for_icnf = regioned_for_mono.clone();
     match contract_injector.inject(&mut exprs_for_icnf) {
         Ok(()) => {}

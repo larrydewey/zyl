@@ -177,7 +177,7 @@ impl ContractInjector {
 
     fn walk_expr_mut(&self, expr: &mut Expr) -> Result<(), ZylError> {
         match &mut expr.inner {
-            ExprInner::Def(name, body) => self.walk_expr_mut(body),
+            ExprInner::Def(_name, body) => self.walk_expr_mut(body),
             ExprInner::Defn(_, _, body) => self.walk_expr_mut(body),
             ExprInner::Let(_, value, body) => {
                 self.walk_expr_mut(value)?;
@@ -232,7 +232,7 @@ impl ContractInjector {
             }
             ExprInner::Deftype(_, variants, _, _) => {
                 for v in variants {
-                    for field in &mut v.fields {
+                    for _field in &mut v.fields {
                         // No nested exprs in field types for now
                     }
                 }

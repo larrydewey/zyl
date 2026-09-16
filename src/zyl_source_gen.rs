@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 
 /// Zyl source code emitter — converts optimized ICNF back to Zyl S-expression source.
 /// This is the first step toward self-hosting: generating Zyl source from Zyl programs.
+#[allow(dead_code)]
 pub struct ZylSourceGen {
     pub source: Vec<String>,
     /// Maps SSA IDs to variable names for output.
@@ -17,6 +18,7 @@ pub struct ZylSourceGen {
     emitted: crate::deterministic::HashSet<usize>,
 }
 
+#[allow(dead_code)]
 impl ZylSourceGen {
     pub fn new() -> Self {
         Self {
@@ -402,7 +404,7 @@ impl ZylSourceGen {
     }
 
     /// Convert a single ICNF node to an inline expression using local branch map.
-    fn node_to_expr_inline<'a>(&mut self, node: &ICNFNode, id_to_expr: &'a indexmap::IndexMap<usize, String>) -> String {
+    fn node_to_expr_inline(&mut self, node: &ICNFNode, id_to_expr: &indexmap::IndexMap<usize, String>) -> String {
         match &node.node {
             ICNFInner::Const(atom) => self.atom_to_str(atom),
             ICNFInner::Load(var_name) => var_name.clone(),
@@ -561,12 +563,15 @@ impl ZylSourceGen {
             Type::ResultType(ok, err) => format!("Result<{}, {}>", self.type_to_str(ok), self.type_to_str(err)),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        self.source.join("\n")
+impl std::fmt::Display for ZylSourceGen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.source.join("\n"))
     }
 }
 
+#[allow(dead_code)]
 fn binop_to_str(op: BinOpKind) -> &'static str {
     match op {
         BinOpKind::Add => "+",
@@ -585,6 +590,7 @@ fn binop_to_str(op: BinOpKind) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn unop_to_str(op: UnOpKind) -> &'static str {
     match op {
         UnOpKind::Not => "not",

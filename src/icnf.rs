@@ -6,14 +6,14 @@ use crate::error::ZylError;
 use crate::region_inference::Region;
 use crate::type_system::Type;
 
+/// Type alias for deferred capture tuple to avoid clippy::type_complexity.
+type DeferredCapture = (usize, Expr, String, IndexMap<String, usize>, Vec<String>);
+
 /// Sanitize an identifier for use as an assembly label: replace characters
 /// that are illegal in asm symbol names (hyphens, dots, and the `?`/`!`
 /// predicate/mutation-convention suffixes) with underscores.
 fn sanitize_name(name: &str) -> String {
-    name.replace('-', "_")
-        .replace('.', "_")
-        .replace('?', "_")
-        .replace('!', "_")
+    name.replace(['-', '.', '?', '!'], "_")
 }
 
 /// Collect all variable names referenced in an expression (for closure capture analysis).
@@ -543,8 +543,8 @@ pub struct IcnfConverter {
     closure_bodies: IndexMap<usize, Vec<ICNFNode>>,
     /// Closure metadata: closure_id → (name, captures).
     closures: IndexMap<usize, (String, Vec<CaptureField>)>,
-    /// Deferred captures: (closure_ssa_id, body_expr, original_binding_name) collected during let-value conversion.
-    deferred_captures: Vec<(usize, Expr, String, IndexMap<String, usize>, Vec<String>)>,
+    /// Deferred captures: (closure_ssa_id, body_expr, original_binding_name, ssa_map, cap_names).
+    deferred_captures: Vec<DeferredCapture>,
     pending_cap_patches: Vec<(String, Vec<CaptureField>)>,
     /// True while converting a let-binding value expression.
     in_let_value: bool,
@@ -665,7 +665,7 @@ impl IcnfConverter {
     /// Recursively rewrite ICNFInner::Closure nodes with `name` so their
     /// captures match `caps`.
     fn patch_node_captures(
-        stmts: &mut Vec<ICNFNode>,
+        stmts: &mut [ICNFNode],
         name: &str,
         caps: &[CaptureField],
     ) {
@@ -994,6 +994,7 @@ impl IcnfConverter {
                                 self.struct_bindings.insert(ssa_id, t.clone());
                             }
                         } else if let Some(ref sig) = resolved_sig {
+                            #[allow(clippy::collapsible_match)]
                             if let Some((_, pt)) = sig.iter().find(|(pn, _)| pn == &param.name) {
                                 if let Type::Nominal(tn) = pt {
                                     if self.struct_layouts.contains_key(tn) {
@@ -1103,8 +1104,7 @@ impl IcnfConverter {
                     // Collect all nodes added by body conversion (pushed to global_stmts).
                     let mut func_body: Vec<ICNFNode> = self.global_stmts
                         .iter()
-                        .skip(len_before)
-                        .map(|n| n.clone())
+                        .skip(len_before).cloned()
                         .collect();
                     // Test functions always return 0 (assertion failures panic via zyl_panic).
                     let zero_id = self.next_ssa_id();
@@ -1213,7 +1213,7 @@ impl IcnfConverter {
                     });
                 }
                 // Call form for assert-true (no-dispatch mode).
-                ExprInner::Call(op, args) if is_ident_op(op, "assert-true") && args.len() >= 1 => {
+                ExprInner::Call(op, args) if is_ident_op(op, "assert-true") && !args.is_empty() => {
                     let expr_id = self.convert_expr(&args[0])?;
                     self.global_stmts.push(ICNFNode {
                         id: self.next_ssa_id(),
@@ -1227,7 +1227,7 @@ impl IcnfConverter {
                     });
                 }
                 // Call form for assert-false (no-dispatch mode).
-                ExprInner::Call(op, args) if is_ident_op(op, "assert-false") && args.len() >= 1 => {
+                ExprInner::Call(op, args) if is_ident_op(op, "assert-false") && !args.is_empty() => {
                     let expr_id = self.convert_expr(&args[0])?;
                     let not_id = self.next_ssa_id();
                     self.global_stmts.push(ICNFNode {
@@ -2549,7 +2549,7 @@ impl IcnfConverter {
             // Call form for assert-true (no-dispatch mode).
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-true")
-                    && args.len() >= 1 =>
+                    && !args.is_empty() =>
             {
                 let mut result = self.convert_expr_collect(&args[0])?;
                 let expr_id = result.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
@@ -2572,7 +2572,7 @@ impl IcnfConverter {
             // Call form for assert-false (no-dispatch mode).
             ExprInner::Call(op, args)
                 if matches!(&op.inner, ExprInner::Atom(Atom::Ident(n)) if n == "assert-false")
-                    && args.len() >= 1 =>
+                    && !args.is_empty() =>
             {
                 let mut result = self.convert_expr_collect(&args[0])?;
                 let expr_id = result.last().map(|n| n.id).unwrap_or(self.next_ssa_id());
@@ -3643,7 +3643,7 @@ impl IcnfConverter {
             stmt.is_branch_body = true;
         }
         // Else: remaining clauses as a nested cond (chained), or empty.
-        let mut else_stmts = if idx + 1 < clauses.len() {
+        let else_stmts = if idx + 1 < clauses.len() {
             let mut rest = self.convert_cond_recursive(clauses, idx + 1)?;
             for stmt in &mut rest {
                 stmt.is_branch_body = true;
@@ -4356,6 +4356,7 @@ impl IcnfConverter {
 
 /// Recursively collect all statement ids embedded in an ICNF node's
 /// nested control flow (If branches, Match arms).
+#[allow(dead_code)]
 fn collect_embedded_ids(node: &ICNFNode, out: &mut crate::deterministic::HashSet<usize>) {
     out.insert(node.id);
     match &node.node {
@@ -4394,6 +4395,7 @@ fn is_arithmetic_or_cmp_name(name: &str) -> bool {
 }
 
 /// Check if an expression looks like a value (not another Call/Apply).
+#[allow(dead_code)]
 fn is_expr_value(args: &[Expr]) -> bool {
     !matches!(
         &args[0].inner,
@@ -4402,6 +4404,7 @@ fn is_expr_value(args: &[Expr]) -> bool {
 }
 
 /// Check if this is a unary minus candidate.
+#[allow(dead_code)]
 fn is_unary_minus_candidate(expr: &Expr) -> bool {
     matches!(&expr.inner, ExprInner::Atom(_)) || !is_expr_value_single(expr)
 }
@@ -4541,11 +4544,13 @@ fn parse_single_param(expr: &Expr) -> Param {
 // fine. Operand ids reference sibling statements in the same arm body,
 // which is where the flattened argument evaluations live.
 
+#[allow(dead_code)]
 fn is_call_stmt(node: &ICNFNode) -> bool {
     matches!(node.node, ICNFInner::Call(_, _) | ICNFInner::FfiCall { .. })
 }
 
 
+#[allow(dead_code)]
 pub fn validate_match_arm_complexity(program: &ICNFProgram) -> Result<(), ZylError> {
     fn check_body(body: &[ICNFNode], fn_name: &str, variant: &str) -> Result<(), ZylError> {
         let mut lookup: std::collections::BTreeMap<usize, &ICNFNode> = std::collections::BTreeMap::new();

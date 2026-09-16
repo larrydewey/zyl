@@ -33,6 +33,7 @@ impl AdtInstantiation {
     /// Legacy sorted-unique naming. Ambiguous for multi-param ADTs
     /// ({T:Int,E:String} and {T:String,E:Int} collide); kept only for
     /// single-constraint records.
+    #[allow(dead_code)]
     pub fn canonical_name(&self, adt: &str) -> Option<String> {
         let mut tys: Vec<&str> = self.params.iter().map(|(_, t)| t.as_str()).collect();
         tys.sort();
@@ -184,6 +185,7 @@ impl TypeInferer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn take_first_body_error(&mut self) -> Option<ZylError> {
         self.first_body_error.take()
     }
@@ -259,13 +261,12 @@ impl TypeInferer {
             }
             if let Some(entries) = self.known_functions.get_mut(fname) {
                 for (j, entry) in entries.iter_mut().enumerate() {
-                    if j < resolved.len() {
-                        if matches!(entry.1, Type::Var(_)) {
+                    if j < resolved.len()
+                        && matches!(entry.1, Type::Var(_)) {
                             if let Some(ts) = &resolved[j] {
                                 entry.1 = type_from_display(ts);
                             }
                         }
-                    }
                 }
             }
         }
@@ -1311,9 +1312,7 @@ impl TypeInferer {
                     return Ok(Type::Prim(PrimType::Unit));
                 }
                 for e in &exprs[..exprs.len() - 1] {
-                    if let Err(err) = self.infer_expr(e) {
-                        return Err(err);
-                    }
+                    self.infer_expr(e)?;
                 }
                 self.infer_expr(exprs.last().unwrap())
             }
@@ -1632,7 +1631,7 @@ ExprInner::WithResource(name, init, body) => {
 
             ExprInner::Derive(type_name, traits) => {
                 let ty = self
-                    .resolve_type_name(&type_name)
+                    .resolve_type_name(type_name)
                     .unwrap_or(Type::Nominal(type_name.clone()));
                 for tn in traits.iter() {
                     if !self.trait_ctx.check_derivable(&ty, tn) {
@@ -1644,7 +1643,7 @@ ExprInner::WithResource(name, init, body) => {
                     }
                     // Register derived impl with generated methods
                     let impl_type = ty.clone();
-                    let methods = self.generate_derive_methods(&type_name, tn);
+                    let methods = self.generate_derive_methods(type_name, tn);
                     if let Err(e) = self.trait_ctx.register_impl(ImplInfo {
                         trait_name: tn.clone(),
                         impl_type,
@@ -1861,9 +1860,7 @@ ExprInner::WithResource(name, init, body) => {
                 if matches!(expected_params[i].1, Type::Var(_)) {
                     bound_param_types.push(at);
                 } else {
-                    if let Err(e) = self.unify(&at, &expected_params[i].1, expr.span.clone()) {
-                        return Err(e);
-                    }
+                    self.unify(&at, &expected_params[i].1, expr.span.clone())?;
                     bound_param_types.push(expected_params[i].1.clone());
                 }
             }
@@ -1914,7 +1911,7 @@ ExprInner::WithResource(name, init, body) => {
                 self.env = old_env;
                 match prev_ret {
                     Some(prev) => { self.function_returns.insert(name.to_string(), prev); }
-                    None => { self.function_returns.remove(&name.to_string()); }
+                    None => { self.function_returns.shift_remove(&name.to_string()); }
                 }
                 match inferred_ret {
                     Ok(ret_ty) => {
@@ -2265,7 +2262,7 @@ ExprInner::WithResource(name, init, body) => {
 /// Generate method implementations for derived traits.
 fn generate_derive_methods(&self, type_name: &str, trait_name: &str) -> IndexMap<String, Type> {
     let mut methods = IndexMap::new();
-    let struct_fields = self.struct_defs.get(type_name).cloned().unwrap_or_default();
+    let _struct_fields = self.struct_defs.get(type_name).cloned().unwrap_or_default();
 
     match trait_name {
         "Eq" => {
@@ -2546,6 +2543,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
     }
 
     /// Expose match-arm pattern variables that bind String fields.
+    #[allow(dead_code)]
     pub fn get_string_match_vars(&self) -> crate::deterministic::HashSet<String> {
         self.string_match_vars.borrow().clone()
     }
@@ -2575,11 +2573,13 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
 
     /// Mark generic function names to skip during collect_definitions (after monomorphization).
     /// Prevents overwriting resolved types with fresh type vars from original generic defs.
+    #[allow(dead_code)]
     pub fn mark_skipped_generic_defs(&self, names: crate::deterministic::HashSet<String>) {
         *self.skip_generic_def_names.borrow_mut() = names;
     }
 
     /// Expose struct definitions with type variables resolved via substitution.
+    #[allow(dead_code)]
     pub fn get_resolved_struct_defs(&self) -> IndexMap<String, Vec<(String, Option<Type>)>> {
         self.struct_defs
             .iter()
@@ -2605,6 +2605,7 @@ fn is_skip_placeholder(expr: &Expr) -> bool {
 
     /// Expose ADT instantiation info: which concrete types each generic ADT was used with.
     /// Generic parameter declaration order per ADT (for positional naming).
+    #[allow(dead_code)]
     pub fn get_adt_param_order(&self) -> &IndexMap<String, Vec<String>> {
         &self.adt_param_order
     }

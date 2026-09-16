@@ -49,6 +49,7 @@ impl Optimizer {
     }
 
     /// Return a summary of optimization statistics.
+    #[allow(dead_code)]
     pub fn stats(&self) -> &IndexMap<String, usize> {
         &self.stats
     }

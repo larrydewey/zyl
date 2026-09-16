@@ -309,8 +309,7 @@ impl Parser {
     }
 
     fn dispatch(&self, span: &Span, op: &str, args: &[Expr]) -> Result<Expr, ZylError> {
-        if op == "deftype" {
-        }
+        
         // Use sequential if-else to avoid type mismatch in match arms.
         macro_rules! check_arity {
             ($name:expr, $min:expr, $max:expr, $args:expr) => {{
@@ -362,8 +361,7 @@ impl Parser {
         }
 
         // When no_dispatch is set (inside defmacro args), return raw Call/Apply instead of dispatching.
-        if op == "deftype" {
-        }
+        
         if self.no_dispatch {
             let first = Box::new(Expr {
                 span: Span::default(),

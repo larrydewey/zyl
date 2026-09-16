@@ -84,6 +84,7 @@ impl MonoContext {
     }
 
     /// Return the names of all generic functions discovered during AST scanning.
+    #[allow(dead_code)]
     pub fn get_generic_names(&self) -> Vec<&String> {
         self.generic_functions.keys().collect()
     }
@@ -493,8 +494,6 @@ impl MonoContext {
                                 | "or"
                         )
                     {
-                        result.push(self.substitute_in_expr(expr));
-                    } else {
                         result.push(self.substitute_in_expr(expr));
                     }
                 }
@@ -946,7 +945,7 @@ impl MonoContext {
                             return Type::Nominal(tname);
                         }
                     }
-                    return ret_ty;
+                    ret_ty
                 } else if fname == "vec"
                     || is_ident_op(
                         &Expr {
@@ -1547,7 +1546,7 @@ impl MonoContext {
             let mut merged_target: Option<usize> = None;
             for (idx, existing) in records.iter().enumerate() {
                 let compatible = rec.params.iter().all(|(p, t)| {
-                    existing.get(p).map_or(true, |et| et == t)
+                    existing.get(p).is_none_or(|et| et == t)
                 });
                 if compatible {
                     merged_target = Some(idx);
@@ -1888,6 +1887,7 @@ impl MonoContext {
             .find(|k| norm(k) == target)
             .cloned()
     }
+    #[allow(dead_code)]
     pub fn debug_has_struct(&self, n: &str) -> (bool, bool) {
         (self.struct_defs.contains_key(n), self.known_types.contains_key(n))
     }

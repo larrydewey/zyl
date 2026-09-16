@@ -1,0 +1,126 @@
+
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/module_resolver)
+(use compiler/macro_expand)
+(use compiler/monomorphization)
+(use compiler/contract_injection)
+(use compiler/icnf)
+(use compiler/trait_dispatch)
+(use compiler/closure_inline)
+(use compiler/assert_lowering)
+(use compiler/codegen)
+(use compiler/region_inference)
+(use compiler/optimization)
+
+(def repl-banner "Zyl REPL — type expressions, :q to quit")
+
+(defn repl-print-banner ()
+  (print repl-banner))
+
+(defn repl-read-line (fd)
+  (let buf (arena-alloc-zeroed (arena-create 1048576) 4096)
+    (let n (file-read fd 4095)
+      (if (> n 0)
+        (let line (str-substring buf 0 n)
+          (Some (str-trim line)))
+        None))))
+
+(defn repl-trim (s)
+  (str-trim s))
+
+(defn repl-is-quit (line)
+  (or (= (str-eq line ":q") 0) (= (str-eq line ":quit") 0)))
+
+(defn repl-wrap-expr (arena line) String
+  (str-concat "(defn main () " (str-concat line ")")))
+
+(defn repl-parse (arena src)
+  (zyl-parse arena src))
+
+(defn repl-resolve (arena exprs)
+  (mr-resolve-program arena exprs))
+
+(defn repl-expand (exprs)
+  (me-expand-program exprs))
+
+(defn repl-infer (exprs)
+  (collect-definitions (inferer-new) exprs))
+
+(defn repl-contracts (exprs)
+  (ci-expand-program exprs))
+
+(defn repl-monomorphize (inferer exprs)
+  (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
+    (monomorphize mono-ctx exprs)))
+
+(defn repl-trait-dispatch (exprs)
+  (td-expand-program exprs))
+
+(defn repl-closure-inline (arena exprs)
+  (ci-expand-program arena exprs))
+
+(defn repl-assert-lowering (exprs)
+  (al-expand-program exprs))
+
+(defn repl-icnf (arena exprs)
+  (ic-program arena exprs))
+
+(defn repl-region-infer (fns)
+  (let ri (ri-new)
+    (ri-infer fns ri)))
+
+(defn repl-optimize (fns)
+  (opt-optimize fns))
+
+(defn repl-codegen (arena fns)
+  (let opt-fns (repl-optimize fns)
+    (let st (cg-program (cg-new arena) opt-fns)
+      (let buf (cg-buffer st)
+        (let out (file-open "/tmp/repl_out.s" "w")
+          (let n (file-write out buf)
+            (let d1 (file-close out)
+              (let cc (ffi-call "zyl_cc_compile" "/tmp/repl_out.s" 1000)
+                (if (= cc 0)
+                  (ffi-call "zyl_run_bin" "/tmp/repl_out" 1000)
+                  -1))))))))
+
+(defn repl-compile-and-run (arena line)
+  (let wrapped (repl-wrap-expr arena line)
+    (let prog (repl-parse arena wrapped)
+      (let exprs0 (convert-ast-list prog)
+        (let exprs1 (repl-resolve arena exprs0)
+          (let exprs (repl-expand exprs1)
+            (let inferer (repl-infer exprs)
+              (let ci-exprs (repl-contracts exprs)
+                (let mono-exprs (repl-monomorphize inferer ci-exprs)
+                  (let td-exprs (repl-trait-dispatch mono-exprs)
+                    (let ci-exprs2 (repl-closure-inline arena td-exprs)
+                      (let al-exprs (repl-assert-lowering ci-exprs2)
+                        (let fns (repl-icnf arena al-exprs)
+                          (repl-region-infer fns)
+                          (repl-codegen arena fns)))))))))))))))
+
+
+(defn repl-loop (arena)
+  (let fd (file-open "/dev/stdin" "r")
+    (if (> fd 0)
+      (let line (repl-read-line fd)
+        (if line
+          (if (repl-is-quit line)
+            (begin (print "Goodbye!") 0)
+            (let result (repl-compile-and-run arena line)
+              (if (> result 0)
+                (print (str-concat "Error: " (ffi-call "zyl_cstr_from_int" arena result 1000)))
+                (print (str-concat "=> " (ffi-call "zyl_cstr_from_int" arena result 1000)))))
+              (repl-loop arena))
+          (repl-loop arena)))
+      -1)))
+
+(defn main ()
+  (let arena (arena-create 1048576)
+    (print "Zyl REPL — type expressions, :q to quit")
+    (repl-loop arena)))
