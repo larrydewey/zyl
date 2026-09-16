@@ -265,18 +265,43 @@
 (defn ic-vt-deftype (name variants vt)
   (vt-from-adtvariants variants vt 0))
 
+; True within-one-deftype duplicate check: does `nm` appear again among
+; this SAME deftype's own remaining variants? (Not the accumulated vt
+; from earlier deftypes -- see vt-from-adtvariants below.)
+(defn av-list-has-name (variants nm)
+  (match variants
+    (Nil 0)
+    (Cons v rest
+      (if (> (str-eq (AV.name v) nm) 0) 1 (av-list-has-name rest nm)))))
+
 ; Link one variant entry per variant; tail = next entry chain. Tags
 ; assigned in declaration order (first variant gets the lowest tag).
+;
+; A variant name repeated within THIS deftype's own variant list is
+; always a genuine bug (two constructors that could never be told
+; apart) and still errors. A name reused by a DIFFERENT, earlier-
+; declared deftype no longer does: since each deftype's variants are
+; prepended ahead of whatever vt already held (see the Cons arm below),
+; and deftypes are processed in source order, a later declaration's
+; entries always end up earlier in the list than -- and so shadow --
+; anything an earlier declaration registered under the same name. That
+; lets, e.g., a test file's own Option-like ADT reuse "Some"/"None"
+; without colliding with the stdlib prelude's real Option, the same
+; way later bindings already shadow earlier ones elsewhere in this
+; language. It's also exactly the fallback the Rust bootstrap's own
+; find_adt_for_variant uses absent a type hint ("returns the first ADT
+; found by iteration order") -- this compiler has no scrutinee-type-
+; aware hint mechanism to do better, so consistent shadowing is the
+; right behavior until one exists, not a hard error blocking otherwise
+; valid programs from compiling at all.
 (defn vt-from-adtvariants (variants vt tag)
   (match variants
     (Nil vt)
     (Cons v rest
       (let tail (vt-from-adtvariants rest vt (+ tag 1))
         (let nm (AV.name v)
-          ; Duplicate variant names across deftypes create incompatible
-          ; constructor identities whose pattern matches silently fail.
-          (if (> (vt-tag-of tail nm) -1)
-            (ffi-call "zyl_f_error" "E_DUPLICATE_VARIANT: variant name defined by more than one deftype" 1000)
+          (if (> (av-list-has-name rest nm) 0)
+            (ffi-call "zyl_f_error" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
             (VTEntry nm
                      tag
                      (AV.fields v)
