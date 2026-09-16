@@ -9018,19 +9018,32 @@ fn collect_func_refs(
     closure_bodies: &IndexMap<usize, Vec<ICNFNode>>,
     out: &mut Vec<String>,
 ) {
+    // Function names flow through this codebase in two forms: as written
+    // in source (dashes, e.g. "ic-expr-list") in most Call/Const/Closure
+    // nodes, and pre-sanitized (underscores) wherever a definition's name
+    // gets stored as a map/table key (program.functions' `f.name`, per the
+    // existing `.replace('-', "_")`/`sanitize_name` calls scattered at
+    // other name-lookup sites in this file). This function's output feeds
+    // both `reachable` (a set) and a `program.functions.iter().find(|f|
+    // f.name == name)` lookup — without sanitizing here, a dash-form name
+    // collected from a Call node never matches its underscore-form
+    // definition, so that definition's own body is never walked (its
+    // callees go unmarked) AND the definition itself gets treated as
+    // unreachable and dropped from emission entirely, leaving any already-
+    // emitted call to it an undefined-reference at link time.
     match &node.node {
-        ICNFInner::Call(name, _) => out.push(name.clone()),
-        ICNFInner::Const(crate::ast::Atom::Ident(name)) => out.push(name.clone()),
+        ICNFInner::Call(name, _) => out.push(sanitize_name(name)),
+        ICNFInner::Const(crate::ast::Atom::Ident(name)) => out.push(sanitize_name(name)),
         ICNFInner::SendClosure(_, _, handler_name, _) => {
             if !handler_name.is_empty() {
-                out.push(handler_name.clone());
+                out.push(sanitize_name(handler_name));
             }
         }
-        ICNFInner::Closure { name, .. } => out.push(name.clone()),
+        ICNFInner::Closure { name, .. } => out.push(sanitize_name(name)),
         ICNFInner::Spawn(id) => {
             if let Some(op) = enclosing.iter().find(|n| n.id == *id) {
                 if let ICNFInner::Closure { name, .. } = &op.node {
-                    out.push(name.clone());
+                    out.push(sanitize_name(name));
                 }
             }
         }
@@ -9160,7 +9173,7 @@ fn reachable_functions(program: &ICNFProgram) -> HashSet<String> {
             for stmt in &func.body {
                 collect_func_refs(stmt, &func.body, &program.closure_bodies, &mut worklist);
             }
-        } 
+        }
     }
     reachable
 }
