@@ -243,7 +243,75 @@
 ; is never compared at all, so every one of those arms fired unconditionally
 ; on the FIRST arm's variant (AstIdent), making every special form after the
 ; first permanently unreachable.
+; (contracts off expr): Rust's own bootstrap (src/ast.rs) recognizes
+; this as a special form and wraps expr in a ContractsOff AST node,
+; which is only ever unwrapped by compiler/contract_injection.zyl
+; (ci-strip-contracts). That module is deliberately excluded from the
+; self-hosted bundle (see driver.zyl's own passthrough comment: its
+; accessors don't match the real DefnNode/TestDecl/TestSuiteNode
+; shapes) -- but this self-hosted parser never had a ContractsOff node
+; or any other "contracts"-keyword handling at all, so `n` fell through
+; every case below and "contracts" parsed as an ordinary call to a
+; function that doesn't exist. Whatever it wrapped (typically a
+; top-level defn) was just an argument to that nonexistent call, not
+; recognized as a defn in its own right, so it never reached
+; collect-definitions/ic-toplevel's EDefn handling and was silently
+; never compiled at all -- a link-time "undefined reference", not a
+; parse error, since the rest of the (contracts off ...) form still
+; parsed as *something* (just not anything meaningful).
+;
+; Since this pipeline never injects or checks contracts in the first
+; place (same passthrough as above), "contracts off X" and plain X are
+; already equivalent here -- no ContractsOff node is needed, just parse
+; straight through to X so a wrapped top-level defn is recognized as a
+; defn again.
+(defn parse-contracts-off (args)
+  (match (ast-nth args 0 (AstInt 0))
+    (AstIdent mode
+      (if (> (str-eq mode "off") 0)
+        (convert-ast (ast-nth args 1 (AstInt 0)))
+        (Expr (EUnknown "contracts" (convert-ast-list args)))))
+    (d1 (Expr (EUnknown "contracts" (convert-ast-list args))))))
+
+; requires/ensures/recover/checkpoint: same gap and same fix as
+; "contracts" above (this parser never had nodes for them, and their
+; real handling lives only in the excluded contract_injection.zyl), and
+; regression/contracts.zyl's own header comment states the same
+; contract-free semantics explicitly: "requires, ensures, invariant,
+; recover, checkpoint" are "a compile-time overlay; core semantics are
+; preserved" -- i.e. even where a real implementation existed, none of
+; these forms are supposed to change what the wrapped code actually
+; does. requires/ensures wrap a single condition used only for a
+; (never-enforced) precondition/postcondition check -- parse straight
+; through to that condition expression, whose value is simply unused
+; when these sit inside a `begin`, matching what evaluating-and-
+; discarding a real check's condition would do anyway. `checkpoint`
+; "preserves the body value" per that same comment -- parse straight
+; through to its single argument. `recover`'s own regression test
+; comment is explicit too: "recover keeps the body value (fallback arm
+; is the overlay)" -- parse straight through to its first argument
+; (the body), ignoring the fallback arm entirely, since it would only
+; ever run on a real failure this pipeline never detects.
+(defn parse-requires-ensures (args)
+  (convert-ast (ast-nth args 0 (AstInt 0))))
+
+(defn parse-checkpoint (args)
+  (convert-ast (ast-nth args 0 (AstInt 0))))
+
+(defn parse-recover (args)
+  (convert-ast (ast-nth args 0 (AstInt 0))))
+
 (defn dispatch-special (n rest)
+  (if (> (str-eq n "contracts") 0)
+    (parse-contracts-off rest)
+  (if (> (str-eq n "requires") 0)
+    (parse-requires-ensures rest)
+  (if (> (str-eq n "ensures") 0)
+    (parse-requires-ensures rest)
+  (if (> (str-eq n "checkpoint") 0)
+    (parse-checkpoint rest)
+  (if (> (str-eq n "recover") 0)
+    (parse-recover rest)
   (if (> (str-eq n "defn") 0)
     (match (parse-defn rest)
       (Some expr expr)
@@ -475,7 +543,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (Expr (EApply n (convert-ast-list rest)))
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 
