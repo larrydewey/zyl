@@ -106,14 +106,35 @@ silently-disabled safety check, not a missing nice-to-have: buggy
 non-exhaustive matches in user code currently compile and misbehave at
 runtime instead of being caught at compile time.
 
-### 5. Missing stdlib piece: `_ct_no_contract` — NOT FIXED, likely quick
+### 5. Missing stdlib piece: `_ct_no_contract` — FIXED (commit `61dfdd2`)
 
-`regression/contracts` fails to *link*, not compile: `_ct_no_contract`
-is referenced but genuinely undefined anywhere in the codebase (same
-shape as the missing `str-trim` found earlier fixing `tools/repl.zyl` —
-grep for it, it isn't there). Isolated, mechanical, no architectural
-question to resolve first. Good candidate for a fast follow-up once
-higher-priority items are handled.
+Turned out to be bigger than "quick" once actually opened up, but still
+small in the end. `_ct_no_contract` wasn't a missing symbol at all — it
+was a user-defined function name wrapped in `(contracts off (defn
+_ct-no-contract ...))`, and the self-hosted parser had **no case at
+all** for the `contracts`/`requires`/`ensures`/`recover`/`checkpoint`
+special forms (Rust's own bootstrap recognizes them via `src/ast.rs`;
+the only code that ever unwraps the resulting AST nodes,
+`compiler/contract_injection.zyl`, is deliberately excluded from the
+self-hosted bundle for an unrelated, already-documented reason — its
+accessors don't match the real `DefnNode`/`TestDecl`/`TestSuiteNode`
+shapes). With no case for any of them, each parsed as an ordinary call
+to a nonexistent function; for `contracts off` specifically, that meant
+the wrapped `defn` was never recognized as a `defn` at all, just an
+argument to a bogus call, so it silently never got compiled —
+surfacing only as a link-time "undefined reference", not a compile
+error, which is why grepping for `_ct_no_contract` found nothing.
+
+Since this pipeline never injects or checks contracts in the first
+place (same passthrough noted above), all five of these forms already
+carry zero runtime semantics here — confirmed by the test file's own
+header comment ("a compile-time overlay; core semantics are
+preserved"). Fixed by parsing each straight through to its core
+expression in `expr_inner.zyl`'s `dispatch-special`, rather than adding
+real AST nodes nothing downstream would consume.
+
+**Impact**: `regression/contracts` link failure → 5/5 tests pass.
+32/43 → 33/43.
 
 ### 6. Individual feature bugs, one file each — NOT FIXED
 
