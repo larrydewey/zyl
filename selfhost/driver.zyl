@@ -1,6 +1,15 @@
 ; === Zyl Self-Hosting Boot Driver ===
 ; Reads Zyl source, lowers it to ICNF, emits x86_64 assembly.
-; Boot input/output paths are fixed for stage1 determinism.
+;
+; Two entry protocols:
+;   1. Real CLI (argv, via zyl_save_args in the entry stub): `zyl <src.zyl>
+;      [-o out] [--emit-asm]`. Chdirs to argv[0]'s directory first so
+;      `(use module/name)` resolves `stdlib/module/name.zyl` relative to
+;      the compiler binary's own bundle dir, not the caller's cwd.
+;   2. Legacy fixed-path protocol (`argc < 2`): reads
+;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s. Used by
+;      boot.sh's --bootstrap-from-rust reseed step and kept as a
+;      dependency-free smoke path.
 
 (use allocator/allocator)
 (use compiler/lexer)
@@ -29,100 +38,200 @@
     (let d1 (file-write f msg)
       (file-close f))))
 
-(defn emit-out (arena fns)
-  (let st (cg-program (cg-new arena) fns)
-    (let buf (cg-buffer st)
-      (let blen (alloc-strlen buf)
-        (if (> blen 66060288)
-          (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
-          (let out (file-open "/tmp/zyl_boot_out.s" "w")
-            (let n (file-write out buf)
-              (let d3 (file-close out)
-                n))))))))
+; ===========================================================================
+; SHARED PIPELINE — parses+lowers `srcbuf`, returns the final assembly
+; buffer (String). Does NOT write anywhere; callers decide the sink.
+; ===========================================================================
+
+(defn compile-to-asm (arena srcbuf)
+  (dbg-log "parse\n")
+  (let prog (zyl-parse arena srcbuf)
+    (dbg-log "bridge\n")
+    (let exprs0 (convert-ast-list prog)
+      (dbg-log "modules\n")
+      (let exprs1 (mr-resolve-program arena exprs0)
+      (dbg-log "macros\n")
+      (let exprs (me-expand-program exprs1)
+    (dbg-log "type-infer\n")
+    (let inferer (collect-definitions (inferer-new) exprs)
+      (dbg-log "contract-injection\n")
+      ; Real contract injection (stdlib/compiler/contract_injection.zyl)
+      ; is NOT wired in here: that module's accessors/constructors
+      ; (d-name, t-name, TestNode, ...) don't match the actual
+      ; DefnNode/TestDecl/TestSuiteNode shapes in expr_inner.zyl, so it
+      ; doesn't compile as part of the bundle. It was silently omitted
+      ; from assemble.py's file list, and this call used to read
+      ; "ci-expand-program" (1 arg) -- which, once the bundle was
+      ; assembled, actually resolved to closure_inline.zyl's SAME-NAMED
+      ; but different-arity `ci-expand-program(arena, prog)` function
+      ; instead (a genuine duplicate-symbol collision), silently
+      ; passing garbage through the mismatched second argument
+      ; register. That corrupted state downstream and crashed the
+      ; self-hosted binary (ic-collect-vt-run) even on trivial input.
+      ; Pass exprs through unchanged until contract injection is
+      ; properly rewritten to match the real deftypes.
+      (let ci-exprs exprs
+        (dbg-log "mono\n")
+        (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
+          (let mono-exprs (monomorphize mono-ctx ci-exprs)
+            (dbg-log "trait-dispatch\n")
+            (let td-exprs (td-expand-program mono-exprs)
+            (dbg-log "closure-inline\n")
+            (let ci-exprs (ci-expand-program arena td-exprs)
+            (dbg-log "assert-lowering\n")
+            (let al-exprs (al-expand-program ci-exprs)
+            (dbg-log "lower\n")
+            (let fns (ic-program arena al-exprs)
+                (dbg-log "optimize\n")
+                ; compiler/optimization.zyl is NOT wired in here: it's a
+                ; self-hosted port of src/optimization.rs's constant-
+                ; folding/DCE passes, written against that Rust module's
+                ; SSA-form ICNFNode representation (ICN id/region/typ/
+                ; is_branch/inner, ICNFFuncSig "IFS" with 5 fields,
+                ; ICNFProgram "IP" wrapping fns+stmts -- all defined in
+                ; type_system.zyl). The self-hosting pipeline's own ICNF
+                ; lowering (compiler/icnf.zyl, ic-program above) produces
+                ; a completely different, simpler tree-shaped `Icnf` (IFn
+                ; name params body, no SSA ids at all) that codegen.zyl
+                ; consumes directly. These two "ICNF"s share a name but
+                ; not a single constructor shape.
+                ;
+                ; Because Zyl's structural `match` dispatches purely on
+                ; the per-deftype tag byte with no runtime type identity,
+                ; feeding a real `(List IFn)` into opt-optimize-fns's
+                ; `(IFS name params ret_type body result_id)` pattern
+                ; never actually matches (a real IFn's tag is 15; IFS's
+                ; is 0) -- every function silently falls through the "no
+                ; match" catch-all and gets dropped, so opt-optimize
+                ; always returned Nil, an empty function list, which is
+                ; why stage1.bin used to link with no f_main at all. Pass
+                ; fns through unchanged: optimization is a performance
+                ; pass, not required for correctness, and nothing in the
+                ; real self-hosting pipeline produces the shape
+                ; compiler/optimization.zyl expects.
+                (let opt-fns fns
+                  (dbg-log "region-infer\n")
+                  (let ri (ri-new)
+                    (let ri2 (ri-infer opt-fns ri)
+                      (dbg-log "codegen\n")
+                      (let st (cg-program (cg-new arena) opt-fns)
+                        (let buf (cg-buffer st)
+                          (let blen (alloc-strlen buf)
+                            (if (> blen 66060288)
+                              (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
+                              buf))))))))))))))))))))
+
+; ===========================================================================
+; LEGACY FIXED-PATH PROTOCOL (argc < 2)
+; ===========================================================================
 
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)
-    (let d2 (file-close fd)
-      (dbg-log "parse\n")
-      (let prog (zyl-parse arena srcbuf)
-        (dbg-log "bridge\n")
-        (let exprs0 (convert-ast-list prog)
-          (dbg-log "modules\n")
-          (let exprs1 (mr-resolve-program arena exprs0)
-          (dbg-log "macros\n")
-          (let exprs (me-expand-program exprs1)
-(dbg-log "type-infer\n")
-        (let inferer (collect-definitions (inferer-new) exprs)
-          (dbg-log "contract-injection\n")
-          ; Real contract injection (stdlib/compiler/contract_injection.zyl)
-          ; is NOT wired in here: that module's accessors/constructors
-          ; (d-name, t-name, TestNode, ...) don't match the actual
-          ; DefnNode/TestDecl/TestSuiteNode shapes in expr_inner.zyl, so it
-          ; doesn't compile as part of the bundle. It was silently omitted
-          ; from assemble.py's file list, and this call used to read
-          ; "ci-expand-program" (1 arg) -- which, once the bundle was
-          ; assembled, actually resolved to closure_inline.zyl's SAME-NAMED
-          ; but different-arity `ci-expand-program(arena, prog)` function
-          ; instead (a genuine duplicate-symbol collision), silently
-          ; passing garbage through the mismatched second argument
-          ; register. That corrupted state downstream and crashed the
-          ; self-hosted binary (ic-collect-vt-run) even on trivial input.
-          ; Pass exprs through unchanged until contract injection is
-          ; properly rewritten to match the real deftypes.
-          (let ci-exprs exprs
-            (dbg-log "mono\n")
-            (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
-              (let mono-exprs (monomorphize mono-ctx ci-exprs)
-                (dbg-log "trait-dispatch\n")
-                (let td-exprs (td-expand-program mono-exprs)
-                (dbg-log "closure-inline\n")
-                (let ci-exprs (ci-expand-program arena td-exprs)
-                (dbg-log "assert-lowering\n")
-                (let al-exprs (al-expand-program ci-exprs)
-                (dbg-log "lower\n")
-                (let fns (ic-program arena al-exprs)
-                    (dbg-log "optimize
-")
-                    ; compiler/optimization.zyl is NOT wired in here: it's a
-                    ; self-hosted port of src/optimization.rs's constant-
-                    ; folding/DCE passes, written against that Rust module's
-                    ; SSA-form ICNFNode representation (ICN id/region/typ/
-                    ; is_branch/inner, ICNFFuncSig "IFS" with 5 fields,
-                    ; ICNFProgram "IP" wrapping fns+stmts -- all defined in
-                    ; type_system.zyl). The self-hosting pipeline's own ICNF
-                    ; lowering (compiler/icnf.zyl, ic-program above) produces
-                    ; a completely different, simpler tree-shaped `Icnf` (IFn
-                    ; name params body, no SSA ids at all) that codegen.zyl
-                    ; consumes directly. These two "ICNF"s share a name but
-                    ; not a single constructor shape.
-                    ;
-                    ; Because Zyl's structural `match` dispatches purely on
-                    ; the per-deftype tag byte with no runtime type identity,
-                    ; feeding a real `(List IFn)` into opt-optimize-fns's
-                    ; `(IFS name params ret_type body result_id)` pattern
-                    ; never actually matches (a real IFn's tag is 15; IFS's
-                    ; is 0) -- every function silently falls through the "no
-                    ; match" catch-all and gets dropped, so opt-optimize
-                    ; always returned Nil, an empty function list, which is
-                    ; why stage1.bin used to link with no f_main at all. Pass
-                    ; fns through unchanged: optimization is a performance
-                    ; pass, not required for correctness, and nothing in the
-                    ; real self-hosting pipeline produces the shape
-                    ; compiler/optimization.zyl expects.
-                    (let opt-fns fns
-                      (dbg-log "region-infer
-")
-                          (let ri (ri-new)
-                        (let ri2 (ri-infer opt-fns ri)
-                          (dbg-log "codegen
-")
-                          (emit-out arena opt-fns)))))))))))))))))))
+    (let d1 (file-close fd)
+      (let buf (compile-to-asm arena srcbuf)
+        (let out (file-open "/tmp/zyl_boot_out.s" "w")
+          (let n (file-write out buf)
+            (let d2 (file-close out)
+              n)))))))
+
+(defn boot-run-legacy (arena)
+  (let fd (file-open "/tmp/zyl_boot_in.zyl" "r")
+    (if (> fd 0)
+      (boot-run arena fd)
+      (begin
+        (dbg-log "no input\n")
+        1))))
+
+; ===========================================================================
+; REAL CLI (argc >= 2): `zyl <src.zyl> [-o out] [--emit-asm]`
+; ===========================================================================
+
+(defn cli-write-file (path content)
+  (let out (file-open path "w")
+    (let n (file-write out content)
+      (file-close out))))
+
+(defn cli-is-absolute (path)
+  (= (ffi-call "zyl_cstr_byte_at" path 0 1000) 47))
+
+; Resolve `path` against `cwd` unless it's already absolute.
+(defn cli-resolve-path (cwd path)
+  (if (> (cli-is-absolute path) 0)
+    path
+    (str-concat cwd (str-concat "/" path))))
+
+(defn cli-ends-with-zyl (s)
+  (let n (str-len s)
+    (if (< n 4)
+      0
+      (str-eq (str-substring s (- n 4) 4) ".zyl"))))
+
+; Default output path when no `-o`/positional out is given: strip a
+; trailing ".zyl" from the source path, else append ".out".
+(defn cli-default-out (src)
+  (if (> (cli-ends-with-zyl src) 0)
+    (str-substring src 0 (- (str-len src) 4))
+    (str-concat src ".out")))
+
+(deftype CliOpts (CliOpts String Int)) ; out-path ("" = unset), emit-asm-flag
+
+; Scan argv[i..argc) for `-o <path>` / `--emit-asm` / a bare positional
+; (treated as the out path). Unrecognized bare tokens simply become the
+; out path too (last one wins) — kept deliberately simple.
+(defn cli-parse-opts (i argc acc)
+  (if (>= i argc)
+    acc
+    (let a (ffi-call "zyl_arg_str" i 1000)
+      (if (> (str-eq a "--emit-asm") 0)
+        (match acc (CliOpts out d1 (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
+        (if (> (str-eq a "-o") 0)
+          (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
+            (match acc (CliOpts d2 flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
+          (match acc (CliOpts d3 flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))
+
+; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
+; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
+(defn cli-link (asmpath outpath)
+  (let cmd
+    (str-concat "cc "
+      (str-concat "-no-pie "
+        (str-concat asmpath
+          (str-concat " actor_runtime.c -o "
+            (str-concat outpath " -lpthread")))))
+    (ffi-call "zyl_exec_cmd" cmd 1000)))
+
+(defn cli-run (arena)
+  (let cwd (ffi-call "zyl_getcwd" 0)
+    (let argv0 (ffi-call "zyl_arg_str" 0 1000)
+      (let bundledir (ffi-call "zyl_dirname_cstr" argv0 1000)
+        (let srcraw (ffi-call "zyl_arg_str" 1 1000)
+          (let src (cli-resolve-path cwd srcraw)
+            (let argc (ffi-call "zyl_argc" 0)
+              (let opts (cli-parse-opts 2 argc (CliOpts "" 0))
+                (match opts
+                  (CliOpts outraw emitflag
+                    (let outbase
+                      (if (> (str-len outraw) 0)
+                        (cli-resolve-path cwd outraw)
+                        (cli-default-out src))
+                      (let d1 (ffi-call "zyl_chdir" bundledir 1000)
+                        (let fd (file-open src "r")
+                          (if (> fd 0)
+                            (let srcbuf (file-read fd 4194304)
+                              (let d2 (file-close fd)
+                                (let buf (compile-to-asm arena srcbuf)
+                                  (if (> emitflag 0)
+                                    (cli-write-file outbase buf)
+                                    (let asmpath (str-concat outbase ".s")
+                                      (let d3 (cli-write-file asmpath buf)
+                                        (cli-link asmpath outbase)))))))
+                            (begin
+                              (print "zyl: error: cannot open source file")
+                              1))))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)
-    (let fd (file-open "/tmp/zyl_boot_in.zyl" "r")
-      (if (> fd 0)
-        (boot-run arena fd)
-        (begin
-          (dbg-log "no input\n")
-          1)))))
+    (let argc (ffi-call "zyl_argc" 0)
+      (if (< argc 2)
+        (boot-run-legacy arena)
+        (cli-run arena)))))

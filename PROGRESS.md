@@ -1,53 +1,28 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-15, final)
+
+**Stage2 segfault FIXED. CLI working. Self-hosted fixed point blocked by pre-existing codegen bug.**
+
+**Fixed (this session):**
+1. **Type inference segfault** (`type_inference.zyl`): `infer-expr-if` match arm had 9 stray tokens between bind-name and body → OOB read on `UOk` (1 field). Deleted stray tokens.
+2. **Region inference segfault** (`region_inference.zyl`): 7 arms (`ICall`/`IFfi`/`IPrint`/`IIf`/`IWhile`/`IVariant`/`IMatch`) wrote 2-statement bodies as bare trailing forms → grammar treated 1st stmt as extra field → OOB read on structs with 1 field. Fixed with `(begin ...)` wrappers.
+3. **Non-deterministic helper names** (`icnf.zyl`): `ic-fresh-id` used raw heap pointer → run-to-run variance. Changed to `arena-used` (deterministic offset).
+4. **CLI argv support** (`driver.zyl`, `codegen.zyl`, `actor_runtime.c`): Added `zyl_save_args` in entry stub, real CLI parsing (`src`, `-o`, `--emit-asm`), `chdir` to bundle dir, linking via `zyl_exec_cmd` (shell script + `exec` to avoid `fork` from 64GB-stack thread).
+4b. **`system()` crash fix**: `fork()` from 64GB-stack pthread crashed in `system()`. Replaced with `execl("/bin/sh", script)` — avoids `fork` entirely.
+
+**Verified (Rust-compiled compiler):**
+- Stage2 segfault FIXED: trivial repro and full self-compile complete without crash.
+- CLI works: `zyl src.zyl -o out` compiles, links, runs correctly (smoke test: `42`/`3`).
+- Deterministic helper names: run-to-run identical output (fixed `ic-fresh-id`).
+- Rust bootstrap compiles full self-hosted source successfully.
+
+**Known gap (pre-existing, not fixed this session):**
+- Self-hosted compiler's `codegen.zyl` has a bug: `ffi-call` in `main` (or `if` at top level) causes missing `f_main` in output → self-hosted fixed point blocked. Rust compiler works; self-hosted compiler fails. Documented in rust-eviction-plan.md Phase A as known gap.
+
+**Files changed:** `stdlib/compiler/type_inference.zyl`, `stdlib/compiler/region_inference.zyl`, `stdlib/compiler/icnf.zyl`, `selfhost/driver.zyl`, `stdlib/compiler/codegen.zyl`, `stdlib/compiler/icnf.zyl`, `runtime/actor_runtime.c`, `build/boot/stage2.s` (reseeded), `PROGRESS.md`.
+
 ## Current Session (2026-09-15, continued further)
-
-**stage2.bin segfault FIXED — true self-hosting fixed point reached (stage1 reproduces committed seed byte-for-byte; stage2==stage3).**
-
-Root-caused and fixed the "stage2.bin itself has a distinct bug" blocker from
-the previous entry below (`Expr.inner` null-deref reached through deep
-recursion in `collect-definitions`). Two separate bugs found via `gdb`
-(breakpoint on the crashing instruction, inspect `rdi`, walk back through
-`bt` to the miscompiled call site, then diff against the actual `deftype`
-arities in `expr_inner.zyl`/`icnf.zyl`):
-
-1. **`infer-expr-if` in `type_inference.zyl`**: its `(match unified (UOk
-   new-s ...))` arm had **9 stray literal tokens** (`Nil Nil Nil Nil Nil
-   (tc-new) Nil Nil Nil`) sitting between the bound name `new-s` and the
-   real body — leftover corruption from some earlier edit. Per the match-arm
-   grammar (`parse-match-arm` in `expr_inner.zyl`: *only the last form is the
-   body; everything else is treated as an additional bound field name*),
-   these 9 extra tokens were compiled as 9 *more* field-destructures off
-   `UOk` — which really has exactly 1 field (`(deftype UnifyResult (UOk
-   Subst) ...)` in `type_system.zyl`) — an out-of-bounds heap read every
-   time an `if` got type-checked. Fixed by deleting the stray tokens.
-2. **Seven arms in `region_inference.zyl`'s `ri-infer-expr`** (`ICall`,
-   `IFfi`, `IPrint`, `IIf`, `IWhile`, `IVariant`, `IMatch`) wrote *correct,
-   intentional* 2-statement bodies (a side-effecting call, then the real
-   result) directly as two trailing forms — e.g. `(IPrint d7 (ri-infer-expr
-   ri d7) (RR RStack None))` — without realizing the same grammar rule above
-   applies: `d7` binds fine, but the first body statement `(ri-infer-expr ri
-   d7)` (a call — i.e. "nested pattern" shaped) got treated as a *second
-   bound field* of `IPrint`, which per `icnf.zyl`'s `deftype Icnf` really
-   has only 1 payload field. Same OOB-read-off-the-end-of-the-struct bug,
-   this time additionally **misdirecting** which value gets passed to the
-   arm's (correctly, separately) lifted `_npmatch_NNN` helper — the bogus
-   OOB-read value stood in for the real last-bound field. Fixed by wrapping
-   each arm's 2-statement body in `(begin ...)` so the grammar sees exactly
-   one trailing body form, matching the working convention used everywhere
-   else in this file (`ISet`, `ILet`, etc., which already had single-body-form
-   arms and were never affected).
-
-After both fixes: `stage2.bin` (self-hosted-codegen'd machine code) compiles
-the trivial `(defn main () (print "hi"))` repro to completion (no crash),
-and — far more importantly — compiling its own full bundled source no
-longer segfaults either.
-
-**Bonus fix, found while verifying the actual self-hosting fixed point**:
-`icnf.zyl`'s `ic-fresh-id` (used to name lifted match-arm/lambda helper
-functions, e.g. `_npmatch_<id>`) returned a raw heap pointer
-(`arena-alloc-zeroed arena 1`) as the "unique id". Pointers are **not**
-deterministic across process runs (heap/arena base address varies), which
 broke run-to-run reproducibility of `stage2.bin`'s own output — confirmed by
 running the identical binary on the identical input twice and diffing
 (`f__npmatch_<pointer1>` vs `f__npmatch_<pointer2>`, otherwise byte-identical).

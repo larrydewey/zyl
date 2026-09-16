@@ -1100,16 +1100,21 @@
   ; the first caller to actually dereference that null buffer (here,
   ; zyl_cstr_substr's memcpy into a null `buf`) segfaulted deep into
   ; the run instead of failing at start.
+  ; edi=argc, rsi=argv at entry (SysV main ABI) — save them via
+  ; zyl_save_args BEFORE any other call (which would clobber the
+  ; caller-saved edi/rsi), so driver.zyl's zyl_argc/zyl_arg_str FFI
+  ; helpers can see the real argv later in the run.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
-        (let st3b (cg-emit-line st3 "    call zyl_ensure_arenas")
-          (let st4 (cg-emit-line st3b "    lea rdi, [rip+f_main]")
-            (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
-              (let st6 (cg-emit-line st5 "    xor eax, eax")
-                (let st7 (cg-emit-line st6 "    pop rbp")
-                  (let st8 (cg-emit-line st7 "    ret")
-                    st8))))))))))
+        (let st3a (cg-emit-line st3 "    call zyl_save_args")
+          (let st3b (cg-emit-line st3a "    call zyl_ensure_arenas")
+            (let st4 (cg-emit-line st3b "    lea rdi, [rip+f_main]")
+              (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
+                (let st6 (cg-emit-line st5 "    xor eax, eax")
+                  (let st7 (cg-emit-line st6 "    pop rbp")
+                    (let st8 (cg-emit-line st7 "    ret")
+                      st8)))))))))))
 
 (defn cg-format-strings (st)
   (let st1 (cg-emit-line st ".section .rodata")

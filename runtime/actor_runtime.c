@@ -945,6 +945,7 @@ int zyl_run_tests(void) {
 
 /* ── Boot-build file helpers (used by the self-hosted driver) ───────── */
 #include <fcntl.h>
+#include <sys/stat.h>
 long long zyl_file_open_c(long long path, long long mode) {
     const char* m = (const char*)(size_t)mode;
     if (m && m[0] == 'r') return (long long)open((const char*)(size_t)path, O_RDONLY);
@@ -1059,4 +1060,17 @@ long long zyl_getcwd(void) {
 
 long long zyl_system_cmd(long long cmd) {
     return (long long)system((const char*)(size_t)cmd);
+}
+
+long long zyl_exec_cmd(long long cmd) {
+    const char* cmd_str = (const char*)(size_t)cmd;
+    char script_path[256];
+    snprintf(script_path, sizeof(script_path), "/tmp/zyl_link_%d.sh", getpid());
+    FILE* f = fopen(script_path, "w");
+    if (!f) return -1;
+    fprintf(f, "#!/bin/sh\n%s\n", cmd_str);
+    fclose(f);
+    chmod(script_path, 0755);
+    execl("/bin/sh", "sh", script_path, (char*)NULL);
+    return -1;
 }
