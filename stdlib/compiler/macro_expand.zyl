@@ -37,10 +37,22 @@
     (MNil Nil)
     (MEntry n params d1 rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
 
-(defn mt-body (mt name)
+(defn mt-case (mt on-nil on-entry)
   (match mt
-    (MNil (Expr (EAtom ANil)))
-    (MEntry n d1 body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
+    (MNil (on-nil))
+    (MEntry n params body rest (on-entry n params body rest))))
+
+(defn mt-body (mt name)
+  (if (> (mt-has mt name) 0)
+    (mt-case mt
+      (fn () (Expr (EAtom ANil)))
+      (fn (n params body rest) body))
+    (mt-body-loop mt name)))
+
+(defn mt-body-loop (mt name)
+  (mt-case mt
+    (fn () (Expr (EAtom ANil)))
+    (fn (n params body rest) (if (> (str-eq n name) 0) body (mt-body-loop rest name)))))
 
 ; --- collect top-level macro defs --------------------------------------------
 
@@ -83,9 +95,12 @@
 ; --- rewrite: substitute params + expand macro calls, recursively ----------
 
 (defn me-rewrite-list (forms senv mt)
+  (me-rewrite-list-acc forms senv mt Nil))
+
+(defn me-rewrite-list-acc (forms senv mt acc)
   (match forms
-    (Nil Nil)
-    (Cons e rest (Cons (me-rewrite e senv mt) (me-rewrite-list rest senv mt)))))
+    (Nil (list-reverse acc))
+    (Cons e rest (me-rewrite-list-acc rest senv mt (Cons (me-rewrite e senv mt) acc)))))
 
 (defn me-rewrite (e senv mt)
   (match (Expr.inner e)
@@ -144,5 +159,4 @@
         (d4 (Cons e (me-strip rest)))))))
 
 (defn me-expand-program (forms)
-  (let mt (me-collect forms MNil)
-    (me-rewrite-list (me-strip forms) SNil mt)))
+  (me-rewrite-list (me-strip forms) SNil (me-collect forms MNil)))
