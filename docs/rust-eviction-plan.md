@@ -661,18 +661,14 @@ shows `99` then `0` — print's own value is always clean 0 (see above),
 so the outer print is simply printing that; not the most useful REPL
 UX for that specific input, but correct and explainable.
 
-**Phase D** (archive `src/`, delete Cargo files) has not been touched —
-Rust is still fully present and still what builds the seed via
-`./boot.sh --bootstrap-from-rust`. That reseed step is the *only*
-remaining place Rust is actually invoked in the normal `./boot.sh` flow
-(default `./boot.sh` with no args is already cargo-free); eviction
-still requires it to not be needed for reseeding either, which is
-Phase D/E territory, not started.
-
-**Overall**: the fixed point holding solidly is the *precondition* for
-eviction, not the finish line. None of Phase D (archiving Rust) has
-started, and Phase B/C are both further along than "unstarted" but
-neither is functionally complete. Not close to eviction yet.
+**Correction, 2026-09-17**: the two paragraphs above were accurate when
+written but are now stale — see "Phase D — Eviction & docs" and
+"Phase E — Verify" further down, both marked DONE. Rust was archived to
+`archive/rust-bootstrap-2026/`, `./boot.sh --bootstrap-from-self`
+means reseeding no longer needs it either, and Phase B and Phase C (the
+sections directly above this one) are now both genuinely complete, not
+just "further along than unstarted." All five phases (A-E) are done as
+of this session.
 
 ## Feature-parity survey status (2026-09-17): closed out
 
