@@ -48,8 +48,11 @@
 ; One rodata entry: label, payload text, kind (0 string, 1 float).
 (deftype REntry (REntry String String Int))
 
-; Known top-level function names (for fn-value references).
-(deftype FnName (FN String) FNNil)
+; Known top-level function names (for fn-value references), plus each
+; one's own body kind (see kind-of's ICall arm and cg-collect-one,
+; below) -- 0 (int) for anything not staticaly known to be a fixed
+; string/float shape.
+(deftype FnName (FN String Int) FNNil)
 
 (deftype CGState (CGS Int Int Int Int (List REntry) (List FnName)))
 ; fields: arena, buffer, next-label, next-slot, rodata, fn-names, fn names
@@ -87,10 +90,10 @@
   (let buf (arena-alloc-zeroed arena 67108864)
     (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
 
-(defn cg-with-fnname (st nm)
+(defn cg-with-fnname (st nm kind)
   (match st
     (CGS a b n s rd fns2
-      (CGS a b n s rd (Cons (FN nm) fns2)))))
+      (CGS a b n s rd (Cons (FN nm kind) fns2)))))
 
 (defn cgg-fns (st)
   (match st
@@ -119,8 +122,21 @@
 
 (defn cg-fn-check-head (h t nm)
   (match h
-    (FN s (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
+    (FN s d1 (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
     (FNNil (cg-fn-search t nm))))
+
+; Look up `nm`'s recorded return kind; 0 (int) if it's not a known
+; top-level function name at all (matches every other "not found"
+; default in this file).
+(defn cg-fn-kind-search (fns nm)
+  (if (is-nil fns)
+    0
+    (cg-fn-kind-check-head (fnhead fns) (fntail fns) nm)))
+
+(defn cg-fn-kind-check-head (h t nm)
+  (match h
+    (FN s k (if (= (str-eq s nm) 1) k (cg-fn-kind-search t nm)))
+    (FNNil (cg-fn-kind-search t nm))))
 
 ; Empty rodata list.
 (defn no-rentries () Nil)
@@ -220,7 +236,25 @@
   (if (> (str-eq name "zyl_file_read_c") 0) 1
     0))))))))
 
-(defn kind-of (env e)
+; kind-of's ICall arm used to unconditionally return 0 (int), regardless
+; of what the called function actually returns -- so `(print (some-fn
+; ...))` for any ordinary top-level function returning a string/float
+; picked %d formatting and printed the raw pointer/bit pattern instead.
+; Same root cause and same fix shape as ffi-str-kind above (this file
+; has no real return-type inference), but for plain user functions
+; instead of a fixed set of C runtime symbols: cg-collect-fnnames now
+; also records each top-level function's own body kind (computed with
+; an empty env, so it only ever reflects genuinely fixed shapes -- a
+; function returning a literal, arithmetic, or a call to an
+; EARLIER-defined function in the same list; a function whose return
+; kind depends on one of its own parameters, or that forward-references
+; a function defined later in the list, still defaults to 0 -- kind-of
+; has no per-call-site specialization either way, so this is already
+; the same class of approximation the rest of this file makes).
+; ICallClosure is deliberately NOT covered: `name` there is a local
+; variable holding a closure value, not a top-level function name, and
+; the CGS fn-kind table only knows about the latter.
+(defn kind-of (st env e)
   (match e
     (IConst 0)
     (IStr d19 1)
@@ -229,16 +263,25 @@
     (IBinop op l r
      (if (> op 4)
        0
-       (if (= (kind-of env l) 2)
+       (if (= (kind-of st env l) 2)
          2
-         (if (= (kind-of env r) 2) 2 0))))
-    (IIf d21 t d22 (kind-of env t))
-    (ICall d23 d24 0)
+         (if (= (kind-of st env r) 2) 2 0))))
+    (IIf d21 t d22 (kind-of st env t))
+    (ICall name d24 (cg-fn-kind-search (cgg-fns st) name))
     (IFfi name d26 (ffi-str-kind name))
     (IPrint d27 0)
     (IWhile d28 d29 0)
     (ISet d30 d31 0)
-    (ILet d32 d33 d34 0)
+    ; ILet's own kind is whatever its BODY evaluates to, not a fixed 0 --
+    ; matters now that literal-pattern match's if-chain desugaring
+    ; (expr_inner.zyl) always wraps its result in a let (binding the
+    ; scrutinee once), so a function whose whole body is such a match
+    ; had its real string/float kind masked by this let wrapper even
+    ; after fixing kind-of's ICall arm above. Same env passed through
+    ; unchanged (not extended with the let's own binding): every leaf
+    ; this needs to see through bottoms out at a literal (IStr/IFlt),
+    ; whose kind doesn't depend on env at all.
+    (ILet d32 d33 body (kind-of st env body))
     (ISeq d35 0)
     ; `==`/`!=` between two struct/ADT-kind operands used to fall straight
     ; into cg-ibinop's raw `cmp rax, rcx` (same bare pointer comparison bug
@@ -284,11 +327,11 @@
     ; (compiled by different machine code), breaking the self-hosting
     ; fixed point. Route string-kind `=`/`!=` through zyl_cstr_eq instead.
     (IBinop op l r
-     (if (> (if (= (kind-of env l) 2) 1 (if (= (kind-of env r) 2) 1 0)) 0)
+     (if (> (if (= (kind-of st env l) 2) 1 (if (= (kind-of st env r) 2) 1 0)) 0)
        (cg-fbinop st env op l r)
-       (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of env l) 1) (= (kind-of env r) 1)) 1 0) 0) 0)
+       (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of st env l) 1) (= (kind-of st env r) 1)) 1 0) 0) 0)
          (cg-strbinop st env op l r)
-         (if (> (if (> op 4) (if (or (= (kind-of env l) 3) (= (kind-of env r) 3)) 1 0) 0) 0)
+         (if (> (if (> op 4) (if (or (= (kind-of st env l) 3) (= (kind-of st env r) 3)) 1 0) 0) 0)
            (cg-variantbinop st env op l r)
            (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-args st env name args true 0))
@@ -365,7 +408,7 @@
       (cg-let-store st2 env n v body off))))
 
 (defn cg-let-store (st env n v body off)
-  (let k (kind-of env v)
+  (let k (kind-of st env v)
     (let st3 (cg-expr st env v)
       (let st4 (cg-emit st3 "    mov [rbp")
         (let st5 (cg-emit-int st4 off)
@@ -769,7 +812,7 @@
 ; statement has no useful value" convention -- by zeroing eax again
 ; right after the call, regardless of what printf itself returned.
 (defn cg-print (st env a)
-  (let k (kind-of env a)
+  (let k (kind-of st env a)
     (let st2 (cg-expr st env a)
       (if (= k 2)
         (let st3 (cg-emit-line st2 "    movq xmm0, rax")
@@ -1317,7 +1360,8 @@
 
 (defn cg-collect-one (st f rest)
   (match f
-    (IFn nm d78 d79 (cg-collect-fnnames (cg-with-fnname st nm) rest))
+    (IFn nm d78 body
+      (cg-collect-fnnames (cg-with-fnname st nm (kind-of st (EnvNil) body)) rest))
     (d80 (cg-collect-fnnames st rest))))
 
 (defn cg-program (st fns)
