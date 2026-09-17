@@ -543,6 +543,96 @@ end-to-end by anyone before — treat it as an unfinished skeleton that
 happens to now *link*, not a nearly-working REPL. Whoever picks this up
 next should expect more bugs of the same shape, not just these two.
 
+**Phase C, 2026-09-17: the REPL actually runs now.** Picked up from the
+"still doesn't work end-to-end" state above and found the *link*
+succeeding had been masking that `repl-compile-and-run` itself was
+never actually part of the compiled program. Root cause: `repl-codegen`
+(right above it in the file) was missing one closing paren. The reader
+doesn't stop at a defn's apparent end — it just keeps consuming forms
+until parens balance — so `repl-codegen`'s unclosed form silently
+swallowed `repl-compile-and-run`'s entire defn, and part of
+`repl-loop`'s, as nested content instead of top-level forms. The whole
+REPL still *linked* (an unrelated `main` was present), which is exactly
+why this had never been caught: `_ZYL_repl_compile_and_run` was called
+but never defined, an error only the assembler surfaces, not the
+self-hosted compiler itself. Fixed by re-balancing both defns' trailing
+parens.
+
+With that fixed, two more real bugs surfaced immediately behind it —
+the same "still doesn't work end-to-end" bugs flagged above, now
+finally reachable:
+- `repl-read-line` treated `file-read`'s return value as a byte count.
+  It's not — `file-read` (icnf.zyl's special-cased lowering to
+  `zyl_file_read_c`) returns the read bytes *themselves* as a ready,
+  null-terminated string. `repl-read-line` was allocating a separate,
+  never-written 4096-byte arena buffer and substringing 0..(pointer
+  value) out of it — reading wildly out of bounds. This was the
+  `arena-alloc-zeroed` corruption flagged above; `arena-create`/
+  `arena-alloc-zeroed` were never needed at all. Fixed by using
+  `file-read`'s result directly.
+- `repl-loop` never unwrapped the `Option<String>` `repl-read-line`
+  returns: `(if line ...)` on a heap `Some`/`None` box is always
+  truthy (both are non-null), so EOF was never detected, and the box
+  itself — not its string payload — was passed into `repl-is-quit`/
+  `repl-compile-and-run`, which read its tag+pointer bytes as if they
+  were text. Fixed with a real `match`; also stopped reopening
+  `/dev/stdin` on every recursive iteration (now threads one `fd`
+  through instead).
+
+With all of that fixed, the REPL compiled and ran end to end for the
+first time — and immediately exposed a fourth, previously-unreachable
+bug: every printed result showed a garbage integer instead of the real
+value. `kind-of` (codegen.zyl), which picks `print`'s format specifier,
+had its `IFfi` arm hardcoded to always return "int kind" regardless of
+what the FFI call actually returns — so `str-concat`'s result (an
+`IFfi "zyl_cstr_concat"` call) always printed as `%d`, showing the raw
+string pointer. Nothing else in the tree ever printed a `str-concat`
+result directly, which is why this had never been hit. Fixed with a
+new `ffi-str-kind` helper recognizing the fixed set of string-returning
+runtime symbols (`zyl_cstr_concat`, `_substr`, `_sub`, `_from_int`,
+`_sanitize`, `_decode`, plus `zyl_file_read_c`).
+
+That fix alone wasn't enough to make the REPL show real values, though:
+`repl-loop` was reading the *value* of a typed expression from the
+compiled child program's process exit code, and codegen.zyl's `main:`
+entry stub unconditionally zeroes `eax` (`xor eax, eax`) right after
+running the user's code, before it becomes the exit status — for every
+Zyl program this compiler has ever produced, not just the REPL's.
+Tried the direct fix (drop the zeroing, let `zyl_call_on_big_stack`'s
+real return value become the exit code) and it broke
+`tests/regression/generics-multi-type.zyl`, whose `main` body ends in a
+`print` call never designed to have its leftover register value become
+a process exit code — reverted immediately once the regression showed
+up. Fixed the REPL's actual problem a different way instead: wrap
+typed input as `(print <expr>)` rather than bare `<expr>`, so the
+value is shown by the compiled child printing it directly, sidestepping
+the exit-code channel entirely rather than trying to repair a shared
+entry stub that other code depends on being exit-code-silent.
+`repl-loop` now only prints an error message when `repl-codegen`
+returns its own `-1` compile-failure sentinel (never a real exit code,
+which is always 0-255); it no longer prints anything derived from a
+normal run.
+
+Verified interactively: typing `(+ 1 2)`, `(* 6 7)`, `(- 10 3)` in one
+REPL session now correctly prints `3`, `42`, `7`. Full reseed to a new
+fixed point, `run_regression_tests.sh --full` stays 43/43.
+
+**Known limitation, not fixed**: typing an expression that itself
+contains a top-level `print` (e.g. `(print 99)`) wraps to
+`(print (print 99))` and produces *three* `printf` calls at runtime
+(`99`, then `3` — the inner print's own leftover return value getting
+printed — then an unexplained third value), not the two the Icnf shape
+alone would predict. Confirmed this is specific to `repl-compile-and-run`'s
+own pipeline: the identical source `(defn main () (print (print 99)))`
+compiled directly through the normal CLI produces exactly two `printf`
+calls, matching a straightforward reading of `ic-print`'s recursive
+lowering. Something specific to going through repl.zyl's own sequence
+of pipeline calls (as opposed to `driver.zyl`'s `compile-to-asm`, which
+calls the same underlying functions) introduces a third print; not
+isolated further. Whoever picks this up should bisect
+`repl-compile-and-run`'s stage-by-stage output for this exact input
+against `compile-to-asm`'s to find where the two diverge.
+
 **Phase D** (archive `src/`, delete Cargo files) has not been touched —
 Rust is still fully present and still what builds the seed via
 `./boot.sh --bootstrap-from-rust`. That reseed step is the *only*
