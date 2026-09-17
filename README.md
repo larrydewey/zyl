@@ -44,6 +44,46 @@ Project-local modules are resolved relative to the source file being
 compiled, so applications can keep their own libraries alongside their
 source.
 
+## REPL
+
+An interactive REPL lives at `tools/repl.zyl`. It's not part of the
+self-hosted compiler bundle (`selfhost/assemble.py`'s bundle), so build
+it directly with the self-hosted compiler like any other program:
+
+```bash
+build/boot/zyl-self tools/repl.zyl -o /tmp/zyl-repl
+```
+
+It has to be *run* from `runtime/`: each typed expression is compiled
+and linked on the fly by shelling out to `cc` with a relative
+`actor_runtime.c` path (`runtime/actor_runtime.c`'s `zyl_cc_compile`),
+so that file needs to be reachable from the current directory.
+
+```bash
+cd runtime
+/tmp/zyl-repl
+```
+
+```
+Zyl REPL — type expressions, :q to quit
+(+ 1 2)
+3
+(* 6 7)
+42
+:q
+Goodbye!
+```
+
+Known limitations:
+- No state persists between lines — each line is compiled and run as
+  its own independent program, so a `let`-bound name from one prompt
+  isn't visible on the next.
+- A value is shown by having the compiled expression print itself
+  directly, not by reading back a process exit code (see
+  `tools/repl.zyl`'s `repl-wrap-expr` for why). Typing an expression
+  that already contains a top-level `print` shows the intended value
+  followed by an extra `0`.
+
 ## Self-Hosting Status
 
 **Self-hosting: complete, no Rust in the active path.** The Zyl
