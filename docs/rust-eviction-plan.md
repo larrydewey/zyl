@@ -469,16 +469,39 @@ required for what "region inference" means in this plan's Phase B.
 
 While testing, hit a `lambda`-keyword-specific gap: a 0-parameter
 `(lambda () ...)` that captures an outer `let`-bound name (not a `fn`
-parameter) and is called immediately in the same scope generates a
-closure call to address 0 and crashes. Reproduces identically with a
-captured plain `Int`, nothing to do with structs or this session's
-changes. The equivalent shape written with `fn` instead of `lambda`
-compiles and runs correctly (closure_inline's inlining recognizes it),
-and the existing regression suite's own closure/escaping-closure tests
-(`tests/regression/closures.zyl`, `tests/regression/regions.zyl`) all
-pass — so this is a narrow, pre-existing, `lambda`-specific hole, not a
-general capture regression. Not fixed here; flagged for whoever next
-touches closure handling.
+parameter) and is called immediately in the same scope generated a
+closure call to address 0 and crashed. Flagged at the time as
+pre-existing and out of scope for this phase.
+
+**Fixed, 2026-09-17 (commit `07c9c5d`)**: root cause was that `lambda`
+and `fn` parsed to two different AST node types (`ELambda`/`EFn`) that
+were only meant to be equivalent — type inference and monomorphization
+already treated them identically, but icnf.zyl's final lowering,
+closure_inline.zyl, trait_dispatch.zyl, macro_expand.zyl, and
+module_resolver.zyl never learned about `ELambda`, only `EFn`. A
+`lambda` silently fell through icnf.zyl's "unsupported shape" catchall
+to a bare `(IConst 0)`, so calling it jumped to address 0. Fixed by
+having `parse-lambda` build an `EFn` node directly instead of a
+separate `ELambda` — no new code paths needed anywhere else, since
+`lambda` was never meant to be distinguishable from `fn` in the first
+place.
+
+**A second, unrelated closure bug found while verifying the first
+(commit `3d7b6ef`)**: a top-level `(defn make-adder (n) (fn (m) (+ n
+m)))` crashed calling its returned closure, even though the identical
+shape written as a `let`-bound value (exactly what
+`tests/regression/regions.zyl`'s `region-heap-closure` test covers)
+already worked. Reproduced identically with plain `fn`, confirming it
+had nothing to do with the `ELambda` fix above. Root cause:
+`ic-collect-vt-inner`'s `EDefn` case (icnf.zyl) registers every
+top-level function name into the whole-program symbol table, but never
+checked whether that function's own body tail is itself a closure
+literal — the same check `ic-lower-let` already does for a `let`-bound
+closure-returning value (`VTClosureReturn`), just never applied to
+top-level `defn`s. Fixed by applying that same check there too. Both
+fixes verified together (`fn` and `lambda` forms, immediately-called
+and escaping, let-bound and top-level), full reseed to a new fixed
+point, regression suite stays 43/43.
 
 **Correction to an earlier draft of this note**: it originally said
 Phase B was unstarted. That was wrong — checked the actual code, not
