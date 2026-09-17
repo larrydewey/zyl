@@ -90,21 +90,45 @@ into two functions, so the two shapes can no longer be conflated.
 **Impact**: `regression/traits` compiler crash → 4/4 tests pass.
 31/43 → 32/43.
 
-### 4. Match exhaustiveness checking is incomplete — NOT FIXED
+### 4. Match exhaustiveness checking is incomplete — FIXED (commit `89124ab`)
 
 Both `compile-fail/match-non-exhaustive` and `compile-fail/
-match-nested-non-exhaustive` expect compilation to fail and it
-silently succeeds instead. `icnf.zyl`'s `ic-check-exhaustive` (own
-comment: "Full ADT exhaustiveness requires scrutinee [type tracking]")
-only verifies each arm's variant is *some* known variant, not that
-*all* variants of the scrutinee's actual type are covered. Real
-per-scrutinee-type tracking is related to item #1's gap (no
-type-hint/scrutinee-type plumbing exists yet) — likely wants solving
-together with a more general fix there, rather than as its own patch.
-Doesn't crash valid programs, so lower urgency than #2/#3, but it's a
-silently-disabled safety check, not a missing nice-to-have: buggy
-non-exhaustive matches in user code currently compile and misbehave at
-runtime instead of being caught at compile time.
+match-nested-non-exhaustive` expected compilation to fail and it
+silently succeeded instead. `icnf.zyl`'s `ic-check-exhaustive` only
+verified each arm's variant was *some* known variant, never that *all*
+variants of the scrutinee's actual type were covered — didn't need full
+scrutinee-type tracking (item #1's still-missing gap) after all: added
+a `gid` field to `VTEntry` (`ast.zyl`), a per-deftype-DECLARATION-unique
+id shared by every variant from one `deftype` call (unlike `tag`, which
+restarts at 0 per deftype for codegen's dispatch and can't disambiguate
+siblings on its own). Take the first arm's gid, collect every sibling
+name sharing it, check each is covered by some arm.
+
+Reseeding the bundle with this in place immediately surfaced a real
+false positive from the check itself, caught before it could ever reach
+a committed seed: `parse-match-arm`'s "wrapped" arm surface form
+`((Variant field*) body)` records the NESTED pattern's own constructor
+as `MA.variant` — correct for a real wrapped arm, but the exact same AST
+shape is what a 3-part `((Inner field*) tail-name body)` arm parses to
+today, which `region_inference.zyl` uses to destructure a `Cons`'s head
+inline (`((RB n r esc) rest ...)`) — a currently-dead code path since
+region inference's result isn't wired into codegen output (see the
+2026-09-16 status update below), not something to fix as a side effect
+of this check. `MA.variant` there reports `"RB"` (from `RegionBind`),
+unrelated to the outer `List`'s `Cons`/`Nil` siblings, which the naive
+gid check flagged as a missing `Cons` arm. Guarded with
+`ic-arms-all-gid`: every arm must share one gid before the group is
+trusted at all; a mismatch backs off to the pre-existing no-check
+behavior rather than risk a false positive on a shape it can't
+distinguish from a real bug. Found via the fast iteration loop of
+invoking `target/release/zyl` + the legacy `/tmp/zyl_boot_in.zyl`
+protocol directly on `selfhost/zyl_selfhost_compiler.zyl`, instead of a
+full `boot.sh --bootstrap-from-rust` per attempt.
+
+**Impact**: `compile-fail/match-non-exhaustive` and `compile-fail/
+match-nested-non-exhaustive` link failure → both now correctly reject
+at compile time. 37/43 → 39/43. `./boot.sh` confirms the fixed point
+still holds.
 
 ### 5. Missing stdlib piece: `_ct_no_contract` — FIXED (commit `61dfdd2`)
 
