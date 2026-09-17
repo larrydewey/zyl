@@ -1118,11 +1118,23 @@
     (d1 (Some (Expr (EBegin (convert-ast-list args))))))
 
 )
+; `lambda` and `fn` are fully equivalent anonymous-function syntax --
+; everywhere both ELambda and EFn are handled (type_inference.zyl's
+; infer-expr-lambda, monomorphization.zyl's subst-expr) they do exactly
+; the same thing. But icnf.zyl (the final Icnf lowering), closure_inline
+; .zyl, trait_dispatch.zyl, macro_expand.zyl, and module_resolver.zyl
+; never learned about ELambda, only EFn -- so a `lambda` silently fell
+; through icnf.zyl's "unsupported shape" catchall to a bare (IConst 0),
+; and calling it jumped to address 0. Rather than teach every one of
+; those passes about a second, functionally-identical closure node
+; type, parse-lambda now builds an EFn directly: `lambda` was always
+; meant to be indistinguishable from `fn`, so make it actually be the
+; same node from the moment it's parsed.
 (defn parse-lambda (args)
   (if (ast-has-at-least args 2)
     (Some
       (Expr
-        (ELambda
+        (EFn
           "___"
           (parse-params (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-list-last args (AstInt 0))))))
