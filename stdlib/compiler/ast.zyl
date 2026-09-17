@@ -91,8 +91,13 @@
 ; ADT-dispatch lookup (a VTFn entry is invisible to vt-tag-of/
 ; vt-arity-of, which only ever see VTEntry — no risk of a plain
 ; function name aliasing a real constructor's tag).
+; gid (5th field): a per-deftype-DECLARATION-unique id, the same value on
+; every variant that came from one `deftype` call — unlike `tag` (which
+; restarts at 0 for every deftype, since codegen's dispatch needs small
+; per-type-relative tags), gid lets ic-check-exhaustive find a variant's
+; siblings across the whole flat table. See vt-names-with-gid below.
 (deftype VTable
-  (VTEntry String Int (List String) VTable)  ; variant name, tag, field names
+  (VTEntry String Int (List String) Int VTable) ; variant name, tag, field names, gid
   (VTFn String VTable)                       ; plain top-level function name
   (VTNil))
 
@@ -100,7 +105,7 @@
 ; Returns: Int
 (defn vt-tag-of (vt name)
   (match vt
-    (VTEntry n tag d3 rest (if (str-eq n name) tag (vt-tag-of rest name)))
+    (VTEntry n tag d3 d10 rest (if (str-eq n name) tag (vt-tag-of rest name)))
     (VTFn d5 rest (vt-tag-of rest name))
     (VTNil -1)))
 
@@ -108,16 +113,32 @@
 ; Returns: Int
 (defn vt-arity-of (vt name)
   (match vt
-    (VTEntry n d4 fields rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
+    (VTEntry n d4 fields d11 rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
     (VTFn d6 rest (vt-arity-of rest name))
     (VTNil -1)))
 
 ; True when `name` is a registered plain top-level function name.
 (defn vt-is-fn (vt name)
   (match vt
-    (VTEntry d7 d8 d9 rest (vt-is-fn rest name))
+    (VTEntry d7 d8 d9 d12 rest (vt-is-fn rest name))
     (VTFn n rest (if (str-eq n name) 1 (vt-is-fn rest name)))
     (VTNil 0)))
+
+; gid for an interned variant name; -1 when absent.
+(defn vt-gid-of (vt name)
+  (match vt
+    (VTEntry n d13 d14 gid rest (if (str-eq n name) gid (vt-gid-of rest name)))
+    (VTFn d15 rest (vt-gid-of rest name))
+    (VTNil -1)))
+
+; All variant names sharing one gid (i.e. one deftype declaration's full
+; sibling set), in table order.
+(defn vt-names-with-gid (vt gid)
+  (match vt
+    (VTEntry n d16 d17 g rest
+      (if (= g gid) (Cons n (vt-names-with-gid rest gid)) (vt-names-with-gid rest gid)))
+    (VTFn d18 rest (vt-names-with-gid rest gid))
+    (VTNil Nil)))
 
 ; --- Token stream helpers ----------------------------------------------------
 

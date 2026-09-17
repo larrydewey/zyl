@@ -256,14 +256,14 @@
   (match structmark
     (Some d2
       (ic-collect-vt-run rest
-                          (vt-from-adtvariants variants vt stag)
+                          (vt-from-adtvariants variants vt stag stag)
                           (+ stag (list-length variants))))
-    (None (ic-collect-vt-run rest (ic-vt-deftype name variants vt) stag))))
+    (None (ic-collect-vt-run rest (ic-vt-deftype name variants vt stag) (+ stag 1)))))
 
 ; Add one deftype's variants. `variants` is already a (List ADTVariant) —
 ; ExprInner parsed field structure once, upstream.
-(defn ic-vt-deftype (name variants vt)
-  (vt-from-adtvariants variants vt 0))
+(defn ic-vt-deftype (name variants vt gid)
+  (vt-from-adtvariants variants vt 0 gid))
 
 ; True within-one-deftype duplicate check: does `nm` appear again among
 ; this SAME deftype's own remaining variants? (Not the accumulated vt
@@ -294,17 +294,18 @@
 ; aware hint mechanism to do better, so consistent shadowing is the
 ; right behavior until one exists, not a hard error blocking otherwise
 ; valid programs from compiling at all.
-(defn vt-from-adtvariants (variants vt tag)
+(defn vt-from-adtvariants (variants vt tag gid)
   (match variants
     (Nil vt)
     (Cons v rest
-      (let tail (vt-from-adtvariants rest vt (+ tag 1))
+      (let tail (vt-from-adtvariants rest vt (+ tag 1) gid)
         (let nm (AV.name v)
           (if (> (av-list-has-name rest nm) 0)
             (ffi-call "zyl_f_error" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
             (VTEntry nm
                      tag
                      (AV.fields v)
+                     gid
                      tail)))))))
 
 ; One top-level function: name, (List Param), body. Returns (List Icnf)
@@ -769,7 +770,7 @@
   (match vt
     (VTNil Nil)
     (VTFn d1 rest (ic-struct-arms arena rest field))
-    (VTEntry name tag fields rest
+    (VTEntry name tag fields d19 rest
       (let arms-rest (ic-struct-arms arena rest field)
         (let idx (ic-field-index fields field 0)
           (if (>= idx 0)
@@ -984,13 +985,73 @@
             (ffi-call "zyl_f_error" msg 1000))
           (ic-check-variants-exist rest vt))))))
 
-; Exhaustiveness check: if no catch-all arm, verify each arm's variant
-; is a known VT variant. (Full ADT exhaustiveness requires scrutinee
-; type info, which we don't have at this lowering stage.)
+; Real exhaustiveness, using VTEntry's gid (see ast.zyl): every variant
+; is grouped with its declaration siblings regardless of tag (tag alone
+; restarts at 0 per deftype and can't disambiguate). Take the first arm's
+; own gid, collect every sibling name sharing it, and check each is
+; covered by some arm. Doesn't need real scrutinee-type tracking (item #1's
+; still-missing gap) since a match's arms are always drawn from one ADT in
+; valid programs, so the first arm's gid already IS the scrutinee's group.
+;
+; Guarded by ic-arms-all-gid: parse-match-arm's "wrapped" arm surface form
+; `((Variant field*) body)` records the NESTED pattern's own constructor as
+; MA.variant -- correct for a real wrapped arm, but the exact same AST shape
+; is (mis)produced today for a 3-part `((Inner f*) tail-name body)` arm
+; that's actually destructuring a Cons's head inline (seen in
+; region_inference.zyl's `((RB n r esc) rest ...)`, a currently-dead code
+; path since region inference's result isn't wired into codegen output —
+; not something to fix as a side effect of this check). MA.variant there
+; reports the INNER type's constructor (e.g. "RB" from RegionBind), which
+; has nothing to do with the outer List's own Cons/Nil siblings. Rather
+; than guess which shape produced a given arm, require every arm in the
+; match to share the SAME gid as the first one before trusting the group at
+; all; a mix of gids means at least one arm's reported name doesn't mean
+; what this check assumes, so it backs off to "no error" (the pre-existing
+; behavior) instead of risking a false positive on a case it can't
+; distinguish from a real bug.
+(defn ic-arm-covers-name (arms n)
+  (match arms
+    (Nil 0)
+    (Cons arm rest
+      (if (> (str-eq (MA.variant arm) n) 0) 1 (ic-arm-covers-name rest n)))))
+
+(defn ic-names-uncovered (names arms)
+  (match names
+    (Nil 0)
+    (Cons n rest
+      (if (> (ic-arm-covers-name arms n) 0)
+        (ic-names-uncovered rest arms)
+        1))))
+
+(defn ic-arms-all-gid (arms vt gid)
+  (match arms
+    (Nil 1)
+    (Cons arm rest
+      (if (= (vt-gid-of vt (MA.variant arm)) gid)
+        (ic-arms-all-gid rest vt gid)
+        0))))
+
+(defn ic-check-exhaustive-gid (arms vt)
+  (match arms
+    (Nil 0)
+    (Cons arm d1
+      (let gid (vt-gid-of vt (MA.variant arm))
+        (if (< gid 0)
+          0
+          (if (= (ic-arms-all-gid arms vt gid) 0)
+            0
+            (if (> (ic-names-uncovered (vt-names-with-gid vt gid) arms) 0)
+              (ffi-call "zyl_f_error" "E_MATCH_NONEXHAUSTIVE: match does not cover every variant" 1000)
+              0)))))))
+
+; Exhaustiveness check: if no catch-all arm, verify each arm's variant is
+; a known VT variant (typo detection), then that every sibling variant of
+; the arms' own deftype is actually covered.
 (defn ic-check-exhaustive (arms vt)
   (if (> (ic-has-catchall arms vt) 0)
     0
-    (ic-check-variants-exist arms vt)))
+    (let d1 (ic-check-variants-exist arms vt)
+      (ic-check-exhaustive-gid arms vt))))
 
 ; (match scrutinee arm...)
 (defn ic-match (arena subj arms vt)
