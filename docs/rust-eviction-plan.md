@@ -574,20 +574,51 @@ Decisions locked (all "recommended" options):
 - Rich error reporting in interactive mode
 - "Did you mean?" suggestions for typo recovery
 
-### Phase D — Eviction & docs
-11. `git mv src archive/rust-bootstrap-2026`; write archive README; delete
-    `Cargo.toml`/`Cargo.lock`; `rm -rf target`.
-12. Merge the two regression runners into one defaulting to the selfhost
-    binary; delete the duplicate `_self.sh`.
-13. Update README, AGENTS.md, PROGRESS.md, book build instructions,
-    `.gitignore`; delete root junk (`a.out*`, `--emit-zyl.s`, `-o.s`,
-    `-emit-zyl.s`, `output.zyl`, `larry_test.*`, `test_*.zyl`, `t.s`,
-    `*__emit-icnf.s` etc.).
+### Phase D — Eviction & docs — DONE (commits `cf00abb`, `ef9305d`, 2026-09-17)
 
-### Phase E — Verify
-14. Full regression suite via selfhost compiler; `./boot.sh` fixed point;
-    compile-fail tests green; `grep -r cargo` free in scripts/docs;
-    REPL smoke; archived Rust never referenced by any script.
+Reordered ahead of Phase B/C once `--bootstrap-from-self` (below)
+proved Rust wasn't load-bearing for reseeding either — no reason left
+to wait on region inference/optimization/REPL work to evict it.
+
+11. ✅ `git mv src archive/rust-bootstrap-2026/src`; `Cargo.toml`/
+    `Cargo.lock` moved alongside (not deleted — kept as a self-
+    contained, still-buildable Cargo project, since the archive's
+    whole point is staying usable as a fallback); `rm -rf target`.
+    Two `include_str!` paths needed fixing after the move
+    (`module_resolver.rs`'s stdlib embeds, `runtime.rs`'s runtime.c
+    embed both assumed `src/` sat directly under the repo root).
+    Archive README written; verified by actually running
+    `./boot.sh --bootstrap-from-rust` from the new location.
+12. ✅ Deleted `run_regression_tests_self.sh` (fully superseded by
+    `run_regression_tests.sh` once it switched to `zyl-self`, commit
+    `e03be5d`).
+13. ✅ Updated README, AGENTS.md, `.gitignore`, `docs/regression-tests.md`,
+    book chapters 1/27/31; deleted root junk; appended (not rewrote)
+    PROGRESS.md with this session's arc. Four older architecture docs
+    (`docs/{codebase-map,compiler-pipeline,architecture-decisions,
+    implementation-status}.md`) got a dated banner pointing to current
+    sources rather than a full rewrite — they still describe the Rust
+    implementation in detail and that's fine as history, just flagged.
+
+**Also not in the original plan**: `./boot.sh --bootstrap-from-self`
+(commit `cf00abb`) — reseeding no longer needs Rust either. Verified
+empirically: a self-hosted seed many commits stale (predating closures,
+try/catch, and exhaustiveness checking) correctly reseeds to the exact
+byte-identical fixed point Rust used to produce for the same source, by
+iterating stage1->stage2->stage3->... until two consecutive rounds
+match (2-3 rounds in practice). `--bootstrap-from-rust` survives only
+as the fallback for a change so large the old seed can't even *parse*
+the new source.
+
+### Phase E — Verify — DONE
+14. ✅ Full regression suite via selfhost compiler (43/43); `./boot.sh`
+    fixed point holds; compile-fail tests green; `grep -r cargo`
+    clean outside `archive/` and historical docs/research notes;
+    archived Rust verified working but not referenced by any active
+    script except `boot.sh`'s own documented fallback path. REPL smoke
+    not re-verified this pass — `tools/repl.zyl` was already known to
+    be an unfinished skeleton (Phase C, still not started) before this
+    phase, unaffected by the archival itself.
 
 ## Risk register
 - **Fixed point fragility**: every compiler-source edit changes what
