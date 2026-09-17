@@ -9,9 +9,32 @@
 #   5. CLI smoke-test + cargo-free zyl-self wrapper
 #
 # Re-seeding (only needed when the compiler source changes the fixed point):
-#   ./boot.sh --bootstrap-from-rust   rebuild stage2.s/ stage2.bin via the
-#                                     still-archived Rust bootstrap, verify,
-#                                     then re-commit the new seed.
+#   ./boot.sh --bootstrap-from-self  rebuild stage2.s/stage2.bin using the
+#                                    CURRENT committed seed as the starting
+#                                    compiler, no Rust anywhere. A source
+#                                    change doesn't take full effect in one
+#                                    round -- the compiler that compiled the
+#                                    new source doesn't yet BEHAVE per that
+#                                    new source until it's compiled AGAIN by
+#                                    the result -- so this iterates
+#                                    stage1->stage2->stage3->... up to
+#                                    MAX_SELF_ROUNDS, comparing consecutive
+#                                    outputs, until two consecutive rounds
+#                                    match. Verified empirically: starting
+#                                    from a seed many commits stale (predating
+#                                    closures, try/catch, exhaustiveness
+#                                    checking, and more), two rounds converged
+#                                    to a fixed point BYTE-IDENTICAL to the one
+#                                    Rust produced for the same source. Only
+#                                    fails to converge for a change so large
+#                                    the OLD seed can't even PARSE the new
+#                                    source at all (new syntax, not just new
+#                                    behavior) -- archive/rust-bootstrap-2026's
+#                                    README covers that fallback.
+#   ./boot.sh --bootstrap-from-rust  the old path, via the archived Rust
+#                                    bootstrap (see archive/rust-bootstrap-2026)
+#                                    -- kept only as a fallback for the case
+#                                    above; not part of the normal workflow.
 #
 # Artifacts land in build/boot/. Exit 0 only if the fixed point holds.
 set -euo pipefail
@@ -21,7 +44,9 @@ SRC="${SCRIPT_DIR}/selfhost/zyl_selfhost_compiler.zyl"
 OUT="${SCRIPT_DIR}/build/boot"
 RUNTIME="${SCRIPT_DIR}/runtime/actor_runtime.c"
 BOOTSTRAP=0
+BOOTSTRAP_SELF=0
 [ "${1:-}" = "--bootstrap-from-rust" ] && BOOTSTRAP=1
+[ "${1:-}" = "--bootstrap-from-self" ] && BOOTSTRAP_SELF=1
 
 mkdir -p "$OUT"
 cd "$SCRIPT_DIR"
@@ -33,6 +58,40 @@ die()  { echo -e "  \033[0;31m✗\033[0m $*"; exit 1; }
 link_cc() { # link_cc <asm> <out-bin>
     cc -no-pie "$1" "$RUNTIME" -o "$2" -lpthread
 }
+
+# ── Re-seed path: iterate the self-hosted compiler to a new fixed point ──
+MAX_SELF_ROUNDS=10
+if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
+    step "Bootstrap: reseeding from the self-hosted compiler (no Rust)"
+    [ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — need a first seed via --bootstrap-from-rust (see archive/rust-bootstrap-2026)"
+    link_cc "${OUT}/stage2.s" "${OUT}/stage1.bin"
+    PREV_S="${OUT}/stage2.s"
+    PREV_BIN="${OUT}/stage1.bin"
+    i=1
+    while [ "$i" -le "$MAX_SELF_ROUNDS" ]; do
+        NEXT_S="${OUT}/reseed_round${i}.s"
+        timeout 600 setarch -R "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
+        [ -f "$NEXT_S" ] || die "round $i produced no output"
+        if cmp -s "$PREV_S" "$NEXT_S"; then
+            ok "converged after $i round$([ "$i" -eq 1 ] && echo "" || echo "s")"
+            cp "$NEXT_S" "${OUT}/stage2.s"
+            link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
+            rm -f "${OUT}"/reseed_round*.s "${OUT}"/reseed_round*.bin
+            ok "stage2 seeded from the self-hosted compiler"
+            echo ""
+            echo "Verify with a clean ./boot.sh (no args) and commit the new seed:"
+            echo "  git add -f build/boot/stage2.s build/boot/stage2.bin && git commit"
+            exit 0
+        fi
+        NEXT_BIN="${OUT}/reseed_round${i}.bin"
+        link_cc "$NEXT_S" "$NEXT_BIN"
+        PREV_S="$NEXT_S"
+        PREV_BIN="$NEXT_BIN"
+        i=$((i + 1))
+    done
+    rm -f "${OUT}"/reseed_round*.s "${OUT}"/reseed_round*.bin
+    die "did not converge after ${MAX_SELF_ROUNDS} rounds — likely a genuinely new language construct the old seed can't parse at all (not just new behavior); fall back to --bootstrap-from-rust (see archive/rust-bootstrap-2026)"
+fi
 
 # ── Re-seed path: Rust bootstrap -> fresh stage2 ─────────────────────────
 if [ "$BOOTSTRAP" -eq 1 ]; then
