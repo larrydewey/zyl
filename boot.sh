@@ -108,6 +108,15 @@ RESULT="$(setarch -R "${OUT}/smoke.bin")"
 ok "smoke output correct ($RESULT)"
 
 step "Generating build/boot/zyl-self wrapper"
+# rm first: `cp -R stdlib OUT/stdlib` nests a fresh copy INSIDE an
+# already-existing OUT/stdlib instead of updating it (cp -R's directory-
+# target semantics), so every run after the first silently left the real
+# resolution path (OUT/stdlib/*, what module_resolver.zyl actually reads
+# after chdir-ing to OUT) frozen at whatever it was on the very first
+# boot.sh run in this checkout -- real, dependency-graph-wide staleness
+# that took a full stdlib diff to actually find (see docs/rust-eviction-
+# plan.md).
+rm -rf "${OUT}/stdlib"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"

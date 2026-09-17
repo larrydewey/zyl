@@ -200,17 +200,71 @@ cause found, so no single fix helps more than one:
   sub-test escapes the `try-catch` and kills the process instead of
   being caught — an exception-propagation bug.
 
-### 7. Unexplained, needs its own investigation — NOT FIXED
+### 7. `integration/selfhost-codegen` — FIXED (`boot.sh` sync bug + duplicate defn)
 
-- `integration/selfhost-codegen`: reports `E_UNBALANCED_PARENS` on a
-  file that isolates and compiles fine standalone when the suspect
-  string literal (four escaped-quote pairs) is extracted into its own
-  minimal repro — so it isn't the escape-handling bug class already
-  fixed in `sexp_balance.zyl` earlier this session. Genuinely
-  unexplained; needs a fresh repro attempt (try the file as-is with
-  smaller and smaller deletions from the end, rather than a hand-built
-  reproduction of the suspected line, since the isolated version
-  already didn't reproduce it).
+Not a lexer/escape bug at all — the file's own token stream was already
+verified balanced by hand (40 `(` / 40 `)`) before finding the real
+cause. Two independent bugs stacked, both systemic rather than specific
+to this one test:
+
+**1. `boot.sh` was copying `stdlib/` into `build/boot/stdlib/` with a
+`cp -R` that only overwrites correctly on a clean target directory.**
+Once `build/boot/stdlib/` already exists (i.e. every `boot.sh` run after
+the very first one in a checkout), `cp -R src dst` nests a *fresh* copy
+inside the existing `dst` (`build/boot/stdlib/stdlib/...`) instead of
+updating `dst` itself — well-known `cp` directory-target semantics, not
+a Zyl bug. Since `module_resolver.zyl` resolves every `(use module/name)`
+in a *user's* file by chdir-ing to the compiler binary's own directory
+(`build/boot/`) and reading `stdlib/<name>.zyl` from there, it was
+reading the STALE, never-updated outer copy — while a correctly-synced
+inner copy sat one level down, at a path nothing ever resolved against.
+`diff -rq stdlib/ build/boot/stdlib/` showed 11 stale files and 4 files
+missing outright (`error_codes.zyl`, `error_report.zyl`,
+`optimization.zyl`, `sexp_balance.zyl` didn't exist in the stale copy at
+all). The stale `type_system.zyl` specifically still had a since-removed
+duplicate `Region` deftype and a since-fixed broken multi-binding `let`
+— genuinely broken source, not just outdated. `integration/
+selfhost-codegen` is one of the only tests that `use`s compiler-internal
+modules (`compiler/expr_inner` → transitively `compiler/type_system`) at
+runtime, which is why nothing else in the suite ever surfaced this.
+Fixed: `rm -rf "${OUT}/stdlib"` before the `cp -R` in `boot.sh`. Also
+deleted the stray nested `build/boot/stdlib/stdlib/` (untracked, gitignored,
+never should have existed).
+
+**2. `compiler/type_inference.zyl` carried its own duplicate copy of
+`resolve-nominal`, byte-identical to `compiler/type_system.zyl`'s.**
+`assemble.py`'s bundle build (used to compile the self-hosted compiler
+itself) has its own Python-level `deduplicate_defns` (first-occurrence-
+wins) that silently papered over this for the compiler's own build —
+so the fixed point never caught it. But `module_resolver.zyl`'s runtime
+`use`-graph splicing has no such dedup: a real program pulling in both
+`compiler/expr_inner` (→ `type_system`) and `compiler/icnf` (→
+`monomorphization` → `type_inference`) spliced both copies in, producing
+a genuine `_ZYL_resolve_nominal` duplicate-symbol assembler error —
+only visible once bug #1 above was fixed and module resolution started
+reading real, current source. Fixed by adding `(use compiler/
+type_system)` to `type_inference.zyl` (its own header comment already
+said type_system is "the single owner of all type-system ADTs") and
+deleting the duplicate.
+
+**Not fixed, found for free during this investigation, not currently
+blocking anything**: `list-nth`/`list-map`/`list-contains` are *also*
+independently defined in both `stdlib/collections/collections.zyl` and
+`stdlib/compiler/monomorphization.zyl` — but unlike `resolve-nominal`,
+these have genuinely different signatures (`list-nth`: `(lst i)` returning
+a raw value vs. `(n xs)` returning `Option`; `list-contains`: reversed
+argument order) between the two copies, so this isn't a safe delete-and-
+`use` fix — it needs an audit of every call site in `monomorphization.zyl`
+before merging. Latent landmine: a real program `use`-ing both
+`collections/collections` and `compiler/monomorphization` would hit the
+same duplicate-symbol class of failure. No current test combination
+triggers it.
+
+**Impact**: `integration/selfhost-codegen` link failure → 1/1 test
+passes. 36/43 → 37/43. More importantly, this was a systemic module-
+resolution bug affecting ANY user `.zyl` file `use`-ing compiler-internal
+modules, not specific to this one test — worth re-verifying if further
+compiler-introspection tests are added.
 
 ### Also noted, not blocking anything specific
 

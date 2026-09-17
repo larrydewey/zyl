@@ -16,6 +16,8 @@
 ; ADTs. This file contains only the inference LOGIC.
 ; ===========================================================================
 
+(use compiler/type_system)
+
 (defn fresh-var (inferer)
     ; return current next-index and bump-by-1
     (let
@@ -1726,13 +1728,14 @@
         (None
         "")))
 
-(defn resolve-nominal (subst t)
-    ; mirror Rust resolve_nominal: apply the substitution then, if the
-    ; resolved type is nominal (TStruct), return its name; else None.
-    (match
-        (subst-apply subst t)
-        (TStruct n d17 (Some n))
-        (d1 None)))
+; resolve-nominal lives in compiler/type_system.zyl (`use`d above) — this
+; file used to carry its own byte-identical copy, which assemble.py's
+; bundle-time deduplicate_defns papered over (first-occurrence-wins) but
+; which is a genuine duplicate-symbol link error for any real program
+; whose `use` graph pulls in both files independently (e.g. a program
+; using compiler/expr_inner, which reaches type_system, and
+; compiler/icnf -> monomorphization -> type_inference, which used to
+; carry this same name).
 
 (defn str-index-of-char (s c i)
     (if
