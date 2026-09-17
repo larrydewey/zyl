@@ -196,7 +196,8 @@
     (CGS d15 d16 d17 d18 rd d19 rd)))
 
 ; ===========================================================================
-; KINDS (for print format + float detection): 0 int, 1 string, 2 float
+; KINDS (for print format + float/string/struct dispatch):
+;   0 int, 1 string, 2 float, 3 struct/variant (heap-allocated aggregate)
 ; ===========================================================================
 
 (defn kind-of (env e)
@@ -219,7 +220,19 @@
     (ISet d30 d31 0)
     (ILet d32 d33 d34 0)
     (ISeq d35 0)
-    (IVariant d36 d37 d38 0)
+    ; `==`/`!=` between two struct/ADT-kind operands used to fall straight
+    ; into cg-ibinop's raw `cmp rax, rcx` (same bare pointer comparison bug
+    ; already fixed for strings above) -- since IVariant construction
+    ; heap-allocates a fresh block every time, two separately-constructed
+    ; but field-for-field-identical values (e.g. a derived-Eq struct's
+    ; make-<Name> called twice with the same arguments) live at different
+    ; addresses, so pointer equality silently said "not equal" regardless
+    ; of content. zyl_variant_eq (actor_runtime.c) already does real
+    ; structural comparison and was already used by cg-variant's own
+    ; comment describing the encoding it depends on -- just never actually
+    ; called from anywhere. Kind 3 marks a value as struct/variant-typed
+    ; so cg-expr's IBinop case can route `==`/`!=` through it instead.
+    (IVariant d36 d37 d38 3)
     (IMatch d39 d40 0)
     (IFn d41 0)))
 
@@ -252,7 +265,9 @@
        (cg-fbinop st env op l r)
        (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of env l) 1) (= (kind-of env r) 1)) 1 0) 0) 0)
          (cg-strbinop st env op l r)
-         (cg-ibinop st env op l r))))
+         (if (> (if (> op 4) (if (or (= (kind-of env l) 3) (= (kind-of env r) 3)) 1 0) 0) 0)
+           (cg-variantbinop st env op l r)
+           (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-args st env name args true 0))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
@@ -415,6 +430,39 @@
     (if (= op 10)
       (cg-emit-line st2 "    xor rax, 1")
       st2)))
+
+; Struct/variant `==`/`!=`: structural comparison via the C runtime
+; (zyl_variant_eq), same shape as cg-strbinop above. `<`/`>`/`<=`/`>=`
+; had the identical bare-pointer-comparison bug (two field-for-field-
+; identical structs are still two separately heap-allocated addresses,
+; so which one comes out "less" depended on allocation order, not
+; content -- e.g. two structs built with the same field values compared
+; as `<` true just because the first one built happened to land at a
+; lower address). zyl_variant_cmp (actor_runtime.c) does a real
+; lexicographic field-by-field comparison (skipping the shared
+; discriminant word, which never differs between same-type values) and
+; returns -1/0/1; cg-variant-cmp-set turns that into the right bool for
+; each of the four ops the same way cg-cmp-set already does for a
+; direct register comparison.
+(defn cg-variantbinop (st env op l r)
+  (if (> op 8)
+    (let st2 (cg-expr st env (IFfi "zyl_variant_eq" (Cons l (Cons r Nil))))
+      (if (= op 10)
+        (cg-emit-line st2 "    xor rax, 1")
+        st2))
+    (let st2 (cg-expr st env (IFfi "zyl_variant_cmp" (Cons l (Cons r Nil))))
+      (cg-variant-cmp-set st2 op))))
+
+(defn cg-variant-cmp-set (st op)
+  (let st2 (cg-emit-line st "    cmp rax, 0")
+    (let st3 (cg-emit st2 "    set")
+      (if (= op 5)
+        (cg-setcc st3 "l al")
+        (if (= op 6)
+          (cg-setcc st3 "g al")
+          (if (= op 7)
+            (cg-setcc st3 "le al")
+            (cg-setcc st3 "ge al")))))))
 
 (defn cg-arith-mnem (st op)
   ; Div (3) and Rem (4) both sign-extend rax into rdx via cqo before idiv,
