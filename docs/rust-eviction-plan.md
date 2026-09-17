@@ -595,43 +595,71 @@ runtime symbols (`zyl_cstr_concat`, `_substr`, `_sub`, `_from_int`,
 That fix alone wasn't enough to make the REPL show real values, though:
 `repl-loop` was reading the *value* of a typed expression from the
 compiled child program's process exit code, and codegen.zyl's `main:`
-entry stub unconditionally zeroes `eax` (`xor eax, eax`) right after
-running the user's code, before it becomes the exit status — for every
+entry stub unconditionally zeroed `eax` (`xor eax, eax`) right after
+running the user's code, before it became the exit status — for every
 Zyl program this compiler has ever produced, not just the REPL's.
 Tried the direct fix (drop the zeroing, let `zyl_call_on_big_stack`'s
 real return value become the exit code) and it broke
 `tests/regression/generics-multi-type.zyl`, whose `main` body ends in a
-`print` call never designed to have its leftover register value become
-a process exit code — reverted immediately once the regression showed
-up. Fixed the REPL's actual problem a different way instead: wrap
-typed input as `(print <expr>)` rather than bare `<expr>`, so the
-value is shown by the compiled child printing it directly, sidestepping
-the exit-code channel entirely rather than trying to repair a shared
-entry stub that other code depends on being exit-code-silent.
-`repl-loop` now only prints an error message when `repl-codegen`
-returns its own `-1` compile-failure sentinel (never a real exit code,
-which is always 0-255); it no longer prints anything derived from a
-normal run.
+`print` call — because `print`'s own codegen (`cg-print`) left
+whatever `printf` happened to return (an arbitrary byte count, an ABI
+artifact) in `rax`, and that leaked out as the exit code once the
+zeroing was gone. Root-caused and fixed *that* instead of reverting:
+`cg-print` now re-zeroes `eax` itself right after each `call printf`,
+so `print`'s own value is always a clean, deterministic 0 — the
+ordinary "no useful value" convention — regardless of what `printf`
+returned. With that fixed, removing the entry stub's zeroing is safe:
+`main`'s real return value now genuinely becomes the process exit
+code for the first time in this compiler's history (verified:
+`generics-multi-type` and all other 43 tests pass with real exit
+codes; `(run-tests)` as a `main` tail now genuinely propagates
+`zyl_run_tests`'s pass/fail result as the exit status too, not just a
+forced 0). The REPL itself still doesn't read that exit code, though
+— it wraps typed input as `(print <expr>)` and lets the child print
+its own value directly, since a process exit status is truncated to a
+single byte and can't represent an arbitrary computed value (negative
+numbers, floats, strings) even now that it's honest.
 
 Verified interactively: typing `(+ 1 2)`, `(* 6 7)`, `(- 10 3)` in one
 REPL session now correctly prints `3`, `42`, `7`. Full reseed to a new
 fixed point, `run_regression_tests.sh --full` stays 43/43.
 
-**Known limitation, not fixed**: typing an expression that itself
-contains a top-level `print` (e.g. `(print 99)`) wraps to
-`(print (print 99))` and produces *three* `printf` calls at runtime
-(`99`, then `3` — the inner print's own leftover return value getting
-printed — then an unexplained third value), not the two the Icnf shape
-alone would predict. Confirmed this is specific to `repl-compile-and-run`'s
-own pipeline: the identical source `(defn main () (print (print 99)))`
-compiled directly through the normal CLI produces exactly two `printf`
-calls, matching a straightforward reading of `ic-print`'s recursive
-lowering. Something specific to going through repl.zyl's own sequence
-of pipeline calls (as opposed to `driver.zyl`'s `compile-to-asm`, which
-calls the same underlying functions) introduces a third print; not
-isolated further. Whoever picks this up should bisect
-`repl-compile-and-run`'s stage-by-stage output for this exact input
-against `compile-to-asm`'s to find where the two diverge.
+**Previously reported as an unresolved "nested-print pipeline
+divergence" — it wasn't one; found and fixed the real bug.** Typing an
+expression that itself contains a top-level `print` (e.g. `(print 99)`)
+used to produce three `printf` calls at runtime instead of the two its
+Icnf shape predicts, and was mistakenly blamed on `repl-compile-and-run`'s
+pipeline somehow diverging from `driver.zyl`'s CLI for identical input.
+The real cause was `repl-read-line`: one `file-read`/`read(2)` call is
+not one line. For an interactive terminal that usually doesn't matter
+(canonical mode line-buffers for you), but for anything piped or
+redirected — a test harness, `echo "..." | ./repl`, a script feeding
+several commands — the whole input routinely arrives in a single read
+as one chunk containing multiple newlines. `str-trim` only strips
+leading/trailing whitespace, so an embedded newline (e.g. `"(print 99)
+\n:q"` read in one shot) survived straight into the wrapped
+`(defn main () (print <chunk>))` source. Since `print` (`EPrint`) takes
+a variadic argument list, that chunk parsed as *two* print arguments:
+the real expression, and the bare trailing token (`:q`), which this
+compiler's "unbound name" fallback silently lowers to `(IConst 0)`
+instead of erroring — an extra, meaningless `printf` call, not a
+pipeline divergence at all. (This is also, in hindsight, exactly what
+the earlier "mysterious extra 0" after ordinary non-nested expressions
+was, in test runs that happened to pipe more than one line in at once.)
+
+Fixed with a real line-buffered reader: `repl-next-line` (replacing
+`repl-read-line`) threads a `pending` string of already-read-but-not-
+yet-consumed bytes through `repl-loop`'s recursion. If `pending`
+already contains a newline, it splits there and returns the remainder
+for the next call with no syscall; otherwise it reads more and
+appends, retrying until a newline appears or the fd is genuinely
+exhausted. Verified: piping `(+ 1 2)\n(* 6 7)\n(- 10 3)\n:q\n` in one
+shot now correctly prints exactly `3`, `42`, `7` (previously showed
+`3`, `42`, `7`, `0` all run together from a single misread "line").
+Nested `print` is now well-defined rather than garbage: `(print 99)`
+shows `99` then `0` — print's own value is always clean 0 (see above),
+so the outer print is simply printing that; not the most useful REPL
+UX for that specific input, but correct and explainable.
 
 **Phase D** (archive `src/`, delete Cargo files) has not been touched —
 Rust is still fully present and still what builds the seed via
