@@ -261,9 +261,33 @@ cause found, so no single fix helps more than one:
   mechanism with no other plumbing), and routed comparisons on
   struct-kind operands through both, mirroring the existing string-kind
   dispatch. 2/5 → 5/5; 35/43 → 36/43.
-- `regression/unwrap-error`: the deliberate error in its `try-catch-err`
-  sub-test escapes the `try-catch` and kills the process instead of
-  being caught — an exception-propagation bug.
+- `regression/unwrap-error` — FIXED (commit `19c6479`). Not actually
+  missing a "real" exception mechanism to build from scratch — the
+  runtime already had one (`zyl_try_push`/`zyl_try_pop`/`zyl_panic`,
+  a heap-allocated frame stack with `jmp_buf`s, added for the *test
+  harness's own* panic recovery) that self-hosted codegen simply never
+  called from anywhere. `error` (`allocator.zyl`) called the always-
+  prints-and-exits `zyl_f_error` instead of the already-catch-aware
+  `zyl_panic`; fixed that one call, then added the codegen side: a new
+  `ITryCatch` Icnf node whose `cg-trycatch` calls `zyl_try_push`, then
+  calls `setjmp` INLINE in the generated function itself (not through
+  an FFI wrapper — a wrapper would `ret` and become an invalid longjmp
+  target before any later panic could fire), and branches on the
+  result — non-panic path runs the try-body and pops the frame; panic
+  path (landed via `longjmp`, frame already popped by `zyl_panic`)
+  reads the stashed message through a new `zyl_try_frame_msg` accessor
+  and runs the catch body with it bound. Every bare `call` in the
+  sequence needed the same save-rsp/`and rsp,-16`/restore alignment
+  dance `cg-variant` already uses elsewhere in this file — verified
+  safe specifically across a later `longjmp` because setjmp/longjmp's
+  own contract is to save and restore every callee-saved register
+  (including the one stashing the pre-alignment `rsp`) as of the
+  `setjmp` call site, regardless of what ran in between.
+
+  **Impact**: `try-catch-err` sub-test passes end-to-end. 42/43 →
+  **43/43 — the full regression suite now passes through the self-
+  hosted compiler, closing out this survey's last open item.**
+  `./boot.sh` confirms the fixed point holds.
 
 ### 7. `integration/selfhost-codegen` — FIXED (`boot.sh` sync bug + duplicate defn)
 
@@ -466,6 +490,28 @@ Phase D/E territory, not started.
 eviction, not the finish line. None of Phase D (archiving Rust) has
 started, and Phase B/C are both further along than "unstarted" but
 neither is functionally complete. Not close to eviction yet.
+
+## Feature-parity survey status (2026-09-17): closed out
+
+As of commit `19c6479`, every item in the 2026-09-16 survey above is
+fixed: cross-deftype variant shadowing (#1), closures/free-variable
+capture (#2), the trait-dispatch compiler crash (#3), match
+exhaustiveness (#4), the contracts passthrough forms (#5), with-resource/
+control-flow-ext/derive/unwrap-error (#6), and the `boot.sh` stdlib-sync
+bug plus a duplicate `resolve-nominal` definition (#7). The full
+regression suite (`./run_regression_tests.sh --full`) now passes
+**43/43** through the self-hosted compiler — up from the 26/43 this
+survey started at. `./boot.sh`'s fixed point holds after every one of
+these landed.
+
+This closes the feature-parity gap the survey was tracking, but does
+**not** mean Rust eviction (this document's original goal, below) is
+done — Phase B (region inference/optimization not wired into codegen
+output), Phase C (REPL, still an unfinished skeleton per the
+2026-09-16 section below), and Phase D (archiving `src/`, deleting
+Cargo files) remain untouched. What changed is the precondition: the
+self-hosted compiler can now be trusted to compile the *entire* known
+test corpus correctly, not just itself.
 
 
 Goal: remove the Rust bootstrap compiler entirely from Zyl's build/test/use
