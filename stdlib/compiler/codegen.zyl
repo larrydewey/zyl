@@ -234,7 +234,8 @@
     ; so cg-expr's IBinop case can route `==`/`!=` through it instead.
     (IVariant d36 d37 d38 3)
     (IMatch d39 d40 0)
-    (IFn d41 0)))
+    (IFn d41 0)
+    (ICallClosure d42 d43 0)))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -269,6 +270,7 @@
            (cg-variantbinop st env op l r)
            (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-args st env name args true 0))
+    (ICallClosure name args (cg-call-closure-args st env name args))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
     (IIf c t eb (cg-if-dispatch st env c t eb))
@@ -692,6 +694,36 @@
   (let st2 (cg-indirect-target st (env-lookup env name))
     (cg-call-cleanup st2 n)))
 
+; ── closure call path (ICallClosure) ──
+; `name`'s own stack slot holds a heap [tag,code,env] triple (see
+; icnf.zyl's ic-lambda-closure), not a bare code pointer: real args are
+; staged into registers exactly like an ordinary call (mirrors
+; cg-call-args's phases 0-3), then this unpacks code/env from the
+; triple and passes env as one extra trailing register argument (index
+; n, right after the n real args) before calling through code. r11
+; (never used for arg staging) holds the triple pointer and then the
+; code pointer in turn, so it's never live across the env-register move.
+(defn cg-call-closure-args (st env name args)
+  (let n (list-length args)
+    (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
+               (cg-emit-line st "    sub rsp, 8")
+               st)
+      (let st3 (cg-scratch-all st2 env args)
+        (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
+          (let st5 (cg-load-reg-args st4 n (- (cg-min-int n 6) 1))
+            (cg-closure-fire st5 env name n)))))))
+
+(defn cg-closure-fire (st env name n)
+  (let st2 (cg-emit st "    mov r11, [rbp")
+    (let st3 (cg-emit-int st2 (env-lookup env name))
+      (let st4 (cg-nl (cg-emit st3 "]"))
+        (let st5 (cg-emit st4 "    mov ")
+          (let st6 (cg-emit st5 (cg-reg-of n))
+            (let st7 (cg-nl (cg-emit st6 ", [r11+16]"))
+              (let st8 (cg-emit-line st7 "    mov r11, [r11+8]")
+                (let st9 (cg-emit-line st8 "    call r11")
+                  (cg-call-cleanup st9 n))))))))))
+
 ; ── ext (FFI) path ──
 
 (defn cg-fire-ext (st env name n)
@@ -934,7 +966,8 @@
     (ISeq es (+ 1 (icnf-count-list es)))
     (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
-    (IFn d65 d66 d67 1)))
+    (IFn d65 d66 d67 1)
+    (ICallClosure d94 args (icnf-add2 2 (icnf-count-list args)))))
 
 (defn icnf-count-list (xs)
   (match xs
@@ -962,7 +995,8 @@
     (ISeq es (icnf-count-slots-list es))
     (IVariant d89 d90 fields (icnf-count-slots-list fields))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
-    (IFn d91 d92 d93 0)))
+    (IFn d91 d92 d93 0)
+    (ICallClosure d95 args (icnf-count-slots-list args))))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)

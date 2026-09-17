@@ -765,6 +765,17 @@ long long zyl_variant_cmp(long long a, long long b) {
     return 0;
 }
 
+/* Field `idx` (0-based, skipping the discriminant at index 0 — same
+ * layout zyl_variant_eq/zyl_variant_cmp document above) of a heap-
+ * allocated aggregate. Used by closure conversion (icnf.zyl's
+ * ic-lambda-closure/ic-wrap-env-binds) to read a captured value back
+ * out of a closure's env block; not something the tag is ever checked
+ * for here, since a closure's env is never `match`ed by user code. */
+long long zyl_variant_field(long long ptr, long long idx) {
+    if (!ptr) return 0;
+    return *(long long*)(size_t)(ptr + 8 * (idx + 1));
+}
+
 long long zyl_pin_alloc(long long size) {
     if (!g_pin_arena || size <= 0) return 0;
     return zyl_arena_alloc((long long)(size_t)g_pin_arena, size);

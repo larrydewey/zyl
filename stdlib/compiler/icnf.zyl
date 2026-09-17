@@ -41,7 +41,13 @@
   (ISeq (List Icnf))
   (IVariant String Int (List Icnf))    ; variant name, tag, field values
   (IMatch Icnf (List IArm))
-  (IFn String (List String) Icnf))     ; top-level function def: name, params, body
+  (IFn String (List String) Icnf)      ; top-level function def: name, params, body
+  ; Call a LOCAL name known (via VTClosureFn) to hold a capturing closure
+  ; value -- a heap [tag,code,env] triple, not a bare code pointer. Real
+  ; args are staged exactly like ICall's; codegen additionally unpacks
+  ; code/env from the target's own stack slot and passes env as one
+  ; extra trailing register argument. See ic-lambda/ic-is-closure-shaped.
+  (ICallClosure String (List Icnf)))
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
@@ -336,10 +342,8 @@
     (EAtom atom (ic-atom arena atom vt))
     (ECall op args (ic-call-expr arena op args vt))
     (EApply fname args (ic-apply arena fname args vt))
-    (ELet name val body
-      (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
-    (ELetMut name val body
-      (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
+    (ELet name val body (ic-lower-let arena name val body vt))
+    (ELetMut name val body (ic-lower-let arena name val body vt))
     ; (with-resource (name init) body): regression/with-resource.zyl's
     ; own tests only exercise lexical-scoping and value semantics
     ; (bind, evaluate body, return body's value, proper shadowing) --
@@ -565,21 +569,207 @@
 ; else falls back to the old IConst 0. This undershoots (a genuinely
 ; non-capturing lambda that calls a real top-level helper by name also
 ; won't hoist) but can never overshoot into a new undefined reference.
+;
+; A lambda that passes ic-safe-expr may still genuinely CAPTURE an
+; enclosing param/local by name (that's exactly what "safe" allows,
+; distinct from "non-capturing" — see ic-safe-callee's own comment on
+; compose). Free-variable capture: ic-free-vars walks the SAME shapes
+; ic-safe-expr already vetted, collecting every referenced name that
+; isn't one of this lambda's own params and isn't a known VT variant/
+; constructor. Empty -> the original, unchanged behavior: hoist to a
+; plain top-level IFn, returned in place for ic-hoist to lift (its
+; existing generic IFn-node walk needs no changes at all). Non-empty ->
+; build a real closure: a heap [tag,code,env] triple (IVariant, reusing
+; cg-variant's existing codegen verbatim -- the tag is unused/decorative
+; here) whose code field is the embedded IFn node itself (still found
+; and lifted by ic-hoist's existing walk, since it recurses into every
+; IVariant's own field list) and whose env field is a second such
+; triple holding one field per captured name, evaluated in the CURRENT
+; (enclosing) scope -- ordinary capture-by-value, matching how actors
+; already work elsewhere in this compiler. The lifted function gets one
+; extra trailing parameter ("_clos_env"); its body is wrapped in a let
+; per captured name that reads it back out with zyl_variant_field,
+; keyed by position -- ordinary local bindings from every other ic-expr
+; call site's point of view, no new codegen needed for the body itself.
+; Capped at 5 declared params: the extra env argument needs its own
+; SysV register (cg-reg-of has none past index 5), and this compiler's
+; call staging has no path today for a register-exhausted 7th argument.
 (defn ic-lambda (arena params body vt)
   (let pnames (param-names params (no-strs))
     (if (> (ic-safe-expr arena body pnames vt) 0)
       (let lname (str-intern arena (str-concat "_lambda_" (ic-int-to-str (ic-fresh-id arena))))
-        (IFn lname pnames (ic-expr arena body vt)))
+        (let fvs (ic-free-vars arena body pnames vt)
+          (if (is-nil fvs)
+            (IFn lname pnames (ic-expr arena body vt))
+            (if (>= (list-length pnames) 6)
+              (IConst 0)
+              (ic-lambda-closure arena lname pnames body fvs vt)))))
       (IConst 0))))
+
+(defn ic-lambda-closure (arena lname pnames body fvs vt)
+  (let envname (str-intern arena "_clos_env")
+    (let wrapped (ic-wrap-env-binds envname fvs 0 (ic-expr arena body vt))
+      (let allparams (list-append pnames (Cons envname Nil))
+        (IVariant lname 0
+          (Cons (IFn lname allparams wrapped)
+            (Cons (IVariant lname 0 (ic-build-env-fields fvs)) Nil)))))))
+
+(defn ic-wrap-env-binds (envname fvs idx body)
+  (match fvs
+    (Nil body)
+    (Cons fv rest
+      (ILet fv (IFfi "zyl_variant_field" (Cons (ILoad envname) (Cons (IConst idx) Nil)))
+        (ic-wrap-env-binds envname rest (+ idx 1) body)))))
+
+(defn ic-build-env-fields (fvs)
+  (match fvs
+    (Nil Nil)
+    (Cons fv rest (Cons (ILoad fv) (ic-build-env-fields rest)))))
+
+; Free variables of `e` relative to `pnames`: every AIdent referenced
+; that isn't one of `pnames` and isn't a known VT variant/constructor
+; (a global, not a capture). Mirrors ic-safe-expr's own shape coverage
+; exactly (only ever called once ic-safe-expr has already confirmed
+; safety, so its own default arm below never actually triggers in
+; practice) — see ic-lambda's comment for why capture and safety are
+; different questions.
+(defn ic-fv-union (a b)
+  (match a
+    (Nil b)
+    (Cons h t (if (> (ic-name-in-list h b) 0) (ic-fv-union t b) (Cons h (ic-fv-union t b))))))
+
+(defn ic-fv-list (arena xs pnames vt)
+  (match xs
+    (Nil Nil)
+    (Cons h t (ic-fv-union (ic-free-vars arena h pnames vt) (ic-fv-list arena t pnames vt)))))
+
+(defn ic-fv-atom (atom pnames vt)
+  (match atom
+    (AIdent name
+      (if (> (ic-name-in-list name pnames) 0) Nil
+        (if (> (vt-tag-of vt name) -1) Nil (Cons name Nil))))
+    (d1 Nil)))
+
+; A call-head name is a capture exactly when ic-safe-callee's own three
+; "not a capture" cases (own param, operator, known top-level fn) all
+; fail — mirrors ic-safe-callee's logic instead of calling it directly
+; since that one returns a bool, not the name itself.
+(defn ic-fv-callee (fname pnames vt)
+  (if (> (ic-name-in-list fname pnames) 0) Nil
+    (if (> (vt-is-fn vt fname) 0) Nil
+      (Cons fname Nil))))
+
+(defn ic-free-vars (arena e pnames vt)
+  (match (Expr.inner e)
+    (EAtom atom (ic-fv-atom atom pnames vt))
+    (ECall op args (ic-fv-union (ic-free-vars arena op pnames vt) (ic-fv-list arena args pnames vt)))
+    (EApply fname args
+      (ic-fv-union
+        (if (> (ic-op-of arena fname) -1) Nil (ic-fv-callee fname pnames vt))
+        (ic-fv-list arena args pnames vt)))
+    (ELet name val body
+      (ic-fv-union (ic-free-vars arena val pnames vt) (ic-free-vars arena body (Cons name pnames) vt)))
+    (ELetMut name val body
+      (ic-fv-union (ic-free-vars arena val pnames vt) (ic-free-vars arena body (Cons name pnames) vt)))
+    (EIf c t eb
+      (ic-fv-union (ic-free-vars arena c pnames vt)
+        (ic-fv-union (ic-free-vars arena t pnames vt) (ic-free-vars arena eb pnames vt))))
+    (EWhile c body (ic-fv-union (ic-free-vars arena c pnames vt) (ic-free-vars arena body pnames vt)))
+    (ESetBang name val
+      (ic-fv-union (if (> (ic-name-in-list name pnames) 0) Nil (Cons name Nil))
+        (ic-free-vars arena val pnames vt)))
+    (EBegin exprs (ic-fv-list arena exprs pnames vt))
+    (EPrint exprs (ic-fv-list arena exprs pnames vt))
+    (EAssertEqual l r (ic-fv-union (ic-free-vars arena l pnames vt) (ic-free-vars arena r pnames vt)))
+    (EAssertTrue e2 d2 (ic-free-vars arena e2 pnames vt))
+    (EAssertFalse e2 d3 (ic-free-vars arena e2 pnames vt))
+    (EStructGet se d4 (ic-free-vars arena se pnames vt))
+    (EFn d5 fparams fbody
+      (ic-free-vars arena fbody (list-append (param-names fparams (no-strs)) pnames) vt))
+    (d6 Nil)))
+
+; Structural check used ONLY to decide whether a let-bound name should
+; be marked VTClosureFn for later calls (see ic-expr's ELet/ELetMut and
+; ic-call-or-variant) -- does `e`, once lowered, evaluate to a captures-
+; having closure value? Mirrors ic-lambda's own branch decision exactly
+; (same safety gate, same arity cap, same free-var computation) so the
+; marking never drifts from what ic-lambda actually built. Propagates
+; through a call to an already-marked name (the "outer/add5" shape: a
+; function returning a closure, then let-bound) and through a plain
+; let/let-mut tail. Undershoots everywhere else (e.g. an if choosing
+; between two closure-shaped branches) -- consistent with this file's
+; existing "never overshoot into a wrong call convention" philosophy.
+(defn ic-is-closure-shaped-fn (arena fparams fbody vt)
+  (let fpnames (param-names fparams (no-strs))
+    (if (>= (list-length fpnames) 6)
+      0
+      (ic-is-closure-shaped-fn2 arena fbody fpnames vt))))
+
+(defn ic-is-closure-shaped-fn2 (arena fbody fpnames vt)
+  (if (= (ic-safe-expr arena fbody fpnames vt) 0)
+    0
+    (if (is-nil (ic-free-vars arena fbody fpnames vt)) 0 1)))
+
+(defn ic-is-closure-shaped (arena e pnames vt)
+  (match (Expr.inner e)
+    (EFn d1 fparams fbody (ic-is-closure-shaped-fn arena fparams fbody vt))
+    (EApply fname d2 (vt-call-returns-closure vt fname))
+    (ELet d3 d4 body (ic-is-closure-shaped arena body pnames vt))
+    (ELetMut d5 d6 body (ic-is-closure-shaped arena body pnames vt))
+    (d7 0)))
+
+; Structural check distinct from ic-is-closure-shaped: does `e`'s TAIL
+; expression (after unwrapping let/let-mut wrappers) end in an `fn`
+; literal? Used to mark a name VTClosureReturn when its OWN value is an
+; `fn` whose BODY hands back another `fn` -- see ic-lower-let's own
+; comment on `outer`/`add5` for why this is a genuinely different
+; question from "is THIS fn itself closure-shaped".
+(defn ic-tail-is-fn (e)
+  (match (Expr.inner e)
+    (EFn d1 d2 d3 1)
+    (ELet d4 d5 body (ic-tail-is-fn body))
+    (ELetMut d6 d7 body (ic-tail-is-fn body))
+    (d8 0)))
+
+(defn ic-val-calls-return-closure (val)
+  (match (Expr.inner val)
+    (EFn d1 d2 body (ic-tail-is-fn body))
+    (d3 0)))
+
+; ic-expr's ELet/ELetMut both funnel through here: lower `val` under the
+; ORIGINAL vt (its own closure-ness, if any, isn't relevant to itself),
+; then extend vt for `name` -- visible only to `body`, ordinary lexical
+; shadowing via cons, same pattern TypeEnv/other tables already use
+; elsewhere in this compiler. Two INDEPENDENT marks, not one: VTClosureFn
+; when `name`'s own value is a closure triple (ic-is-closure-shaped),
+; VTClosureReturn when CALLING `name` hands one back
+; (ic-val-calls-return-closure) -- `outer` in `(let outer (fn (x) (fn
+; (y) (+ x y))) ...)` gets the second but never the first (outer's own
+; value is a bare, non-capturing code pointer; it's *outer's result*
+; that's the closure).
+(defn ic-lower-let (arena name val body vt)
+  (let iname (str-intern arena name)
+    (let vta (if (> (ic-is-closure-shaped arena val (no-strs) vt) 0) (VTClosureFn iname vt) vt)
+      (let vt2 (if (> (ic-val-calls-return-closure val) 0) (VTClosureReturn iname vta) vta)
+        (ILet iname (ic-expr arena val vt) (ic-expr arena body vt2))))))
 
 (defn ic-name-in-list (name xs)
   (match xs
     (Nil 0)
     (Cons h t (if (> (str-eq name h) 0) 1 (ic-name-in-list name t)))))
 
+; A bare identifier used as a plain VALUE (not a call head -- see
+; ic-safe-callee for that separate, still-unchanged case) is always safe
+; to hoist now: it's either this lambda's own param, a known VT variant,
+; or otherwise a genuine capture of an enclosing name -- and ic-free-vars
+; (mirroring this same shape coverage) correctly identifies and captures
+; exactly that third case via ic-lambda's closure-with-env path. Used to
+; return 0 (unsafe, forcing the whole lambda to IConst 0) for that third
+; case, back when this compiler had no capture mechanism at all to make
+; it safe.
 (defn ic-safe-atom (atom pnames vt)
   (match atom
-    (AIdent name (if (> (ic-name-in-list name pnames) 0) 1 (if (> (vt-tag-of vt name) -1) 1 0)))
+    (AIdent name 1)
     (d1 1)))
 
 (defn ic-safe-list (arena xs pnames vt)
@@ -699,6 +889,9 @@
     (ICall name args
       (let ha (ic-hoist-list args)
         (HoistAcc (ICall name (hoistl-nodes ha)) (hoistl-fns ha))))
+    (ICallClosure name args
+      (let ha (ic-hoist-list args)
+        (HoistAcc (ICallClosure name (hoistl-nodes ha)) (hoistl-fns ha))))
     (IFfi name args
       (let ha (ic-hoist-list args)
         (HoistAcc (IFfi name (hoistl-nodes ha)) (hoistl-fns ha))))
@@ -770,6 +963,8 @@
   (match vt
     (VTNil Nil)
     (VTFn d1 rest (ic-struct-arms arena rest field))
+    (VTClosureFn d20 rest (ic-struct-arms arena rest field))
+    (VTClosureReturn d21 rest (ic-struct-arms arena rest field))
     (VTEntry name tag fields d19 rest
       (let arms-rest (ic-struct-arms arena rest field)
         (let idx (ic-field-index fields field 0)
@@ -892,7 +1087,12 @@
   (let tag (vt-tag-of vt (str-intern arena fname))
     (if (> tag -1)
       (IVariant (str-intern arena fname) tag (ic-expr-list arena args vt))
-      (ICall (str-intern arena fname) (ic-expr-list arena args vt)))))
+      ; VTClosureFn only ever marks a let-bound LOCAL (see ic-lower-let),
+      ; never a real top-level defn, so this never misfires on an
+      ; ordinary direct call to a known top-level function.
+      (if (> (vt-returns-closure vt (str-intern arena fname)) 0)
+        (ICallClosure (str-intern arena fname) (ic-expr-list arena args vt))
+        (ICall (str-intern arena fname) (ic-expr-list arena args vt))))))
 
 ; Binary operator: exactly two arguments lowers directly, unary minus
 ; (- x) supported, three or more arguments fold left-associatively

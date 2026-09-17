@@ -253,6 +253,7 @@
                       (ri-is-literal-const b)
                       0))
     (ICall d6 args (ri-is-literal-icnf-list args))
+    (ICallClosure d99 args (ri-is-literal-icnf-list args))
     (IFfi d7 args (ri-is-literal-icnf-list args))
     (IPrint d (ri-is-literal-const d))
     (IIf c t e (if (= (ri-is-literal-const c) 1)
@@ -310,6 +311,7 @@
       (ri-capture-collect b captured-refs env)
       env))
     (ICall d2 args (ri-capture-collect-list args captured-refs env))
+    (ICallClosure d100 args (ri-capture-collect-list args captured-refs env))
     (IFfi d3 args (ri-capture-collect-list args captured-refs env))
     (IPrint d (ri-capture-collect d captured-refs env))
     (IIf c t e
@@ -399,6 +401,10 @@
         (let rr (ri-infer-expr ri right)
           (RR (ri-union-regions (RR.reg lr) (RR.reg rr)) None))))
     (ICall d5 args
+      (begin
+        (ri-infer-args ri args)
+        (RR RHeap None)))
+    (ICallClosure d101 args
       (begin
         (ri-infer-args ri args)
         (RR RHeap None)))
