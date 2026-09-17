@@ -121891,6 +121891,128 @@ call zyl_exec_cmd
     mov rsp, rbp
     pop rbp
     ret
+_ZYL_cli_zyl_home_candidate:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 96
+    sub rsp, 8
+    lea rax, [rip+.L5401]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zyl_getenv
+    add rsp, 16
+    mov [rbp-8], rax
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5402
+    mov rax, [rbp-8]
+    jmp .L5403
+.L5402:
+    sub rsp, 8
+    lea rax, [rip+.L5404]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zyl_getenv
+    add rsp, 16
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5405
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L5407]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zyl_cstr_concat
+    add rsp, 16
+    jmp .L5406
+.L5405:
+    lea rax, [rip+.L5408]
+.L5406:
+.L5403:
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_cli_resolve_bundledir:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 96
+    mov [rbp-8], rdi
+call _ZYL_cli_zyl_home_candidate
+    add rsp, 0
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zyl_cstr_len
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5409
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L5413]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zyl_cstr_concat
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zyl_path_exists
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5411
+    mov rax, [rbp-16]
+    jmp .L5412
+.L5411:
+    mov rax, [rbp-8]
+.L5412:
+    jmp .L5410
+.L5409:
+    mov rax, [rbp-8]
+.L5410:
+    mov rsp, rbp
+    pop rbp
+    ret
 _ZYL_cli_run:
     push rbp
     mov rbp, rsp
@@ -121908,11 +122030,17 @@ call zyl_arg_str
     add rsp, 16
     mov [rbp-24], rax
     sub rsp, 8
+    sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zyl_dirname_cstr
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_cli_resolve_bundledir
     add rsp, 16
     mov [rbp-32], rax
     sub rsp, 8
@@ -121944,7 +122072,7 @@ call zyl_argc
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5401]
+    lea rax, [rip+.L5414]
     push rax
     mov rax, 0
     push rax
@@ -121973,7 +122101,7 @@ call _ZYL_cli_parse_opts
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5403
+    jne .L5416
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -121995,7 +122123,7 @@ call _ZYL_str_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L5404
+    je .L5417
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -122006,8 +122134,8 @@ call _ZYL_str_len
     mov rdi, [rsp+8]
 call _ZYL_cli_resolve_path
     add rsp, 16
-    jmp .L5405
-.L5404:
+    jmp .L5418
+.L5417:
     sub rsp, 8
     mov rax, [rbp-48]
     sub rsp, 8
@@ -122015,7 +122143,7 @@ call _ZYL_cli_resolve_path
     mov rdi, [rsp+0]
 call _ZYL_cli_default_out
     add rsp, 16
-.L5405:
+.L5418:
     mov [rbp-88], rax
     sub rsp, 8
     mov rax, [rbp-32]
@@ -122028,7 +122156,7 @@ call zyl_chdir
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5406]
+    lea rax, [rip+.L5419]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -122045,7 +122173,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L5407
+    je .L5420
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
@@ -122085,7 +122213,7 @@ call _ZYL_compile_to_asm
     setg al
     movzx rax, al
     test rax, rax
-    je .L5409
+    je .L5422
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -122096,12 +122224,12 @@ call _ZYL_compile_to_asm
     mov rdi, [rsp+8]
 call _ZYL_cli_write_file
     add rsp, 16
-    jmp .L5410
-.L5409:
+    jmp .L5423
+.L5422:
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5411]
+    lea rax, [rip+.L5424]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -122130,22 +122258,22 @@ call _ZYL_cli_write_file
     mov rdi, [rsp+8]
 call _ZYL_cli_link
     add rsp, 16
-.L5410:
-    jmp .L5408
-.L5407:
-    lea rax, [rip+.L5412]
+.L5423:
+    jmp .L5421
+.L5420:
+    lea rax, [rip+.L5425]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
     call printf
     xor eax, eax
     mov rax, 1
-.L5408:
+.L5421:
     mov [rsp], rax
-    jmp .L5402
-.L5403:
+    jmp .L5415
+.L5416:
     mov qword ptr [rsp], 0
-.L5402:
+.L5415:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122174,7 +122302,7 @@ call zyl_argc
     setl al
     movzx rax, al
     test rax, rax
-    je .L5413
+    je .L5426
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -122182,8 +122310,8 @@ call zyl_argc
     mov rdi, [rsp+0]
 call _ZYL_boot_run_legacy
     add rsp, 16
-    jmp .L5414
-.L5413:
+    jmp .L5427
+.L5426:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -122191,7 +122319,7 @@ call _ZYL_boot_run_legacy
     mov rdi, [rsp+0]
 call _ZYL_cli_run
     add rsp, 16
-.L5414:
+.L5427:
     mov rsp, rbp
     pop rbp
     ret
@@ -123870,10 +123998,20 @@ main:
 .L5400:
     .string " -lpthread"
 .L5401:
+    .string "ZYL_HOME"
+.L5404:
+    .string "HOME"
+.L5407:
+    .string "/.zyl"
+.L5408:
     .string ""
-.L5406:
+.L5413:
+    .string "/stdlib"
+.L5414:
+    .string ""
+.L5419:
     .string "r"
-.L5411:
+.L5424:
     .string ".s"
-.L5412:
+.L5425:
     .string "zyl: error: cannot open source file"

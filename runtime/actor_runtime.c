@@ -1113,6 +1113,26 @@ long long zyl_dirname_cstr(long long path) {
     return (long long)(size_t)buf;
 }
 
+/* Returns 1 if `path` exists (any type), 0 otherwise. Used to probe for
+   an installed ~/.zyl before falling back to the argv0-relative bundle
+   dir -- see cli-resolve-bundledir (driver.zyl) and repl-resolve-
+   bundledir (tools/repl.zyl). */
+long long zyl_path_exists(long long path) {
+    return (access((const char*)(size_t)path, F_OK) == 0) ? 1 : 0;
+}
+
+/* Returns the value of environment variable `name`, or 0 (null) if
+   unset. Contents valid until the next call (matches zyl_getcwd/
+   zyl_dirname_cstr's own static-buffer convention) -- getenv's own
+   returned pointer is not copied since its storage is already stable
+   for the process's lifetime, but callers must still copy out (e.g.
+   via str-concat) before any other env-touching call if they need the
+   value to survive one. */
+long long zyl_getenv(long long name) {
+    const char* v = getenv((const char*)(size_t)name);
+    return v ? (long long)(size_t)v : 0;
+}
+
 long long zyl_chdir(long long path) {
     return (long long)chdir((const char*)(size_t)path);
 }

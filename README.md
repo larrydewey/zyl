@@ -44,24 +44,55 @@ Project-local modules are resolved relative to the source file being
 compiled, so applications can keep their own libraries alongside their
 source.
 
+## Installing (optional)
+
+`./boot.sh` only builds and verifies the compiler for this checkout —
+`build/boot/zyl-self` still needs to run from inside the repo. To get a
+`zyl`/`zyl-repl` that work from any directory, with no repo checkout
+nearby, install them into a standard per-user location:
+
+```bash
+./install.sh
+export PATH="$HOME/.zyl/bin:$PATH"   # add to your shell profile
+```
+
+This copies the stdlib and runtime support files to `~/.zyl` (or
+`$ZYL_HOME`, if set) and builds `zyl`/`zyl-repl` wrapper scripts there.
+Both binaries check `$ZYL_HOME`, then `$HOME/.zyl`, before falling back
+to their own directory — the same resolution order used by every real
+compiler toolchain (`RUST_SYSROOT`, `PYTHONHOME`, ...), chosen so it
+works correctly the moment this is ever packaged for a real Linux
+distro: package managers install executables into `/usr/bin/` and
+never let a package drop support files right next to them there, so
+"look next to argv0" (this repo's own `build/boot/zyl-self` convention)
+can't be the only mechanism long-term.
+
+```bash
+cd /anywhere
+zyl hello.zyl -o hello && ./hello
+```
+
+To remove it, `./uninstall.sh` — `install.sh` only ever writes inside
+that one directory, so this is a plain `rm -rf` of it and nothing else
+(any `PATH` line you added yourself is left for you to remove by hand).
+
 ## REPL
 
-An interactive REPL lives at `tools/repl.zyl`. It's not part of the
-self-hosted compiler bundle (`selfhost/assemble.py`'s bundle), so build
-it directly with the self-hosted compiler like any other program:
+An interactive REPL lives at `tools/repl.zyl`. `./install.sh` builds it
+as `zyl-repl` automatically; to build it manually instead:
 
 ```bash
 build/boot/zyl-self tools/repl.zyl -o /tmp/zyl-repl
 ```
 
-It has to be *run* from `runtime/`: each typed expression is compiled
-and linked on the fly by shelling out to `cc` with a relative
-`actor_runtime.c` path (`runtime/actor_runtime.c`'s `zyl_cc_compile`),
-so that file needs to be reachable from the current directory.
+A manually-built copy still needs to either sit next to a
+`build/boot/`-style `actor_runtime.c` (each typed expression is
+compiled and linked on the fly by shelling out to `cc`) or have
+`~/.zyl`/`$ZYL_HOME` set up via `./install.sh` — `zyl-repl` from an
+install works from any directory with neither requirement.
 
 ```bash
-cd runtime
-/tmp/zyl-repl
+zyl-repl
 ```
 
 ```

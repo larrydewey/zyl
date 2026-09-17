@@ -264,9 +264,39 @@
           (repl-loop arena fd rest))))
     (NoLine (begin (print "Goodbye!") 0))))
 
+; Same resolution driver.zyl's cli-resolve-bundledir uses (duplicated
+; rather than shared: this file compiles as its own standalone
+; compilation unit, outside assemble.py's bundle, so there's no single
+; compiled module both could import without either pulling repl.zyl
+; into the bundle or driver.zyl's CLI into repl.zyl's standalone build
+; -- see this file's own str-trim/list-set for the established
+; precedent of small local duplication over cross-module risk here).
+; Fixes needing to run the REPL from runtime/ specifically: it now
+; chdirs to a real ~/.zyl install if one exists, falling back to
+; argv0's own directory (today's behavior) otherwise, before doing
+; anything else -- so `zyl_cc_compile`'s bare "actor_runtime.c" always
+; resolves regardless of where the REPL binary was invoked from.
+(defn repl-zyl-home-candidate ()
+  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
+    (if (> zh 0)
+      zh
+      (let home (ffi-call "zyl_getenv" "HOME" 1000)
+        (if (> home 0) (str-concat home "/.zyl") "")))))
+
+(defn repl-resolve-bundledir (argv0dir)
+  (let candidate (repl-zyl-home-candidate)
+    (if (> (str-length candidate) 0)
+      (if (> (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000) 0)
+        candidate
+        argv0dir)
+      argv0dir)))
+
 (defn main ()
   (let arena (arena-create 1048576)
     (begin
+      (let argv0 (ffi-call "zyl_arg_str" 0 1000)
+        (let bundledir (repl-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
+          (ffi-call "zyl_chdir" bundledir 1000)))
       (print "Zyl REPL — type expressions, :q to quit")
       (let fd (file-open "/dev/stdin" "r")
         (if (> fd 0)

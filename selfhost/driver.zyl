@@ -198,10 +198,41 @@
             (str-concat outpath " -lpthread")))))
     (ffi-call "zyl_exec_cmd" cmd 1000)))
 
+; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a
+; real, packaged install (checked via a ZYL_HOME override, else
+; $HOME/.zyl) over "next to argv0" -- the latter only works for this
+; repo's own dev/build workflow (build/boot/ carries its own stdlib +
+; actor_runtime.c copies alongside the binary), and breaks the moment
+; this is ever packaged for a real Linux distro: package managers
+; install executables into /usr/bin/ alongside a hundred unrelated
+; packages' binaries and never let a package drop support files right
+; next to them there. $HOME/.zyl matches the well-established per-user
+; toolchain convention (~/.cargo, ~/.rustup, ~/.pyenv, ...), sidesteps
+; that packaging problem entirely, and needs no compile-time-baked
+; install prefix to work correctly the first time it's actually
+; packaged. Falls back to the argv0-relative bundledir whenever
+; $HOME/.zyl (or ZYL_HOME) isn't a real, populated install -- so this
+; repo's own build/boot/zyl-self keeps working unchanged for anyone who
+; hasn't installed anything.
+(defn cli-zyl-home-candidate ()
+  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
+    (if (> zh 0)
+      zh
+      (let home (ffi-call "zyl_getenv" "HOME" 1000)
+        (if (> home 0) (str-concat home "/.zyl") "")))))
+
+(defn cli-resolve-bundledir (argv0dir)
+  (let candidate (cli-zyl-home-candidate)
+    (if (> (str-length candidate) 0)
+      (if (> (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000) 0)
+        candidate
+        argv0dir)
+      argv0dir)))
+
 (defn cli-run (arena)
   (let cwd (ffi-call "zyl_getcwd" 0)
     (let argv0 (ffi-call "zyl_arg_str" 0 1000)
-      (let bundledir (ffi-call "zyl_dirname_cstr" argv0 1000)
+      (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
         (let srcraw (ffi-call "zyl_arg_str" 1 1000)
           (let src (cli-resolve-path cwd srcraw)
             (let argc (ffi-call "zyl_argc" 0)
