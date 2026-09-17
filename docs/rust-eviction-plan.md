@@ -415,6 +415,71 @@ This was a real, separate defect, but empirically was not the trigger
 for the crash above; not fully ruled out as *a* trigger elsewhere,
 worth keeping an eye on.
 
+**Phase B, 2026-09-17: done for real.** Region inference now actually
+affects generated code for the first time in this compiler's history.
+Traced both implementations down to source: the original Rust
+bootstrap's escape-detection errors were silently swallowed in
+`collect_definitions`, and its second analysis pass never recursed into
+function bodies at all; the self-hosted port faithfully preserved that
+no-op behavior by computing `ri-infer`'s result and then codegening
+from the pre-inference `fns` unchanged. Neither implementation has ever
+stack-allocated anything — every struct/variant construction always
+went through `zyl_heap_alloc`, regardless of whether it escaped.
+
+Given the choice between (a) fixing the bugs and wiring the existing
+informational result in with zero behavior change, or (b) implementing
+real conservative escape analysis and genuinely stack-allocating
+provably-non-escaping constructions, chose (b): a new `IStackVariant`
+Icnf variant, a from-scratch escape analysis in `region_inference.zyl`
+(`ri-transform-fns`), and new codegen (`cg-stack-variant` and helpers
+in `codegen.zyl`) that write tag+fields directly into the current
+frame instead of allocating. The analysis is deliberately conservative:
+a let-bound construction is stack-eligible only if every one of its
+uses is a match scrutinee or a print argument. A call argument, a field
+of another variant, a `set` target, a bare tail/return value, or any
+reference at all inside a nested closure forces heap allocation, same
+as before. `ic-hoist` already lifts every closure literal to top level
+before region inference runs, so a captured variable never appears
+nested inside an `IFn` by the time the analysis sees it — it shows up
+as a field of the closure's heap-allocated env construction instead,
+which the generic "any variant field is unsafe" rule already catches
+correctly without needing closure-specific logic.
+
+Verified two ways: direct assembly inspection (safe cases emit zero
+`zyl_heap_alloc` calls, writing straight to `[rbp-N]`; unsafe cases
+still call it) and running compiled binaries end to end — struct-get,
+multi-arm-match, call-argument-escape, and return-value-escape test
+programs all produced correct output with the expected allocation
+strategy in each case. Full reseed to a new fixed point, `run_
+regression_tests.sh --full` stays at 43/43 — the analysis is
+conservative enough that no program in the existing suite changes
+allocation strategy in any observable way, only new code exercising
+the specific safe-pattern shapes does.
+
+`driver.zyl` and `tools/repl.zyl` were both updated to call the new
+`ri-transform-fns` instead of the old `ri-infer`-then-discard pattern.
+The old `Region`/`RegionInferer` machinery from the original,
+never-effective implementation was left in place rather than deleted —
+additive-only change, lower risk; removing the dead code is separate,
+unstarted cleanup. `optimization.zyl` (constant folding/DCE) is
+unaffected by this work and remains the dead SSA-shaped file described
+below — `driver.zyl` and `repl.zyl` still pass `fns` through it
+unchanged; genuinely implementing it is separate, unstarted work, not
+required for what "region inference" means in this plan's Phase B.
+
+While testing, hit a `lambda`-keyword-specific gap: a 0-parameter
+`(lambda () ...)` that captures an outer `let`-bound name (not a `fn`
+parameter) and is called immediately in the same scope generates a
+closure call to address 0 and crashes. Reproduces identically with a
+captured plain `Int`, nothing to do with structs or this session's
+changes. The equivalent shape written with `fn` instead of `lambda`
+compiles and runs correctly (closure_inline's inlining recognizes it),
+and the existing regression suite's own closure/escaping-closure tests
+(`tests/regression/closures.zyl`, `tests/regression/regions.zyl`) all
+pass — so this is a narrow, pre-existing, `lambda`-specific hole, not a
+general capture regression. Not fixed here; flagged for whoever next
+touches closure handling.
+
 **Correction to an earlier draft of this note**: it originally said
 Phase B was unstarted. That was wrong — checked the actual code, not
 just this plan doc. `region_inference.zyl` and `optimization.zyl` are
