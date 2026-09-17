@@ -176,9 +176,26 @@ cause found, so no single fix helps more than one:
   own body instead of leaving it as a sibling — no changes needed to
   `icnf.zyl`'s already-correct `ELet`/`ELetMut` lowering. 4/5 → 5/5;
   34/43 → 35/43.
-- `regression/derive`: 3/5 sub-tests fail (`derive-eq-struct`,
-  `derive-multi-trait`, `derive-generic-struct`) — derive-macro gaps
-  for Eq, combining multiple derived traits, and generic structs.
+- `regression/derive` — FIXED (commit `aac297a`). Not a derive-macro
+  gap at all — `==`/`!=`/`<`/`>`/`<=`/`>=` on struct/ADT (`IVariant`)
+  values fell into `codegen.zyl`'s `kind-of` int-default bucket (only
+  3 kinds tracked: int/string/float), so every comparison went through
+  a bare `cmp rax, rcx` pointer comparison — the exact same bug already
+  fixed for strings, just never extended to structs. `==`/`!=` were
+  simply always wrong for two separately-constructed but field-
+  identical structs; `<`/`>`/`<=`/`>=` gave an allocation-order-
+  dependent answer, which is why `derive-ord-struct` alone happened to
+  "pass" (`b1` built before `b2` coincidentally lands at a lower
+  address) while `derive-multi-trait`'s own `<` check on two
+  *equal*-valued structs failed the moment address order no longer
+  lined up with the expected result. `zyl_variant_eq` (real structural
+  equality) already existed in `actor_runtime.c` but was never actually
+  called from anywhere; added a matching `zyl_variant_cmp` (lexico-
+  graphic, -1/0/1) for ordering, added a 4th "struct/variant" kind to
+  `kind-of` (propagates through the existing `EnvBind`-carried-kind
+  mechanism with no other plumbing), and routed comparisons on
+  struct-kind operands through both, mirroring the existing string-kind
+  dispatch. 2/5 → 5/5; 35/43 → 36/43.
 - `regression/unwrap-error`: the deliberate error in its `try-catch-err`
   sub-test escapes the `try-catch` and kills the process instead of
   being caught — an exception-propagation bug.
