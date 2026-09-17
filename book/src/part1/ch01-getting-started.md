@@ -12,7 +12,7 @@ Zyl is a **deterministic Lisp systems language** designed for building reliable,
 - **Region-based memory**: Instead of a garbage collector or manual `malloc`/`free`, Zyl assigns every value to a **region** (Stack, Heap, Global, Circular, or Pin) at compile time. The compiler proves no value escapes its region.
 - **Capability types**: Two key capabilities control aliasing: `TCap` (shared, immutable access — any number of references) and `TMut` (exclusive, mutable ownership — exactly one reference). The compiler enforces this at compile time.
 - **Actor concurrency**: Lightweight actors with isolated state and deterministic FIFO mailboxes. No shared mutable state between actors.
-- **Self-hosting**: The Zyl compiler is written in Zyl and compiles itself. The Rust bootstrap is only needed for the very first build.
+- **Self-hosting**: The Zyl compiler is written in Zyl and compiles itself, verified by a byte-identical fixed point. The original Rust bootstrap is archived and no longer part of the build, test, or use path at all — building Zyl needs nothing but a C compiler.
 
 **Who is Zyl for?**
 - Systems programmers who want Lisp's expressiveness with Rust-like safety
@@ -23,9 +23,8 @@ Zyl is a **deterministic Lisp systems language** designed for building reliable,
 
 ### Prerequisites
 
-- **Rust 1.70+** (for building the bootstrap compiler)
 - **Linux x86_64** (other platforms may work but are not tested)
-- `cc` (GCC or Clang) for the linking phase
+- `cc` (GCC or Clang) — the only compiler you need; Zyl is self-hosting
 - `pthread` library (for actor runtime)
 
 ### Building from Source
@@ -33,12 +32,14 @@ Zyl is a **deterministic Lisp systems language** designed for building reliable,
 ```bash
 git clone https://github.com/your-org/zyl.git
 cd zyl
-cargo build --release
+./boot.sh
 ```
 
-This builds two binaries in `target/release/`:
-- `zyl` — The batch compiler (compile `.zyl` files to executables)
-- `zyl-repl` — The interactive REPL (read-eval-print loop)
+`boot.sh` links the committed compiler seed with `cc`, verifies the
+self-hosting fixed point (the compiler reproduces its own committed
+output, byte for byte, when compiling itself), and writes
+`build/boot/zyl-self` — a wrapper you invoke like a normal compiler
+binary from any directory.
 
 ### Quick Test
 
@@ -47,44 +48,20 @@ This builds two binaries in `target/release/`:
 echo '(defn main () (print "Hello, Zyl!"))' > hello.zyl
 
 # Compile
-./target/release/zyl hello.zyl
+build/boot/zyl-self hello.zyl -o hello
 
 # Run the resulting executable
 ./hello
 # Output: Hello, Zyl!
 ```
 
-### Using the REPL
+### The REPL
 
-```bash
-./target/release/zyl-repl
-```
-
-You'll see:
-```
-Zyl REPL v0.1.0
-Type :help for commands, :quit to exit
-zyl>
-```
-
-Try some expressions:
-```lisp
-zyl> (+ 1 2 3)
-6
-zyl> (defn square (x) (* x x))
-zyl> (square 5)
-25
-zyl> :quit
-```
-
-**REPL Commands:**
-| Command | Description |
-|---------|-------------|
-| `:help` | Show available commands |
-| `:quit` | Exit the REPL |
-| `:type <expr>` | Show inferred type of expression |
-| `:ast <expr>` | Show parsed AST |
-| `:icnf <expr>` | Show ICNF (intermediate representation) |
+`tools/repl.zyl` exists but is an unfinished skeleton as of this
+writing — it links and runs, but has known bugs (dropping `main` for
+trivial programs, an arena-corruption crash on some inputs). Treat it
+as a work in progress, not a reliable interactive tool; every example
+in this book uses the batch compiler instead.
 
 ## 1.3 Your First Zyl Program
 
@@ -106,7 +83,7 @@ Create a file `factorial.zyl`:
 
 Compile and run:
 ```bash
-./target/release/zyl factorial.zyl
+build/boot/zyl-self factorial.zyl -o factorial
 ./factorial
 # Output: Factorial of 10: 3628800
 ```
@@ -274,7 +251,7 @@ TextMate grammars in `editors/` for Sublime, Atom, etc.
 | `eval` at runtime | ❌ No — AOT compiled only |
 | Dynamic typing | ❌ Static Hindley-Milner + capabilities |
 | GC | ❌ Region-based (compile-time) |
-| REPL | ✅ `zyl-repl` (interprets via compiled code) |
+| REPL | 🚧 `tools/repl.zyl` exists but is unfinished (see above) |
 | `cons`/`car`/`cdr` | ❌ Use ADTs: `(Cons head tail)` / `Nil` |
 
 ### From Python/JavaScript

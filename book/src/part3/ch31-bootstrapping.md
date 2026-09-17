@@ -7,15 +7,15 @@ Deep dive into Zyl's bootstrapping process, the fixed point verification, and th
 **Bootstrapping**: Building a compiler using the compiler itself.
 
 ```
-Stage 0: Rust compiler (src/) exists
+Stage 0: committed seed build/boot/stage2.s exists (no Rust — see §31.10)
          ↓
-Stage 1: Rust compiles Zyl compiler → stage1
+Stage 1: cc links the seed → stage1.bin
          ↓
-Stage 2: stage1 compiles Zyl compiler → stage2
+Stage 2: stage1.bin compiles the Zyl compiler → stage2.s
          ↓
-Stage 3: stage2 compiles Zyl compiler → stage3
+Stage 3: stage2.bin compiles the Zyl compiler → stage3.s
          ↓
-Verify: stage2.asm == stage3.asm (fixed point)
+Verify: stage2.s == stage3.s (fixed point)
 ```
 
 ## 31.2 The Fixed Point Property
@@ -35,47 +35,35 @@ For Zyl compiler `C`:
 
 ## 31.3 Boot Process Details (`boot.sh`)
 
+The real script (`boot.sh` at the repo root; this is its default,
+no-Rust flow — see §31.10 for reseeding):
+
 ```bash
-#!/bin/bash
-set -e
+SRC="selfhost/zyl_selfhost_compiler.zyl"
+OUT="build/boot"
 
-# Configuration
-ZYL_SRC="stdlib/compiler/*.zyl"
-RUST_BIN="./target/release/zyl"
+# Stage 1: cc links the committed seed
+cc -no-pie "$OUT/stage2.s" runtime/actor_runtime.c -o "$OUT/stage1.bin" -lpthread
 
-# Stage 1: Rust → Zyl
-echo "=== Stage 1: Rust bootstrap ==="
-$RUST_BIN $ZYL_SRC -o stage1
+# Stage 2: stage1 compiles the Zyl compiler — must reproduce the seed exactly
+setarch -R "$OUT/stage1.bin" "$SRC" -o "$OUT/stage2_gen.s" --emit-asm
+cmp -s "$OUT/stage2_gen.s" "$OUT/stage2.s" || {
+    echo "compiler source changed the fixed point — reseed with --bootstrap-from-self"
+    exit 1
+}
+cc -no-pie "$OUT/stage2.s" runtime/actor_runtime.c -o "$OUT/stage2.bin" -lpthread
 
-# Stage 2: Zyl → Zyl
-echo "=== Stage 2: Self-hosted (stage1) ==="
-./stage1 $ZYL_SRC -o stage2
-
-# Stage 3: Zyl → Zyl
-echo "=== Stage 3: Self-hosted (stage2) ==="
-./stage2 $ZYL_SRC -o stage3
+# Stage 3: stage2 compiles the Zyl compiler again
+setarch -R "$OUT/stage2.bin" "$SRC" -o "$OUT/stage3.s" --emit-asm
 
 # Fixed point verification
-echo "=== Fixed point verification ==="
-if cmp -s stage2.asm stage3.asm; then
-    echo "✓ FIXED POINT REACHED"
-    echo "  stage2.asm == stage3.asm"
+if cmp -s "$OUT/stage2.s" "$OUT/stage3.s"; then
+    echo "✓ FIXED POINT REACHED — stage2.s == stage3.s"
 else
     echo "✗ FIXED POINT FAILED"
-    echo "  Differences:"
-    diff stage2.asm stage3.asm | head -50
+    diff "$OUT/stage2.s" "$OUT/stage3.s" | head -50
     exit 1
 fi
-
-# Verify executables also identical
-if cmp -s stage2 stage3; then
-    echo "✓ Executables identical"
-else
-    echo "✗ Executables differ"
-    exit 1
-fi
-
-echo "=== Bootstrap successful ==="
 ```
 
 ## 31.4 Why Fixed Point is Hard
@@ -225,22 +213,27 @@ Required for paren balance:
 | Contract Injection | Zyl | ✅ |
 
 **Fixed point**: ✅ Holding
-**Rust bootstrap**: Only for Stage 1
+**Rust bootstrap**: Archived (`archive/rust-bootstrap-2026/`) — no longer part of the build
 
-## 31.10 Future: Removing Rust Bootstrap
+## 31.10 Rust Bootstrap: Archived
 
-### Remaining Work
+What was tracked here as future work is done:
 
-1. **Verify all Zyl passes** through fixed point
-2. **Archive `src/`** — move to `legacy/`
-3. **Boot from source** — `boot.sh` starts with Zyl source only
-4. **CI integration** — Fixed point check on every commit
+1. ✅ All Zyl passes verified through the fixed point, and through the
+   full regression suite (43/43 via the self-hosted compiler — see
+   `docs/rust-eviction-plan.md`)
+2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained:
+   its own `Cargo.toml`, kept buildable in place)
+3. ✅ `boot.sh` (default) starts from the committed Zyl-compiled seed
+   only — no Rust, no Cargo, `cc` is the only requirement
+4. ✅ Reseeding is also Rust-free now: `./boot.sh --bootstrap-from-self`
+   iterates the self-hosted compiler against its own output until it
+   converges — no Cargo build in the normal loop at all (§31.3, §27.3)
 
-### Timeline
-
-- 2026-09-10: Type inference + monomorphization ported
-- 2026-Q4: Full verification of all passes
-- 2027-Q1: Rust bootstrap archived
+The archived Rust bootstrap is kept only as a fallback for the one
+case self-hosted reseeding can't solve: a language change so large the
+previous seed's compiler can't even *parse* the new source. See
+`archive/rust-bootstrap-2026/README.md`.
 
 ## 31.11 Lessons Learned
 

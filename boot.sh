@@ -93,11 +93,14 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     die "did not converge after ${MAX_SELF_ROUNDS} rounds — likely a genuinely new language construct the old seed can't parse at all (not just new behavior); fall back to --bootstrap-from-rust (see archive/rust-bootstrap-2026)"
 fi
 
-# ── Re-seed path: Rust bootstrap -> fresh stage2 ─────────────────────────
+# ── Re-seed path: Rust bootstrap -> fresh stage2 (fallback only — see
+#    --bootstrap-from-self above; this needs the archived Rust source) ───
+ARCHIVE="${SCRIPT_DIR}/archive/rust-bootstrap-2026"
 if [ "$BOOTSTRAP" -eq 1 ]; then
-    step "Bootstrap: rebuilding stage2 seed from the Rust bootstrap"
-    cargo build --release --quiet
-    ZYL="${SCRIPT_DIR}/target/release/zyl"
+    step "Bootstrap: rebuilding stage2 seed from the archived Rust bootstrap"
+    [ -f "${ARCHIVE}/Cargo.toml" ] || die "archived Rust bootstrap not found at ${ARCHIVE} (see docs/rust-eviction-plan.md)"
+    cargo build --release --quiet --manifest-path "${ARCHIVE}/Cargo.toml" --target-dir "${ARCHIVE}/target"
+    ZYL="${ARCHIVE}/target/release/zyl"
     [ -x "$ZYL" ] || die "Rust bootstrap not found at $ZYL"
     step "stage1: Rust bootstrap -> selfhost binary"
     "$ZYL" "$SRC" -o "$OUT/stage1" >/dev/null

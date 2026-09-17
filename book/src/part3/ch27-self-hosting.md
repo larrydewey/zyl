@@ -7,16 +7,24 @@ Zyl's compiler is written in Zyl and compiles itself. This chapter explains the 
 **Self-hosting**: The Zyl compiler (`stdlib/compiler/*.zyl`, `selfhost/`) is written in Zyl and compiles itself end-to-end.
 
 ```
-Rust bootstrap (src/) → Stage 1 → Stage 2 (Zyl) → Stage 3 (Zyl)
-                                                      ↓
-                                            stage2.asm == stage3.asm
+build/boot/stage2.s (committed) → Stage 1 (cc) → Stage 2 (Zyl) → Stage 3 (Zyl)
+                                                                     ↓
+                                                        stage2.asm == stage3.asm
 ```
 
-The Rust bootstrap (`src/`) is **only needed for the initial Stage 1 build**. After that, Zyl compiles itself.
+Rust is no longer part of this at all — `./boot.sh` (default, no args)
+builds and verifies the whole thing with nothing but `cc`, starting
+from the committed seed `build/boot/stage2.s`. The original Rust
+bootstrap that produced the very first seed is archived at
+`archive/rust-bootstrap-2026/` and kept only as a fallback for
+reseeding across a language change so large the previous seed's
+compiler can't even parse the new source — see §27.8.
 
 ## 27.2 Compiler Architecture
 
-### Rust Bootstrap (`src/`)
+### Rust Bootstrap (archived: `archive/rust-bootstrap-2026/src/`)
+
+Not part of the active build — see `archive/rust-bootstrap-2026/README.md`.
 
 | File | Purpose |
 |------|---------|
@@ -67,34 +75,47 @@ The Rust bootstrap (`src/`) is **only needed for the initial Stage 1 build**. Af
 
 ## 27.3 Bootstrapping Process (`boot.sh`)
 
+Default flow — verifies the fixed point, no Rust anywhere:
+
 ```bash
-#!/bin/bash
-# boot.sh — Self-hosting verification
-
-# Stage 1: Rust compiler builds Zyl compiler
-cargo build --release
-./target/release/zyl stdlib/compiler/*.zyl -o stage1
-
-# Stage 2: Stage 1 compiles Zyl compiler
-./stage1 stdlib/compiler/*.zyl -o stage2
-
-# Stage 3: Stage 2 compiles Zyl compiler
-./stage2 stdlib/compiler/*.zyl -o stage3
-
-# Verify fixed point
-diff stage2.asm stage3.asm
-# If identical → fixed point reached
+./boot.sh
+# 1. cc-links the committed seed build/boot/stage2.s -> stage1.bin
+# 2. stage1 compiles selfhost/zyl_selfhost_compiler.zyl -> stage2.s
+#    (must byte-match the committed seed)
+# 3. stage2 compiles the same source -> stage3.s
+# 4. stage3.s must be byte-identical to stage2.s (fixed point)
+# 5. CLI smoke-test + build/boot/zyl-self wrapper
 ```
+
+Reseeding — needed only when a compiler source change moves the fixed
+point (`FIXED POINT BROKEN` or "reproduced asm differs from committed
+seed"):
+
+```bash
+python3 selfhost/assemble.py     # re-bundle stdlib/compiler/*.zyl
+./boot.sh --bootstrap-from-self  # reseed via the self-hosted compiler
+./boot.sh                        # verify the new seed is clean
+```
+
+`--bootstrap-from-self` links the *current* committed seed and repeats
+the stage1-compiles-source step, but instead of requiring the result to
+match the old seed, it iterates — compiling its own output again and
+again — until two consecutive rounds agree, up to 10 rounds. This works
+because a compiler that just compiled a behavior change doesn't yet
+exhibit that behavior itself (it was built by logic that predates the
+change); the *next* round, compiled by a binary that has the change
+baked in, does. Verified to converge to the exact fixed point Rust used
+to produce, starting from a seed many commits stale.
 
 ### Stages Explained
 
 | Stage | Compiler | Compiles | Output |
 |-------|----------|----------|--------|
-| 1 | Rust (`src/`) | `stdlib/compiler/*.zyl` | `stage1` (executable) |
-| 2 | `stage1` (Zyl) | `stdlib/compiler/*.zyl` | `stage2` (executable + asm) |
-| 3 | `stage2` (Zyl) | `stdlib/compiler/*.zyl` | `stage3` (executable + asm) |
+| 1 | `cc`-linked committed seed | `selfhost/zyl_selfhost_compiler.zyl` | `stage1.bin` |
+| 2 | `stage1.bin` (Zyl) | same source | `stage2.s`/`.bin` |
+| 3 | `stage2.bin` (Zyl) | same source | `stage3.s` |
 
-**Fixed point**: `stage2.asm == stage3.asm` (byte-identical assembly)
+**Fixed point**: `stage2.s == stage3.s` (byte-identical assembly)
 
 ## 27.4 Why Self-Hosting Matters
 
@@ -152,6 +173,8 @@ Rules:
 | Type inference ported to Zyl | 2026-09-10 | HM + capabilities + traits |
 | Monomorphization ported to Zyl | 2026-09-10 | Full mono using type inference |
 | P3.5 complete | 2026-09-10 | Zyl self-hosts all phases |
+| Fixed point solid, cargo-free `./boot.sh` | 2026-09-16 | `stage2.s == stage3.s`, no cargo in the default flow |
+| Full regression parity, Rust evicted | 2026-09-17 | 43/43 via self-hosted compiler; `src/` archived; reseeding self-hosted too (`--bootstrap-from-self`) |
 
 ## 27.7 Debugging the Bootstrap
 
@@ -169,27 +192,31 @@ Rules:
 
 ```bash
 # Compare assembly
-diff stage2.asm stage3.asm
+diff build/boot/stage2.s build/boot/stage3.s
 
-# Run stage2 on itself
-./stage2 stdlib/compiler/*.zyl -o test-stage3
+# Run stage2 on itself again
+setarch -R build/boot/stage2.bin selfhost/zyl_selfhost_compiler.zyl \
+    -o /tmp/test-stage3.s --emit-asm
 
-# Run stage3 on itself
-./stage3 stdlib/compiler/*.zyl -o test-stage4
-
-# Compare all
-diff stage2.asm stage3.asm test-stage3.asm test-stage4.asm
+# Compare
+diff build/boot/stage2.s /tmp/test-stage3.s
 ```
 
-## 27.8 Future: Removing Rust Bootstrap
+## 27.8 Rust Eviction: Done
 
-**Goal**: Archive `src/` entirely, Zyl compiles from source.
+This was tracked as future work in earlier drafts of this chapter; as
+of `docs/rust-eviction-plan.md`'s latest survey, it's complete:
 
-**Remaining work**:
-1. ✅ Type inference ported to Zyl
-2. ✅ Monomorphization ported to Zyl
-3. 🔄 Lexer/parser in Zyl (done but needs verification)
-4. 🔄 Codegen in Zyl (done but needs verification)
-5. 🔄 All phases verified through fixed point
+1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
+2. ✅ Full regression suite passes through the self-hosted compiler
+   (43/43, `./run_regression_tests.sh --full`)
+3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
+4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
+5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/
+   `Cargo.lock`/`target/` removed from the active tree
 
-Once complete: `src/` archived, `boot.sh` starts from Zyl source only.
+The archived Rust bootstrap remains available as a fallback for the one
+case self-hosted reseeding can't solve on its own: a language change so
+large the previous seed's compiler can't even *parse* the new source
+(new syntax, not just new behavior). See
+`archive/rust-bootstrap-2026/README.md`.

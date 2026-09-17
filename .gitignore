@@ -1,6 +1,9 @@
 # Build artifacts
 /build/
 /target
+# Rust bootstrap, archived (docs/rust-eviction-plan.md) — only built if
+# ./boot.sh --bootstrap-from-rust is ever actually invoked.
+/archive/rust-bootstrap-2026/target
 
 # Book build output
 /book-build/

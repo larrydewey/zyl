@@ -973,7 +973,81 @@ compiles itself" (now working) and full self-hosting fixed point
 (stage2 producing byte-identical-behavior stage3 output, `boot.sh`'s
 actual pass condition).
 
-## Pointers
+## Current Session (2026-09-17): feature-parity survey closed, Rust evicted
+
+Picked up from the 17-item self-hosted-compiler feature-parity survey
+(`docs/rust-eviction-plan.md`, added 2026-09-16 once the fixed point
+above was finally solid). Fixed every remaining item:
+
+- Cross-deftype variant shadowing, trait-dispatch compiler crash,
+  contracts passthrough forms, with-resource/control-flow-ext/derive —
+  fixed earlier in this arc (see rust-eviction-plan.md for each).
+- **`boot.sh`'s `build/boot/stdlib` mirror was stale on every run after
+  the first** (`cp -R stdlib OUT/stdlib` nests instead of updating an
+  already-existing target dir) — silently froze the module-resolution
+  path any program `use`-ing compiler-internal modules actually read,
+  which is why `integration/selfhost-codegen` failed with a nonsensical
+  `E_UNBALANCED_PARENS`. `rm -rf` before the `cp -R` fixed it; also
+  found and fixed a duplicate `resolve-nominal` definition it exposed.
+- **Real per-ADT match exhaustiveness**: added a `gid` field to
+  `VTEntry` grouping a deftype's variants regardless of `tag` (which
+  restarts at 0 per deftype); guarded against a parser surface-form
+  ambiguity (`region_inference.zyl`'s nested-Cons-destructuring arms)
+  that would have produced false positives.
+- **Real closures (free-variable capture)**: `fn` referencing an
+  enclosing name now works. Heap `[tag,code,env]` triples, a new
+  `ICallClosure` call path, two independent VTable marks (`VTClosureFn`
+  vs `VTClosureReturn` — "this value is a closure" vs "calling this
+  hands one back" are different questions, conflating them was the
+  first bug found bringing this up).
+- **Real `try`/`catch`**: turned out the runtime already had a working
+  panic/longjmp mechanism (built for the test harness's own panic
+  recovery, never wired to anything else) — `error` needed to call it,
+  and a new `ITryCatch` codegen path calls `setjmp` inline in generated
+  code (not through an FFI wrapper, which would `ret` and become an
+  invalid longjmp target).
+
+**Result: `./run_regression_tests.sh --full` passes 43/43 through the
+self-hosted compiler** — up from 26/43 when the survey started, 0 known
+gaps left.
+
+Then went further than the survey: verified empirically that Rust
+isn't needed for **reseeding** either, not just the default build.
+Took a self-hosted seed many commits stale (predating all of the above)
+and fed it the current compiler source through the existing argv CLI,
+iterating stage1->stage2->stage3->... — round 1 differs from round 2
+(a compiler doesn't yet behave per source it JUST compiled, only source
+its own compiled predecessor already reflects), but round 2 and round 3
+were byte-identical, and matched what Rust had actually produced for
+the same source. Added `./boot.sh --bootstrap-from-self`, which does
+exactly this (up to 10 rounds), and it's now the normal reseed path.
+
+With that proven, executed Phase D: `git mv src archive/rust-bootstrap-
+2026` (with its own README explaining when it's still needed — only a
+change so large the previous seed's compiler can't even PARSE the new
+source, which no amount of self-iteration can solve), moved
+`Cargo.toml`/`Cargo.lock` alongside it, deleted `target/`, deleted
+`run_regression_tests_self.sh` (fully superseded by
+`run_regression_tests.sh` since it switched to `zyl-self`), deleted a
+pile of untracked/stray root junk (`a.out.*`, `--emit-*.s`,
+`larry_test.*`, `test_*.zyl`, `output.zyl`, etc.), and updated
+README.md/AGENTS.md/`.gitignore`/`docs/regression-tests.md` to stop
+referencing Cargo/`target/release`/`src/*.rs`.
+
+**Rust is no longer part of the active build, test, or use path.**
+`./boot.sh` (verify) and `./boot.sh --bootstrap-from-self` (reseed)
+both build with nothing but `cc`. `archive/rust-bootstrap-2026/` is
+preserved, self-contained and (with one path fix to `runtime.rs`) still
+buildable in place, purely as a fallback.
+
+**Not done / explicitly out of scope for this session**: Phase B
+(region inference's own result is still computed and discarded, never
+fed into codegen; `optimization.zyl` is still never called — both
+compile and are exercised by every self-hosted build, neither affects
+compiled output) and Phase C (`tools/repl.zyl` compiles and links now
+but has at least two known bugs — dropped `main` for trivial programs,
+an arena-corruption crash — treat it as an unfinished skeleton, not a
+working REPL).
 
 ## Pointers
 

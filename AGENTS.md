@@ -8,10 +8,10 @@
 
 1. **`zyl_specification.txt`** — Canonical language specification (v4.2)
 2. **`spec/`/** — Structured reference copy of specification, organized by semantic domain
-3. **`Cargo.toml`** — Dependencies and binary targets
+3. **`docs/rust-eviction-plan.md`** — Self-hosting status, the fixed-point invariant, and the survey of self-hosted-compiler gaps (mostly closed as of this writing — see the doc for current state)
 4. **`PROGRESS.md`** — Current implementation state and next priorities
 5. **`docs/`/** — Architecture decisions, implementation history, design rationale
-6. **Source code** — Authority for implemented behavior (overrides specification on implementation details)
+6. **Source code** — Authority for implemented behavior (overrides specification on implementation details). The compiler is self-hosted: `stdlib/compiler/*.zyl` + `selfhost/` is the ACTIVE implementation. `archive/rust-bootstrap-2026/` is the original Rust implementation, frozen and kept only as a reseed fallback — never the thing to edit for a language change.
 
 ## Session Protocol
 
@@ -87,12 +87,31 @@ No phase may depend on a later phase. Determinism is required at every step.
 
 ## Development Commands
 
+No Rust, no Cargo — the compiler is self-hosted and builds with `cc`:
+
 ```bash
-cargo build          # Build both binaries (zyl, zyl-repl)
-cargo run --bin zyl  # Run compiler binary
-cargo run --bin zyl-repl  # Run REPL
-cargo check          # Fast compile check
+./boot.sh                       # Build + verify the self-hosting fixed point
+build/boot/zyl-self hello.zyl -o hello   # Compile a program
+./hello                         # Run it
 ```
+
+After editing anything under `stdlib/compiler/*.zyl`, `selfhost/`, or
+`runtime/actor_runtime.c`, re-run `./boot.sh` — a source change that
+alters the compiler's own output breaks the fixed point (`FIXED POINT
+BROKEN` or `reproduced asm differs from committed seed`), which needs
+reseeding before anything else will trust the new `build/boot/stage2.s`:
+
+```bash
+python3 selfhost/assemble.py    # Re-bundle stdlib/compiler/*.zyl into selfhost/zyl_selfhost_compiler.zyl
+./boot.sh --bootstrap-from-self # Reseed using the self-hosted compiler (no Rust)
+./boot.sh                       # Verify the new seed reaches a clean fixed point
+git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
+```
+
+`--bootstrap-from-self` fails only when a change is so large the old
+seed can't even parse the new source (new syntax, not just new
+behavior) — see `archive/rust-bootstrap-2026/README.md` for that
+fallback, and `docs/rust-eviction-plan.md` for the full story.
 
 ## Regression Tests
 
@@ -102,7 +121,7 @@ cargo check          # Fast compile check
 ./run_regression_tests.sh --filter structs  # Struct regression tests only
 ```
 
-**Trigger before modifying struct-related code** (`ast.rs`, `codegen.rs`, `icnf.rs`, `type_inference.rs`, `parser.rs`, `region_inference.rs`):
+**Trigger before modifying struct-related code** (`ast.zyl`, `codegen.zyl`, `icnf.zyl`, `type_inference.zyl`, `parser.zyl`, `region_inference.zyl` under `stdlib/compiler/`):
 ```bash
 ./run_regression_tests.sh --filter structs
 ```
@@ -113,7 +132,7 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 
 ## Architecture Notes
 
-- Entry points: `src/main.rs` (compiler), `src/repl.rs` (REPL)
-- Single binary — no workspace, no crates
+- Entry point: `selfhost/driver.zyl` (assembled into `selfhost/zyl_selfhost_compiler.zyl` by `selfhost/assemble.py`, compiled to `build/boot/stage2.bin`/`zyl-self`). `tools/repl.zyl` is a REPL but is an unfinished skeleton — treat it as such, not a working tool.
+- Single binary — no workspace, no crates, no Cargo anywhere in the active path
 - Spec v5.0 features (package management, workspaces, feature flags) are NOT implemented; do not build them
 - All error codes from spec §28 must be defined and used consistently

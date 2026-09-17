@@ -1,5 +1,7 @@
 # Codebase Map
 
+> **Note (2026-09-17):** this document predates the Rust eviction (see `docs/rust-eviction-plan.md`) and may still reference `src/*.rs` or Cargo. The active compiler implementation is `stdlib/compiler/*.zyl` + `selfhost/`; the Rust bootstrap it describes is archived at `archive/rust-bootstrap-2026/`. See `AGENTS.md` for current build commands.
+
 ## Overview
 
 This file documents major source files, module responsibilities, and relationships between components.

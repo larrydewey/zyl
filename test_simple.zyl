@@ -1,4 +1,0 @@
-(test "simple add"
-  (assert-equal (+ 1 2) 3))
-
-(run-tests)

@@ -8,58 +8,62 @@ A deterministic Lisp systems language with region-based memory, capability types
 
 ## Installation
 
-```bash
-cargo install --path .
-```
-
-Or build from source:
+Zyl is self-hosting and builds with nothing but `cc` — no Rust, no
+Cargo, no other toolchain:
 
 ```bash
 git clone https://github.com/your-org/zyl.git
 cd zyl
-cargo build --release
+./boot.sh
 ```
+
+This links the committed compiler seed (`build/boot/stage2.s`) with
+`cc`, verifies the self-hosting fixed point (the compiler reproduces
+its own committed output, byte for byte, when compiling itself), and
+writes `build/boot/zyl-self` — a wrapper you can invoke from anywhere.
 
 ## Usage
 
 ```bash
 # Compile a Zyl source file
-zyl hello.zyl
-
-# Run the REPL
-zyl-repl
+build/boot/zyl-self hello.zyl -o hello
+./hello
 ```
 
-The compiler embeds the Zyl standard library and actor runtime, so an
-installed binary does not need to be run from a repository checkout or have a
-`stdlib/` directory on the current working-directory path. Core facilities
-(`Option`, `Result`, `List`, and core helpers) are available automatically.
-Additional libraries remain opt-in, for example:
+`zyl-self` resolves its standard library and runtime relative to its
+own directory (`build/boot/`), not your current working directory, so
+it works the same regardless of where you invoke it from. Core
+facilities (`Option`, `Result`, `List`, and core helpers) are available
+automatically; additional libraries remain opt-in, for example:
 
 ```lisp
 (use testing/testing)
 ```
 
-Project-local modules are still resolved relative to the source file, allowing
-applications to keep their own libraries alongside their source.
+Project-local modules are resolved relative to the source file being
+compiled, so applications can keep their own libraries alongside their
+source.
 
-The self-hosted compiler produced by `./boot.sh` is packaged the same way:
-`build/boot/zyl-self` includes its standard-library bundle and runtime, and
-can be invoked from any working directory.
+## Self-Hosting Status
 
-## Self-Hosting Status (2026-09-10)
+**Self-hosting: complete, no Rust in the active path.** The Zyl
+compiler written in Zyl (`stdlib/compiler/*.zyl`, `selfhost/`) compiles
+itself end-to-end with a strict byte-identical fixed point, verified by
+`./boot.sh`, and passes the full regression suite (`./run_regression_tests.sh
+--full`) — 43/43 as of the latest survey in `docs/rust-eviction-plan.md`.
 
-**Self-hosting: COMPLETE** — The Zyl compiler written in Zyl compiles itself end-to-end with a strict byte-identical fixed point.
+The original Rust bootstrap compiler is archived at
+`archive/rust-bootstrap-2026/` (see its own README) — kept only as a
+fallback for reseeding across a language change so large the previous
+self-hosted seed can't parse the new source at all. The normal reseed
+path, `./boot.sh --bootstrap-from-self`, needs no Rust either: it
+iterates the self-hosted compiler against its own new output until two
+consecutive rounds match.
 
-```bash
-./boot.sh    # stage1 (Rust) -> stage2 (Zyl) -> stage3 (Zyl); stage2.asm == stage3.asm
-```
-
-The Zyl-written compiler (`stdlib/compiler/*.zyl`, `selfhost/`) handles all 11 compilation phases:
-- Phases 1–6: Parsing → Macro Expansion → Type Inference → Monomorphization (ported from Rust)
-- Phases 7–11: ICNF → Optimization → Code Generation → Linking → Contract Injection
-
-The Rust bootstrap is now only needed for the initial stage1 build.
+The Zyl-written compiler handles the full pipeline: Parsing → Module
+Resolution → Macro Expansion → Region Inference → Monomorphization →
+Type Inference → Contract Injection → ICNF Generation → Optimization →
+Code Generation → Linking.
 
 ## Features
 
@@ -99,27 +103,32 @@ The Rust bootstrap is now only needed for the initial stage1 build.
 ## Project Structure
 
 ```
-src/                          # Rust bootstrap compiler (stages 1 only)
-├── main.rs                   # Compiler entry point, pipeline orchestration
-├── repl.rs                   # REPL entry point
-├── ast.rs                    # AST definitions + PostProcessor
-├── lexer.rs                  # Tokenizer
-├── parser.rs                 # Recursive descent parser
-├── macro_expander.rs         # Macro expansion with gensym hygiene
-├── type_system.rs            # Type definitions
-├── type_inference.rs         # HM type inference + trait resolution
-├── region_inference.rs       # Region inference + capture analysis
-├── monomorphization.rs       # Generic type instantiation
-├── icnf.rs                   # SSA IR (ICNF)
-├── optimization.rs           # IR optimizations
-├── codegen.rs                # x86_64 code generation
-├── error.rs                  # Error model
-├── runtime.rs                # Actor runtime path re-export
-└── runtime/
-    ├── actor_runtime.c       # pthread-based actor runtime
-    └── actor_runtime.h       # Actor runtime header
+archive/rust-bootstrap-2026/  # Archived Rust bootstrap — NOT part of the
+│                              # active build; see its own README and
+│                              # docs/rust-eviction-plan.md
+├── Cargo.toml
+└── src/
+    ├── main.rs                # Compiler entry point, pipeline orchestration
+    ├── repl.rs                # REPL entry point
+    ├── ast.rs                 # AST definitions + PostProcessor
+    ├── lexer.rs                # Tokenizer
+    ├── parser.rs               # Recursive descent parser
+    ├── macro_expander.rs       # Macro expansion with gensym hygiene
+    ├── type_system.rs          # Type definitions
+    ├── type_inference.rs       # HM type inference + trait resolution
+    ├── region_inference.rs     # Region inference + capture analysis
+    ├── monomorphization.rs     # Generic type instantiation
+    ├── icnf.rs                 # SSA IR (ICNF)
+    ├── optimization.rs         # IR optimizations
+    ├── codegen.rs               # x86_64 code generation
+    ├── error.rs                 # Error model
+    └── runtime.rs                # Embeds runtime/actor_runtime.{c,h}
 
-stdlib/compiler/              # Zyl-written compiler (self-hosted)
+runtime/                       # Actor runtime, used by every compiled binary
+├── actor_runtime.c            # pthread-based actor runtime
+└── actor_runtime.h            # Actor runtime header
+
+stdlib/compiler/              # Zyl-written compiler (self-hosted, active)
 ├── lexer.zyl
 ├── parser.zyl
 ├── ast.zyl
@@ -151,8 +160,10 @@ tests/                        # Regression test suite
 
 ## Requirements
 
-- Rust 1.70+ (edition 2021)
+- `cc` (a C compiler) and `pthread` — that's it; no Rust, no Cargo
 - Linux x86_64 (other platforms may work)
+- Rust 1.70+ (edition 2021) only if you need `archive/rust-bootstrap-2026`'s
+  fallback reseed path — see its README
 
 ## Examples
 

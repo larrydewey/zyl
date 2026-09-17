@@ -139,7 +139,7 @@ These tests require interactive input and cannot be automated:
 ### read-line
 
 ```bash
-echo 'hello world' | ./target/debug/zyl tests/manual/read-line.zyl t.bin && ./t.bin
+echo 'hello world' | ./build/boot/zyl-self tests/manual/read-line.zyl -o t.bin && ./t.bin
 # Expected: got: hello world
 ```
 
