@@ -1033,17 +1033,170 @@
     (AstIdent name (if (= name "else") (AstBool true) test))
     (d1 test)))
 
+; --- Literal-pattern match: desugars to a nested if/else chain ------------
+;
+; `match`'s real arm grammar (parse-match-arm, below) dispatches on ADT
+; variant tags (icnf.zyl's vt-tag-of / codegen.zyl's cg-tag-check, which
+; dereferences the scrutinee as a heap pointer to read a tag word) --
+; there was never a path for a bare literal pattern like `0` or `"x"`,
+; which isn't a registered variant name. vt-tag-of returned its "not
+; found" sentinel (-1) for any such pattern, which codegen treats
+; identically to a wildcard `_` (skip the comparison, always match) --
+; so the FIRST literal/unrecognized arm silently won unconditionally,
+; and the arm's own body (parsed by parse-match-arm's own catch-all)
+; collapsed to `(EAtom ANil)`, losing the literal's actual value
+; entirely. See docs/rust-eviction-plan.md for the full writeup.
+;
+; Fixed by recognizing this shape at parse time and desugaring it
+; entirely separately from ordinary ADT matches, rather than bending
+; vt-tag-of/cg-tag-check's pointer-based dispatch to also understand
+; raw values: `(match a (0 body0) (1 body1) ... (_ bodyN))` becomes
+; `(let __match_scrutinee__ a (if (= __match_scrutinee__ 0) body0 (if
+; (= __match_scrutinee__ 1) body1 ... bodyN)))`, binding the scrutinee
+; once (so a side-effecting scrutinee expression isn't re-evaluated per
+; arm) and reusing the `=` operator's own existing per-kind dispatch
+; (cg-strbinop for strings, plain cmp for int/bool, SSE ucomisd for
+; float -- all already correct, unrelated to this change). A trailing
+; `_` is REQUIRED and enforced as a hard compile error, not silently
+; allowed to fall through to some default the way ADT-match's own
+; unrecognized-pattern catch-all silently did before this fix.
+;
+; Deliberately does NOT support mixing a literal pattern and an ADT
+; constructor pattern in the SAME match: the two dispatch mechanisms
+; are fundamentally different (raw-value comparison vs. pointer-tag
+; dereference), and unifying them into one decision procedure the way
+; Rust's match compiler does is a much larger redesign, out of scope
+; here. A match is treated as "literal-pattern" the moment ANY one of
+; its arms has a literal head; every other non-wildcard arm is then
+; expected to also have a literal head.
+; An arm's pattern "alternatives": everything in the arm's list before
+; the body, e.g. `(1 2 3 body)` -> [1, 2, 3] -- one alternative is the
+; ordinary case, more than one is an OR-pattern (matches the scrutinee
+; against ANY of them), same idea as Rust's `1 | 2 | 3 => ...`.
+(defn ast-pattern-alts (arm)
+  (match arm
+    (AList kids (ast-list-butlast kids))
+    (d1 (Cons (AstIdent "_") Nil))))
+
+(defn ast-is-literal-head (h)
+  (match h
+    (AstInt d1 1)
+    (AstFloat d2 1)
+    (AString d3 1)
+    (AstBool d4 1)
+    (d5 0)))
+
+(defn ast-first-alt (alts)
+  (match alts
+    (Nil (AstIdent "_"))
+    (Cons h d1 h)))
+
+(defn match-has-literal-head (raw-arms)
+  (match raw-arms
+    (Nil 0)
+    (Cons arm rest
+      (if (> (ast-is-literal-head (ast-first-alt (ast-pattern-alts arm))) 0)
+        1
+        (match-has-literal-head rest)))))
+
+; Any bare identifier counts as the trailing wildcard, not just `_`
+; specifically -- matches this codebase's own pervasive ADT-match
+; convention (an unresolved name isn't a registered variant, so
+; vt-tag-of/cg-tag-check already treat it as a universal catchall;
+; `d1`/`d2`/... throwaway names are used this way hundreds of times
+; already, e.g. type_system.zyl's binop-kind-from-int). Requiring
+; literally `_` here would be a second, inconsistent wildcard
+; convention alongside the one ADT matches already have.
+(defn ast-pattern-is-wildcard (h)
+  (match h
+    (AstIdent n 1)
+    (d1 0)))
+
+; A wildcard arm is exactly one alternative, `_` -- `(_ x body)` (a
+; wildcard alongside something else) isn't treated as one, since that
+; would be ambiguous about which case actually applies.
+(defn ast-pattern-is-wildcard-alts (alts)
+  (match alts
+    (Nil 0)
+    (Cons h t (if (nil? t) (ast-pattern-is-wildcard h) 0))))
+
+(defn ast-list-is-last-wildcard (raw-arms)
+  (match raw-arms
+    (Nil 0)
+    (Cons arm t
+      (if (nil? t)
+        (ast-pattern-is-wildcard-alts (ast-pattern-alts arm))
+        (ast-list-is-last-wildcard t)))))
+
+(defn literal-arm-body (arm)
+  (match arm
+    (AList kids (convert-ast (ast-list-last kids (AstInt 0))))
+    (d1 (Expr (EAtom ANil)))))
+
+(defn literal-eq-test (scrutinee-name alt)
+  (Expr
+    (ECall
+      (Expr (EAtom (AIdent "=")))
+      (Cons (Expr (EAtom (AIdent scrutinee-name)))
+            (Cons (convert-ast alt) Nil)))))
+
+; OR-chain across one arm's alternatives: matches when the scrutinee
+; equals ANY of them. Same short-circuiting EIf desugaring `or` itself
+; already uses (or-fold, above) -- just built from `=` tests against
+; each alternative instead of arbitrary sub-expressions.
+(defn literal-alts-test (scrutinee-name alts)
+  (match alts
+    (Nil (Expr (EAtom (ABool false))))
+    (Cons a rest
+      (match rest
+        (Nil (literal-eq-test scrutinee-name a))
+        (d1 (Expr
+              (EIf
+                (literal-eq-test scrutinee-name a)
+                (Expr (EAtom (ABool true)))
+                (literal-alts-test scrutinee-name rest))))))))
+
+; Build nested EIf comparing the bound scrutinee against each arm's
+; alternatives in turn. The last arm (already checked to be `_` by the
+; caller) supplies the base case body directly, with no comparison.
+(defn build-literal-chain (scrutinee-name raw-arms)
+  (match raw-arms
+    (Nil (Expr (EAtom ANil)))
+    (Cons arm rest
+      (let alts (ast-pattern-alts arm)
+        (if (> (ast-pattern-is-wildcard-alts alts) 0)
+          (literal-arm-body arm)
+          (Expr
+            (EIf
+              (literal-alts-test scrutinee-name alts)
+              (literal-arm-body arm)
+              (build-literal-chain scrutinee-name rest))))))))
+
+(defn parse-literal-match (scrutinee-ast raw-arms)
+  (if (> (ast-list-is-last-wildcard raw-arms) 0)
+    (Expr
+      (ELet "__match_scrutinee__"
+            (convert-ast scrutinee-ast)
+            (build-literal-chain "__match_scrutinee__" raw-arms)))
+    (begin
+      (ffi-call "zyl_f_error" "E_MATCH_NONEXHAUSTIVE: a literal-pattern match must end with a `_` arm" 1000)
+      (Expr (EAtom ANil)))))
+
 ; Match arms are every element AFTER the subject: `(match subject arm1 arm2
 ; ...)` — NOT one single list-wrapped argument, so `parse-match-arms` takes
 ; a plain `List Ast` of arm-forms directly (args[1..]), one recursive step
 ; at a time, same as the old Ast-based icnf.zyl's `ic-arms` did.
 (defn parse-match (args)
   (if (ast-has-at-least args 2)
-    (Some
-      (Expr
-        (EMatch
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (parse-match-arms (ast-list-nth-rest args 1)))))
+    (let scrutinee-ast (ast-nth args 0 (AstInt 0))
+      (let raw-arms (ast-list-nth-rest args 1)
+        (if (> (match-has-literal-head raw-arms) 0)
+          (Some (parse-literal-match scrutinee-ast raw-arms))
+          (Some
+            (Expr
+              (EMatch
+                (convert-ast scrutinee-ast)
+                (parse-match-arms raw-arms)))))))
     None))
 
 (defn parse-match-arms (arms)

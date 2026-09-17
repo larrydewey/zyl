@@ -774,6 +774,85 @@ Decisions locked (all "recommended" options):
    relocate `src/runtime/*` → `runtime/`, clear junk files, rewrite
    README/AGENTS/PROGRESS/book build instructions cargo-free.
 
+## Literal-pattern `match` support (2026-09-17)
+
+Not a rust-eviction item, but same codebase/session: `match` has only
+ever dispatched on ADT variant tags (`vt-tag-of` in ast.zyl, checked via
+a heap-pointer dereference in `codegen.zyl`'s `cg-tag-check`) — there
+was never a path for a bare literal pattern like `(match a (0 "a") (1
+"b") ... (_ "i"))`. `vt-tag-of` returns its "not found" sentinel (`-1`)
+for anything that isn't a registered variant name, and `cg-arm-match`
+already special-cases `-1` to mean "skip the comparison, always match"
+(the correct behavior for a single trailing wildcard). With every
+literal arm ALSO landing on `-1`, the *first* one silently won
+unconditionally, and `parse-match-arm`'s own catch-all for a non-
+identifier, non-nested-list pattern head collapsed the arm's body to a
+bare `(EAtom ANil)`, discarding the literal's actual value. Confirmed
+via direct assembly inspection: zero `cmp` instructions anywhere in the
+generated code for such a match. Checked history and the archived Rust
+bootstrap's own `decompose_match_arm` before concluding this — neither
+ever supported it either; this was unfinished, never-landed work from
+an earlier work session, not a regression introduced here.
+
+Fixed by recognizing a literal-headed arm at parse time
+(`expr_inner.zyl`'s `parse-match`) and desugaring the *entire* match to
+a nested `if`/`=` chain, rather than bending the ADT tag-dispatch
+machinery to also understand raw values — the two mechanisms are
+fundamentally different (pointer-tag dereference vs. raw-value
+comparison), and unifying them the way Rust's match compiler does is a
+much larger redesign, deliberately out of scope here. The scrutinee is
+bound once via a synthetic `let` so a side-effecting scrutinee isn't
+re-evaluated per arm; `=` already dispatches correctly per value kind
+(`cg-strbinop` for strings, plain `cmp` for int/bool, SSE `ucomisd` for
+float), so no codegen changes were needed at all. A literal match
+**requires** a trailing wildcard and now raises a hard
+`E_MATCH_NONEXHAUSTIVE` compile error if one is missing, rather than
+silently compiling something wrong — the wildcard check accepts any
+bare identifier, not just `_`, matching this codebase's own pervasive
+ADT-match convention (an unresolved name is already treated as a
+universal catchall; `type_system.zyl`'s `binop-kind-from-int` is one of
+many existing examples using a throwaway `d1` for exactly this).
+
+**Also implemented**: OR-patterns (`(1 2 3 body)` matches the scrutinee
+against any of several literals in one arm, same idea as Rust's `1 | 2
+| 3 => ...`), reusing `or`'s own existing short-circuit desugaring.
+
+**Explicitly not implemented, discovered as separate follow-up work**:
+- Mixing a literal pattern and an ADT constructor pattern in the same
+  `match` — the two dispatch mechanisms don't unify without a bigger
+  redesign (see above).
+- Range patterns (`1..10`) and match guards (`pattern if cond`) — both
+  natural extensions of the same if-chain foundation, not done here to
+  keep this change bounded.
+- Rust-grade exhaustiveness analysis (a real usefulness/decision-tree
+  algorithm over literal sets and ranges) — the mandatory-wildcard rule
+  gets most of the practical safety value far more cheaply; treated as
+  a permanent, accepted gap rather than something to chase.
+- **A separate, pre-existing, unrelated bug found while verifying this
+  fix**: `print`-ing the result of an ordinary function call that
+  returns a string prints a garbage integer instead of the string,
+  because `codegen.zyl`'s `kind-of` unconditionally treats any `ICall`
+  as int-kind regardless of what the called function actually returns
+  (the exact same class of bug `ffi-str-kind` fixed for `IFfi` calls
+  earlier this session, just never applied to ordinary calls). Verified
+  as pre-existing and unrelated via a minimal match-free repro
+  (`(defn get-str () "hello") (defn main () (print (get-str)))` prints
+  garbage on its own). This is why the user's own original literal-
+  match example (which prints a `search-index` call's string result
+  directly) doesn't visibly show correct output yet even though the
+  underlying match/dispatch logic is proven correct via direct assembly
+  inspection and an equivalent all-integer version of the same program.
+  Fixing it needs threading function-return-kind information into
+  `kind-of` (which currently only sees local `env`, not the function
+  list) — a real, separate fix, not bundled into this one.
+
+Verified: the reported example, once printing integers instead of
+strings to sidestep the `ICall`-kind bug above, dispatches correctly
+for all nine cases; an OR-pattern match dispatches correctly across
+multiple values per arm; a literal match missing its trailing wildcard
+now raises a hard compile error instead of silently compiling. Full
+reseed to a new fixed point, regression suite stays 43/43.
+
 ## Sequencing (each step ends verifiable, fixed point preserved)
 
 ### Phase A — Foundation (must land together)
