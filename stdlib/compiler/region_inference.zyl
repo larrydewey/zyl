@@ -273,7 +273,8 @@
       (if (= (ri-is-literal-const scr) 1)
         (ri-is-literal-arms arms)
         0))
-    (IFn d20 d21 d22 (ri-is-literal-const d22))))
+    (IFn d20 d21 d22 (ri-is-literal-const d22))
+    (ITryCatch d102 d103 d104 0)))
 
 (defn ri-is-literal-icnf-list (icnfs)
   (match icnfs
@@ -342,7 +343,11 @@
         (ri-capture-collect scr captured-refs env)
         env))
     (IFn d15 d16 body
-      (ri-capture-collect body captured-refs env))))
+      (ri-capture-collect body captured-refs env))
+    (ITryCatch tbody d105 cbody
+      (ri-capture-collect cbody
+        (ri-capture-collect tbody captured-refs env)
+        env))))
 
 (defn ri-capture-collect-list (icnfs acc env)
   (match icnfs
@@ -461,7 +466,11 @@
                 (let env3 (RI.env ri2)
                   (let env4 (env-exit env3)
                     (RI env4 (RI.sr ri) (RI.fs ri))
-                    (RR RHeap None)))))))))))
+                    (RR RHeap None)))))))))
+    (ITryCatch tbody d106 cbody
+      (begin
+        (ri-infer-expr ri tbody)
+        (ri-infer-expr ri cbody)))))
 
 (defn ri-infer-args (ri icnfs)
   (ri-infer-args-loop ri icnfs RStack))

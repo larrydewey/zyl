@@ -47,7 +47,12 @@
   ; args are staged exactly like ICall's; codegen additionally unpacks
   ; code/env from the target's own stack slot and passes env as one
   ; extra trailing register argument. See ic-lambda/ic-is-closure-shaped.
-  (ICallClosure String (List Icnf)))
+  (ICallClosure String (List Icnf))
+  ; try-body, catch-var name, catch-body. See cg-trycatch: uses the
+  ; runtime's existing zyl_try_push/zyl_try_pop/zyl_panic frame-stack
+  ; machinery (added for the test harness, never wired to anything else
+  ; until now) via an inline `call setjmp` in generated code.
+  (ITryCatch Icnf String Icnf))
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
@@ -459,13 +464,13 @@
     ; discarding the catch clause — a real `try` needs the runtime's
     ; setjmp/longjmp panic-frame mechanism (zyl_try_push/zyl_try_pop,
     ; used by zyl_panic to unwind to the nearest try instead of killing
-    ; the process), which nothing in self-hosted codegen sets up or
-    ; calls anywhere. Correct for every ACTUAL use in this corpus
-    ; (ffi.zyl's ffi-safe-call/ffi-pin-call-unpin wrap a plain value in
-    ; Ok — the try-body can't panic, so the catch branch is unreachable
-    ; regardless), but a for a call that genuinely CAN panic, this skips
-    ; the catch and lets the panic kill the process instead.
-    (ETryCatch tbody d6 d7 (ic-expr arena tbody vt))
+    ; the process) already exists in the runtime (added for the test
+    ; harness's own panic recovery) -- cg-trycatch below is the first
+    ; thing to actually call it from generated code. `error` (allocator
+    ; .zyl) now calls zyl_panic instead of the always-exits zyl_f_error,
+    ; so it unwinds to the nearest try when one is active.
+    (ETryCatch tbody cvar cbody
+      (ITryCatch (ic-expr arena tbody vt) (str-intern arena cvar) (ic-expr arena cbody vt)))
     ; (fn (params...) body): lowers to an embedded IFn value — legal
     ; here only because ic-hoist (called by every top-level-function
     ; lowering site: ic-defn, ic-toplevel-test) walks the finished Icnf
@@ -892,6 +897,11 @@
     (ICallClosure name args
       (let ha (ic-hoist-list args)
         (HoistAcc (ICallClosure name (hoistl-nodes ha)) (hoistl-fns ha))))
+    (ITryCatch tbody cvar cbody
+      (let ht (ic-hoist tbody)
+        (let hc (ic-hoist cbody)
+          (HoistAcc (ITryCatch (hoist-node ht) cvar (hoist-node hc))
+                    (list-append (hoist-fns ht) (hoist-fns hc))))))
     (IFfi name args
       (let ha (ic-hoist-list args)
         (HoistAcc (IFfi name (hoistl-nodes ha)) (hoistl-fns ha))))

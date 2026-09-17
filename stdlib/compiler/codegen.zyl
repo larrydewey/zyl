@@ -235,7 +235,8 @@
     (IVariant d36 d37 d38 3)
     (IMatch d39 d40 0)
     (IFn d41 0)
-    (ICallClosure d42 d43 0)))
+    (ICallClosure d42 d43 0)
+    (ITryCatch d96 d97 d98 0)))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -285,7 +286,8 @@
     (IVariant d46 tag fields (cg-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms))
     ; A bare function node is never emitted as a value expression; keep st.
-    (IFn d47 d48 d49 st)))
+    (IFn d47 d48 d49 st)
+    (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))))
 
 ; Load a variable / function value into rax.
 (defn cg-load-value (st env n)
@@ -934,6 +936,85 @@
   (cg-nl (cg-emit (cg-emit st lbl) ":")))
 
 ; ===========================================================================
+; TRY / CATCH — inline setjmp/longjmp via the runtime's existing panic-
+; frame stack (zyl_try_push/zyl_try_pop/zyl_panic, added for the test
+; harness's own recovery, never wired to anything else until now).
+;
+; `error` (allocator.zyl) now calls zyl_panic, which — if a frame is
+; active — pops it and longjmps to its buffer instead of exiting.
+; setjmp/longjmp only work correctly when the function that calls
+; setjmp is still on the stack when the corresponding longjmp fires, so
+; setjmp is called INLINE here in the generated code itself, not via an
+; FFI wrapper function (which would return and pop its own frame before
+; any later longjmp could target it).
+;
+; Every bare `call` below (zyl_try_push/setjmp/zyl_try_pop/
+; zyl_try_frame_msg) is wrapped in cg-call0-aligned's save-rsp/and-16/
+; restore dance, mirroring cg-variant's own alignment fix elsewhere in
+; this file — this call site's own stack depth (mid-expression, with
+; earlier pushes already live) isn't guaranteed 16-aligned otherwise.
+; This is safe across the longjmp specifically because setjmp/longjmp's
+; whole contract is to save and restore every callee-saved register
+; (including r12, used here to stash the pre-alignment rsp) as of the
+; setjmp call site — the "mov rsp, r12" right after `call setjmp`
+; behaves identically whether we got there by falling through or by
+; landing via a later longjmp, regardless of what r12 held in between.
+(defn cg-call0-aligned (st sym)
+  (let st2 (cg-emit-line st "    mov r12, rsp")
+    (let st3 (cg-emit-line st2 "    and rsp, -16")
+      (let st4 (cg-emit-line st3 (str-concat "    call " sym))
+        (cg-emit-line st4 "    mov rsp, r12")))))
+
+(defn cg-trycatch (st env tbody cvar cbody)
+  (match (cg-label-pair st)
+    (CGP st1 lcatch ldone
+      (match (cg-new-slot st1)
+        (CGR st2 cvar-off d1
+          (cg-trycatch-emit st2 env tbody cvar cbody lcatch ldone cvar-off))))))
+
+(defn cg-trycatch-emit (st env tbody cvar cbody lcatch ldone cvar-off)
+  ; rax = new frame ptr (jmp_buf is its first field); save it across the
+  ; setjmp call, then use it as setjmp's own argument.
+  (let st2 (cg-call0-aligned st "zyl_try_push")
+    (let st3 (cg-emit-line st2 "    push rax")
+      (let st4 (cg-emit-line st3 "    mov rdi, rax")
+        (let st5 (cg-call0-aligned st4 "setjmp")
+          (let st6 (cg-emit-line st5 "    cmp rax, 0")
+            (let st7 (cg-emit st6 "    jne ")
+              (let st8 (cg-nl (cg-emit st7 lcatch))
+                (cg-trycatch-try st8 env tbody cvar cbody lcatch ldone cvar-off)))))))))
+
+; setjmp returned 0 (direct call, no panic yet): drop the saved frame
+; ptr (not needed on this path — zyl_try_pop operates on the runtime's
+; own top-of-stack global, not this specific pointer), run the try body,
+; then pop our frame so an error AFTER this point doesn't unwind here.
+(defn cg-trycatch-try (st env tbody cvar cbody lcatch ldone cvar-off)
+  (let st2 (cg-emit-line st "    pop rax")
+    (let st3 (cg-expr st2 env tbody)
+      (let st4 (cg-emit-line st3 "    push rax")
+        (let st5 (cg-call0-aligned st4 "zyl_try_pop")
+          (let st6 (cg-emit-line st5 "    pop rax")
+            (let st7 (cg-emit st6 "    jmp ")
+              (let st8 (cg-nl (cg-emit st7 ldone))
+                (let st9 (cg-emit-label st8 lcatch)
+                  (cg-trycatch-catch st9 env cbody cvar ldone cvar-off))))))))))
+
+; Landed here via longjmp (zyl_panic already popped our frame from the
+; runtime's own stack before jumping, so no zyl_try_pop call on this
+; path — that would incorrectly pop whatever frame is now on top,
+; typically an enclosing try/catch's). The frame ptr saved before
+; setjmp is still on our own stack (longjmp restores rsp to right after
+; that push, discarding only what the try body itself pushed) — use it
+; to read the message zyl_panic stashed.
+(defn cg-trycatch-catch (st env cbody cvar ldone cvar-off)
+  (let st2 (cg-emit-line st "    pop rax")
+    (let st3 (cg-emit-line st2 "    mov rdi, rax")
+      (let st4 (cg-call0-aligned st3 "zyl_try_frame_msg")
+        (let st5 (cg-store-rax-slot st4 cvar-off)
+          (let st6 (cg-expr st5 (EnvBind cvar cvar-off 0 env) cbody)
+            (cg-emit-label st6 ldone)))))))
+
+; ===========================================================================
 ; FUNCTION / PROGRAM EMISSION
 ; ===========================================================================
 
@@ -967,7 +1048,8 @@
     (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
     (IFn d65 d66 d67 1)
-    (ICallClosure d94 args (icnf-add2 2 (icnf-count-list args)))))
+    (ICallClosure d94 args (icnf-add2 2 (icnf-count-list args)))
+    (ITryCatch tbody d102 cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))))
 
 (defn icnf-count-list (xs)
   (match xs
@@ -996,7 +1078,8 @@
     (IVariant d89 d90 fields (icnf-count-slots-list fields))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
     (IFn d91 d92 d93 0)
-    (ICallClosure d95 args (icnf-count-slots-list args))))
+    (ICallClosure d95 args (icnf-count-slots-list args))
+    (ITryCatch tbody d103 cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)

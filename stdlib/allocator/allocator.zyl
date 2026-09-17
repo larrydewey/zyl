@@ -144,9 +144,11 @@
 (defn buf-append (dst src)
   (ffi-call "zyl_str_append" dst src 1000))
 
-; Zyl-level error: print and exit.
+; Zyl-level error: unwind to the nearest active try/catch, or print and
+; exit if there is none (zyl_panic already implements exactly this via
+; the runtime's g_try_top frame stack -- see runtime/actor_runtime.c).
 (defn error (msg)
-  (ffi-call "zyl_f_error" msg 1000))
+  (ffi-call "zyl_panic" msg 1000))
 
 (defn str-intern (arena s)
   (let n (alloc-strlen s)

@@ -355,6 +355,17 @@ const char* zyl_try_last_msg(void) {
     return g_try_top ? g_try_top->msg : 0;
 }
 
+/* The `msg` field of a specific frame (the pointer zyl_try_push returned
+ * for it) -- unlike zyl_try_last_msg, valid to call AFTER a longjmp has
+ * already unlinked that frame from g_try_top (zyl_panic pops before it
+ * jumps), which is exactly when generated try/catch code needs it: the
+ * frame pointer it saved across the longjmp is the only remaining
+ * reference to it. */
+long long zyl_try_frame_msg(long long frame) {
+    if (!frame) return 0;
+    return (long long)(size_t)((struct ZylTryFrame*)(size_t)frame)->msg;
+}
+
 /* ==========================================================================
    FFI pinning — copy an 8-byte value to a stable heap location and back.
    ========================================================================== */
