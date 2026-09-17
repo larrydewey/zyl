@@ -35,36 +35,77 @@ compile now instead of being rejected outright.
 found: one collision, five test files, all fixed by removing one error
 check. 26/43 → 31/43 on the full suite.
 
-### 2. Closures crash on nesting/higher-order use — NOT FIXED, deliberately deferred
+### 2. Closures crash on nesting/higher-order use — FIXED (commit `195c513`)
 
-**Root-caused, but not a bug — a documented, deliberate architectural
-gap.** `icnf.zyl`'s own comment on `ic-lambda`/`ic-hoist` (~line 462)
-says it outright: "No free-variable capture: a `fn` referencing a name
-bound in an ENCLOSING scope (not its own params) reads as unbound in
-the lifted function, same as any other out-of-scope reference." Every
-`(fn ...)` gets lifted to a top-level function with zero access to its
-defining scope; a captured name resolves via the same
-unbound-name-falls-back-to-offset-0 mechanism that caused the
-`ic-wrap-one` bug, and calling the resulting garbage value crashes.
+**Was root-caused as a documented, deliberate architectural gap**
+(`icnf.zyl`'s own comment on `ic-lambda`/`ic-hoist`: "No free-variable
+capture..."), comparable in scope to Rust's own `closure_inline.rs" —
+deferred once (user decision, 2026-09-16), then implemented for real.
 
-Implementing this for real is a compiler feature addition, not a
-targeted fix: free-variable analysis over `fn` bodies, heap-allocating
-an environment block for captured values, changing the closure calling
-convention to a (code-pointer, env) pair, rewriting the lifted
-function's body to read captures from the env instead of as bare
-out-of-scope names, and updating every indirect-call site in
-`codegen.zyl` to match — comparable in scope to Rust's own
-`closure_inline.rs`. Deliberately deferred (user decision, 2026-09-16)
-in favor of the smaller, more contained items below; still the
-highest-impact gap once someone has the hours for it, since closures
-are basic and load-bearing, and three independent test files
-(`unit_test`, `regression/functions`, `regression/regions`) hit the
-identical crash on ordinary use, not some obscure edge case
-(`unit_test`'s "nested closures" sub-test, `regression/functions`'
-"hof-closure" sub-test, and `regression/regions`'
-"region-heap-closure" sub-test — the last only visible now that fix #1
-stopped `regions` from failing earlier, on the variant collision, for
-an unrelated reason).
+Free-variable analysis (`ic-free-vars`, mirroring `ic-safe-expr`'s own
+shape coverage) finds every name a `fn` body references that isn't its
+own param or a known VT variant. Empty → unchanged (plain top-level
+`IFn`, identical codegen to before). Non-empty → a heap `[tag,code,env]`
+triple (`IVariant`, reusing `cg-variant`'s codegen as-is) whose code
+field is the lifted function (still found and hoisted by `ic-hoist`'s
+existing generic field-list walk) and whose env field is a second such
+triple holding one captured value per field, evaluated in the enclosing
+scope — capture by value. The lifted function gets one extra trailing
+`_clos_env` param; its body is wrapped in ordinary `let`s reading
+captures back out via a new `zyl_variant_field` runtime helper — no new
+codegen needed for the body itself, since a captured name is just a
+normal local from every other angle. A new `ICallClosure` Icnf node
+(paired with `cg-call-closure-args`/`cg-closure-fire`) unpacks
+code/env at the call site and passes env as an extra trailing register
+argument, capped at 5 declared params (env needs its own SysV register,
+and this compiler's call staging has no path for a register-exhausted
+7th argument today).
+
+Two independent VTable marks decide which names need the new call form,
+since they answer genuinely different questions: `VTClosureFn` ("this
+name's own value is a closure triple") and `VTClosureReturn` ("calling
+this name hands one back"). `outer` in `(let outer (fn (x) (fn (y) (+ x
+y))) (let add5 (outer 5) ...))` is itself a plain non-capturing lambda
+— ordinary bare-pointer calling convention is correct for calling
+`outer` itself — but its body's tail is another `fn` that captures `x`,
+so *calling* it hands back a real closure; `add5` needs the new call
+form, `outer` doesn't. An earlier attempt conflated the two into one
+mark, marked `outer` based on its own (empty) free-var set, left `add5`
+unmarked, and crashed calling `add5` with the plain bare-pointer
+convention on an actual triple.
+
+Two bugs found and fixed during bring-up, worth knowing about if
+something in this area breaks again: (1) an early version of the
+closure-marking helper matched `EFn`'s fields in the wrong order
+(`(EFn fparams fbody _)` instead of the real `(EFn _ params body)`
+shape — `EFn` carries an unused name string *first*), silently feeding
+a raw string into `param-names` as if it were a param list; the ensuing
+memory corruption didn't crash where it happened, surfacing many calls
+later as a SIGSEGV in a generic call trampoline with no obvious
+connection to the actual bug — found only by bisecting with `dbg2-log`-
+style file-based debug prints added at each step of the suspect call
+chain, the fast way being direct `target/release/zyl` + the legacy
+`/tmp/zyl_boot_in.zyl` protocol against single-line repros rather than
+a full `boot.sh --bootstrap-from-rust` per attempt (~1 min vs ~4).
+(2) The `outer`/`add5` conflation above, found by reading the actual
+generated assembly once compilation itself started succeeding.
+
+**Impact**: `regression/functions`' `hof-closure`, `regression/regions`'
+`region-heap-closure`, and `unit_test`'s `nested closures` sub-tests all
+pass end-to-end now. 39/43 → 42/43. `./boot.sh` confirms the fixed point
+holds.
+
+**Known, deliberate limitation**: a closure passed through an unrelated
+higher-order function's own parameter (not a `let`-bound name) is only
+correctly handled when it doesn't capture anything — `VTClosureFn`/
+`VTClosureReturn` only ever mark `let`-bound locals and `defn`s whose
+own body's tail is an `fn` literal, never plain function *parameters*
+(no static type info flows into a parameter's own kind anywhere in this
+pipeline). A *non-capturing* closure passed as an argument still works
+today (falls back to the always-correct bare-pointer convention, since
+its own value genuinely is one) — this only matters for a capturing
+closure specifically passed through a HOF parameter, which no test in
+this corpus currently does.
 
 ### 3. Trait-dispatch compiler crash — FIXED (commit `29ef5db`)
 
