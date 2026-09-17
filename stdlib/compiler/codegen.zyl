@@ -756,6 +756,18 @@
       (cg-call-cleanup st3 n))))
 
 ; print: pick the format by the argument's kind.
+; `print`'s own "value" (this is a Lisp where everything is an
+; expression, so a print statement is also usable as one) used to be
+; whatever printf happened to leave in rax -- its return value, the
+; byte count written, an ABI artifact never meant to be meaningful
+; here. That leaked two different ways: it silently became the process
+; exit code whenever a print was the tail expression of `main` (see
+; the entry stub's own comment), and it made nested prints like
+; `(print (print x))` show a second, garbage-looking number (the
+; inner print's byte count) instead of anything sensible. print now
+; always evaluates to a clean, deterministic 0 -- the ordinary "this
+; statement has no useful value" convention -- by zeroing eax again
+; right after the call, regardless of what printf itself returned.
 (defn cg-print (st env a)
   (let k (kind-of env a)
     (let st2 (cg-expr st env a)
@@ -763,16 +775,19 @@
         (let st3 (cg-emit-line st2 "    movq xmm0, rax")
           (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtf]")
             (let st5 (cg-emit-line st4 "    mov eax, 1")
-              (cg-emit-line st5 "    call printf"))))
+              (let st6 (cg-emit-line st5 "    call printf")
+                (cg-emit-line st6 "    xor eax, eax")))))
         (if (= k 1)
           (let st3 (cg-emit-line st2 "    mov rsi, rax")
             (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmts]")
               (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (cg-emit-line st5 "    call printf"))))
+                (let st6 (cg-emit-line st5 "    call printf")
+                  (cg-emit-line st6 "    xor eax, eax")))))
           (let st3 (cg-emit-line st2 "    mov rsi, rax")
             (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtd]")
               (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (cg-emit-line st5 "    call printf")))))))))
+                (let st6 (cg-emit-line st5 "    call printf")
+                  (cg-emit-line st6 "    xor eax, eax"))))))))))
 
 ; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
 ; (not raw malloc) so the runtime's hidden qword-count header lands
@@ -1349,6 +1364,21 @@
   ; zyl_save_args BEFORE any other call (which would clobber the
   ; caller-saved edi/rsi), so driver.zyl's zyl_argc/zyl_arg_str FFI
   ; helpers can see the real argv later in the run.
+  ;
+  ; zyl_call_on_big_stack's return value (user main's real return
+  ; value, via g_bigstack_result) now becomes this process's actual
+  ; exit code -- this used to zero eax here unconditionally, silently
+  ; discarding it for every Zyl program ever compiled by this codegen.
+  ; That was only safe because print (this language's overwhelmingly
+  ; common tail expression) used to leave printf's own return value in
+  ; rax, an arbitrary byte count with no relation to program correctness
+  ; -- exactly what broke tests/regression/generics-multi-type.zyl the
+  ; first time this zeroing was removed without also fixing print. Now
+  ; that cg-print always leaves a clean 0 (see its own comment), a
+  ; `main` whose tail is print exits 0 as expected, and one whose tail
+  ; is (run-tests) genuinely propagates zyl_run_tests' pass/fail result
+  ; (actor_runtime.c: 0 if all passed, 1 if any failed) as the process
+  ; exit code for the first time.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
@@ -1356,10 +1386,9 @@
           (let st3b (cg-emit-line st3a "    call zyl_ensure_arenas")
             (let st4 (cg-emit-line st3b "    lea rdi, [rip+_ZYL_main]")
               (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
-                (let st6 (cg-emit-line st5 "    xor eax, eax")
-                  (let st7 (cg-emit-line st6 "    pop rbp")
+                  (let st7 (cg-emit-line st5 "    pop rbp")
                     (let st8 (cg-emit-line st7 "    ret")
-                      st8)))))))))))
+                      st8))))))))))
 
 (defn cg-format-strings (st)
   (let st1 (cg-emit-line st ".section .rodata")

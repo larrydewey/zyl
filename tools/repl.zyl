@@ -67,6 +67,17 @@
           (str-substring s start (- end start))
           "")))))
 
+(deftype ReadLine
+  (GotLine String String)  ; the line, plus whatever's left over unconsumed
+  (NoLine))                ; real EOF: nothing left, ever
+
+(defn repl-find-newline (s i len)
+  (if (>= i len)
+    -1
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10)
+      i
+      (repl-find-newline s (+ i 1) len))))
+
 ; `file-read` (icnf.zyl's special-cased lowering to zyl_file_read_c) does
 ; not return a byte count -- it returns the read bytes themselves as a
 ; ready-to-use, already-null-terminated string (a pointer into the FFI's
@@ -75,11 +86,44 @@
 ; that was never written to, and then substring 0..pointer-as-length out
 ; of that empty buffer -- reading wildly out of bounds and returning
 ; garbage. `arena-create`/`arena-alloc-zeroed` were never needed at all.
-(defn repl-read-line (fd)
-  (let line (file-read fd 4095)
-    (if (> (str-length line) 0)
-      (Some (str-trim line))
-      None)))
+;
+; Separately, and much more subtly: one raw `file-read` call is NOT one
+; line. `read(2)` (what zyl_file_read_c calls) returns whatever bytes
+; are currently available, up to the requested max -- for an
+; interactive terminal that's usually exactly one line (canonical mode
+; line-buffers for you), but for anything piped or redirected (a test
+; harness, `echo "..." | ./repl`, a script feeding multiple commands)
+; the whole input routinely arrives in ONE read as one chunk containing
+; several newlines. The old repl-read-line handed that entire chunk to
+; str-trim as if it were a single line -- str-trim only strips leading/
+; trailing whitespace, so embedded newlines survived into the wrapped
+; `(defn main () (print <chunk>))` source. Since `print` (EPrint) takes
+; a variadic argument list, a chunk like "(+ 1 2)\n:q" parsed as TWO
+; print arguments -- the real expression, and the bare, meaningless
+; token `:q`, which this compiler's "unbound name" fallback silently
+; lowers to `(IConst 0)` instead of erroring. That is where the
+; mysterious extra "0" (and, for a chunk containing its own nested
+; `print`, an entire extra phantom printf call) was coming from -- not
+; a bug in repl.zyl's compile pipeline diverging from the CLI's, as
+; docs/rust-eviction-plan.md previously (incorrectly) guessed.
+;
+; Fixed with a real line reader: `pending` carries bytes already read
+; but not yet consumed across calls. If it already contains a newline,
+; split there and return the rest as the new pending buffer -- no
+; syscall needed. Otherwise read more and append, retrying until a
+; newline shows up or the fd is genuinely exhausted (a 0-length read),
+; in which case any non-empty leftover is returned as one final line.
+(defn repl-next-line (fd pending)
+  (let nl (repl-find-newline pending 0 (str-length pending))
+    (if (>= nl 0)
+      (GotLine (str-trim (str-substring pending 0 nl))
+               (str-substring pending (+ nl 1) (- (str-length pending) (+ nl 1))))
+      (let chunk (file-read fd 4095)
+        (if (> (str-length chunk) 0)
+          (repl-next-line fd (str-concat pending chunk))
+          (if (> (str-length (str-trim pending)) 0)
+            (GotLine (str-trim pending) "")
+            (NoLine)))))))
 
 ; str-eq returns 1 for equal, 0 for not-equal (see zyl_cstr_eq in
 ; actor_runtime.c) -- this used to check `= 0`, i.e. "not equal to :q
@@ -91,20 +135,21 @@
 
 ; Wraps as `(print <line>)`, not bare `<line>`, and deliberately does NOT
 ; rely on the compiled child's exit code to carry the value: codegen.zyl's
-; `main:` entry stub unconditionally zeroes eax after running the user's
-; code (`xor eax, eax`) before it becomes the process exit status, for
-; every Zyl program this compiler has ever produced -- confirmed by
-; testing the fix directly: removing that zeroing so exit status reflects
-; the real return value breaks tests/regression/generics-multi-type.zyl
-; (and likely others), whose `main` body ends in a `print` call and never
-; expected its leftover register value to become an exit code. Making the
-; REPL print its own result directly sidesteps that shared, load-bearing
-; entry stub entirely instead of trying to fix it. The one known rough
-; edge: typing an expression that already contains a top-level `print`
-; wraps it as `(print (print ...))`, showing the intended value followed
-; by a second, meaningless number (whatever raw value the inner print's
-; own codegen leaves in rax) -- not fixed here, out of scope for getting
-; ordinary expressions to show real values.
+; `main:` entry stub used to unconditionally zero eax after running the
+; user's code (`xor eax, eax`) before it became the process exit status,
+; for every Zyl program this compiler ever produced. That zeroing is gone
+; now (see cg-entry-stub's own comment) -- exit code genuinely reflects
+; main's return value -- but the REPL still prints its own result
+; directly rather than reading it back from the exit code, since a
+; process's exit status is always truncated to a single byte (0-255) and
+; can't represent an arbitrary computed value anyway (a negative number,
+; a float, a string). Typing an expression that already contains a
+; top-level `print`, e.g. `(print 99)`, wraps to `(print (print 99))` and
+; now shows `99` followed by `0` -- well-defined, not garbage: print's
+; own value is always a clean 0 (see cg-print's comment), so the outer
+; print is simply printing that. Not the most useful REPL UX for that
+; specific input, but correct and explainable, which is what matters
+; here.
 (defn repl-wrap-expr (arena line) String
   (str-concat "(defn main () (print " (str-concat line "))")))
 
@@ -212,9 +257,9 @@
 ; (see repl-wrap-expr's comment) does not carry a meaningful value, so
 ; it's neither printed nor treated as an error: the child already
 ; printed the real result itself.
-(defn repl-loop (arena fd)
-  (match (repl-read-line fd)
-    (Some line
+(defn repl-loop (arena fd pending)
+  (match (repl-next-line fd pending)
+    (GotLine line rest
       (if (repl-is-quit line)
         (begin (print "Goodbye!") 0)
         (begin
@@ -222,8 +267,8 @@
             (if (= result -1)
               (print "Error: compile failed")
               0))
-          (repl-loop arena fd))))
-    (None (begin (print "Goodbye!") 0))))
+          (repl-loop arena fd rest))))
+    (NoLine (begin (print "Goodbye!") 0))))
 
 (defn main ()
   (let arena (arena-create 1048576)
@@ -231,5 +276,5 @@
       (print "Zyl REPL — type expressions, :q to quit")
       (let fd (file-open "/dev/stdin" "r")
         (if (> fd 0)
-          (repl-loop arena fd)
+          (repl-loop arena fd "")
           -1)))))
