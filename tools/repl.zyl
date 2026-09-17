@@ -200,17 +200,11 @@
 (defn repl-region-infer (fns)
   (ri-transform-fns fns))
 
-; compiler/optimization.zyl is NOT called here: it's written against
-; src/optimization.rs's SSA-form ICNFNode/IFS representation, while this
-; pipeline's own compiler/icnf.zyl lowering produces a different,
-; simpler tree-shaped Icnf (IFn name params body) that codegen.zyl
-; consumes directly. Feeding a real `(List IFn)` into opt-optimize's
-; `IFS` pattern never matches (see driver.zyl's identical passthrough
-; for the full explanation), so opt-optimize always returns Nil --
-; silently dropping every function, which used to make repl-codegen
-; emit a binary with no main at all. Pass fns through unchanged.
+; Real constant folding + dead-branch elimination now: optimization.zyl
+; was rewritten against this pipeline's actual tree-shaped Icnf (see
+; its own header comment).
 (defn repl-optimize (fns)
-  fns)
+  (opt-optimize-fns fns))
 
 (defn repl-codegen (arena fns)
   (let opt-fns (repl-optimize fns)

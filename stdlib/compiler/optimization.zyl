@@ -1,1199 +1,141 @@
-; === Zyl Standard Library — ICNF Safe Optimizations ===
+; === Zyl Standard Library — Icnf Safe Optimizations ===
 ; Module: compiler/optimization
-; Provides: Constant folding + Dead code elimination (spec §22)
+; Provides: constant folding + dead-branch elimination (spec §22)
 ; Safe-only: no reordering, no speculation, preserves all semantics
+;
+; This used to be written against src/optimization.rs's SSA-form
+; ICNFNode/IFS/ICNFProgram representation (type_system.zyl), a
+; different shape from what this self-hosted pipeline actually produces
+; -- compiler/icnf.zyl's own tree-shaped Icnf (IFn name params body, no
+; SSA ids at all). Feeding a real `(List IFn)` into the old
+; opt-optimize's IFS pattern never matched (a real IFn's tag differs
+; from IFS's), so every function silently fell through to an empty
+; result and opt-optimize always returned Nil -- driver.zyl and
+; tools/repl.zyl both had to pass `fns` through unchanged instead of
+; calling it, which is why nothing here ever affected a compiled
+; program. Rewritten from scratch against the real Icnf shape instead
+; of patching the old file, same approach as region_inference.zyl's
+; Phase B rewrite.
+;
+; Two passes, both structural, single bottom-up tree walk (opt-expr
+; recurses into children BEFORE checking whether the current node
+; folds, so nested constant arithmetic like `(+ (* 2 3) 4)` collapses
+; in one pass -- by the time the outer `+` is examined, its own
+; operands are already `(IConst 6)`/`(IConst 4)`):
+;
+;   1. Constant folding: an IBinop whose operands are both already
+;      IConst after their own recursive optimization folds to a single
+;      IConst, for every op codegen.zyl's cg-ibinop actually implements
+;      (0-4 arithmetic, 5-10 comparisons -- see cg-arith-mnem/
+;      cg-cmp-set). Integer-only: IFlt only ever carries the ORIGINAL
+;      SOURCE TEXT of a float literal (icnf.zyl: "raw literal text"),
+;      not a parsed numeric value, so folding it would mean parsing and
+;      re-formatting through a text round-trip this compiler has no
+;      existing float-to-string/string-to-float machinery for --
+;      deliberately out of scope rather than risk a precision bug for a
+;      case that's rare in practice (Float is not this language's
+;      arithmetic workhorse). Division/remainder by a constant zero is
+;      NOT folded: it must still fail at runtime exactly like the
+;      unoptimized program would (this codegen's idiv already raises
+;      SIGFPE), not silently become some placeholder value at compile
+;      time.
+;
+;   2. Dead-branch elimination: an IIf whose condition folds to a
+;      constant keeps only the taken branch (matching this codegen's
+;      own 0-is-false/nonzero-is-true convention -- cg-if-parts' `test
+;      rax, rax` / `je`); an IWhile whose condition folds to constant
+;      FALSE folds to `(IConst 0)` (cg-while-body always starts a
+;      loop's own value at 0 and only overwrites it once the body has
+;      run at least once, so a loop that never executes really does
+;      evaluate to a bare 0). A constant-TRUE while condition is left
+;      alone -- an infinite loop is still a legitimate, intentional
+;      program shape; this pass proves nothing about how the body might
+;      exit, so eliminating the test would be a real behavior change,
+;      not an optimization.
+;
+; Both are safe from ever discarding a real side effect: the only way
+; `opt-expr` ever produces a bare IConst for something structurally
+; complex is by folding IBinop-of-constants, which by construction has
+; none. A condition built from a call, print, or anything else that
+; isn't pure arithmetic-on-literals simply never matches IConst here,
+; so it's never eligible for branch elimination in the first place --
+; nothing about "is this expression pure" needs to be proven separately.
 
-(use allocator/allocator)
-(use compiler/type_system)
+(use compiler/icnf)
 
-; ===========================================================================
-; OPTIMIZATION STATE
-; ===========================================================================
-
-(
-  deftype OptState
-  (OS (List (Pair String Int)))
-)
-
-(
-  defn OS.stats (os)
-  (match os
-    (OS s s)
-  )
-)
-
-(
-  defn opt-new ()
-  (OS Nil)
-)
-
-(
-  defn opt-add-stat (os name)
-  (let stats (OS.stats os)
-    (let new-stats (opt-stat-add stats name)
-      (OS new-stats)
-    )
-  )
-)
-
-(
-  defn opt-stat-add (stats name)
-  (match stats
-    (Nil
-      (Cons (Pair name 1) Nil)
-    )
-    (Cons hd rest
-      (match hd
-        (Pair k v
-          (if (= (str-eq k name) 0)
-            (Cons (Pair k (+ v 1)) rest)
-            (Cons hd (opt-stat-add rest name))
-          )
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-stats (os)
-  (OS.stats os)
-)
-
-; ===========================================================================
-; CONSTANT FOLDING — Pass 1
-; Fold BinOp/UnOp with constant operands. Iterate to fixed-point (max 100).
-; ===========================================================================
-
-(
-  defn opt-fold-constants (os stmts)
-  (let result (opt-fold-constants-loop os stmts 0)
-    (match result
-      (Pair new-os new-stmts
-        (opt-add-stat new-os "constant_folding")
-      )
-      (d1
-        (opt-add-stat os "constant_folding")
-      )
-    )
-  )
-)
-
-(
-  defn opt-fold-constants-loop (os stmts iter)
-  (if (> iter 100)
-    (Pair os stmts)
-    (let binop-indices (opt-collect-binop-indices stmts)
-      (if (is-nil binop-indices)
-        (Pair os stmts)
-        (let fold-result (opt-fold-constants-pass os stmts binop-indices 0 False)
-          (match fold-result
-            (Pair new-os
-              (Pair folded_any new-stmts)
-              (if folded_any
-                (opt-fold-constants-loop new-os new-stmts (+ iter 1))
-                (Pair new-os new-stmts)
-              )
-            )
-            (d1
-              (Pair os stmts)
-            )
-          )
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-collect-binop-indices (stmts)
-  (opt-collect-binop-indices-loop stmts 0 Nil)
-)
-
-(
-  defn opt-collect-binop-indices-loop (stmts idx acc)
-  (match stmts
-    (Nil
-      (list-reverse acc)
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch node
-          (let new-acc
-            (if (opt-is-binop-or-unop node)
-              (Cons idx acc)
-              acc
-            )
-            (opt-collect-binop-indices-loop rest (+ idx 1) new-acc)
-          )
-        )
-        (d1
-          (opt-collect-binop-indices-loop rest (+ idx 1) acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-is-binop-or-unop (node)
-  (match node
-    (ICBinop d1 d2 d3
-      1
-    )
-    (ICUnop d1 d2
-      1
-    )
-    (d1
-      0
-    )
-  )
-)
-
-(
-  defn opt-fold-constants-pass (os stmts indices folded_any)
-  (match indices
-    (Nil
-      (Pair (Pair os folded_any) stmts)
-    )
-    (Cons idx rest
-      (if (>= idx (list-length stmts))
-        (opt-fold-constants-pass os stmts rest folded_any)
-        (let node (list-nth stmts idx)
-          (match node
-            (ICN id region typ is_branch inner
-              (match inner
-                (ICBinop op left right
-                  (let left-atom (opt-resolve-atom left stmts)
-                    (let right-atom (opt-resolve-atom right stmts)
-                      (if (and left-atom right-atom)
-                        (let folded (opt-fold-binop op left-atom right-atom)
-                          (if folded
-                            (let new-node (ICN id region typ is_branch folded)
-                              (let new-stmts (list-set stmts idx new-node)
-                                (opt-fold-constants-pass os new-stmts rest True)
-                              )
-                            )
-                            (opt-fold-constants-pass os stmts rest folded_any)
-                          )
-                        )
-                        (opt-fold-constants-pass os stmts rest folded_any)
-                      )
-                    )
-                    (opt-fold-constants-pass os stmts rest folded_any)
-                  )
-                )
-                (ICUnop op arg
-                  (let arg-atom (opt-resolve-atom arg stmts)
-                    (if arg-atom
-                      (let folded (opt-fold-unop op arg-atom)
-                        (if folded
-                          (let new-node (ICN id region typ is_branch folded)
-                            (let new-stmts (list-set stmts idx new-node)
-                              (opt-fold-constants-pass os new-stmts rest True)
-                            )
-                          )
-                          (opt-fold-constants-pass os stmts rest folded_any)
-                        )
-                      )
-                      (opt-fold-constants-pass os stmts rest folded_any)
-                    )
-                    (opt-fold-constants-pass os stmts rest folded_any)
-                  )
-                )
-                (ICBegin body
-                  (let fold-result (opt-fold-constants-pass os body rest folded_any)
-                    (match fold-result
-                      (Pair new-os new-stmts
-                        (opt-fold-constants-pass new-os stmts rest (or folded_any (opt-stmts-changed new-stmts)))
-                      )
-                      (_
-                        (opt-fold-constants-pass os stmts rest folded_any)
-                      )
-                    )
-                  )
-                )
-                (_
-                  (opt-fold-constants-pass os stmts rest folded_any)
-                )
-              )
-            )
-            (d1
-              (opt-fold-constants-pass os stmts rest folded_any)
-            )
-          )
-        )
-        (d1
-          (opt-fold-constants-pass os stmts rest folded_any)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-resolve-atom (ssa-id stmts)
-  (opt-resolve-atom-loop stmts ssa-id)
-)
-
-(
-  defn opt-resolve-atom-loop (stmts ssa-id)
-  (match stmts
-    (Nil
-      None
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch inner
-          (if (= id ssa-id)
-            (match inner
-              (ICConst atom
-                (Some atom)
-              )
-              (d1
-                None
-              )
-            )
-            (opt-resolve-atom-loop rest ssa-id)
-          )
-        )
-        (d1
-          (opt-resolve-atom-loop rest ssa-id)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-fold-binop (op left right)
-  (match op
-    (BAdd
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (Some (ICConst (AInt (+ a b))))
-            )
-            (AFloat b
-              (Some (ICConst (AFloat (+ a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (AFloat (+ a b))))
-            )
-            (AInt b
-              (Some (ICConst (AFloat (+ a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BSub
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (Some (ICConst (AInt (- a b))))
-            )
-            (AFloat b
-              (Some (ICConst (AFloat (- a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (AFloat (- a b))))
-            )
-            (AInt b
-              (Some (ICConst (AFloat (- a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BMul
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (Some (ICConst (AInt (* a b))))
-            )
-            (AFloat b
-              (Some (ICConst (AFloat (* a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (AFloat (* a b))))
-            )
-            (AInt b
-              (Some (ICConst (AFloat (* a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BDiv
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (if (> b 0)
-                (Some (ICConst (AInt (/ a b))))
-                None
-              )
-            )
-            (AFloat b
-              (Some (ICConst (AFloat (/ a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (AFloat (/ a b))))
-            )
-            (AInt b
-              (Some (ICConst (AFloat (/ a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BRem
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (if (> b 0)
-                (Some (ICConst (AInt (% a b))))
-                None
-              )
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BEq
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (Some (ICConst (ABool (= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (ABool (= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (ABool a
-          (match right
-            (ABool b
-              (Some (ICConst (ABool (= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (BNeq
-      (match left
-        (AInt a
-          (match right
-            (AInt b
-              (Some (ICConst (ABool (!= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (AFloat a
-          (match right
-            (AFloat b
-              (Some (ICConst (ABool (!= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (ABool a
-          (match right
-            (ABool b
-              (Some (ICConst (ABool (!= a b))))
-            )
-            (d1
-              None
-            )
-          )
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (d1
-      None
-    )
-  )
-)
-
-(
-  defn opt-fold-unop (op arg)
-  (match op
-    (UNot
-      (match arg
-        (ABool b
-          (Some (ICConst (ABool (not b))))
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (UNegate
-      (match arg
-        (AInt i
-          (Some (ICConst (AInt (- 0 i))))
-        )
-        (AFloat f
-          (Some (ICConst (AFloat (- 0 f))))
-        )
-        (d1
-          None
-        )
-      )
-    )
-    (d1
-      None
-    )
-  )
-)
-
-; ===========================================================================
-; DEAD CODE ELIMINATION — Pass 2
-; Remove SSA assignments whose results are not used (except side effects).
-; ===========================================================================
-
-(
-  defn opt-dce (os stmts)
-  (let dce-result (opt-dce-pass os stmts)
-    (match dce-result
-      (Pair new-os new-stmts
-        (opt-add-stat new-os "dead_code_elimination")
-      )
-      (d1
-        (opt-add-stat os "dead_code_elimination")
-      )
-    )
-  )
-)
-
-(
-  defn opt-dce-pass (os stmts)
-  (let id-to-node (opt-build-id-map stmts)
-    (let referenced (opt-collect-referenced stmts)
-      (let live (opt-compute-live id-to-node referenced)
-        (let new-stmts (opt-filter-live stmts live)
-          (let new-stmts2 (opt-dce-recurse new-stmts live)
-            (Pair os new-stmts2)
-          )
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-build-id-map (stmts)
-  (opt-build-id-map-loop stmts Nil)
-)
-
-(
-  defn opt-build-id-map-loop (stmts acc)
-  (match stmts
-    (Nil
-      acc
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch inner
-          (opt-build-id-map-loop rest (Cons (Pair id inner) acc))
-        )
-        (d1
-          (opt-build-id-map-loop rest acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-collect-referenced (stmts)
-  (opt-collect-referenced-loop stmts Nil)
-)
-
-(
-  defn opt-collect-referenced-loop (stmts acc)
-  (match stmts
-    (Nil
-      acc
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch inner
-          (let new-acc (opt-collect-refs inner acc)
-            (opt-collect-referenced-loop rest new-acc)
-          )
-        )
-        (d1
-          (opt-collect-referenced-loop rest acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-collect-refs (inner acc)
-  (match inner
-    (ICBinop d1 left right
-      (opt-collect-refs-2 left right acc)
-    )
-    (ICUnop d1 arg
-      (Cons arg acc)
-    )
-    (ICCall d1 args
-      (opt-collect-refs-list args acc)
-    )
-    (ICCallIndirect d1 args
-      (opt-collect-refs-list args acc)
-    )
-    (ICIf cond then_body else_body
-      (let acc1 (Cons cond acc)
-        (let acc2 (opt-collect-refs-list then_body acc1)
-          (opt-collect-refs-list else_body acc2)
-        )
-      )
-    )
-    (ICWhile cond_body body
-      (let acc1 (opt-collect-refs-list cond_body acc)
-        (opt-collect-refs-list body acc1)
-      )
-    )
-    (ICFor cond_nodes body
-      (let acc1 (opt-collect-refs-list cond_nodes acc)
-        (opt-collect-refs-list body acc1)
-      )
-    )
-    (ICMatch scrutinee arms
-      (let acc1 (Cons scrutinee acc)
-        (opt-collect-refs-arms arms acc1)
-      )
-    )
-    (ICMakeVariant d1 d2 d3 field_ids
-      (opt-collect-refs-list field_ids acc)
-    )
-    (ICAssign d1 src
-      (Cons src acc)
-    )
-    (ICStructGet val_id d1
-      (Cons val_id acc)
-    )
-    (ICErrValue v
-      (Cons v acc)
-    )
-    (ICOkValue v
-      (Cons v acc)
-    )
-    (ICSend actor_id msg_id
-      (Cons actor_id (Cons msg_id acc))
-    )
-    (ICSendClosure actor_id d1 d2 cap_ids
-      (opt-collect-refs-list (Cons actor_id cap_ids) acc)
-    )
-    (ICExit code
-      (Cons code acc)
-    )
-    (ICClose code
-      (Cons code acc)
-    )
-    (ICFileRead handle count
-      (Cons handle (Cons count acc))
-    )
-    (ICFileWrite handle data
-      (Cons handle (Cons data acc))
-    )
-    (ICBufAppend dst src
-      (Cons dst (Cons src acc))
-    )
-    (ICFileClose handle
-      (Cons handle acc)
-    )
-    (ICPrint args
-      (opt-collect-refs-list args acc)
-    )
-    (ICWithResource var_name init_ssa
-      (Cons init_ssa acc)
-    )
-    (ICSetBang var_name val_id
-      (Cons val_id acc)
-    )
-    (ICUnwrap val_id
-      (Cons val_id acc)
-    )
-    (ICAssert cond d1
-      (Cons cond acc)
-    )
-    (ICBegin body
-      (opt-collect-refs-list body acc)
-    )
-    (d1
-      acc
-    )
-  )
-)
-
-(
-  defn opt-collect-refs-2 (a b acc)
-  (Cons a (Cons b acc))
-)
-
-(
-  defn opt-collect-refs-list (items acc)
-  (match items
-    (Nil
-      acc
-    )
-    (Cons hd rest
-      (opt-collect-refs-list rest (Cons hd acc))
-    )
-  )
-)
-
-(
-  defn opt-collect-refs-arms (arms acc)
-  (match arms
-    (Nil
-      acc
-    )
-    (Cons arm rest
-      (match arm
-        (MAI variant_name discriminant field_names field_types body
-          (let acc1 (opt-collect-refs-list body acc)
-            (opt-collect-refs-arms rest acc1)
-          )
-        )
-        (d1
-          (opt-collect-refs-arms rest acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-compute-live (id-to-node referenced)
-  (let root-live (opt-root-live id-to-node referenced)
-    (opt-compute-live-bfs id-to-node root-live)
-  )
-)
-
-(
-  defn opt-root-live (id-to-node referenced)
-  (let root-live (opt-find-root-live id-to-node referenced)
-    root-live
-  )
-)
-
-(
-  defn opt-find-root-live (id-to-node referenced)
-  (opt-find-root-live-loop id-to-node referenced Nil)
-)
-
-(
-  defn opt-find-root-live-loop (id-to-node referenced acc)
-  (match id-to-node
-    (Nil
-      acc
-    )
-    (Cons hd rest
-      (match hd
-        (Pair id inner
-          (let has-effect (opt-has-side-effect inner)
-            (let is-referenced (opt-list-has referenced id)
-              (let new-acc (if (or has-effect is-referenced)
-                (Cons id acc)
-                acc
-              )
-                (opt-find-root-live-loop rest referenced new-acc)
-              )
-            )
-          )
-        )
-        (d1
-          (opt-find-root-live-loop rest referenced acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-compute-live-bfs (id-to-node live-set)
-  (let queue (opt-list-to-vec live-set)
-    (opt-compute-live-bfs-loop id-to-node live-set queue)
-  )
-)
-
-(
-  defn opt-compute-live-bfs-loop (id-to-node live-set queue)
-  (match queue
-    (Nil
-      live-set
-    )
-    (Cons id rest
-      (let inner (opt-lookup-id-map id-to-node id)
-        (if inner
-          (let deps (opt-get-deps inner)
-            (let new-live (opt-add-new-live live-set deps)
-              (let new-queue (opt-add-new-queue rest deps new-live)
-                (opt-compute-live-bfs-loop id-to-node new-live new-queue)
-              )
-            )
-          )
-          (opt-compute-live-bfs-loop id-to-node live-set rest)
-        )
-        (opt-compute-live-bfs-loop id-to-node live-set rest)
-      )
-    )
-  )
-)
-
-(
-  defn opt-get-deps (inner)
-  (let deps Nil
-    (opt-collect-refs inner deps)
-    deps
-  )
-)
-
-(
-  defn opt-add-new-live (live-set deps)
-  (opt-add-new-live-loop live-set deps)
-)
-
-(
-  defn opt-add-new-live-loop (live-set deps)
-  (match deps
-    (Nil
-      live-set
-    )
-    (Cons dep rest
-      (if (opt-list-has live-set dep)
-        (opt-add-new-live-loop live-set rest)
-        (opt-add-new-live-loop (Cons dep live-set) rest)
-      )
-    )
-  )
-)
-
-(
-  defn opt-add-new-queue (queue deps live-set)
-  (opt-add-new-queue-loop queue deps live-set)
-)
-
-(
-  defn opt-add-new-queue-loop (queue deps live-set)
-  (match deps
-    (Nil
-      queue
-    )
-    (Cons dep rest
-      (if (opt-list-has live-set dep)
-        (opt-add-new-queue-loop queue rest live-set)
-        (opt-add-new-queue-loop (Cons dep queue) rest live-set)
-      )
-    )
-  )
-)
-
-(
-  defn opt-lookup-id-map (id-map id)
-  (match id-map
-    (Nil
-      None
-    )
-    (Cons hd rest
-      (match hd
-        (Pair map-id inner
-          (if (= map-id id)
-            (Some inner)
-            (opt-lookup-id-map rest id)
-          )
-        )
-        (d1
-          (opt-lookup-id-map rest id)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-filter-live (stmts live-set)
-  (opt-filter-live-loop stmts live-set Nil)
-)
-
-(
-  defn opt-filter-live-loop (stmts live-set acc)
-  (match stmts
-    (Nil
-      (list-reverse acc)
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch inner
-          (if (opt-list-has live-set id)
-            (opt-filter-live-loop rest live-set (Cons hd acc))
-            (opt-filter-live-loop rest live-set acc)
-          )
-        )
-        (d1
-          (opt-filter-live-loop rest live-set acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-dce-recurse (stmts live-set)
-  (opt-dce-recurse-loop stmts live-set Nil)
-)
-
-(
-  defn opt-dce-recurse-loop (stmts live-set acc)
-  (match stmts
-    (Nil
-      (list-reverse acc)
-    )
-    (Cons hd rest
-      (match hd
-        (ICN id region typ is_branch inner
-            (match inner
-              (ICBegin body
-                (let new-body (opt-dce-recurse body live-set)
-                  (let new-node (ICN id region typ is_branch (ICBegin new-body))
-                    (opt-dce-recurse-loop rest live-set (Cons new-node acc))
-                  )
-                )
-              )
-              (d1
-                (opt-dce-recurse-loop rest live-set (Cons hd acc))
-              )
-            )
-        )
-        (d1
-          (opt-dce-recurse-loop rest live-set acc)
-        )
-      )
-    )
-  )
-)
-
-(
-  defn opt-has-side-effect (inner)
-  (match inner
-    (ICPrint d1
-      1
-    )
-    (ICFfiCall d1 d2 d3
-      1
-    )
-    (ICSpawn d1
-      1
-    )
-    (ICSend d1 d2
-      1
-    )
-    (ICSendClosure d1 d2 d3 d4
-      1
-    )
-    (ICExit d1
-      1
-    )
-    (ICClose d1
-      1
-    )
-    (ICReadLine
-      1
-    )
-    (ICFileOpen d1 d2
-      1
-    )
-    (ICFileRead d1 d2
-      1
-    )
-    (ICFileWrite d1 d2
-      1
-    )
-    (ICBufAppend d1 d2
-      1
-    )
-    (ICFileClose d1
-      1
-    )
-    (ICAssert d1 d2
-      1
-    )
-    (ICIf d1 d2 d3 d4
-      1
-    )
-    (ICWhile d1 d2 d3
-      1
-    )
-    (ICFor d1 d2 d3 d4
-      1
-    )
-    (d1
-      0
-    )
-  )
-)
-
-(
-  defn opt-list-has (list item)
-  (match list
-    (Nil
-      0
-    )
-    (Cons hd rest
-      (if (= hd item)
-        1
-        (opt-list-has rest item)
-      )
-    )
-  )
-)
-
-(
-  defn opt-list-to-vec (list)
-  (list-reverse list)
-)
-
-(
-  defn opt-stmts-changed (stmts)
-  False
-)
-
-; ===========================================================================
-; OPTIMIZE FUNCTION BODIES
-; ===========================================================================
-
-(
-  defn opt-optimize-fn-body (os body)
-  (let fold-result (opt-fold-constants os body)
-    (match fold-result
-      (Pair new-os folded-body
-        (let dce-result (opt-dce new-os folded-body)
-          (match dce-result
-            (Pair final-os final-body
-              final-body
-            )
-            (d1
-              folded-body
-            )
-          )
-        )
-      )
-      (d1
-        body
-      )
-    )
-  )
-)
-
-; Split out of opt-optimize-fns' Cons arm: a 3-level-deep nested match
-; (fns -> hd -> rest-result) miscompiled under the Rust bootstrap (the
-; innermost match silently returned a bogus -1 sentinel instead of its
-; real Pair result, matching the ic-collect-vt-run bug found earlier).
-; Flattening into its own top-level function dodges that codegen bug.
-; Takes the already-built new-fn (not its 5 separate fields) to stay
-; within the bootstrap's arity <= 6 limit -- an earlier version of this
-; helper took (os rest name params ret_type opt-body result_id), 7 args,
-; which silently miscompiled (arity > 6 is a documented bootstrap
-; hazard), dropping the whole functions list down to Nil by the time it
-; reached codegen even though the pipeline reported success.
-(defn opt-optimize-fns-ifs (os rest new-fn)
-  (let rest-result (opt-optimize-fns os rest)
-    (match rest-result
-      (Pair new-os new-rest
-        (Pair new-os (Cons new-fn new-rest))
-      )
-      (d1
-        (Pair os (Cons new-fn rest))
-      )
-    )
-  )
-)
-
-(
-  defn opt-optimize-fns (os fns)
+(defn opt-optimize-fns (fns)
   (match fns
-    (Nil
-      (Pair os Nil)
-    )
-    (Cons hd rest
-      (match hd
-        (IFS name params ret_type body result_id
-          (opt-optimize-fns-ifs os rest (IFS name params ret_type (opt-optimize-fn-body os body) result_id))
-        )
-        (d1
-          (opt-optimize-fns os rest)
-        )
-      )
-    )
-  )
-)
+    (Nil Nil)
+    (Cons f rest (Cons (opt-optimize-fn f) (opt-optimize-fns rest)))))
 
-; ===========================================================================
-; MAIN ENTRY — optimize ICNFProgram
-; ===========================================================================
+(defn opt-optimize-fn (f)
+  (match f
+    (IFn name params body (IFn name params (opt-expr body)))
+    (d1 (opt-expr f))))
 
-(
-  defn opt-optimize-program-dce (final-os opt-fns opt-stmts)
-  (let dce-result (opt-dce final-os opt-stmts)
-    (match dce-result
-      (Pair final-os2 final-stmts
-        (IP opt-fns final-stmts)
-      )
-      (d1
-        (IP opt-fns opt-stmts)
-      )
-    )
-  )
-)
+(defn opt-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (opt-expr h) (opt-list t)))))
 
-(
-  defn opt-optimize-program-stmts (new-os opt-fns stmts)
-  (let stmts-result (opt-fold-constants new-os stmts)
-    (match stmts-result
-      (Pair final-os opt-stmts
-        (opt-optimize-program-dce final-os opt-fns opt-stmts)
-      )
-      (d1
-        (IP opt-fns stmts)
-      )
-    )
-  )
-)
+(defn opt-arms (arms)
+  (match arms
+    (Nil Nil)
+    (Cons a rest
+      (match a
+        (IArm v tag binds body (Cons (IArm v tag binds (opt-expr body)) (opt-arms rest)))))))
 
-(
-  defn opt-optimize-program (program)
-  (match program
-    (IP fns stmts
-      (let os (opt-new)
-        (let fns-result (opt-optimize-fns os fns)
-          (match fns-result
-            (Pair new-os opt-fns
-              (opt-optimize-program-stmts new-os opt-fns stmts)
-            )
-            (d1
-              program
-            )
-          )
-        )
-      )
-    )
-    (d1
-      program
-    )
-  )
-)
+; op codes, matching codegen.zyl's cg-arith-mnem/cg-cmp-set exactly:
+; 0 + , 1 - , 2 * , 3 / , 4 % , 5 < , 6 > , 7 <= , 8 >= , 9 = , 10 !=
+(defn opt-fold-binop (op a b)
+  (if (= op 0) (IConst (+ a b))
+  (if (= op 1) (IConst (- a b))
+  (if (= op 2) (IConst (* a b))
+  (if (= op 3) (if (= b 0) (IBinop op (IConst a) (IConst b)) (IConst (/ a b)))
+  (if (= op 4) (if (= b 0) (IBinop op (IConst a) (IConst b)) (IConst (% a b)))
+  (if (= op 5) (IConst (if (< a b) 1 0))
+  (if (= op 6) (IConst (if (> a b) 1 0))
+  (if (= op 7) (IConst (if (<= a b) 1 0))
+  (if (= op 8) (IConst (if (>= a b) 1 0))
+  (if (= op 9) (IConst (if (= a b) 1 0))
+  (IConst (if (= a b) 0 1)))))))))))))
 
-; NOTE: this used to `(match fns (IP fns2 stmts ...) (d1 (opt-optimize-fns
-; (opt-new) fns)))` to accept either a raw (List IFn) or an IP-wrapped
-; ICNFProgram. That's unsound: Zyl's structural match dispatches purely on
-; the per-deftype tag byte at offset 0, with no runtime type identity --
-; and IP (ICNFProgram's only constructor) has tag 0, which is *also*
-; List's Cons tag. Since driver.zyl's only caller always passes the raw
-; (List IFn) from ic-program (never an actual IP value), any non-empty
-; list was silently misinterpreted as an IP struct (its head/tail cells
-; reinterpreted as fns2/stmts), corrupting everything downstream and
-; eventually segfaulting stage1.bin's self-hosted run deep inside
-; opt-optimize-fns on a bogus "fns" list. Always treat the input as the
-; raw function list. opt-optimize-fns itself returns (Pair new-os new-fns)
-; -- unwrap to the plain list so callers (driver.zyl's `opt-fns`, fed
-; straight into emit-out/cg-program) get the (List IFn) shape they expect
-; instead of a Pair silently masquerading as one (same tag-0/Cons
-; collision hazard as above, one level further out).
-(defn opt-optimize (fns)
-  (match (opt-optimize-fns (opt-new) fns)
-    (Pair new-os new-fns new-fns)
-    (d1 fns)))
+(defn opt-expr (e)
+  (match e
+    (IConst d1 e)
+    (IStr d2 e)
+    (IFlt d3 e)
+    (ILoad d4 e)
+    (IBinop op l r (opt-binop op (opt-expr l) (opt-expr r)))
+    (ICall name args (ICall name (opt-list args)))
+    (ICallClosure name args (ICallClosure name (opt-list args)))
+    (IFfi name args (IFfi name (opt-list args)))
+    (IPrint a (IPrint (opt-expr a)))
+    (IIf c t eb (opt-if (opt-expr c) t eb))
+    (IWhile c b (opt-while (opt-expr c) b))
+    (ISet name v (ISet name (opt-expr v)))
+    (ILet name val body (ILet name (opt-expr val) (opt-expr body)))
+    (ISeq es (ISeq (opt-list es)))
+    (IVariant nm tag fields (IVariant nm tag (opt-list fields)))
+    (IStackVariant nm tag fields (IStackVariant nm tag (opt-list fields)))
+    (IMatch scr arms (IMatch (opt-expr scr) (opt-arms arms)))
+    (IFn name params body (IFn name params (opt-expr body)))
+    (ITryCatch tbody cvar cbody (ITryCatch (opt-expr tbody) cvar (opt-expr cbody)))))
+
+(defn opt-binop (op l2 r2)
+  (match l2
+    (IConst a
+      (match r2
+        (IConst b (opt-fold-binop op a b))
+        (d1 (IBinop op l2 r2))))
+    (d2 (IBinop op l2 r2))))
+
+(defn opt-if (c2 t eb)
+  (match c2
+    (IConst v (if (> v 0) (opt-expr t) (opt-expr eb)))
+    (d1 (IIf c2 (opt-expr t) (opt-expr eb)))))
+
+(defn opt-while (c2 b)
+  (match c2
+    (IConst v (if (= v 0) (IConst 0) (IWhile c2 (opt-expr b))))
+    (d1 (IWhile c2 (opt-expr b)))))
