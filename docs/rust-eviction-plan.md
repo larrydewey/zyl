@@ -817,34 +817,52 @@ many existing examples using a throwaway `d1` for exactly this).
 against any of several literals in one arm, same idea as Rust's `1 | 2
 | 3 => ...`), reusing `or`'s own existing short-circuit desugaring.
 
-**Explicitly not implemented, discovered as separate follow-up work**:
-- Mixing a literal pattern and an ADT constructor pattern in the same
-  `match` — the two dispatch mechanisms don't unify without a bigger
-  redesign (see above).
-- Range patterns (`1..10`) and match guards (`pattern if cond`) — both
-  natural extensions of the same if-chain foundation, not done here to
-  keep this change bounded.
-- Rust-grade exhaustiveness analysis (a real usefulness/decision-tree
-  algorithm over literal sets and ranges) — the mandatory-wildcard rule
-  gets most of the practical safety value far more cheaply; treated as
-  a permanent, accepted gap rather than something to chase.
-- **A separate, pre-existing, unrelated bug found while verifying this
-  fix**: `print`-ing the result of an ordinary function call that
-  returns a string prints a garbage integer instead of the string,
-  because `codegen.zyl`'s `kind-of` unconditionally treats any `ICall`
-  as int-kind regardless of what the called function actually returns
-  (the exact same class of bug `ffi-str-kind` fixed for `IFfi` calls
-  earlier this session, just never applied to ordinary calls). Verified
-  as pre-existing and unrelated via a minimal match-free repro
-  (`(defn get-str () "hello") (defn main () (print (get-str)))` prints
-  garbage on its own). This is why the user's own original literal-
-  match example (which prints a `search-index` call's string result
-  directly) doesn't visibly show correct output yet even though the
-  underlying match/dispatch logic is proven correct via direct assembly
-  inspection and an equivalent all-integer version of the same program.
-  Fixing it needs threading function-return-kind information into
-  `kind-of` (which currently only sees local `env`, not the function
-  list) — a real, separate fix, not bundled into this one.
+**Follow-up, same day (commit `d84d8c0`): range patterns, guards, and
+the print/kind-of bug are all done too.**
+- **Range patterns**: `(range lo hi)` as a match alternative, inclusive
+  both ends — a plain nested list, not new infix `1..10` lexer syntax
+  (this language's lexer has no range token at all; adding one would be
+  a far more invasive change than this fix warrants).
+- **Guards**: `(when cond)` as an arm's last element before its body,
+  ANDed with the pattern test. Narrower than Rust's guards — a literal
+  pattern binds no names, so a guard here can only reference
+  outer-scope variables, not anything extracted from the pattern.
+  Deliberately not supported on the trailing wildcard arm (a failed
+  guard there has nowhere left to fall through to; replicating Rust's
+  runtime-panic-on-exhausted-guards is more machinery than this scope
+  needs) — an accepted, documented gap, not a silent mishandling.
+- **The `print`/`kind-of` bug**: `codegen.zyl`'s `kind-of` unconditionally
+  treated any `ICall` as int-kind regardless of what the called
+  function actually returns (the same class of bug `ffi-str-kind` fixed
+  for `IFfi` calls earlier, never applied to ordinary calls). Fixed by
+  having `cg-collect-fnnames` also record each top-level function's own
+  body kind (computed with an empty env, so it only reflects genuinely
+  fixed shapes — a function whose kind depends on one of its own
+  params, or that forward-references a later function in the list,
+  still defaults to int, matching every other approximation already in
+  this file) and threading the codegen state into `kind-of` (11 call
+  sites) so `ICall` can look the callee up. A SECOND, related gap
+  surfaced while verifying this against the original literal-match
+  report: `kind-of`'s `ILet` arm was ALSO hardcoded to int regardless of
+  its own body, which masked the `ICall` fix for any function whose
+  whole body is a literal-pattern match (the if-chain desugaring always
+  wraps its result in a `let`, to bind the scrutinee once). Fixed the
+  same way: `ILet`'s kind is now whatever its body evaluates to.
+
+Still an accepted, permanent gap, not chased: mixing a literal pattern
+and an ADT constructor pattern in the same `match` (the two dispatch
+mechanisms don't unify without a bigger redesign), and Rust-grade
+exhaustiveness analysis over literal sets/ranges (a real usefulness/
+decision-tree algorithm; the mandatory-wildcard rule gets most of the
+practical safety value far more cheaply).
+
+Verified end to end with real string output this time (not integers
+standing in for strings): the originally-reported `search-index`
+example now genuinely prints `"d"`; a `grade()` function using three
+`(range ..)` patterns dispatches correctly (`A`/`C`/`F` for 95/72/50);
+a guarded arm executes when true and correctly falls through to the
+next arm when false. Full reseed to a new fixed point, regression
+suite stays 43/43.
 
 Verified: the reported example, once printing integers instead of
 strings to sidestep the `ICall`-kind bug above, dispatches correctly
