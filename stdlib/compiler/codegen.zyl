@@ -200,6 +200,26 @@
 ;   0 int, 1 string, 2 float, 3 struct/variant (heap-allocated aggregate)
 ; ===========================================================================
 
+; kind-of's IFfi arm used to unconditionally return 0 (int), regardless of
+; what the FFI actually returns -- so `(print (str-concat "=> " ...))`
+; (str-concat lowers to IFfi "zyl_cstr_concat", see icnf.zyl's
+; ic-str-builtin-sym) picked %d formatting and printed the raw string
+; pointer as a garbage integer instead of the text. Never caught before:
+; grepping the whole tree, tools/repl.zyl is the only caller anywhere
+; that ever printed a str-concat/ffi-string result directly. Named here
+; rather than solved with real return-type inference (kind-of has none)
+; since these are exactly the fixed set of C symbols icnf.zyl ever emits
+; that hand back a string pointer.
+(defn ffi-str-kind (name)
+  (if (> (str-eq name "zyl_cstr_concat") 0) 1
+  (if (> (str-eq name "zyl_cstr_substr") 0) 1
+  (if (> (str-eq name "zyl_cstr_sub") 0) 1
+  (if (> (str-eq name "zyl_cstr_from_int") 0) 1
+  (if (> (str-eq name "zyl_cstr_sanitize") 0) 1
+  (if (> (str-eq name "zyl_cstr_decode") 0) 1
+  (if (> (str-eq name "zyl_file_read_c") 0) 1
+    0))))))))
+
 (defn kind-of (env e)
   (match e
     (IConst 0)
@@ -214,7 +234,7 @@
          (if (= (kind-of env r) 2) 2 0))))
     (IIf d21 t d22 (kind-of env t))
     (ICall d23 d24 0)
-    (IFfi d25 d26 0)
+    (IFfi name d26 (ffi-str-kind name))
     (IPrint d27 0)
     (IWhile d28 d29 0)
     (ISet d30 d31 0)

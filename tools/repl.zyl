@@ -20,6 +20,22 @@
 (defn repl-print-banner ()
   (print repl-banner))
 
+; compiler/optimization.zyl (imported below, but never actually called --
+; see repl-optimize's own comment) references `list-set`, which doesn't
+; exist anywhere in the resolved program: it's not a builtin, and
+; collections/collections.zyl's real list-set can't be imported instead
+; -- that module's own list-contains/list-nth/list-map top-level names
+; collide with compiler/monomorphization.zyl's differently-shaped
+; functions of the same name once both land in module_resolver's single
+; flat namespace, which is a hard assembler-level duplicate-symbol
+; error, not a warning. Defined locally purely so optimization.zyl's
+; dead code (opt-fold-constants-pass is never invoked; repl-optimize is
+; a passthrough) links; never actually executed.
+(defn list-set (idx val xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (= idx 0) (Cons val t) (Cons h (list-set (- idx 1) val t))))))
+
 ; str-trim doesn't exist anywhere else in the codebase (not stdlib, not
 ; a builtin, not FFI-backed) -- repl.zyl calling it was always a latent
 ; bug, never reachable before because the file never linked at all.
@@ -51,13 +67,19 @@
           (str-substring s start (- end start))
           "")))))
 
+; `file-read` (icnf.zyl's special-cased lowering to zyl_file_read_c) does
+; not return a byte count -- it returns the read bytes themselves as a
+; ready-to-use, already-null-terminated string (a pointer into the FFI's
+; own thread-local static buffer). This used to treat that pointer as if
+; it were a length, allocate a SEPARATE, unrelated 4096-byte arena buffer
+; that was never written to, and then substring 0..pointer-as-length out
+; of that empty buffer -- reading wildly out of bounds and returning
+; garbage. `arena-create`/`arena-alloc-zeroed` were never needed at all.
 (defn repl-read-line (fd)
-  (let buf (arena-alloc-zeroed (arena-create 1048576) 4096)
-    (let n (file-read fd 4095)
-      (if (> n 0)
-        (let line (str-substring buf 0 n)
-          (Some (str-trim line)))
-        None))))
+  (let line (file-read fd 4095)
+    (if (> (str-length line) 0)
+      (Some (str-trim line))
+      None)))
 
 ; str-eq returns 1 for equal, 0 for not-equal (see zyl_cstr_eq in
 ; actor_runtime.c) -- this used to check `= 0`, i.e. "not equal to :q
@@ -67,8 +89,24 @@
 (defn repl-is-quit (line)
   (or (= (str-eq line ":q") 1) (= (str-eq line ":quit") 1)))
 
+; Wraps as `(print <line>)`, not bare `<line>`, and deliberately does NOT
+; rely on the compiled child's exit code to carry the value: codegen.zyl's
+; `main:` entry stub unconditionally zeroes eax after running the user's
+; code (`xor eax, eax`) before it becomes the process exit status, for
+; every Zyl program this compiler has ever produced -- confirmed by
+; testing the fix directly: removing that zeroing so exit status reflects
+; the real return value breaks tests/regression/generics-multi-type.zyl
+; (and likely others), whose `main` body ends in a `print` call and never
+; expected its leftover register value to become an exit code. Making the
+; REPL print its own result directly sidesteps that shared, load-bearing
+; entry stub entirely instead of trying to fix it. The one known rough
+; edge: typing an expression that already contains a top-level `print`
+; wraps it as `(print (print ...))`, showing the intended value followed
+; by a second, meaningless number (whatever raw value the inner print's
+; own codegen leaves in rax) -- not fixed here, out of scope for getting
+; ordinary expressions to show real values.
 (defn repl-wrap-expr (arena line) String
-  (str-concat "(defn main () " (str-concat line ")")))
+  (str-concat "(defn main () (print " (str-concat line "))")))
 
 (defn repl-parse (arena src)
   (zyl-parse arena src))
@@ -139,7 +177,7 @@
               (let cc (ffi-call "zyl_cc_compile" "/tmp/repl_out.s" 1000)
                 (if (= cc 0)
                   (ffi-call "zyl_run_bin" "/tmp/repl_out" 1000)
-                  -1))))))))
+                  -1)))))))))
 
 (defn repl-compile-and-run (arena line)
   (let wrapped (repl-wrap-expr arena line)
@@ -155,25 +193,43 @@
                       (let al-exprs (repl-assert-lowering ci-exprs2)
                         (let fns (repl-icnf arena al-exprs)
                           (let region-fns (repl-region-infer fns)
-                            (repl-codegen arena region-fns))))))))))))))))
+                            (repl-codegen arena region-fns)))))))))))))))
 
 
-(defn repl-loop (arena)
-  (let fd (file-open "/dev/stdin" "r")
-    (if (> fd 0)
-      (let line (repl-read-line fd)
-        (if line
-          (if (repl-is-quit line)
-            (begin (print "Goodbye!") 0)
-            (let result (repl-compile-and-run arena line)
-              (if (> result 0)
-                (print (str-concat "Error: " (ffi-call "zyl_cstr_from_int" arena result 1000)))
-                (print (str-concat "=> " (ffi-call "zyl_cstr_from_int" arena result 1000)))))
-              (repl-loop arena))
-          (repl-loop arena)))
-      -1)))
+; This used to bind `line` directly to `(repl-read-line fd)` -- an
+; Option<String>, NOT a string -- and pass that box straight into
+; repl-is-quit/repl-compile-and-run without ever matching out the Some
+; payload. `(if line ...)` on a heap Option value is always truthy
+; (Some and None are both non-null boxes), so EOF was never detected;
+; str-eq/str-concat on the box itself read its tag+payload bytes as if
+; they were string bytes, feeding garbage into the compile pipeline.
+; Also used to reopen /dev/stdin from scratch on every single
+; iteration instead of threading one fd through the recursion.
+; repl-codegen returns -1 specifically when the compile step itself
+; failed (cc's exit status was nonzero) -- the one sentinel value
+; zyl_run_bin can never produce on its own (it's WEXITSTATUS, always
+; 0-255). Everything else is the compiled child's own exit code, which
+; (see repl-wrap-expr's comment) does not carry a meaningful value, so
+; it's neither printed nor treated as an error: the child already
+; printed the real result itself.
+(defn repl-loop (arena fd)
+  (match (repl-read-line fd)
+    (Some line
+      (if (repl-is-quit line)
+        (begin (print "Goodbye!") 0)
+        (begin
+          (let result (repl-compile-and-run arena line)
+            (if (= result -1)
+              (print "Error: compile failed")
+              0))
+          (repl-loop arena fd))))
+    (None (begin (print "Goodbye!") 0))))
 
 (defn main ()
   (let arena (arena-create 1048576)
-    (print "Zyl REPL — type expressions, :q to quit")
-    (repl-loop arena)))
+    (begin
+      (print "Zyl REPL — type expressions, :q to quit")
+      (let fd (file-open "/dev/stdin" "r")
+        (if (> fd 0)
+          (repl-loop arena fd)
+          -1)))))
