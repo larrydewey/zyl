@@ -268,7 +268,22 @@
     ; capture at all, but ic-safe-callee had no way to know that,
     ; so `f` silently became 0 and `(f v)` crashed jumping to
     ; address 0.
-    (EDefn name d4 d5 (ic-collect-vt-run rest (VTFn name vt) stag))
+    ;
+    ; Also marks VTClosureReturn when a top-level defn's own body tail
+    ; is itself an `fn`/`lambda` literal (ic-tail-is-fn, the same check
+    ; ic-lower-let already does for a LET-BOUND closure-returning
+    ; value) -- e.g. `(defn make-adder (n) (fn (m) (+ n m)))`. Without
+    ; this, only a let-bound "outer" got marked; a plain top-level
+    ; function returning a closure never did, so `(let add5 (make-adder
+    ; 5) (add5 3))` silently used the wrong (plain, not closure) call
+    ; convention for `(add5 3)` and crashed jumping to whatever
+    ; genuinely non-closure address ended up in the closure-call
+    ; register slot.
+    (EDefn name d4 body
+      (let vtfn (VTFn name vt)
+        (ic-collect-vt-run rest
+          (if (> (ic-tail-is-fn body) 0) (VTClosureReturn name vtfn) vtfn)
+          stag)))
     (d3 (ic-collect-vt-run rest vt stag))))
 
 (defn ic-collect-vt-deftype (rest name variants structmark vt stag)
