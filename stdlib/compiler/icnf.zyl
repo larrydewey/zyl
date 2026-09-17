@@ -52,7 +52,15 @@
   ; runtime's existing zyl_try_push/zyl_try_pop/zyl_panic frame-stack
   ; machinery (added for the test harness, never wired to anything else
   ; until now) via an inline `call setjmp` in generated code.
-  (ITryCatch Icnf String Icnf))
+  (ITryCatch Icnf String Icnf)
+  ; Same shape and runtime layout as IVariant (variant name, tag, field
+  ; values) but allocated directly in the current function's own stack
+  ; frame instead of via zyl_heap_alloc -- region_inference.zyl rewrites
+  ; an IVariant into this when its let-binding provably never escapes
+  ; the function (see ri-transform-expr/ri-name-safe-in). See
+  ; cg-stack-variant: no runtime call at all, just fixed rbp-relative
+  ; stores, reserved up front by icnf-slot-count like any other local.
+  (IStackVariant String Int (List Icnf)))
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
@@ -931,6 +939,9 @@
     (IVariant nm tag fields
       (let ha (ic-hoist-list fields)
         (HoistAcc (IVariant nm tag (hoistl-nodes ha)) (hoistl-fns ha))))
+    (IStackVariant nm tag fields
+      (let ha (ic-hoist-list fields)
+        (HoistAcc (IStackVariant nm tag (hoistl-nodes ha)) (hoistl-fns ha))))
     (IMatch scr arms
       (let hs (ic-hoist scr)
         (let ha (ic-hoist-arms arms)

@@ -115,8 +115,7 @@
   (ic-program arena exprs))
 
 (defn repl-region-infer (fns)
-  (let ri (ri-new)
-    (ri-infer fns ri)))
+  (ri-transform-fns fns))
 
 ; compiler/optimization.zyl is NOT called here: it's written against
 ; src/optimization.rs's SSA-form ICNFNode/IFS representation, while this
@@ -155,8 +154,8 @@
                     (let ci-exprs2 (repl-closure-inline arena td-exprs)
                       (let al-exprs (repl-assert-lowering ci-exprs2)
                         (let fns (repl-icnf arena al-exprs)
-                          (repl-region-infer fns)
-                          (repl-codegen arena fns)))))))))))))))
+                          (let region-fns (repl-region-infer fns)
+                            (repl-codegen arena region-fns))))))))))))))))
 
 
 (defn repl-loop (arena)

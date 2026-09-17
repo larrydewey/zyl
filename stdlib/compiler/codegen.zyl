@@ -233,6 +233,7 @@
     ; called from anywhere. Kind 3 marks a value as struct/variant-typed
     ; so cg-expr's IBinop case can route `==`/`!=` through it instead.
     (IVariant d36 d37 d38 3)
+    (IStackVariant d105 d106 d107 3)
     (IMatch d39 d40 0)
     (IFn d41 0)
     (ICallClosure d42 d43 0)
@@ -284,6 +285,7 @@
     (ILet n v body (cg-let-dispatch st env n v body))
     (ISeq es (cg-seq st env es))
     (IVariant d46 tag fields (cg-variant st env tag fields))
+    (IStackVariant d108 tag fields (cg-stack-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms))
     ; A bare function node is never emitted as a value expression; keep st.
     (IFn d47 d48 d49 st)
@@ -799,6 +801,48 @@
           (let st5 (cg-nl (cg-emit st4 "], rax"))
             (cg-pop-fields st5 (- j 1))))))))
 
+; ── Stack-allocated variant (IStackVariant) ──────────────────────────────
+; Same [tag, field0, field1, ...] layout cg-variant builds on the heap,
+; but written directly into (n+1) slots reserved in the CURRENT
+; function's own frame (cg-reserve-block, a run of consecutive
+; cg-new-slot calls) -- no zyl_heap_alloc call, no staging through
+; pushes: each field is evaluated and stored straight to its final
+; offset, since there's no allocation call in between that could clobber
+; a value still waiting to be written (unlike cg-variant, which stages
+; through pushes specifically because zyl_heap_alloc happens AFTER every
+; field is evaluated). Only reached when region_inference.zyl has
+; already proven the binding never escapes this frame -- see
+; ri-name-safe-in.
+(defn cg-reserve-block (st count)
+  (match (cg-new-slot st)
+    (CGR st2 off d1
+      (if (<= count 1)
+        (CGR st2 off "")
+        (cg-reserve-block st2 (- count 1))))))
+
+(defn cg-stack-variant (st env tag fields)
+  (let n (list-length fields)
+    (match (cg-reserve-block st (+ n 1))
+      (CGR st2 base d1
+        (let st3 (cg-emit st2 "    mov qword ptr [rbp")
+          (let st4 (cg-emit-int st3 base)
+            (let st5 (cg-emit st4 "], ")
+              (let st6 (cg-nl (cg-emit-int st5 tag))
+                (let st7 (cg-stack-write-fields st6 env base fields 0)
+                  (let st8 (cg-emit st7 "    lea rax, [rbp")
+                    (let st9 (cg-emit-int st8 base)
+                      (cg-nl (cg-emit st9 "]")))))))))))))
+
+(defn cg-stack-write-fields (st env base fields idx)
+  (match fields
+    (Nil st)
+    (Cons f rest
+      (let st2 (cg-expr st env f)
+        (let st3 (cg-emit st2 "    mov [rbp")
+          (let st4 (cg-emit-int st3 (+ base (* 8 (+ idx 1))))
+            (let st5 (cg-nl (cg-emit st4 "], rax"))
+              (cg-stack-write-fields st5 env base rest (+ idx 1)))))))))
+
 ; Match: evaluate scrutinee, keep it on the stack for the whole dispatch,
 ; replace it with the arm-body result, pop at the end.
 ; Stack invariant: exactly one pushed word ([rsp] = scrutinee or result).
@@ -1046,6 +1090,7 @@
     (ILet d62 v b (icnf-add3 3 (icnf-size v) (icnf-size b)))
     (ISeq es (+ 1 (icnf-count-list es)))
     (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
+    (IStackVariant d109 d110 fields (+ 1 (icnf-count-list fields)))
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
     (IFn d65 d66 d67 1)
     (ICallClosure d94 args (icnf-add2 2 (icnf-count-list args)))
@@ -1076,6 +1121,13 @@
     (ILet d88 v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
     (ISeq es (icnf-count-slots-list es))
     (IVariant d89 d90 fields (icnf-count-slots-list fields))
+    ; +1 slot for the block base plus one per field, on top of each
+    ; field's own subexpression slots -- this block is reserved as
+    ; (n+1) CONSECUTIVE cg-new-slot calls (cg-reserve-block), unlike
+    ; IVariant's fields (which only ever need scratch slots transiently
+    ; during heap-alloc staging, already counted by icnf-count-slots-list
+    ; alone).
+    (IStackVariant d111 d112 fields (icnf-add2 (+ 1 (list-length fields)) (icnf-count-slots-list fields)))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
     (IFn d91 d92 d93 0)
     (ICallClosure d95 args (icnf-count-slots-list args))

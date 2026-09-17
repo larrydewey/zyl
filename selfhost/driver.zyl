@@ -122,15 +122,20 @@
                   ; compiler/optimization.zyl expects.
                   (let opt-fns fns
                     (dbg-log "region-infer\n")
-                    (let ri (ri-new)
-                      (let ri2 (ri-infer opt-fns ri)
-                        (dbg-log "codegen\n")
-                        (let st (cg-program (cg-new arena) opt-fns)
+                    ; Real escape analysis now: region_inference.zyl
+                    ; rewrites a provably-non-escaping IVariant let-
+                    ; binding to IStackVariant (stack-allocated, see
+                    ; cg-stack-variant) in place -- see its own header
+                    ; comment for why this used to be, and in every
+                    ; prior implementation always was, a no-op.
+                    (let region-fns (ri-transform-fns opt-fns)
+                      (dbg-log "codegen\n")
+                        (let st (cg-program (cg-new arena) region-fns)
                           (let buf (cg-buffer st)
                             (let blen (alloc-strlen buf)
                               (if (> blen 66060288)
                                 (ffi-call "zyl_f_error" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
-                                buf))))))))))))))))))))
+                                buf)))))))))))))))))))
         ))
 )
 

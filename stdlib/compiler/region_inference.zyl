@@ -269,6 +269,7 @@
         0))
     (ISeq d15 (ri-is-literal-icnf-list d15))
     (IVariant d16 d23 d18 (ri-is-literal-icnf-list d18))
+    (IStackVariant d113 d114 d115 (ri-is-literal-icnf-list d115))
     (IMatch scr arms
       (if (= (ri-is-literal-const scr) 1)
         (ri-is-literal-arms arms)
@@ -338,6 +339,7 @@
     (IStr d18 captured-refs)
     (IFlt d19 captured-refs)
     (IVariant d12 d13 args (ri-capture-collect-list args captured-refs env))
+    (IStackVariant d116 d117 args (ri-capture-collect-list args captured-refs env))
     (IMatch scr arms
       (ri-capture-collect-arms arms
         (ri-capture-collect scr captured-refs env)
@@ -453,6 +455,10 @@
       (begin
         (ri-infer-args ri d15)
         (RR RHeap None)))
+    (IStackVariant d118 d119 d120
+      (begin
+        (ri-infer-args ri d120)
+        (RR RStack None)))
     (IMatch scrutinee arms
       (begin
         (ri-infer-expr ri scrutinee)
@@ -599,3 +605,193 @@
     ((Cons ic rest)
       (let d1 (ri-infer-expr ri ic)
         (ri-infer-expressions ri rest)))))
+
+; ===========================================================================
+; REAL ESCAPE ANALYSIS + STACK PROMOTION
+; ===========================================================================
+;
+; Everything above this point computes region metadata that nothing ever
+; reads back (ri-infer's result is discarded by every caller) -- true of
+; both this file's own history and, it turns out, the original Rust
+; bootstrap's region_inference.rs too (its own error path is silently
+; swallowed in collect_definitions, so E_REGION_ESCAPE never actually
+; fired there either; see docs/rust-eviction-plan.md). Region inference
+; has never affected a single compiled program's behavior in any
+; implementation this compiler has had.
+;
+; ri-transform-fns is the real thing: a genuine Icnf -> Icnf rewrite.
+; For a `(let x (SomeVariant ...) body)`, if `x` provably never escapes
+; `body` -- never passed to a call, never captured by a nested `fn`,
+; never anything except the scrutinee of a `match` or an argument to
+; `print` -- its IVariant construction is rewritten to IStackVariant,
+; which cg-stack-variant (codegen.zyl) allocates directly in the current
+; function's own frame instead of on the heap. Deliberately narrow and
+; conservative (R1 from spec §9.1: Stack for values that provably don't
+; escape): a name that's merely unused in some particular way isn't
+; specifically hunted for, only the common, easy-to-prove-safe shape of
+; "constructed, then only matched or printed" is promoted. Getting this
+; wrong is a silent memory-corruption bug, not a crash-on-sight one, so
+; every uncertain case falls back to the always-correct heap path
+; unchanged -- undershooting here can only cost a missed optimization,
+; never a wrong program.
+
+; True when EVERY occurrence of `name` inside `e` is either the
+; scrutinee of an IMatch or a direct argument to IPrint -- the only two
+; contexts proven not to retain the pointer past this expression's own
+; evaluation. Any other occurrence (call argument, another variant's
+; field, a set! target, referenced at all inside a nested `fn`) makes
+; the whole thing unsafe: `name`'s value might be retained somewhere
+; that outlives this function's own stack frame.
+(defn ri-is-load-of (e name)
+  (match e
+    (ILoad n (str-eq n name))
+    (d1 0)))
+
+(defn ri-name-safe-in (e name)
+  (match e
+    (IConst d1 1)
+    (IStr d2 1)
+    (IFlt d3 1)
+    (ILoad n (if (> (str-eq n name) 0) 0 1))
+    (IBinop d4 l r (if (> (ri-name-safe-in l name) 0) (ri-name-safe-in r name) 0))
+    (ICall d5 args (ri-name-safe-in-list args name))
+    (ICallClosure d6 args (ri-name-safe-in-list args name))
+    (IFfi d7 args (ri-name-safe-in-list args name))
+    (IPrint a (if (> (ri-is-load-of a name) 0) 1 (ri-name-safe-in a name)))
+    (IIf c t eb
+      (if (> (ri-name-safe-in c name) 0)
+        (if (> (ri-name-safe-in t name) 0) (ri-name-safe-in eb name) 0)
+        0))
+    (IWhile c b (if (> (ri-name-safe-in c name) 0) (ri-name-safe-in b name) 0))
+    (ISet d8 v (ri-name-safe-in v name))
+    (ILet d9 v b (if (> (ri-name-safe-in v name) 0) (ri-name-safe-in b name) 0))
+    (ISeq es (ri-name-safe-in-list es name))
+    (IVariant d10 d11 fields (ri-name-safe-in-list fields name))
+    (IStackVariant d12 d13 fields (ri-name-safe-in-list fields name))
+    (IMatch scr arms
+      (if (> (ri-is-load-of scr name) 0)
+        (ri-name-safe-in-arms arms name)
+        (if (> (ri-name-safe-in scr name) 0) (ri-name-safe-in-arms arms name) 0)))
+    (IFn d14 d15 body (= (ri-name-referenced body name) 0))
+    (ITryCatch tbody d16 cbody
+      (if (> (ri-name-safe-in tbody name) 0) (ri-name-safe-in cbody name) 0))))
+
+(defn ri-name-safe-in-list (xs name)
+  (match xs
+    (Nil 1)
+    (Cons h t (if (> (ri-name-safe-in h name) 0) (ri-name-safe-in-list t name) 0))))
+
+(defn ri-name-safe-in-arms (arms name)
+  (match arms
+    (Nil 1)
+    (Cons a rest
+      (match a
+        (IArm d1 d2 d3 body
+          (if (> (ri-name-safe-in body name) 0) (ri-name-safe-in-arms rest name) 0))))))
+
+; Unconditional "does `name` appear anywhere at all" — used only for the
+; IFn case above: a nested closure that references `name` in ANY
+; position captures it (by value, into its own heap-allocated env — see
+; icnf.zyl's ic-lambda-closure), and that env outlives this frame, so
+; any reference at all inside a closure is unsafe, not just the
+; unrecognized-position ones ri-name-safe-in itself checks for.
+(defn ri-name-referenced (e name)
+  (match e
+    (IConst d1 0)
+    (IStr d2 0)
+    (IFlt d3 0)
+    (ILoad n (str-eq n name))
+    (IBinop d4 l r (if (> (ri-name-referenced l name) 0) 1 (ri-name-referenced r name)))
+    (ICall d5 args (ri-name-referenced-list args name))
+    (ICallClosure d6 args (ri-name-referenced-list args name))
+    (IFfi d7 args (ri-name-referenced-list args name))
+    (IPrint a (ri-name-referenced a name))
+    (IIf c t eb
+      (if (> (ri-name-referenced c name) 0) 1
+        (if (> (ri-name-referenced t name) 0) 1 (ri-name-referenced eb name))))
+    (IWhile c b (if (> (ri-name-referenced c name) 0) 1 (ri-name-referenced b name)))
+    (ISet d8 v (ri-name-referenced v name))
+    (ILet d9 v b (if (> (ri-name-referenced v name) 0) 1 (ri-name-referenced b name)))
+    (ISeq es (ri-name-referenced-list es name))
+    (IVariant d10 d11 fields (ri-name-referenced-list fields name))
+    (IStackVariant d12 d13 fields (ri-name-referenced-list fields name))
+    (IMatch scr arms
+      (if (> (ri-name-referenced scr name) 0) 1 (ri-name-referenced-arms arms name)))
+    (IFn d14 d15 body (ri-name-referenced body name))
+    (ITryCatch tbody d16 cbody
+      (if (> (ri-name-referenced tbody name) 0) 1 (ri-name-referenced cbody name)))))
+
+(defn ri-name-referenced-list (xs name)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (ri-name-referenced h name) 0) 1 (ri-name-referenced-list t name)))))
+
+(defn ri-name-referenced-arms (arms name)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (match a
+        (IArm d1 d2 d3 body
+          (if (> (ri-name-referenced body name) 0) 1 (ri-name-referenced-arms rest name)))))))
+
+; The actual Icnf -> Icnf rewrite, structurally recursing everywhere
+; (nothing here changes shape except ILet's own val/body, and even then
+; only ever IVariant -> IStackVariant, never anything structural).
+(defn ri-transform-fns (fns)
+  (match fns
+    (Nil Nil)
+    (Cons f rest (Cons (ri-transform-fn f) (ri-transform-fns rest)))))
+
+(defn ri-transform-fn (f)
+  (match f
+    (IFn name params body (IFn name params (ri-transform-expr body)))
+    (d1 (ri-transform-expr f))))
+
+(defn ri-to-stack-variant (val)
+  (match val
+    (IVariant nm tag fields (IStackVariant nm tag fields))
+    (d1 val)))
+
+(defn ri-transform-let (name val body)
+  (let val2 (ri-transform-expr val)
+    (let body2 (ri-transform-expr body)
+      (match val2
+        (IVariant d1 d2 d3
+          (if (> (ri-name-safe-in body2 name) 0)
+            (ILet name (ri-to-stack-variant val2) body2)
+            (ILet name val2 body2)))
+        (d4 (ILet name val2 body2))))))
+
+(defn ri-transform-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (ri-transform-expr h) (ri-transform-list t)))))
+
+(defn ri-transform-arms (arms)
+  (match arms
+    (Nil Nil)
+    (Cons a rest
+      (match a
+        (IArm v tag binds body (Cons (IArm v tag binds (ri-transform-expr body)) (ri-transform-arms rest)))))))
+
+(defn ri-transform-expr (e)
+  (match e
+    (IConst d1 e)
+    (IStr d2 e)
+    (IFlt d3 e)
+    (ILoad d4 e)
+    (IBinop op l r (IBinop op (ri-transform-expr l) (ri-transform-expr r)))
+    (ICall name args (ICall name (ri-transform-list args)))
+    (ICallClosure name args (ICallClosure name (ri-transform-list args)))
+    (IFfi name args (IFfi name (ri-transform-list args)))
+    (IPrint a (IPrint (ri-transform-expr a)))
+    (IIf c t eb (IIf (ri-transform-expr c) (ri-transform-expr t) (ri-transform-expr eb)))
+    (IWhile c b (IWhile (ri-transform-expr c) (ri-transform-expr b)))
+    (ISet name v (ISet name (ri-transform-expr v)))
+    (ILet name val body (ri-transform-let name val body))
+    (ISeq es (ISeq (ri-transform-list es)))
+    (IVariant nm tag fields (IVariant nm tag (ri-transform-list fields)))
+    (IStackVariant nm tag fields (IStackVariant nm tag (ri-transform-list fields)))
+    (IMatch scr arms (IMatch (ri-transform-expr scr) (ri-transform-arms arms)))
+    (IFn name params body (IFn name params (ri-transform-expr body)))
+    (ITryCatch tbody cvar cbody (ITryCatch (ri-transform-expr tbody) cvar (ri-transform-expr cbody)))))
