@@ -458,14 +458,20 @@ the specific safe-pattern shapes does.
 
 `driver.zyl` and `tools/repl.zyl` were both updated to call the new
 `ri-transform-fns` instead of the old `ri-infer`-then-discard pattern.
-The old `Region`/`RegionInferer` machinery from the original,
-never-effective implementation was left in place rather than deleted —
-additive-only change, lower risk; removing the dead code is separate,
-unstarted cleanup. `optimization.zyl` (constant folding/DCE) is
-unaffected by this work and remains the dead SSA-shaped file described
-below — `driver.zyl` and `repl.zyl` still pass `fns` through it
-unchanged; genuinely implementing it is separate, unstarted work, not
-required for what "region inference" means in this plan's Phase B.
+
+**Follow-up, 2026-09-17**: the three items flagged above as separate/
+unstarted are all done now too:
+- The old `Region`/`RegionInferer` machinery (~600 lines) was deleted
+  (commit `c2e23e1`) once confirmed genuinely unreferenced anywhere —
+  `region_inference.zyl` is 197 lines now, down from 797.
+- `optimization.zyl` (constant folding + dead-branch elimination) was
+  rewritten from scratch against the real tree-shaped Icnf, the same
+  way region inference was, and wired into both `driver.zyl` and
+  `tools/repl.zyl` for the first time (commit `16c28b1`) — see the
+  "Feature-parity survey status" section below for the full writeup.
+- The `lambda`-keyword gap and a second, related top-level-closure-
+  return bug found while fixing it are both fixed (commits `07c9c5d`,
+  `3d7b6ef`) — see this section's own note above for detail.
 
 While testing, hit a `lambda`-keyword-specific gap: a 0-parameter
 `(lambda () ...)` that captures an outer `let`-bound name (not a `fn`
@@ -526,6 +532,11 @@ compiled program's point of view, kept alive only because `tools/
 repl.zyl` (Phase C) references them (see assemble.py's comment on why
 they're in the bundle's file list at all). Actually wiring either pass
 in for real is unstarted, separate work.
+
+*(This paragraph describes the 2026-09-16 state. Both passes are wired
+in for real as of 2026-09-17 — see the Phase B note above for region
+inference and the "Feature-parity survey status" section below for
+optimization.zyl.)*
 
 **Phase C (REPL), 2026-09-16**: `tools/repl.zyl` existed but had never
 been run successfully by anyone — every attempt to compile it failed at
@@ -714,6 +725,32 @@ output), Phase C (REPL, still an unfinished skeleton per the
 Cargo files) remain untouched. What changed is the precondition: the
 self-hosted compiler can now be trusted to compile the *entire* known
 test corpus correctly, not just itself.
+
+**Update, later on 2026-09-17**: all of Phase B, C, and D are done now
+(see their own sections above/below) — this paragraph describes an
+earlier point in the same day, not the current state.
+
+**`optimization.zyl` wired in for real, 2026-09-17 (commit `16c28b1`)**:
+constant folding + dead-branch elimination now actually runs, for the
+first time — previously dead code from the compiled program's point of
+view (see the Phase B section above for exactly how dead: the old file
+was written against an incompatible SSA-shaped IR and always silently
+returned `Nil`). Rewritten from scratch against the real tree-shaped
+`Icnf`, same approach as `region_inference.zyl`'s Phase B rewrite:
+`opt-expr` does a single bottom-up walk, folding any `IBinop` whose
+operands both reduce to `IConst` (every op `cg-ibinop` implements —
+Int-only; `IFlt` carries a float literal's raw source text rather than
+a parsed value, so folding it would need string<->float machinery this
+compiler doesn't have, deliberately left out rather than risk a
+precision bug), and collapsing an `IIf`/`IWhile` with a constant
+condition to just its live branch. Constant division/remainder by zero
+is deliberately never folded, so it still fails at runtime exactly like
+the unoptimized program (SIGFPE), not a silently-folded placeholder.
+Verified via direct assembly inspection: `(print (+ 2 3))` compiles
+straight to `mov rax, 5` with no runtime `add`; `(if 0 (print 111)
+(print 222))` emits only the `222` path, no `test`/`je` at all. Wired
+into both `driver.zyl` and `tools/repl.zyl`. Full reseed to a new fixed
+point, regression suite stays 43/43.
 
 
 Goal: remove the Rust bootstrap compiler entirely from Zyl's build/test/use
