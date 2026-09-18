@@ -1,0 +1,305 @@
+; === Zyl Standard Library — Compiler mutability/capability check ===
+; Module: compiler/mutability_check
+;
+; Wires in spec/06-capability-types.md's aliasing invariant and
+; spec/07-region-memory-model.md S10 for the one shape this compiler can
+; actually construct today: a plain `let` binding is TCap (immutable);
+; only a `let-mut` binding is TMut (assignable via `set!`). Before this
+; pass, `set!` on a plain `let`-bound name silently compiled and ran --
+; spec/07 S10's "Either exactly one TMut reference OR any number of TCap
+; references" invariant existed only on paper (E_MUT_CONFLICT was
+; defined in error_codes.zyl but never raised anywhere; see
+; docs' security-audit findings).
+;
+; This is a conservative, syntax-driven walk over the pre-lowering Expr
+; tree (same stage as assert_lowering.zyl/closure_inline.zyl), not a
+; general points-to/alias analysis: it tracks which plain names are
+; currently in scope as let-mut bindings and rejects any `set!` whose
+; target isn't one of them. Two things this deliberately does NOT
+; attempt, matching region_inference.zyl's own stated philosophy of
+; undershooting rather than risking a false positive that breaks a
+; legitimate program:
+;   - Cross-actor / cross-closure Send-capability (spec/07 R3) -- a
+;     closure body is walked with the SAME mutscope as its enclosing
+;     function, so `set!` on a captured outer let-mut var from inside a
+;     closure is still permitted here, not specifically re-checked.
+;   - General pointer/alias tracking through the raw FFI/arena
+;     primitives (alloc-*, atomic-*, ffi-pin/unpin) -- those bypass the
+;     surface `let`/`let-mut` distinction entirely by design (see the
+;     security audit's separate finding on that raw-primitive surface).
+;
+; Every shape with a nested Expr is walked explicitly; anything else
+; (declarations, atoms, module/test metadata) falls through the final
+; wildcard arm unchanged -- undershooting (an unreached `set!` deep
+; inside an unwalked shape) only misses a diagnostic, it can never
+; reject a valid program, which is the failure direction that matters:
+; a compiler that's too eager to flag E_MUT_CONFLICT on legitimate code
+; is far worse than one that misses an edge case.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+
+; --- entry point ------------------------------------------------------------
+
+(defn mc-check-program (prog)
+  (mc-check-top prog))
+
+(defn mc-check-top (forms)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDefn d1 d2 body (mc-expr body Nil))
+          (ETestDecl d3 body d4 (mc-expr body Nil))
+          (d5 0))
+        (mc-check-top rest)))))
+
+; --- scope helpers -----------------------------------------------------------
+
+(defn mc-in-scope (name scope)
+  (match scope
+    (Nil 0)
+    (Cons h t (if (> (str-eq h name) 0) 1 (mc-in-scope name t)))))
+
+(defn mc-list (xs mutscope)
+  (match xs
+    (Nil 0)
+    (Cons h t (begin (mc-expr h mutscope) (mc-list t mutscope)))))
+
+(defn mc-arms (arms mutscope)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (match a
+        (MA d1 d2 body (begin (mc-expr body mutscope) (mc-arms rest mutscope)))))))
+
+(defn mc-cond-clauses (clauses mutscope)
+  (match clauses
+    (Nil 0)
+    (Cons pr rest
+      (match pr
+        (Pair c b
+          (begin
+            (mc-expr c mutscope)
+            (mc-expr b mutscope)
+            (mc-cond-clauses rest mutscope)))))))
+
+(defn mc-for-names (bindings)
+  (match bindings
+    (Nil Nil)
+    (Cons pr rest
+      (match pr
+        (Pair name d1 (Cons name (mc-for-names rest)))))))
+
+(defn mc-for-inits (bindings mutscope)
+  (match bindings
+    (Nil 0)
+    (Cons pr rest
+      (match pr
+        (Pair d1 opt
+          (begin
+            (match opt
+              (Some e2 (mc-expr e2 mutscope))
+              (None 0))
+            (mc-for-inits rest mutscope)))))))
+
+(defn mc-append (xs ys)
+  (match xs
+    (Nil ys)
+    (Cons h t (Cons h (mc-append t ys)))))
+
+(defn mc-butlast (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (nil? t) Nil (Cons h (mc-butlast t))))))
+
+(defn mc-check-ffi-args (args)
+  (match args
+    (Nil 0)
+    (Cons a rest
+      (begin
+        (match (Expr.inner a)
+          (ELambda d1 d2 d3
+            (ffi-call "zyl_f_error" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
+          (EFn d4 d5 d6
+            (ffi-call "zyl_f_error" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
+          (d7 0))
+        (mc-check-ffi-args rest)))))
+
+; --- the actual check ---------------------------------------------------
+
+(defn mc-expr (e mutscope)
+  (match (Expr.inner e)
+    (ESetBang name val
+      (begin
+        (if (= (mc-in-scope name mutscope) 0)
+          (ffi-call "zyl_f_error" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
+          0)
+        (mc-expr val mutscope)))
+    (ELet name val body
+      (begin
+        (mc-expr val mutscope)
+        (mc-expr body mutscope)))
+    (ELetMut name val body
+      (begin
+        (mc-expr val mutscope)
+        (mc-expr body (Cons name mutscope))))
+    (EDef d1 val (mc-expr val mutscope))
+    (EIf c t eb
+      (begin
+        (mc-expr c mutscope)
+        (mc-expr t mutscope)
+        (mc-expr eb mutscope)))
+    (EWhile c body (begin (mc-expr c mutscope) (mc-expr body mutscope)))
+    (EFor bindings cond body
+      (let names (mc-for-names bindings)
+        (begin
+          (mc-for-inits bindings mutscope)
+          (mc-expr cond (mc-append names mutscope))
+          (mc-expr body (mc-append names mutscope)))))
+    (ECond clauses (mc-cond-clauses clauses mutscope))
+    (EBegin exprs (mc-list exprs mutscope))
+    (ELambda d2 d3 body (mc-expr body mutscope))
+    (EFn d4 d5 body (mc-expr body mutscope))
+    (ETryCatch tbody d6 handler
+      (begin (mc-expr tbody mutscope) (mc-expr handler mutscope)))
+    (EMatch subj arms (begin (mc-expr subj mutscope) (mc-arms arms mutscope)))
+    (ECall op args (begin (mc-expr op mutscope) (mc-list args mutscope)))
+    ; `(ffi-call "sym" a b timeout)` arrives here as EApply("ffi-call",
+    ; args) -- expr_inner.zyl's dispatch has no dedicated ffi-call
+    ; parser (see icnf.zyl's own ic-expr comment on this same fact) --
+    ; not as the EFfiCall constructor that name might suggest; that
+    ; constructor is only ever built synthetically by assert_lowering.zyl,
+    ; never from real ffi-call source. The trailing timeout arg is
+    ; dropped before the FFI_Pinnable check, same as icnf.zyl's own
+    ; lowering does.
+    (EApply fname args
+      (begin
+        (if (> (str-eq fname "ffi-call") 0)
+          (mc-check-ffi-args (mc-butlast args))
+          0)
+        (mc-list args mutscope)))
+    ; spec/07 R4: ffi-call requires an FFI_Pinnable argument type (Int,
+    ; Float, Bool, String, or composed thereof) -- a closure is none of
+    ; those (it's a heap [tag,code,env] triple or bare code pointer,
+    ; internal representation with no FFI_Pinnable meaning), so passing
+    ; one directly is exactly the type-confusion R4 exists to prevent.
+    ; This only catches the syntactically-obvious case (a literal
+    ; `fn`/`lambda` written straight in the call) -- passing a closure
+    ; via an intermediate variable isn't traced (that needs real type
+    ; info this pass doesn't have), same conservative-undershoot
+    ; posture as everywhere else in this file.
+    (EFfiCall d8 args d9
+      (begin
+        (mc-check-ffi-args args)
+        (mc-list args mutscope)))
+    (EFfiPin e2 (mc-expr e2 mutscope))
+    (EFfiUnpin e2 (mc-expr e2 mutscope))
+    (EAssert c d10 (mc-expr c mutscope))
+    (EUnwrap e2 (mc-expr e2 mutscope))
+    (EStructGet se d11 (mc-expr se mutscope))
+    (EMakeStruct d12 fields (mc-list fields mutscope))
+    (EMakeVariant d13 d14 args (mc-list args mutscope))
+    (EPrint exprs (mc-list exprs mutscope))
+    (EExit c (mc-expr c mutscope))
+    (EClose e2 (mc-expr e2 mutscope))
+    (EFileOpen a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
+    (EFileRead a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
+    (EFileWrite a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
+    (EFileClose e2 (mc-expr e2 mutscope))
+    (EBufAppend a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
+    (EWithResource d15 init body
+      (begin (mc-expr init mutscope) (mc-expr body mutscope)))
+    ; spec/07 R3 / spec/06 rule 5: a spawned closure must only capture
+    ; Send-capable (TCap/TAtomic) variables, and a sent message must
+    ; itself be Send-capable -- a let-mut (TMut) variable escaping into
+    ; another actor thread this way is exactly the aliasing hazard the
+    ; capability system exists to catch (two threads, one with the
+    ; ability to mutate, sharing the same binding). Checkable
+    ; syntactically with the same mutscope this pass already threads:
+    ; if the spawned/sent expression references any name that's a
+    ; let-mut binding in the CURRENT (enclosing, pre-spawn) scope,
+    ; that's a TMut value crossing an actor boundary.
+    (ESpawn closure
+      (begin
+        (if (> (mc-refs-any closure mutscope) 0)
+          (ffi-call "zyl_f_error" "E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor" 1000)
+          0)
+        (mc-expr closure mutscope)))
+    (ESend actor msg
+      (begin
+        (mc-expr actor mutscope)
+        (if (> (mc-refs-any msg mutscope) 0)
+          (ffi-call "zyl_f_error" "E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable" 1000)
+          0)
+        (mc-expr msg mutscope)))
+    (ESendClosure actor closure d16
+      (begin (mc-expr actor mutscope) (mc-expr closure mutscope)))
+    (ETestDecl d17 body d18 (mc-expr body mutscope))
+    (EAssertEqual l r (begin (mc-expr l mutscope) (mc-expr r mutscope)))
+    (EAssertFail e2 d19 (mc-expr e2 mutscope))
+    (EAssertTrue e2 d20 (mc-expr e2 mutscope))
+    (EAssertFalse e2 d21 (mc-expr e2 mutscope))
+    (ETestProperty d22 d23 body (mc-expr body mutscope))
+    (ESetup exprs (mc-list exprs mutscope))
+    (ETeardown exprs (mc-list exprs mutscope))
+    (ETestCompile e2 d24 (mc-expr e2 mutscope))
+    (EDefn d25 d26 body (mc-expr body Nil))
+    (d27 0)))
+
+; --- free-variable-reference scan (for ESpawn/ESend above) --------------
+; True if `e` references ANY name in `names` anywhere in its tree.
+; Deliberately the same undershoot-not-overshoot posture as mc-expr: an
+; unwalked shape just can't be detected as a capture here, it never
+; produces a false positive.
+
+(defn mc-or-list (xs names)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (mc-refs-any h names) 0) 1 (mc-or-list t names)))))
+
+(defn mc-or-arms (arms names)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (match a
+        (MA d1 d2 body (if (> (mc-refs-any body names) 0) 1 (mc-or-arms rest names)))))))
+
+(defn mc-refs-any (e names)
+  (match (Expr.inner e)
+    (EAtom a
+      (match a
+        (AIdent n (mc-in-scope n names))
+        (d1 0)))
+    (ECall op args (if (> (mc-refs-any op names) 0) 1 (mc-or-list args names)))
+    (EApply d2 args (mc-or-list args names))
+    (EDef d3 val (mc-refs-any val names))
+    (ELet d4 val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
+    (ELetMut d5 val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
+    (EIf c t eb
+      (if (> (mc-refs-any c names) 0) 1
+        (if (> (mc-refs-any t names) 0) 1 (mc-refs-any eb names))))
+    (EWhile c body (if (> (mc-refs-any c names) 0) 1 (mc-refs-any body names)))
+    (EBegin exprs (mc-or-list exprs names))
+    (ELambda d6 d7 body (mc-refs-any body names))
+    (EFn d8 d9 body (mc-refs-any body names))
+    (ETryCatch tbody d10 handler
+      (if (> (mc-refs-any tbody names) 0) 1 (mc-refs-any handler names)))
+    (EMatch subj arms (if (> (mc-refs-any subj names) 0) 1 (mc-or-arms arms names)))
+    (EFfiCall d11 args d12 (mc-or-list args names))
+    (EFfiPin e2 (mc-refs-any e2 names))
+    (EFfiUnpin e2 (mc-refs-any e2 names))
+    (EAssert c d13 (mc-refs-any c names))
+    (EUnwrap e2 (mc-refs-any e2 names))
+    (ESetBang name val
+      (if (> (mc-in-scope name names) 0) 1 (mc-refs-any val names)))
+    (EStructGet se d15 (mc-refs-any se names))
+    (EMakeStruct d16 fields (mc-or-list fields names))
+    (EMakeVariant d17 d18 args (mc-or-list args names))
+    (EPrint exprs (mc-or-list exprs names))
+    (ESpawn closure (mc-refs-any closure names))
+    (ESend actor msg (if (> (mc-refs-any actor names) 0) 1 (mc-refs-any msg names)))
+    (EWithResource d19 init body
+      (if (> (mc-refs-any init names) 0) 1 (mc-refs-any body names)))
+    (d20 0)))

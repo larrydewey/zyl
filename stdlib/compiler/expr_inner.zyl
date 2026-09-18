@@ -1528,13 +1528,21 @@
     None
     (Some (Expr (EFileClose (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
+; `set!`'s target must be a bare identifier bound via let-mut (spec/07
+; S10: "Direct field mutation (set! (struct-get p x) 5) is FORBIDDEN" --
+; the whole struct must be rebound instead). Previously, any non-
+; identifier first argument (exactly that forbidden shape) silently
+; fell through to a placeholder name ("___") instead of being rejected,
+; so `(set! (struct-get p x) 5)` compiled into an ESetBang against a
+; nonexistent variable -- surfacing later as a baffling linker error
+; ("undefined reference") instead of a clear diagnostic at the point of
+; the actual mistake.
 (defn parse-set-bang (args)
   (if (ast-has-at-least args 2)
-    (Some
-      (Expr
-        (ESetBang
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
-          (convert-ast (ast-nth args 1 (AstInt 0))))))
+    (match (ast-nth args 0 (AstInt 0))
+      (AstIdent n
+        (Some (Expr (ESetBang n (convert-ast (ast-nth args 1 (AstInt 0)))))))
+      (d1 (ffi-call "zyl_f_error" "E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead" 1000)))
     None))
 
 (defn parse-module (args)

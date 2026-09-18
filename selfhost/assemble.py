@@ -246,6 +246,7 @@ files = [
     'stdlib/compiler/parser.zyl',
     'stdlib/compiler/module_resolver.zyl',
     'stdlib/compiler/macro_expand.zyl',
+    'stdlib/compiler/mutability_check.zyl',
     'stdlib/compiler/resolver.zyl',
     'stdlib/compiler/type_system.zyl',
     'stdlib/compiler/type_inference.zyl',
