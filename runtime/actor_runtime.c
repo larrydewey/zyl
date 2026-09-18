@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
 
 #define ZYL_HEAP_ARENA_DEFAULT_BLOCK (1024 * 1024)
 #define ZYL_PIN_ARENA_DEFAULT_BLOCK (256 * 1024)
@@ -539,6 +541,10 @@ long long zyl_cstr_concat(long long a, long long b) {
     const char* sb = b ? (const char*)(size_t)b : "";
     size_t la = strlen(sa);
     size_t lb = strlen(sb);
+    /* Checked arithmetic: la + lb + 1 must not overflow */
+    if (la > SIZE_MAX - lb - 1) {
+        zyl_panic("string concatenation length overflow");
+    }
     char* buf = (char*)(size_t)zyl_heap_alloc((long long)(la + lb + 1));
     memcpy(buf, sa, la);
     memcpy(buf + la, sb, lb);
@@ -627,7 +633,8 @@ long long zyl_cstr_sub(long long arena, long long src, long long start, long lon
     return buf;
 }
 
-/* Parse a decimal integer string (optional leading '-') to a value. */
+/* Parse a decimal integer string (optional leading '-') to a value.
+   Returns 0 on overflow and sets errno to ERANGE. */
 long long zyl_cstr_to_int(long long ptr) {
     if (!ptr) return 0;
     if (!zyl_cstr_valid(ptr, "cstr-to-int")) return 0;
@@ -635,7 +642,20 @@ long long zyl_cstr_to_int(long long ptr) {
     long long neg = 0, v = 0;
     if (*s == '-') { neg = 1; s++; }
     while (*s >= '0' && *s <= '9') {
-        v = v * 10 + (*s - '0');
+        int digit = *s - '0';
+        /* Check for overflow before multiplying/adding */
+        if (neg) {
+            if (v < (LLONG_MIN + digit) / 10) {
+                errno = ERANGE;
+                return 0;
+            }
+        } else {
+            if (v > (LLONG_MAX - digit) / 10) {
+                errno = ERANGE;
+                return 0;
+            }
+        }
+        v = v * 10 + digit;
         s++;
     }
     return neg ? -v : v;
@@ -817,7 +837,7 @@ long long zyl_arena_alloc(long long arena, long long size) {
     size_t need = zyl_arena_align_up((size_t)size);
     pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
-    if (!b || b->used + need > b->cap) {
+    if (!b || need > b->cap - b->used) {
         b = zyl_arena_new_block_of(a, need);
         if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
     }
@@ -834,7 +854,7 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
     size_t need = zyl_arena_align_up((size_t)size);
     pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
-    if (!b || b->used + need > b->cap) {
+    if (!b || need > b->cap - b->used) {
         b = zyl_arena_new_block_of(a, need);
         if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
     }
@@ -944,7 +964,13 @@ long long zyl_heap_alloc(long long size) {
      * (zyl_variant_eq) without changing any field offsets — all consumers
      * see the same address as before. */
     long long qwords = (size + 7) / 8;
-    long long base = zyl_arena_alloc((long long)(size_t)g_heap_arena, qwords * 8 + 8);
+    /* Checked arithmetic: qwords * 8 + 8 must not overflow */
+    if (qwords > (SIZE_MAX - 8) / 8) {
+        fprintf(stderr, "zyl_heap_alloc: header size overflow\n");
+        return 0;
+    }
+    long long alloc_size = qwords * 8 + 8;
+    long long base = zyl_arena_alloc((long long)(size_t)g_heap_arena, alloc_size);
     if (!base) {
         fprintf(stderr, "zyl_heap_alloc: FAILED size=%lld\n", size);
         return 0;
@@ -1259,10 +1285,21 @@ long long zyl_f_error(long long msg) {
 /* Thread-local: keyed by hashed address only, so two actors appending to
  * different buffers that hash to the same slot would otherwise race on a
  * shared cache entry and could write through a stale cached end-pointer
- * into memory they don't own. */
+ * into memory they don't own. Use SipHash-like mixing for better distribution. */
 #define ZSA_CACHE_SLOTS 64
 static _Thread_local long long zsa_cache_dst[ZSA_CACHE_SLOTS];
 static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
+
+static inline size_t zsa_cache_index(long long dst) {
+    /* SipHash-like mixing for better distribution across cache slots */
+    uintptr_t x = (uintptr_t)dst;
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return (size_t)(x % ZSA_CACHE_SLOTS);
+}
 
 /* Shared implementation: `cap` is the total usable size of the `dst`
  * buffer (including its NUL), or 0 for "no known bound" (preserves the
@@ -1273,7 +1310,7 @@ static long long zyl_str_append_impl(long long dst, long long src, long long cap
     if (!dst) return dst;
     if (!src) return dst;
     if (!zyl_cstr_valid(dst, "str-append") || !zyl_cstr_valid(src, "str-append")) return dst;
-    size_t idx = ((size_t)dst >> 4) % ZSA_CACHE_SLOTS;
+    size_t idx = zsa_cache_index(dst);
     char* base = (char*)(size_t)dst;
     char* d;
     if (zsa_cache_dst[idx] == dst) {

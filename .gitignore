@@ -24,3 +24,7 @@ t.zyl
 t.bin
 t.s.s
 .aider*
+
+# Python (assemble.py / cve_scanner.py)
+__pycache__/
+*.pyc

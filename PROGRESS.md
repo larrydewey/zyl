@@ -1057,3 +1057,37 @@ working REPL).
 - Regression infrastructure: `docs/regression-tests.md`
 - Historical phase details: `docs/implementation-status.md`
 - Specifications: `specifications/` (v1.0–v4.1), `zyl_specification.txt` (v4.2)
+
+---
+
+## Future Work (deferred)
+
+### Byte-level primitives (layout / zero-copy)
+- `load-u8/u16/u32/u64` + `store-…` with explicit endianness
+- `ByteSlice` / `ByteBuf` in tracked region
+- Checked offset+length views that cannot outlive backing data
+- Optional alignment assertions (static or runtime panic)
+- Goal: common serialization/FFI/buffer work without general unsafe
+
+### Deterministic region extension
+- Closed registry of additional region kinds (fixed growth, alignment, policy)
+- User code selects among audited kinds; no raw alloc/free function pointers
+- Any OS-touching kind must be deterministic for given request sequence
+- Goal: specialized allocation without breaking determinism
+
+### Capability-mediated sharing (concurrency)
+- Shared region holding only TCap (or new TAtomic) values
+- Mutation only via atomics or temporary exclusive upgrade
+- Typed/bounded channels with explicit ownership transfer
+- Read-only shared pages for multiple actors
+- Goal: high-performance patterns without unrestricted shared mutability
+
+### Inline assembly (future)
+- Capability- and region-aware asm interface
+- Pointer-carrying registers respect existing type/region rules
+- Goal: architecture-specific kernels that cannot manufacture illegal capabilities
+
+### Ergonomic zero-copy views (regions)
+- Short-lived region views over longer-lived data convenient
+- Cover parsing, substrings, temporary array slices without full ownership transfer
+- Goal: common zero-copy cases without Rust-style lifetime parameters

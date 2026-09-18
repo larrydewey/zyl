@@ -2281,18 +2281,76 @@
 ; ===========================================================================
 ; INFER-EXPR — ffi
 ; ===========================================================================
+;
+; (ffi-call "name" arg1 ... argN timeout): the trailing `timeout` (Int) is
+; never passed to the FFI symbol itself; every real argument must be
+; FFI_Pinnable per spec S16 (Int/Float/Bool/String/composed only) -- an
+; unchecked argument could hand FFI code a mutable/shared-aliasing
+; reference it has no business touching. There is no FFI signature
+; registry anywhere in this language (spec has no syntax for declaring
+; one), so the real return type is unknowable here; TInt is used as the
+; default, matching every native runtime helper's own C signature (they
+; all return `long long`) and this file's existing convention for other
+; loosely-typed FFI-ish builtins (EFileOpen/EFileWrite below -> TInt).
+;
+; This replaces a prior version that returned `(TCap TCBox <fresh var>)`:
+; a forged owned-box CAPABILITY wrapped around a completely unconstrained
+; type variable, letting a caller unify the "result" with anything at all
+; under a claimed capability the compiler never actually established
+; (CVE-2026-ZYL-001).
+
+; Validate every element of `arg-types` is FFI_Pinnable; used for the FFI
+; call's real (non-timeout) arguments and for ffi-pin's single argument.
+(defn check-ffi-pinnable-args (arg-types)
+  (match arg-types
+    (Nil true)
+    (Cons h t
+      (if (is-ffi-pinnable h)
+        (check-ffi-pinnable-args t)
+        (ffi-not-pinnable-error h)))))
+
+(defn ffi-not-pinnable-error (bad-type)
+  (begin
+    (ffi-call "zyl_f_error" (str-concat "E_INVALID_CAPABILITY: FFI value has type " (ffi-not-pinnable-msg bad-type)) 1000)
+    false))
+
+(defn ffi-not-pinnable-msg (bad-type)
+  (str-concat (type-to-string bad-type) " which is not FFI_Pinnable"))
 
 (defn infer-expr-ffi-call (inferer expr)
-    (TCap
-        TCBox
-        (inferer-return-var inferer)))
+  (match (Expr.inner expr)
+    (EApply name args (infer-ffi-call-args inferer args))
+    (d1 TInt)))
 
+(defn infer-ffi-call-args (inferer args)
+  (let arg-types (infer-args inferer args)
+    (begin
+      (check-ffi-pinnable-args (butlast-arg-types arg-types))
+      TInt)))
+
+; All but the last element (the trailing timeout is checked separately).
+(defn butlast-arg-types (types)
+  (match types
+    (Nil Nil)
+    (Cons h t
+      (match t
+        (Nil Nil)
+        (Cons d1 d2 (Cons h (butlast-arg-types t)))))))
+
+; ffi-pin: validate the pinned value is FFI_Pinnable (CVE-2026-ZYL-002 --
+; this previously accepted any type at all, including closures/TMut/
+; TAtomic, letting a caller pin and hand FFI code a value it has no
+; business touching).
 (defn infer-expr-ffi-pin (inferer expr e)
-    (let
-        (t (infer-expr inferer e))
-        (TCap
-        TCPin
-        t)))
+  (let t (infer-expr inferer e)
+    (if (is-ffi-pinnable t)
+      (TCap TCPin t)
+      (infer-ffi-pin-rejected inferer t))))
+
+(defn infer-ffi-pin-rejected (inferer bad-type)
+  (begin
+    (ffi-not-pinnable-error bad-type)
+    (inferer-return-var inferer)))
 
 ; ===========================================================================
 ; INFER-EXPR — assert

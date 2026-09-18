@@ -1282,13 +1282,14 @@
       (let params (ifn-tag-params f)
         (let body (ifn-tag-body f)
      (let env (cg-param-env params 0 (EnvNil))
-       ; Frame sized from actual slot usage: param slots + one per ILet /
-       ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
-       ; The old uniform 16*(64+icnf-size) wasted ~16x stack.
-       (let nslots (icnf-add2 (list-length params)
-                              (+ (icnf-slot-count body) 8))
-         ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
-         (let fsz (* 16 (+ 1 (/ nslots 2)))
+; Frame sized from actual slot usage: param slots + one per ILet /
+        ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
+        ; The old uniform 16*(64+icnf-size) wasted ~16x stack.
+        (let nslots (icnf-add2 (list-length params)
+                               (+ (icnf-slot-count body) 8))
+          ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
+          ; Entry rsp is 8 mod 16 (after push rbp), so fsz must be 16n+8
+          (let fsz (+ 8 (* 16 (+ 1 (/ nslots 2))))
           (let st1 (cg-emit st "_ZYL_")
            (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
              (let st3 (cg-emit-line st2 ":")

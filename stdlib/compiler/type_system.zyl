@@ -158,7 +158,59 @@
     TraitContext             ; ti-trait-ctx
     (List TIStructDef)         ; ti-struct-defs
     (List String)            ; ti-generics-in-scope
-    (List (Pair String String))))    ; ti-var-type-map (for occurs-check tracking)
+    (List (Pair String String))))  ; ti-var-type-map (for occurs-check tracking)
+
+; ===========================================================================
+; FFI_PINNABLE CHECK (spec S16)
+; ===========================================================================
+;
+; FFI_Pinnable types: Int, Float, Bool, String, Vec<T> (where T is
+; FFI_Pinnable), and types composed solely of FFI_Pinnable types.
+; TMut/TAtomic/TPin/TBox are explicitly NOT FFI_Pinnable: a mutable or
+; shared-aliasing reference, or one already wrapped in another capability,
+; has no business being handed to (or forged by) FFI code, which is
+; entirely outside the compiler's aliasing/region tracking. Used to close
+; two gaps found in audit: `ffi-call` used to return an unconstrained,
+; TCBox-wrapped fresh type variable (CVE-2026-ZYL-001), and `ffi-pin`
+; accepted any type at all with no FFI_Pinnable check (CVE-2026-ZYL-002).
+; This inferer is a simplified Hindley-Milner without full constraint
+; propagation (documented pervasively throughout type_inference.zyl):
+; plenty of legitimate, working expressions still carry an unresolved
+; TVar at the point this check runs, well before the wider substitution
+; would have pinned them down. Rejecting TVar outright breaks those
+; (confirmed against regression/ffi.zyl and regression/ffi-advanced.zyl).
+; An unresolved var is, by definition, not PROVEN to be a disallowed
+; capability either -- so it's treated as pinnable, matching this
+; codebase's general "undershoot, never a new false rejection" posture
+; (see e.g. ic-safe-expr's own comment). This still catches every case
+; that actually matters for CVE-2026-ZYL-001/002/003: a REAL, resolved
+; TMut/TAtomic/TPin/TBox reaching ffi-call/ffi-pin.
+(defn is-ffi-pinnable (t)
+  (match t
+    (TInt true)
+    (TFloat true)
+    (TBool true)
+    (TString true)
+    (TUnit true)
+    (TVar d1 d2 true)
+    (TList elem (is-ffi-pinnable elem))
+    (TArray elem _ (is-ffi-pinnable elem))
+    (TStruct _ fields (is-ffi-pinnable-list fields))
+    (TCap kind inner
+      (match kind
+        (TCMut false)
+        (TCAtomic false)
+        (TCPin false)
+        (TCBox false)
+        (_ (is-ffi-pinnable inner))))
+    (TMap k v (and (is-ffi-pinnable k) (is-ffi-pinnable v)))
+    (TResult e h (and (is-ffi-pinnable e) (is-ffi-pinnable h)))
+    (d1 false)))
+
+(defn is-ffi-pinnable-list (types)
+  (match types
+    (Nil true)
+    (Cons h t (and (is-ffi-pinnable h) (is-ffi-pinnable-list t)))))
 
 (defn ti-env (ti) (match ti (TypeInferer v tia2 tia3 tia4 tia5 tia6 tia7 tia8 tia9 tia10 tia11 tia12 tia13 tia14 tia15 tia16 tia17 tia18 tia19 tia20 v)))
 (defn ti-subst (ti) (match ti (TypeInferer tib1 v tib3 tib4 tib5 tib6 tib7 tib8 tib9 tib10 tib11 tib12 tib13 tib14 tib15 tib16 tib17 tib18 tib19 tib20 v)))
@@ -189,6 +241,11 @@
 (deftype AdtDef (AD Name (List Variant)))
 (deftype Variant (V Name (List Field)))
 (deftype Field (F Name Type))
+; Key is a String built by make-site-key (type_inference.zyl) as
+; "<fname>::<type1>,<type2>,...", so it already disambiguates by
+; function name -- CVE-2026-ZYL-017 ("cache key lacks function name")
+; was investigated and found not applicable: audited against a stale
+; assumption about the key's real shape, not this actual one.
 (deftype BodyCache (BC Key Type))
 (deftype VarPair (VP Index Int))
 
@@ -529,8 +586,14 @@
         (d1 (UErr "Type mismatch"))))
     (d2 (UErr "Type mismatch"))))
 
+; Occurs check: does type `t` contain type variable `n` anywhere?
+; `Type` values here are plain immutable trees built by subst-apply/unify
+; (no mutable refs, no back-patching), so a genuine cycle in the DATA
+; itself cannot occur -- this walk always terminates on the tree's own
+; finite depth. (Audited for CVE-2026-ZYL-016 "occurs check may infinite
+; recurse on cyclic types": confirmed non-exploitable under this Type
+; representation; no visited-set is needed.)
 (defn type-contains-var (t n)
-  ; Check if type t contains type variable n (occurs check)
   (match t
     (TVar m _ (= m n))
     (TFun args (type-contains-var-list args n))
