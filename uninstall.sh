@@ -8,6 +8,21 @@
 set -euo pipefail
 TARGET="${ZYL_HOME:-$HOME/.zyl}"
 
+# Guard against a mistyped/misexported ZYL_HOME turning the `rm -rf "$TARGET"`
+# below into something catastrophic (empty, "/", or a bare non-absolute path
+# all resolve to places you do not want wiped).
+case "$TARGET" in
+    ""|/|"$HOME")
+        echo "error: refusing unsafe removal target: '$TARGET'" >&2
+        exit 1
+        ;;
+    /*) ;;
+    *)
+        echo "error: ZYL_HOME must be an absolute path, got: '$TARGET'" >&2
+        exit 1
+        ;;
+esac
+
 if [ ! -d "$TARGET" ]; then
     echo "Nothing to remove: $TARGET does not exist"
     exit 0

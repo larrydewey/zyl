@@ -150,16 +150,23 @@
     (CGS a b n s rd fns
       (CGS a b n s (Cons entry rd) fns))))
 
+; Bounds-checked against the fixed 64MB capacity cg-new allocates for
+; `buf` (see cg-new below): the driver's own post-emission length check
+; against E_CODEGEN_BUFFER_LIMIT runs AFTER cg-program returns, which is
+; too late to prevent an overflowing append from already having
+; scribbled past the malloc'd block during codegen (buf-append/
+; zyl_str_append have no capacity awareness at all). Checking here, on
+; every write, is the only point that can actually stop it.
 (defn cg-emit (st s)
   (match st
     (CGS d6 buf d7 d8 d9 d10
-      (begin (buf-append buf s) st))))
+      (begin (ffi-call "zyl_str_append_capped" buf s 67108864 1000) st))))
 
 (defn cg-emit-int (st n)
   (match st
     (CGS arena buf d10 d11 d12 d13
       (begin
-        (buf-append buf (ffi-call "zyl_cstr_from_int" arena n 1000))
+        (ffi-call "zyl_str_append_capped" buf (ffi-call "zyl_cstr_from_int" arena n 1000) 67108864 1000)
         st))))
 
 (defn cg-nl (st)
@@ -793,10 +800,22 @@
 
 ; ── ext (FFI) path ──
 
+; `name` is an arbitrary string literal from source (ffi-call's target),
+; not a compiler-chosen symbol -- unlike cg-fire-user/cg-sym-for it was
+; being spliced into the emitted ".s" text unsanitized. Any byte in the
+; literal (a decoded escape like "\n" included) landed verbatim in the
+; assembly source, so a crafted ffi-call name could inject extra
+; assembly lines rather than merely naming an odd symbol. Route it
+; through the same zyl_cstr_sanitize used for user-call symbols first:
+; that collapses everything outside [A-Za-z0-9_] to '_', so the emitted
+; text can only ever be a single `call <identifier>` line -- callable
+; native symbol names are still unrestricted (per spec/09's arbitrary
+; ffi-call-by-name model), only assembly-source injection is closed.
 (defn cg-fire-ext (st env name n)
-  (let st2 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") (str-intern (cg-arena-of st) name))
-    (let st3 (cg-emit-line st st2)
-      (cg-call-cleanup st3 n))))
+  (let sym (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000)
+    (let st2 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)
+      (let st3 (cg-emit-line st st2)
+        (cg-call-cleanup st3 n)))))
 
 ; print: pick the format by the argument's kind.
 ; `print`'s own "value" (this is a Lisp where everything is an

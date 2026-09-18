@@ -13,6 +13,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET="${ZYL_HOME:-$HOME/.zyl}"
 
+# Guard against a mistyped/misexported ZYL_HOME turning `rm -rf "$TARGET/..."`
+# below into something catastrophic (empty, "/", or a bare non-absolute path
+# all resolve to places you do not want wiped).
+case "$TARGET" in
+    ""|/|"$HOME")
+        echo "error: refusing unsafe install target: '$TARGET'" >&2
+        exit 1
+        ;;
+    /*) ;;
+    *)
+        echo "error: ZYL_HOME must be an absolute path, got: '$TARGET'" >&2
+        exit 1
+        ;;
+esac
+
 [ -f "$SCRIPT_DIR/build/boot/stage2.bin" ] || {
     echo "error: build/boot/stage2.bin missing -- run ./boot.sh first" >&2
     exit 1

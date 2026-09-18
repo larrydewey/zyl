@@ -18,29 +18,33 @@ static void* g_pin_arena = NULL;
    its integer result. Used by generated main so deep recursion in
    self-hosted compiler runs cannot exhaust the 8MB main-thread stack
    (which is frequently capped by adjacent mmaps). */
-static long long (*g_bigstack_fn)(void) = 0;
-static long long g_bigstack_result = 0;
+struct ZylBigStackCtx {
+    long long (*fn)(void);
+    long long result;
+};
 
 static void* zyl_bigstack_tramp(void* arg) {
-    (void)arg;
-    g_bigstack_result = g_bigstack_fn();
+    struct ZylBigStackCtx* ctx = (struct ZylBigStackCtx*)arg;
+    ctx->result = ctx->fn();
     return 0;
 }
 
 long long zyl_call_on_big_stack(long long (*fn)(void)) {
     pthread_attr_t attr;
     pthread_t t;
-    g_bigstack_fn = fn;
-    g_bigstack_result = 0;
+    struct ZylBigStackCtx ctx;
+    ctx.fn = fn;
+    ctx.result = 0;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, (size_t)64 * 1024 * 1024 * 1024ULL);
-    if (pthread_create(&t, &attr, zyl_bigstack_tramp, 0) != 0) {
+    if (pthread_create(&t, &attr, zyl_bigstack_tramp, &ctx) != 0) {
         /* fallback: run inline */
+        pthread_attr_destroy(&attr);
         return fn();
     }
     pthread_join(t, 0);
     pthread_attr_destroy(&attr);
-    return g_bigstack_result;
+    return ctx.result;
 }
 
 
@@ -337,7 +341,10 @@ struct ZylTryFrame {
     const char* msg;
 };
 
-static struct ZylTryFrame* g_try_top = 0;
+/* Thread-local: each actor runs its own thread with independent try/catch
+ * nesting. A process-global here would let one actor's zyl_try_pop/
+ * zyl_panic unlink or longjmp into another actor's frame/stack. */
+static _Thread_local struct ZylTryFrame* g_try_top = 0;
 
 void* zyl_try_push(void) {
     struct ZylTryFrame* f = (struct ZylTryFrame*)malloc(sizeof *f);
@@ -370,6 +377,14 @@ long long zyl_try_frame_msg(long long frame) {
    FFI pinning — copy an 8-byte value to a stable heap location and back.
    ========================================================================== */
 
+/* Defined below, once the ZylArena block layout is in scope: validates that
+ * `ptr` actually lies within a live block of g_pin_arena before ffi_unpin
+ * is allowed to dereference it. Without this, ffi_unpin was an unchecked
+ * arbitrary-address 8-byte read: any Int a zyl program computed (leaked
+ * address, brute-forced offset) could be handed to ffi-unpin regardless of
+ * whether ffi-pin ever produced it. */
+static int zyl_ptr_in_pin_arena(long long ptr);
+
 void* ffi_pin(long long value) {
     if (!g_pin_arena) return NULL;
     long long* slot = (long long*)zyl_arena_alloc((long long)(size_t)g_pin_arena, sizeof(long long));
@@ -381,6 +396,10 @@ void* ffi_pin(long long value) {
  * bulk, so individual slots are never freed here. */
 long long ffi_unpin(long long ptr) {
     if (!ptr) return 0;
+    if (!zyl_ptr_in_pin_arena(ptr)) {
+        fprintf(stderr, "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n");
+        return 0;
+    }
     return *(long long*)(size_t)ptr;
 }
 
@@ -443,10 +462,12 @@ void zyl_mem_free(long long ptr) {
 }
 
 long long zyl_mem_read(long long ptr) {
+    if (!ptr) { fprintf(stderr, "zyl: mem-read: null pointer\n"); return 0; }
     return *(volatile long long*)(size_t)ptr;
 }
 
 long long zyl_mem_write(long long ptr, long long value) {
+    if (!ptr) { fprintf(stderr, "zyl: mem-write: null pointer\n"); return value; }
     *(volatile long long*)(size_t)ptr = value;
     return value;
 }
@@ -604,6 +625,15 @@ typedef struct ZylArena {
     size_t block_size;
     size_t total_capacity;
     size_t total_used;
+    /* g_heap_arena/g_pin_arena are process-global, shared by every actor
+     * thread (despite the "one arena per actor/scope" isolation this type
+     * was originally meant to provide -- that per-actor split was never
+     * actually implemented). Without this lock, two actors allocating
+     * concurrently race on `head`/`used`/`total_used`: both can read the
+     * same `used` before either writes it back, so both get a pointer into
+     * the SAME bytes -- two logically distinct heap objects silently
+     * aliasing, in ordinary concurrent-actor usage, not an edge case. */
+    pthread_mutex_t lock;
 } ZylArena;
 
 static size_t zyl_arena_align_up(size_t n) {
@@ -636,8 +666,10 @@ long long zyl_arena_create(long long block_size) {
     a->block_size = bs;
     a->total_capacity = 0;
     a->total_used = 0;
+    pthread_mutex_init(&a->lock, NULL);
     ZylArenaBlock* b = zyl_arena_new_block_of(a, bs);
     if (!b) {
+        pthread_mutex_destroy(&a->lock);
         free(a);
         return 0;
     }
@@ -648,14 +680,16 @@ long long zyl_arena_alloc(long long arena, long long size) {
     if (!arena || size < 0) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
+    pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
     if (!b || b->used + need > b->cap) {
         b = zyl_arena_new_block_of(a, need);
-        if (!b) return 0;
+        if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
     }
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
+    pthread_mutex_unlock(&a->lock);
     return (long long)(size_t)p;
 }
 
@@ -663,14 +697,19 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
     if (!arena || size < 0) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
+    pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
     if (!b || b->used + need > b->cap) {
         b = zyl_arena_new_block_of(a, need);
-        if (!b) return 0;
+        if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
     }
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
+    pthread_mutex_unlock(&a->lock);
+    /* p is exclusively ours from here: `used` was already advanced past it
+     * under the lock, so no concurrent allocator can hand out an
+     * overlapping range -- safe to zero without holding the lock. */
     memset(p, 0, (size_t)size);
     return (long long)(size_t)p;
 }
@@ -678,9 +717,16 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
 void zyl_arena_reset(long long arena) {
     if (!arena) return;
     ZylArena* a = (ZylArena*)(size_t)arena;
+    pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
     while (b) {
         ZylArenaBlock* next = b->next;
+        /* Poison before free: any zyl-level pointer into this block that
+         * outlived the reset (nothing in the current compiler tracks or
+         * invalidates such pointers -- see region-inference gap) reads
+         * obvious garbage and is far more likely to crash fast than to
+         * silently read/corrupt whatever libc reuses this memory for. */
+        memset(b->mem, 0xDE, b->used);
         free(b->mem);
         free(b);
         b = next;
@@ -688,29 +734,58 @@ void zyl_arena_reset(long long arena) {
     a->head = NULL;
     a->total_capacity = 0;
     a->total_used = 0;
+    pthread_mutex_unlock(&a->lock);
 }
 
 void zyl_arena_destroy(long long arena) {
     if (!arena) return;
     ZylArena* a = (ZylArena*)(size_t)arena;
+    pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
     while (b) {
         ZylArenaBlock* next = b->next;
+        memset(b->mem, 0xDE, b->used);
         free(b->mem);
         free(b);
         b = next;
     }
+    pthread_mutex_unlock(&a->lock);
+    pthread_mutex_destroy(&a->lock);
     free(a);
 }
 
 long long zyl_arena_used(long long arena) {
     if (!arena) return 0;
-    return (long long)((ZylArena*)(size_t)arena)->total_used;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    pthread_mutex_lock(&a->lock);
+    long long v = (long long)a->total_used;
+    pthread_mutex_unlock(&a->lock);
+    return v;
 }
 
 long long zyl_arena_capacity(long long arena) {
     if (!arena) return 0;
-    return (long long)((ZylArena*)(size_t)arena)->total_capacity;
+    ZylArena* a = (ZylArena*)(size_t)arena;
+    pthread_mutex_lock(&a->lock);
+    long long v = (long long)a->total_capacity;
+    pthread_mutex_unlock(&a->lock);
+    return v;
+}
+
+/* True if `ptr` falls within an in-use byte range of some block of
+ * g_pin_arena. Used by ffi_unpin to reject pointers that were never
+ * handed out by ffi_pin. */
+static int zyl_ptr_in_pin_arena(long long ptr) {
+    if (!ptr || !g_pin_arena) return 0;
+    ZylArena* a = (ZylArena*)(size_t)g_pin_arena;
+    pthread_mutex_lock(&a->lock);
+    int found = 0;
+    for (ZylArenaBlock* b = a->head; b; b = b->next) {
+        char* p = (char*)(size_t)ptr;
+        if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
+    }
+    pthread_mutex_unlock(&a->lock);
+    return found;
 }
 
 /* ==========================================================================
@@ -721,6 +796,14 @@ long long zyl_arena_capacity(long long arena) {
 
 long long zyl_heap_alloc(long long size) {
     if (!g_heap_arena || size <= 0) return 0;
+    /* Reject sizes that could overflow the (qwords*8+8) header-size
+     * calculation below (signed overflow is UB in C; relying on wraparound
+     * to be caught downstream is not a validated bound). No legitimate
+     * allocation needs anywhere near this much. */
+    if (size > (1LL << 48)) {
+        fprintf(stderr, "zyl_heap_alloc: size too large size=%lld\n", size);
+        return 0;
+    }
     /* Reserve a hidden 8-byte header before the returned pointer holding the
      * payload size (in qwords). This enables structural equality checks
      * (zyl_variant_eq) without changing any field offsets — all consumers
@@ -1050,27 +1133,53 @@ long long zyl_strcpy(long long dst, long long src) {
    cache of (address -> known end pointer) turns the common repeated-
    same-buffer case O(1) amortized; a miss (new/rare address, or hash
    collision) just falls back to the original full scan once. */
+/* Thread-local: keyed by hashed address only, so two actors appending to
+ * different buffers that hash to the same slot would otherwise race on a
+ * shared cache entry and could write through a stale cached end-pointer
+ * into memory they don't own. */
 #define ZSA_CACHE_SLOTS 64
-static long long zsa_cache_dst[ZSA_CACHE_SLOTS];
-static char* zsa_cache_end[ZSA_CACHE_SLOTS];
+static _Thread_local long long zsa_cache_dst[ZSA_CACHE_SLOTS];
+static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
 
-long long zyl_str_append(long long dst, long long src) {
+/* Shared implementation: `cap` is the total usable size of the `dst`
+ * buffer (including its NUL), or 0 for "no known bound" (preserves the
+ * original unchecked behavior for every existing caller that has no
+ * capacity to hand it). When a real cap is given and the append would
+ * write past it, panics instead of writing out of bounds. */
+static long long zyl_str_append_impl(long long dst, long long src, long long cap) {
     if (!dst) return dst;
     if (!src) return dst;
     size_t idx = ((size_t)dst >> 4) % ZSA_CACHE_SLOTS;
+    char* base = (char*)(size_t)dst;
     char* d;
     if (zsa_cache_dst[idx] == dst) {
         d = zsa_cache_end[idx];
     } else {
-        d = (char*)(size_t)dst;
+        d = base;
         while (*d) d++;
     }
     const char* s = (const char*)(size_t)src;
+    size_t slen = strlen(s);
+    if (cap > 0 && (size_t)(d - base) + slen + 1 > (size_t)cap) {
+        zyl_panic("codegen buffer limit exceeded");
+    }
     while (*s) { *d++ = *s++; }
     *d = 0;
     zsa_cache_dst[idx] = dst;
     zsa_cache_end[idx] = d;
     return dst;
+}
+
+long long zyl_str_append(long long dst, long long src) {
+    return zyl_str_append_impl(dst, src, 0);
+}
+
+/* Bounds-checked variant for fixed-capacity buffers (e.g. the codegen
+ * output buffer): same cache-accelerated append as zyl_str_append, but
+ * panics before writing past `cap` instead of silently overrunning the
+ * underlying malloc'd block (CWE-787). */
+long long zyl_str_append_capped(long long dst, long long src, long long cap) {
+    return zyl_str_append_impl(dst, src, cap);
 }
 
 /* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
@@ -1106,8 +1215,10 @@ long long zyl_dirname_cstr(long long path) {
     } else {
         len = (size_t)(slash - p) + 1;
     }
-    /* Use a static buffer sized generously; contents valid until next call. */
-    static char buf[4096];
+    /* Thread-local buffer sized generously; contents valid until next call
+     * on the same thread. A plain static here would let concurrent actor
+     * threads clobber each other's returned string. */
+    static _Thread_local char buf[4096];
     memcpy(buf, p, len);
     buf[len] = 0;
     return (long long)(size_t)buf;
@@ -1138,7 +1249,7 @@ long long zyl_chdir(long long path) {
 }
 
 long long zyl_getcwd(void) {
-    static char buf[4096];
+    static _Thread_local char buf[4096];
     if (getcwd(buf, sizeof(buf)) == NULL) {
         return 0;
     }
@@ -1151,14 +1262,23 @@ long long zyl_system_cmd(long long cmd) {
 
 long long zyl_exec_cmd(long long cmd) {
     const char* cmd_str = (const char*)(size_t)cmd;
-    char script_path[256];
-    snprintf(script_path, sizeof(script_path), "/tmp/zyl_link_%d.sh", getpid());
-    FILE* f = fopen(script_path, "w");
-    if (!f) return -1;
+    /* mkstemp atomically creates+opens with O_EXCL: unlike the old
+     * predictable "/tmp/zyl_link_<pid>.sh" + fopen(), this can't be raced
+     * by a pre-planted symlink at that path (classic /tmp TOCTOU). */
+    char script_path[] = "/tmp/zyl_link_XXXXXX";
+    int fd = mkstemp(script_path);
+    if (fd < 0) return -1;
+    FILE* f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        unlink(script_path);
+        return -1;
+    }
     fprintf(f, "#!/bin/sh\n%s\n", cmd_str);
     fclose(f);
     chmod(script_path, 0755);
     execl("/bin/sh", "sh", script_path, (char*)NULL);
+    unlink(script_path);
     return -1;
 }
 
