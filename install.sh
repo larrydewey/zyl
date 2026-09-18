@@ -41,11 +41,10 @@ cp "$SCRIPT_DIR/runtime/actor_runtime.c" "$SCRIPT_DIR/runtime/actor_runtime.h" "
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 
 echo "Building the REPL..."
-setarch -R "$TARGET/bin/stage2.bin" "$SCRIPT_DIR/tools/repl.zyl" -o "$TARGET/bin/zyl-repl-bin"
+"$TARGET/bin/stage2.bin" "$SCRIPT_DIR/tools/repl.zyl" -o "$TARGET/bin/zyl-repl-bin"
 
 cat > "$TARGET/bin/zyl" <<WRAPPER
 #!/usr/bin/env bash
-# setarch -R disables ASLR for the big worker stack (see runtime/README).
 # No arguments: start the REPL, same as \`python\`/\`node\` with no args --
 # this is purely a shell-level dispatch (the compiled zyl binary itself
 # has no notion of a REPL; tools/repl.zyl is an entirely separate
@@ -53,9 +52,9 @@ cat > "$TARGET/bin/zyl" <<WRAPPER
 # driver.zyl nor boot.sh's own direct stage1.bin/stage2.bin invocations.
 set -euo pipefail
 if [ \$# -eq 0 ]; then
-    exec setarch -R "$TARGET/bin/zyl-repl-bin"
+    exec "$TARGET/bin/zyl-repl-bin"
 else
-    exec setarch -R "$TARGET/bin/stage2.bin" "\$@"
+    exec "$TARGET/bin/stage2.bin" "\$@"
 fi
 WRAPPER
 chmod +x "$TARGET/bin/zyl"
@@ -63,7 +62,7 @@ chmod +x "$TARGET/bin/zyl"
 cat > "$TARGET/bin/zyl-repl" <<WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
-exec setarch -R "$TARGET/bin/zyl-repl-bin" "\$@"
+exec "$TARGET/bin/zyl-repl-bin" "\$@"
 WRAPPER
 chmod +x "$TARGET/bin/zyl-repl"
 

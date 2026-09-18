@@ -12,10 +12,11 @@ static void* g_heap_arena = NULL;
 static void* g_pin_arena = NULL;
 
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <pthread.h>
 
-/* Run `fn` on a worker thread with a very large stack (512MB) and return
-   its integer result. Used by generated main so deep recursion in
+/* Run `fn` on a worker thread with a very large stack and return its
+   integer result. Used by generated main so deep recursion in
    self-hosted compiler runs cannot exhaust the 8MB main-thread stack
    (which is frequently capped by adjacent mmaps). */
 struct ZylBigStackCtx {
@@ -29,22 +30,69 @@ static void* zyl_bigstack_tramp(void* arg) {
     return 0;
 }
 
+/* Historically this used pthread_attr_setstacksize (pthread does its own
+ * internal mmap for the stack) at a fixed 64GB, and the whole process had
+ * to run under `setarch -R` (ASLR fully off) because that allocation
+ * intermittently crashed/hung under ASLR (~20% of runs; see commit
+ * fc0ad72). Disabling ASLR for the entire process to work around one
+ * allocation is a much bigger exploit-mitigation downgrade than the
+ * problem calls for -- it also weakens every other mapping in the
+ * process (heap, shared libs, every other thread's stack), including
+ * whatever untrusted zyl program this process may go on to run.
+ *
+ * Fix: allocate the stack ourselves via explicit mmap (MAP_NORESERVE, so
+ * it's a virtual reservation, not a real memory commitment) and hand it
+ * to pthread via pthread_attr_setstack instead of letting pthread pick
+ * the placement. This gives explicit, checkable error handling instead
+ * of a fire-and-forget internal allocation, and a graceful size ladder
+ * (64GB down to 1GB) instead of one all-or-nothing size -- so a
+ * constrained environment degrades instead of crashing. A single mmap
+ * call is also unaffected by ASLR in the way that mattered here: the
+ * kernel never returns overlapping memory for it, so this needs no
+ * personality/ASLR change to be reliable. */
+static const size_t ZYL_BIGSTACK_SIZES[] = {
+    (size_t)64 * 1024 * 1024 * 1024ULL,
+    (size_t)16 * 1024 * 1024 * 1024ULL,
+    (size_t)4  * 1024 * 1024 * 1024ULL,
+    (size_t)1  * 1024 * 1024 * 1024ULL,
+};
+#define ZYL_BIGSTACK_GUARD 4096
+
 long long zyl_call_on_big_stack(long long (*fn)(void)) {
-    pthread_attr_t attr;
-    pthread_t t;
-    struct ZylBigStackCtx ctx;
-    ctx.fn = fn;
-    ctx.result = 0;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, (size_t)64 * 1024 * 1024 * 1024ULL);
-    if (pthread_create(&t, &attr, zyl_bigstack_tramp, &ctx) != 0) {
-        /* fallback: run inline */
+    for (size_t i = 0; i < sizeof(ZYL_BIGSTACK_SIZES) / sizeof(ZYL_BIGSTACK_SIZES[0]); i++) {
+        size_t sz = ZYL_BIGSTACK_SIZES[i];
+        void* stack = mmap(NULL, sz, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (stack == MAP_FAILED) continue;
+        /* Guard page at the low end (stack grows down toward it): an
+         * overflow past the reserved size faults immediately instead of
+         * silently running into whatever happens to sit below. */
+        mprotect(stack, ZYL_BIGSTACK_GUARD, PROT_NONE);
+
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        if (pthread_attr_setstack(&attr, stack, sz) != 0) {
+            pthread_attr_destroy(&attr);
+            munmap(stack, sz);
+            continue;
+        }
+        pthread_t t;
+        struct ZylBigStackCtx ctx;
+        ctx.fn = fn;
+        ctx.result = 0;
+        if (pthread_create(&t, &attr, zyl_bigstack_tramp, &ctx) != 0) {
+            pthread_attr_destroy(&attr);
+            munmap(stack, sz);
+            continue;
+        }
+        pthread_join(t, 0);
         pthread_attr_destroy(&attr);
-        return fn();
+        munmap(stack, sz);
+        return ctx.result;
     }
-    pthread_join(t, 0);
-    pthread_attr_destroy(&attr);
-    return ctx.result;
+    /* Every reservation size failed: fall back to running inline on the
+     * current (small) stack rather than crashing outright. */
+    return fn();
 }
 
 

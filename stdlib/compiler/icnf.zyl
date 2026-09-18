@@ -1312,9 +1312,10 @@
 ; (different runs of the same rebuild crashed at different pipeline
 ; stages, no code difference between runs) and was reverted; that
 ; flakiness is now understood to be an unrelated ASLR/stack-collision
-; bug in the self-hosted worker thread (see boot.sh's `setarch -R`),
-; not a defect in this lowering — retried now that the real cause is
-; fixed.
+; bug in the self-hosted worker thread's stack allocation (originally
+; worked around with boot.sh's `setarch -R`, since fixed for real in
+; zyl_call_on_big_stack -- see runtime/actor_runtime.c), not a defect
+; in this lowering — retried now that the real cause is fixed.
 (defn ic-arm (arena arm vt)
   (let iname (str-intern arena (MA.variant arm))
     (let tag (vt-tag-of vt iname)

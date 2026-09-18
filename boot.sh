@@ -70,7 +70,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     i=1
     while [ "$i" -le "$MAX_SELF_ROUNDS" ]; do
         NEXT_S="${OUT}/reseed_round${i}.s"
-        timeout 600 setarch -R "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
+        timeout 600 "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
         [ -f "$NEXT_S" ] || die "round $i produced no output"
         if cmp -s "$PREV_S" "$NEXT_S"; then
             ok "converged after $i round$([ "$i" -eq 1 ] && echo "" || echo "s")"
@@ -111,7 +111,7 @@ if [ "$BOOTSTRAP" -eq 1 ]; then
     # fixed-path protocol. The generated stage2/s carries the real CLI stub.
     cp "$SRC" /tmp/zyl_boot_in.zyl
     rm -f /tmp/zyl_boot_out.s
-    timeout 600 setarch -R "${OUT}/stage1.bin" >/dev/null
+    timeout 600 "${OUT}/stage1.bin" >/dev/null
     [ -f /tmp/zyl_boot_out.s ] || die "stage1 produced no output"
     mv /tmp/zyl_boot_out.s "${OUT}/stage2.s"
     link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
@@ -130,7 +130,7 @@ ok "stage1 linked"
 
 # ── 2. stage1 -> stage2 (must reproduce the committed seed) ──────────────
 step "stage2: stage1 compiles the selfhost source"
-timeout 600 setarch -R "${OUT}/stage1.bin" "$SRC" -o "${OUT}/stage2_gen.s" --emit-asm
+timeout 600 "${OUT}/stage1.bin" "$SRC" -o "${OUT}/stage2_gen.s" --emit-asm
 [ -f "${OUT}/stage2_gen.s" ] || die "stage1 produced no output"
 if cmp -s "${OUT}/stage2_gen.s" "${OUT}/stage2.s"; then
     HASH=$(sha256sum "${OUT}/stage2.s" | cut -c1-16)
@@ -143,7 +143,7 @@ ok "stage2 linked"
 
 # ── 3+4. stage2 -> stage3, fixed-point check ─────────────────────────────
 step "stage3: stage2 compiles the selfhost source"
-timeout 600 setarch -R "${OUT}/stage2.bin" "$SRC" -o "${OUT}/stage3.s" --emit-asm
+timeout 600 "${OUT}/stage2.bin" "$SRC" -o "${OUT}/stage3.s" --emit-asm
 [ -f "${OUT}/stage3.s" ] || die "stage2 produced no output"
 ok "stage3 emitted"
 
@@ -163,9 +163,9 @@ cat > /tmp/zyl_smoke.zyl <<'SMOKE_EOF'
 (defn applyit (f v) (f v))
 (defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))
 SMOKE_EOF
-timeout 120 setarch -R "${OUT}/stage2.bin" /tmp/zyl_smoke.zyl -o "${OUT}/smoke.bin" >/dev/null
+timeout 120 "${OUT}/stage2.bin" /tmp/zyl_smoke.zyl -o "${OUT}/smoke.bin" >/dev/null
 [ -x "${OUT}/smoke.bin" ] || die "smoke did not produce a linked binary"
-RESULT="$(setarch -R "${OUT}/smoke.bin")"
+RESULT="$("${OUT}/smoke.bin")"
 [ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT'"
 ok "smoke output correct ($RESULT)"
 
@@ -187,11 +187,9 @@ cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 # Cargo-free CLI wrapper: passes arguments straight to the self-hosted
 # stage2 compiler, which handles compilation, linking and its own stdlib
 # resolution (it chdirs to this directory).
-# setarch -R disables ASLR for the big worker stack (see runtime/README or
-# docs/rust-eviction-plan.md).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec setarch -R "$SCRIPT_DIR/stage2.bin" "$@"
+exec "$SCRIPT_DIR/stage2.bin" "$@"
 WRAPPER_EOF
 chmod +x "${OUT}/zyl-self"
 ok "zyl-self wrapper written"
