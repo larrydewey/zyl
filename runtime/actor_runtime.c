@@ -168,7 +168,13 @@ uint32_t zyl_actor_spawn(void (*entry)(void*), void* state) {
 }
 
 void zyl_actor_send(uint32_t actor_id, void* msg) {
-    if (!g_system.initialized || actor_id >= ZYL_MAX_ACTORS) {
+    /* IDs are monotonic (never recycled -- next_id only increments, spawn
+       just refuses once it hits ZYL_MAX_ACTORS), so no generation counter
+       is needed to distinguish "reused" IDs. What IS unguarded without the
+       next_id check: an ID that was never spawned still indexes a live
+       slot in the fixed actors[] array, so sending to it would lock/touch
+       an actor whose mutex/cond were never pthread_*_init'd. */
+    if (!g_system.initialized || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
         free(msg);
         return;
     }
@@ -207,7 +213,7 @@ void zyl_actor_send_data(uint32_t actor_id, void* data) {
 }
 
 void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state) {
-    if (!g_system.initialized || actor_id >= ZYL_MAX_ACTORS) {
+    if (!g_system.initialized || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
         return;
     }
 
@@ -301,37 +307,59 @@ void* zyl_actor_thread_entry(void* arg) {
 void zyl_actor_wait_all(void) {
     /* Wait until all pending messages have been consumed, so messages sent
        before wait_all are guaranteed to be processed (avoids the race where
-       a send lands after the consumer already drained an empty mailbox). */
-    int pending;
-    do {
-        pending = 0;
+       a send lands after the consumer already drained an empty mailbox).
+
+       The drain poll and the alive=0 pass below are two separate lock
+       acquisitions per actor, so a message can still land in the gap
+       between "this actor's mailbox read empty" and "we marked it dead"
+       (send only checks `alive`, which is still 1 in that gap). Such a
+       message would sit on the mailbox forever: the consumer thread's loop
+       exits on `!alive` without re-checking mailbox_head, leaking it.
+       Closed by re-checking mailbox_count at the point we're about to set
+       alive=0, atomically with that write (same lock acquisition); if it's
+       non-empty, skip stopping that actor this round and re-run the whole
+       drain+stop pass instead. */
+    for (;;) {
+        int pending;
+        do {
+            pending = 0;
+            for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
+                ZylActor* actor = &g_system.actors[i];
+                pthread_mutex_lock(&actor->lock);
+                int active = !actor->joined && (actor->running || actor->thread) && actor->mailbox_count > 0;
+                pthread_mutex_unlock(&actor->lock);
+                if (active) {
+                    pending = 1;
+                    break;
+                }
+            }
+            if (pending) usleep(1000);
+        } while (pending);
+
+        int retry = 0;
         for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
             ZylActor* actor = &g_system.actors[i];
             pthread_mutex_lock(&actor->lock);
-            int active = !actor->joined && (actor->running || actor->thread) && actor->mailbox_count > 0;
+            int active = !actor->joined && (actor->running || actor->thread);
+            if (active && actor->mailbox_count > 0) {
+                /* Message landed since the drain poll above; don't stop
+                   this actor yet, let the outer loop drain it and retry. */
+                pthread_mutex_unlock(&actor->lock);
+                retry = 1;
+                continue;
+            }
+            if (active) actor->alive = 0;
+            pthread_t t = actor->thread;
             pthread_mutex_unlock(&actor->lock);
             if (active) {
-                pending = 1;
-                break;
+                pthread_cond_broadcast(&actor->cond);
+                pthread_join(t, NULL);
+                pthread_mutex_lock(&actor->lock);
+                actor->joined = 1;
+                pthread_mutex_unlock(&actor->lock);
             }
         }
-        if (pending) usleep(1000);
-    } while (pending);
-
-    for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
-        ZylActor* actor = &g_system.actors[i];
-        pthread_mutex_lock(&actor->lock);
-        int active = !actor->joined && (actor->running || actor->thread);
-        if (active) actor->alive = 0;
-        pthread_t t = actor->thread;
-        pthread_mutex_unlock(&actor->lock);
-        if (active) {
-            pthread_cond_broadcast(&actor->cond);
-            pthread_join(t, NULL);
-            pthread_mutex_lock(&actor->lock);
-            actor->joined = 1;
-            pthread_mutex_unlock(&actor->lock);
-        }
+        if (!retry) break;
     }
 }
 
@@ -345,31 +373,57 @@ void zyl_actor_wait_all(void) {
 
 #define ZYL_HEAP_THRESHOLD 0x100000000LL
 
+/* Lowest address the kernel will ever map on Linux by default
+ * (/proc/sys/vm/mmap_min_addr, 0x10000 on most distros; 0x1000 is the
+ * conservative floor even on the most permissive configs). Neither branch
+ * below does executable-page validation -- that needs parsing
+ * /proc/self/maps or similar on every call, too costly for a hot path --
+ * but a callee address under this floor can only be a null/uninitialized
+ * slot or a small bogus integer misused as code, never a real function or
+ * env-block pointer. Reject those before the indirect call/deref instead
+ * of segfaulting (or worse, "succeeding") on attacker-influenced data. */
+#define ZYL_MIN_CALL_ADDR 0x1000LL
+
+static long long zyl_call_guard(long long v) {
+    if (v < ZYL_MIN_CALL_ADDR) {
+        fprintf(stderr, "zyl: invalid callee address 0x%llx\n", (unsigned long long)v);
+        exit(1);
+    }
+    return v;
+}
+
 long long zyl_call0(long long v) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(void))v)();
     return ((long long (*)(void*))*(long long*)(size_t)v)((void*)v);
 }
 long long zyl_call1(long long v, long long a) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long))v)(a);
     return ((long long (*)(void*, long long))*(long long*)(size_t)v)((void*)v, a);
 }
 long long zyl_call2(long long v, long long a, long long b) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long))v)(a, b);
     return ((long long (*)(void*, long long, long long))*(long long*)(size_t)v)((void*)v, a, b);
 }
 long long zyl_call3(long long v, long long a, long long b, long long c) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long))v)(a, b, c);
     return ((long long (*)(void*, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c);
 }
 long long zyl_call4(long long v, long long a, long long b, long long c, long long d) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long))v)(a, b, c, d);
     return ((long long (*)(void*, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d);
 }
 long long zyl_call5(long long v, long long a, long long b, long long c, long long d, long long e) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long))v)(a, b, c, d, e);
     return ((long long (*)(void*, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e);
 }
 long long zyl_call6(long long v, long long a, long long b, long long c, long long d, long long e, long long f) {
+    v = zyl_call_guard(v);
     if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long, long long))v)(a, b, c, d, e, f);
     return ((long long (*)(void*, long long, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e, f);
 }
@@ -456,14 +510,31 @@ long long ffi_unpin(long long ptr) {
    Pointers are passed to/from Zyl as Int (64-bit).
    ========================================================================== */
 
+/* Same rationale as zyl_call_guard (zyl_callN, above): every one of these
+ * "string pointer" arguments is a Zyl Int that can be corrupted, brute-
+ * forced, or simply a wrong value the program computed -- 0 is already a
+ * valid "empty string" sentinel these helpers special-case, but a non-zero
+ * value under ZYL_MIN_CALL_ADDR is never a real mapping and would run
+ * strlen/strcmp/indexing off into unmapped memory (CWE-125 over-read).
+ * Rejects that range cheaply before any of it runs. */
+static int zyl_cstr_valid(long long ptr, const char* who) {
+    if (ptr && ptr < ZYL_MIN_CALL_ADDR) {
+        fprintf(stderr, "zyl: %s: invalid string pointer 0x%llx\n", who, (unsigned long long)ptr);
+        return 0;
+    }
+    return 1;
+}
+
 long long zyl_cstr_len(long long ptr) {
     if (!ptr) return 0;
+    if (!zyl_cstr_valid(ptr, "cstr-len")) return 0;
     return (long long)strlen((const char*)(size_t)ptr);
 }
 
 /* Concatenate two NUL-terminated strings into freshly heap-allocated
    storage (zyl_heap_alloc). Either argument may be NULL (treated as ""). */
 long long zyl_cstr_concat(long long a, long long b) {
+    if (!zyl_cstr_valid(a, "cstr-concat") || !zyl_cstr_valid(b, "cstr-concat")) return 0;
     const char* sa = a ? (const char*)(size_t)a : "";
     const char* sb = b ? (const char*)(size_t)b : "";
     size_t la = strlen(sa);
@@ -479,6 +550,7 @@ long long zyl_cstr_concat(long long a, long long b) {
    freshly heap-allocated storage (zyl_heap_alloc). Clamps len to the
    remaining bytes. NULL src is treated as "". */
 long long zyl_cstr_substr(long long src, long long start, long long len) {
+    if (!zyl_cstr_valid(src, "cstr-substr")) return 0;
     const char* s = src ? (const char*)(size_t)src : "";
     size_t slen = strlen(s);
     if (start < 0) start = 0;
@@ -496,6 +568,7 @@ long long zyl_cstr_substr(long long src, long long start, long long len) {
 long long zyl_cstr_eq(long long p1, long long p2) {
     if (p1 == p2) return 1;
     if (!p1 || !p2) return 0;
+    if (!zyl_cstr_valid(p1, "cstr-eq") || !zyl_cstr_valid(p2, "cstr-eq")) return 0;
     const char* s1 = (const char*)(size_t)p1;
     const char* s2 = (const char*)(size_t)p2;
     return (long long)(strcmp(s1, s2) == 0);
@@ -527,6 +600,7 @@ long long zyl_mem_write(long long ptr, long long value) {
 /* Byte at index `i` of a NUL-terminated string, or -1 if past the terminator. */
 long long zyl_cstr_byte_at(long long ptr, long long i) {
     if (!ptr || i < 0) return -1;
+    if (!zyl_cstr_valid(ptr, "cstr-byte-at")) return -1;
     const char* s = (const char*)(size_t)ptr;
     if (i >= (long long)strlen(s)) return -1;
     return (long long)(unsigned char)s[i];
@@ -535,6 +609,7 @@ long long zyl_cstr_byte_at(long long ptr, long long i) {
 /* Write byte `b` at index `i` of a buffer (does not manage the terminator). */
 void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
     if (!ptr || i < 0) return;
+    if (!zyl_cstr_valid(ptr, "cstr-byte-set")) return;
     ((unsigned char*)(size_t)ptr)[i] = (unsigned char)b;
 }
 
@@ -542,6 +617,7 @@ void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
    in `arena`, returning the new buffer pointer. Deterministic (copy order). */
 long long zyl_cstr_sub(long long arena, long long src, long long start, long long len) {
     if (!src || start < 0 || len < 0) return 0;
+    if (!zyl_cstr_valid(src, "cstr-sub")) return 0;
     const char* s = (const char*)(size_t)src;
     long long n = (long long)strlen(s);
     if (start + len > n) len = n - start < 0 ? 0 : n - start;
@@ -554,6 +630,7 @@ long long zyl_cstr_sub(long long arena, long long src, long long start, long lon
 /* Parse a decimal integer string (optional leading '-') to a value. */
 long long zyl_cstr_to_int(long long ptr) {
     if (!ptr) return 0;
+    if (!zyl_cstr_valid(ptr, "cstr-to-int")) return 0;
     const char* s = (const char*)(size_t)ptr;
     long long neg = 0, v = 0;
     if (*s == '-') { neg = 1; s++; }
@@ -580,6 +657,7 @@ long long zyl_cstr_from_int(long long arena, long long value) {
    `arena`. Deterministic: copied left-to-right. */
 long long zyl_cstr_sanitize(long long arena, long long src) {
     if (!src) return 0;
+    if (!zyl_cstr_valid(src, "cstr-sanitize")) return 0;
     const char* s = (const char*)(size_t)src;
     long long n = (long long)strlen(s);
     long long buf = zyl_arena_alloc_zeroed(arena, n + 1);
@@ -599,6 +677,7 @@ long long zyl_cstr_sanitize(long long arena, long long src) {
    Deterministic: decodes left-to-right in source order. */
 long long zyl_cstr_decode(long long arena, long long src, long long start, long long end) {
     if (!src) return 0;
+    if (!zyl_cstr_valid(src, "cstr-decode")) return 0;
     const char* s = (const char*)(size_t)src;
     long long cap = (end - start) + 1;
     long long buf = zyl_arena_alloc_zeroed(arena, cap + 1);
@@ -628,6 +707,7 @@ long long zyl_cstr_decode(long long arena, long long src, long long start, long 
 /* Count the number of '\n' characters in src[0..end). Used for line/col. */
 long long zyl_cstr_count_newlines(long long src, long long end) {
     if (!src) return 0;
+    if (!zyl_cstr_valid(src, "cstr-count-newlines")) return 0;
     const char* s = (const char*)(size_t)src;
     long long n = 0;
     for (long long i = 0; i < end && s[i]; i++) {
@@ -639,6 +719,7 @@ long long zyl_cstr_count_newlines(long long src, long long end) {
 /* Index of the last '\n' in src[0..end), or -1 if none. Used for column. */
 long long zyl_cstr_last_newline(long long src, long long end) {
     if (!src) return -1;
+    if (!zyl_cstr_valid(src, "cstr-last-newline")) return -1;
     const char* s = (const char*)(size_t)src;
     for (long long i = end - 1; i >= 0; i--) {
         if (s[i] == '\n') return i;
@@ -660,6 +741,12 @@ long long zyl_cstr_last_newline(long long src, long long end) {
 
 #define ZYL_ARENA_DEFAULT_BLOCK 65536
 #define ZYL_ARENA_ALIGN 16
+/* Reject sizes that could overflow zyl_arena_align_up's `n + 15` or any
+ * caller's own size arithmetic (e.g. zyl_heap_alloc's qwords*8+8 header
+ * calc) before they ever reach this layer. Centralized here instead of
+ * only in zyl_heap_alloc so every direct zyl_arena_alloc(_zeroed) caller
+ * gets the same bound, not just the one wrapper that happened to add it. */
+#define ZYL_ARENA_MAX_ALLOC (1LL << 48)
 
 typedef struct ZylArenaBlock {
     char* mem;
@@ -725,7 +812,7 @@ long long zyl_arena_create(long long block_size) {
 }
 
 long long zyl_arena_alloc(long long arena, long long size) {
-    if (!arena || size < 0) return 0;
+    if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
     pthread_mutex_lock(&a->lock);
@@ -742,7 +829,7 @@ long long zyl_arena_alloc(long long arena, long long size) {
 }
 
 long long zyl_arena_alloc_zeroed(long long arena, long long size) {
-    if (!arena || size < 0) return 0;
+    if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
     pthread_mutex_lock(&a->lock);
@@ -988,7 +1075,7 @@ long long zyl_atomic_fetch_add(long long addr, long long value) {
    ========================================================================== */
 
 long long zyl_actor_is_alive(long long actor_id) {
-    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
         return 0;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
@@ -999,7 +1086,7 @@ long long zyl_actor_is_alive(long long actor_id) {
 }
 
 void zyl_actor_terminate(long long actor_id) {
-    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
         return;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
@@ -1018,7 +1105,7 @@ void zyl_actor_terminate(long long actor_id) {
 }
 
 void zyl_actor_wait(long long actor_id) {
-    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS) {
+    if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
         return;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
@@ -1156,18 +1243,6 @@ long long zyl_f_error(long long msg) {
     exit(1);
 }
 
-/* Copy a NUL-terminated string from src to dst (dst must be pre-allocated).
-   Returns dst. Used by the Zyl-level buf-append wrapper. */
-long long zyl_strcpy(long long dst, long long src) {
-    if (!dst || !src) return dst;
-    const char* s = (const char*)(size_t)src;
-    char* d = (char*)(size_t)dst;
-    while (*s) { *d++ = *s++; }
-    *d = 0;
-    return dst;
-}
-
-
 /* Append src at the end of the NUL-terminated string in dst.
    Used by the Zyl-level buf-append wrapper so repeated appends
    accumulate (matching the Rust bootstrap's StringBuffer backend).
@@ -1197,6 +1272,7 @@ static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
 static long long zyl_str_append_impl(long long dst, long long src, long long cap) {
     if (!dst) return dst;
     if (!src) return dst;
+    if (!zyl_cstr_valid(dst, "str-append") || !zyl_cstr_valid(src, "str-append")) return dst;
     size_t idx = ((size_t)dst >> 4) % ZSA_CACHE_SLOTS;
     char* base = (char*)(size_t)dst;
     char* d;
