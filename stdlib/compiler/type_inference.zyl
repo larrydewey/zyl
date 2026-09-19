@@ -999,7 +999,7 @@
         false))
 
 (defn is-primitive-type-name (s)
-    (or (= s "Int") (or (= s "Float") (or (= s "Bool") (or (= s "String") (= s "Unit"))))))
+    (or (= s "Int") (or (= s "Float") (or (= s "Bool") (or (= s "String") (or (= s "Unit") (= s "Byte")))))))
 
 (defn prim-type-from-name (s)
     (if (= s "Int") TInt
@@ -1007,7 +1007,8 @@
         (if (= s "Bool") TBool
                 (if (= s "String") TString
                     (if (= s "Unit") TUnit
-                        (TVar 0 TUnit)))))))
+                        (if (= s "Byte") TByte
+                            (TVar 0 TUnit))))))))
 
 (defn type-from-display (s)
     ; map display string to concrete type

@@ -25,6 +25,20 @@
 (defn chr-digit-p (c)
   (if (>= c 48) (if (<= c 57) 1 0) 0))
 
+; Hex digit: 0-9 a-f A-F (byte values; ASCII).
+(defn chr-hexdigit-p (c)
+  (if (= (chr-digit-p c) 1) 1
+    (if (>= c 97) (if (<= c 102) 1 (if (>= c 65) (if (<= c 70) 1 0) 0))
+    (if (>= c 65) (if (<= c 70) 1 0) 0))))
+
+; Octal digit: 0-7.
+(defn chr-octdigit-p (c)
+  (if (>= c 48) (if (<= c 55) 1 0) 0))
+
+; Binary digit: 0-1.
+(defn chr-bindigit-p (c)
+  (if (>= c 48) (if (<= c 49) 1 0) 0))
+
 (defn chr-alpha-p (c)
   (if (>= c 65)
     (if (<= c 90) 1 (if (>= c 97) (if (<= c 122) 1 0) 0))
@@ -115,16 +129,61 @@
                    (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j)))
 
 ; Full numeric literal end from `start` (sign included in caller).
-; Returns: Int (end, exclusive)
+; Handles decimal/float literals AND radix-prefixed integers (0x.., 0o..,
+; 0b..). Returns: Int (end, exclusive)
 (defn scan-number-end (src len start)
   (let i (if (= (byte-at src start) 45) (+ start 1) start)
-    (let mid (scan-num-body src len i)
-      (if (>= mid len)
-        mid
-        (let c (byte-at src mid)
-          (if (= (either (= c 101) (= c 69)) 1)
-            (scan-exp src len mid)
-            mid))))))
+    (let radix (scan-radix-end src len i)
+      (if (>= radix 0)
+        radix
+        (let mid (scan-num-body src len i)
+          (if (>= mid len)
+            mid
+            (let c (byte-at src mid)
+              (if (= (either (= c 101) (= c 69)) 1)
+                (scan-exp src len mid)
+                mid))))))))
+
+; When the numeric body starts with "0x"/"0o"/"0b", scan the full radix
+; digit run and return its end (exclusive); otherwise return -1.
+; Returns: Int
+(defn scan-radix-end (src len i)
+  (if (>= (+ i 1) len)
+    -1
+    (let c0 (byte-at src i)
+      (if (= c0 48)
+        (radix-probe src len i (byte-at src (+ i 1)))
+        -1))))
+
+; Probe the radix-marker char after '0'.
+(defn radix-probe (src len i c)
+  (if (= (either (= c 120) (= c 88)) 1)
+    (radix-body src len i 16)
+  (if (= (either (= c 111) (= c 79)) 1)
+    (radix-body src len i 8)
+  (if (= (either (= c 98) (= c 66)) 1)
+    (radix-body src len i 2)
+    -1))))
+
+; Consume digits valid in `base` starting one past the radix marker.
+(defn radix-body (src len i base)
+  (radix-body-j src len i base (+ i 2)))
+
+(defn radix-body-j (src len i base j)
+  (if (>= j len)
+    j
+    (radix-body-c src len i base j (byte-at src j))))
+
+(defn radix-body-c (src len i base j c)
+  (if (= (radix-digit-p c base) 1)
+    (radix-body-j src len i base (+ j 1))
+    j))
+
+; Whether `c` is a digit in the given radix.
+(defn radix-digit-p (c base)
+  (if (= base 16) (chr-hexdigit-p c)
+  (if (= base 8) (chr-octdigit-p c)
+  (if (= base 2) (chr-bindigit-p c) 0))))
 
 ; Index of the closing '"' for a string opened before `i`; -1 if unterminated.
 ; Returns: Int
@@ -141,9 +200,25 @@
           (scan-str-end src len (+ i 1)))))))
 
 ; Whether numeric literal text contains '.' or e/E (float marker).
-; Returns: Bool (0/1)
+; Radix-prefixed integers (0x/0o/0b) are exempt: hex digits a-f include
+; 'e', which must not force float classification. Returns: Bool (0/1)
 (defn text-float-marker-p (text)
-  (marker-loop text (ffi-call "zyl_cstr_len" text 1000) 0))
+  (let n (ffi-call "zyl_cstr_len" text 1000)
+    (if (= (radix-prefix-len text n) 1)
+      0
+      (marker-loop text n 0))))
+
+; 1 if `text` starts with any radix prefix at offset 0; else 0.
+(defn radix-prefix-len (text n)
+  (if (>= n 2)
+    (let c0 (ffi-call "zyl_cstr_byte_at" text 0 1000)
+      (if (= c0 48)
+        (let c1 (ffi-call "zyl_cstr_byte_at" text 1 1000)
+          (if (= (either (= c1 120) (= c1 88)) 1) 1
+          (if (= (either (= c1 111) (= c1 79)) 1) 1
+          (if (= (either (= c1 98) (= c1 66)) 1) 1 0))))
+        0))
+    0))
 
 (defn marker-loop (text n i)
   (if (>= i n)
@@ -243,12 +318,15 @@
     (lex-loop arena src len (+ e 1)
               (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)) acc))))
 
-; Numeric literal: i..e; float when the text carries '.' or exponent.
+; Numeric literal: i..e; float when the text carries '.' or exponent,
+; integer otherwise. Radix-prefixed literals (0x/0o/0b) are always
+; integers -- their text carries neither '.' nor 'e', so they take the
+; TkInt path, and zyl_cstr_to_int_base decodes the prefix.
 (defn lex-num-e (arena src len i acc e)
   (let text (sub-str arena src i (- e i))
     (if (= (text-float-marker-p text) 1)
       (lex-loop arena src len e (Cons (TkFloat text) acc))
-      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int" text 1000)) acc)))))
+      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000)) acc)))))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)

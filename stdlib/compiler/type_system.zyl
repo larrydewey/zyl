@@ -19,6 +19,9 @@
   (TBool)
   (TString)
   (TUnit)
+  (TByte)
+  (TByteSlice Region)
+  (TByteBuf Region)
   (TFun (List Type))
   (TList (List Type))
   (TArray Type Int)
@@ -33,7 +36,42 @@
   (TCMut)
   (TCAtomic)
   (TCBox)
-  (TCPin))
+  (TCPin)
+  (TCByte)
+  (TCAtomicByte))
+
+; Memory regions (spec §9) — reintroduced by the byte-primitive work
+; (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §1): TByteSlice/TByteBuf carry
+; their region as an INVARIANT in the Type parameter. This is the same
+; RStack/RHeap/RGlobal/RCircular/RPin family the original Region ADT used
+; (deleted alongside the general region machinery — see region_inference
+; .zyl's header comment for why). Only the parameter-carrying wrappers
+; below consume it today.
+(deftype Region
+  (RStack)
+  (RHeap)
+  (RGlobal)
+  (RCircular)
+  (RPin))
+
+; Canonical display name for a Region — used in type-to-string and
+; monomorphized names so a ByteBuf in Heap vs Pin never alias.
+(defn region-to-string (r)
+  (match r
+    (RStack "Stack")
+    (RHeap "Heap")
+    (RGlobal "Global")
+    (RCircular "Circular")
+    (RPin "Pin")))
+
+; Region id for Icnf immediates (0..4 in the order above).
+(defn region-to-int (r)
+  (match r
+    (RStack 0)
+    (RHeap 1)
+    (RGlobal 2)
+    (RCircular 3)
+    (RPin 4)))
 
 ; A nominal (named) type with no type arguments — sugar over TStruct.
 (defn TNominal (name) (TStruct name Nil))
@@ -48,6 +86,9 @@
     (TBool "Bool")
     (TString "String")
     (TUnit "Unit")
+    (TByte "Byte")
+    (TByteSlice r (str-concat "ByteSlice" (region-to-string r)))
+    (TByteBuf r (str-concat "ByteBuf" (region-to-string r)))
     (TFun d1 "Fn")
     (TList d1 "List")
     (TArray d1 d2 "Array")
@@ -192,6 +233,15 @@
     (TBool true)
     (TString true)
     (TUnit true)
+    ; A lone byte is as pinnable as an Int (it IS an integer subset).
+    ; ByteBuf/ByteSlice are deliberately NOT pinnable as FFI arguments --
+    ; they are internal managed buffers (48-byte header + tracked data);
+    ; FFI code reaches their bytes only via an explicit bytebuf-ptr Pin
+    ; handoff (see infer-expr-bytebuf-ptr), never by passing the buffer
+    ; object itself to an extern.
+    (TByte true)
+    (TByteSlice d1 false)
+    (TByteBuf d1 false)
     (TVar d1 d2 true)
     (TList elem (is-ffi-pinnable elem))
     (TArray elem _ (is-ffi-pinnable elem))
@@ -202,6 +252,8 @@
         (TCAtomic false)
         (TCPin false)
         (TCBox false)
+        (TCByte false)
+        (TCAtomicByte false)
         (_ (is-ffi-pinnable inner))))
     (TMap k v (and (is-ffi-pinnable k) (is-ffi-pinnable v)))
     (TResult e h (and (is-ffi-pinnable e) (is-ffi-pinnable h)))
@@ -282,6 +334,19 @@
   (TC (TC.traits tc) (Cons impl-info (TC.impls tc))))
 
 (defn tc-check-derivable (tc ty trait-name)
+  ; Plan §1: TByte derives true (integrates with the auto-derive set for
+  ; primitives); TByteBuf is false -- its Eq/Ord/Hash need content
+  ; semantics that the generic derive harness would get wrong (it would
+  ; treat the 48-byte header as fields). Matched on the concrete Type so
+  ; this policy holds even though the phantom-impl path only ever derives
+  ; primitives today.
+  (match ty
+    (TByte true)
+    (TByteBuf d1 false)
+    (TByteSlice d1 false)
+    (d1 (tc-check-derivable-base trait-name))))
+
+(defn tc-check-derivable-base (trait-name)
   ; Simplified: auto-derive Eq, Ord, Debug, Clone, Hash for primitives
   (or (= trait-name "Eq")
     (or (= trait-name "Ord")
@@ -289,15 +354,26 @@
         (or (= trait-name "Clone") (= trait-name "Hash"))))))
 
 (defn tc-is-send (tc ty)
-  ; Simplified: primitives, TCap, TAtomic are Send
+  ; Simplified: primitives, TCap, TAtomic, and the byte-region types are Send.
+  ; ByteBuf/ByteSlice carry no nested capability: their underlying bytes are
+  ; plain owned data, and the buffer header is immutably managed by the
+  ; runtime (contents mutation is a TMut/atomic op-level story, not a raw
+  ; aliasing one) -- so a TByteBuf/TByteSlice value is safely shareable
+  ; across actors exactly like a TString is.
   (match ty
     (TInt true)
     (TFloat true)
     (TBool true)
     (TString true)
     (TUnit true)
+    (TByte true)
+    (TByteSlice d1 true)
+    (TByteBuf d1 true)
     (TCap kind inner
-      (or (= kind TCCap) (or (= kind TCAtomic) (tc-is-send tc inner))))
+      (or (= kind TCCap)
+        (or (= kind TCAtomic)
+          (or (= kind TCByte)
+            (or (= kind TCAtomicByte) (tc-is-send tc inner))))))
     (d1 false)))
 
 ; ===========================================================================
@@ -398,6 +474,13 @@
     (TBool TBool)
     (TString TString)
     (TUnit TUnit)
+    ; No type variables live inside a Region parameter, so TByteSlice/
+    ; TByteBuf pass the substitution straight through (the region is
+    ; invariant by construction -- see BYTE_PRIMITIVES_IMPLEMENTATION_PLAN
+    ; .md §1).
+    (TByte TByte)
+    (TByteSlice r (TByteSlice r))
+    (TByteBuf r (TByteBuf r))
     (TFun args (subst-apply-type-list s args))
     (TList elem (TList (subst-apply-type s elem)))
     (TArray elem len (TArray (subst-apply-type s elem) len))
@@ -463,6 +546,9 @@
     (TBool Nil)
     (TString Nil)
     (TUnit Nil)
+    (TByte Nil)
+    (TByteSlice d1 Nil)
+    (TByteBuf d1 Nil)
     (TFun args (type-free-vars-list args))
     (TList elem (type-free-vars elem))
     (TArray elem d1 (type-free-vars elem))
@@ -535,7 +621,16 @@
 
 (defn unify-terms-concrete (s t1 t2)
   (match t1
-    (TInt (match t2 (TInt (UOk s)) (d1 (UErr "Type mismatch"))))
+    (TInt (match t2 (TInt (UOk s)) (TByte (UOk s)) (d1 (UErr "Type mismatch"))))
+    (TByte (match t2 (TByte (UOk s)) (TInt (UOk s)) (d1 (UErr "Type mismatch"))))
+    (TByteSlice r1
+      (match t2
+        (TByteSlice r2 (if (= r1 r2) (UOk s) (UErr "ByteSlice region mismatch")))
+        (d1 (UErr "Type mismatch"))))
+    (TByteBuf r1
+      (match t2
+        (TByteBuf r2 (if (= r1 r2) (UOk s) (UErr "ByteBuf region mismatch")))
+        (d1 (UErr "Type mismatch"))))
     (TFloat (match t2 (TFloat (UOk s)) (d1 (UErr "Type mismatch"))))
     (TBool (match t2 (TBool (UOk s)) (d1 (UErr "Type mismatch"))))
     (TString (match t2 (TString (UOk s)) (d1 (UErr "Type mismatch"))))
@@ -596,6 +691,9 @@
 (defn type-contains-var (t n)
   (match t
     (TVar m _ (= m n))
+    (TByte false)
+    (TByteSlice d1 false)
+    (TByteBuf d1 false)
     (TFun args (type-contains-var-list args n))
     (TList elem (type-contains-var elem n))
     (TArray elem _ (type-contains-var elem n))

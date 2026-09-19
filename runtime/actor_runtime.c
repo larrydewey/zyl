@@ -661,6 +661,41 @@ long long zyl_cstr_to_int(long long ptr) {
     return neg ? -v : v;
 }
 
+/* Convert a radix-prefixed integer literal ("0xFF", "-0xFF", "0b1010",
+   "0o777", plain decimal) to its value. The single leading radix prefix
+   (0x/0o/0b, any case) is consumed; everything after it is parsed in that
+   base. No prefix means decimal. Used by the byte-primitive lexer (the
+   `(byte 0xFF)` radix forms from BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md). */
+long long zyl_cstr_to_int_base(long long ptr) {
+    if (!ptr) return 0;
+    if (!zyl_cstr_valid(ptr, "cstr-to-int-base")) return 0;
+    const char* s = (const char*)(size_t)ptr;
+    long long neg = 0, v = 0;
+    if (*s == '-') { neg = 1; s++; }
+    int base = 10;
+    if (s[0] == '0') {
+        char p = s[1];
+        if (p == 'x' || p == 'X') { base = 16; s += 2; }
+        else if (p == 'o' || p == 'O') { base = 8; s += 2; }
+        else if (p == 'b' || p == 'B') { base = 2; s += 2; }
+    }
+    for (; *s; s++) {
+        int digit;
+        if (*s >= '0' && *s <= '9') digit = *s - '0';
+        else if (*s >= 'a' && *s <= 'f') digit = *s - 'a' + 10;
+        else if (*s >= 'A' && *s <= 'F') digit = *s - 'A' + 10;
+        else break;
+        if (digit >= base) break;
+        if (neg) {
+            if (v < (LLONG_MIN + digit) / base) { errno = ERANGE; return 0; }
+        } else {
+            if (v > (LLONG_MAX - digit) / base) { errno = ERANGE; return 0; }
+        }
+        v = v * base + digit;
+    }
+    return neg ? -v : v;
+}
+
 /* Convert a non-negative integer to its decimal string form in `arena`.
    Used for spans/error messages in the lexer/parser. */
 long long zyl_cstr_from_int(long long arena, long long value) {

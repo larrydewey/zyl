@@ -217,7 +217,8 @@
       (if (= s "Bool") TBool
         (if (= s "String") TString
           (if (= s "Unit") TUnit
-            (TVar 0 TUnit)))))))
+            (if (= s "Byte") TByte
+              (TVar 0 TUnit))))))))
 
 (defn is-uppercase-ident (name)
   (if (= (str-length name) 0)
