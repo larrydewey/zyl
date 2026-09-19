@@ -1277,8 +1277,98 @@
         (EError
         _msg
         (inferer-return-unit inferer))
+        (EByteLit
+        _n
+        TByte)
+        (ELoadByte
+        _endian _offset _buf
+        (inferer-return-int inferer))
+        (ELoadByteSigned
+        _endian _offset _buf
+        (inferer-return-int inferer))
+        (EStoreByte
+        _endian _offset _buf _val
+        (inferer-return-unit inferer))
+        (EStoreByteSigned
+        _endian _offset _buf _val
+        (inferer-return-unit inferer))
+        (EByteSlice
+        buf _start _len
+        (TByteSlice (infer-byte-source-region inferer buf)))
+        (EByteSliceSub
+        slice _start _len
+        (TByteSlice (infer-byte-source-region inferer slice)))
+        (EByteBuf
+        region _cap
+        ; region is a literal Region value already (parsed at parse time
+        ; by parse-region-selector -- see expr_inner.zyl), not something
+        ; that needs inferring.
+        (TByteBuf region))
+        (EByteBufAppend
+        _buf _val
+        (inferer-return-unit inferer))
+        (EByteBufLen
+        _buf
+        (inferer-return-int inferer))
+        (EByteBufCap
+        _buf
+        (inferer-return-int inferer))
+        (EByteBufPtr
+        _buf
+        ; Plan calls for `TCap TPin (Ptr Byte)` here, but this Type ADT
+        ; has no Ptr constructor -- every pointer-shaped value in this
+        ; compiler (arena addresses, FFI results, closures' env blocks)
+        ; is already represented as a plain TInt, so bytebuf-ptr matches
+        ; that existing convention. The Pin-region restriction the plan
+        ; wants (E_BYTEBUF_NOT_PIN) is enforced at runtime instead, since
+        ; this file's inference generally degrades to a fresh type var on
+        ; a mismatch rather than hard-erroring (see e.g. infer-expr-if's
+        ; UErr branch) -- there's no hard-error path here to hook into.
+        (inferer-return-int inferer))
+        (EAlignCheck
+        _expr _align
+        (inferer-return-bool inferer))
+        (EAtomicLoad
+        _buf _offset
+        (inferer-return-int inferer))
+        (EAtomicStore
+        _buf _offset _val
+        (inferer-return-unit inferer))
+        (EAtomicAdd
+        _buf _offset _val
+        (inferer-return-int inferer))
+        (EAtomicSub
+        _buf _offset _val
+        (inferer-return-int inferer))
+        (EAtomicCAS
+        _buf _offset _expected _newval
+        (inferer-return-bool inferer))
+        (EAtomicFetchAdd
+        _buf _offset _val
+        (inferer-return-int inferer))
+        (EAtomicMax
+        _buf _offset _val
+        (inferer-return-int inferer))
+        (EAtomicMin
+        _buf _offset _val
+        (inferer-return-int inferer))
         (d11
         (inferer-return-var inferer))))
+
+; Region backing a ByteSlice/ByteSlice-sub source: infers `buf`'s own type
+; and reads its Region parameter off a TByteBuf/TByteSlice result. Falls
+; back to RHeap when `buf`'s type isn't resolved to either yet (a fresh
+; TVar) -- consistent with this file's existing degrade-don't-hard-error
+; style (inferer-return-var and friends); the runtime's own magic-tag and
+; bounds checks (actor_runtime.c) are what actually enforce safety, not
+; this best-effort region label.
+(defn infer-byte-source-region (inferer buf)
+    (let
+        (bt (infer-expr inferer buf))
+        (match bt
+        (TByteBuf r r)
+        (TByteSlice r r)
+        (d1 RHeap))))
 
 ; ===========================================================================
 ; INFER-EXPR — primitive return helpers

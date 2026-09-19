@@ -1,512 +1,389 @@
 # Zyl Byte-Level Primitives — Implementation Plan
-## Post 30-Iteration Red Team Audit — Final Consolidated Plan
 
-**Status**: APPROVED FOR IMPLEMENTATION  
-**Total CVEs Mitigated**: 120 (7 Critical, 12 High, 18 Medium, 83 Low/Info)  
-**Audit Exhaustion**: Achieved (rate < 0.1/iteration in final 5 iterations)
+**Status**: Core primitives (byte load/store, byte slices, byte buffers, atomics,
+align-check) implemented and verified through the self-hosted pipeline.
+Region-inference integration, dedicated codegen paths, and testing/docs are
+explicitly deferred — see each section below for what's real vs. TODO.
+
+This document was previously written as a prescriptive spec before
+implementation started, including a Phase 0 step that told the reader to add
+these primitives to `archive/rust-bootstrap-2026/src/` and a "30-Iteration Red
+Team Audit" / "120 CVEs Mitigated" section. Neither reflected anything that
+actually happened:
+
+- `archive/rust-bootstrap-2026/` is a frozen fallback, not part of the active
+  compiler (see `AGENTS.md`) — it is never touched for language feature work,
+  and `boot.sh --bootstrap-from-rust` exists only as a last resort for
+  genuinely new unparseable syntax, not the normal workflow. That step has
+  been removed from this plan.
+- The audit numbers did not correspond to any actual review process on this
+  codebase and have been removed rather than carried forward as if they were
+  real.
 
 ---
 
-## 1. Type System (`stdlib/compiler/type_system.zyl`)
+## 1. Type System (`stdlib/compiler/type_system.zyl`) — Implemented
 
-### Type ADT Additions
 ```zyl
 (deftype Type
   ...
   (TByte)
-  (TByteSlice Region)          ; INVARIANT in Region parameter
-  (TByteBuf Region))           ; INVARIANT in Region parameter
-```
+  (TByteSlice Region)          ; region-carrying, invariant
+  (TByteBuf Region))           ; region-carrying, invariant
 
-### CapKind Additions
-```zyl
 (deftype CapKind
   ...
-  (TCByte)                      ; Shared read-only byte slice
-  (TCAtomicByte))               ; Atomic byte buffer (Pin region only)
+  (TCByte)
+  (TCAtomicByte))
+
+(deftype Region (RStack) (RHeap) (RGlobal) (RCircular) (RPin))
 ```
 
-### Trait Derivation
-```zyl
-; tc-check-derivable: TByte = true, TByteBuf = false
-; tc-is-send: TCByte = true, TCAtomicByte = true
-```
-
-### Coercion
-```zyl
-; TByte unifies with TInt (byte is integer subset)
-; Add coerce-byte-to-int in unification logic
-```
+The `Type` ADT has no `Ptr`/pointer constructor at all, and never has —
+pointer-shaped values (including `bytebuf-ptr`'s result) are represented as
+plain `Int`, matching this codebase's existing universal convention that
+"pointers are ints." The plan's original §1 sketch of `TByteBuf`/`TByteSlice`
+matches what's implemented; no separate coercion or trait-derivation logic
+was needed beyond what already exists for other capability-carrying types.
 
 ---
 
-## 2. Expression Bridge (`stdlib/compiler/expr_inner.zyl`)
+## 2. Expression Bridge (`stdlib/compiler/expr_inner.zyl`) — Implemented
 
-### Endian Type
 ```zyl
-(deftype Endian (ELe) (EBe))   ; Parsed from :le / :be keywords
-```
+(deftype Endian (ELe) (EBe))
 
-### ExprInner Variants (19 new)
-```zyl
 (deftype ExprInner
   ...
-  (EByteLit Int)                              ; (byte 255) — 0-255, radix prefixes
-  (ELoadByte Endian Expr Expr)                ; (load-u8 ptr off)
-  (ELoadByteSigned Endian Expr Expr)          ; (load-i8 ptr off)
-  (EStoreByte Endian Expr Expr Expr)          ; (store-u8 ptr off val)
-  (EStoreByteSigned Endian Expr Expr Expr)    ; (store-i8 ptr off val)
-  (EByteSlice Expr Expr Expr)                 ; (byteslice buf off len)
-  (EByteSliceSub Expr Expr Expr)              ; (byteslice-sub slice off len)
-  (EByteBuf Region Int)                       ; (bytebuf Heap 100)
-  (EByteBufAppend Expr Expr)                  ; (bytebuf-append buf slice)
+  (EByteLit Int)
+  (ELoadByte Endian Expr Expr)
+  (ELoadByteSigned Endian Expr Expr)
+  (EStoreByte Endian Expr Expr Expr)
+  (EStoreByteSigned Endian Expr Expr Expr)
+  (EByteSlice Expr Expr Expr)
+  (EByteSliceSub Expr Expr Expr)
+  (EByteBuf Region Int)
+  (EByteBufAppend Expr Expr)          ; takes a whole ByteSlice, not a byte
   (EByteBufLen Expr)
   (EByteBufCap Expr)
-  (EByteBufPtr Expr)                          ; Linear: (TCap TPin (Ptr Byte))
-  (EAlignCheck Expr Int)                      ; (align-check ptr align)
-  (EAtomicLoad Expr Expr)                     ; (atomic-load buf off)
-  (EAtomicStore Expr Expr Expr)               ; (atomic-store buf off val)
-  (EAtomicAdd Expr Expr Expr)                 ; (atomic-add buf off val)
-  (EAtomicSub Expr Expr Expr)                 ; (atomic-sub buf off val)
-  (EAtomicCAS Expr Expr Expr Expr)            ; (atomic-cas buf off exp new)
-  (EAtomicFetchAdd Expr Expr Expr)            ; (atomic-fetch-add buf off val)
-  (EAtomicMax Expr Expr Expr)                 ; (atomic-max buf off val)
-  (EAtomicMin Expr Expr Expr))               ; (atomic-min buf off val)
+  (EByteBufPtr Expr)
+  (EAlignCheck Expr Int)
+  (EAtomicLoad Expr Expr)
+  (EAtomicStore Expr Expr Expr)
+  (EAtomicAdd Expr Expr Expr)
+  (EAtomicSub Expr Expr Expr)
+  (EAtomicCAS Expr Expr Expr Expr)
+  (EAtomicFetchAdd Expr Expr Expr)
+  (EAtomicMax Expr Expr Expr)
+  (EAtomicMin Expr Expr Expr))
 ```
 
-### Parser Rules
-- Depth limit: 100 nested special forms
-- `byte` literal: parse radix (0x, 0o, 0b, decimal), range 0-255
-- `load-u8` etc.: endian as `:le` / `:be` keyword
-- Region spec: identifier (`Heap`, `Stack`, `Pin`, `Global`, `Circular`)
-- Reject special forms in value position (not first-class)
+Recognized surface forms: `byte`, `load-u8`/`load-i8`, `store-u8`/`store-i8`,
+`byteslice`, `byteslice-sub`, `bytebuf`, `bytebuf-append`, `bytebuf-len`,
+`bytebuf-cap`, `bytebuf-ptr`, `align-check`.
 
-### Reserved Keywords (add to parser)
-```
-byte, load-u8, load-u16, load-u32, load-u64,
-load-i8, load-i16, load-i32, load-i64,
-store-u8, store-u16, store-u32, store-u64,
-store-i8, store-i16, store-i32, store-i64,
-byteslice, byteslice-sub, bytebuf, bytebuf-append,
-bytebuf-len, bytebuf-cap, bytebuf-ptr, align-check,
-atomic-load, atomic-store, atomic-add, atomic-sub,
-atomic-cas, atomic-fetch-add, atomic-max, atomic-min,
-:le, :be
-```
+**Naming collision, found and fixed**: the plan's original names
+`atomic-load`/`atomic-store`/`atomic-add`/`atomic-sub`/`atomic-cas`/
+`atomic-max`/`atomic-min` collide with pre-existing, unrelated functions of
+the same names in `stdlib/atomic/atomic.zyl` (raw-address atomics used by the
+actor runtime, signature `(addr value)` — 2 args, vs. the new bytebuf-offset
+forms' `(buf offset value)` — 3 args). Because form recognition happens in
+`byte-form-dispatch` before any function-name resolution, the new forms would
+silently shadow every call to the old ones, breaking existing code
+(`tests/unit_test.zyl`'s atomic tests failed this way when the collision was
+in place). Fixed by renaming the new forms to `bytebuf-atomic-load`,
+`bytebuf-atomic-store`, `bytebuf-atomic-add`, `bytebuf-atomic-sub`,
+`bytebuf-atomic-fetch-add`, `bytebuf-atomic-max`, `bytebuf-atomic-min`,
+`bytebuf-atomic-cas` — matching the `zyl_bytebuf_atomic_*` runtime naming
+already in use.
+
+Wide-width forms (`load-u16`/`u32`/`u64`, `i16`/`i32`/`i64`, and their
+`store-*` counterparts) are recognized and rejected with
+`E_RESERVED_KEYWORD` rather than silently falling through to an unresolvable
+call — not implemented, reserved for future work.
+
+**Two real bugs found and fixed in this file** (both were malformed
+s-expressions committed as part of this feature, both were the actual root
+cause of the memory-ballooning bug described in §12 below — not anything to
+do with lowering or codegen):
+
+- `parse-bytebuf` was missing one closing paren, leaving its `(Some r ...)`
+  match arm unterminated.
+- `reserved-byte-name`'s final `if` chain had one closing paren too many.
+
+Either bug, on its own, desyncs this reader from the intended form
+boundaries for everything after it in the file, since this reader has no
+separate validation pass — nesting depth alone decides where one top-level
+form ends and the next begins.
 
 ---
 
-## 3. Type Inference (`stdlib/compiler/type_inference.zyl`)
+## 3. Type Inference (`stdlib/compiler/type_inference.zyl`) — Implemented
 
-### Inference Rules
+| Expression | Result Type |
+|------------|-------------|
+| `EByteLit n` | `TByte` |
+| `ELoadByte`/`ELoadByteSigned` | `TInt` |
+| `EStoreByte`/`EStoreByteSigned` | `TInt` (existing code; unchanged) |
+| `EByteSlice`/`EByteSliceSub` | `(TByteSlice R)`, `R` taken from the source buffer/slice's own inferred region (falls back to `RHeap` if the source's type isn't a byte-region-carrying type) |
+| `EByteBuf region _cap` | `(TByteBuf region)` |
+| `EByteBufPtr` | `TInt` — no `Ptr` type exists in this ADT (see §1); Pin-region enforcement is deferred to the runtime, since this inference pass has no hard-error path (see below) |
+| `EByteBufAppend`/`EByteBufLen`/`EByteBufCap`/`EAlignCheck` | unchanged from initial commit, already correct |
+| `EAtomicLoad`/`Add`/`Sub`/`FetchAdd`/`Max`/`Min` | `TInt` |
+| `EAtomicStore` | unit-shaped (`TInt`, matching this codebase's convention for statement-like FFI calls) |
+| `EAtomicCAS` | `TInt` (0/1 boolean-as-int, matching this codebase's convention — there is no dedicated `TBool`-returning path used elsewhere for CAS-like ops) |
 
-| Expression | Result Type | Constraints |
-|------------|-------------|-------------|
-| `EByteLit n` | `TByte` | `0 <= n <= 255` |
-| `ELoadByte endian ptr off` | `TInt` (zero-extended) | `ptr: TByteBuf R` or `TByteSlice R`, `off: TInt` |
-| `ELoadByteSigned ...` | `TInt` (sign-extended) | Same |
-| `EStoreByte ...` | `TUnit` | `ptr: TMut (TByteBuf R)`, `off: TInt`, `val: TByte` or `TInt` |
-| `EByteSlice buf off len` | `TByteSlice R` | `buf: TByteBuf R`, `off/len: TInt`, `off+len <= buf.cap` |
-| `EByteSliceSub slice off len` | `TByteSlice R` | `slice: TByteSlice R`, `off+len <= slice.len` |
-| `EByteBuf region cap` | `TByteBuf R` | `R = region`, `cap: TInt` (const if `R = Stack`) |
-| `EByteBufAppend buf slice` | `TUnit` | `buf: TMut (TByteBuf R)`, `slice: TByteSlice R` |
-| `EByteBufLen buf` | `TInt` | `buf: TByteBuf R` |
-| `EByteBufCap buf` | `TInt` | `buf: TByteBuf R` |
-| `EByteBufPtr buf` | `TCap TPin (Ptr Byte)` | `buf: TByteBuf RPin` only |
-| `EAlignCheck ptr align` | `TBool` | `ptr: TInt`, `align: TInt` (power of 2) |
-| `EAtomicLoad buf off` | `TInt` | `buf: TAtomicByte RPin`, `off: TInt` |
-| `EAtomicStore buf off val` | `TUnit` | `buf: TAtomicByte RPin`, `off: TInt`, `val: TInt` |
-| `EAtomicAdd buf off val` | `TInt` | Same |
-| `EAtomicSub ...` | `TInt` | Same |
-| `EAtomicCAS buf off exp new` | `TBool` | Same |
-| `EAtomicFetchAdd ...` | `TInt` | Same |
-| `EAtomicMax/Min ...` | `TInt` | Same |
-
-### Region Constraints
-- `ByteSlice` region = backing `ByteBuf` region (invariant)
-- `ByteBuf` region = declared at creation
-- `Stack` ByteBuf: capacity must be compile-time constant
-- `Stack` ByteBuf return → promote to `Heap`
-- `Global` ByteBuf: only if immutable (cap=0 or const init)
-
-### Capability Constraints
-- `ByteSlice` = `TCap TCByte (TByteSlice R)` — shared read-only
-- `ByteBuf` mutable ops require `TMut (TByteBuf R)`
-- `bytebuf-ptr` only on `TByteBuf RPin` → returns linear `TCap TPin (Ptr Byte)`
-- Atomic ops only on `TAtomicByte RPin`
+`type_inference.zyl` is a best-effort pass throughout this codebase, not a
+hard type-checker: many arms already collapse to a generic `TInt` for
+handle-like values (e.g. `EFileOpen`), and `unify` failures are frequently
+degraded to a best-guess return rather than a compile error. The rules above
+follow that existing convention rather than introducing new hard-error
+plumbing. Region tracking for `TByteSlice`/`TByteBuf` is preserved (the
+reason those two `Type` variants carry a `Region` at all), but nothing in
+this pass enforces the "Pin-only" constraint on `bytebuf-ptr` or
+`TAtomicByte`-only constraint on the atomic ops described in the original
+plan — see §5.
 
 ---
 
-## 4. ICNF Lowering (`stdlib/compiler/icnf.zyl`)
+## 4. ICNF Lowering (`stdlib/compiler/icnf.zyl`) — Implemented, differently than planned
 
-### ICNFInner Variants (19 new)
+The original plan proposed 19 new dedicated `ICNFInner` variants
+(`ICLoadByte`, `ICAtomicCAS`, etc.) with their own codegen paths. That is
+**not** what got built, and doing so was unnecessary: `icnf.zyl` already has
+a generic `IFfi "name" args` node for calling any C runtime function by name,
+and every byte/atomic primitive lowers through it, e.g.:
+
 ```zyl
-(deftype ICNFInner
-  ...
-  (ICByteLit Int)
-  (ICLoadByte Endian Int Int)                 ; side-effect=true
-  (ICLoadByteSigned Endian Int Int)           ; side-effect=true
-  (ICStoreByte Endian Int Int Int)            ; side-effect=true
-  (ICStoreByteSigned Endian Int Int Int)      ; side-effect=true
-  (ICByteSlice Int Int Int)                   ; region from type
-  (ICByteSliceSub Int Int Int)                ; region from type
-  (ICByteBuf Int)                             ; cap_ssa, region from type
-  (ICByteBufAppend Int Int)                   ; side-effect=true
-  (ICByteBufLen Int)
-  (ICByteBufCap Int)
-  (ICByteBufPtr Int)                          ; linear capability
-  (ICAlignCheck Int Int)                      ; side-effect=true (never fold)
-  (ICAtomicLoad Int Int)
-  (ICAtomicStore Int Int Int)
-  (ICAtomicAdd Int Int Int)
-  (ICAtomicSub Int Int Int)
-  (ICAtomicCAS Int Int Int Int)
-  (ICAtomicFetchAdd Int Int Int)
-  (ICAtomicMax Int Int Int)
-  (ICAtomicMin Int Int Int))
+(EAtomicCAS buf offset expected newval
+  (IFfi "zyl_bytebuf_atomic_cas"
+    (Cons (ic-expr arena buf vt)
+      (Cons (ic-expr arena offset vt)
+        (Cons (ic-expr arena expected vt)
+          (Cons (ic-expr arena newval vt) Nil))))))
 ```
 
-### Region Field
-- `ICByteSlice`, `ICByteSliceSub`, `ICByteBuf`: `ICNFNode.region` = type's region
-- All others: region = operand's region
+This avoids touching `codegen.zyl` at all — `IFfi` already has a working,
+tested codegen path (a normal C call) that every other runtime-backed
+primitive in this compiler already goes through.
 
-### Lowering Notes
-- `ic-expr` receives typed `Expr` with region annotations
-- Endian: `ELe` = 0, `EBe` = 1 (immediate in ICNF)
-- Volatile flag: set on all load/store/atomic/align-check nodes
+**Two type-confusion bugs found and fixed**: `EByteBuf`'s `region` (a bare
+`Region` ADT value, not an `Expr`) and `EAlignCheck`'s `align` (a bare `Int`
+literal, not an `Expr`) were being passed through `ic-expr` — which calls
+`Expr.inner` on its argument — instead of being lowered directly via
+`IConst`. Same bug, independently, in `ELoadByte`/`ELoadByteSigned`/
+`EStoreByte`/`EStoreByteSigned`'s `endian` argument (an `Endian` ADT value).
+All three are fixed the same way: convert to an `Int` first (`region-to-int`,
+`endian-to-int`, or the literal itself) and wrap in `IConst`, never
+`ic-expr`. Passing a non-`Expr` value into `ic-expr` reads it as if it were
+an `Expr` struct — undefined behavior, not a compile error in this
+untyped-at-the-IR-level pipeline — and was the direct cause of a segfault in
+`ic-expr` when compiling any program that used `load-u8`/`store-u8`.
 
 ---
 
-## 5. Region Inference (`stdlib/compiler/region_inference.zyl`)
+## 5. Region Inference — Not applicable, out of scope
 
-### Borrow Graph
-```zyl
-; ByteSlice -> backing ByteBuf (transitive closure)
-; Tracked per-value, not just per-name
-```
+The plan's original §5 described a general worklist/cycle-detection region
+promotion pass operating on a borrow graph. That machinery does not exist in
+this codebase and never has in any form this plan could build on: the
+general `Region` ADT propagation system was deliberately deleted as dead
+code (see `region_inference.zyl`'s header comment) because "region inference
+had never affected a single compiled program's behavior in any
+implementation this compiler has ever had." What remains is a narrower
+`ri-transform-fns` pass that promotes provably-non-escaping heap allocations
+to the stack — unrelated to byte buffers specifically, and not extended for
+this feature.
 
-### Worklist Algorithm
-```zyl
-; Iterative promotion:
-; 1. Initial escape analysis
-; 2. When ByteBuf promoted (Stack→Heap), re-analyze all dependent ByteSlice
-; 3. Repeat until fixed point
-```
-
-### Cycle Detection
-```zyl
-; ByteBuf append edges: buf1 --append(slice of buf2)--> buf2
-; Detect cycles, assign Circular region
-; Circular ByteBuf: bounded total capacity (sum of caps)
-```
-
-### Stack ByteBuf
-```zyl
-; Fixed capacity only (compile-time constant)
-; Frame allocation via cg-reserve-block (3 slots: ptr, len, cap)
-; NO header duplication — slots ARE the header
-; Return: promote to Heap
-```
-
-### Global ByteBuf
-```zyl
-; Only if immutable: cap=0 or initialized with constant data
-; Reject mutable Global ByteBuf
-```
+Practical effect: `TByteBuf`/`TByteSlice`'s region parameter is tracked
+through the type system (§1, §3) and used only to keep slice/buffer regions
+consistent at the type level. There is no compile-time enforcement of
+Stack-capacity-must-be-constant, Stack-return-promotes-to-Heap, or
+Global-must-be-immutable — none of that machinery exists to enforce it. If
+this needs to become a real, enforced constraint later, it is new work, not
+"wire up the existing pass."
 
 ---
 
-## 6. Codegen (`stdlib/compiler/codegen.zyl`)
+## 6. Codegen (`stdlib/compiler/codegen.zyl`) — Not touched, not needed
 
-### Kind Mapping
-| ICNF Node | kind-of |
-|-----------|---------|
-| `ICLoadByte*` | 0 (int) |
-| `ICStoreByte*` | 0 (unit) |
-| `ICByteSlice*` | 3 (struct-like, 2 words) |
-| `ICByteBuf*` | 3 (struct-like, 3 words) |
-| `ICByteBufLen/Cap/Ptr` | 0 |
-| `ICAlignCheck` | 0 (bool) |
-| `ICAtomic*` | 0 (int) |
-
-### Emission Strategies
-
-#### Bounds Check (Constant-Time)
-```asm
-; cmov-based, no branch
-mov r10, [buf+32]      ; cap
-mov r11, off
-add r11, size          ; off + 1/2/4/8
-cmp r11, r10
-cmovae rax, [panic_addr]
-lfence                 ; speculation barrier
-; proceed with load/store
-```
-
-#### Atomic Check+Load Block
-```asm
-; No register reuse between check and load
-; Single atomic emission block
-```
-
-#### Stack ByteBuf
-```zyl
-; cg-reserve-block for 3 slots (ptr, len, cap)
-; ptr = rbp - data_offset
-; len/cap in slots
-; NO header — slots are the header
-```
-
-#### ByteBuf Pointer Print
-```asm
-; %llx format (hex, unsigned)
-mov rsi, rax
-lea rdi, [rip+.Lfmtp]  ; "%llx\n"
-```
-
-#### ByteSlice ABI
-```zyl
-; 2 words = 16 bytes → RDI (ptr), RSI (len)
-```
-
-#### Atomic Operations
-```asm
-; lock cmpxchg / lock xadd / lock add / lock sub
-; seq_cst (full barrier)
-; Version counter for CAS: 32-bit combined (high 16 version, low 48 value)
-```
-
-#### Volatile Nodes (Never Fold)
-- `ICLoadByte*`, `ICStoreByte*`, `ICAlignCheck`, `ICAtomic*`
+Because every byte/atomic primitive lowers through the existing generic
+`IFfi` node (§4), `codegen.zyl` required no changes: `IFfi` already has a
+tested emission path (ordinary C call, System V ABI). The original plan's
+proposed constant-time `cmov`-based bounds checks, atomic instruction
+emission, and stack `ByteBuf` frame layout were not implemented — bounds
+checking happens in the C runtime (§7) with an ordinary branch, not
+speculation-hardened asm. If constant-time bounds checks are a real
+requirement later, that is new codegen work against a currently
+nonexistent code path, not a tweak to something in place.
 
 ---
 
-## 7. Runtime (`runtime/actor_runtime.c`)
+## 7. Runtime (`runtime/actor_runtime.c`) — Implemented, leaner than planned
 
-### ByteBuf Layout (48-byte header, 16-byte aligned)
-```
-Offset 0:   canary (PRNG(alloc_sequence_number))
-Offset 8:   magic (0x5A594C4255460000)  ; "ZYLBUF\0\0"
-Offset 16:  data_ptr (points to offset 48)
-Offset 24:  len (atomic_size_t for TCAtomicByte)
-Offset 32:  cap
-Offset 40:  version (for CAS ABA — 32-bit)
-Offset 48:  data...
-```
+Actual header layout (not the plan's originally proposed 48-byte
+canary/magic/version/data layout):
 
-### Checked Arithmetic
 ```c
-static inline int zyl_bounds_check(size_t off, size_t size, size_t cap) {
-    return off <= cap - size;  // No overflow
-}
+#define ZYL_BYTEBUF_MAGIC   0x5A594C4255460001ULL
+#define ZYL_BYTESLICE_MAGIC 0x5A594C4255460002ULL
+#define ZYL_BYTEBUF_MAX_CAP (1LL << 40)
+
+typedef struct {
+    unsigned long long magic;
+    unsigned char* data;   /* separate malloc, sized to cap */
+    long long len;
+    long long cap;
+} ZylByteBufHeader;
+
+typedef struct {
+    unsigned long long magic;
+    unsigned char* data;   /* borrowed -- never freed through this handle */
+    long long len;
+} ZylByteSliceHeader;
 ```
 
-### Constant-Time Bounds Check
-```c
-// cmov-based in assembly; C fallback uses branch but lfence after
-```
+No canary, no ABI version field, no built-in ABA-detection counter — magic
+tag + bounds check on every access is the actual (and, for this codebase's
+existing threat model, consistent) level of hardening; every other
+handle-shaped value in this runtime (actors, arena blocks) uses the same
+magic-tag-after-dereference convention, not a stronger one.
 
-### Max Memcpy
-```c
-#define MAX_MEMCPY_LEN (1UL << 30)  // 1GB
-```
+What's implemented and covered by a standalone C smoke test (bounds
+rejection, embedded-null-byte safety, zero-copy slicing, cap-overflow
+rejection, self-aliasing `memmove`-safe append, magic-tag type-confusion
+rejection, atomic load/store/add/fetch_add/CAS/alignment/bounds):
 
-### Minimal Panic
-```c
-// write(2, fixed_string, len) — no allocation, no formatting
-```
+- `zyl_load_byte`, `zyl_load_byte_signed`, `zyl_store_byte`,
+  `zyl_store_byte_signed`
+- `zyl_byte_slice` (zero-copy), `zyl_byte_slice_sub` (bounds against the
+  parent slice's own `len`, not the backing buffer's `cap`)
+- `zyl_bytebuf_new(region, cap)` — `region` is accepted but unused (no-op;
+  see §5 — nothing downstream distinguishes Stack/Heap/Pin/etc. at the
+  runtime level), fixed-capacity zero-initialized allocation
+- `zyl_bytebuf_append(buf, slice)` — takes a whole `ByteSlice`, not a single
+  byte (this is what `parse-bytebuf-append`'s own error string says, and
+  matches the implementation); uses `memmove` for alias safety; fails closed
+  (returns 0, no partial write) on capacity overflow
+- `zyl_bytebuf_len`, `zyl_bytebuf_cap`, `zyl_bytebuf_ptr`, `zyl_align_check`
+- Atomics: `zyl_bytebuf_atomic_load/store/add/sub/fetch_add/max/min/cas`,
+  each delegating to the pre-existing raw-address `zyl_atomic_*` family
+  (already used for actor messaging) after validating the target slot is
+  `>= 0`, 8-byte-aligned, and fully within `[0, cap)`.
 
-### Overlap Detection
-```c
-// In append: if (src >= dst && src < dst + len) || (dst >= src && dst < src + src_len)
-// Use memmove or reject with E_BYTEBUF_OVERLAP
-```
-
-### Pin Arena
-```c
-// mprotect PROT_READ|PROT_WRITE (no PROT_EXEC)
-// Never reset (zyl_arena_reset on Pin = no-op)
-```
-
-### Canary
-```c
-// PRNG(alloc_sequence_number) — deterministic sequence
-// XOR with arena base for per-process uniqueness
-```
-
-### Atomic Len/Cap
-```c
-// For TCAtomicByte: len/cap are atomic_size_t
-// bytebuf-append uses atomic_fetch_add on len
-```
-
-### Custom Equality
-```c
-// zyl_bytebuf_eq: compares len + data only
-// Skips canary, magic, version
-```
+Not implemented from the original plan: PRNG canary, ABI version field,
+atomic `len`/`cap` fields (the buffer's own length/capacity bookkeeping is
+not itself atomic — only the 8-byte slot values an atomic op targets are),
+custom `zyl_bytebuf_eq` (no equality primitive was requested or added),
+`mprotect`-based Pin-region write protection.
 
 ---
 
-## 8. Error Codes (`stdlib/compiler/error_codes.zyl`)
+## 8. Error Codes (`stdlib/compiler/error_codes.zyl`) — Partially implemented
 
-```zyl
-(EC "E_BYTE_VALUE_OOB"        1  1 "lexer: byte literal out of range 0-255")
-(EC "E_BYTE_OOB"              10 1 "runtime: byte offset out of bounds")
-(EC "E_ALIGNMENT_FAILED"      10 1 "runtime: alignment check failed")
-(EC "E_BYTEBUF_CAP_EXCEEDED"  10 1 "runtime: bytebuf append exceeds capacity")
-(EC "E_BYTEBUF_NOT_PIN"       4  1 "type: bytebuf-ptr requires Pin region")
-(EC "E_BYTEBUF_INVALID"       10 1 "runtime: bytebuf magic tag mismatch")
-(EC "E_NULL_POINTER"          10 1 "runtime: null pointer dereference")
-(EC "E_OUT_OF_MEMORY"         10 1 "runtime: out of memory")
-(EC "E_ATOMIC_ABA"            10 1 "runtime: atomic CAS ABA detected")
-(EC "E_BYTEBUF_OVERLAP"       10 1 "runtime: bytebuf append overlapping slice")
-(EC "E_STACK_BYTEBUF_RETURN"  4  1 "type: Stack ByteBuf cannot be returned")
-(EC "E_GLOBAL_BYTEBUF_MUT"    4  1 "type: Global ByteBuf must be immutable")
-```
+Endian error variants (`ELe`/`EBe`) and the byte/atomic-primitive error
+codes were added in the initial commit. `E_BYTEBUF_NOT_PIN` is defined but
+currently unused — nothing enforces the Pin-only constraint it was meant for
+(see §5). The rest of the originally-planned codes
+(`E_ATOMIC_ABA`, `E_BYTEBUF_OVERLAP`, `E_STACK_BYTEBUF_RETURN`,
+`E_GLOBAL_BYTEBUF_MUT`) were not added — they describe enforcement that
+doesn't exist (§5, §7).
 
 ---
 
-## 9. Optimization (`stdlib/compiler/optimization.zyl`)
+## 9. Optimization — Not touched
 
-### Volatile Nodes (Never Fold)
-```zyl
-; ICLoadByte*, ICStoreByte*, ICAlignCheck, ICAtomic*
-```
-
-### CSE Region Boundaries
-```zyl
-; Common subexpression elimination respects region promotion boundaries
-```
-
-### Hoisting Prevention
-```zyl
-; No hoisting of bytebuf-len when TMut ByteBuf in scope
-```
+No `optimization.zyl` changes were made. Volatile/no-fold treatment for
+load/store/atomic/align-check nodes is inherited for free from lowering
+through `IFfi` (external calls are already never constant-folded in this
+pipeline) — no new logic was needed.
 
 ---
 
-## 10. Testing (`tests/byte-primitives.zyl`)
+## 10. Testing — Minimal; fuzzing and property tests are TODO
 
-### Property Tests
-- Load/store roundtrip (all sizes, endianness)
-- Bounds checks on all boundaries (0, cap-1, cap, cap+1)
-- Atomic linearizability (concurrent stress)
-- Region safety: slice never outlives backing buf
-- Stack ByteBuf promotion on escape
-- Determinism: binary identical across runs
+Done: a standalone C smoke test for the runtime layer (§7), a manual
+end-to-end smoke test compiled and run through the actual self-hosted
+pipeline (byte literal, `store-u8`/`load-u8`/`load-i8`, `bytebuf`,
+`bytebuf-atomic-store`/`load`/`add`/`cas`, `align-check`), and the existing
+`run_regression_tests.sh` suite (unaffected, still 6/6).
 
-### Fuzzing
-```zyl
-; libfuzzer harness for runtime primitives
-; Structure-aware: byte literal parsing, load/store sequences, atomic ops
-```
-
-### Benchmarks
-```zyl
-; Microbenchmarks: load/store throughput, append throughput, atomic throughput
-```
+Not done, real follow-up work: a dedicated `tests/byte-primitives.zyl`
+regression file, property tests (roundtrip, boundary bounds checks,
+concurrent atomic linearizability), and any fuzzing harness. None of this
+existed before this plan's implementation and none of it was added.
 
 ---
 
-## 11. Documentation (`docs/byte-primitives.md`)
+## 11. Documentation — Not done
 
-### Required Sections
-- Determinism note: `bytebuf-ptr` on Heap non-deterministic
-- ABA: version counter 32-bit combined
-- Async FFI: Pin lifetime manual management
-- Contracts: byte primitives excluded
-- ByteBuf equality: content only (skip canary/magic/version)
-- ByteSlice equality: content only
-- Stack ByteBuf: fixed cap, no return
-- Global ByteBuf: immutable only
-- `Vec<u8>` vs `ByteBuf` distinction
+No `docs/byte-primitives.md` was written. Follow-up work, not covered here.
 
 ---
 
-## 12. Implementation Order
+## 12. What actually caused the memory-ballooning bug
 
-### Phase 0: Rust Bootstrap (Prerequisite)
-1. Add byte primitives to `archive/rust-bootstrap-2026/src/`
-2. Compile `actor_runtime.c` with new functions
-3. Verify Rust bootstrap compiles Zyl compiler with byte primitives
+Separately from the byte-primitives feature review, a real bug was found
+and fixed: `./boot.sh` (plain, non-reseed mode) OOM-killed `stage1.bin` at
+~42.5GB RSS while compiling the (pre-fix) selfhost source, confirmed via
+`dmesg`/`journalctl -k`.
 
-### Phase 1: Type System & Parser
-1. `type_system.zyl` — Type ADT, CapKind
-2. `expr_inner.zyl` — Endian, ExprInner variants, parser rules
-3. `parser.zyl` / `lexer.zyl` — Reserved keywords, byte literal radix
-4. `error_codes.zyl` — New error codes
+Root cause, isolated by bisecting the committed diff file-by-file and then
+function-by-function against a fixed memory cap (`ulimit -v`): the two
+malformed s-expressions in `expr_inner.zyl` described in §2
+(`parse-bytebuf`'s missing close-paren, `reserved-byte-name`'s extra
+close-paren). This reader has no form-boundary validation independent of
+paren-nesting depth, so either bug alone desyncs where the reader thinks
+top-level forms end, corrupting the parse of a large, unpredictable span of
+the rest of the file into one pathologically oversized nested expression —
+which is what actually drove RSS from a ~690MB baseline to >40GB. This had
+nothing to do with the lexer, tail-call optimization, or closure conversion,
+all of which were investigated and ruled out along the way.
 
-### Phase 2: Inference & Lowering
-1. `type_inference.zyl` — Inference rules for all 19 forms
-2. `icnf.zyl` — ICNFInner variants, lowering logic
-
-### Phase 3: Region & Codegen
-1. `region_inference.zyl` — Borrow graph, worklist, cycle detection
-2. `codegen.zyl` — kind-of, emission, volatile nodes
-
-### Phase 4: Runtime & Optimization
-1. `actor_runtime.c` — All C primitives with security fixes
-2. `optimization.zyl` — Volatile nodes, CSE boundaries
-
-### Phase 5: Testing & Verification
-1. `tests/byte-primitives.zyl` — Property tests, fuzzing, benchmarks
-2. `run_regression_tests.sh --filter byte-primitives`
-3. `./boot.sh` — Full self-host fixed point
+Both bugs are fixed. `./boot.sh` (plain) and `./boot.sh --bootstrap-from-self`
+both verified clean afterward (peak RSS ~600MB, fixed point holds,
+`run_regression_tests.sh` 6/6).
 
 ---
 
 ## 13. Bootstrap Compatibility
 
-### Self-Host Constraints
-- All new functions ≤ 6 parameters
-- Match arms enumerate all constructors (no `_`)
-- No binop combining two calls (use `let` bindings)
-- Paren discipline (C-style block formatting)
-- No duplicate `defn`/`deftype` across files
+Constraints that were actually relevant and observed in this work:
+functions with a small, fixed parameter count; paren discipline (see §2/§12
+for what goes wrong when it slips); no duplicate `defn`/`deftype` across
+files. "Match arms enumerate all constructors, no catchall" is real for some
+top-level AST/IR dispatch functions (e.g. `ic-expr`'s outer match does use a
+final catchall arm, `byte-form-dispatch` does not need one since it's a
+plain cascade) but is not a universal rule — catchall arms are common
+elsewhere in this codebase's smaller helper matches.
 
-### Assembly Seed
-- `build/boot/stage2.s` must be regenerated after implementation
-- `./boot.sh --bootstrap-from-self` for reseeding
-
----
-
-## 14. Sign-Off Checklist
-
-- [ ] All CRITICAL CVEs mitigated (7/7)
-- [ ] All HIGH CVEs mitigated (12/12)
-- [ ] All MEDIUM CVEs mitigated (18/18)
-- [ ] Type system changes compile
-- [ ] Parser accepts all new syntax
-- [ ] Inference rules type-check
-- [ ] ICNF lowering produces valid IR
-- [ ] Region inference tracks borrows correctly
-- [ ] Codegen emits correct x86_64
-- [ ] Runtime primitives pass fuzzing
-- [ ] Property tests pass
-- [ ] Determinism verified (stage2 == stage3)
-- [ ] Self-host fixed point holds
-- [ ] Documentation complete
+`build/boot/stage2.s`/`stage2.bin` must be regenerated after any change
+here, via `./boot.sh --bootstrap-from-self` (not `--bootstrap-from-rust`),
+and committed once verified. Not done as part of this review — left for the
+user to commit deliberately.
 
 ---
 
-## 15. Appendix: Attack Surface Summary
+## 14. Status Checklist
 
-| Category | CVEs | Status |
-|----------|------|--------|
-| Memory Safety (OOB, UAF, type confusion) | 24 | ✅ Mitigated |
-| Capability/Region Soundness | 18 | ✅ Mitigated |
-| Side Channels (timing, cache, branch) | 10 | ✅ Mitigated |
-| Concurrency/Atomic | 12 | ✅ Mitigated |
-| Integer Arithmetic | 14 | ✅ Mitigated |
-| Parser/Logic | 12 | ✅ Mitigated |
-| Determinism | 8 | ✅ Mitigated |
-| FFI/Lifetime | 6 | ✅ Mitigated |
-| Spec/Documentation | 16 | ✅ Documented |
-
-**Total**: 120 CVEs identified, all mitigated in plan.
-
----
-
-**Red Team Lead**: Audit exhausted. Implementation approved.  
-**Date**: 2026-09-18
+- [x] Type system changes compile
+- [x] Parser accepts all new syntax
+- [x] Naming collision with existing `stdlib/atomic/atomic.zyl` found and fixed
+- [x] Two malformed-s-expression bugs found and fixed (root cause of the
+      ballooning bug, §12)
+- [x] One type-confusion lowering bug (bare `Endian`/`Region`/`Int` through
+      `ic-expr`) found and fixed
+- [x] Inference rules type-check
+- [x] ICNF lowering produces valid IR (via `IFfi`, not dedicated nodes)
+- [x] Runtime primitives pass a standalone smoke test
+- [x] Manual end-to-end smoke test passes through the self-hosted pipeline
+- [x] Determinism verified (stage2 == stage3)
+- [x] Self-host fixed point holds
+- [x] `run_regression_tests.sh` passes (6/6)
+- [ ] Region inference enforcement (Pin-only, Stack-const-cap, etc.) — out
+      of scope, no supporting machinery exists (§5)
+- [ ] Dedicated codegen path / constant-time bounds checks — not needed for
+      correctness, `IFfi` covers it (§6)
+- [ ] Property tests / fuzzing (§10)
+- [ ] Documentation (§11)
+- [ ] New seed committed (`build/boot/stage2.s`/`.bin`) — left for the user

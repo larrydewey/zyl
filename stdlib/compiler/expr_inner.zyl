@@ -674,7 +674,7 @@
       (Some r
         (match (ast-nth args 1 (AstInt 0))
           (AstInt cap (Some (Expr (EByteBuf r cap))))
-          (d1 (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000)))
+          (d1 (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000))))
       (None (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf region must be Stack Heap Global Circular or Pin" 1000)))
     (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf requires region and capacity" 1000)))
 
@@ -698,7 +698,7 @@
 (defn parse-align-check (args)
   (if (ast-has-at-least args 2)
     (match (ast-nth args 1 (AstInt 0))
-      (AstInt align (Some (Expr (EAlignCheck (convert-ast (ast-nth args 0 (AstInt 0))) align)))
+      (AstInt align (Some (Expr (EAlignCheck (convert-ast (ast-nth args 0 (AstInt 0))) align))))
       (d1 (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: align-check alignment must be a power-of-two literal" 1000)))
     (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: align-check requires ptr align" 1000)))
 
@@ -709,7 +709,7 @@
         (EAtomicLoad
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: atomic-load requires buf off" 1000)))
+    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-load requires buf off" 1000)))
 
 (defn parse-atomic-store (args)
   (if (ast-has-at-least args 3)
@@ -719,7 +719,7 @@
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: atomic-store requires buf off val" 1000)))
+    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-store requires buf off val" 1000)))
 
 (defn parse-atomic-op3 (args variant)
   (if (ast-has-at-least args 3)
@@ -731,7 +731,7 @@
           (if (= variant 2) (Some (Expr (EAtomicFetchAdd a b c)))
           (if (= variant 3) (Some (Expr (EAtomicMax a b c)))
           (Some (Expr (EAtomicMin a b c))))))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: atomic-op requires buf off val" 1000)))
+    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-op requires buf off val" 1000)))
 
 (defn parse-atomic-cas (args)
   (if (ast-has-at-least args 4)
@@ -742,7 +742,7 @@
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0)))
           (convert-ast (ast-nth args 3 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: atomic-cas requires buf off exp new" 1000)))
+    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-cas requires buf off exp new" 1000)))
 
 ; Names reserved by the plan with width variants (u16/u32/u64, i16/i32/i64)
 ; that have NO ExprInner variant in §2 -- reject loudly rather than lower.
@@ -758,7 +758,7 @@
   (if (> (str-eq n "store-u64") 0) 1
   (if (> (str-eq n "store-i16") 0) 1
   (if (> (str-eq n "store-i32") 0) 1
-  (if (> (str-eq n "store-i64") 0) 1 0))))))))))))))
+  (if (> (str-eq n "store-i64") 0) 1 0)))))))))))))
 
 ; Dispatch a head-symbol to the byte-form parse helpers, preserving the
 ; outer no-dispatch fallback for non-byte names.
@@ -815,38 +815,38 @@
     (match (parse-align-check rest)
       (Some expr expr)
       (None (Expr (EUnknown "align-check" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-load") 0)
+  (if (> (str-eq n "bytebuf-atomic-load") 0)
     (match (parse-atomic-load rest)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-load" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-store") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-load" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-store") 0)
     (match (parse-atomic-store rest)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-store" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-add") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-store" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-add") 0)
     (match (parse-atomic-op3 rest 0)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-add" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-sub") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-add" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-sub") 0)
     (match (parse-atomic-op3 rest 1)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-sub" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-fetch-add") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-sub" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-fetch-add") 0)
     (match (parse-atomic-op3 rest 2)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-fetch-add" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-max") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-fetch-add" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-max") 0)
     (match (parse-atomic-op3 rest 3)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-max" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-min") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-max" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-min") 0)
     (match (parse-atomic-op3 rest 4)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-min" (convert-ast-list rest)))))
-  (if (> (str-eq n "atomic-cas") 0)
+      (None (Expr (EUnknown "bytebuf-atomic-min" (convert-ast-list rest)))))
+  (if (> (str-eq n "bytebuf-atomic-cas") 0)
     (match (parse-atomic-cas rest)
       (Some expr expr)
-      (None (Expr (EUnknown "atomic-cas" (convert-ast-list rest)))))
+      (None (Expr (EUnknown "bytebuf-atomic-cas" (convert-ast-list rest)))))
   (if (= (reserved-byte-name n) 1)
     (ffi-call "zyl_f_error" (str-concat "E_RESERVED_KEYWORD: " (str-concat n " is reserved but not yet supported (only byte-width load/store forms are implemented)")) 1000)
     (Expr (EApply n (convert-ast-list rest)))

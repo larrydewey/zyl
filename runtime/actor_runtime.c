@@ -696,6 +696,273 @@ long long zyl_cstr_to_int_base(long long ptr) {
     return neg ? -v : v;
 }
 
+/* ==========================================================================
+   Byte-level primitives for the byte/atomic/Endian feature.
+   These implement the FFI calls lowered from the byte ICNF nodes
+   (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md).
+
+   A ByteBuf handle and a ByteSlice handle are both plain heap pointers to
+   a small tagged header, never a bare data pointer -- the magic tag lets
+   every entry point reject a garbage/foreign int passed in through an
+   unsafe FFI escape hatch instead of dereferencing it blind (same spirit
+   as zyl_variant_eq's discriminant check above). A ByteBuf owns malloc'd,
+   zero-initialized storage sized to its fixed capacity (no growth: append
+   fails closed past cap, same as the E_BYTEBUF_CAP_EXCEEDED contract).
+   A ByteSlice never owns memory -- it is only {data, len} borrowed from a
+   ByteBuf (or another slice), so byteslice/byteslice-sub are zero-copy. */
+
+#define ZYL_BYTEBUF_MAGIC   0x5A594C4255460001ULL /* "ZYLBUF" + kind 1 */
+#define ZYL_BYTESLICE_MAGIC 0x5A594C4255460002ULL /* "ZYLBUF" + kind 2 */
+#define ZYL_BYTEBUF_MAX_CAP (1LL << 40)
+
+typedef struct {
+    unsigned long long magic;
+    unsigned char* data; /* separate malloc, sized to cap -- see zyl_bytebuf_new */
+    long long len; /* bytes appended so far; <= cap */
+    long long cap; /* fixed at creation, never grows */
+} ZylByteBufHeader;
+
+typedef struct {
+    unsigned long long magic;
+    unsigned char* data; /* borrowed -- never freed through this handle */
+    long long len;
+} ZylByteSliceHeader;
+
+static ZylByteBufHeader* zyl_bytebuf_of(long long buf) {
+    if (!buf) return NULL;
+    ZylByteBufHeader* h = (ZylByteBufHeader*)(size_t)buf;
+    return h->magic == ZYL_BYTEBUF_MAGIC ? h : NULL;
+}
+
+static ZylByteSliceHeader* zyl_byteslice_of(long long slice) {
+    if (!slice) return NULL;
+    ZylByteSliceHeader* h = (ZylByteSliceHeader*)(size_t)slice;
+    return h->magic == ZYL_BYTESLICE_MAGIC ? h : NULL;
+}
+
+static unsigned char* zyl_bytebuf_data(ZylByteBufHeader* h) {
+    return h->data;
+}
+
+/* off/size/bound all >= 0 and off+size <= bound, without signed overflow
+   (mirrors zyl_arena_align_up's overflow-checked-first discipline above). */
+static int zyl_bb_bounds_ok(long long off, long long size, long long bound) {
+    if (off < 0 || size < 0 || bound < 0 || size > bound) return 0;
+    return off <= bound - size;
+}
+
+/* A load/store target is either a ByteBuf (bounded by its fixed cap -- the
+   whole cap is zero-initialized up front, so reading past len but within
+   cap is well-defined, just zero) or a ByteSlice (bounded by its own len,
+   which was already checked against its parent's extent when it was
+   created). Resolves either handle kind to a flat {data, bound} view. */
+typedef struct { unsigned char* data; long long bound; int valid; } ZylBytesView;
+
+static ZylBytesView zyl_bytes_view(long long handle) {
+    ZylBytesView v; v.data = NULL; v.bound = 0; v.valid = 0;
+    ZylByteBufHeader* buf = zyl_bytebuf_of(handle);
+    if (buf) { v.data = zyl_bytebuf_data(buf); v.bound = buf->cap; v.valid = 1; return v; }
+    ZylByteSliceHeader* sl = zyl_byteslice_of(handle);
+    if (sl) { v.data = sl->data; v.bound = sl->len; v.valid = 1; return v; }
+    return v;
+}
+
+/* Load a byte from a ByteBuf/ByteSlice at offset (zero-extended). */
+long long zyl_load_byte(long long endian, long long offset, long long buf) {
+    (void)endian; /* single-byte load: endianness is a no-op until wider loads exist */
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!v.valid || !zyl_bb_bounds_ok(offset, 1, v.bound)) return 0;
+    return (long long)v.data[offset];
+}
+
+/* Load a signed byte from a ByteBuf/ByteSlice at offset (sign-extended). */
+long long zyl_load_byte_signed(long long endian, long long offset, long long buf) {
+    (void)endian;
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!v.valid || !zyl_bb_bounds_ok(offset, 1, v.bound)) return 0;
+    return (long long)(signed char)v.data[offset];
+}
+
+/* Store a byte into a ByteBuf/ByteSlice at offset. Returns 1 on success,
+   0 if out of bounds (silent no-op, consistent with this file's other
+   bad-input-returns-0 primitives -- never corrupts memory). */
+long long zyl_store_byte(long long endian, long long offset, long long buf, long long val) {
+    (void)endian;
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!v.valid || !zyl_bb_bounds_ok(offset, 1, v.bound)) return 0;
+    v.data[offset] = (unsigned char)val;
+    return 1;
+}
+
+long long zyl_store_byte_signed(long long endian, long long offset, long long buf, long long val) {
+    (void)endian;
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!v.valid || !zyl_bb_bounds_ok(offset, 1, v.bound)) return 0;
+    v.data[offset] = (unsigned char)(signed char)val;
+    return 1;
+}
+
+/* Zero-copy view: `start..start+len` of a ByteBuf's data. Bounds-checked
+   against the buf's fixed capacity. Returns a new ByteSlice handle (or 0
+   on OOB / allocation failure) -- never copies the underlying bytes. */
+long long zyl_byte_slice(long long buf, long long start, long long len) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    if (!h || !zyl_bb_bounds_ok(start, len, h->cap)) return 0;
+    ZylByteSliceHeader* s = (ZylByteSliceHeader*)malloc(sizeof(ZylByteSliceHeader));
+    if (!s) return 0;
+    s->magic = ZYL_BYTESLICE_MAGIC;
+    s->data = zyl_bytebuf_data(h) + start;
+    s->len = len;
+    return (long long)(size_t)s;
+}
+
+/* Zero-copy sub-view of an existing ByteSlice, bounds-checked against the
+   parent slice's own len (never its backing buf's cap). */
+long long zyl_byte_slice_sub(long long slice, long long start, long long len) {
+    ZylByteSliceHeader* parent = zyl_byteslice_of(slice);
+    if (!parent || !zyl_bb_bounds_ok(start, len, parent->len)) return 0;
+    ZylByteSliceHeader* s = (ZylByteSliceHeader*)malloc(sizeof(ZylByteSliceHeader));
+    if (!s) return 0;
+    s->magic = ZYL_BYTESLICE_MAGIC;
+    s->data = parent->data + start;
+    s->len = len;
+    return (long long)(size_t)s;
+}
+
+/* Create a new, fixed-capacity, zero-initialized ByteBuf. `region` is
+   accepted (matches the ExprInner/EByteBuf shape, which threads the
+   parsed region literal through type inference already -- see
+   type_inference.zyl) but doesn't change allocation strategy: the general
+   Stack/Heap/Global/Circular region-promotion machinery was deleted as
+   dead code (region_inference.zyl's header comment) and was never
+   resurrected by this feature, so every region gets the same plain,
+   stable-address heap allocation. That's actually what Pin needs anyway
+   (never moves once allocated), so nothing is unsound -- Stack/Global's
+   extra compile-time constraints from the plan just aren't enforced yet. */
+long long zyl_bytebuf_new(long long region, long long cap) {
+    (void)region;
+    if (cap < 0 || cap > ZYL_BYTEBUF_MAX_CAP) return 0;
+    ZylByteBufHeader* h = (ZylByteBufHeader*)malloc(sizeof(ZylByteBufHeader));
+    if (!h) return 0;
+    size_t alloc_len = (size_t)cap > 0 ? (size_t)cap : 1;
+    unsigned char* data = (unsigned char*)malloc(alloc_len);
+    if (!data) { free(h); return 0; }
+    memset(data, 0, alloc_len);
+    h->magic = ZYL_BYTEBUF_MAGIC;
+    h->data = data;
+    h->len = 0;
+    h->cap = cap;
+    return (long long)(size_t)h;
+}
+
+/* Append a whole ByteSlice's bytes to a ByteBuf (bytebuf-append takes a
+   slice, not a single byte -- see parse-bytebuf-append's own arity error
+   message "requires buf slice"). memmove (not memcpy) because the slice
+   may alias the buf's own storage (e.g. appending a buf's own tail back
+   onto itself). Fails closed (returns 0, no partial write) if it would
+   exceed the buf's fixed capacity. */
+long long zyl_bytebuf_append(long long buf, long long slice) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    ZylByteSliceHeader* s = zyl_byteslice_of(slice);
+    if (!h || !s) return 0;
+    if (!zyl_bb_bounds_ok(h->len, s->len, h->cap)) return 0;
+    memmove(h->data + h->len, s->data, (size_t)s->len);
+    h->len += s->len;
+    return 1;
+}
+
+long long zyl_bytebuf_len(long long buf) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    return h ? h->len : 0;
+}
+
+long long zyl_bytebuf_cap(long long buf) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    return h ? h->cap : 0;
+}
+
+/* Raw data pointer, for Pin-region FFI use. Not bounds-checked itself --
+   callers get a stable address good for exactly `bytebuf-cap` bytes. */
+long long zyl_bytebuf_ptr(long long buf) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    return h ? (long long)(size_t)h->data : 0;
+}
+
+/* Alignment check - returns true if expr is aligned to align boundary */
+long long zyl_align_check(long long expr, long long align) {
+    if (align <= 0) return 0;
+    return ((expr % align) == 0) ? 1 : 0;
+}
+
+/* ==========================================================================
+   Atomic operations on a ByteBuf slot, layered on the existing raw-address
+   atomics defined further below (zyl_atomic_load/store/add/sub/max/min/
+   cas/fetch_add -- forward-declared here since this section comes first
+   in the file): resolve+bounds+align-check the (buf, offset) pair down to
+   a checked 8-byte-aligned address, then delegate. offset+8 must fit
+   within the buf's fixed capacity, and offset must be 8-byte aligned
+   (unaligned atomics are not lock-free on x86_64 and are rejected rather
+   than silently taking a slow/tearing path). */
+long long zyl_atomic_load(long long addr);
+long long zyl_atomic_store(long long addr, long long value);
+long long zyl_atomic_add(long long addr, long long value);
+long long zyl_atomic_sub(long long addr, long long value);
+long long zyl_atomic_max(long long addr, long long value);
+long long zyl_atomic_min(long long addr, long long value);
+long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
+long long zyl_atomic_fetch_add(long long addr, long long value);
+
+static long long* zyl_bytebuf_atomic_slot(long long buf, long long offset) {
+    ZylByteBufHeader* h = zyl_bytebuf_of(buf);
+    if (!h) return NULL;
+    if (offset < 0 || (offset & 7) != 0) return NULL;
+    if (!zyl_bb_bounds_ok(offset, 8, h->cap)) return NULL;
+    return (long long*)(void*)(h->data + offset);
+}
+
+long long zyl_bytebuf_atomic_load(long long buf, long long offset) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_load((long long)(size_t)p) : 0;
+}
+
+long long zyl_bytebuf_atomic_store(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    if (!p) return 0;
+    zyl_atomic_store((long long)(size_t)p, val);
+    return 1;
+}
+
+long long zyl_bytebuf_atomic_add(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_add((long long)(size_t)p, val) : 0;
+}
+
+long long zyl_bytebuf_atomic_sub(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_sub((long long)(size_t)p, val) : 0;
+}
+
+long long zyl_bytebuf_atomic_fetch_add(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_fetch_add((long long)(size_t)p, val) : 0;
+}
+
+long long zyl_bytebuf_atomic_max(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_max((long long)(size_t)p, val) : 0;
+}
+
+long long zyl_bytebuf_atomic_min(long long buf, long long offset, long long val) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_min((long long)(size_t)p, val) : 0;
+}
+
+/* Returns 1/0 (success), matching EAtomicCAS's TBool result type. */
+long long zyl_bytebuf_atomic_cas(long long buf, long long offset, long long expected, long long new_value) {
+    long long* p = zyl_bytebuf_atomic_slot(buf, offset);
+    return p ? zyl_atomic_cas((long long)(size_t)p, expected, new_value) : 0;
+}
+
 /* Convert a non-negative integer to its decimal string form in `arena`.
    Used for spans/error messages in the lexer/parser. */
 long long zyl_cstr_from_int(long long arena, long long value) {

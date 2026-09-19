@@ -507,6 +507,38 @@
     ; params) reads as unbound in the lifted function, same as any other
     ; out-of-scope reference.
     (EFn d5 params body (ic-lambda arena params body vt))
+    (EByteLit n (IConst n))
+    ; endian is a bare `Endian` ADT value (ELe/EBe), not an Expr -- same
+    ; type-confusion hazard as EByteBuf's region above: goes through
+    ; endian-to-int + IConst directly, never ic-expr.
+    (ELoadByte endian offset buf (IFfi "zyl_load_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
+    (ELoadByteSigned endian offset buf (IFfi "zyl_load_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
+    (EStoreByte endian offset buf val (IFfi "zyl_store_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
+    (EStoreByteSigned endian offset buf val (IFfi "zyl_store_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
+    (EByteSlice buf start len (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
+    (EByteSliceSub buf start len (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
+    ; region is a bare `Region` ADT value (not an Expr -- see ExprInner's
+    ; (EByteBuf Region Int)), and cap is a bare compile-time Int literal
+    ; (parse-bytebuf only accepts an AstInt for it) -- both go through
+    ; IConst directly, never ic-expr (which expects an Expr and would
+    ; mis-lower either one, silently falling through to its own IConst-0
+    ; catch-all on a shape it doesn't recognize).
+    (EByteBuf region cap (IFfi "zyl_bytebuf_new" (Cons (IConst (region-to-int region)) (Cons (IConst cap) Nil))))
+    (EByteBufAppend buf val (IFfi "zyl_bytebuf_append" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))
+    (EByteBufLen buf (IFfi "zyl_bytebuf_len" (Cons (ic-expr arena buf vt) Nil)))
+    (EByteBufCap buf (IFfi "zyl_bytebuf_cap" (Cons (ic-expr arena buf vt) Nil)))
+    (EByteBufPtr buf (IFfi "zyl_bytebuf_ptr" (Cons (ic-expr arena buf vt) Nil)))
+    ; align is likewise a bare Int literal (parse-align-check requires an
+    ; AstInt), not an Expr.
+    (EAlignCheck expr align (IFfi "zyl_align_check" (Cons (ic-expr arena expr vt) (Cons (IConst align) Nil))))
+    (EAtomicLoad buf offset (IFfi "zyl_bytebuf_atomic_load" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) Nil))))
+    (EAtomicStore buf offset val (IFfi "zyl_bytebuf_atomic_store" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EAtomicAdd buf offset val (IFfi "zyl_bytebuf_atomic_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EAtomicSub buf offset val (IFfi "zyl_bytebuf_atomic_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EAtomicCAS buf offset expected newval (IFfi "zyl_bytebuf_atomic_cas" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena expected vt) (Cons (ic-expr arena newval vt) Nil))))))
+    (EAtomicFetchAdd buf offset val (IFfi "zyl_bytebuf_atomic_fetch_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EAtomicMax buf offset val (IFfi "zyl_bytebuf_atomic_max" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EAtomicMin buf offset val (IFfi "zyl_bytebuf_atomic_min" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
     (d2 (IConst 0))))
 
 ; Fresh, guaranteed-unique numeric id for naming a lifted lambda: the
