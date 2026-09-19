@@ -13,7 +13,9 @@ The most incredible developer experience for a systems Lisp. Every error is acti
 - Fixed point verified (stage2 == stage3)
 
 ### What's Broken / Missing
-1. **Paren balance**: `E_UNBALANCED_PARENS: '(' and ')' counts differ` - no location, no context, no help
+1. ~~**Paren balance**: no location, no context, no help~~ FIXED
+   (2026-09-19): native stack-based validator reports exact line/column
+   and a fix-it hint (see Phase 1 below).
 2. **Location precision**: "at 9:3-9:4" is technically precise but clunky to reason about
 3. **No source snippets**: User sees column numbers but not the actual code
 4. **No "did you mean?"**: Typos in variant names, field names, function names go undetected
@@ -22,7 +24,9 @@ The most incredible developer experience for a systems Lisp. Every error is acti
 7. **Single error**: First error stops compilation
 8. **No error recovery**: Can't continue past errors
 9. **No LSP structured errors**: IDE integration missing
-10. **No native balance validator**: Currently requires Python script
+10. ~~**No native balance validator**: Currently requires Python script~~
+    FIXED (2026-09-19): `sexp_balance.zyl`, wired into the real compile
+    path.
 
 ## Target State: Incredible Error Experience
 
@@ -212,10 +216,23 @@ stdlib/compiler/
 ## Phase Plan
 
 ### Phase 1: Foundation (Blocks REPL)
-- [ ] `sexp_balance.zyl` - native structural balance validator
-- [ ] `error_codes.zyl` - complete error code enum + metadata
-- [ ] `error_report.zyl` - colorized output + source snippets
-- [ ] Integrate into driver pipeline
+- [x] `sexp_balance.zyl` - native structural balance validator, stack-based
+      over bracket TYPE (not just a net count), string/comment-aware
+      *(2026-09-19)*
+- [x] `error_codes.zyl` - error code catalog + metadata (fixed a
+      pre-existing 14-paren-deficit in the catalog itself that had been
+      silently swallowing every defn after it into the wrong nesting
+      level — never caught because nothing called into this module yet)
+      *(2026-09-19)*
+- [ ] `error_report.zyl` - colorized output + source snippets (location +
+      `err-header` formatting exist and are wired into the balance-error
+      path; no colorization or multi-line snippet rendering yet)
+- [x] Integrate into driver pipeline - `compile-to-asm` (selfhost/driver.zyl)
+      and `zyl-parse` (stdlib/compiler/parser.zyl) both call
+      `sb-check-string` and report through `report-unbalanced`, which
+      reads its fix-it hint from `sb-hint` (sexp_balance.zyl) — one
+      mechanism feeds both the fatal-error path and any future hint
+      consumer (LSP, REPL) *(2026-09-19)*
 
 ### Phase 2: Intelligence
 - [ ] `error_suggest.zyl` - "did you mean?" engine

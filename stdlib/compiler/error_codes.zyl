@@ -84,6 +84,9 @@
                                                                                     (Cons (EC "E_TRAIT_NOT_FOUND" 12 1 "trait: no implementation found for T at S")
                                                                                       (Cons (EC "E_TYPE_MISMATCH" 4 1 "type: type mismatch at S - expected E, found F")
                                                                                         (Cons (EC "E_UNBALANCED_PARENS" 2 1 "parser: unbalanced parens - open and close counts differ")
+                                                                                          (Cons (EC "E_UNBALANCED_UNCLOSED" 2 1 "parser: unclosed opener - opened at S, never reached its matching closer")
+                                                                                            (Cons (EC "E_UNBALANCED_UNEXPECTED_CLOSE" 2 1 "parser: unexpected closing delimiter at S - no opener is open here")
+                                                                                              (Cons (EC "E_UNBALANCED_MISMATCHED_BRACKET" 2 1 "parser: closing delimiter at S does not match its opener")
                                                                                           (Cons (EC "E_UNBOUND_VARIABLE" 4 1 "type: unbound variable V at S")
                                                                                             (Cons (EC "E_UNEXPECTED_EOF" 1 1 "lexer: unexpected EOF while expecting C at S")
                                                                                               (Cons (EC "E_UNEXPECTED_TOKEN_IN_EXPR" 2 1 "parser: unexpected token T in expression context at S")
@@ -92,7 +95,7 @@
                                                                                                     (Cons (EC "E_UNKNOWN_TYPE" 4 1 "type: unknown type T at S")
                                                                                                       (Cons (EC "E_UNTERMINATED_STRING" 1 1 "lexer: unterminated string at S")
                                                                                                         (Cons (EC "E_USER_ERROR" 10 1 "runtime: user error - M at S")
-                                                                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

@@ -17,6 +17,9 @@
 
 (use allocator/allocator)
 (use compiler/ast)
+(use compiler/sexp_balance)
+(use compiler/error_codes)
+(use compiler/error_report)
 
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
@@ -211,39 +214,62 @@
     (let r (read-form arena toks)
       (parse-program-loop arena (art-rest r) (Cons (art-ast r) acc)))))
 
+; Whole-source structural balance check, delegated to the native
+; sexp_balance scanner (string/comment-aware, stack-based over bracket
+; TYPE, not just a net count). The reader consumes to EOF on an unclosed
+; form, so imbalance must be caught before parsing ever starts. This
+; replaces the old bal-walk depth counter, which only ever compared total
+; '(' vs ')' counts -- ")(" and "(]" both netted to a valid count and
+; passed straight through to the reader.
+(defn check-balanced (src)
+  (let result (sb-check-string src)
+    (if (= (sb-result-balanced result) 1)
+      0
+      (report-unbalanced result))))
+
+; Every str-concat argument below is a literal or a pre-bound `let` --
+; see error_report.zyl's header comment: an inline call operand in a
+; str-concat argument miscompiles under the Rust bootstrap's inlining,
+; and this file is compiled by that bootstrap on the way to stage1.
+(defn bal-msg (code msg hint)
+  (let h (err-header code msg)
+    (let n1 (str-concat h "\n  = help: ")
+      (str-concat n1 hint))))
+
+(defn bal-msg-loc (code msg line col hint)
+  (let h (err-header code msg)
+    (let ls (int-to-str line)
+      (let cs (int-to-str col)
+        (let loc1 (str-concat ls ":")
+          (let loc2 (str-concat loc1 cs)
+            (let arrow (str-concat "\n  --> line " loc2)
+              (let n1 (str-concat h arrow)
+                (let n2 (str-concat n1 "\n  = help: ")
+                  (str-concat n2 hint))))))))))
+
+; All 5 BalanceResult variants enumerated; Balanced is unreachable here
+; (check-balanced already short-circuits on it) but match must stay
+; exhaustive.
+(defn report-unbalanced (result)
+  (match result
+    (Balanced 0)
+    (UnbalancedOpenString
+      (let msg (bal-msg "E_UNTERMINATED_STRING" "unterminated string literal reached end of input" (sb-hint result))
+        (ffi-call "zyl_f_error" msg 1000)))
+    (UnclosedOpen closer line col
+      (let msg (bal-msg-loc "E_UNBALANCED_UNCLOSED" "unclosed opener never reached its matching closer" line col (sb-hint result))
+        (ffi-call "zyl_f_error" msg 1000)))
+    (UnbalancedClose closer line col
+      (let msg (bal-msg-loc "E_UNBALANCED_UNEXPECTED_CLOSE" "unexpected closing delimiter" line col (sb-hint result))
+        (ffi-call "zyl_f_error" msg 1000)))
+    (MismatchedPair opener closer line col
+      (let msg (bal-msg-loc "E_UNBALANCED_MISMATCHED_BRACKET" "closing delimiter does not match its opener" line col (sb-hint result))
+        (ffi-call "zyl_f_error" msg 1000)))))
+
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)
-; Whole-token-stream paren balance. The reader consumes to EOF on an
-; unclosed form, so imbalance must be checked on the token stream itself.
-; All 15 variants enumerated: partial enumerations fail inference here.
-(defn bal-walk (toks depth)
-  (match toks
-    (Nil depth)
-    (Cons t rest
-      (match t
-        (TkLParen d50 (bal-walk rest (+ depth 1)))
-        (TkRParen d51 (bal-walk rest (- depth 1)))
-        (TkEof d52 (bal-walk rest depth))
-        (TkIdent d53 (bal-walk rest depth))
-        (TkInt d54 (bal-walk rest depth))
-        (TkFloat d55 (bal-walk rest depth))
-        (TkString d56 (bal-walk rest depth))
-        (TkBool d57 (bal-walk rest depth))
-        (TkSymbol d58 (bal-walk rest depth))
-        (TkKeyword d59 (bal-walk rest depth))
-        (TkLBrace d60 (bal-walk rest depth))
-        (TkRBrace d61 (bal-walk rest depth))
-        (TkLBracket d62 (bal-walk rest depth))
-        (TkRBracket d63 (bal-walk rest depth))
-        (TkColon d64 (bal-walk rest depth))))))
-
-(defn check-balanced (toks)
-  (if (= (bal-walk toks 0) 0)
-    0
-    (ffi-call "zyl_f_error" "E_UNBALANCED_PARENS: '(' and ')' counts differ" 1000)))
-
 (defn zyl-parse (arena src)
-  (let toks (zyl-lex arena src)
-    (begin
-      (check-balanced toks)
+  (begin
+    (check-balanced src)
+    (let toks (zyl-lex arena src)
       (parse-program arena toks))))

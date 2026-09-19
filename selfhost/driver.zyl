@@ -53,8 +53,7 @@
     (if (= (sb-result-balanced balance) 0)
       (begin
         (dbg-log "unbalanced\n")
-        (sb-report balance)
-        (ffi-call "zyl_f_error" "E_SEXP_UNBALANCED: source has unbalanced parentheses" 1000))
+        (report-unbalanced balance))
       (begin
         (dbg-log "parse\n")
         (let prog (zyl-parse arena srcbuf)

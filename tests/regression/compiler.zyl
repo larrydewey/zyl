@@ -4,6 +4,7 @@
 (use compiler/lexer)
 (use compiler/parser)
 (use compiler/ast)
+(use compiler/sexp_balance)
 
 (defn tk-at (toks n)
   (if (<= n 0)
@@ -110,5 +111,69 @@
     (AFloat d25 0)
     (AString d26 0)
     (ABool d27 0)))
+
+; Line component of a location-carrying BalanceResult; -1 otherwise.
+(defn br-line (r)
+  (match r
+    (Balanced -1)
+    (UnbalancedOpenString -1)
+    (UnclosedOpen closer line col line)
+    (UnbalancedClose closer line col line)
+    (MismatchedPair opener closer line col line)))
+
+; Column component of a location-carrying BalanceResult; -1 otherwise.
+(defn br-col (r)
+  (match r
+    (Balanced -1)
+    (UnbalancedOpenString -1)
+    (UnclosedOpen closer line col col)
+    (UnbalancedClose closer line col col)
+    (MismatchedPair opener closer line col col)))
+
+; sexp_balance: native structural balance check, exercised directly
+; (not just via the compile-fail black-box tests, which only prove the
+; compiler exits nonzero) so a regression in the reported location or
+; in bracket-type discrimination shows up as a specific assertion
+; failure instead of just "still fails to compile, for some reason".
+(test "balance-ok"
+  (let r (sb-check-string "(defn f (x) (* x x))")
+    (begin
+      (assert-equal (sb-result-balanced r) 1)
+      0)))
+
+(test "balance-unclosed-open"
+  (let r (sb-check-string "(defn main () (begin (print (+ 1 2)) 0)")
+    (begin
+      (assert-equal (sb-result-balanced r) 0)
+      ; reports the OPENER's position (the outermost '(', the only
+      ; frame still on the stack), not the EOF position.
+      (assert-equal (br-line r) 1)
+      (assert-equal (br-col r) 1)
+      (assert-true (> (str-length (sb-hint r)) 0))
+      0)))
+
+(test "balance-unexpected-close"
+  (let r (sb-check-string "(defn main () (begin (print (+ 1 2)) 0)))")
+    (begin
+      (assert-equal (sb-result-balanced r) 0)
+      (assert-equal (br-line r) 1)
+      (assert-equal (br-col r) 41)
+      0)))
+
+(test "balance-mismatched-bracket"
+  (let r (sb-check-string "(defn main (] (begin (print (+ 1 2)) 0))")
+    (begin
+      (assert-equal (sb-result-balanced r) 0)
+      (assert-equal (br-line r) 1)
+      (assert-equal (br-col r) 13)
+      0)))
+
+; ")(" nets to a valid open/close COUNT but is never validly nested --
+; the old depth-counter this validator replaced let it through silently.
+(test "balance-reversed-pair-rejected"
+  (let r (sb-check-string ")(")
+    (begin
+      (assert-equal (sb-result-balanced r) 0)
+      0)))
 
 (run-tests)

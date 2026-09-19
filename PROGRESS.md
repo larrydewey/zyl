@@ -1,5 +1,84 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-19)
+
+**Wired the native paren/bracket balance validator into the real compile path; fixed a latent paren-deficit bug in error_codes.zyl found along the way.**
+
+- `sexp_balance.zyl` and `error_codes.zyl`/`error_report.zyl` existed in
+  the bundle (`selfhost/assemble.py`'s `files` list) but nothing called
+  into them — the actual compile path (`selfhost/driver.zyl`'s
+  `compile-to-asm`, `stdlib/compiler/parser.zyl`'s `zyl-parse`) still used
+  a depth-counter (`bal-walk`) that only compared total `(` vs `)` counts,
+  so `)(` and `(]` both passed straight through to the reader.
+- Added a `BalanceResult` variant `UnclosedOpen` that carries the
+  *opener's* position (not just EOF), added `sb-hint` (one fix-it-text
+  function per `BalanceResult` variant, colocated with the type so the
+  compiler's error path and any future LSP/REPL consumer read the same
+  wording), and wired both `compile-to-asm` and `zyl-parse` to call
+  `sb-check-string` + `report-unbalanced` instead of `bal-walk`.
+  `bal-walk`/old `check-balanced` deleted (fully superseded).
+- Added 3 error codes: `E_UNBALANCED_UNCLOSED`,
+  `E_UNBALANCED_UNEXPECTED_CLOSE`, `E_UNBALANCED_MISMATCHED_BRACKET`
+  (`error_codes.zyl`, `docs/errors.md`).
+- **Found along the way**: `error_codes.zyl`'s catalog `Cons` chain was
+  under-closed by 14 parens — a real instance of the skill's own
+  constraint-4 warning ("a missing closer silently nests every following
+  defn inside the broken one"). Never caught because nothing called
+  `ec-name`/`ec-lookup`/etc. yet, and `assemble.py`'s depth check only
+  verifies the WHOLE bundle nets to 0, not each file — a per-file deficit
+  that happens to get absorbed by later files in the bundle is invisible
+  to it. Fixed by closing the chain where `defn error-codes` actually
+  ends; verified every top-level form in the file closes independently
+  (script in this session's transcript, not committed — a real per-file/
+  per-form checker here is exactly the gap `sexp_balance.zyl` should grow
+  into next, see below).
+- **Found along the way (2)**: `sexp_balance.zyl` shipped its own
+  `(defn main ...)` for standalone-CLI use. Harmless while it only ever
+  reached the compiler via the bundle (`assemble.py`'s `strip_named_defn`
+  already special-cases stripping `main` from every non-driver bundled
+  file, exactly to avoid this) — but now that `parser.zyl` genuinely
+  `use`s it, the real module resolver splices that `main` verbatim into
+  ANY standalone program that (transitively) uses `compiler/parser`,
+  tripping `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` the moment that program
+  also has top-level `test`/`run-tests` forms. Renamed to
+  `sb-standalone-run` (no longer named `main`).
+- **Found along the way (3)**: `sexp_balance.zyl` used
+  `compiler/type_system`'s generic `Pair` without declaring that `use` —
+  invisible under the bundle (everything's globally available there) but
+  a real undefined-reference link error (`_ZYL_Pair`) for any standalone
+  `use compiler/parser` once sexp_balance became a genuine dependency
+  edge. Rather than pull in the entire Hindley-Milner type_system module
+  for one tuple type, gave sexp_balance.zyl its own local `SBPair`.
+- **Environment gotcha hit while testing, not a source bug**: `~/.zyl`
+  (a previously-installed global copy, see `install.sh`'s own docstring)
+  takes precedence over `build/boot/stdlib` for any file compiled outside
+  this checkout — by design, for normal end-user `zyl` usage from any
+  directory. It was stale on this machine and briefly made a fixed unit
+  test look like it was still failing. `./install.sh` refreshes it; worth
+  remembering to re-run after any stdlib change before trusting a
+  standalone (non-`run_regression_tests.sh`) manual test.
+- Added regression coverage using the language's OWN test framework
+  (`test`/`assert-equal`/`run-tests`), not just black-box compile-fail
+  checks: 5 new `(test ...)` cases in `tests/regression/compiler.zyl`
+  exercising `sb-check-string`/`sb-hint` directly (balanced, unclosed-
+  open with exact opener line/col, unexpected-close, mismatched-bracket,
+  and the `)(` case the old depth-counter used to let through). Plus 3
+  compile-fail tests (`tests/compile-fail/{unclosed-opener,
+  unexpected-close,mismatched-bracket}.zyl`) proving the compiler itself
+  rejects each case. Full suite green: 46/46
+  (`run_regression_tests.sh --full --no-boot`).
+- Reseeded `build/boot/stage2.s`/`stage2.bin` three times as the above
+  was found and fixed (`./boot.sh --bootstrap-from-self`, converged in
+  1-2 rounds each time); clean `./boot.sh` confirms fixed point holds and
+  the CLI smoke test still passes after the final round.
+
+**Follow-up worth doing**: `assemble.py`'s depth check should verify each
+*file's own* net depth is 0 before concatenating, not just the final
+bundle — it would have caught the error_codes.zyl bug immediately instead
+of it sitting latent. LSP integration (this session's validator is the
+prerequisite) and the rest of `error_report.zyl` (colorized output,
+snippets) are still open — see `docs/error-system-architecture.md`.
+
 ## Current Session (2026-09-15, final)
 
 **Stage2 segfault FIXED. CLI working. Self-hosted fixed point blocked by pre-existing codegen bug.**

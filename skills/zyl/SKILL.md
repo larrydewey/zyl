@@ -4,9 +4,10 @@ description: >
   Expert Zyl language knowledge for writing, reviewing, and debugging Zyl
   code — especially the self-hosted compiler (stdlib/compiler, selfhost/).
   Covers syntax, the bootstrap constraint list, ADT/match idioms, FFI and
-  arena patterns, codegen pitfalls, and debugging recipes for the
-  stage1->stage2 pipeline. Use when editing any *.zyl file, the assembled
-  boot source, or when diagnosing self-hosting regressions.
+  arena patterns, codegen pitfalls, module resolution, and debugging
+  recipes for the stage1->stage2 pipeline. Use when editing any *.zyl
+  file, the assembled boot source, or when diagnosing self-hosting
+  regressions.
 triggers:
   - .zyl files
   - selfhost, stage1, stage2, stage3, boot build
@@ -18,8 +19,9 @@ triggers:
 Zyl is a deterministic Lisp systems language: S-expressions, Hindley-Milner
 inference with capability types (TCap/TMut), region-based memory, actor
 concurrency, SSA IR (ICNF), x86_64 codegen. The compiler is written in Zyl
-itself. Strict left-to-right evaluation everywhere; same input must produce
-byte-identical output.
+itself and is now self-hosting end to end — no Rust in the default build
+path (see §5). Strict left-to-right evaluation everywhere; same input must
+produce byte-identical output.
 
 ## 1. Syntax essentials
 
@@ -50,8 +52,13 @@ byte-identical output.
 (impl Show Int (defn show (self) ...))
 (Show.show receiver args...)               ; trait dispatch by receiver type
 
+(test "name" body)                         ; top-level test (no explicit main
+(run-tests)                                ;  needed — see §3 test idiom)
+
 (ffi-call "c_function_name" arg1 arg2 timeout)   ; timeout literal LAST
-(module ...) / (use path/module)           ; module system (Rust driver only)
+(use module/path)                          ; module import (self-hosted
+                                            ;  driver resolves this now —
+                                            ;  see §5)
 ```
 
 Gotchas that look like other Lisps but aren't:
@@ -65,9 +72,10 @@ Gotchas that look like other Lisps but aren't:
 
 ## 2. THE BOOTSTRAP CONSTRAINT LIST
 
-The self-hosted codegen (stdlib/compiler/codegen.zyl) has restrictions the
-Rust compiler does not. Code that must compile through stage>=2 MUST follow
-these. Violations miscompile SILENTLY.
+The self-hosted codegen (stdlib/compiler/codegen.zyl) has restrictions
+that must be followed — violations miscompile SILENTLY, in stage>=2
+binaries (i.e. anything built by the self-hosted compiler, which is the
+default build now, not just some legacy fallback).
 
 1. **(LIFTED 2026-08-25) Function arity.** Stack-passed args >6 now work
    end-to-end (`cg-call-args` scratch-slot staging + `cg-param-spills`
@@ -82,10 +90,16 @@ these. Violations miscompile SILENTLY.
    `d2`, ...), never bare `_`.
 4. **Parens must balance per top-level form.** A missing closer silently
    nests every following defn inside the broken one (they vanish from
-   compiled output). After editing, verify balance:
-   ```python
-   # per-line scanner honoring strings ("...\"...") and ; comments
-   ```
+   compiled output) — a real instance of this shipped in error_codes.zyl
+   for a while (14-paren deficit in its catalog, only caught once
+   something finally called into it; see PROGRESS.md 2026-09-19). The
+   compiler now catches this for real SOURCE at compile time
+   (`stdlib/compiler/sexp_balance.zyl`, wired into `zyl-parse` and
+   `compile-to-asm` — reports exact line/col + a fix-it hint, not just a
+   count). It does NOT (yet) catch a per-file deficit inside a file that
+   still nets to zero once concatenated with others in
+   `selfhost/assemble.py`'s bundle — verify a hand-edited compiler-stdlib
+   file balances on its own, not just that the whole bundle does.
 5. **One deftype per name, ever.** Duplicate deftypes create incompatible
    constructor identities; pattern matches against them silently fail.
 6. ~~Cross-module shared list helpers~~ LIFTED (2026-08-25): per-site
@@ -103,12 +117,50 @@ these. Violations miscompile SILENTLY.
    (f x) (g y)))`. Both compilers reject the arm-level shape with
    E_MATCH_ARM_COMPLEX; the general shape is NOT caught — it just
    miscompiles. N-ary binops fold left-associatively (`ic-binop-fold`),
-   matching Rust.
+   matching Rust. The same "no inline call operand" caution applies to
+   `str-concat`'s arguments specifically — see `error_report.zyl`'s
+   header comment: every `str-concat` call anywhere in the compiler
+   stdlib takes only literals or pre-bound `let` variables, never a
+   nested call, in either argument position.
 9. **';' inside strings is safe** (lexer is string-aware as of
    2026-08-25), but older stage binaries truncate there.
 10. Keep function arities/bodies moderate; frame size scales with
    `16*(64+icnf-size)` bytes (~11KB typical) so deep recursion needs the
    big-stack worker (generated entry stubs already route main through it).
+11. **A record type embedded as a constructor argument to ANOTHER
+    constructor call wants an EVEN field count.** `cg-variant`'s
+    alignment padding for a nested variant-construction argument is
+    computed from the CURRENT call's own field count only, not the
+    caller's already-pushed argument count — an odd field count can trip
+    a stack-alignment bug there (confirmed root cause of a real segfault
+    in `sexp_balance.zyl`'s `CheckState`, see its own header comment).
+    The general codegen defect is not fixed; matching field count parity
+    on any such type sidesteps it. Not yet known to bite records that are
+    never themselves passed as a nested constructor argument.
+12. **A module meant to be `use`d as a library must not define `main`
+    (or any other name a caller might reasonably also define).** The
+    module resolver splices a `use`d file's top-level forms in verbatim;
+    a stray `defn main` collides with the importing program's own `main`
+    or trips `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` for any importer that
+    also has top-level `test`/`run-tests` forms. `assemble.py`'s bundle
+    path silently strips `main` from every non-driver file for exactly
+    this reason (`strip_named_defn`) — but that stripping does NOT apply
+    to a standalone `use`, so a library module's own convenience CLI
+    entry point (if it needs one) must be named something else and
+    wrapped in a real `main` only by whatever actually is the program's
+    entry point.
+13. **Every type your module directly constructs must be `use`d
+    explicitly, even if it "happens to already be visible."** Inside
+    `selfhost/assemble.py`'s bundle everything is one flat global
+    namespace, so a missing `use` for a type defined elsewhere in the
+    bundle compiles fine there — then fails as an undefined-reference
+    link error (`_ZYL_<Ctor>`) the moment the same file is resolved
+    standalone via the real module resolver, because that file becomes a
+    genuine dependency edge for whoever `use`s it. Prefer a small local
+    type over reaching across a large, wrong-direction module boundary
+    for one shared shape (e.g. `sexp_balance.zyl` has its own `SBPair`
+    rather than depending on the entire `compiler/type_system` module
+    just for its generic `Pair`).
 
 ## 3. Idioms
 
@@ -152,11 +204,41 @@ Emit into a CGState text buffer via `cg-emit` / `cg-emit-line` /
 Alignment discipline for calls: pad BEFORE pushes when arg count is odd;
 pop into SysV regs in reverse; cleanup pad after the call.
 
+### Tests: the language's own test framework, not ad hoc `main` checks
+Top-level `(test "name" body)` forms + a trailing `(run-tests)` compile
+to registered test functions; the file needs no explicit `main` (an
+implicit one is synthesized — see icnf.zyl's `ic-finish-program`, and
+constraint 12 above for why NOT to accidentally introduce an explicit
+one via a stray `use`d library `main`). This is the idiom
+`tests/regression/*.zyl` uses to unit-test compiler internals directly
+(e.g. `tests/regression/compiler.zyl` calls `zyl-lex`/`zyl-parse`/
+`sb-check-string` and asserts on their results) — prefer this over only
+proving something via a black-box `tests/compile-fail/*.zyl` case, which
+just shows the compiler exits nonzero, not that the RIGHT diagnostic
+(location, hint text) came out.
+
+### Diagnostics: sexp_balance / error_codes / error_report
+`stdlib/compiler/sexp_balance.zyl` is the native, stack-based structural
+validator (string/comment-aware, tracks bracket TYPE not just a net
+count) — `sb-check-string` returns a `BalanceResult`, `sb-hint` returns
+its fix-it text, colocated with the type so every consumer (the fatal
+compile-time error path today; an LSP or REPL live-check tomorrow) reads
+the same wording from one place. `error_codes.zyl` is the single-source
+error-code catalog; `error_report.zyl` has the shared location/header
+formatting helpers (`err-header`, `int-to-str`, `loc-string`). Wired into
+`zyl-parse` (parser.zyl) and `compile-to-asm` (driver.zyl) via
+`report-unbalanced`. Still open: colorized output, multi-line source
+snippets, "did you mean?" suggestions, LSP JSON — see
+`docs/error-system-architecture.md`.
+
 ## 4. Debugging recipes
 
 - **Symptom: function missing from compiled output.** Check paren balance
   of the forms BEFORE it (a broken opener nests subsequent defns). Also
-  check for duplicate deftypes upstream.
+  check for duplicate deftypes upstream, and check per-FILE balance if
+  it's a compiler-stdlib file that's also concatenated into the bundle
+  (see constraint 4 — a per-file deficit that nets to zero across the
+  whole bundle is invisible to `assemble.py`'s own check).
 - **Symptom: garbage where a variable should be.** Slot aliasing — look
   for a constructor reconstruction with fields out of order, or a call
   whose pad/pops disagree.
@@ -166,31 +248,84 @@ pop into SysV regs in reverse; cleanup pad after the call.
   idiv (stale rdx).
 - **Symptom: output truncated to the last emitted line.** Something used
   copy (strcpy) instead of append (zyl_str_append) for buffer emission.
-- **Symptom: works via Rust compiler, breaks via stage2.** Violation of a
-  section-2 constraint. Diff which construct differs; bisect by compiling
-  prefixes of the input plus a canary program.
+- **Symptom: `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` in a file with no
+  `defn main` of your own.** A `use`d module defines one — see
+  constraint 12. Check every module in the `use` chain (transitively)
+  for a stray top-level `main`.
+- **Symptom: undefined reference to `_ZYL_<SomeCtor>` at link time, for
+  a standalone `use`, in a program that compiles fine as part of the
+  self-hosted bundle.** A `use`d compiler-stdlib file constructs a type
+  it never declared a dependency on — see constraint 13.
+- **Symptom: edited stdlib/compiler code doesn't seem to take effect
+  when compiling some file OUTSIDE this checkout (or via a bare `zyl` on
+  PATH).** `~/.zyl` (or `$ZYL_HOME`), if it exists from a prior
+  `./install.sh`, is checked AHEAD of the repo's own `build/boot/stdlib`
+  for module resolution — by design, so an installed `zyl` works from
+  any directory (see `install.sh`'s header comment). Re-run
+  `./install.sh` after any stdlib/compiler change, or just always test
+  against `build/boot/zyl-self` from inside the repo AND make sure
+  `~/.zyl` isn't stale before trusting a "still fails" result.
+- **Symptom: works via the archived Rust bootstrap, breaks via
+  stage2.** Violation of a section-2 constraint. Diff which construct
+  differs; bisect by compiling prefixes of the input plus a canary
+  program.
 - **Logs:** dbg-log/cg-dbg write via file-open "a" (O_APPEND after the
   fix — logs accumulate reliably now). Log integers via
   `(ffi-call "zyl_cstr_from_int" arena n 1000)`.
 
 ## 5. Pipeline map (what runs where)
 
+Default build (`./boot.sh`, no args) is cargo-free — no Rust anywhere:
 ```
-Rust bootstrap: src/*.rs (9 phases) -> compiles selfhost/zyl_selfhost_compiler.zyl
-  selfhost source = assemble.py concatenation of:
-    stdlib/core/{option,list}.zyl, stdlib/allocator/allocator.zyl,
-    stdlib/compiler/{ast,lexer,parser,icnf,codegen}.zyl, selfhost/driver.zyl
-stage1..N: the compiled compiler reads /tmp/zyl_boot_in.zyl,
-  writes /tmp/zyl_boot_out.s (link with src/runtime/actor_runtime.c,
-  -lpthread, -no-pie).
-Fixed point: stageN output == stage(N+1) input compilation, byte-for-byte.
+committed seed build/boot/stage2.s --cc--> stage1.bin
+stage1.bin compiles selfhost/zyl_selfhost_compiler.zyl -> stage2_gen.s
+  (must byte-match the committed stage2.s seed, or the compiler source
+  changed and needs re-seeding)
+stage2.bin (relinked from stage2.s) compiles the same source -> stage3.s
+  (must byte-match stage2.s: the actual fixed-point check)
 ```
+`selfhost/zyl_selfhost_compiler.zyl` is `selfhost/assemble.py`'s
+concatenation of stdlib/core/*, stdlib/collections/*,
+stdlib/allocator/allocator.zyl, stdlib/compiler/{ast,expr_inner,lexer,
+parser,module_resolver,macro_expand,mutability_check,resolver,
+type_system,type_inference,monomorphization,icnf,trait_dispatch,
+closure_inline,assert_lowering,codegen,region_inference,optimization,
+sexp_balance,error_codes,error_report}.zyl, selfhost/driver.zyl (in that
+order — see the file for the authoritative, occasionally-changing list).
 
-Key naming: lowering functions prefix `ic-`, codegen `cg-`; state records
-CGS/CGE/CGR/CGP; env chain EnvBind/EnvNil; token variants Tk*; AST A*.
+**After changing compiler source**: `python3 selfhost/assemble.py`
+(regenerates the bundle, verifies whole-bundle paren depth — but see
+constraint 4's per-file caveat), then `./boot.sh --bootstrap-from-self`
+(iterates stage1->stage2->... to a new fixed point, seeds
+`build/boot/stage2.s`/`.bin`), then a clean `./boot.sh` to verify. Run
+`./install.sh` too if you'll test any file outside this checkout, or via
+a bare `zyl`/`zyl-self` on PATH (see the debugging recipe above).
+
+**Module resolution is self-hosted too now**, not Rust-only:
+`stdlib/compiler/module_resolver.zyl` walks a parsed program's top-level
+`(use module/path)` forms, recursively resolves+parses each dependency
+file under `stdlib/`, and splices dependency bodies in ahead of the
+main program — auto-injecting `core/core` unless already `use`d. This
+runs for real, standalone `zyl <file.zyl>` compiles (not just inside the
+one giant bundle file, where `use` lines are simply regex-stripped by
+`assemble.py` since everything's already concatenated). Constraints 12
+and 13 above are specifically about this real resolution path.
+
+**Archived fallback only** (`./boot.sh --bootstrap-from-rust`, needs
+`archive/rust-bootstrap-2026/Cargo.toml`): rebuilds a first/fresh
+`stage2.s` seed via the old Rust compiler. Not part of the normal
+workflow — only needed if `--bootstrap-from-self` fails to converge
+(a genuinely new construct the old seed can't even parse, not just new
+behavior).
+
+Key naming: lowering functions prefix `ic-`, codegen `cg-`; module
+resolver `mr-`; sexp_balance `sb-`; state records CGS/CGE/CGR/CGP; env
+chain EnvBind/EnvNil; token variants Tk*; AST A*.
 
 ## 6. When constraints get lifted
 
 Track PROGRESS.md roadmap. When stack-passed args land, constraint 1 goes;
 when match-in-value-position lands, rewrite rule 2's workarounds. Update
-this skill whenever a constraint changes — stale skills cause wrong code.
+this skill whenever a constraint changes, a module moves, or the pipeline
+map goes stale — a stale skill causes wrong code with high confidence,
+since it reads as authoritative.

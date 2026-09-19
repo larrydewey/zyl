@@ -19,11 +19,20 @@
 (deftype BalanceResult
   (Balanced)
   (UnbalancedOpenString)
+  (UnclosedOpen String Int Int)
   (UnbalancedClose String Int Int)
   (MismatchedPair String String Int Int))
 
+; Local, self-contained pair -- deliberately NOT compiler/type_system's
+; generic `Pair`. This module is a real `use` dependency of parser.zyl
+; now (not just bundle-concatenated), and type_system.zyl is the entire
+; Hindley-Milner inference engine; reaching across for one generic tuple
+; type would saddle a small lexical-structure checker with a large,
+; wrong-direction dependency edge.
+(deftype SBPair (SBPair A B))
+
 ; line col stack ctx-col in-string in-comment escape-next err
-;   stack  :: (List (Pair expected-closer (Pair open-line open-col)))
+;   stack  :: (List (SBPair expected-closer (SBPair open-line open-col)))
 ;   (there used to be a `ctx` field here too -- "current partial line",
 ;   rebuilt via str-concat on every single character and only ever reset
 ;   on a newline. Nothing read it (sb-report's output never references
@@ -49,7 +58,7 @@
 ;   cg-variant.)
 ;   err    :: BalanceResult if a fatal deviation was recorded, else balanced
 (deftype CheckState
-  (CS Int Int (List (Pair String (Pair Int Int))) Int Int Int Int BalanceResult))
+  (CS Int Int (List (SBPair String (SBPair Int Int))) Int Int Int Int BalanceResult))
 
 ; ===========================================================================
 ; CHARACTER CLASSIFICATION (byte values, ASCII)
@@ -148,7 +157,7 @@
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1)
-          (Cons (Pair closer (Pair line col)) stack)
+          (Cons (SBPair closer (SBPair line col)) stack)
           ctx-col in-string in-comment 0 err))))
 
 ; Closing bracket: verify against the stack head.
@@ -161,7 +170,7 @@
             (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err)))
         (Cons top rest
           (match top
-            (Pair expected (Pair ol oc)
+            (SBPair expected (SBPair ol oc)
               (if (= (str-eq expected closer) 1)
                 (CS line (+ col 1) rest ctx-col in-string in-comment 0 err)
                 (let new-err (MismatchedPair expected closer line col)
@@ -251,7 +260,11 @@
             (sb-scan-index src (+ idx 1) len next))
           state)))))
 
-; Resolve the terminal diagnosis from the final state.
+; Resolve the terminal diagnosis from the final state. A non-empty stack
+; at EOF reports the STILL-OPEN bracket's own position (where it was
+; opened), not the EOF position -- that is the actionable line to fix,
+; and it is the whole reason sb-open-bracket carries (open-line open-col)
+; on every stack frame instead of just the expected closer.
 (defn sb-finalize (state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
@@ -260,7 +273,11 @@
           UnbalancedOpenString
           (match stack
             (Nil Balanced)
-            (Cons top rest UnbalancedOpenString)))
+            (Cons top rest
+              (match top
+                (SBPair closer pos
+                  (match pos
+                    (SBPair ol oc (UnclosedOpen closer ol oc))))))))
         err))))
 
 ; ===========================================================================
@@ -271,6 +288,7 @@
   (match r
     (Balanced 1)
     (UnbalancedOpenString 0)
+    (UnclosedOpen closer line col 0)
     (UnbalancedClose closer line col 0)
     (MismatchedPair opener closer line col 0)))
 
@@ -278,6 +296,7 @@
   (match r
     (Balanced 0)
     (UnbalancedOpenString 1)
+    (UnclosedOpen closer line col 1)
     (UnbalancedClose closer line col 1)
     (MismatchedPair opener closer line col 1)))
 
@@ -289,6 +308,7 @@
   (match r
     (Balanced 0)
     (UnbalancedOpenString 1)
+    (UnclosedOpen closer line col 1)
     (UnbalancedClose closer line col 1)
     (MismatchedPair opener closer line col 1)))
 
@@ -297,7 +317,12 @@
     (Balanced
       (print "balanced"))
     (UnbalancedOpenString
-      (print "unbalanced: reached end of input inside open pair/string"))
+      (print "unbalanced: reached end of input inside an open string"))
+    (UnclosedOpen closer line col
+      (begin
+        (print "unbalanced: opener never closed")
+        (print line)
+        (print col)))
     (UnbalancedClose closer line col
       (begin
         (print "unbalanced: unexpected closer")
@@ -312,8 +337,50 @@
 )
 
 ; ===========================================================================
-; FILE VALIDATION + CLI ENTRY
+; FIX-IT HINTS
 ; ===========================================================================
+; Single source of remediation text for a BalanceResult. Both the fatal
+; compiler error path (parser.zyl's check-balanced) and any future
+; consumer (LSP diagnostics, a REPL live-check) read hints from here, so
+; the wording can never drift from what the structural scan actually
+; found. Every str-concat argument is a literal or a pre-bound `let` --
+; see error_report.zyl's header comment for why (inline call operands
+; miscompile under the Rust bootstrap's str-concat inlining).
+(defn sb-hint (r)
+  (match r
+    (Balanced "")
+    (UnbalancedOpenString
+      "close the open string literal with a matching '\"'")
+    (UnclosedOpen closer line col
+      (let m1 "insert '"
+        (let m2 (str-concat m1 closer)
+          (str-concat m2 "' to close the opener"))))
+    (UnbalancedClose closer line col
+      (let m1 "remove this '"
+        (let m2 (str-concat m1 closer)
+          (str-concat m2 "' -- no opener is open here"))))
+    (MismatchedPair opener closer line col
+      (let m1 "replace '"
+        (let m2 (str-concat m1 closer)
+          (let m3 (str-concat m2 "' with '")
+            (let m4 (str-concat m3 opener)
+              (str-concat m4 "', or fix the opener it was meant to close"))))))))
+
+; ===========================================================================
+; FILE VALIDATION + STANDALONE CLI ENTRY
+; ===========================================================================
+; NOT named `main`: this module is a real library dependency of
+; parser.zyl/driver.zyl now (both `use` it directly), and Zyl's module
+; resolver splices a `use`d file's top-level forms in verbatim -- a
+; `defn main` here would silently override/collide with the importing
+; program's own `main`, or trip E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN for
+; any importer that also has top-level `test`/`run-tests` forms (both
+; confirmed live: assemble.py's bundle path already special-cases
+; stripping a `main` named exactly `main` from every non-driver file for
+; this exact reason -- see strip_named_defn -- but that stripping never
+; applied to a standalone, non-bundled `use compiler/sexp_balance`).
+; A dedicated standalone binary can still wrap `sb-standalone-run` in its
+; own `(defn main () (sb-standalone-run))`.
 
 (defn sb-validate-file (path)
   (let fd (file-open path "r")
@@ -323,7 +390,7 @@
           (sb-check-string srcbuf)))
       (UnbalancedClose "file-open" 0 0))))
 
-(defn main ()
+(defn sb-standalone-run ()
   (let argc (ffi-call "zyl_argc" 0)
     (if (< argc 2)
       (begin

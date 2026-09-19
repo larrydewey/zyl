@@ -61,6 +61,16 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
   Rust bootstrap (ICNF level) and the self-hosted lowering (AST level).
 - `E_DUPLICATE_VARIANT` — a variant name is defined by more than one
   deftype; constructor identities would silently break `match`.
-- `E_UNBALANCED_PARENS` — paren counts differ across the token stream.
+- `E_UNBALANCED_PARENS` — legacy code name for the old depth-counter check
+  (superseded; kept for the catalog entry only). The live checks below are
+  raised by the native stack-based validator (`sexp_balance.zyl`, wired
+  into `compile-to-asm` and `zyl-parse`), which reports the exact line and
+  column plus a fix-it hint instead of just a count mismatch:
+  - `E_UNBALANCED_UNCLOSED` — an opener was never closed; location is
+    where it was opened.
+  - `E_UNBALANCED_UNEXPECTED_CLOSE` — a closer appears with no opener on
+    the stack.
+  - `E_UNBALANCED_MISMATCHED_BRACKET` — a closer's type doesn't match the
+    opener it would close (e.g. `(...]`).
 - `E_CODEGEN_BUFFER_FULL` — generated assembly exceeded the 64MB codegen
   text buffer.
