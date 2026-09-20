@@ -26,11 +26,11 @@
 ; True when the Ast node is an identifier equal to `s`.
 (defn ident-eq (arena a s)
   (match a
-    (AIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
-    (AInt d1 0)
-    (AFloat d2 0)
+    (AstIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
+    (AstInt d1 0)
+    (AstFloat d2 0)
     (AString d3 0)
-    (ABool d4 0)
+    (AstBool d4 0)
     (AList d5 0)))
 
 ; Token classifier: 1 when the token matches the expected constructor,
@@ -53,14 +53,14 @@
     (TkSymbol d11 (= 6 want))
     (TkKeyword d12 (= 7 want))))
 
-; Payload of an AInt node; -1 otherwise.
+; Payload of an AstInt node; -1 otherwise.
 (defn atom-int (a)
   (match a
-    (AInt v v)
-    (AIdent d13 -1)
-    (AFloat d14 -1)
+    (AstInt v v)
+    (AstIdent d13 -1)
+    (AstFloat d14 -1)
     (AString d15 -1)
-    (ABool d16 -1)
+    (AstBool d16 -1)
     (AList d17 -1)))
 
 ; Lexer produces a (List Token) ending in TkEof
@@ -96,21 +96,21 @@
 (defn kids-of-form (a)
   (match a
     (AList kids kids)
-    (AIdent d18 Nil)
-    (AInt d19 Nil)
-    (AFloat d20 Nil)
+    (AstIdent d18 Nil)
+    (AstInt d19 Nil)
+    (AstFloat d20 Nil)
     (AString d21 Nil)
-    (ABool d22 Nil)))
+    (AstBool d22 Nil)))
 
 ; Number of children when `a` is an AList; 0 otherwise.
 (defn list-len-or-0 (a)
   (match a
     (AList kids (list-length kids))
-    (AIdent d23 0)
-    (AInt d24 0)
-    (AFloat d25 0)
+    (AstIdent d23 0)
+    (AstInt d24 0)
+    (AstFloat d25 0)
     (AString d26 0)
-    (ABool d27 0)))
+    (AstBool d27 0)))
 
 ; Line component of a location-carrying BalanceResult; -1 otherwise.
 (defn br-line (r)

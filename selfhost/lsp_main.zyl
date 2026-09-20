@@ -1,0 +1,14 @@
+; === Zyl LSP — Server Entry Point ===
+; Module: selfhost/lsp_main
+; Entry point for zyl-lsp binary. Starts JSON-RPC stdio server.
+
+(use allocator/allocator)
+(use lsp/lsp_server)
+
+; ===========================================================================
+; MAIN
+; ===========================================================================
+
+(defn main ()
+  (let arena (arena-create 1073741824)
+    (lsp-run-server arena)))

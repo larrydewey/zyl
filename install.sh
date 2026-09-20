@@ -43,6 +43,9 @@ cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 echo "Building the REPL..."
 "$TARGET/bin/stage2.bin" "$SCRIPT_DIR/tools/repl.zyl" -o "$TARGET/bin/zyl-repl-bin"
 
+echo "Building the LSP server..."
+"$TARGET/bin/stage2.bin" "$SCRIPT_DIR/selfhost/lsp_main.zyl" -o "$TARGET/bin/zyl-lsp-bin"
+
 cat > "$TARGET/bin/zyl" <<WRAPPER
 #!/usr/bin/env bash
 # No arguments: start the REPL, same as \`python\`/\`node\` with no args --
@@ -66,6 +69,13 @@ exec "$TARGET/bin/zyl-repl-bin" "\$@"
 WRAPPER
 chmod +x "$TARGET/bin/zyl-repl"
 
+cat > "$TARGET/bin/zyl-lsp" <<WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$TARGET/bin/zyl-lsp-bin" "\$@"
+WRAPPER
+chmod +x "$TARGET/bin/zyl-lsp"
+
 # Shell env snippets, rustup/go-style: written to disk, never auto-
 # appended to the user's own rc files. bash and zsh share `export`
 # syntax; fish's is genuinely different (`set -gx`), so it gets its own
@@ -81,7 +91,7 @@ set -gx PATH "$TARGET/bin" \$PATH
 ENVFILE
 
 echo
-echo "Installed: $TARGET/bin/zyl, $TARGET/bin/zyl-repl"
+echo "Installed: $TARGET/bin/zyl, $TARGET/bin/zyl-repl, $TARGET/bin/zyl-lsp"
 echo
 
 case "$(basename "${SHELL:-bash}")" in

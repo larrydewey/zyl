@@ -1,0 +1,79 @@
+; === Zyl Compiler — Duplicate Top-Level Definition Check ===
+; Module: compiler/duplicate_check
+;
+; Two top-level `defn`s (or two top-level `deftype`s) with the same name
+; are never legal: functions resolve by flat global name everywhere
+; downstream (codegen's cg-fn-kind-search, arity_check's ac-lookup, the
+; link-time symbol table), so a second definition doesn't get rejected --
+; it just silently wins-or-loses depending on list order in whatever pass
+; happens to scan first, with no diagnostic either way. `E_DUPLICATE_
+; DEFINITION` was already reserved in error_codes.zyl's table (see its
+; header comment) but never actually raised anywhere until this file.
+;
+; Scoped to the SAME resolved `exprs` list arity_check/mutability_check
+; run against (post module-resolution, post macro-expansion) -- i.e. only
+; names that collide WITHIN one actual compiled program. Confirmed by
+; direct repo-wide scan that several names (`main`, `list-map`, `map-get`,
+; ...) are legitimately reused across DIFFERENT top-level programs/
+; modules that are never `use`d together (driver.zyl's `main` vs
+; repl.zyl's `main`; stdlib/collections/map.zyl vs stdlib/core/map.zyl) --
+; checking the whole repo instead of one resolved program would have
+; produced constant false positives on already-correct code.
+;
+; Undershoot posture, same as arity_check.zyl/mutability_check.zyl: this
+; only looks at EDefn/EDeftype names, the two namespaces most likely to
+; produce a real silent bug on collision. It deliberately does NOT flag
+; ADT variant-constructor name reuse across different deftypes (e.g.
+; `CI` naming both `CaptureInfo` and `CompletionItem` in unrelated
+; modules) -- confirmed these are resolved per call/match site by the
+; surrounding type context, not through any flat global registry, so a
+; repeat variant name across two deftypes that legitimately never
+; interact is not a bug at all, just a short name reused twice.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+
+(defn dc-check-program (exprs)
+  (begin
+    (dc-check-names "function" (dc-collect-defn-names exprs) Nil)
+    (dc-check-names "type" (dc-collect-deftype-names exprs) Nil)))
+
+(defn dc-collect-defn-names (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name d1 d2 (Cons name (dc-collect-defn-names rest)))
+        (d3 (dc-collect-defn-names rest))))))
+
+(defn dc-collect-deftype-names (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype name d1 d2 d3 (Cons name (dc-collect-deftype-names rest)))
+        (d4 (dc-collect-deftype-names rest))))))
+
+; `seen` accumulates names already passed; a name already in `seen` is a
+; duplicate. Linear scan, same complexity class as ac-lookup/mc-in-scope
+; elsewhere in this pipeline -- fine for a few thousand top-level names.
+(defn dc-check-names (kind names seen)
+  (match names
+    (Nil 0)
+    (Cons n rest
+      (if (> (dc-in-list n seen) 0)
+        (dc-fail kind n)
+        (dc-check-names kind rest (Cons n seen))))))
+
+(defn dc-in-list (name xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq h name) 0) 1 (dc-in-list name t)))))
+
+(defn dc-fail (kind name)
+  (let m1 "E_DUPLICATE_DEFINITION: "
+    (let m2 (str-concat m1 kind)
+      (let m3 (str-concat m2 " `")
+        (let m4 (str-concat m3 name)
+          (let m5 (str-concat m4 "` is defined more than once in this program")
+            (ffi-call "zyl_panic" m5 1000)))))))

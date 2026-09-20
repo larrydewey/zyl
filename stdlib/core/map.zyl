@@ -1,0 +1,96 @@
+; === Zyl Standard Library — Map ADT ===
+; Module: core/map
+; Provides: Generic Map<K, V> ADT (association list backed).
+;
+; No hash-table primitive exists in this runtime, and the maps this
+; compiler's own tooling needs (LSP request params, small per-document
+; symbol tables) are always small, so a plain association list is the
+; right trade: no FFI, no arena, deterministic iteration order (always
+; most-recently-inserted-first), and every operation is O(n) which is
+; fine at the sizes these are actually used at.
+;
+; Two-type-parameter generic deftype, same pattern as
+; compiler/sexp_balance.zyl's `SBPair A B`.
+
+(use core/option)
+(use core/list)
+
+(deftype MapEntry (ME K V))
+
+(defn ME.key (e) (match e (ME k d1 k)))
+(defn ME.value (e) (match e (ME d1 v v)))
+
+(deftype Map (MapC (List (MapEntry K V))))
+
+(defn map-new () (MapC Nil))
+
+; Insert always wins over any existing entry for the same key: the new
+; entry is prepended and any earlier entry for `k` is dropped, so a
+; key never appears twice and lookup never needs to pick "first vs
+; last" -- there's only ever one.
+(defn map-insert (m k v)
+  (match m
+    (MapC entries (MapC (Cons (ME k v) (map-entries-without entries k))))))
+
+(defn map-entries-without (entries k)
+  (match entries
+    (Nil Nil)
+    (Cons e rest
+      (if (> (str-eq (ME.key e) k) 0)
+        (map-entries-without rest k)
+        (Cons e (map-entries-without rest k))))))
+
+(defn map-remove (m k)
+  (match m
+    (MapC entries (MapC (map-entries-without entries k)))))
+
+(defn map-get (m k)
+  (match m
+    (MapC entries (map-entries-find entries k))))
+
+(defn map-entries-find (entries k)
+  (match entries
+    (Nil None)
+    (Cons e rest
+      (if (> (str-eq (ME.key e) k) 0)
+        (Some (ME.value e))
+        (map-entries-find rest k)))))
+
+(defn map-has (m k)
+  (match (map-get m k)
+    (Some d1 1)
+    (None 0)))
+
+(defn map-get-or (m k default)
+  (match (map-get m k)
+    (Some v v)
+    (None default)))
+
+; Raw entry list -- callers destructure with ME.key/ME.value. Kept as
+; MapEntry rather than converting to a generic Pair so this module has
+; no dependency on compiler/type_system's (much heavier) Pair.
+(defn map-entries (m)
+  (match m (MapC entries entries)))
+
+(defn map-size (m)
+  (match m (MapC entries (list-length entries))))
+
+(defn map-is-empty (m)
+  (= (map-size m) 0))
+
+(defn map-map-values (f m)
+  (match m
+    (MapC entries (MapC (map-entries-map-values f entries)))))
+
+(defn map-entries-map-values (f entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest (Cons (ME (ME.key e) (f (ME.value e))) (map-entries-map-values f rest)))))
+
+(defn map-from-list (pairs)
+  (map-from-list-acc pairs (map-new)))
+
+(defn map-from-list-acc (pairs acc)
+  (match pairs
+    (Nil acc)
+    (Cons e rest (map-from-list-acc rest (map-insert acc (ME.key e) (ME.value e))))))

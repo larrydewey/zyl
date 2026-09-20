@@ -1,0 +1,496 @@
+; === Zyl Compiler — Unused Bindings / Shadowing / Duplicate Parameters ===
+; Module: compiler/unused_check
+;
+; Four checks living together because they share one machine: a flat,
+; whole-function reference collector (uc-refs) plus a scope-threading
+; walk (uc-walk-scope) with the exact same shape coverage and threading
+; discipline as arity_check.zyl's ac-expr / mutability_check.zyl's
+; mc-expr (same pipeline stage: post module-resolution, post macro-
+; expansion).
+;
+;   - W_UNUSED_FUNCTION: a top-level `defn` never referenced by name
+;     anywhere else in this resolved program (excluding its own body --
+;     self-recursion doesn't count as being "used").
+;   - W_UNUSED_PARAMETER / W_UNUSED_VARIABLE: a `defn`/`fn`/`lambda`
+;     parameter, or a `let`/`let-mut`/`for` binding, that never appears
+;     as a plain identifier reference anywhere in its owning function
+;     body.
+;   - W_SHADOWED_BINDING: a `let`/`let-mut`/`for`/lambda-or-fn-param/
+;     match-arm-bound name that reuses a name already in scope.
+;   - E_DUPLICATE_PARAMETER: two parameters of the same `defn`/`fn`/
+;     `lambda` sharing a name -- purely syntactic, zero legitimate use,
+;     kept as a hard error rather than a warning.
+;
+; Exemption: `_` (the codegen-recognized wildcard -- see cg-bind-one,
+; which skips slot allocation for it entirely) and any `d` followed by
+; one or more digits (`d1`, `d2`, ... -- confirmed by a repo-wide scan to
+; be this codebase's own established "intentionally discarded" naming
+; convention, 744+ uses across 24 files, used wherever `_` can't be
+; repeated within the same binding list) are exempt from BOTH the
+; unused and the shadowing checks. Without this exemption, checking this
+; codebase's OWN source (which self-hosts through this exact check)
+; would produce thousands of warnings on already-deliberate code.
+;
+; Undershoot posture, same rationale as arity_check.zyl throughout:
+;   - uc-refs is deliberately OVER-inclusive (walks every shape it can,
+;     including ones arity_check.zyl doesn't bother with, like the byte/
+;     atomic primitives) -- for a reference collector, over-counting only
+;     ever SUPPRESSES a true-positive warning, it can never manufacture a
+;     false one. Under-counting is the dangerous direction here, not
+;     over-counting.
+;   - The unused check is flat per function, not scope-precise: if a name
+;     is used ANYWHERE in the function body, every same-named binding
+;     inside it (however deeply shadowed) is considered "used". Misses a
+;     real dead shadowed binding sometimes; never flags a live one.
+;   - Match-arm pattern-bound names are shadow-checked but NOT unused-
+;     checked (out of scope for this pass -- by far the highest-volume
+;     binding site in this codebase via the very d1/d2/... convention
+;     this file already has to exempt everywhere else, and scoping this
+;     precisely needs real scoping the flat approach doesn't have).
+;   - A nested (non-top-level) `defn` resets to its own params only, same
+;     as arity_check.zyl/mutability_check.zyl already do -- it does NOT
+;     inherit or contribute to the enclosing function's shadow/unused
+;     bookkeeping, checked independently via its own recursive call.
+
+(use core/list)
+(use core/option)
+(use compiler/ast)
+(use compiler/expr_inner)
+
+; uc-check-unused-functions is NOT wired in here, even though it's fully
+; implemented below: core/core (compose, is-even, print-string, ...) is
+; auto-injected into every single program by module_resolver.zyl's
+; mr-resolve-program (see its own header comment), and the resolved
+; `exprs` this whole pipeline stage operates on has NO per-defn file-
+; provenance field to tell "the user's own dead helper" apart from "an
+; auto-injected stdlib function this particular tiny program doesn't
+; happen to call". Confirmed by direct testing: even a 5-line test file
+; produces a dozen-plus W_UNUSED_FUNCTION warnings for ordinary,
+; perfectly normal core/core entries -- pure noise, the opposite of the
+; "pleasant development experience" this whole file exists for. Wiring
+; this in for real needs the AST to carry which file each top-level form
+; came from (or scoping the check to only the entry file's own defns),
+; neither of which exists yet.
+(defn uc-check-program (exprs)
+  (uc-check-top exprs))
+
+; ===========================================================================
+; EXEMPTION
+; ===========================================================================
+
+(defn uc-is-exempt (name)
+  (if (> (str-eq name "_") 0) 1 (uc-is-d-numeral name)))
+
+(defn uc-is-d-numeral (name)
+  (if (< (str-length name) 2)
+    0
+    (if (> (str-eq (str-substring name 0 1) "d") 0)
+      (uc-all-digits name 1 (str-length name))
+      0)))
+
+(defn uc-all-digits (s i n)
+  (if (>= i n)
+    1
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (< c 48)
+        0
+        (if (> c 57) 0 (uc-all-digits s (+ i 1) n))))))
+
+(defn uc-nonexempt (names)
+  (match names
+    (Nil Nil)
+    (Cons n rest (if (> (uc-is-exempt n) 0) (uc-nonexempt rest) (Cons n (uc-nonexempt rest))))))
+
+(defn uc-in-list (name xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq h name) 0) 1 (uc-in-list name t)))))
+
+; Compiler diagnostics belong on stderr (matches zyl_panic's own
+; fprintf(stderr, ...) in the runtime -- see runtime/actor_runtime.c),
+; not stdout, which stays free for the program's own output. Raw fd
+; write rather than `print`: `print` goes through libc's buffered
+; stdout, and warnings emitted here must survive whatever exit path the
+; caller takes afterward (same reasoning as the LSP server's own
+; fd-2 debug writes elsewhere in this codebase).
+(defn uc-warn-line (msg)
+  (file-write 2 (str-concat msg "\n")))
+
+; ===========================================================================
+; UNUSED TOP-LEVEL FUNCTION
+; ===========================================================================
+
+(defn uc-check-unused-functions (exprs)
+  (let names (uc-collect-defn-names exprs)
+    (let refs (uc-collect-all-refs exprs)
+      (uc-report-unused-fns names refs))))
+
+(defn uc-collect-defn-names (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name d1 d2 (Cons name (uc-collect-defn-names rest)))
+        (d3 (uc-collect-defn-names rest))))))
+
+(defn uc-collect-all-refs (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name d1 body (list-append (uc-filter-out name (uc-refs body)) (uc-collect-all-refs rest)))
+        (ETestDecl d2 body d3 (list-append (uc-refs body) (uc-collect-all-refs rest)))
+        (d4 (uc-collect-all-refs rest))))))
+
+(defn uc-filter-out (name xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (> (str-eq h name) 0) (uc-filter-out name t) (Cons h (uc-filter-out name t))))))
+
+(defn uc-should-check-fn (name)
+  (if (> (str-eq name "main") 0) 0 (if (> (uc-is-exempt name) 0) 0 1)))
+
+(defn uc-report-unused-fns (names refs)
+  (match names
+    (Nil 0)
+    (Cons n rest
+      (begin
+        (if (> (uc-should-check-fn n) 0)
+          (if (> (uc-in-list n refs) 0) 0 (uc-warn-unused-fn n))
+          0)
+        (uc-report-unused-fns rest refs)))))
+
+(defn uc-warn-unused-fn (name)
+  (let m1 "W_UNUSED_FUNCTION: `"
+    (let m2 (str-concat m1 name)
+      (uc-warn-line (str-concat m2 "` is defined but never called")))))
+
+; ===========================================================================
+; WHOLE-BODY REFERENCE COLLECTOR (flat, over-inclusive)
+; ===========================================================================
+
+(defn uc-refs-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (list-append (uc-refs h) (uc-refs-list t)))))
+
+(defn uc-refs-arms (arms)
+  (match arms
+    (Nil Nil)
+    (Cons a rest
+      (match a
+        (MA d1 patterns body (list-append (uc-refs-list patterns) (list-append (uc-refs body) (uc-refs-arms rest))))))))
+
+(defn uc-refs-cond (clauses)
+  (match clauses
+    (Nil Nil)
+    (Cons pr rest
+      (match pr (Pair c body (list-append (uc-refs c) (list-append (uc-refs body) (uc-refs-cond rest))))))))
+
+(defn uc-refs-for-inits (bindings)
+  (match bindings
+    (Nil Nil)
+    (Cons pr rest
+      (match pr
+        (Pair d1 valOpt
+          (list-append
+            (match valOpt (Some v (uc-refs v)) (None Nil))
+            (uc-refs-for-inits rest)))))))
+
+(defn uc-refs (e)
+  (match (Expr.inner e)
+    (EAtom atom (match atom (AIdent n (Cons n Nil)) (d1 Nil)))
+    (ECall op args (list-append (uc-refs op) (uc-refs-list args)))
+    (EDef d2 val (uc-refs val))
+    (EDefn d3 d4 body (uc-refs body))
+    (ELet d5 val body (list-append (uc-refs val) (uc-refs body)))
+    (ELetMut d6 val body (list-append (uc-refs val) (uc-refs body)))
+    (EIf c t eb (list-append (uc-refs c) (list-append (uc-refs t) (uc-refs eb))))
+    (ETryCatch tbody d7 handler (list-append (uc-refs tbody) (uc-refs handler)))
+    (EMatch subj arms (list-append (uc-refs subj) (uc-refs-arms arms)))
+    (ESpawn body (uc-refs body))
+    (ESend a m (list-append (uc-refs a) (uc-refs m)))
+    (ESendClosure a c d8 (list-append (uc-refs a) (uc-refs c)))
+    (EFfiCall d9 args d10 (uc-refs-list args))
+    (EFfiPin e2 (uc-refs e2))
+    (EFfiUnpin e2 (uc-refs e2))
+    (EAssert c d11 (uc-refs c))
+    (EUnwrap e2 (uc-refs e2))
+    (EWhile c body (list-append (uc-refs c) (uc-refs body)))
+    (EFor bindings cond body (list-append (uc-refs-for-inits bindings) (list-append (uc-refs cond) (uc-refs body))))
+    (ECond clauses (uc-refs-cond clauses))
+    (EBegin exprs (uc-refs-list exprs))
+    (ELambda d12 d13 body (uc-refs body))
+    (EFn d14 d15 body (uc-refs body))
+    (EStructGet se d16 (uc-refs se))
+    (EMakeStruct d17 fields (uc-refs-list fields))
+    (EMakeVariant d18 d19 args (uc-refs-list args))
+    (ESetBang name val (Cons name (uc-refs val)))
+    (EPrint exprs (uc-refs-list exprs))
+    (EExit c (uc-refs c))
+    (EClose e2 (uc-refs e2))
+    (EFileOpen a b (list-append (uc-refs a) (uc-refs b)))
+    (EFileRead a b (list-append (uc-refs a) (uc-refs b)))
+    (EFileWrite a b (list-append (uc-refs a) (uc-refs b)))
+    (EFileClose e2 (uc-refs e2))
+    (EBufAppend a b (list-append (uc-refs a) (uc-refs b)))
+    (EWithResource d20 init body (list-append (uc-refs init) (uc-refs body)))
+    (ETestDecl d21 body d22 (uc-refs body))
+    (EAssertEqual l r (list-append (uc-refs l) (uc-refs r)))
+    (EAssertFail e2 d23 (uc-refs e2))
+    (EAssertTrue e2 d24 (uc-refs e2))
+    (EAssertFalse e2 d25 (uc-refs e2))
+    (ETestProperty d26 d27 body (uc-refs body))
+    (ESetup exprs (uc-refs-list exprs))
+    (ETeardown exprs (uc-refs-list exprs))
+    (ETestCompile e2 d28 (uc-refs e2))
+    (EApply fname args (Cons fname (uc-refs-list args)))
+    (EMacroDef d29 args body (list-append (uc-refs-list args) (uc-refs body)))
+    (EUnknown d30 args (uc-refs-list args))
+    (ELoadByte d31 off buf (list-append (uc-refs off) (uc-refs buf)))
+    (ELoadByteSigned d32 off buf (list-append (uc-refs off) (uc-refs buf)))
+    (EStoreByte d33 off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
+    (EStoreByteSigned d34 off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
+    (EByteSlice buf start len (list-append (uc-refs buf) (list-append (uc-refs start) (uc-refs len))))
+    (EByteSliceSub buf start len (list-append (uc-refs buf) (list-append (uc-refs start) (uc-refs len))))
+    (EByteBufAppend buf val (list-append (uc-refs buf) (uc-refs val)))
+    (EByteBufLen buf (uc-refs buf))
+    (EByteBufCap buf (uc-refs buf))
+    (EByteBufPtr buf (uc-refs buf))
+    (EAlignCheck e2 d35 (uc-refs e2))
+    (EAtomicLoad buf off (list-append (uc-refs buf) (uc-refs off)))
+    (EAtomicStore buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (EAtomicAdd buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (EAtomicSub buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (EAtomicCAS buf off exp2 nv (list-append (uc-refs buf) (list-append (uc-refs off) (list-append (uc-refs exp2) (uc-refs nv)))))
+    (EAtomicFetchAdd buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (EAtomicMax buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (EAtomicMin buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
+    (d36 Nil)))
+
+; ===========================================================================
+; PARAMETERS: duplicate + unused
+; ===========================================================================
+
+(defn uc-param-names (params)
+  (match params
+    (Nil Nil)
+    (Cons p rest (Cons (P.name p) (uc-param-names rest)))))
+
+(defn uc-check-dup-params (fname names seen)
+  (match names
+    (Nil 0)
+    (Cons n rest
+      (if (> (uc-in-list n seen) 0)
+        (uc-fail-dup-param fname n)
+        (uc-check-dup-params fname rest (Cons n seen))))))
+
+(defn uc-fail-dup-param (fname pname)
+  (let m1 "E_DUPLICATE_PARAMETER: `"
+    (let m2 (str-concat m1 pname)
+      (let m3 (str-concat m2 "` is used more than once in `")
+        (let m4 (str-concat m3 fname)
+          (let m5 (str-concat m4 "`'s parameter list")
+            (ffi-call "zyl_panic" m5 1000)))))))
+
+(defn uc-check-unused-names (refs names kind)
+  (match names
+    (Nil 0)
+    (Cons n rest
+      (begin
+        (if (> (uc-in-list n refs) 0) 0 (uc-warn-unused n kind))
+        (uc-check-unused-names refs rest kind)))))
+
+(defn uc-warn-unused (name kind)
+  (let m1 "W_UNUSED_"
+    (let m2 (if (> (str-eq kind "parameter") 0) (str-concat m1 "PARAMETER: `") (str-concat m1 "VARIABLE: `"))
+      (let m3 (str-concat m2 name)
+        (uc-warn-line (str-concat m3 "` is never used"))))))
+
+; ===========================================================================
+; SHADOWING
+; ===========================================================================
+
+(defn uc-check-shadow (name scope)
+  (if (> (uc-is-exempt name) 0)
+    0
+    (if (> (uc-in-list name scope) 0) (uc-warn-shadow name) 0)))
+
+(defn uc-check-shadow-list (names scope)
+  (match names
+    (Nil 0)
+    (Cons n rest (begin (uc-check-shadow n scope) (uc-check-shadow-list rest scope)))))
+
+(defn uc-warn-shadow (name)
+  (let m1 "W_SHADOWED_BINDING: `"
+    (let m2 (str-concat m1 name)
+      (uc-warn-line (str-concat m2 "` shadows an outer binding of the same name")))))
+
+; ===========================================================================
+; TOP-LEVEL DRIVER
+; ===========================================================================
+
+(defn uc-check-top (exprs)
+  (match exprs
+    (Nil 0)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDefn name params body (uc-check-fn name params body))
+          (ETestDecl d1 body d2 (uc-check-fn-body body))
+          (d3 0))
+        (uc-check-top rest)))))
+
+(defn uc-check-fn (name params body)
+  (let pnames (uc-param-names params)
+    (begin
+      (uc-check-dup-params name pnames Nil)
+      (let refs (uc-refs body)
+        (begin
+          (uc-check-unused-names refs (uc-nonexempt pnames) "parameter")
+          (uc-walk-scope body refs pnames))))))
+
+(defn uc-check-fn-body (body)
+  (let refs (uc-refs body)
+    (uc-walk-scope body refs Nil)))
+
+; ===========================================================================
+; SCOPE-THREADING WALK — shadow + unused-let checks, same shape coverage
+; as arity_check.zyl's ac-expr.
+; ===========================================================================
+
+(defn uc-walk-list (xs refs scope)
+  (match xs
+    (Nil 0)
+    (Cons h t (begin (uc-walk-scope h refs scope) (uc-walk-list t refs scope)))))
+
+(defn uc-walk-for-bindings (bindings refs scope)
+  (match bindings
+    (Nil scope)
+    (Cons pr rest
+      (match pr
+        (Pair name valOpt
+          (begin
+            (uc-check-shadow name scope)
+            (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+            (match valOpt (Some v (uc-walk-scope v refs scope)) (None 0))
+            (uc-walk-for-bindings rest refs (Cons name scope))))))))
+
+(defn uc-walk-cond-clauses (clauses refs scope)
+  (match clauses
+    (Nil 0)
+    (Cons pr rest
+      (match pr
+        (Pair c body (begin (uc-walk-scope c refs scope) (uc-walk-scope body refs scope) (uc-walk-cond-clauses rest refs scope)))))))
+
+(defn uc-walk-arms (arms refs scope)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (match a
+        (MA d1 patterns body
+          (let pnames (uc-pattern-names patterns)
+            (begin
+              (uc-check-shadow-list pnames scope)
+              (uc-walk-scope body refs (list-append pnames scope))
+              (uc-walk-arms rest refs scope))))))))
+
+(defn uc-pattern-names (fields)
+  (match fields
+    (Nil Nil)
+    (Cons f rest
+      (match (Expr.inner f)
+        (EAtom atom (match atom (AIdent n (Cons n (uc-pattern-names rest))) (d1 (uc-pattern-names rest))))
+        (d2 (uc-pattern-names rest))))))
+
+(defn uc-walk-lambda-like (label params body refs scope)
+  (let pnames (uc-param-names params)
+    (begin
+      (uc-check-dup-params label pnames Nil)
+      (uc-check-shadow-list pnames scope)
+      (uc-check-unused-names refs (uc-nonexempt pnames) "parameter")
+      (uc-walk-scope body refs (list-append pnames scope)))))
+
+(defn uc-walk-scope (e refs scope)
+  (match (Expr.inner e)
+    (ESetBang d1 val (uc-walk-scope val refs scope))
+    (ELet name val body
+      (begin
+        (uc-check-shadow name scope)
+        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+        (uc-walk-scope val refs scope)
+        (uc-walk-scope body refs (Cons name scope))))
+    (ELetMut name val body
+      (begin
+        (uc-check-shadow name scope)
+        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+        (uc-walk-scope val refs scope)
+        (uc-walk-scope body refs (Cons name scope))))
+    (EDef d2 val (uc-walk-scope val refs scope))
+    (EIf c t eb (begin (uc-walk-scope c refs scope) (uc-walk-scope t refs scope) (uc-walk-scope eb refs scope)))
+    (EWhile c body (begin (uc-walk-scope c refs scope) (uc-walk-scope body refs scope)))
+    (EFor bindings cond body
+      (let newscope (uc-walk-for-bindings bindings refs scope)
+        (begin (uc-walk-scope cond refs newscope) (uc-walk-scope body refs newscope))))
+    (ECond clauses (uc-walk-cond-clauses clauses refs scope))
+    (EBegin exprs (uc-walk-list exprs refs scope))
+    (ELambda d3 params body (uc-walk-lambda-like "<lambda>" params body refs scope))
+    (EFn d4 params body (uc-walk-lambda-like "<fn>" params body refs scope))
+    (ETryCatch tbody cvar handler
+      (begin
+        (uc-walk-scope tbody refs scope)
+        (uc-check-shadow cvar scope)
+        (uc-walk-scope handler refs (Cons cvar scope))))
+    (EMatch subj arms (begin (uc-walk-scope subj refs scope) (uc-walk-arms arms refs scope)))
+    (ECall op args (begin (uc-walk-scope op refs scope) (uc-walk-list args refs scope)))
+    (EApply d5 args (uc-walk-list args refs scope))
+    (EFfiCall d6 args d7 (uc-walk-list args refs scope))
+    (EFfiPin e2 (uc-walk-scope e2 refs scope))
+    (EFfiUnpin e2 (uc-walk-scope e2 refs scope))
+    (EAssert c d8 (uc-walk-scope c refs scope))
+    (EUnwrap e2 (uc-walk-scope e2 refs scope))
+    (EStructGet se d9 (uc-walk-scope se refs scope))
+    (EMakeStruct d10 fields (uc-walk-list fields refs scope))
+    (EMakeVariant d11 d12 args (uc-walk-list args refs scope))
+    (EPrint exprs (uc-walk-list exprs refs scope))
+    (EExit c (uc-walk-scope c refs scope))
+    (EClose e2 (uc-walk-scope e2 refs scope))
+    (EFileOpen a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
+    (EFileRead a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
+    (EFileWrite a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
+    (EFileClose e2 (uc-walk-scope e2 refs scope))
+    (EBufAppend a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
+    (EWithResource d13 init body (begin (uc-walk-scope init refs scope) (uc-walk-scope body refs scope)))
+    (ESpawn closure (uc-walk-scope closure refs scope))
+    (ESend actor msg (begin (uc-walk-scope actor refs scope) (uc-walk-scope msg refs scope)))
+    (ESendClosure actor closure d14 (begin (uc-walk-scope actor refs scope) (uc-walk-scope closure refs scope)))
+    (ETestDecl d15 body d16 (uc-walk-scope body refs scope))
+    (EAssertEqual l r (begin (uc-walk-scope l refs scope) (uc-walk-scope r refs scope)))
+    (EAssertFail e2 d17 (uc-walk-scope e2 refs scope))
+    (EAssertTrue e2 d18 (uc-walk-scope e2 refs scope))
+    (EAssertFalse e2 d19 (uc-walk-scope e2 refs scope))
+    (ETestProperty d20 d21 body (uc-walk-scope body refs scope))
+    (ESetup exprs (uc-walk-list exprs refs scope))
+    (ETeardown exprs (uc-walk-list exprs refs scope))
+    (ETestCompile e2 d22 (uc-walk-scope e2 refs scope))
+    (ELoadByte d23 off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
+    (ELoadByteSigned d24 off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
+    (EStoreByte d25 off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
+    (EStoreByteSigned d26 off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
+    (EByteSlice buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
+    (EByteSliceSub buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
+    (EByteBufAppend buf val (begin (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
+    (EByteBufLen buf (uc-walk-scope buf refs scope))
+    (EByteBufCap buf (uc-walk-scope buf refs scope))
+    (EByteBufPtr buf (uc-walk-scope buf refs scope))
+    (EAlignCheck e2 d27 (uc-walk-scope e2 refs scope))
+    (EAtomicLoad buf off (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope)))
+    (EAtomicStore buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EAtomicAdd buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EAtomicSub buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EAtomicCAS buf off exp2 nv (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope exp2 refs scope) (uc-walk-scope nv refs scope)))
+    (EAtomicFetchAdd buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EAtomicMax buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EAtomicMin buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
+    (EDefn name params body (uc-check-fn name params body))
+    (d28 0)))

@@ -1,0 +1,649 @@
+; === Zyl LSP — LSP 3.17 Protocol Types ===
+; Module: lsp/lsp_types
+; Mechanical translation of TypeScript LSP definitions to Zyl ADTs.
+; All types are structural, no numeric tag codes, exhaustive match required.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/result)
+(use core/map)
+
+; ===========================================================================
+; CORE PRIMITIVES
+; ===========================================================================
+
+(deftype LSPAny
+  (LSPNull)
+  (LSPBool Bool)
+  (LSPInt Int)
+  (LSPFloat String)
+  (LSPString String)
+  (LSPArray (List LSPAny))
+  (LSPObject (Map String LSPAny)))
+
+; Position in a text document (zero-based line/character)
+(deftype Position
+  (Pos Int Int))
+
+; Range in a text document
+(deftype Range
+  (Rng Position Position))
+
+; Location = uri + range
+(deftype Location
+  (Loc String Range))
+
+; LocationLink for go-to-definition with target selection range
+(deftype LocationLink
+  (LLnk Range String Range Range))
+
+; DiagnosticSeverity
+(deftype DiagnosticSeverity
+  (DSError)
+  (DSWarning)
+  (DSInformation)
+  (DSHint))
+
+; DiagnosticTag
+(deftype DiagnosticTag
+  (DTUnnecessary)
+  (DTDeprecated))
+
+; CodeDescription
+(deftype CodeDescription
+  (CD String))
+
+; Diagnostic
+(deftype Diagnostic
+  (Diag Range
+        (Option DiagnosticSeverity)
+        (Option DiagnosticTag)
+        (Option (Either String Int))
+        (Option CodeDescription)
+        (Option String)
+        String
+        (Option (List DiagnosticRelatedInformation))
+        (Option LSPAny)))
+
+(deftype DiagnosticRelatedInformation
+  (DRI Location String))
+
+; ===========================================================================
+; INITIALIZE / CAPABILITIES
+; ===========================================================================
+
+(deftype ClientCapabilities
+  (CC (Option TextDocumentClientCapabilities)
+       (Option WorkspaceClientCapabilities)
+       (Option WindowClientCapabilities)
+       (Option NotebookClientCapabilities)))
+
+(deftype TextDocumentClientCapabilities
+  (TDCC (Option SynchronizationCapabilities)
+        (Option CompletionCapabilities)
+        (Option HoverCapabilities)
+        (Option SignatureHelpCapabilities)
+        (Option DeclarationCapabilities)
+        (Option DefinitionCapabilities)
+        (Option TypeDefinitionCapabilities)
+        (Option ImplementationCapabilities)
+        (Option ReferenceCapabilities)
+        (Option DocumentHighlightCapabilities)
+        (Option DocumentSymbolCapabilities)
+        (Option CodeActionCapabilities)
+        (Option CodeLensCapabilities)
+        (Option DocumentLinkCapabilities)
+        (Option ColorProviderCapabilities)
+        (Option FoldingRangeCapabilities)
+        (Option SelectionRangeCapabilities)
+        (Option LinkedEditingRangeCapabilities)
+        (Option CallHierarchyCapabilities)
+        (Option SemanticTokensCapabilities)
+        (Option InlayHintCapabilities)
+        (Option InlineValueCapabilities)
+        (Option DiagnosticCapabilities)
+        (Option MonikerCapabilities)
+        (Option RenameCapabilities)
+        (Option PrepareSupportDefaultBehaviorCapabilities)))
+
+(deftype SynchronizationCapabilities (SC (Option Bool) (Option Bool) (Option Bool)))
+(deftype CompletionCapabilities (CCap (Option Bool) (Option CompletionItemCapabilities) (Option CompletionItemKindCapabilities) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype CompletionItemCapabilities (CICap (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype CompletionItemKindCapabilities (CIKCap (Option (List CompletionItemKind))))
+(deftype HoverCapabilities (HCap (Option Bool) (Option Bool) (Option Bool)))
+(deftype DeclarationCapabilities (DCap (Option Bool) (Option Bool)))
+(deftype DefinitionCapabilities (DefCap (Option Bool) (Option Bool)))
+(deftype TypeDefinitionCapabilities (TDCap (Option Bool) (Option Bool)))
+(deftype ImplementationCapabilities (ICap (Option Bool) (Option Bool)))
+(deftype ReferenceCapabilities (RCap (Option Bool) (Option Bool)))
+(deftype DocumentHighlightCapabilities (DHC (Option Bool)))
+(deftype DocumentSymbolCapabilities (DSC (Option Bool) (Option Bool) (Option (List SymbolKind)) (Option Bool) (Option Bool)))
+(deftype CodeActionCapabilities (CACap (Option Bool) (Option CodeActionLiteralSupport) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype CodeActionLiteralSupport (CALS (List CodeActionKind)))
+(deftype CodeLensCapabilities (CLC (Option Bool)))
+(deftype DocumentLinkCapabilities (DLC (Option Bool) (Option Bool)))
+(deftype ColorProviderCapabilities (CPC (Option Bool)))
+(deftype FoldingRangeCapabilities (FRC (Option Bool) (Option Bool) (Option Bool)))
+(deftype SelectionRangeCapabilities (SRC (Option Bool)))
+(deftype LinkedEditingRangeCapabilities (LERC (Option Bool)))
+(deftype CallHierarchyCapabilities (CHC (Option Bool)))
+(deftype SemanticTokensCapabilities (STC (Option Bool) (Option SemanticTokensRequestCapabilities) (Option Bool) (Option Bool)))
+(deftype SemanticTokensRequestCapabilities (STRC (Option Bool) (Option Bool) (Option Bool)))
+(deftype InlayHintCapabilities (IHC (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype InlineValueCapabilities (IVC (Option Bool)))
+(deftype DiagnosticCapabilities (DiagCap (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype MonikerCapabilities (MCap (Option Bool)))
+(deftype RenameCapabilities (RCap2 (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype PrepareSupportDefaultBehaviorCapabilities (PSDBC (Option Bool)))
+
+(deftype WorkspaceClientCapabilities
+  (WCC (Option WorkspaceFolderCapabilities)
+       (Option ConfigurationCapabilities)
+       (Option DidChangeConfigurationCapabilities)
+       (Option DidChangeWatchedFilesCapabilities)
+       (Option SymbolCapabilities)
+       (Option ExecuteCommandCapabilities)
+       (Option WorkspaceEditCapabilities)))
+
+(deftype WorkspaceFolderCapabilities (WFC (Option Bool) (Option Bool)))
+(deftype ConfigurationCapabilities (ConfCap (Option Bool)))
+(deftype DidChangeConfigurationCapabilities (DCCCap (Option Bool)))
+(deftype DidChangeWatchedFilesCapabilities (DCWFC (Option Bool) (Option Bool)))
+(deftype SymbolCapabilities (SymCap (Option Bool) (Option (List SymbolKind)) (Option Bool)))
+(deftype ExecuteCommandCapabilities (ECC (Option Bool)))
+(deftype WorkspaceEditCapabilities (WEC (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+
+(deftype WindowClientCapabilities (WinCap (Option Bool) (Option Bool) (Option Bool) (Option Bool)))
+(deftype NotebookClientCapabilities (NBC (Option Bool) (Option Bool)))
+
+(deftype ServerCapabilities
+  (SCaps (Option TextDocumentSyncOptions)
+         (Option CompletionOptions)
+         (Option HoverOptions)
+         (Option SignatureHelpOptions)
+         (Option DeclarationOptions)
+         (Option DefinitionOptions)
+         (Option TypeDefinitionOptions)
+         (Option ImplementationOptions)
+         (Option ReferenceOptions)
+         (Option DocumentHighlightOptions)
+         (Option DocumentSymbolOptions)
+         (Option CodeActionOptions)
+         (Option CodeLensOptions)
+         (Option DocumentLinkOptions)
+         (Option ColorProviderOptions)
+         (Option FoldingRangeOptions)
+         (Option SelectionRangeOptions)
+         (Option LinkedEditingRangeOptions)
+         (Option CallHierarchyOptions)
+         (Option SemanticTokensOptions)
+         (Option InlayHintOptions)
+         (Option InlineValueOptions)
+         (Option DiagnosticOptions)
+         (Option MonikerOptions)
+         (Option RenameOptions)
+         (Option WorkspaceSymbolOptions)
+         (Option ExecuteCommandOptions)
+         (Option WorkspaceOptions)
+         (Option DocumentFormattingOptions)
+         (Option (Map String LSPAny))
+         (Option Bool)))
+
+(deftype DocumentFormattingOptions
+  (DFOpt (Option Bool)))
+
+(deftype TextDocumentSyncOptions
+  (TDSO (Option (Either Int TextDocumentSyncKind))
+        (Option Bool)
+        (Option Bool)
+        (Option (Either Bool SaveOptions))
+        (Option (Either Bool Bool))))
+
+(deftype TextDocumentSyncKind
+  (TDSKNone)
+  (TDSKFull)
+  (TDSKIncremental))
+
+(deftype SaveOptions
+  (SO (Option Bool)))
+
+(deftype CompletionOptions
+  (COpt (Option Bool)
+        (Option (List CompletionTriggerCharacter))
+        (Option (List CompletionTriggerCharacter))
+        (Option CompletionItemKindOptions)
+        (Option Bool)))
+
+(deftype CompletionItemKindOptions (CIKO (Option (List CompletionItemKind))))
+
+(deftype HoverOptions
+  (HOpt (Option Bool)))
+
+(deftype SignatureHelpOptions
+  (SHOpt (Option (List SignatureHelpTriggerCharacter))
+         (Option (List SignatureHelpTriggerCharacter))
+         (Option Bool)
+         (Option Bool)))
+
+(deftype DeclarationOptions
+  (DeclOpt (Option Bool)))
+
+(deftype DefinitionOptions
+  (DefOpt (Option Bool)))
+
+(deftype TypeDefinitionOptions
+  (TDefOpt (Option Bool)))
+
+(deftype ImplementationOptions
+  (ImplOpt (Option Bool)))
+
+(deftype ReferenceOptions
+  (RefOpt (Option Bool)))
+
+(deftype DocumentHighlightOptions
+  (DHOpt (Option Bool)))
+
+(deftype DocumentSymbolOptions
+  (DSOpt (Option Bool) (Option Bool)))
+
+(deftype CodeActionOptions
+  (CAOpt (Option (List CodeActionKind)) (Option Bool) (Option Bool)))
+
+(deftype CodeLensOptions
+  (CLOpt (Option Bool) (Option Bool)))
+
+(deftype DocumentLinkOptions
+  (DLOpt (Option Bool) (Option Bool)))
+
+(deftype ColorProviderOptions
+  (CPOpt (Option Bool)))
+
+(deftype FoldingRangeOptions
+  (FROpt (Option Bool)))
+
+(deftype SelectionRangeOptions
+  (SROpt (Option Bool)))
+
+(deftype LinkedEditingRangeOptions
+  (LEROpt (Option Bool)))
+
+(deftype CallHierarchyOptions
+  (CHOOpt (Option Bool)))
+
+(deftype SemanticTokensOptions
+  (STOpt (Option SemanticTokensLegend) (Option Bool) (Option (Either Bool SemanticTokensFullOptions)) (Option Bool) (Option Bool)))
+
+(deftype SemanticTokensLegend
+  (STLeg (List String) (List String)))
+
+(deftype SemanticTokensFullOptions
+  (STFOpt (Option Bool)))
+
+(deftype InlayHintOptions
+  (IHOpt (Option Bool) (Option Bool) (Option Bool)))
+
+(deftype InlineValueOptions
+  (IVOpt (Option Bool)))
+
+(deftype DiagnosticOptions
+  (DiagOpt (Option (Either Bool DiagnosticWorkspaceClientCapabilities)) (Option Bool) (Option Bool)))
+
+(deftype DiagnosticWorkspaceClientCapabilities
+  (DWCC (Option Bool)))
+
+(deftype MonikerOptions
+  (MonOpt (Option Bool)))
+
+(deftype RenameOptions
+  (ROpt (Option Bool) (Option Bool) (Option Bool)))
+
+(deftype WorkspaceSymbolOptions
+  (WSOpt (Option Bool) (Option Bool)))
+
+(deftype ExecuteCommandOptions
+  (ECOpt (List String) (Option Bool)))
+
+(deftype WorkspaceOptions
+  (WOpt (Option WorkspaceFoldersServerCapabilities)))
+
+(deftype WorkspaceFoldersServerCapabilities
+  (WFSC (Option Bool) (Option Bool)))
+
+; ===========================================================================
+; INITIALIZE PARAMS / RESULT
+; ===========================================================================
+
+(deftype InitializeParams
+  (InitP Int (Option String) (Option String) (Option String) ClientCapabilities (Option (Either String (List WorkspaceFolder))) (Option LSPAny) (Option (Map String LSPAny)) (Option (List String))))
+
+(deftype InitializeResult
+  (InitR ServerCapabilities (Option InitializeResultServerInfo)))
+
+(deftype InitializeResultServerInfo
+  (IRSI String String))
+
+(deftype InitializedParams
+  (InitParams))
+
+; ===========================================================================
+; TEXT DOCUMENT SYNC
+; ===========================================================================
+
+(deftype TextDocumentItem
+  (TDI String String Int String))
+
+(deftype VersionedTextDocumentIdentifier
+  (VTDI String Int))
+
+(deftype TextDocumentIdentifier
+  (TDI2 String))
+
+(deftype TextDocumentContentChangeEvent
+  (TDCCE (Option Range) (Option Range) String))
+
+(deftype DidOpenTextDocumentParams
+  (DOTDP TextDocumentItem))
+
+(deftype DidChangeTextDocumentParams
+  (DCTDP VersionedTextDocumentIdentifier (List TextDocumentContentChangeEvent)))
+
+(deftype DidCloseTextDocumentParams
+  (DCTDP2 TextDocumentIdentifier))
+
+(deftype DidSaveTextDocumentParams
+  (DSTDP TextDocumentIdentifier (Option String)))
+
+; ===========================================================================
+; DIAGNOSTICS
+; ===========================================================================
+
+(deftype PublishDiagnosticsParams
+  (PDP String (Option Int) (List Diagnostic)))
+
+(deftype DiagnosticParams
+  (DiagP TextDocumentIdentifier (Option (List Range))))
+
+(deftype DiagnosticRegistrationOptions
+  (DiagRegOpt (Option (List DocumentFilter)) (Option Bool) (Option (Either Bool DiagnosticWorkspaceClientCapabilities)) (Option Bool) (Option (Either Bool Bool))))
+
+(deftype DocumentFilter
+  (DF (Option String) (Option String) (Option String)))
+
+; ===========================================================================
+; HOVER
+; ===========================================================================
+
+(deftype HoverParams
+  (HP TextDocumentIdentifier Position (Option (Either Bool (List Range)))))
+
+(deftype Hover
+  (Hov MarkupContent (Option Range)))
+
+(deftype MarkupContent
+  (MC MarkupKind String))
+
+(deftype MarkupKind
+  (MKPlainText)
+  (MKMarkdown))
+
+; ===========================================================================
+; COMPLETION
+; ===========================================================================
+
+(deftype CompletionParams
+  (CP TextDocumentIdentifier Position (Option CompletionContext) (Option (Either Bool (List Range)))))
+
+(deftype CompletionContext
+  (CCTX CompletionTriggerKind (Option CompletionTriggerCharacter)))
+
+(deftype CompletionTriggerKind
+  (CTKInvoked)
+  (CTKTriggerChar)
+  (CTKTriggerIncomplete))
+
+(deftype CompletionTriggerCharacter
+  (CTC String))
+
+(deftype CompletionItem
+  (CI String (Option CompletionItemKind) (Option Int) (Option String) (Option String) (Option InsertTextFormat) (Option String) (Option MarkupContent) (Option (Either Bool (List Range))) (Option (List String)) (Option (List TextEdit)) (Option (List TextEdit)) (Option Command) (Option LSPAny) (Option (Either Bool (List Range)))))
+
+(deftype CompletionItemKind
+  (CIKText) (CIKMethod) (CIKFunction) (CIKConstructor) (CIKField)
+  (CIKVariable) (CIKClass) (CIKInterface) (CIKModule) (CIKProperty)
+  (CIKUnit) (CIKValue) (CIKEnum) (CIKKeyword) (CIKSnippet) (CIKColor)
+  (CIKFile) (CIKReference) (CIKFolder) (CIKEnumMember) (CIKConstant)
+  (CIKStruct) (CIKEvent) (CIKOperator) (CIKTypeParameter)
+  (CIKCapability) (CIKRegion) (CIKVariant) (CIKTraitMethod) (CIKFFICall) (CIKActorSpawn))
+
+(deftype InsertTextFormat
+  (ITFPlainText) (ITFSnippet))
+
+(deftype CompletionList
+  (CL (Option Bool) (List CompletionItem) (Option LSPAny)))
+
+; ===========================================================================
+; GO TO DEFINITION
+; ===========================================================================
+
+(deftype DefinitionParams
+  (DefP TextDocumentIdentifier Position))
+
+(deftype DefinitionResult
+  (DefRLoc Location)
+  (DefRLocs (List Location))
+  (DefRLnk (List LocationLink)))
+
+; ===========================================================================
+; DOCUMENT SYMBOLS
+; ===========================================================================
+
+(deftype DocumentSymbolParams
+  (DSP TextDocumentIdentifier))
+
+(deftype DocumentSymbol
+  (DSym String (Option String) SymbolKind (Option (List SymbolTag)) Range Range (Option (List DocumentSymbol)) (Option LSPAny)))
+
+(deftype SymbolInformation
+  (SymInfo String SymbolKind (Option (List SymbolTag)) (Option Location) (Option String) (Option LSPAny)))
+
+(deftype SymbolKind
+  (SKFile) (SKModule) (SKNamespace) (SKPackage) (SKClass) (SKMethod) (SKProperty) (SKField) (SKConstructor) (SKEnum)
+  (SKInterface) (SKFunction) (SKVariable) (SKConstant) (SKString) (SKNumber) (SKBoolean) (SKArray) (SKObject)
+  (SKKey) (SKNull) (SKEnumMember) (SKStruct) (SKEvent) (SKOperator) (SKTypeParameter)
+  (SKCapability) (SKRegion) (SKVariant) (SKTraitMethod) (SKFFICall) (SKActorSpawn))
+
+(deftype SymbolTag
+  (STDeprecated))
+
+; ===========================================================================
+; SEMANTIC TOKENS
+; ===========================================================================
+
+(deftype SemanticTokensParams
+  (STP TextDocumentIdentifier (Option (Either Bool (List Range)))))
+
+(deftype SemanticTokensRangeParams
+  (STRP TextDocumentIdentifier Range))
+
+(deftype SemanticTokensDeltaParams
+  (STDP TextDocumentIdentifier Int))
+
+(deftype SemanticTokens
+  (STok (Option String) (List Int)))
+
+(deftype SemanticTokensPartialResult
+  (STPR (List Int)))
+
+; ===========================================================================
+; CODE ACTION
+; ===========================================================================
+
+(deftype CodeActionParams
+  (CAP TextDocumentIdentifier Range CodeActionContext (Option (Either Bool (List Range)))))
+
+(deftype CodeActionContext
+  (CACtx (List Diagnostic) (Option (List CodeActionKind)) (Option Bool)))
+
+(deftype CodeActionKind
+  (CAK String))
+
+(deftype CodeAction
+  (CA String (Option CodeActionKind) (Option Diagnostic) (Option Bool) (Option Bool) (Option WorkspaceEdit) (Option Command) (Option LSPAny) (Option (Either Bool (List Range)))))
+
+(deftype WorkspaceEdit
+  (WE (Option (Map String (List TextEdit))) (Option (List WorkspaceEditEntry)) (Option (Map String LSPAny))))
+
+(deftype WorkspaceEditEntry
+  (WEE TextEdit)
+  (WEECreate CreateFile)
+  (WEERename RenameFile)
+  (WEEDelete DeleteFile))
+
+(deftype TextEdit
+  (TE Range String))
+
+(deftype CreateFile
+  (CF String (Option CreateFileOptions)))
+
+(deftype CreateFileOptions
+  (CFO (Option Bool) (Option Bool) (Option Bool)))
+
+(deftype RenameFile
+  (RF String String (Option RenameFileOptions)))
+
+(deftype RenameFileOptions
+  (RFO (Option Bool) (Option Bool) (Option Bool)))
+
+(deftype DeleteFile
+  (DF2 String (Option DeleteFileOptions)))
+
+(deftype DeleteFileOptions
+  (DFO (Option Bool) (Option Bool) (Option Bool)))
+
+; ===========================================================================
+; COMMAND
+; ===========================================================================
+
+(deftype Command
+  (Cmd String String (Option (List LSPAny))))
+
+; ===========================================================================
+; WORKSPACE
+; ===========================================================================
+
+(deftype WorkspaceFolder
+  (WF String String))
+
+(deftype DidChangeWorkspaceFoldersParams
+  (DCWFP (List WorkspaceFolder) (List WorkspaceFolder)))
+
+(deftype WorkspaceFoldersChangeEvent
+  (WFCE (List WorkspaceFolder) (List WorkspaceFolder)))
+
+; ===========================================================================
+; RENAME
+; ===========================================================================
+
+(deftype RenameParams
+  (RenP TextDocumentIdentifier Position String (Option (Either Bool (List Range)))))
+
+(deftype PrepareRenameParams
+  (PRP TextDocumentIdentifier Position))
+
+(deftype PrepareRenameResult
+  (PRRRange Range)
+  (PRRRangePlaceholder Range String)
+  (PRRDefaultBehavior Bool))
+
+; ===========================================================================
+; FOLDING RANGE
+; ===========================================================================
+
+(deftype FoldingRangeParams
+  (FRP TextDocumentIdentifier))
+
+(deftype FoldingRange
+  (FR Int Int (Option Int) (Option Int) (Option FoldingRangeKind) (Option String)))
+
+(deftype FoldingRangeKind
+  (FRKComment) (FRKImports) (FRKRegion))
+
+; ===========================================================================
+; SELECTION RANGE
+; ===========================================================================
+
+(deftype SelectionRangeParams
+  (SRP TextDocumentIdentifier (List Position)))
+
+(deftype SelectionRange
+  (SelR Range (Option SelectionRange)))
+
+; ===========================================================================
+; INLAY HINTS
+; ===========================================================================
+
+(deftype InlayHintParams
+  (IHP TextDocumentIdentifier (Option Range)))
+
+(deftype InlayHint
+  (IH Position String (Option InlayHintKind) (Option (List TextEdit)) (Option String) (Option LSPAny) (Option (Either Bool (List Range)))))
+
+(deftype InlayHintKind
+  (IHKType) (IHKParameter))
+
+; ===========================================================================
+; WORKSPACE SYMBOL
+; ===========================================================================
+
+(deftype WorkspaceSymbolParams
+  (WSP String (Option (Either Bool (List Range)))))
+
+; ===========================================================================
+; EXECUTE COMMAND
+; ===========================================================================
+
+(deftype ExecuteCommandParams
+  (ECP String (Option (List LSPAny)) (Option (Either Bool (List Range)))))
+
+; ===========================================================================
+; JSON-RPC MESSAGES
+; ===========================================================================
+
+(deftype RequestMessage
+  (ReqMsg String Int String (Option LSPAny)))
+
+(deftype ResponseMessage
+  (RespMsg String Int (Option LSPAny) (Option ResponseError)))
+
+(deftype ResponseError
+  (RErr Int String (Option LSPAny)))
+
+(deftype NotificationMessage
+  (NotifMsg String String (Option LSPAny)))
+
+; ===========================================================================
+; EITHER HELPER
+; ===========================================================================
+
+(deftype Either (Left L) (Right R))
+
+; ===========================================================================
+; ZYL-SPECIFIC EXTENSIONS
+; ===========================================================================
+
+(deftype CapabilityConflictData
+  (CCD String String Range String Range))
+
+(deftype RegionEscapeData
+  (RED String String Range String))
+
+(deftype MissingMatchArmData
+  (MMAD String (List String) Range))
+
+(deftype DidYouMeanData
+  (DYM String (List String) Range))
+
+(deftype FixItData
+  (FID String (List TextEdit) Range))

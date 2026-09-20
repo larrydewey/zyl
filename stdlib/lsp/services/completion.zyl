@@ -1,0 +1,56 @@
+; === Zyl LSP — Completion Service ===
+; Module: lsp/services/completion
+; Sources: static keywords, known top-level function names, known ADT
+; type names, known variant constructor names -- everything this LSP
+; actually has real data for (see compiler_bridge.zyl's SymTable). No
+; "local variables in scope" source: that needs real position-aware
+; scoping this compiler's Ast/Expr can't provide (LSP_ARCHITECTURE_
+; PLAN.md's "Wall 1") -- omitted rather than guessed at.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/map)
+(use lsp/lsp_types)
+(use lsp/compiler_bridge)
+(use lsp/services/semantic_tokens)
+
+(defn completion-items-for (tbl)
+  (list-append (completion-keywords)
+    (list-append (completion-fns tbl)
+      (list-append (completion-adts tbl) (completion-variants tbl)))))
+
+(defn completion-keywords ()
+  (cmp-kw-items (st-keywords)))
+
+(defn cmp-kw-items (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (CI h (Some CIKKeyword) None None None None None None None None None None None None None) (cmp-kw-items t)))))
+
+(defn completion-fns (tbl)
+  (cmp-fn-items (map-entries (st-fns tbl))))
+
+(defn cmp-fn-items (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e t
+      (Cons (CI (ME.key e) (Some CIKFunction) None None None None None None None None None None None None None) (cmp-fn-items t)))))
+
+(defn completion-adts (tbl)
+  (cmp-adt-items (map-entries (st-adts tbl))))
+
+(defn cmp-adt-items (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e t
+      (Cons (CI (ME.key e) (Some CIKEnum) None None None None None None None None None None None None None) (cmp-adt-items t)))))
+
+(defn completion-variants (tbl)
+  (cmp-variant-items (map-entries (st-variant-owners tbl))))
+
+(defn cmp-variant-items (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e t
+      (Cons (CI (ME.key e) (Some CIKVariant) None None None None (Some (str-concat "variant of " (ME.value e))) None None None None None None None None) (cmp-variant-items t)))))

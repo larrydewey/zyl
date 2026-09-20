@@ -615,9 +615,9 @@
       (AstInt n
         (if (byte-value-ok n)
           (Some (Expr (EByteLit n)))
-          (ffi-call "zyl_f_error" "E_BYTE_VALUE_OOB: byte literal out of range 0-255" 1000)))
-      (d1 (ffi-call "zyl_f_error" "E_BYTE_VALUE_OOB: byte literal must be an integer" 1000)))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: byte requires a literal argument" 1000)))
+          (ffi-call "zyl_panic" "E_BYTE_VALUE_OOB: byte literal out of range 0-255" 1000)))
+      (d1 (ffi-call "zyl_panic" "E_BYTE_VALUE_OOB: byte literal must be an integer" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: byte requires a literal argument" 1000)))
 
 (defn byte-value-ok (n)
   (if (>= n 0) (if (<= n 255) 1 0) 0))
@@ -629,8 +629,8 @@
         (if (= signed 0)
           (Some (Expr (ELoadByte e (convert-ast (ast-nth args 1 (AstInt 0))) (convert-ast (ast-nth args 2 (AstInt 0))))))
           (Some (Expr (ELoadByteSigned e (convert-ast (ast-nth args 1 (AstInt 0))) (convert-ast (ast-nth args 2 (AstInt 0))))))))
-      (None (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: load-byte endian must be :le or :be" 1000)))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: load-byte requires :le buf off" 1000)))
+      (None (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: load-byte endian must be :le or :be" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: load-byte requires :le buf off" 1000)))
 
 (defn parse-store-byte (args signed)
   (if (ast-has-at-least args 4)
@@ -645,8 +645,8 @@
             (convert-ast (ast-nth args 1 (AstInt 0)))
             (convert-ast (ast-nth args 2 (AstInt 0)))
             (convert-ast (ast-nth args 3 (AstInt 0))))))))
-      (None (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: store-byte endian must be :le or :be" 1000)))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: store-byte requires :le buf off val" 1000)))
+      (None (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: store-byte endian must be :le or :be" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: store-byte requires :le buf off val" 1000)))
 
 (defn parse-byteslice (args)
   (if (ast-has-at-least args 3)
@@ -656,7 +656,7 @@
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: byteslice requires buf off len" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: byteslice requires buf off len" 1000)))
 
 (defn parse-byteslice-sub (args)
   (if (ast-has-at-least args 3)
@@ -666,7 +666,7 @@
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: byteslice-sub requires slice off len" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: byteslice-sub requires slice off len" 1000)))
 
 (defn parse-bytebuf (args)
   (if (ast-has-at-least args 2)
@@ -674,9 +674,9 @@
       (Some r
         (match (ast-nth args 1 (AstInt 0))
           (AstInt cap (Some (Expr (EByteBuf r cap))))
-          (d1 (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000))))
-      (None (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf region must be Stack Heap Global Circular or Pin" 1000)))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf requires region and capacity" 1000)))
+          (d1 (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000))))
+      (None (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf region must be Stack Heap Global Circular or Pin" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf requires region and capacity" 1000)))
 
 (defn parse-bytebuf-append (args)
   (if (ast-has-at-least args 2)
@@ -685,7 +685,7 @@
         (EByteBufAppend
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-append requires buf slice" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-append requires buf slice" 1000)))
 
 (defn parse-bytebuf-unary (args variant)
   (if (ast-has-at-least args 1)
@@ -693,14 +693,14 @@
       (if (= variant 0) (Some (Expr (EByteBufLen v)))
       (if (= variant 1) (Some (Expr (EByteBufCap v)))
       (Some (Expr (EByteBufPtr v))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-len/cap/ptr requires buf" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-len/cap/ptr requires buf" 1000)))
 
 (defn parse-align-check (args)
   (if (ast-has-at-least args 2)
     (match (ast-nth args 1 (AstInt 0))
       (AstInt align (Some (Expr (EAlignCheck (convert-ast (ast-nth args 0 (AstInt 0))) align))))
-      (d1 (ffi-call "zyl_f_error" "E_UNEXPECTED_TOKEN_IN_EXPR: align-check alignment must be a power-of-two literal" 1000)))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: align-check requires ptr align" 1000)))
+      (d1 (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: align-check alignment must be a power-of-two literal" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: align-check requires ptr align" 1000)))
 
 (defn parse-atomic-load (args)
   (if (ast-has-at-least args 2)
@@ -709,7 +709,7 @@
         (EAtomicLoad
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-load requires buf off" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-atomic-load requires buf off" 1000)))
 
 (defn parse-atomic-store (args)
   (if (ast-has-at-least args 3)
@@ -719,7 +719,7 @@
           (convert-ast (ast-nth args 0 (AstInt 0)))
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-store requires buf off val" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-atomic-store requires buf off val" 1000)))
 
 (defn parse-atomic-op3 (args variant)
   (if (ast-has-at-least args 3)
@@ -731,7 +731,7 @@
           (if (= variant 2) (Some (Expr (EAtomicFetchAdd a b c)))
           (if (= variant 3) (Some (Expr (EAtomicMax a b c)))
           (Some (Expr (EAtomicMin a b c))))))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-op requires buf off val" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-atomic-op requires buf off val" 1000)))
 
 (defn parse-atomic-cas (args)
   (if (ast-has-at-least args 4)
@@ -742,7 +742,7 @@
           (convert-ast (ast-nth args 1 (AstInt 0)))
           (convert-ast (ast-nth args 2 (AstInt 0)))
           (convert-ast (ast-nth args 3 (AstInt 0))))))
-    (ffi-call "zyl_f_error" "E_ARITY_MISMATCH: bytebuf-atomic-cas requires buf off exp new" 1000)))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-atomic-cas requires buf off exp new" 1000)))
 
 ; Names reserved by the plan with width variants (u16/u32/u64, i16/i32/i64)
 ; that have NO ExprInner variant in §2 -- reject loudly rather than lower.
@@ -848,7 +848,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "bytebuf-atomic-cas" (convert-ast-list rest)))))
   (if (= (reserved-byte-name n) 1)
-    (ffi-call "zyl_f_error" (str-concat "E_RESERVED_KEYWORD: " (str-concat n " is reserved but not yet supported (only byte-width load/store forms are implemented)")) 1000)
+    (ffi-call "zyl_panic" (str-concat "E_RESERVED_KEYWORD: " (str-concat n " is reserved but not yet supported (only byte-width load/store forms are implemented)")) 1000)
     (Expr (EApply n (convert-ast-list rest)))
   )))))))))))))))))))))))
 
@@ -1591,7 +1591,7 @@
             (convert-ast scrutinee-ast)
             (build-literal-chain "__match_scrutinee__" raw-arms)))
     (begin
-      (ffi-call "zyl_f_error" "E_MATCH_NONEXHAUSTIVE: a literal-pattern match must end with a `_` arm" 1000)
+      (ffi-call "zyl_panic" "E_MATCH_NONEXHAUSTIVE: a literal-pattern match must end with a `_` arm" 1000)
       (Expr (EAtom ANil)))))
 
 ; Match arms are every element AFTER the subject: `(match subject arm1 arm2
@@ -1849,7 +1849,7 @@
     (match (ast-nth args 0 (AstInt 0))
       (AstIdent n
         (Some (Expr (ESetBang n (convert-ast (ast-nth args 1 (AstInt 0)))))))
-      (d1 (ffi-call "zyl_f_error" "E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead" 1000)))
+      (d1 (ffi-call "zyl_panic" "E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead" 1000)))
     None))
 
 (defn parse-module (args)

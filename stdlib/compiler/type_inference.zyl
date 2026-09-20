@@ -1847,12 +1847,17 @@
         name)))
 
 (defn infer-lookup-variant-fields (inferer adt-name variant-name)
-    ; walk the inferer's ADT defs; return the named variant's fields or Nil
-    (match
-        (lookup-adt-def inferer adt-name)
-        (Nil
-        Nil)
-        (variants
+    ; walk the inferer's ADT defs; return the named variant's fields or Nil.
+    ; A plain `if`/`is-nil` here rather than a `(match ... (variants ...))`
+    ; catch-all-bind arm: that shape parses and type-checks fine but codegen
+    ; never actually allocates an Env slot for a bare-identifier catch-all
+    ; pattern (only real constructor-pattern field bindings get one), so
+    ; `variants` read as genuinely unbound in the arm body -- silently
+    ; compiled to 0 before this compiler's codegen hardened unbound reads
+    ; into a hard E_UNBOUND_VARIABLE failure (which is how this was found).
+    (let variants (lookup-adt-def inferer adt-name)
+      (if (> (is-nil variants) 0)
+        Nil
         (infer-find-variant-fields variants variant-name))))
 
 (defn infer-find-variant-fields (variants variant-name)
@@ -2125,9 +2130,12 @@
                     (TNominal mono-name)))))))
 
 (defn lookup-variant-fields (inferer adt-name variant-name)
-    (match (lookup-adt-def inferer adt-name)
-        (Nil Nil)
-        (variants
+    ; See infer-lookup-variant-fields's comment: a catch-all-bind match arm
+    ; (`(variants ...)`) doesn't actually get an Env slot from codegen, so
+    ; this uses a plain `if`/`is-nil` instead.
+    (let variants (lookup-adt-def inferer adt-name)
+      (if (> (is-nil variants) 0)
+        Nil
         (find-variant-fields variants variant-name))))
 
 ; `variants` is a (List ADTVariant) -- see extract-generic-params-loop's
@@ -2402,7 +2410,7 @@
 
 (defn ffi-not-pinnable-error (bad-type)
   (begin
-    (ffi-call "zyl_f_error" (str-concat "E_INVALID_CAPABILITY: FFI value has type " (ffi-not-pinnable-msg bad-type)) 1000)
+    (ffi-call "zyl_panic" (str-concat "E_INVALID_CAPABILITY: FFI value has type " (ffi-not-pinnable-msg bad-type)) 1000)
     false))
 
 (defn ffi-not-pinnable-msg (bad-type)

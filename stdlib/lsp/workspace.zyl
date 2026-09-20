@@ -1,0 +1,49 @@
+; === Zyl LSP — Workspace ===
+; Module: lsp/workspace
+; Multi-root workspace folder tracking + workspace-wide symbol search
+; across every currently-open document. Does not parse zyl.toml's
+; module DAG: given no position tracking exists anywhere in this
+; compiler's real Ast/Expr (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), a
+; workspace-wide symbol index built from files NOT open in the editor
+; would need to invoke the parser standalone per file anyway (real,
+; buildable) -- deferred here for time, not architecture; workspace
+; symbol search below already works correctly across every document the
+; client HAS open, which is what actually gets used interactively.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use lsp/document_manager)
+(use lsp/services/document_symbols)
+
+(deftype Workspace
+  (WS (List String))) ; root URIs
+
+(defn ws-new () (WS Nil))
+
+(defn ws-from-folders (folders)
+  (WS (ws-folder-uris folders)))
+
+(defn ws-folder-uris (folders)
+  (match folders
+    (Nil Nil)
+    (Cons f rest
+      (match f
+        (WorkspaceFolder uri d1 (Cons uri (ws-folder-uris rest)))))))
+
+(defn ws-roots (ws) (match ws (WS roots roots)))
+
+; Every open document's workspace symbols, filtered by `query`. Real
+; results for everything the editor has open; a file never opened in
+; this session isn't indexed (see header comment).
+(defn ws-symbols-for-query (dm query)
+  (ws-symbols-uris (dm-open-uris dm) dm query))
+
+(defn ws-symbols-uris (uris dm query)
+  (match uris
+    (Nil Nil)
+    (Cons uri rest
+      (match (dm-get-text dm uri)
+        (Some text (list-append (workspace-symbols-for text uri query) (ws-symbols-uris rest dm query)))
+        (None (ws-symbols-uris rest dm query))))))

@@ -1,0 +1,69 @@
+; === Zyl LSP — REPL Integration ===
+; Module: lsp/repl_integration
+; KNOWN BROKEN: `zyl_system_cmd` (this file's only real dependency)
+; segfaults inside libc's `system()` on every call tested, including
+; the simplest possible ("echo hello", zero prior calls) -- confirmed
+; via gdb, crash is inside system() itself, called from zyl_system_cmd.
+; Root cause: `main` here always runs on a pthread-spawned worker
+; (zyl_bigstack_tramp in actor_runtime.c, used to get a large custom
+; stack), never the process's original main thread, and system()'s
+; internal vfork() sharing an address space with a non-main thread
+; that has a custom/oversized stack is a known-fragile combination in
+; glibc. zyl_system_cmd has no other caller anywhere in this codebase,
+; so this was previously latent and unnoticed. This function is
+; written for the RIGHT primitive (zyl_system_cmd, not zyl_exec_cmd --
+; see below) and is otherwise correct; it will start working once
+; zyl_system_cmd is reimplemented without vfork (posix_spawn, like
+; zyl_cc_compile/zyl_run_bin already do) -- reported separately. Do
+; not wire this into lsp_server's request dispatch until then.
+;
+; Evaluate a document's current text by shelling out to the real `zyl`
+; CLI (same self-hosted compiler the LSP server itself runs on) via
+; zyl_system_cmd (a real fork+exec+wait -- NOT zyl_exec_cmd, which
+; execl()s and replaces the calling process image entirely; that's fine
+; for driver.zyl's own cli-link, its last action before exiting anyway,
+; but would silently kill this long-running LSP server on the first
+; eval request), then running the resulting binary and capturing its
+; output. Not an in-process interpreter: this compiler has no bytecode
+; VM, only a native-codegen backend, so "evaluate this buffer" means
+; "compile and run it as a real program" -- the same thing tools/
+; repl.zyl already does per input line, applied here to a whole
+; document. A single fixed temp path is fine: the LSP server processes
+; one JSON-RPC request at a time (see lsp/lsp_server's read loop), so
+; there is never a concurrent second eval to collide with.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use allocator/allocator)
+
+(deftype EvalResult
+  (EvalOk String)   ; captured stdout+stderr
+  (EvalFail String)) ; captured stdout+stderr from a failed compile/run
+
+(defn repl-eval-text (text)
+  (let src-path "/tmp/zyl_lsp_eval.zyl"
+    (let bin-path "/tmp/zyl_lsp_eval.bin"
+      (let out-path "/tmp/zyl_lsp_eval.out"
+        (let d1 (file-open src-path "w")
+          (let d2 (file-write d1 text)
+            (let d3 (file-close d1)
+              (let compile-cmd (str-concat "zyl " (str-concat src-path (str-concat " -o " (str-concat bin-path (str-concat " > " (str-concat out-path " 2>&1"))))))
+                (let compile-status (ffi-call "zyl_system_cmd" compile-cmd 1000)
+                  (if (!= compile-status 0)
+                    (EvalFail (repl-slurp out-path))
+                    (repl-run-and-capture bin-path out-path)))))))))))
+
+(defn repl-run-and-capture (bin-path out-path)
+  (let run-cmd (str-concat bin-path (str-concat " > " (str-concat out-path " 2>&1")))
+    (let status (ffi-call "zyl_system_cmd" run-cmd 1000)
+      (let output (repl-slurp out-path)
+        (if (= status 0) (EvalOk output) (EvalFail output))))))
+
+(defn repl-slurp (path)
+  (let fd (file-open path "r")
+    (if (<= fd 0)
+      ""
+      (let output (file-read fd 1048576)
+        (let d1 (file-close fd)
+          output)))))

@@ -1,0 +1,212 @@
+; === Zyl LSP — Compiler Bridge ===
+; Module: lsp/compiler_bridge
+;
+; Adapter: compiler-internal data -> LSP types, plus a lightweight,
+; LSP-OWNED symbol table (SymTable) built directly from the macro-expanded
+; Expr list.
+;
+; Deliberately does NOT use compiler/type_inference's TypeInferer/
+; collect-definitions:
+;  1. Position tracking: nothing in this compiler's real Ast/Expr/Token
+;     carries a source position (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), so
+;     a full Hindley-Milner pass buys hover/goto-def nothing beyond what a
+;     plain signature-text listing already gives by NAME.
+;  2. Safety/cost: collect-definitions calls infer-defn-body on every
+;     function -- real, recursive, non-tail-call HM inference over the
+;     WHOLE program on every keystroke. Confirmed by direct testing this
+;     is not merely slow: several of TypeInferer's own name-lookup
+;     helpers compare strings with bare `=` instead of `str-eq` (a
+;     pre-existing bug -- `=` on two dynamically-produced strings is
+;     pointer comparison, not content comparation), and fixing that
+;     class of bug changes control flow deep in generic-instantiation
+;     tracking enough to blow the native call stack compiling this
+;     compiler's own ~14K-line source (confirmed via gdb: unbounded
+;     recursion through collect-definitions). Diagnosing and fixing that
+;     safely is a separate, much larger project; the fix was reverted
+;     rather than risk the self-hosting fixed point for a feature this
+;     LSP doesn't need. SymTable below is built with a single flat pass
+;     over top-level forms and this module's own (correct) str-eq-based
+;     core/map, so it doesn't touch any of that machinery at all.
+;
+; What this means for hover text: it shows the DECLARED text of a
+; parameter's type annotation (Param carries `(Option String)`, exactly
+; what the programmer wrote, if anything) rather than a fully-inferred
+; Type. Less clever than rust-analyzer's inference-driven hover, but
+; real, honest, and fast.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/map)
+(use lsp/lsp_types)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/sexp_balance)
+
+; ===========================================================================
+; BALANCE -> DIAGNOSTIC
+; ===========================================================================
+
+(defn diagnostic-from-balance (balance)
+  (match balance
+    (Balanced None)
+    (UnclosedOpen closer line col
+      (Some (bridge-balance-diag line col "E_UNBALANCED_UNCLOSED"
+              (str-concat "Unclosed opener: missing matching '" (str-concat closer "'"))
+              (sb-hint balance))))
+    (UnbalancedClose closer line col
+      (Some (bridge-balance-diag line col "E_UNBALANCED_UNEXPECTED_CLOSE"
+              (str-concat "Unexpected closing delimiter: '" (str-concat closer "'"))
+              (sb-hint balance))))
+    (MismatchedPair opener closer line col
+      (Some (bridge-balance-diag line col "E_UNBALANCED_MISMATCHED_BRACKET"
+              (str-concat "Mismatched brackets: opened with '" (str-concat opener (str-concat "', closed with '" (str-concat closer "'"))))
+              (sb-hint balance))))
+    (UnbalancedOpenString
+      (Some (bridge-balance-diag 1 1 "E_UNBALANCED_OPEN_STRING"
+              "Unterminated string literal"
+              (sb-hint balance))))))
+
+; BalanceResult positions are 1-based line/col; LSP Position is 0-based.
+(defn bridge-balance-diag (line col code message hint)
+  (let ln0 (- line 1)
+    (let cl0 (- col 1)
+      (let rng (Rng (Pos ln0 cl0) (Pos ln0 (+ cl0 1)))
+        (Diag rng (Some DSError) None (Some (Left code)) None (Some "zyl") message None
+              (Some (LSPObject (map-insert (map-new) "fixIt" (LSPString hint)))))))))
+
+; A caught compiler panic (see lsp/document_manager) has no location at
+; all -- reported at the top of the file, still with the real message.
+(defn diagnostic-from-panic (msg)
+  (Diag (Rng (Pos 0 0) (Pos 0 0)) (Some DSError) None None None (Some "zyl") msg None None))
+
+; ===========================================================================
+; SYMBOL TABLE — name -> declared signature / variant info
+; ===========================================================================
+
+(deftype FnInfo (FI String (List Param)))          ; name, params
+(deftype AdtInfo (AI2 String (List ADTVariant) (List String))) ; name, variants, generic params
+
+(deftype SymTable
+  (SymT (Map String FnInfo)   ; function name -> FnInfo
+        (Map String AdtInfo)  ; ADT type name -> AdtInfo
+        (Map String String))) ; variant constructor name -> owning ADT name
+
+(defn st-new () (SymT (map-new) (map-new) (map-new)))
+
+(defn st-fns (t) (match t (SymT f d1 d2 f)))
+(defn st-adts (t) (match t (SymT d1 a d2 a)))
+(defn st-variant-owners (t) (match t (SymT d1 d2 v v)))
+
+(defn st-build (exprs)
+  (st-build-acc exprs (st-new)))
+
+(defn st-build-acc (exprs acc)
+  (match exprs
+    (Nil acc)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name params d1 (st-build-acc rest (st-add-fn acc name params)))
+        (EDeftype name variants gparams d2 (st-build-acc rest (st-add-adt acc name variants gparams)))
+        (EStructDef sd extra (st-build-acc rest acc))
+        (d3 (st-build-acc rest acc))))))
+
+(defn st-add-fn (t name params)
+  (match t
+    (SymT fns adts vo (SymT (map-insert fns name (FI name params)) adts vo))))
+
+(defn st-add-adt (t name variants gparams)
+  (match t
+    (SymT fns adts vo
+      (SymT fns (map-insert adts name (AI2 name variants gparams))
+            (st-register-variants vo variants name)))))
+
+(defn st-register-variants (vo variants owner)
+  (match variants
+    (Nil vo)
+    (Cons v rest
+      (match v
+        (AV vname d1 (st-register-variants (map-insert vo vname owner) rest owner))))))
+
+(defn st-lookup-fn (t name) (map-get (st-fns t) name))
+(defn st-lookup-adt (t name) (map-get (st-adts t) name))
+(defn st-variant-owner (t name) (map-get (st-variant-owners t) name))
+
+(defn st-is-known-fn (t name) (map-has (st-fns t) name))
+(defn st-is-known-adt (t name) (map-has (st-adts t) name))
+(defn st-is-known-variant (t name) (map-has (st-variant-owners t) name))
+
+; ===========================================================================
+; HOVER TEXT
+; ===========================================================================
+
+(defn bridge-fn-hover (t name)
+  (match (st-lookup-fn t name)
+    (Some info
+      (match info
+        (FI d1 params
+          (Some (str-concat "```\nfn " (str-concat name (str-concat "(" (str-concat (bridge-params-to-string params) ")\n```"))))))))
+    (None None)))
+
+(defn bridge-params-to-string (params)
+  (match params
+    (Nil "")
+    (Cons p t
+      (match p
+        (P pname ptyOpt
+          (let this-str (bridge-param-to-string pname ptyOpt)
+            (match t
+              (Nil this-str)
+              (Cons d1 d2 (str-concat this-str (str-concat ", " (bridge-params-to-string t)))))))))))
+
+(defn bridge-param-to-string (pname ptyOpt)
+  (match ptyOpt
+    (Some tyExpr (str-concat pname (str-concat ": " (bridge-type-expr-to-string tyExpr))))
+    (None pname)))
+
+; Best-effort unparse of a param's type annotation Expr back to display
+; text. Only a bare identifier (`Int`, `String`, a user type name -- the
+; overwhelmingly common case for a hand-written annotation) round-trips
+; exactly; anything structurally richer (a generic instantiation written
+; inline, say) falls back to a marker rather than a wrong guess.
+(defn bridge-type-expr-to-string (e)
+  (match (Expr.inner e)
+    (EAtom atom
+      (match atom
+        (AIdent s s)
+        (d1 "<expr>")))
+    (d2 "<expr>")))
+
+(defn bridge-adt-hover (t name)
+  (match (st-lookup-adt t name)
+    (Some info
+      (match info
+        (AI2 d1 variants d2
+          (Some (str-concat "```\ndeftype " (str-concat name (str-concat "\n  " (str-concat (bridge-variants-to-string variants) "\n```"))))))))
+    (None None)))
+
+(defn bridge-variants-to-string (variants)
+  (match variants
+    (Nil "")
+    (Cons v t
+      (match v
+        (AV vname fields
+          (match t
+            (Nil (bridge-variant-line vname fields))
+            (Cons d1 d2 (str-concat (bridge-variant-line vname fields) (str-concat "\n  " (bridge-variants-to-string t))))))))))
+
+(defn bridge-variant-line (vname fields)
+  (if (is-nil fields)
+    (str-concat "(" (str-concat vname ")"))
+    (str-concat "(" (str-concat vname (str-concat " " (str-concat (str-join-spaces fields) ")"))))))
+
+(defn str-join-spaces (xs)
+  (match xs
+    (Nil "")
+    (Cons h t (match t (Nil h) (Cons d1 d2 (str-concat h (str-concat " " (str-join-spaces t))))))))
+
+(defn bridge-hover-for-name (t name)
+  (match (bridge-fn-hover t name)
+    (Some h (Some h))
+    (None (bridge-adt-hover t name))))

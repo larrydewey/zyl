@@ -1,0 +1,76 @@
+; === Zyl LSP — Go-to-Definition + Rename Service ===
+; Module: lsp/services/goto_definition
+; Name-based: resolve the identifier under the cursor via
+; lsp/source_index's word-at-position, confirm it's a real known name
+; via the document's SymTable, then find WHERE it was declared via
+; lsp/source_index's own top-level-form scan (position lookup by name,
+; the mirror image of hover's name lookup by position).
+;
+; Rename lives here too: same name resolution, but produces a
+; WorkspaceEdit renaming every top-level occurrence of the declaration
+; site's own header token (the def/deftype name itself) -- NOT every
+; reference across the file, since references aren't position-tracked
+; either. Honest, reduced scope: renames the declaration; call sites
+; are left for the user, same as this LSP's hover: real data, no
+; fabricated precision.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use core/map)
+(use lsp/source_index)
+(use lsp/compiler_bridge)
+
+(defn definition-at (text tbl uri line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      None
+      (if (or (> (st-is-known-fn tbl word) 0) (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-variant tbl word) 0)))
+        (goto-find-form text uri word)
+        None))))
+
+(defn goto-find-form (text uri word)
+  (goto-search (si-top-level-forms text) uri word))
+
+(defn goto-search (forms uri word)
+  (match forms
+    (Nil None)
+    (Cons f rest
+      (if (> (str-eq (TopForm.name f) word) 0)
+        (Some (Loc uri (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length word))))))
+        (goto-search rest uri word)))))
+
+(defn prepare-rename-at (text line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      None
+      (Some (Rng (Pos line (- col (si-word-back-offset text line col))) (Pos line col))))))
+
+; Column offset back to the start of the identifier at (line, col), for
+; PrepareRename's requested range.
+(defn si-word-back-offset (text line col)
+  (let offset (si-offset-of-pos text line col)
+    (- offset (si-word-start-offset text offset))))
+
+(defn si-word-start-offset (text offset)
+  (if (<= offset 0)
+    0
+    (if (> (si-is-ident-char (str-substring text (- offset 1) 1)) 0)
+      (si-word-start-offset text (- offset 1))
+      offset)))
+
+; Renames only the declaration header's own name token (see header
+; comment) -- one TextEdit at the declaration site.
+(defn rename-at (text uri tbl line col new-name)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      None
+      (if (or (> (st-is-known-fn tbl word) 0) (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-variant tbl word) 0)))
+        (match (goto-find-form text uri word)
+          (Some loc
+            (match loc
+              (Loc d1 rng
+                (Some (WE (Some (map-insert (map-new) uri (Cons (TE rng new-name) Nil))) None None)))))
+          (None None))
+        None))))

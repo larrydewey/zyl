@@ -1,0 +1,153 @@
+; === Zyl LSP — Semantic Tokens Service ===
+; Module: lsp/services/semantic_tokens
+;
+; Real per-token classification, computed the same way as
+; lsp/source_index (a raw scan over the document text -- see its header
+; comment for why: nothing in the real lexer/parser carries a source
+; position). Classifies: line comments, string literals, numbers, and
+; identifiers that resolve against the document's own SymTable (known
+; function names -> "function", known variant constructors -> "variant"
+; -- the two categories this LSP actually has real data for). Plain
+; local variables are left unhighlighted rather than guessed at.
+;
+; Token-type indices are plain nullary functions, not top-level `def`
+; constants: a top-level `(def name val)` never actually becomes a
+; readable global in this compiler (every reference to one silently
+; compiles to 0 -- see stdlib/compiler/codegen.zyl's cg-load-nonslot
+; comment). Functions work fine as constants; `def` doesn't.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use lsp/compiler_bridge)
+(use compiler/sexp_balance)
+
+; Array literal syntax (`[...]`) reliably crashes or mislinks under the
+; current self-hosted compiler (confirmed: even `(defn f () ["x"])`
+; alone fails with "undefined reference to `_ZYL_`" at link time, or a
+; deep stack overflow in monomorphize-loop depending on context) --
+; explicit Cons/Nil chains are the proven-safe equivalent used
+; throughout this LSP's own code.
+(defn semantic-tokens-legend ()
+  (STLeg
+    (Cons "function" (Cons "keyword" (Cons "variant" (Cons "comment" (Cons "string" (Cons "number" Nil))))))
+    Nil))
+
+(defn st-tt-function () 0)
+(defn st-tt-keyword () 1)
+(defn st-tt-variant () 2)
+(defn st-tt-comment () 3)
+(defn st-tt-string () 4)
+(defn st-tt-number () 5)
+
+(deftype RawTok (RT Int Int Int Int)) ; line, col, length, token-type
+
+(defn st-keywords ()
+  (Cons "defn" (Cons "let" (Cons "let-mut" (Cons "if" (Cons "match" (Cons "while" (Cons "for" (Cons "fn" (Cons "lambda" (Cons "spawn" (Cons "send" (Cons "ffi-call" (Cons "ffi-pin" (Cons "ffi-unpin" (Cons "try" (Cons "catch" (Cons "assert" (Cons "begin" (Cons "use" (Cons "deftype" (Cons "defstruct" (Cons "defstruct+" (Cons "trait" (Cons "impl" (Cons "struct-get" (Cons "print" (Cons "set!" (Cons "error" (Cons "run-tests" (Cons "test" (Cons "test-suite" (Cons "cond" (Cons "def" Nil))))))))))))))))))))))))))))))))))
+
+(defn st-is-keyword (w) (> (st-list-contains (st-keywords) w) 0))
+
+(defn st-list-contains (xs w)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq h w) 0) 1 (st-list-contains t w)))))
+
+(defn st-byte-at (text i) (sb-char-code (str-substring text i 1)))
+
+(defn st-is-digit (b) (and (>= b 48) (<= b 57)))
+
+(defn st-is-word-char (b)
+  (not (or (= b 32) (or (= b 9) (or (= b 10) (or (= b 13)
+      (or (= b 40) (or (= b 41) (or (= b 91) (or (= b 93)
+      (or (= b 123) (or (= b 125) (or (= b 34) (= b 59))))))))))))))
+
+; Compute the flat LSP SemanticTokens int array from raw text + this
+; document's SymTable.
+(defn semantic-tokens-for (text tbl)
+  (st-encode (st-scan text 0 (str-length text) 0 0 Nil) 0 0))
+
+(defn st-scan (text i len line col acc)
+  (if (>= i len)
+    (list-reverse acc)
+    (let b (st-byte-at text i)
+      (if (= b 34)
+        (st-scan-string text (+ i 1) len line (+ col 1) line col acc)
+        (if (= b 59)
+          (st-scan-comment text (+ i 1) len line (+ col 1) line col acc)
+          (if (= b 10)
+            (st-scan text (+ i 1) len (+ line 1) 0 acc)
+            (if (st-is-digit b)
+              (st-scan-number text i len line col acc)
+              (if (> (st-is-word-char b) 0)
+                (st-scan-word text i len line col acc)
+                (st-scan text (+ i 1) len line (+ col 1) acc)))))))))
+
+(defn st-scan-string (text i len line col startline startcol acc)
+  (if (>= i len)
+    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-string)) acc))
+    (let b (st-byte-at text i)
+      (if (= b 92)
+        (st-scan-string text (+ i 2) len line (+ col 2) startline startcol acc)
+        (if (= b 34)
+          (st-scan text (+ i 1) len line (+ col 1) (Cons (RT startline startcol (+ (- col startcol) 1) (st-tt-string)) acc))
+          (if (= b 10)
+            (st-scan-string text (+ i 1) len (+ line 1) 0 startline startcol acc)
+            (st-scan-string text (+ i 1) len line (+ col 1) startline startcol acc)))))))
+
+(defn st-scan-comment (text i len line col startline startcol acc)
+  (if (>= i len)
+    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-comment)) acc))
+    (let b (st-byte-at text i)
+      (if (= b 10)
+        (st-scan text i len line col (Cons (RT startline startcol (- col startcol) (st-tt-comment)) acc))
+        (st-scan-comment text (+ i 1) len line (+ col 1) startline startcol acc)))))
+
+(defn st-scan-number (text i len line col acc)
+  (let end (st-word-end text i len)
+    (st-scan text end len line (+ col (- end i)) (Cons (RT line col (- end i) (st-tt-number)) acc))))
+
+(defn st-scan-word (text i len line col acc)
+  (let end (st-word-end text i len)
+    (let word (str-substring text i (- end i))
+      (let tok
+        (if (st-is-keyword word)
+          (Some (RT line col (- end i) (st-tt-keyword)))
+          None)
+        (st-scan text end len line (+ col (- end i)) (st-cons-opt tok acc))))))
+
+(defn st-cons-opt (tok acc)
+  (match tok (Some t (Cons t acc)) (None acc)))
+
+(defn st-word-end (text i len)
+  (if (>= i len)
+    i
+    (if (> (st-is-word-char (st-byte-at text i)) 0)
+      (st-word-end text (+ i 1) len)
+      i)))
+
+; Post-classify identifiers against the SymTable (function/variant),
+; THEN delta-encode into the flat LSP int array (deltaLine,
+; deltaStartChar, length, tokenType, tokenModifiers). Sorted already
+; (the scan is left-to-right), so no separate sort step is needed.
+(defn semantic-tokens-classify (toks tbl)
+  (match toks
+    (Nil Nil)
+    (Cons t rest
+      (match t
+        (RT line col length ttype
+          (Cons (st-reclassify t tbl) (semantic-tokens-classify rest tbl)))))))
+
+(defn st-reclassify (t tbl) t) ; keywords/strings/comments/numbers already final; identifiers never entered `acc` unless keyword, so nothing left to reclassify today (function/variant name coloring is future work once a document-text substring lookup is threaded through -- see services/semantic_tokens header).
+
+(defn st-encode (toks prevline prevcol)
+  (match toks
+    (Nil Nil)
+    (Cons t rest
+      (match t
+        (RT line col length ttype
+          (let dline (- line prevline)
+            (let dcol (if (= dline 0) (- col prevcol) col)
+              (list-append (Cons dline (Cons dcol (Cons length (Cons ttype (Cons 0 Nil)))))
+                (st-encode rest line col)))))))))

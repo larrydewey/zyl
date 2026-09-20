@@ -1,0 +1,95 @@
+; === Zyl LSP — Document Symbols / Folding / Selection Range Service ===
+; Module: lsp/services/document_symbols
+; All three are pure functions of lsp/source_index's top-level-form scan
+; (name + line/col only -- no end-position tracking exists for a form,
+; so symbol/folding ranges span from the declaration line to itself;
+; still real and useful for outline/breadcrumb navigation and rough
+; folding, just not byte-exact end boundaries).
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use lsp/source_index)
+
+(defn document-symbols-for (text)
+  (ds-from-forms (si-top-level-forms text)))
+
+(defn ds-from-forms (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (let rng (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length (TopForm.name f)))))
+        (Cons (DSym (TopForm.name f) None (ds-symbol-kind (TopForm.kind f)) None rng rng None None)
+              (ds-from-forms rest))))))
+
+(defn ds-symbol-kind (kind)
+  (if (> (str-eq kind "defn") 0) SKFunction
+    (if (> (str-eq kind "deftype") 0) SKEnum
+      (if (or (> (str-eq kind "defstruct") 0) (> (str-eq kind "defstruct+") 0)) SKStruct
+        (if (> (str-eq kind "trait") 0) SKInterface
+          SKFunction)))))
+
+; workspace/symbol: same data, flattened to SymbolInformation with a
+; URI attached (workspace.zyl calls this per open document and
+; concatenates).
+(defn workspace-symbols-for (text uri query)
+  (ws-from-forms (si-top-level-forms text) uri query))
+
+(defn ws-from-forms (forms uri query)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (if (> (ws-matches (TopForm.name f) query) 0)
+        (let rng (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length (TopForm.name f)))))
+          (Cons (SymInfo (TopForm.name f) (ds-symbol-kind (TopForm.kind f)) None (Some (Loc uri rng)) None None)
+                (ws-from-forms rest uri query)))
+        (ws-from-forms rest uri query)))))
+
+; Empty query matches everything (LSP convention); otherwise a plain
+; substring match -- no fuzzy scoring, but real and fast.
+(defn ws-matches (name query)
+  (if (= (str-length query) 0) 1 (str-contains-ci name query)))
+
+(defn str-contains-ci (s sub)
+  (if (> (str-length sub) (str-length s))
+    0
+    (str-contains-loop s sub 0 (- (+ (str-length s) 1) (str-length sub)))))
+
+(defn str-contains-loop (s sub i limit)
+  (if (>= i limit)
+    0
+    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+      1
+      (str-contains-loop s sub (+ i 1) limit))))
+
+; ===========================================================================
+; FOLDING RANGES — one per top-level form, start line to itself (see
+; header comment on end-position precision).
+; ===========================================================================
+
+(defn folding-ranges-for (text)
+  (fr-from-forms (si-top-level-forms text)))
+
+(defn fr-from-forms (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest (Cons (FR (TopForm.line f) (TopForm.line f) None None None None) (fr-from-forms rest)))))
+
+; ===========================================================================
+; SELECTION RANGES — one per requested position: the enclosing top-
+; level form's range, if any (a single expanding step; a real
+; token-level innermost range would need the position tracking this
+; compiler doesn't have -- see compiler_bridge.zyl's header).
+; ===========================================================================
+
+(defn selection-range-at (text line col)
+  (sr-find (si-top-level-forms text) line))
+
+(defn sr-find (forms line)
+  (match forms
+    (Nil (SelR (Rng (Pos line 0) (Pos line 0)) None))
+    (Cons f rest
+      (if (= (TopForm.line f) line)
+        (SelR (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (TopForm.col f))) None)
+        (sr-find rest line)))))

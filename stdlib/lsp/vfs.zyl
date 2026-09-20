@@ -1,0 +1,155 @@
+; === Zyl LSP — Virtual File System ===
+; Module: lsp/vfs
+; Open-document store: uri -> (text, version, languageId). Backed by
+; core/map (association list) -- the number of documents open in an
+; editor at once is always small, so O(n) lookups are fine.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/map)
+(use lsp/lsp_types)
+
+(deftype Document
+  (Doc String Int String String)) ; text, version, uri, languageId
+
+(defn Document.text (d) (match d (Doc t d1 d2 d3 t)))
+(defn Document.version (d) (match d (Doc d1 v d2 d3 v)))
+(defn Document.uri (d) (match d (Doc d1 d2 u d3 u)))
+(defn Document.languageId (d) (match d (Doc d1 d2 d3 l l)))
+
+(deftype VFS
+  (VFSC (Map String Document)))
+
+(defn vfs-new () (VFSC (map-new)))
+
+(defn vfs-open (vfs uri text version languageId)
+  (match vfs
+    (VFSC docs (VFSC (map-insert docs uri (Doc text version uri languageId))))))
+
+(defn vfs-close (vfs uri)
+  (match vfs (VFSC docs (VFSC (map-remove docs uri)))))
+
+(defn vfs-get (vfs uri)
+  (match vfs (VFSC docs (map-get docs uri))))
+
+(defn vfs-get-text (vfs uri)
+  (match (vfs-get vfs uri)
+    (Some doc (Some (Document.text doc)))
+    (None None)))
+
+(defn vfs-open-uris (vfs)
+  (match vfs (VFSC docs (vfs-uri-list (map-entries docs)))))
+
+(defn vfs-uri-list (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest (Cons (ME.key e) (vfs-uri-list rest)))))
+
+; Apply a batch of LSP TextDocumentContentChangeEvent-style full-range
+; edits and store the result under the new version. LSP allows either
+; incremental (range-scoped) or full-document (no range) edits; the
+; caller normalizes to TextEdit (always range + newText) before this,
+; treating a full-document change as a TextEdit over the whole buffer.
+(defn vfs-change (vfs uri edits new-version)
+  (match (vfs-get vfs uri)
+    (Some doc
+      (let new-text (vfs-apply-edits (Document.text doc) edits)
+        (vfs-open vfs uri new-text new-version (Document.languageId doc))))
+    (None vfs)))
+
+(defn vfs-apply-edits (text edits)
+  (match edits
+    (Nil text)
+    (Cons edit rest (vfs-apply-edits (vfs-apply-edit text edit) rest))))
+
+; A TextEdit with an all-zero range spanning nothing (LSP's "full
+; document sync" shape has no range at all; the caller maps that case
+; to a full-buffer replace before calling this) is handled the same
+; way as any other range -- vfs-apply-edit-lines below just needs a
+; range that actually covers the whole text for that to work out, so
+; the normalization happens at the call site (document_manager.zyl),
+; not here.
+(defn vfs-apply-edit (text edit)
+  (match edit
+    (TE rng newText
+      (match rng
+        (Rng startPos endPos
+          (match startPos
+            (Pos sl sc
+              (match endPos
+                (Pos el ec
+                  (let lines (str-split-lines text)
+                    (let new-lines (vfs-apply-edit-lines lines sl sc el ec newText)
+                      (str-join-lines new-lines))))))))))))
+
+(defn vfs-apply-edit-lines (lines sl sc el ec newText)
+  (let inserted (str-split-lines newText)
+    (let before (list-take lines sl)
+      (let after (list-drop lines (+ el 1))
+        (let start-line (if (< sl (list-length lines)) (list-nth-str lines sl) "")
+          (let end-line (if (< el (list-length lines)) (list-nth-str lines el) "")
+            (let prefix (str-substring start-line 0 (min sc (str-length start-line)))
+              (let suffix (str-substring end-line (min ec (str-length end-line)) (str-length end-line))
+                (vfs-stitch-lines before prefix inserted suffix after)))))))))
+
+; before ++ [prefix ++ inserted[0]] ++ inserted[1..] ++ [last-inserted ++ suffix] ++ after
+; -- collapsed onto a single line when `inserted` is itself single-line
+; (the overwhelmingly common case: one keystroke, one edited line).
+(defn vfs-stitch-lines (before prefix inserted suffix after)
+  (match inserted
+    (Nil (list-append before (Cons (str-concat prefix suffix) after)))
+    (Cons only rst
+      (match rst
+        (Nil (list-append before (Cons (str-concat prefix (str-concat only suffix)) after)))
+        (Cons d1 d2
+          (list-append before
+            (Cons (str-concat prefix only)
+              (list-append (vfs-middle-lines rst) (Cons (str-concat (vfs-last-str rst) suffix) after)))))))))
+
+(defn vfs-middle-lines (lines)
+  (match lines
+    (Nil Nil)
+    (Cons h t (match t (Nil Nil) (Cons d1 d2 (Cons h (vfs-middle-lines t)))))))
+
+(defn vfs-last-str (lines)
+  (match lines
+    (Nil "")
+    (Cons h t (match t (Nil h) (Cons d1 d2 (vfs-last-str t))))))
+
+(defn str-split-lines (s)
+  (str-split-lines-loop s 0 0 (str-length s) Nil))
+
+(defn str-split-lines-loop (s i start len acc)
+  (if (>= i len)
+    (list-reverse (Cons (str-substring s start (- i start)) acc))
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10)
+      (str-split-lines-loop s (+ i 1) (+ i 1) len (Cons (str-substring s start (- i start)) acc))
+      (str-split-lines-loop s (+ i 1) start len acc))))
+
+(defn str-join-lines (lines)
+  (match lines
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil h)
+        (Cons d1 d2
+          (let rest (str-join-lines t)
+            (let m1 (str-concat h "\n")
+              (str-concat m1 rest))))))))
+
+(defn list-take (lst n)
+  (match lst
+    (Nil Nil)
+    (Cons h t (if (<= n 0) Nil (Cons h (list-take t (- n 1)))))))
+
+(defn list-drop (lst n)
+  (match lst
+    (Nil Nil)
+    (Cons h t (if (<= n 0) lst (list-drop t (- n 1))))))
+
+(defn list-nth-str (lst i)
+  (match lst
+    (Nil "")
+    (Cons h t (if (= i 0) h (list-nth-str t (- i 1))))))

@@ -1,0 +1,128 @@
+; === Zyl LSP — Document Manager ===
+; Module: lsp/document_manager
+;
+; Per-document analysis cache. See lsp/compiler_bridge's header comment
+; for why this stops at macro expansion + mutability check + a flat
+; SymTable pass, rather than running compiler/type_inference's
+; collect-definitions.
+;
+; Every real diagnostic-producing check that DOES run here (parser syntax
+; errors, mutability_check's E_MUT_CONFLICT/E_CAPABILITY_LEAK/
+; E_INVALID_CAPABILITY) reports failure by calling `zyl_panic`, which is
+; `exit(1)` if uncaught -- fine for a one-shot CLI compile, fatal for a
+; server that must keep running across many edits of not-yet-valid code.
+; Everything past the balance check therefore runs inside `try`/`catch`;
+; a panic becomes one Diagnostic instead of killing the process.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/result)
+(use core/map)
+(use lsp/lsp_types)
+(use lsp/vfs)
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/expr_inner)
+(use compiler/module_resolver)
+(use compiler/macro_expand)
+(use compiler/mutability_check)
+(use compiler/sexp_balance)
+(use lsp/compiler_bridge)
+
+(deftype DocState
+  (DS Document Int SymTable (List Diagnostic)))
+  ; document, version analyzed at, symbol table, diagnostics
+
+(defn DocState.doc (s) (match s (DS d d1 d2 d3 d)))
+(defn DocState.version (s) (match s (DS d1 v d2 d3 v)))
+(defn DocState.symtable (s) (match s (DS d1 d2 t d3 t)))
+(defn DocState.diagnostics (s) (match s (DS d1 d2 d3 g g)))
+
+(deftype DocManager
+  (DM (Map String DocState)))
+
+(defn dm-new () (DM (map-new)))
+
+(defn dm-get (dm uri)
+  (match dm (DM states (map-get states uri))))
+
+(defn dm-get-text (dm uri)
+  (match (dm-get dm uri)
+    (Some st (Some (Document.text (DocState.doc st))))
+    (None None)))
+
+(defn dm-get-symtable (dm uri)
+  (match (dm-get dm uri)
+    (Some st (Some (DocState.symtable st)))
+    (None None)))
+
+(defn dm-get-diagnostics (dm uri)
+  (match (dm-get dm uri)
+    (Some st (DocState.diagnostics st))
+    (None Nil)))
+
+(defn dm-open-uris (dm)
+  (match dm (DM states (dm-uri-list (map-entries states)))))
+
+(defn dm-uri-list (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest (Cons (ME.key e) (dm-uri-list rest)))))
+
+(defn dm-put (dm uri st)
+  (match dm (DM states (DM (map-insert states uri st)))))
+
+(defn dm-on-open (arena dm uri text version languageId)
+  (let doc (Doc text version uri languageId)
+    (dm-put dm uri (dm-analyze arena doc))))
+
+(defn dm-on-change (arena dm uri edits new-version)
+  (match (dm-get dm uri)
+    (Some st
+      (let old-doc (DocState.doc st)
+        (let new-text (vfs-apply-edits (Document.text old-doc) edits)
+          (let new-doc (Doc new-text new-version uri (Document.languageId old-doc))
+            (dm-put dm uri (dm-analyze arena new-doc))))))
+    (None dm)))
+
+; Full-document replace (didChange with no range, or a didSave-triggered
+; re-analysis of text already known to the client) -- skips vfs-apply-edits.
+(defn dm-on-full-change (arena dm uri text new-version)
+  (match (dm-get dm uri)
+    (Some st
+      (let old-doc (DocState.doc st)
+        (let new-doc (Doc text new-version uri (Document.languageId old-doc))
+          (dm-put dm uri (dm-analyze arena new-doc)))))
+    (None dm)))
+
+(defn dm-on-close (dm uri)
+  (match dm (DM states (DM (map-remove states uri)))))
+
+(defn dm-analyze (arena doc)
+  (let text (Document.text doc)
+    (let balance (sb-check-string text)
+      (if (= (sb-result-balanced balance) 0)
+        (DS doc (Document.version doc) (st-new) (dm-balance-diags balance))
+        (dm-analyze-parsed arena doc text)))))
+
+(defn dm-balance-diags (balance)
+  (match (diagnostic-from-balance balance)
+    (Some d (Cons d Nil))
+    (None Nil)))
+
+(defn dm-analyze-parsed (arena doc text)
+  (let outcome (try (Ok (dm-run-pipeline arena text)) (catch e (Err e)))
+    (match outcome
+      (Ok tbl (DS doc (Document.version doc) tbl Nil))
+      (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg) Nil))))))
+
+(defn dm-run-pipeline (arena text)
+  (let prog (zyl-parse arena text)
+    (let exprs0 (convert-ast-list prog)
+      (let exprs1 (mr-resolve-program arena exprs0)
+        (let exprs (me-expand-program exprs1)
+          (let d1 (mc-check-program exprs)
+            (st-build exprs)))))))

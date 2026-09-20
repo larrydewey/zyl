@@ -121,9 +121,9 @@
       (begin
         (match (Expr.inner a)
           (ELambda d1 d2 d3
-            (ffi-call "zyl_f_error" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
+            (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
           (EFn d4 d5 d6
-            (ffi-call "zyl_f_error" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
+            (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
           (d7 0))
         (mc-check-ffi-args rest)))))
 
@@ -134,7 +134,7 @@
     (ESetBang name val
       (begin
         (if (= (mc-in-scope name mutscope) 0)
-          (ffi-call "zyl_f_error" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
+          (ffi-call "zyl_panic" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
           0)
         (mc-expr val mutscope)))
     (ELet name val body
@@ -224,14 +224,14 @@
     (ESpawn closure
       (begin
         (if (> (mc-refs-any closure mutscope) 0)
-          (ffi-call "zyl_f_error" "E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor" 1000)
+          (ffi-call "zyl_panic" "E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor" 1000)
           0)
         (mc-expr closure mutscope)))
     (ESend actor msg
       (begin
         (mc-expr actor mutscope)
         (if (> (mc-refs-any msg mutscope) 0)
-          (ffi-call "zyl_f_error" "E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable" 1000)
+          (ffi-call "zyl_panic" "E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable" 1000)
           0)
         (mc-expr msg mutscope)))
     (ESendClosure actor closure d16

@@ -255,16 +255,16 @@
     (Balanced 0)
     (UnbalancedOpenString
       (let msg (bal-msg "E_UNTERMINATED_STRING" "unterminated string literal reached end of input" (sb-hint result))
-        (ffi-call "zyl_f_error" msg 1000)))
+        (ffi-call "zyl_panic" msg 1000)))
     (UnclosedOpen closer line col
       (let msg (bal-msg-loc "E_UNBALANCED_UNCLOSED" "unclosed opener never reached its matching closer" line col (sb-hint result))
-        (ffi-call "zyl_f_error" msg 1000)))
+        (ffi-call "zyl_panic" msg 1000)))
     (UnbalancedClose closer line col
       (let msg (bal-msg-loc "E_UNBALANCED_UNEXPECTED_CLOSE" "unexpected closing delimiter" line col (sb-hint result))
-        (ffi-call "zyl_f_error" msg 1000)))
+        (ffi-call "zyl_panic" msg 1000)))
     (MismatchedPair opener closer line col
       (let msg (bal-msg-loc "E_UNBALANCED_MISMATCHED_BRACKET" "closing delimiter does not match its opener" line col (sb-hint result))
-        (ffi-call "zyl_f_error" msg 1000)))))
+        (ffi-call "zyl_panic" msg 1000)))))
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)

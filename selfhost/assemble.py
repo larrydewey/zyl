@@ -247,6 +247,10 @@ files = [
     'stdlib/compiler/module_resolver.zyl',
     'stdlib/compiler/macro_expand.zyl',
     'stdlib/compiler/mutability_check.zyl',
+    'stdlib/compiler/arity_check.zyl',
+    'stdlib/compiler/duplicate_check.zyl',
+    'stdlib/compiler/exhaustiveness_check.zyl',
+    'stdlib/compiler/unused_check.zyl',
     'stdlib/compiler/resolver.zyl',
     'stdlib/compiler/type_system.zyl',
     'stdlib/compiler/type_inference.zyl',
@@ -262,6 +266,17 @@ files = [
     'stdlib/compiler/sexp_balance.zyl',
     'stdlib/compiler/error_codes.zyl',
     'stdlib/compiler/error_report.zyl',
+    # NOTE: stdlib/lsp/* is deliberately NOT part of this bundle. This file
+    # assembles the SELF-HOSTED COMPILER's own source (what driver.zyl uses
+    # to compile itself for the stage2/stage3 fixed-point check) -- driver.zyl
+    # never (use)s anything under lsp/. The zyl-lsp binary is built directly
+    # via `stage2.bin selfhost/lsp_main.zyl -o zyl-lsp` (see boot.sh), which
+    # resolves its own `(use lsp/...)` tree dynamically through
+    # module_resolver.zyl reading stdlib/ straight off disk -- it needs no
+    # entry here at all. A prior change added all 16 lsp/* files to this list
+    # by mistake, which broke this script outright (several of those files
+    # didn't exist yet) and would have pulled an entire language server into
+    # every self-hosting bootstrap for no reason.
     # region_inference/optimization were previously excluded as "dead code"
     # with link errors; tools/repl.zyl (the self-hosted REPL) calls them,
     # so they now ship in the boot source.

@@ -1,0 +1,21 @@
+; === Zyl LSP — Hover Service ===
+; Module: lsp/services/hover
+; Name-based hover: resolve the identifier under the cursor via
+; lsp/source_index (text scan, no real position tracking exists in the
+; compiler -- see compiler_bridge.zyl's header), then look it up in the
+; document's SymTable.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use lsp/source_index)
+(use lsp/compiler_bridge)
+
+(defn hover-at (text tbl line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      None
+      (match (bridge-hover-for-name tbl word)
+        (Some md (Some (Hov (MC MKMarkdown md) None)))
+        (None None)))))

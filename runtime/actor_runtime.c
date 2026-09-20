@@ -1012,6 +1012,8 @@ long long zyl_cstr_decode(long long arena, long long src, long long start, long 
             char n = s[i + 1];
             if (n == 'n') { out[o++] = '\n'; i += 2; }
             else if (n == 't') { out[o++] = '\t'; i += 2; }
+            else if (n == 'r') { out[o++] = '\r'; i += 2; }
+            else if (n == '0') { out[o++] = '\0'; i += 2; }
             else if (n == '"') { out[o++] = '"'; i += 2; }
             else if (n == '\\') { out[o++] = '\\'; i += 2; }
             else return 0;

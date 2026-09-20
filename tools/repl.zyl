@@ -15,10 +15,17 @@
 (use compiler/region_inference)
 (use compiler/optimization)
 
-(def repl-banner "Zyl REPL — type expressions, :q to quit")
-
+; Inlined rather than a top-level `def`: top-level `(def name val)`
+; bindings never actually become readable globals in this compiler --
+; referencing one anywhere lowers through codegen's unbound-identifier
+; path (cg-load-nonslot), which used to silently compile to the literal
+; 0 instead of the real value (confirmed empirically: this line used to
+; print "0", not the banner). Codegen now hard-fails on that path
+; instead of silently returning 0, so this is inlined directly rather
+; than relying on top-level `def` reads, which nothing in this compiler
+; actually implements.
 (defn repl-print-banner ()
-  (print repl-banner))
+  (print "Zyl REPL — type expressions, :q to quit"))
 
 ; compiler/optimization.zyl (imported below, but never actually called --
 ; see repl-optimize's own comment) references `list-set`, which doesn't
@@ -150,7 +157,7 @@
 ; print is simply printing that. Not the most useful REPL UX for that
 ; specific input, but correct and explainable, which is what matters
 ; here.
-(defn repl-wrap-expr (arena line) String
+(defn repl-wrap-expr (arena line)
   (str-concat "(defn main () (print " (str-concat line "))")))
 
 (defn repl-parse (arena src)

@@ -1,0 +1,179 @@
+; === Zyl LSP — Source Index ===
+; Module: lsp/source_index
+;
+; Position tracking that lives entirely OUTSIDE the real compiler
+; pipeline: nothing in the real Token/Ast/Expr carries a source
+; position (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), so hover/goto-
+; definition/document-symbols/semantic-tokens are built here instead, by
+; scanning the raw document TEXT directly -- the same technique
+; compiler/sexp_balance.zyl already uses for its own line/col tracking,
+; reusing its character classifiers.
+;
+; Two things this module answers, independent of each other:
+;   1. byte offset <-> (line, col), and "what identifier is at this
+;      position" -- for hover/goto-definition/completion, which then
+;      look the resolved NAME up in lsp/compiler_bridge's SymTable.
+;   2. a flat list of top-level (defn/deftype/defstruct/trait) forms
+;      with their name, kind, and position -- for document-symbols and
+;      for "go to the definition of this name" (position lookup, not
+;      NAME lookup: given a name, where in the text was it declared).
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use compiler/sexp_balance)
+
+; ===========================================================================
+; OFFSET <-> LINE/COL (0-based, matching LSP's Position)
+; ===========================================================================
+
+(defn si-offset-of-pos (text line col)
+  (si-offset-of-pos-loop text 0 0 0 line col (str-length text)))
+
+(defn si-offset-of-pos-loop (text i curline curcol targetline targetcol len)
+  (if (or (>= i len) (and (= curline targetline) (= curcol targetcol)))
+    i
+    (if (= curline targetline)
+      (if (>= curcol targetcol) i (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len))
+      (if (= (sb-char-code (str-substring text i 1)) 10)
+        (si-offset-of-pos-loop text (+ i 1) (+ curline 1) 0 targetline targetcol len)
+        (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len)))))
+
+(defn si-pos-of-offset (text offset)
+  (si-pos-of-offset-loop text 0 0 0 (min offset (str-length text))))
+
+(defn si-pos-of-offset-loop (text i line col target)
+  (if (>= i target)
+    (Pair2 line col)
+    (if (= (sb-char-code (str-substring text i 1)) 10)
+      (si-pos-of-offset-loop text (+ i 1) (+ line 1) 0 target)
+      (si-pos-of-offset-loop text (+ i 1) line (+ col 1) target))))
+
+(deftype Pair2 (Pair2 Int Int))
+(defn Pair2.line (p) (match p (Pair2 l d1 l)))
+(defn Pair2.col (p) (match p (Pair2 d1 c c)))
+
+; ===========================================================================
+; IDENTIFIER-AT-POSITION
+; ===========================================================================
+
+(defn si-is-ident-char (ch)
+  (let c (sb-char-code ch)
+    (not (or (= c 32) (or (= c 9) (or (= c 10) (or (= c 13)
+        (or (= c 40) (or (= c 41) (or (= c 91) (or (= c 93)
+        (or (= c 123) (or (= c 125) (or (= c 34) (= c 59)))))))))))))))
+
+(defn si-word-at (text line col)
+  (let offset (si-offset-of-pos text line col)
+    (si-word-at-offset text offset)))
+
+(defn si-word-at-offset (text offset)
+  (let len (str-length text)
+    (let clamped (if (>= offset len) (- len 1) offset)
+      (if (< clamped 0)
+        ""
+        (let start (si-word-scan-back text clamped)
+          (let end (si-word-scan-fwd text clamped len)
+            (if (> end start) (str-substring text start (- end start)) "")))))))
+
+(defn si-word-scan-back (text i)
+  (if (<= i 0)
+    0
+    (if (> (si-is-ident-char (str-substring text (- i 1) 1)) 0)
+      (si-word-scan-back text (- i 1))
+      i)))
+
+(defn si-word-scan-fwd (text i len)
+  (if (>= i len)
+    i
+    (if (> (si-is-ident-char (str-substring text i 1)) 0)
+      (si-word-scan-fwd text (+ i 1) len)
+      i)))
+
+; ===========================================================================
+; TOP-LEVEL FORM INDEX — name, kind, position, by a single depth-tracked
+; scan (same character classification as sexp_balance, but recording
+; instead of just validating).
+; ===========================================================================
+
+(deftype TopForm (TF String String Int Int)) ; kind ("defn"/"deftype"/"defstruct"/"trait"), name, line, col
+
+(defn TopForm.kind (f) (match f (TF k d1 d2 d3 k)))
+(defn TopForm.name (f) (match f (TF d1 n d2 d3 n)))
+(defn TopForm.line (f) (match f (TF d1 d2 l d3 l)))
+(defn TopForm.col (f) (match f (TF d1 d2 d3 c c)))
+
+(defn si-top-level-forms (text)
+  (list-reverse (si-scan text 0 (str-length text) 0 0 0 0 Nil)))
+
+; depth: paren/bracket/brace nesting depth. in-string/in-comment/escape:
+; same three-flag context as sexp_balance's CheckState, tracked the same
+; way so string/comment contents never get misread as code.
+(defn si-scan (text i len line col depth in-string acc)
+  (if (>= i len)
+    acc
+    (let ch (str-substring text i 1)
+      (if (> in-string 0)
+        (if (sb-is-backslash ch)
+          (si-scan text (+ i 2) len line (+ col 2) depth in-string acc)
+          (if (sb-is-quote ch)
+            (si-scan text (+ i 1) len line (+ col 1) depth 0 acc)
+            (si-scan-advance text i len line col depth in-string acc ch)))
+        (if (sb-is-quote ch)
+          (si-scan text (+ i 1) len line (+ col 1) depth 1 acc)
+          (if (sb-is-semicolon ch)
+            (si-scan-skip-comment text i len line acc)
+            (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+              (si-scan-open text i len line col depth acc ch)
+              (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
+                (si-scan text (+ i 1) len line (+ col 1) (- depth 1) 0 acc)
+                (si-scan-advance text i len line col depth in-string acc ch)))))))))
+
+(defn si-scan-advance (text i len line col depth in-string acc ch)
+  (if (sb-is-newline ch)
+    (si-scan text (+ i 1) len (+ line 1) 0 depth in-string acc)
+    (si-scan text (+ i 1) len line (+ col 1) depth in-string acc)))
+
+(defn si-scan-skip-comment (text i len line acc)
+  (if (>= i len)
+    acc
+    (if (sb-is-newline (str-substring text i 1))
+      (si-scan text (+ i 1) len (+ line 1) 0 0 0 acc)
+      (si-scan-skip-comment text (+ i 1) len line acc))))
+
+; Opening a bracket AT depth 0 is the start of a candidate top-level
+; form; try to read a "(keyword name" header right after it.
+(defn si-scan-open (text i len line col depth acc ch)
+  (if (= depth 0)
+    (match (si-try-header text (+ i 1) len line col)
+      (Some form (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 (Cons form acc)))
+      (None (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
+    (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
+
+(defn si-try-header (text pos len line col)
+  (let p1 (si-skip-ws text pos len)
+    (let kwend (si-word-scan-fwd text p1 len)
+      (let kw (str-substring text p1 (- kwend p1))
+        (if (si-is-def-keyword kw)
+          (let p2 (si-skip-ws text kwend len)
+            (let nameend (si-word-scan-fwd text p2 len)
+              (let name (str-substring text p2 (- nameend p2))
+                (if (> (str-length name) 0)
+                  (Some (TF kw name line col))
+                  None)))
+            )
+          None)))))
+
+(defn si-is-def-keyword (kw)
+  (or (> (str-eq kw "defn") 0)
+    (or (> (str-eq kw "deftype") 0)
+      (or (> (str-eq kw "defstruct") 0)
+        (or (> (str-eq kw "defstruct+") 0)
+          (> (str-eq kw "trait") 0))))))
+
+(defn si-skip-ws (text i len)
+  (if (>= i len)
+    i
+    (let c (sb-char-code (str-substring text i 1))
+      (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (si-skip-ws text (+ i 1) len) i))))

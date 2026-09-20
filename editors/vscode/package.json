@@ -1,19 +1,26 @@
 {
-  "name": "zyl-lang",
-  "displayName": "Zyl Language Basics",
-  "description": "Syntax highlighting, bracket matching, and commenting for the Zyl deterministic Lisp systems language.",
+  "name": "zyl",
+  "displayName": "Zyl",
+  "description": "Language support for Zyl (deterministic Lisp systems language)",
   "version": "0.1.0",
   "publisher": "zyl-lang",
-  "license": "MIT",
-  "engines": { "vscode": "^1.70.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:zyl"
+  ],
+  "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "zyl",
         "aliases": ["Zyl", "zyl"],
         "extensions": [".zyl"],
-        "configuration": "./zyl-language-configuration.json"
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -22,6 +29,46 @@
         "scopeName": "source.zyl",
         "path": "./syntaxes/zyl.tmLanguage.json"
       }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Zyl",
+      "properties": {
+        "zyl.lsp.path": {
+          "type": "string",
+          "default": "zyl-lsp",
+          "description": "Path to the Zyl LSP server binary (zyl-lsp)."
+        },
+        "zyl.lsp.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the Zyl LSP server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "zyl.restartLSP",
+        "title": "Zyl: Restart Language Server"
+      }
     ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-electron": "^2.3.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
   }
 }

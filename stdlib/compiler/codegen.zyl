@@ -377,7 +377,29 @@
   ; passed as an argument and called indirectly (HOF support).
   (if (= (cg-fn-known st n) 1)
     (cg-load-fnref st n)
-    (cg-load-unresolved st)))
+    (if (> (str-eq n "nil") 0)
+      (cg-load-unresolved st)
+      (cg-fail-unbound n))))
+
+; A name that resolves to neither a bound local slot nor a known
+; top-level function is a genuine unbound identifier (`nil` is the one
+; deliberate exception above, handled by cg-load-unresolved). This used
+; to fall through silently to cg-load-unresolved for EVERY unbound name,
+; not just `nil` -- compiling the reference to the bare integer 0, so a
+; typo'd or never-bound name never failed to compile, it just became 0
+; and crashed later, at runtime, wherever that 0 was used as a pointer
+; (an arena, a buffer, an FFI argument) -- far from the actual mistake.
+; Confirmed: this is exactly what was happening to every free `arena`
+; reference in early stdlib/lsp/*.zyl drafts (none of those functions
+; ever bound `arena`), each one segfaulting inside whatever FFI call
+; first dereferenced the resulting garbage/near-null pointer. Hard
+; failure at compile time, at the actual unbound reference, replaces
+; that entire class of bug with a real error at the real location.
+(defn cg-fail-unbound (n)
+  (let m1 "E_UNBOUND_VARIABLE: unbound identifier '"
+    (let m2 (str-concat m1 n)
+      (let msg (str-concat m2 "'")
+        (ffi-call "zyl_panic" msg 1000)))))
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+_ZYL_")
@@ -1181,7 +1203,7 @@
     (ICall d59 args (icnf-add2 2 (icnf-count-list args)))
     (IFfi d60 args (icnf-add2 2 (icnf-count-list args)))
     (IPrint a (+ 1 (icnf-size a)))
-    (IIf c t eb (icnf-add3 4 (icnf-size c) (icnf-size t) (icnf-size eb)))
+    (IIf c t eb (icnf-add3 4 (icnf-size c) (icnf-add2 (icnf-size t) (icnf-size eb))))
     (IWhile c b (icnf-add3 3 (icnf-size c) (icnf-size b)))
     (ISet d61 v (+ 2 (icnf-size v)))
     (ILet d62 v b (icnf-add3 3 (icnf-size v) (icnf-size b)))

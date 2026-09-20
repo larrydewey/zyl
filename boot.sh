@@ -43,6 +43,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="${SCRIPT_DIR}/selfhost/zyl_selfhost_compiler.zyl"
 OUT="${SCRIPT_DIR}/build/boot"
 RUNTIME="${SCRIPT_DIR}/runtime/actor_runtime.c"
+
+# Force stdlib resolution to this checkout's freshly-synced build/boot/stdlib
+# (see cli-resolve-bundledir in selfhost/driver.zyl) instead of silently
+# preferring a populated $HOME/.zyl from an old `install.sh` run, which would
+# make this build depend on unrelated machine state and mask edits to
+# stdlib/ made in this checkout (confirmed to happen in practice).
+export ZYL_HOME="${OUT}"
 BOOTSTRAP=0
 BOOTSTRAP_SELF=0
 [ "${1:-}" = "--bootstrap-from-rust" ] && BOOTSTRAP=1
@@ -193,6 +200,11 @@ exec "$SCRIPT_DIR/stage2.bin" "$@"
 WRAPPER_EOF
 chmod +x "${OUT}/zyl-self"
 ok "zyl-self wrapper written"
+
+step "Building zyl-lsp (LSP server)"
+"${OUT}/stage2.bin" "${SCRIPT_DIR}/selfhost/lsp_main.zyl" -o "${OUT}/zyl-lsp" >/dev/null
+[ -x "${OUT}/zyl-lsp" ] || die "zyl-lsp build failed"
+ok "zyl-lsp linked"
 
 echo ""
 echo "Self-hosting verified: fixed point holds (no Rust in the build path)."

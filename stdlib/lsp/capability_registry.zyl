@@ -1,0 +1,57 @@
+; === Zyl LSP — Capability Registry ===
+; Module: lsp/capability_registry
+; ServerCapabilities advertisement for `initialize`.
+
+(use lsp/lsp_types)
+(use core/core)
+(use core/list)
+(use lsp/services/semantic_tokens)
+
+; Array literal syntax (`[...]`) reliably crashes or mislinks under the
+; current self-hosted compiler -- see semantic_tokens.zyl's header
+; comment. Cons/Nil chains below are the proven-safe equivalent.
+
+(defn lsp-server-capabilities ()
+  (SCaps
+    (Some (TDSO (Some (Right TDSKIncremental)) (Some 1) (Some 1) (Some (Right (SO (Some 1)))) (Some 1)))
+    (Some (COpt (Some 1)
+      (Some (Cons (CTC "(") (Cons (CTC ".") (Cons (CTC ":") (Cons (CTC "<") (Cons (CTC "\"") Nil))))))
+      (Some (Cons (CTC "(") (Cons (CTC ".") (Cons (CTC ":") Nil))))
+      (Some (CIKO (Some (Cons CIKFunction (Cons CIKMethod (Cons CIKVariable (Cons CIKStruct (Cons CIKInterface (Cons CIKEnum (Cons CIKKeyword (Cons CIKTypeParameter (Cons CIKCapability (Cons CIKRegion (Cons CIKVariant (Cons CIKTraitMethod (Cons CIKFFICall (Cons CIKActorSpawn Nil)))))))))))))))))
+      (Some 1)))
+    (Some (HOpt (Some 1)))
+    None
+    None
+    (Some (DefOpt (Some 1)))
+    None
+    None
+    None
+    None
+    (Some (DSOpt (Some 1) (Some 1)))
+    (Some (CAOpt
+      (Some (Cons (CAK "quickfix") (Cons (CAK "refactor") (Cons (CAK "refactor.extract") (Cons (CAK "source") (Cons (CAK "source.organizeImports") Nil))))))
+      (Some 1) (Some 1)))
+    None
+    None
+    None
+    (Some (FROpt (Some 1)))
+    (Some (SROpt (Some 1)))
+    None
+    None
+    (Some (STOpt (Some (semantic-tokens-legend)) (Some 1) (Some (Right (STFOpt (Some 1)))) (Some 1) (Some 1)))
+    (Some (IHOpt (Some 1) (Some 1) (Some 1)))
+    None
+    (Some (DiagOpt (Some (Right (DWCC (Some 1)))) (Some 1) (Some 1)))
+    None
+    (Some (ROpt (Some 1) (Some 1) (Some 1)))
+    (Some (WSOpt (Some 1) (Some 1)))
+    (Some (ECOpt
+      (Cons "zyl.organizeImports" (Cons "zyl.sortImports" (Cons "zyl.addMissingMatchArms" (Cons "zyl.fixCapabilityConflict" Nil))))
+      (Some 1)))
+    (Some (WOpt (Some (WFSC (Some 1) (Some 1)))))
+    (Some (DFOpt (Some 1)))
+    None
+    (Some 1)))
+
+(defn lsp-initialize-result ()
+  (InitR (lsp-server-capabilities) (Some (IRSI "Zyl Language Server" "0.1.0"))))

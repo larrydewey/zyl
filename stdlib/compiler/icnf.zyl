@@ -203,7 +203,7 @@
     (Nil fns)
     (Cons d1 d2
       (if (> (ic-has-main fns) 0)
-        (ffi-call "zyl_f_error" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
+        (ffi-call "zyl_panic" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
         (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil)))) fns)))))
 
 (defn ic-has-main (fns)
@@ -335,7 +335,7 @@
       (let tail (vt-from-adtvariants rest vt (+ tag 1) gid)
         (let nm (AV.name v)
           (if (> (av-list-has-name rest nm) 0)
-            (ffi-call "zyl_f_error" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
+            (ffi-call "zyl_panic" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
             (VTEntry nm
                      tag
                      (AV.fields v)
@@ -1250,7 +1250,7 @@
       (let iname (MA.variant arm)
         (if (= (vt-tag-of vt iname) -1)
           (let msg (str-concat "E_MATCH_NONEXHAUSTIVE: unknown variant `" (str-concat iname "` in match arm"))
-            (ffi-call "zyl_f_error" msg 1000))
+            (ffi-call "zyl_panic" msg 1000))
           (ic-check-variants-exist rest vt))))))
 
 ; Real exhaustiveness, using VTEntry's gid (see ast.zyl): every variant
@@ -1309,7 +1309,7 @@
           (if (= (ic-arms-all-gid arms vt gid) 0)
             0
             (if (> (ic-names-uncovered (vt-names-with-gid vt gid) arms) 0)
-              (ffi-call "zyl_f_error" "E_MATCH_NONEXHAUSTIVE: match does not cover every variant" 1000)
+              (ffi-call "zyl_panic" "E_MATCH_NONEXHAUSTIVE: match does not cover every variant" 1000)
               0)))))))
 
 ; Exhaustiveness check: if no catch-all arm, verify each arm's variant is
@@ -1482,7 +1482,7 @@
   (if (is-nil args)
     (if (> consts 0)
       (if (> calls 1)
-        (ffi-call "zyl_f_error" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
+        (ffi-call "zyl_panic" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
         0)
       0)
     (ic-arm-guard-count arena (rest-expr args) vt

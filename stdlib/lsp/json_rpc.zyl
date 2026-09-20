@@ -1,0 +1,509 @@
+; === Zyl LSP — JSON-RPC 2.0 Codec ===
+; Module: lsp/json_rpc
+; Native Zyl JSON encoder/decoder + stdio transport for LSP (simplified:
+; assumes well-formed JSON on the wire, since both peers are JSON-RPC
+; implementations -- not a general-purpose lenient parser).
+
+(use allocator/allocator)
+(use lsp/lsp_types)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/map)
+(use compiler/error_report)
+
+; ===========================================================================
+; JSON VALUE ADT (internal representation)
+; ===========================================================================
+
+(deftype JSON
+  (JNull)
+  (JBool Bool)
+  (JInt Int)
+  (JFloat String)
+  (JStr String)
+  (JArr (List JSON))
+  (JObj (Map String JSON)))
+
+; Parser return pair: local rather than compiler/type_system's Pair, to
+; keep this module free of any dependency on the type-inference engine.
+(deftype JVal (JV JSON Int))     ; parsed value, position after it
+(deftype JKV (JKVP String JSON Int)) ; parsed key+value, position after it
+
+; ===========================================================================
+; ENCODER: Zyl LSP types -> JSON string
+; ===========================================================================
+
+(defn jr-encode-response (resp)
+  (match resp
+    (RespMsg d0 id result error
+      (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
+        (let obj1 (map-insert obj0 "id" (JInt id))
+          (let obj2 (if (option-is-some result) (map-insert obj1 "result" (jr-encode-any (option-unwrap result JNull))) obj1)
+            (let obj3 (if (option-is-some error) (map-insert obj2 "error" (jr-encode-error (option-unwrap error (RErr 0 "" None)))) obj2)
+              (jr-json-to-string (JObj obj3)))))))))
+
+(defn jr-encode-notification (notif)
+  (match notif
+    (NotifMsg d0 method params
+      (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
+        (let obj1 (map-insert obj0 "method" (JStr method))
+          (let obj2 (if (option-is-some params) (map-insert obj1 "params" (jr-encode-any (option-unwrap params LSPNull))) obj1)
+            (jr-json-to-string (JObj obj2))))))))
+
+(defn jr-encode-request (req)
+  (match req
+    (ReqMsg d0 id method params
+      (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
+        (let obj1 (map-insert obj0 "id" (JInt id))
+          (let obj2 (map-insert obj1 "method" (JStr method))
+            (let obj3 (if (option-is-some params) (map-insert obj2 "params" (jr-encode-any (option-unwrap params LSPNull))) obj2)
+              (jr-json-to-string (JObj obj3)))))))))
+
+(defn jr-encode-any (val)
+  (match val
+    (LSPNull JNull)
+    (LSPBool b (JBool b))
+    (LSPInt i (JInt i))
+    (LSPFloat s (JFloat s))
+    (LSPString s (JStr s))
+    (LSPArray arr (JArr (jr-encode-any-list arr)))
+    (LSPObject obj (JObj (map-map-values jr-encode-any obj)))))
+
+(defn jr-encode-any-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (jr-encode-any h) (jr-encode-any-list t)))))
+
+(defn jr-encode-error (err)
+  (match err
+    (RErr code message data
+      (let obj0 (map-insert (map-new) "code" (JInt code))
+        (let obj1 (map-insert obj0 "message" (JStr message))
+          (JObj (if (option-is-some data) (map-insert obj1 "data" (jr-encode-any (option-unwrap data LSPNull))) obj1)))))))
+
+; ===========================================================================
+; JSON -> STRING (compact)
+; ===========================================================================
+
+(defn jr-json-to-string (j)
+  (let buf ""
+    (jr-write-json-str buf j)))
+
+; buf-append (used by the earlier draft) mutates via string reassignment
+; through `str-concat`, not in place -- so every writer here just returns
+; the extended string and threads it through, exactly like the rest of
+; this codebase's string-building code (see error_report.zyl).
+(defn jr-write-json-str (buf j)
+  (match j
+    (JNull (str-concat buf "null"))
+    (JBool b (str-concat buf (if b "true" "false")))
+    (JInt i (str-concat buf (int-to-str-signed i)))
+    (JFloat s (str-concat buf s))
+    (JStr s (jr-write-string-str buf s))
+    (JArr arr (jr-write-array-str buf arr))
+    (JObj obj (jr-write-object-str buf obj))))
+
+; error_report.zyl's int-to-str doesn't handle negatives (LSP ids/counts
+; are never negative in practice, but a defensive minus-sign prefix costs
+; nothing).
+(defn int-to-str-signed (n)
+  (if (< n 0) (str-concat "-" (int-to-str (- 0 n))) (int-to-str n)))
+
+(defn jr-write-string-str (buf s)
+  (jr-write-string-loop (str-concat buf "\"") s 0 (str-length s)))
+
+(defn jr-write-string-loop (buf s i len)
+  (if (>= i len)
+    (str-concat buf "\"")
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (jr-write-string-loop (jr-write-json-char buf c) s (+ i 1) len))))
+
+(defn jr-write-json-char (buf c)
+  (match c
+    (34 (str-concat buf "\\\""))
+    (92 (str-concat buf "\\\\"))
+    (8 (str-concat buf "\\b"))
+    (9 (str-concat buf "\\t"))
+    (10 (str-concat buf "\\n"))
+    (12 (str-concat buf "\\f"))
+    (13 (str-concat buf "\\r"))
+    (d1 (if (and (>= c 32) (< c 127))
+        (str-concat buf (char-from-int c))
+        (str-concat buf (jr-encode-unicode c))))))
+
+; Only reachable for control bytes < 32 and the DEL/8-bit range, since
+; the printable-ASCII path above (32..126) goes through char-from-int
+; directly -- this only ever needs to print small values as 4 hex
+; digits.
+(defn jr-encode-unicode (codepoint)
+  (let hex "0123456789abcdef"
+    (let h1 (str-substring hex (/ codepoint 4096) 1)
+      (let h2 (str-substring hex (% (/ codepoint 256) 16) 1)
+        (let h3 (str-substring hex (% (/ codepoint 16) 16) 1)
+          (let h4 (str-substring hex (% codepoint 16) 1)
+            (str-concat "\\u" (str-concat h1 (str-concat h2 (str-concat h3 h4))))))))))
+
+(defn jr-write-array-str (buf arr)
+  (match arr
+    (Nil (str-concat buf "[]"))
+    (Cons h t (jr-write-array-rest (jr-write-json-str (str-concat buf "[") h) t))))
+
+(defn jr-write-array-rest (buf xs)
+  (match xs
+    (Nil (str-concat buf "]"))
+    (Cons h t (jr-write-array-rest (jr-write-json-str (str-concat buf ",") h) t))))
+
+(defn jr-write-object-str (buf obj)
+  (jr-write-entries-str (str-concat buf "{") (map-entries obj) 1)
+
+)
+
+(defn jr-write-entries-str (buf entries first)
+  (match entries
+    (Nil (str-concat buf "}"))
+    (Cons e rest
+      (let buf1 (if (> first 0) buf (str-concat buf ","))
+        (let buf2 (jr-write-string-str buf1 (ME.key e))
+          (let buf3 (str-concat buf2 ":")
+            (jr-write-entries-str (jr-write-json-str buf3 (ME.value e)) rest 0)))))))
+
+; ===========================================================================
+; DECODER: JSON string -> internal JSON, then -> LSP types
+; ===========================================================================
+
+(defn jr-decode-message (s)
+  (jr-decode-message-json (jr-parse-json s)))
+
+; Left = RequestMessage (has "id"), Right = NotificationMessage (no
+; "id") -- matching jr-decode-message's declared
+; (Either RequestMessage NotificationMessage) return type exactly, so
+; lsp_server.zyl's `(match ... (Left req ...) (Right notif ...))`
+; dispatch reads the right field layout for each. A prior version
+; tagged BOTH as Right: lsp-loop then read every real request (with an
+; Int id) as if it were a NotifMsg (String method only), silently
+; misinterpreting the id integer as a string pointer wherever the
+; (nonexistent) "method" field got used -- confirmed via the exact
+; symptom: "cstr-eq: invalid string pointer 0x1" for request id 1, 0x2
+; for id 2, etc. A raw JSON-RPC ResponseMessage (no "method" at all)
+; is never sent TO this server in the request/notification flow
+; lsp_server.zyl implements, so that case isn't modeled here -- it
+; falls through to an empty-method "request", which cleanly reports
+; "method not found" rather than crashing.
+(defn jr-decode-message-json (j)
+  (match j
+    (JObj obj
+      (let method-opt (map-get obj "method")
+        (match method-opt
+          (Some (JStr method)
+            (match (map-get obj "id")
+              (Some id-val (Left (ReqMsg "2.0" (jr-decode-int id-val) method (jr-decode-params-opt obj))))
+              (None (Right (NotifMsg "2.0" method (jr-decode-params-opt obj))))))
+          (None (Left (ReqMsg "2.0" 0 "" None))))))
+    (d1 (Left (ReqMsg "2.0" 0 "" None)))))
+
+(defn jr-decode-params-opt (obj)
+  (match (map-get obj "params")
+    (Some p (Some (jr-decode-any p)))
+    (None None)))
+
+(defn jr-decode-id (j)
+  (match j
+    (JInt i i)
+    (JStr s (ffi-call "zyl_cstr_to_int" s 1000))
+    (d1 0)))
+
+(defn jr-decode-response-json (j)
+  (match j
+    (JObj obj
+      (let id (jr-decode-id (option-unwrap (map-get obj "id") (JInt 0)))
+        (RespMsg "2.0" id
+          (option-map (map-get obj "result") jr-decode-any)
+          (option-map (map-get obj "error") jr-decode-error))))
+    (d1 (RespMsg "2.0" 0 None (Some (RErr -32700 "Parse error" None))))))
+
+(defn jr-decode-error (j)
+  (match j
+    (JObj obj
+      (RErr (jr-decode-int (option-unwrap (map-get obj "code") (JInt 0)))
+            (jr-decode-string (option-unwrap (map-get obj "message") (JStr "")))
+            (option-map (map-get obj "data") jr-decode-any)))
+    (d1 (RErr 0 "" None))))
+
+(defn jr-decode-any (j)
+  (match j
+    (JNull LSPNull)
+    (JBool b (LSPBool b))
+    (JInt i (LSPInt i))
+    (JFloat s (LSPFloat s))
+    (JStr s (LSPString s))
+    (JArr arr (LSPArray (jr-decode-any-list arr)))
+    (JObj obj (LSPObject (map-map-values jr-decode-any obj)))))
+
+(defn jr-decode-any-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (jr-decode-any h) (jr-decode-any-list t)))))
+
+(defn jr-decode-int (j)
+  (match j
+    (JInt i i)
+    (JStr s (ffi-call "zyl_cstr_to_int" s 1000))
+    (d1 0)))
+
+(defn jr-decode-string (j)
+  (match j
+    (JStr s s)
+    (d1 "")))
+
+; ===========================================================================
+; JSON PARSER (recursive descent over a byte-indexed String)
+; ===========================================================================
+
+(defn jr-parse-json (s)
+  (match (jr-parse-value s 0)
+    (JV val d1 val)))
+
+(defn jr-parse-value (s pos)
+  (let c (jr-skip-whitespace s pos)
+    (let ch (ffi-call "zyl_cstr_byte_at" s c 1000)
+      (match ch
+        (123 (jr-parse-object s (+ c 1)))
+        (91 (jr-parse-array s (+ c 1)))
+        (34 (jr-parse-string s (+ c 1)))
+        (116 (if (jr-starts-with s c "true") (JV (JBool 1) (+ c 4)) (JV JNull (+ c 1))))
+        (102 (if (jr-starts-with s c "false") (JV (JBool 0) (+ c 5)) (JV JNull (+ c 1))))
+        (110 (if (jr-starts-with s c "null") (JV JNull (+ c 4)) (JV JNull (+ c 1))))
+        (d1 (if (or (= ch 45) (and (>= ch 48) (<= ch 57))) (jr-parse-number s c) (JV JNull (+ c 1))))))))
+
+(defn jr-skip-whitespace (s pos)
+  (let len (str-length s)
+    (if (>= pos len)
+      pos
+      (let c (ffi-call "zyl_cstr_byte_at" s pos 1000)
+        (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (jr-skip-whitespace s (+ pos 1)) pos)))))
+
+(defn jr-starts-with (s pos prefix)
+  (jr-starts-with-loop s pos prefix 0 (str-length prefix)))
+
+(defn jr-starts-with-loop (s pos prefix i len)
+  (if (>= i len)
+    1
+    (if (= (ffi-call "zyl_cstr_byte_at" s (+ pos i) 1000) (ffi-call "zyl_cstr_byte_at" prefix i 1000))
+      (jr-starts-with-loop s pos prefix (+ i 1) len)
+      0)))
+
+(defn jr-parse-string (s pos)
+  (jr-parse-string-loop s pos "")
+
+)
+
+(defn jr-parse-string-loop (s i acc)
+  (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+    (if (= c 34)
+      (JV (JStr acc) (+ i 1))
+      (if (= c 92)
+        (jr-parse-string-escape s (+ i 1) acc)
+        (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char c)))))))
+
+; Bytes outside the printable range can't round-trip through
+; char-from-int's lookup table; JSON we author never emits them
+; unescaped, and this only needs to survive whatever a well-behaved
+; peer actually sends.
+(defn jr-safe-char (c)
+  (if (and (>= c 32) (< c 127)) (char-from-int c) "?"))
+
+(defn jr-parse-string-escape (s i acc)
+  (let esc (ffi-call "zyl_cstr_byte_at" s i 1000)
+    (match esc
+      (34 (jr-parse-string-loop s (+ i 1) (str-concat acc "\"")))
+      (92 (jr-parse-string-loop s (+ i 1) (str-concat acc "\\")))
+      (47 (jr-parse-string-loop s (+ i 1) (str-concat acc "/")))
+      (98 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char 8))))
+      (102 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char 12))))
+      (110 (jr-parse-string-loop s (+ i 1) (str-concat acc "\n")))
+      (114 (jr-parse-string-loop s (+ i 1) (str-concat acc "\r")))
+      (116 (jr-parse-string-loop s (+ i 1) (str-concat acc "\t")))
+      (117
+        (let hex (str-substring s (+ i 1) 4)
+          (let cp (jr-hex-to-int hex)
+            (jr-parse-string-loop s (+ i 5) (str-concat acc (jr-safe-char cp))))))
+      (d1 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char esc)))))))
+
+(defn jr-hex-to-int (s)
+  (jr-hex-to-int-loop s 0 0 (str-length s)))
+
+(defn jr-hex-to-int-loop (s i acc len)
+  (if (>= i len)
+    acc
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (let val
+        (if (and (>= c 48) (<= c 57)) (- c 48)
+          (if (and (>= c 97) (<= c 102)) (- c 87)
+            (if (and (>= c 65) (<= c 70)) (- c 55) 0)))
+        (jr-hex-to-int-loop s (+ i 1) (+ (* acc 16) val) len)))))
+
+(defn jr-parse-number (s pos)
+  (let end (jr-number-end s pos (str-length s))
+    (let num-str (str-substring s pos (- end pos))
+      (if (jr-has-char num-str 46)
+        (JV (JFloat num-str) end)
+        (JV (JInt (ffi-call "zyl_cstr_to_int" num-str 1000)) end)))))
+
+(defn jr-number-end (s i len)
+  (if (>= i len)
+    i
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (or (and (>= c 48) (<= c 57)) (or (= c 46) (or (= c 101) (or (= c 69) (or (= c 43) (= c 45))))))
+        (jr-number-end s (+ i 1) len)
+        i))))
+
+(defn jr-has-char (s c)
+  (jr-has-char-loop s c 0 (str-length s)))
+
+(defn jr-has-char-loop (s c i len)
+  (if (>= i len)
+    0
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) c) 1 (jr-has-char-loop s c (+ i 1) len))))
+
+(defn jr-parse-array (s pos)
+  (jr-parse-array-loop s (jr-skip-whitespace s pos) Nil))
+
+(defn jr-parse-array-loop (s pos acc)
+  (let ch (ffi-call "zyl_cstr_byte_at" s pos 1000)
+    (if (= ch 93)
+      (JV (JArr (list-reverse acc)) (+ pos 1))
+      (match (jr-parse-value s pos)
+        (JV elem next
+          (let after (jr-skip-whitespace s next)
+            (let ch2 (ffi-call "zyl_cstr_byte_at" s after 1000)
+              (if (= ch2 44)
+                (jr-parse-array-loop s (jr-skip-whitespace s (+ after 1)) (Cons elem acc))
+                (JV (JArr (list-reverse (Cons elem acc))) (+ after 1))))))))))
+
+(defn jr-parse-object (s pos)
+  (jr-parse-object-loop s (jr-skip-whitespace s pos) (map-new)))
+
+(defn jr-parse-object-loop (s pos acc)
+  (let ch (ffi-call "zyl_cstr_byte_at" s pos 1000)
+    (if (= ch 125)
+      (JV (JObj acc) (+ pos 1))
+      (match (jr-parse-string s (+ pos 1))
+        (JV keyval keyend
+          (match keyval
+            (JStr key
+              (let after-key (jr-skip-whitespace s keyend)
+                (let after-colon (jr-skip-whitespace s (+ after-key 1))
+                  (match (jr-parse-value s after-colon)
+                    (JV val next
+                      (let after-val (jr-skip-whitespace s next)
+                        (let ch2 (ffi-call "zyl_cstr_byte_at" s after-val 1000)
+                          (if (= ch2 44)
+                            (jr-parse-object-loop s (jr-skip-whitespace s (+ after-val 1)) (map-insert acc key val))
+                            (JV (JObj (map-insert acc key val)) (+ after-val 1))))))))))
+            (d1 (JV (JObj acc) (+ keyend 1)))))))))
+
+; ===========================================================================
+; STDIO TRANSPORT — Content-Length-framed messages (LSP base protocol)
+; ===========================================================================
+
+(defn jr-read-message ()
+  (match (jr-read-headers)
+    (Some content-length (Some (jr-read-body content-length)))
+    (None None)))
+
+; Reads header lines (each "Name: value\r\n") until the blank line that
+; ends the header block, returning the Content-Length value. Only that
+; one header matters for this server (no content-type negotiation).
+(defn jr-read-headers ()
+  (jr-read-headers-loop None))
+
+(defn jr-read-headers-loop (len-so-far)
+  (match (jr-read-header-line)
+    (None None)
+    (Some line
+      (if (= (str-length line) 0)
+        len-so-far
+        (jr-read-headers-loop (jr-merge-content-length line len-so-far))))))
+
+(defn jr-merge-content-length (line current)
+  (if (> (jr-starts-with line 0 "Content-Length:") 0)
+    (Some (ffi-call "zyl_cstr_to_int" (str-trim (str-substring line 15 (- (str-length line) 15))) 1000))
+    current))
+
+; One CRLF-terminated line from stdin (fd 0), with the CRLF stripped.
+; None only on genuine EOF with nothing pending.
+(defn jr-read-header-line ()
+  (let buf (jr-read-raw-line "")
+    (if (= (str-length buf) 0) None (Some (str-trim buf)))))
+
+(defn jr-read-raw-line (acc)
+  (let ch (jr-read-one-byte)
+    (if (< ch 0)
+      acc
+      (if (= ch 10)
+        acc
+        ; jr-safe-char maps anything outside printable-ASCII to "?" --
+        ; wrong here specifically for \r (13), the other half of a
+        ; \r\n line terminator: that turned every header line's
+        ; trailing \r into a literal "?" instead of a strippable
+        ; whitespace byte, so str-trim never removed it and
+        ; "Content-Length: N" never string-equality-matched anything
+        ; (confirmed: length was right, content had a stray "?").
+        (jr-read-raw-line (str-concat acc (if (= ch 13) "\r" (jr-safe-char ch))))))))
+
+; One byte from stdin via the same fd the rest of this codebase already
+; reads with (`file-read`, icnf.zyl's special-cased builtin) -- -1 on EOF.
+(defn jr-read-one-byte ()
+  (let s (file-read 0 1)
+    (if (= (str-length s) 0) -1 (ffi-call "zyl_cstr_byte_at" s 0 1000))))
+
+(defn jr-read-body (len)
+  (jr-read-body-loop len "")
+
+)
+
+(defn jr-read-body-loop (remaining acc)
+  (if (<= remaining 0)
+    acc
+    (let chunk (file-read 0 remaining)
+      (let n (str-length chunk)
+        (if (= n 0)
+          acc
+          (jr-read-body-loop (- remaining n) (str-concat acc chunk)))))))
+
+(defn jr-write-message (msg)
+  (let content-len (str-length msg)
+    (let header (str-concat "Content-Length: " (str-concat (int-to-str content-len) "\r\n\r\n"))
+      (let d1 (file-write 1 header)
+        (file-write 1 msg)))))
+
+; ===========================================================================
+; UTILITIES
+; ===========================================================================
+
+(defn char-from-int (i)
+  (str-substring " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~" (- i 32) 1))
+
+(defn str-trim (s)
+  (let len (str-length s)
+    (let start (str-trim-start s 0 len)
+      (let end (str-trim-end s (- len 1))
+        (if (> end start) (str-substring s start (- end start)) "")))))
+
+(defn str-trim-byte-ws (b)
+  (or (= b 32) (or (= b 9) (or (= b 10) (= b 13)))))
+
+(defn str-trim-start (s i len)
+  (if (>= i len)
+    i
+    (if (> (str-trim-byte-ws (ffi-call "zyl_cstr_byte_at" s i 1000)) 0)
+      (str-trim-start s (+ i 1) len)
+      i)))
+
+(defn str-trim-end (s i)
+  (if (< i 0)
+    0
+    (if (> (str-trim-byte-ws (ffi-call "zyl_cstr_byte_at" s i 1000)) 0)
+      (str-trim-end s (- i 1))
+      (+ i 1))))

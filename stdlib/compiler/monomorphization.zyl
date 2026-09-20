@@ -88,7 +88,7 @@
 ; would otherwise materialize as a bare 0, corrupting whatever type the
 ; caller expected back).
 (defn list-nth-oob ()
-  (ffi-call "zyl_f_error" "E_LIST_NTH_OOB: list-nth called with an out-of-range index" 1000))
+  (ffi-call "zyl_panic" "E_LIST_NTH_OOB: list-nth called with an out-of-range index" 1000))
 
 (defn list-push (lst x)
   (Cons x lst))
