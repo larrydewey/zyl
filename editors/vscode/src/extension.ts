@@ -73,6 +73,41 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+
+    const evalOutput = vscode.window.createOutputChannel('Zyl Eval');
+    context.subscriptions.push(evalOutput);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('zyl.evalDocument', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'zyl') {
+                vscode.window.showWarningMessage('zyl.evalDocument: no active Zyl document');
+                return;
+            }
+            if (!lspClient) {
+                vscode.window.showWarningMessage('zyl.evalDocument: language server not running');
+                return;
+            }
+            const uri = editor.document.uri.toString();
+            evalOutput.show(true);
+            evalOutput.appendLine(`--- evaluating ${uri} ---`);
+            try {
+                // workspace/executeCommand: same request the server's own
+                // "zyl.evalDocument" command dispatch expects a single
+                // string argument, the document's URI (see
+                // lsp_server.zyl's lsp-first-arg-uri).
+                const result = await lspClient.sendRequest('workspace/executeCommand', {
+                    command: 'zyl.evalDocument',
+                    arguments: [uri],
+                }) as { ok: boolean; output: string };
+                evalOutput.append(result.output);
+                if (!result.ok) {
+                    evalOutput.appendLine('--- compile/run failed ---');
+                }
+            } catch (err) {
+                evalOutput.appendLine(`--- request failed: ${err} ---`);
+            }
+        })
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {

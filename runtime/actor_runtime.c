@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <limits.h>
+#include <spawn.h>
+#include <sys/wait.h>
+extern char** environ;
 
 #define ZYL_HEAP_ARENA_DEFAULT_BLOCK (1024 * 1024)
 #define ZYL_PIN_ARENA_DEFAULT_BLOCK (256 * 1024)
@@ -1721,8 +1724,28 @@ long long zyl_getcwd(void) {
     return (long long)(size_t)buf;
 }
 
+/* Was `system((const char*)(size_t)cmd)` -- confirmed by gdb to
+   segfault on EVERY call in this runtime, including the simplest
+   possible ("echo hello", no prior state): `main` here always runs on a
+   pthread-spawned worker (zyl_bigstack_tramp, used to get a large
+   custom stack), never the process's original main thread, and
+   system()'s internal vfork() sharing an address space with a
+   non-main thread that has a custom/oversized stack is a known-fragile
+   combination in glibc. Same posix_spawn fix as zyl_cc_compile/
+   zyl_run_bin below: posix_spawn doesn't duplicate the caller's address
+   space the way vfork/fork do, so it doesn't hit that. Runs the command
+   through `/bin/sh -c` so callers keep shell features (pipes, `>`
+   redirection, `&&`) exactly like system() gave them -- lsp/
+   repl_integration.zyl's callers rely on this. */
 long long zyl_system_cmd(long long cmd) {
-    return (long long)system((const char*)(size_t)cmd);
+    const char* cmd_str = (const char*)(size_t)cmd;
+    if (!cmd_str) return -1;
+    char* argv[] = { (char*)"sh", (char*)"-c", (char*)cmd_str, NULL };
+    pid_t pid;
+    if (posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, environ) != 0) return -1;
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
 }
 
 long long zyl_exec_cmd(long long cmd) {
@@ -1746,10 +1769,6 @@ long long zyl_exec_cmd(long long cmd) {
     unlink(script_path);
     return -1;
 }
-
-#include <spawn.h>
-#include <sys/wait.h>
-extern char** environ;
 
 /* Compile an assembly file into a binary next to it (same path minus
    ".s") via `cc`, using posix_spawn rather than fork()/system(): fork()

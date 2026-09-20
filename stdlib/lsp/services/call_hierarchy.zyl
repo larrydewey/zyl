@@ -1,0 +1,201 @@
+; === Zyl LSP — Call Hierarchy Service ===
+; Module: lsp/services/call_hierarchy
+;
+; Name-based, same posture as hover/goto_definition: a function's
+; declaration position comes from lsp/source_index's top-level-form
+; scan (real text position, not from Ast/Expr -- see Wall 1), and the
+; caller/callee graph comes from a flat reference walk over this
+; document's own macro-expanded Expr forms (compiler/unused_check's
+; `uc-refs`, already written for the compiler's unused-binding check and
+; reused verbatim here: it collects every identifier reference in a
+; function body, which is exactly what "who does this function mention"
+; needs). A referenced name only counts as a call edge when it resolves
+; to a function actually DECLARED in this document's own SymTable --
+; drops local variables, parameters, and any name this document never
+; defines (an unrelated stdlib helper it doesn't itself declare).
+;
+; Scope, honestly stated:
+;   - Per-document only, same limit as workspace symbol search (see
+;     workspace.zyl's header) -- a caller in a different file that isn't
+;     currently open is invisible here.
+;   - No real call-SITE position exists (Wall 1 again): `fromRanges` on
+;     an incoming/outgoing call is just the OTHER function's own
+;     declaration range, not the actual call expression's position,
+;     since the latter isn't tracked anywhere in this compiler.
+;     Functional (the call hierarchy view still navigates correctly
+;     between functions), just not pixel-precise on which line inside
+;     the caller the call itself sits.
+;   - A reference used only as a value (passed to a higher-order
+;     function, stored in a variable) is indistinguishable from a real
+;     call without type information this compiler doesn't have, so it's
+;     also counted as an edge here -- an overshoot in the opposite
+;     direction from this LSP's usual undershoot-only posture, but the
+;     alternative (missing real indirect-call edges entirely) is worse
+;     for a feature whose whole point is "show me what calls this".
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/result)
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/expr_inner)
+(use compiler/module_resolver)
+(use compiler/macro_expand)
+(use compiler/unused_check)
+(use lsp/lsp_types)
+(use lsp/source_index)
+(use lsp/compiler_bridge)
+
+(deftype CallEdge (CE String String)) ; caller name, callee name
+(deftype CallHierarchyItem (CHI String String Range)) ; name, uri, range (reused as selectionRange too)
+(deftype CallHierarchyIncomingCall (CHIncoming CallHierarchyItem))
+(deftype CallHierarchyOutgoingCall (CHOutgoing CallHierarchyItem))
+
+(defn CHI.name (i) (match i (CHI n d1 d2 n)))
+(defn CHI.uri (i) (match i (CHI d1 u d2 u)))
+(defn CHI.range (i) (match i (CHI d1 d2 r r)))
+(defn CHIncoming.item (c) (match c (CHIncoming i i)))
+(defn CHOutgoing.item (c) (match c (CHOutgoing i i)))
+
+; ===========================================================================
+; PARSE (re-derives macro-expanded Expr forms from raw text; DocState
+; only caches the flat SymTable, not the Expr list itself, and call
+; hierarchy requests are rare enough that re-parsing on demand is fine)
+; ===========================================================================
+
+(defn ch-parse-exprs (arena text)
+  (match (try (Ok (ch-run-pipeline arena text)) (catch e (Err e)))
+    (Ok exprs (Some exprs))
+    (Err d1 None)))
+
+(defn ch-run-pipeline (arena text)
+  (let prog (zyl-parse arena text)
+    (let exprs0 (convert-ast-list prog)
+      (let exprs1 (mr-resolve-program arena exprs0)
+        (me-expand-program exprs1)))))
+
+; ===========================================================================
+; CALL GRAPH
+; ===========================================================================
+
+(defn ch-build-edges (exprs tbl)
+  (ch-edges-top exprs tbl))
+
+(defn ch-edges-top (exprs tbl)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name d1 body (list-append (ch-edges-for name body tbl) (ch-edges-top rest tbl)))
+        (d2 (ch-edges-top rest tbl))))))
+
+(defn ch-edges-for (caller body tbl)
+  (ch-dedup (ch-refs-to-edges caller (uc-refs body) tbl)))
+
+(defn ch-refs-to-edges (caller refs tbl)
+  (match refs
+    (Nil Nil)
+    (Cons name rest
+      (if (> (str-eq name caller) 0)
+        (ch-refs-to-edges caller rest tbl)
+        (if (> (st-is-known-fn tbl name) 0)
+          (Cons (CE caller name) (ch-refs-to-edges caller rest tbl))
+          (ch-refs-to-edges caller rest tbl))))))
+
+(defn ch-dedup (edges) (ch-dedup-acc edges Nil))
+
+(defn ch-dedup-acc (edges seen)
+  (match edges
+    (Nil Nil)
+    (Cons e rest
+      (match e
+        (CE caller callee
+          (if (> (ch-edge-seen caller callee seen) 0)
+            (ch-dedup-acc rest seen)
+            (Cons e (ch-dedup-acc rest (Cons e seen)))))))))
+
+(defn ch-edge-seen (caller callee seen)
+  (match seen
+    (Nil 0)
+    (Cons e rest
+      (match e
+        (CE c2 k2
+          (if (and (> (str-eq c2 caller) 0) (> (str-eq k2 callee) 0)) 1 (ch-edge-seen caller callee rest)))))))
+
+(defn ch-incoming-callers (edges name)
+  (match edges
+    (Nil Nil)
+    (Cons e rest
+      (match e
+        (CE caller callee (if (> (str-eq callee name) 0) (Cons caller (ch-incoming-callers rest name)) (ch-incoming-callers rest name)))))))
+
+(defn ch-outgoing-callees (edges name)
+  (match edges
+    (Nil Nil)
+    (Cons e rest
+      (match e
+        (CE caller callee (if (> (str-eq caller name) 0) (Cons callee (ch-outgoing-callees rest name)) (ch-outgoing-callees rest name)))))))
+
+; ===========================================================================
+; CallHierarchyItem construction — real declaration position via
+; source_index's top-level-form scan.
+; ===========================================================================
+
+(defn ch-topform-for-name (forms name)
+  (match forms
+    (Nil None)
+    (Cons f rest (if (> (str-eq (TopForm.name f) name) 0) (Some f) (ch-topform-for-name rest name)))))
+
+(defn ch-item-for (uri text name)
+  (match (ch-topform-for-name (si-top-level-forms text) name)
+    (Some f
+      (let rng (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length name))))
+        (Some (CHI name uri rng))))
+    (None None)))
+
+; ===========================================================================
+; ENTRY POINTS
+; ===========================================================================
+
+; textDocument/prepareCallHierarchy
+(defn call-hierarchy-prepare (text tbl uri line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      Nil
+      (if (> (st-is-known-fn tbl word) 0)
+        (match (ch-item-for uri text word)
+          (Some item (Cons item Nil))
+          (None Nil))
+        Nil))))
+
+; callHierarchy/incomingCalls — every function in THIS document that
+; calls `name`.
+(defn call-hierarchy-incoming (arena text tbl uri name)
+  (match (ch-parse-exprs arena text)
+    (Some exprs (ch-incoming-items uri text (ch-incoming-callers (ch-build-edges exprs tbl) name)))
+    (None Nil)))
+
+(defn ch-incoming-items (uri text names)
+  (match names
+    (Nil Nil)
+    (Cons n rest
+      (match (ch-item-for uri text n)
+        (Some item (Cons (CHIncoming item) (ch-incoming-items uri text rest)))
+        (None (ch-incoming-items uri text rest))))))
+
+; callHierarchy/outgoingCalls — every function `name` itself calls.
+(defn call-hierarchy-outgoing (arena text tbl uri name)
+  (match (ch-parse-exprs arena text)
+    (Some exprs (ch-outgoing-items uri text (ch-outgoing-callees (ch-build-edges exprs tbl) name)))
+    (None Nil)))
+
+(defn ch-outgoing-items (uri text names)
+  (match names
+    (Nil Nil)
+    (Cons n rest
+      (match (ch-item-for uri text n)
+        (Some item (Cons (CHOutgoing item) (ch-outgoing-items uri text rest)))
+        (None (ch-outgoing-items uri text rest))))))

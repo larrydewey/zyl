@@ -221,18 +221,28 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] `error_fixit.zyl` was never a real file in this codebase; not
   integrated (nothing to integrate)
 
-### Phase 5: REPL Integration + Workspace ⚠️ PARTIAL
-- [ ] `repl_integration.zyl` — written, uses the right primitive
-  (`zyl_system_cmd`), but that primitive crashes on every call in this
-  runtime (pthread-worker + `system()`'s internal `vfork()` — see the
-  file's header comment). NOT wired into `lsp_server.zyl`'s dispatch.
-  Will work once that runtime bug is fixed (reimplement
-  `zyl_system_cmd` with `posix_spawn`, like `zyl_cc_compile`/
-  `zyl_run_bin` already do).
+### Phase 5: REPL Integration + Workspace ✅ COMPLETE (workspace symbols reduced scope, see below)
+- [x] `repl_integration.zyl` — wired into `lsp_server.zyl` as the
+  `workspace/executeCommand` command `zyl.evalDocument` (compile+run the
+  document's current buffer, return captured stdout+stderr). Was
+  blocked on `zyl_system_cmd` crashing on every call in this runtime
+  (pthread-worker + `system()`'s internal `vfork()`); fixed at the root
+  by reimplementing `zyl_system_cmd` with `posix_spawn` in
+  `runtime/actor_runtime.c`, the same fix `zyl_cc_compile`/`zyl_run_bin`
+  already had. Verified end-to-end over real stdio: evaluating a 4-line
+  document returns the correct computed output. VS Code command:
+  `zyl.evalDocument`, output shown in a dedicated "Zyl Eval" channel.
 - [x] `workspace.zyl` — multi-root folder tracking + real workspace/symbol
   search across every currently-open document
-- [ ] `zyl.toml` DAG parsing: not implemented (time, not architecture —
-  see workspace.zyl's header for the real reason and what it would take)
+- [ ] `zyl.toml` DAG parsing: intentionally NOT implemented. `zyl.toml`
+  isn't a real format yet anywhere in this language — it's listed as
+  "planned v5.0" in `book/src/part2/ch25-modules.md`, this compiler has
+  no TOML parser, and no project anywhere in this repo uses one. Inventing
+  a workspace-config format on the spot for a v5.0-labeled placeholder
+  risks conflicting with whatever the real spec eventually says; this is
+  genuinely future work, not a "time, not architecture" shortcut.
+  Workspace symbol search across every currently-OPEN document (above)
+  is real and already covers the interactive case.
 
 ### Phase 6: Polish ✅ MOSTLY COMPLETE (folded into existing services, reduced scope per Wall 1)
 - [x] Folding Ranges — one per top-level form (`document_symbols.zyl`)
@@ -243,19 +253,33 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] Format — real: reindents every line by paren depth
   (`services/code_action.zyl`), does not reflow/rewrap expressions
 - [ ] Inlay Hints — API wired (`inlay-hints-for`), returns an empty
-  list: real inlay hints need a type inferred at a specific source
+  list: real TYPE inlay hints need a type inferred at a specific source
   position, which nothing in this compiler produces (Wall 1); left
-  honestly empty rather than fabricated
-- [ ] Call Hierarchy — not implemented (would need a caller graph;
-  `compiler/arity_check.zyl`'s tree walk could be adapted to build one,
-  not done under time pressure)
+  honestly empty rather than fabricated. (Parameter-name hints at call
+  sites wouldn't need type inference, only call-site argument
+  positions — which also aren't tracked anywhere; would need a new
+  nested, depth-aware position-recovering text scanner, a bigger
+  standalone feature than the rest of this phase. Not attempted here.)
+- [x] Call Hierarchy — `services/call_hierarchy.zyl`: real caller/callee
+  graph built by reusing `compiler/unused_check.zyl`'s `uc-refs`
+  reference collector, declaration positions from
+  `source_index.zyl`'s existing top-level-form scan.
+  `textDocument/prepareCallHierarchy` +
+  `callHierarchy/incomingCalls`/`outgoingCalls` all wired into
+  `lsp_server.zyl` and verified over real stdio. Scope, honestly
+  stated: per-document only (same limit as workspace symbols above);
+  `fromRanges` reuses the other function's own declaration range rather
+  than the real call-site position (Wall 1 — no such position exists to
+  give); a reference used only as a value (not a direct call) is still
+  counted as an edge, since telling the two apart needs type
+  information this compiler doesn't have.
 - [x] VS Code extension v0.1.0 — `editors/vscode/`: fixed real bugs in
   the pre-existing draft (`vscode.LanguageClient` doesn't exist — the
   language client comes from the separate `vscode-languageclient`
   package, not the `vscode` module; added it as a real dependency,
   fixed the `onReady()` call removed in v8+, added the missing
-  `zyl.restartLSP` command contribution). Compiles clean with `tsc`.
-- [ ] VS Code extension v0.1.0
+  `zyl.restartLSP` command contribution, added `zyl.evalDocument`).
+  Compiles clean with `tsc`.
 
 ---
 
@@ -459,7 +483,9 @@ exercised end-to-end over real stdio: `initialize` → real capabilities,
 against a live compile of `document_manager.zyl`'s own analysis
 pipeline. Self-hosting fixed point verified unaffected (byte-identical
 stage2/stage3 output) after every compiler-side change this work made.
-Full regression suite: 46/46. Remaining honest gaps are listed inline
-per-phase above (inlay hints, call hierarchy, zyl.toml DAG parsing,
-REPL integration blocked on a separate runtime bug) rather than
-claimed as done.
+Full regression suite: 46/46. `zyl_system_cmd` fixed (posix_spawn,
+matching `zyl_cc_compile`/`zyl_run_bin`) and REPL-eval + call hierarchy
+both wired in and verified over real stdio since. Remaining honest gaps
+are listed inline per-phase above (type inlay hints, `zyl.toml` DAG
+parsing — the latter deferred because the format itself doesn't exist
+yet, not for lack of time) rather than claimed as done.

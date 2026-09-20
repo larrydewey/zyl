@@ -26,6 +26,8 @@
 (use lsp/services/document_symbols)
 (use lsp/services/semantic_tokens)
 (use lsp/services/code_action)
+(use lsp/services/call_hierarchy)
+(use lsp/repl_integration)
 
 (defn lsp-run-server (arena)
   (lsp-loop arena (dm-new) (ws-new) 1))
@@ -225,9 +227,17 @@
                                   (lsp-req-rename arena dm ws id paramsOpt)
                                   (if (> (str-eq method "workspace/symbol") 0)
                                     (lsp-req-workspace-symbol arena dm ws id paramsOpt)
-                                    (begin
-                                      (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
-                                      (lsp-loop arena dm ws running))))))))))))))))))))
+                                    (if (> (str-eq method "workspace/executeCommand") 0)
+                                      (lsp-req-execute-command arena dm ws id paramsOpt)
+                                      (if (> (str-eq method "textDocument/prepareCallHierarchy") 0)
+                                        (lsp-req-prepare-call-hierarchy arena dm ws id paramsOpt)
+                                        (if (> (str-eq method "callHierarchy/incomingCalls") 0)
+                                          (lsp-req-incoming-calls arena dm ws id paramsOpt)
+                                          (if (> (str-eq method "callHierarchy/outgoingCalls") 0)
+                                            (lsp-req-outgoing-calls arena dm ws id paramsOpt)
+                                            (begin
+                                              (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
+                                              (lsp-loop arena dm ws running))))))))))))))))))))))))
 
 (defn lsp-respond (id result error)
   (jr-write-message (jr-encode-response (RespMsg "2.0" id result error))))
@@ -274,7 +284,9 @@
                       (let m10 (map-insert m9 "documentFormattingProvider" (LSPBool 1))
                         (let m11 (map-insert m10 "renameProvider" (LSPObject (map-insert (map-new) "prepareProvider" (LSPBool 1))))
                           (let m12 (map-insert m11 "workspaceSymbolProvider" (LSPBool 1))
-                            (LSPObject m12)))))))))))))))
+                            (let m13 (map-insert m12 "executeCommandProvider" (LSPObject (map-insert (map-new) "commands" (LSPArray (Cons (LSPString "zyl.evalDocument") Nil)))))
+                              (let m14 (map-insert m13 "callHierarchyProvider" (LSPBool 1))
+                                (LSPObject m14)))))))))))))))))
 
 (defn lsp-semantic-legend-any ()
   (match (semantic-tokens-legend)
@@ -530,6 +542,155 @@
     (begin
       (lsp-respond id (Some (LSPArray (lsp-syminfo-list-any (ws-symbols-for-query dm query)))) None)
       (lsp-loop arena dm ws 1))))
+
+; workspace/executeCommand -> "zyl.evalDocument": compile+run the given
+; document's CURRENT (possibly unsaved) buffer text and return its
+; captured stdout+stderr as the command result. Only command this server
+; knows; only real dependency is repl_integration.zyl's repl-eval-text,
+; unusable until zyl_system_cmd stopped segfaulting on every call (see
+; that file's own header comment -- fixed in runtime/actor_runtime.c by
+; replacing its vfork-via-system() body with posix_spawn, same fix
+; zyl_cc_compile/zyl_run_bin already had).
+(defn lsp-req-execute-command (arena dm ws id paramsOpt)
+  (let cmd (lsp-get-str paramsOpt "command" "")
+    (if (> (str-eq cmd "zyl.evalDocument") 0)
+      (let uri (lsp-first-arg-uri paramsOpt)
+        (begin
+          (match (dm-get-text dm uri)
+            (Some text
+              (match (repl-eval-text text)
+                (EvalOk out (lsp-respond id (Some (lsp-eval-result-any 1 out)) None))
+                (EvalFail out (lsp-respond id (Some (lsp-eval-result-any 0 out)) None))))
+            (None (lsp-respond id (Some LSPNull) None)))
+          (lsp-loop arena dm ws 1)))
+      (begin
+        (lsp-respond id None (Some (RErr -32601 (str-concat "unknown command: " cmd) None)))
+        (lsp-loop arena dm ws 1)))))
+
+; `arguments` is a bare JSON array; this server's only command takes
+; exactly one argument, the target document's URI as a plain string
+; (see editors/vscode/src/extension.ts's zyl.evalDocument command).
+(defn lsp-first-arg-uri (paramsOpt)
+  (match (lsp-obj-get paramsOpt "arguments")
+    (Some (LSPArray args)
+      (match args
+        (Cons (LSPString s) d1 s)
+        (d2 "")))
+    (d3 "")))
+
+(defn lsp-eval-result-any (ok output)
+  (LSPObject
+    (map-insert (map-insert (map-new) "ok" (LSPBool ok)) "output" (LSPString output))))
+
+; ===========================================================================
+; CALL HIERARCHY — see lsp/services/call_hierarchy for the scope/honesty
+; notes (per-document only, fromRanges reuse the target's own declaration
+; range rather than a real call-site position -- Wall 1).
+; ===========================================================================
+
+(defn lsp-req-prepare-call-hierarchy (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (match (dm-get-symtable dm uri)
+              (Some tbl
+                (let items (call-hierarchy-prepare text tbl uri (Pos.line-of pos) (Pos.col-of pos))
+                  (if (> (list-length items) 0)
+                    (lsp-respond id (Some (LSPArray (lsp-chitem-full-list-any items))) None)
+                    (lsp-respond id (Some LSPNull) None))))
+              (None (lsp-respond id (Some LSPNull) None))))
+          (None (lsp-respond id (Some LSPNull) None)))
+        (lsp-loop arena dm ws 1)))))
+
+(defn lsp-chitem-full-list-any (items)
+  (match items
+    (Nil Nil)
+    (Cons h t (Cons (lsp-chitem-any-full h) (lsp-chitem-full-list-any t)))))
+
+(defn lsp-chitem-any (item)
+  (let rng (lsp-range-to-any (CHI.range item))
+    (LSPObject
+      (map-insert
+        (map-insert
+          (map-insert
+            (map-insert (map-new) "name" (LSPString (CHI.name item)))
+            "kind" (LSPInt 12))
+          "uri" (LSPString (CHI.uri item)))
+        "range" rng)
+      )))
+
+; deftype CallHierarchyItem's wire shape needs BOTH "range" and
+; "selectionRange"; lsp-chitem-any above builds everything except
+; selectionRange (map-insert composition got unwieldy past 4 keys) --
+; add it here instead of growing that one expression further.
+(defn lsp-chitem-any-full (item)
+  (let base (lsp-chitem-any item)
+    (match base
+      (LSPObject obj (LSPObject (map-insert obj "selectionRange" (lsp-range-to-any (CHI.range item)))))
+      (d1 base))))
+
+(deftype NameUri (NU String String))
+
+(defn lsp-call-hierarchy-item-of (paramsOpt)
+  (match (lsp-obj-get paramsOpt "item")
+    (Some (LSPObject obj)
+      (let name (lsp-any-str (map-get obj "name"))
+        (let uri (lsp-any-str (map-get obj "uri"))
+          (if (> (str-length name) 0) (Some (NU name uri)) None)))
+      )
+    (d1 None)))
+
+(defn lsp-req-incoming-calls (arena dm ws id paramsOpt)
+  (match (lsp-call-hierarchy-item-of paramsOpt)
+    (Some pr
+      (match pr
+        (NU name uri
+          (begin
+            (match (dm-get-text dm uri)
+              (Some text
+                (match (dm-get-symtable dm uri)
+                  (Some tbl (lsp-respond id (Some (LSPArray (lsp-incoming-list-any (call-hierarchy-incoming arena text tbl uri name)))) None))
+                  (None (lsp-respond id (Some LSPNull) None))))
+              (None (lsp-respond id (Some LSPNull) None)))
+            (lsp-loop arena dm ws 1)))))
+    (None (begin (lsp-respond id (Some LSPNull) None) (lsp-loop arena dm ws 1)))))
+
+(defn lsp-incoming-list-any (calls)
+  (match calls
+    (Nil Nil)
+    (Cons h t (Cons (lsp-incoming-any h) (lsp-incoming-list-any t)))))
+
+(defn lsp-incoming-any (c)
+  (let item (CHIncoming.item c)
+    (LSPObject
+      (map-insert (map-insert (map-new) "from" (lsp-chitem-any-full item)) "fromRanges" (LSPArray (Cons (lsp-range-to-any (CHI.range item)) Nil))))))
+
+(defn lsp-req-outgoing-calls (arena dm ws id paramsOpt)
+  (match (lsp-call-hierarchy-item-of paramsOpt)
+    (Some pr
+      (match pr
+        (NU name uri
+          (begin
+            (match (dm-get-text dm uri)
+              (Some text
+                (match (dm-get-symtable dm uri)
+                  (Some tbl (lsp-respond id (Some (LSPArray (lsp-outgoing-list-any (call-hierarchy-outgoing arena text tbl uri name)))) None))
+                  (None (lsp-respond id (Some LSPNull) None))))
+              (None (lsp-respond id (Some LSPNull) None)))
+            (lsp-loop arena dm ws 1)))))
+    (None (begin (lsp-respond id (Some LSPNull) None) (lsp-loop arena dm ws 1)))))
+
+(defn lsp-outgoing-list-any (calls)
+  (match calls
+    (Nil Nil)
+    (Cons h t (Cons (lsp-outgoing-any h) (lsp-outgoing-list-any t)))))
+
+(defn lsp-outgoing-any (c)
+  (let item (CHOutgoing.item c)
+    (LSPObject
+      (map-insert (map-insert (map-new) "to" (lsp-chitem-any-full item)) "fromRanges" (LSPArray (Cons (lsp-range-to-any (CHI.range item)) Nil))))))
 
 (defn lsp-syminfo-list-any (syms)
   (match syms

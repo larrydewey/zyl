@@ -51,6 +51,10 @@
       {
         "command": "zyl.restartLSP",
         "title": "Zyl: Restart Language Server"
+      },
+      {
+        "command": "zyl.evalDocument",
+        "title": "Zyl: Evaluate Document"
       }
     ]
   },
