@@ -215,9 +215,18 @@ flagged, not fixed; see repl_integration.zyl's header comment.
   `sexp_balance.zyl`'s `sb-hint` already computes — one real quickfix
   per unclosed/unexpected/mismatched-bracket diagnostic
 - [ ] Fix-its for E_MATCH_NONEXHAUSTIVE / E_MUT_CONFLICT / other caught
-  panics: not implemented — those diagnostics carry only a message
-  string today (Wall 2's catch path), no structured "here's what's
-  missing" data to build a fix-it from
+  panics: not implemented. Re-examined when inlay hints (below) added
+  the ability to recover call-site positions by text-scanning — but a
+  fix-it needs the position of the SPECIFIC construct the panic is
+  about (which `match`, which `set!`), and a caught panic carries only
+  a message string with no position at all, not even an approximate
+  one (`diagnostic-from-panic` reports every caught panic at a fixed
+  (0,0)). Unlike inlay hints' call-site positions (independently
+  re-discoverable by scanning for known function names), there's
+  nothing in a bare message string to correlate back to a specific
+  source location when a file has more than one candidate match/set!
+  matching that message — genuinely blocked on the same missing
+  position data as type inlay hints, not a time shortcut.
 - [x] `error_fixit.zyl` was never a real file in this codebase; not
   integrated (nothing to integrate)
 
@@ -252,14 +261,19 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] Rename — see Phase 2
 - [x] Format — real: reindents every line by paren depth
   (`services/code_action.zyl`), does not reflow/rewrap expressions
-- [ ] Inlay Hints — API wired (`inlay-hints-for`), returns an empty
-  list: real TYPE inlay hints need a type inferred at a specific source
-  position, which nothing in this compiler produces (Wall 1); left
-  honestly empty rather than fabricated. (Parameter-name hints at call
-  sites wouldn't need type inference, only call-site argument
-  positions — which also aren't tracked anywhere; would need a new
-  nested, depth-aware position-recovering text scanner, a bigger
-  standalone feature than the rest of this phase. Not attempted here.)
+- [x] Inlay Hints — `services/inlay_hints.zyl`: real PARAMETER NAME
+  hints (`(add {a:} 1 {b:} 2)`) via a dedicated recursive-descent text
+  scanner (offset/line/col threaded through, same character
+  classifiers as `sexp_balance`/`source_index`) that recognizes
+  `(head arg...)` where `head` names a known function in the
+  document's SymTable, and hints each argument's start position with
+  the callee's declared parameter name — recursing into each argument
+  so a nested call gets its OWN hints too. Verified over real stdio
+  against a 2-level-nested call: all 4 hints at the exact right byte
+  columns. TYPE inlay hints (the original plan's `let x = ...: T`)
+  remain out of reach: need a type inferred at a specific source
+  position, which nothing in this compiler produces (Wall 1) — left
+  honestly absent rather than fabricated.
 - [x] Call Hierarchy — `services/call_hierarchy.zyl`: real caller/callee
   graph built by reusing `compiler/unused_check.zyl`'s `uc-refs`
   reference collector, declaration positions from
@@ -485,7 +499,9 @@ pipeline. Self-hosting fixed point verified unaffected (byte-identical
 stage2/stage3 output) after every compiler-side change this work made.
 Full regression suite: 46/46. `zyl_system_cmd` fixed (posix_spawn,
 matching `zyl_cc_compile`/`zyl_run_bin`) and REPL-eval + call hierarchy
-both wired in and verified over real stdio since. Remaining honest gaps
-are listed inline per-phase above (type inlay hints, `zyl.toml` DAG
-parsing — the latter deferred because the format itself doesn't exist
-yet, not for lack of time) rather than claimed as done.
++ parameter-name inlay hints all wired in and verified over real stdio
+since. Remaining honest gaps are listed inline per-phase above (type
+inlay hints and caught-panic fix-its, both genuinely blocked on the
+same missing source-position data; `zyl.toml` DAG parsing, deferred
+because the format itself doesn't exist yet, not for lack of time)
+rather than claimed as done.

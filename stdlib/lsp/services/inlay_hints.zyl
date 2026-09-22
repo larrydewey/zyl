@@ -1,0 +1,222 @@
+; === Zyl LSP — Inlay Hints Service (parameter names) ===
+; Module: lsp/services/inlay_hints
+;
+; TYPE inlay hints (the original architecture plan's "let x = ...: T")
+; are NOT what this file produces -- that needs a type inferred at a
+; specific source position, and nothing in this compiler tracks a
+; position anywhere in Ast/Expr (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
+; PARAMETER NAME hints ("(add {a:} 1 {b:} 2)") need no type information
+; at all, only call-site argument positions -- which also aren't
+; tracked anywhere (Wall 1 again, but for position generally, not just
+; types), so this file gets them the same way source_index.zyl gets
+; top-level-form positions: a dedicated raw-text scan, independent of
+; the real compiler pipeline.
+;
+; Unlike source_index's flat, depth-counting scan (good enough for
+; "top-level forms only"), a parameter hint can sit at ANY nesting
+; depth (an argument can itself contain a call), so this is a genuine
+; recursive-descent reader over the raw characters: it tracks (offset,
+; line, col) exactly like sexp_balance/source_index's classifiers, but
+; RECURSES per bracketed form instead of iterating with a flat depth
+; counter, so "read one argument, note where it started, recurse into
+; it to find nested calls, then move to the next argument" falls out
+; naturally instead of needing ad hoc token-boundary flags.
+;
+; A call is recognized the same name-based way as everything else in
+; this LSP: `(head arg1 arg2 ...)` where `head` is a bare identifier
+; matching a known function in this document's own SymTable. Extra
+; arguments past the callee's declared parameter count get no hint
+; (not an error here -- arity_check.zyl already owns that diagnostic);
+; a callee this document doesn't declare produces no hints for that
+; call, same per-document scope limit as workspace symbols/call
+; hierarchy.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use compiler/sexp_balance)
+(use lsp/source_index)
+(use lsp/compiler_bridge)
+
+; ===========================================================================
+; STATE — (offset, line, col, hints-found-so-far-in-REVERSE-order)
+; ===========================================================================
+
+(deftype IHSt (IHS Int Int Int (List PHint)))
+(deftype PHint (PH String Int Int)) ; param label, line, col -- converted to a real InlayHint at the wire boundary
+
+(defn IHSt.i (s) (match s (IHS i d1 d2 d3 i)))
+(defn IHSt.line (s) (match s (IHS d1 l d2 d3 l)))
+(defn IHSt.col (s) (match s (IHS d1 d2 c d3 c)))
+(defn IHSt.hints (s) (match s (IHS d1 d2 d3 h h)))
+
+(defn ih-add-hint (st label)
+  (match st (IHS i l c hs (IHS i l c (Cons (PH label l c) hs)))))
+
+(defn ih-advance (st ch)
+  (match st
+    (IHS i l c hs
+      (if (sb-is-newline ch)
+        (IHS (+ i 1) (+ l 1) 0 hs)
+        (IHS (+ i 1) l (+ c 1) hs)))))
+
+; ===========================================================================
+; LOW-LEVEL SKIPPERS
+; ===========================================================================
+
+(defn ih-skip-ws-comments (text st len)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (sb-is-semicolon ch)
+        (ih-skip-comment text st len)
+        (if (or (= (sb-char-code ch) 32) (or (= (sb-char-code ch) 9) (or (= (sb-char-code ch) 10) (= (sb-char-code ch) 13))))
+          (ih-skip-ws-comments text (ih-advance st ch) len)
+          st)))))
+
+(defn ih-skip-comment (text st len)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (sb-is-newline ch)
+        (ih-skip-ws-comments text (ih-advance st ch) len)
+        (ih-skip-comment text (ih-advance st ch) len)))))
+
+(defn ih-read-string (text st len)
+  (let st1 (ih-advance st (str-substring text (IHSt.i st) 1))
+    (ih-read-string-body text st1 len)))
+
+(defn ih-read-string-body (text st len)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (sb-is-backslash ch)
+        (ih-read-string-body text (ih-advance-escaped text st len) len)
+        (if (sb-is-quote ch)
+          (ih-advance st ch)
+          (ih-read-string-body text (ih-advance st ch) len))))))
+
+(defn ih-advance-escaped (text st len)
+  (let st1 (ih-advance st (str-substring text (IHSt.i st) 1))
+    (if (< (IHSt.i st1) len)
+      (ih-advance st1 (str-substring text (IHSt.i st1) 1))
+      st1)))
+
+(defn ih-read-atom (text st len)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (> (si-is-ident-char ch) 0)
+        (ih-read-atom text (ih-advance st ch) len)
+        st))))
+
+; ===========================================================================
+; FORM READER — consumes exactly one form (atom, string, or a fully
+; bracketed expression with every nested form inside it also scanned),
+; accumulating any parameter hints found along the way.
+; ===========================================================================
+
+(defn ih-read-form (text st len tbl)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+        (ih-read-bracketed text st len tbl ch)
+        (if (sb-is-quote ch)
+          (ih-read-string text st len)
+          (ih-read-atom text st len))))))
+
+(defn ih-close-char (openCh)
+  (if (sb-is-paren-open openCh) ")" (if (sb-is-bracket-open openCh) "]" "}")))
+
+(defn ih-read-bracketed (text st len tbl openCh)
+  (let st1 (ih-advance st openCh)
+    (let closeCh (ih-close-char openCh)
+      (let st2 (ih-skip-ws-comments text st1 len)
+        (if (> (str-eq openCh "(") 0)
+          (ih-read-call-or-list text st2 len tbl closeCh)
+          (ih-read-children text st2 len tbl closeCh Nil))))))
+
+; Positioned right after "(" (and any leading ws/comments): if what
+; follows is a bare identifier naming a known function in this
+; document, treat the rest as its argument list (hinting each
+; argument's position with that callee's next declared parameter name);
+; otherwise (an empty list, a computed call target, or an unknown
+; name) fall back to scanning children with no hints of its own -- a
+; nested call inside one of those children still gets found and
+; hinted normally, since ih-read-children recurses through ih-read-form
+; either way.
+(defn ih-read-call-or-list (text st len tbl closeCh)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (> (str-eq ch closeCh) 0)
+        (ih-advance st ch)
+        (if (> (si-is-ident-char ch) 0)
+          (let headStart (IHSt.i st)
+            (let stHead (ih-read-atom text st len)
+              (let headWord (str-substring text headStart (- (IHSt.i stHead) headStart))
+                (ih-read-children text (ih-skip-ws-comments text stHead len) len tbl closeCh (ih-fn-param-names tbl headWord)))))
+          (ih-read-children text st len tbl closeCh Nil))))))
+
+(defn ih-fn-param-names (tbl name)
+  (if (> (st-is-known-fn tbl name) 0)
+    (match (st-lookup-fn tbl name)
+      (Some info (match info (FI d1 params (ih-param-name-list params))))
+      (None Nil))
+    Nil))
+
+(defn ih-param-name-list (params)
+  (match params
+    (Nil Nil)
+    (Cons p rest (Cons (P.name p) (ih-param-name-list rest)))))
+
+; `paramNames`: remaining declared parameter names for the call this
+; list belongs to (Nil for a plain list / unknown callee / once past
+; the last declared parameter -- no more hints emitted, but scanning
+; and nested-call detection continue regardless).
+(defn ih-read-children (text st len tbl closeCh paramNames)
+  (if (>= (IHSt.i st) len)
+    st
+    (let ch (str-substring text (IHSt.i st) 1)
+      (if (> (str-eq ch closeCh) 0)
+        (ih-advance st ch)
+        (let stHinted (ih-maybe-hint st paramNames)
+          (let stArg (ih-read-form text stHinted len tbl)
+            (let stNext (ih-skip-ws-comments text stArg len)
+              (ih-read-children text stNext len tbl closeCh (ih-cdr-or-nil paramNames)))))))))
+
+(defn ih-cdr-or-nil (xs)
+  (match xs (Nil Nil) (Cons d1 t t)))
+
+(defn ih-maybe-hint (st paramNames)
+  (match paramNames
+    (Nil st)
+    (Cons pname d1 (ih-add-hint st pname))))
+
+; ===========================================================================
+; DOCUMENT-LEVEL DRIVER
+; ===========================================================================
+
+(defn ih-scan-top (text st len tbl)
+  (let st1 (ih-skip-ws-comments text st len)
+    (if (>= (IHSt.i st1) len)
+      (list-reverse (IHSt.hints st1))
+      (ih-scan-top text (ih-read-form text st1 len tbl) len tbl))))
+
+; ===========================================================================
+; ENTRY POINT — real (List InlayHint), replacing code_action.zyl's old
+; permanently-empty stub.
+; ===========================================================================
+
+(defn inlay-hints-for (text tbl)
+  (ih-phints-to-any (ih-scan-top text (IHS 0 0 0 Nil) (str-length text) tbl)))
+
+(defn ih-phints-to-any (phints)
+  (match phints
+    (Nil Nil)
+    (Cons p rest
+      (match p
+        (PH label line col
+          (Cons (IH (Pos line col) (str-concat label ":") (Some IHKParameter) None None None None) (ih-phints-to-any rest)))))))

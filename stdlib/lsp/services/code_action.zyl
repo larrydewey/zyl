@@ -9,12 +9,9 @@
 ; lsp/document_manager) have no fix-it text yet -- no fabricated
 ; suggestions for those.
 ;
-; Inlay hints: returns an empty list. Real inlay hints (inferred types
-; at `let` bindings, as the architecture plan originally described)
-; need a type inferred AT A SOURCE POSITION, which nothing in this
-; compiler tracks (LSP_ARCHITECTURE_PLAN.md's "Wall 1") -- the API is
-; wired up so a client can call it without erroring, but it is honestly
-; empty rather than showing fabricated types.
+; Inlay hints moved to lsp/services/inlay_hints.zyl (parameter-name
+; hints via a dedicated recursive-descent text scan -- real TYPE hints
+; still aren't possible; see that file's header for why).
 ;
 ; Format: a real, if simple, formatter -- reindents every line to
 ; (paren depth * 2) spaces, using the same character classification as
@@ -57,8 +54,6 @@
   (CA (str-concat "Fix: " fixit) (Some (CAK "quickfix")) (Some d) None None
       (Some (WE None (Some (Cons (WEE (TE (ca-range-of d) fixit)) Nil)) None))
       None None None))
-
-(defn inlay-hints-for (text) Nil)
 
 ; ===========================================================================
 ; FORMAT — reindent by paren depth

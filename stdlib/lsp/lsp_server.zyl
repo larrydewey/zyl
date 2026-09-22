@@ -27,6 +27,7 @@
 (use lsp/services/semantic_tokens)
 (use lsp/services/code_action)
 (use lsp/services/call_hierarchy)
+(use lsp/services/inlay_hints)
 (use lsp/repl_integration)
 
 (defn lsp-run-server (arena)
@@ -235,9 +236,11 @@
                                           (lsp-req-incoming-calls arena dm ws id paramsOpt)
                                           (if (> (str-eq method "callHierarchy/outgoingCalls") 0)
                                             (lsp-req-outgoing-calls arena dm ws id paramsOpt)
-                                            (begin
-                                              (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
-                                              (lsp-loop arena dm ws running))))))))))))))))))))))))
+                                            (if (> (str-eq method "textDocument/inlayHint") 0)
+                                              (lsp-req-inlay-hint arena dm ws id paramsOpt)
+                                              (begin
+                                                (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
+                                                (lsp-loop arena dm ws running)))))))))))))))))))))))))
 
 (defn lsp-respond (id result error)
   (jr-write-message (jr-encode-response (RespMsg "2.0" id result error))))
@@ -286,7 +289,8 @@
                           (let m12 (map-insert m11 "workspaceSymbolProvider" (LSPBool 1))
                             (let m13 (map-insert m12 "executeCommandProvider" (LSPObject (map-insert (map-new) "commands" (LSPArray (Cons (LSPString "zyl.evalDocument") Nil)))))
                               (let m14 (map-insert m13 "callHierarchyProvider" (LSPBool 1))
-                                (LSPObject m14)))))))))))))))))
+                                (let m15 (map-insert m14 "inlayHintProvider" (LSPBool 1))
+                                  (LSPObject m15))))))))))))))))))
 
 (defn lsp-semantic-legend-any ()
   (match (semantic-tokens-legend)
@@ -691,6 +695,38 @@
   (let item (CHOutgoing.item c)
     (LSPObject
       (map-insert (map-insert (map-new) "to" (lsp-chitem-any-full item)) "fromRanges" (LSPArray (Cons (lsp-range-to-any (CHI.range item)) Nil))))))
+
+; ===========================================================================
+; INLAY HINTS — see lsp/services/inlay_hints for what this is (real
+; parameter-name hints, not type hints) and why. `range` in the request
+; is ignored: hints are computed for the whole document regardless
+; (simple, correct; only a perf nicety would come from filtering, not
+; wired up).
+; ===========================================================================
+
+(defn lsp-req-inlay-hint (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (begin
+      (match (dm-get-text dm uri)
+        (Some text
+          (match (dm-get-symtable dm uri)
+            (Some tbl (lsp-respond id (Some (LSPArray (lsp-ihint-list-any (inlay-hints-for text tbl)))) None))
+            (None (lsp-respond id (Some LSPNull) None))))
+        (None (lsp-respond id (Some LSPNull) None)))
+      (lsp-loop arena dm ws 1))))
+
+(defn lsp-ihint-list-any (hints)
+  (match hints
+    (Nil Nil)
+    (Cons h t (Cons (lsp-ihint-any h) (lsp-ihint-list-any t)))))
+
+(defn lsp-ihint-any (h)
+  (match h
+    (IH pos label d1 d2 d3 d4 d5
+      (LSPObject
+        (map-insert
+          (map-insert (map-new) "position" (lsp-pos-to-any pos))
+          "label" (LSPString label))))))
 
 (defn lsp-syminfo-list-any (syms)
   (match syms
