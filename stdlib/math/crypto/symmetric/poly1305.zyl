@@ -1,0 +1,284 @@
+; === Zyl Standard Library — Poly1305 ===
+; Module: math/crypto/symmetric/poly1305
+; Provides: Poly1305 one-time authenticator (RFC 8439 s2.5)
+;
+; Poly1305 evaluates a polynomial over GF(2^130 - 5): the message is
+; split into 16-byte blocks, each read as a little-endian integer with
+; a 2^128 bit appended, and the accumulator is updated as
+; h = (h + block) * r, finally reduced and added to the one-time pad s.
+;
+; The field element is carried as five 26-bit limbs in five Ints (the
+; "donna" representation). That is not an optimization here so much as
+; a necessity: a 130-bit value obviously does not fit in a 64-bit Int,
+; and the 26-bit limb width is chosen so that the five cross products
+; of a multiply, each at most 5*2^52, sum to under 2^57 and so never
+; overflow a signed 64-bit Int before the carry chain runs.
+;
+; Constant-time: no branch and no table index depends on the message,
+; the key, or the accumulator. The final conditional subtraction of
+; the modulus -- the one place the reference algorithm says "if h >= p"
+; -- is done with an arithmetic-shift mask and a bitwise select, never
+; an `if`. Message LENGTH drives the loop bounds and is not secret.
+;
+; A Poly1305 key must be used for exactly ONE message. It is a one-time
+; authenticator: two tags under the same (r, s) leak r, and r is all an
+; attacker needs to forge. ChaCha20-Poly1305 satisfies this by deriving
+; a fresh key from the nonce for every message.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+
+; ===========================================================================
+; KEY SETUP
+; ===========================================================================
+
+; Read a little-endian 32-bit word from four bytes.
+; Returns: Int
+(defn poly1305-le32 ((buf Int) (off Int))
+  (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3))))
+
+; The clamped multiplier r, as five 26-bit limbs. The odd-looking masks
+; are the clamping rule of RFC 8439 s2.5 folded into the limb split:
+; the top four bits of each of r's four 32-bit words are cleared, and
+; the low two bits of the upper three, which is what keeps the products
+; inside the limb bounds this representation assumes.
+; Returns: Int
+(defn poly1305-r ((arena Int) (key Int))
+  (let t0 (poly1305-le32 key 0)
+    (let t1 (poly1305-le32 key 4)
+      (let t2 (poly1305-le32 key 8)
+        (let t3 (poly1305-le32 key 12)
+          (let rp (w-alloc arena 5)
+            (begin
+              (w-set rp 0 (bit-and t0 67108863))
+              (w-set rp 1 (bit-and (bit-or (shr t0 26) (shl t1 6)) 67108611))
+              (w-set rp 2 (bit-and (bit-or (shr t1 20) (shl t2 12)) 67092735))
+              (w-set rp 3 (bit-and (bit-or (shr t2 14) (shl t3 18)) 66076671))
+              (w-set rp 4 (bit-and (shr t3 8) 1048575))
+              rp)))))))
+
+; s[i] = 5 * r[i] for i in 1..4 (s[0] is unused). These are the
+; coefficients that fold the 2^130 overflow back down, since
+; 2^130 = 5 mod (2^130 - 5).
+; Returns: Int
+(defn poly1305-s ((arena Int) (rp Int))
+  (let sp (w-alloc arena 5)
+    (begin
+      (for (i 1) (< i 5)
+        (begin (w-set sp i (* 5 (w-get rp i))) (set! i (+ i 1))))
+      sp)))
+
+; ===========================================================================
+; ACCUMULATION
+; ===========================================================================
+
+; One term-by-term product of the accumulator against five
+; coefficients: h0*c0 + h1*c1 + h2*c2 + h3*c3 + h4*c4.
+; Returns: Int
+(defn poly1305-dot ((h Int) (c0 Int) (c1 Int) (c2 Int) (c3 Int) (c4 Int))
+  (let p0 (* (w-get h 0) c0)
+    (let p1 (* (w-get h 1) c1)
+      (let p2 (* (w-get h 2) c2)
+        (let p3 (* (w-get h 3) c3)
+          (let p4 (* (w-get h 4) c4)
+            (+ (+ (+ p0 p1) (+ p2 p3)) p4)))))))
+
+; Add the 16-byte block at msg[off..off+16) to the accumulator. `hibit`
+; is 2^24 in the top limb for a full block (the 2^128 bit) and, for a
+; final short block, whatever the caller's padded block requires.
+; Returns: Int
+(defn poly1305-add-block ((h Int) (msg Int) (off Int) (hibit Int))
+  (let t0 (poly1305-le32 msg off)
+    (let t1 (poly1305-le32 msg (+ off 4))
+      (let t2 (poly1305-le32 msg (+ off 8))
+        (let t3 (poly1305-le32 msg (+ off 12))
+          (begin
+            (w-set h 0 (+ (w-get h 0) (bit-and t0 67108863)))
+            (w-set h 1 (+ (w-get h 1) (bit-and (bit-or (shr t0 26) (shl t1 6)) 67108863)))
+            (w-set h 2 (+ (w-get h 2) (bit-and (bit-or (shr t1 20) (shl t2 12)) 67108863)))
+            (w-set h 3 (+ (w-get h 3) (bit-and (bit-or (shr t2 14) (shl t3 18)) 67108863)))
+            (w-set h 4 (+ (w-get h 4) (+ (shr t3 8) hibit)))
+            0))))))
+
+; h = h * r mod (2^130 - 5), with the products taken against r and the
+; pre-multiplied 5*r coefficients, then one full carry pass.
+; Returns: Int
+(defn poly1305-mul ((h Int) (rp Int) (sp Int))
+  (let d0 (poly1305-dot h (w-get rp 0) (w-get sp 4) (w-get sp 3) (w-get sp 2) (w-get sp 1))
+    (let d1 (poly1305-dot h (w-get rp 1) (w-get rp 0) (w-get sp 4) (w-get sp 3) (w-get sp 2))
+      (let d2 (poly1305-dot h (w-get rp 2) (w-get rp 1) (w-get rp 0) (w-get sp 4) (w-get sp 3))
+        (let d3 (poly1305-dot h (w-get rp 3) (w-get rp 2) (w-get rp 1) (w-get rp 0) (w-get sp 4))
+          (let d4 (poly1305-dot h (w-get rp 4) (w-get rp 3) (w-get rp 2) (w-get rp 1) (w-get rp 0))
+            (poly1305-carry h d0 d1 d2 d3 d4)))))))
+
+; The carry chain after a multiply: each limb keeps 26 bits and passes
+; the rest up, and the carry out of the top limb re-enters at the
+; bottom multiplied by 5 (again because 2^130 = 5 in this field).
+; Returns: Int
+(defn poly1305-carry ((h Int) (d0 Int) (d1 Int) (d2 Int) (d3 Int) (d4 Int))
+  (let c0 (shr d0 26)
+    (let e1 (+ d1 c0)
+      (let c1 (shr e1 26)
+        (let e2 (+ d2 c1)
+          (let c2 (shr e2 26)
+            (let e3 (+ d3 c2)
+              (let c3 (shr e3 26)
+                (let e4 (+ d4 c3)
+                  (let c4 (shr e4 26)
+                    (let h0 (+ (bit-and d0 67108863) (* c4 5))
+                      (begin
+                        (w-set h 0 (bit-and h0 67108863))
+                        (w-set h 1 (+ (bit-and e1 67108863) (shr h0 26)))
+                        (w-set h 2 (bit-and e2 67108863))
+                        (w-set h 3 (bit-and e3 67108863))
+                        (w-set h 4 (bit-and e4 67108863))
+                        0))))))))))))
+
+; ===========================================================================
+; TAG
+; ===========================================================================
+
+; Final full carry, conditional subtraction of 2^130 - 5, and addition
+; of the one-time pad s = key[16..32). The conditional subtraction is
+; the security-critical branchless step: `g4` goes negative exactly
+; when h < p, and an arithmetic shift of its sign bit becomes the
+; select mask.
+; Returns: Int
+(defn poly1305-finish ((arena Int) (h Int) (key Int))
+  (begin
+    (poly1305-final-carry h)
+    (poly1305-select-reduced h)
+    (poly1305-emit arena h key)))
+
+; Returns: Int
+(defn poly1305-final-carry ((h Int))
+  (begin
+    (for (i 1) (< i 4)
+      (begin
+        (w-set h (+ i 1) (+ (w-get h (+ i 1)) (shr (w-get h i) 26)))
+        (w-set h i (bit-and (w-get h i) 67108863))
+        (set! i (+ i 1))))
+    (poly1305-fold-top h)
+    0))
+
+; The i=4 step of the carry above would write past the accumulator, so
+; the top limb's carry folds back into limb 0 (times 5) here instead,
+; followed by one more pass through limbs 0 and 1 to absorb it.
+; Returns: Int
+(defn poly1305-fold-top ((h Int))
+  (let c (shr (w-get h 4) 26)
+    (begin
+      (w-set h 4 (bit-and (w-get h 4) 67108863))
+      (w-set h 0 (+ (w-get h 0) (* c 5)))
+      (w-set h 1 (+ (w-get h 1) (shr (w-get h 0) 26)))
+      (w-set h 0 (bit-and (w-get h 0) 67108863))
+      0)))
+
+; Compute g = h + 5 - 2^130 (i.e. h - p) and keep it only when it did
+; not go negative, which is exactly the case h >= p.
+; Returns: Int
+(defn poly1305-select-reduced ((h Int))
+  (let g0 (+ (w-get h 0) 5)
+    (let g1 (+ (w-get h 1) (shr g0 26))
+      (let g2 (+ (w-get h 2) (shr g1 26))
+        (let g3 (+ (w-get h 3) (shr g2 26))
+          (let g4 (- (+ (w-get h 4) (shr g3 26)) 67108864)
+            (let m (bit-not (ashr g4 63))
+              (begin
+                (poly1305-blend h 0 (bit-and g0 67108863) m)
+                (poly1305-blend h 1 (bit-and g1 67108863) m)
+                (poly1305-blend h 2 (bit-and g2 67108863) m)
+                (poly1305-blend h 3 (bit-and g3 67108863) m)
+                (poly1305-blend h 4 g4 m)
+                0))))))))
+
+; h[i] <- g when the mask is all ones, unchanged when it is zero.
+; Returns: Int
+(defn poly1305-blend ((h Int) (i Int) (g Int) (m Int))
+  (w-set h i (bit-or (bit-and g m) (bit-and (bit-not m) (w-get h i)))))
+
+; Repack the five 26-bit limbs into four 32-bit words, add the pad, and
+; serialize the low 128 bits little-endian as the 16-byte tag.
+; Returns: Int
+(defn poly1305-emit ((arena Int) (h Int) (key Int))
+  (let f0 (bit-and (bit-or (w-get h 0) (shl (w-get h 1) 26)) 4294967295)
+    (let f1 (bit-and (bit-or (shr (w-get h 1) 6) (shl (w-get h 2) 20)) 4294967295)
+      (let f2 (bit-and (bit-or (shr (w-get h 2) 12) (shl (w-get h 3) 14)) 4294967295)
+        (let f3 (bit-and (bit-or (shr (w-get h 3) 18) (shl (w-get h 4) 8)) 4294967295)
+          (poly1305-add-pad arena f0 f1 f2 f3 key))))))
+
+; Returns: Int
+(defn poly1305-add-pad ((arena Int) (f0 Int) (f1 Int) (f2 Int) (f3 Int) (key Int))
+  (let a0 (+ f0 (poly1305-le32 key 16))
+    (let a1 (+ (+ f1 (poly1305-le32 key 20)) (shr a0 32))
+      (let a2 (+ (+ f2 (poly1305-le32 key 24)) (shr a1 32))
+        (let a3 (+ (+ f3 (poly1305-le32 key 28)) (shr a2 32))
+          (let out (w-alloc arena 16)
+            (begin
+              (poly1305-put32 out 0 a0)
+              (poly1305-put32 out 4 a1)
+              (poly1305-put32 out 8 a2)
+              (poly1305-put32 out 12 a3)
+              out)))))))
+
+; Returns: Int
+(defn poly1305-put32 ((out Int) (off Int) (v Int))
+  (begin
+    (w-set out off (bit-and v 255))
+    (w-set out (+ off 1) (bit-and (shr v 8) 255))
+    (w-set out (+ off 2) (bit-and (shr v 16) 255))
+    (w-set out (+ off 3) (bit-and (shr v 24) 255))
+    0))
+
+; ===========================================================================
+; TOP LEVEL
+; ===========================================================================
+
+; Poly1305 tag (16 bytes) over `len` message bytes with the 32-byte
+; one-time key. Full blocks carry the implicit 2^128 bit; a trailing
+; partial block gets an explicit 0x01 byte instead, in a zero-padded
+; scratch block.
+; Returns: Int
+(defn poly1305-mac ((arena Int) (key Int) (msg Int) (len Int))
+  (let rp (poly1305-r arena key)
+    (let sp (poly1305-s arena rp)
+      (let h (w-alloc arena 5)
+        (begin
+          (poly1305-full-blocks arena h rp sp msg len)
+          (poly1305-last-block arena h rp sp msg len)
+          (poly1305-finish arena h key))))))
+
+; Returns: Int
+(defn poly1305-full-blocks ((arena Int) (h Int) (rp Int) (sp Int) (msg Int) (len Int))
+  (begin
+    (for (off 0) (<= (+ off 16) len)
+      (begin
+        (poly1305-add-block h msg off 16777216)
+        (poly1305-mul h rp sp)
+        (set! off (+ off 16))))
+    0))
+
+; The trailing bytes, if any: copied into a zeroed 16-byte block with a
+; 0x01 terminator, so the padding is unambiguous.
+; Returns: Int
+(defn poly1305-last-block ((arena Int) (h Int) (rp Int) (sp Int) (msg Int) (len Int))
+  (let rem (% len 16)
+    (if (= rem 0)
+      0
+      (let blk (w-alloc arena 16)
+        (let base (- len rem)
+          (begin
+            (for (i 0) (< i rem)
+              (begin (w-set blk i (w-get msg (+ base i))) (set! i (+ i 1))))
+            (w-set blk rem 1)
+            (poly1305-add-block h blk 0 0)
+            (poly1305-mul h rp sp)
+            0))))))
+
+; Constant-time tag verification: 16 bytes compared with no early exit.
+; Returns: Bool
+(defn poly1305-verify ((arena Int) (key Int) (msg Int) (len Int) (tag Int))
+  (let computed (poly1305-mac arena key msg len)
+    (ct-eq-words-bool computed tag 16)))

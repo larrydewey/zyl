@@ -1,0 +1,409 @@
+; === Zyl Standard Library — BLAKE2b ===
+; Module: math/hash/blake2b
+; Provides: BLAKE2b (RFC 7693), keyed or unkeyed, 1..64 byte digests
+;
+; BLAKE2b is here primarily because Argon2 is defined in terms of it
+; (RFC 9106), but it stands on its own: faster than SHA-2 in software,
+; with a built-in keyed mode that replaces HMAC.
+;
+; The state is eight 64-bit words and the message is absorbed in
+; 128-byte blocks. As everywhere else in this library, 64-bit words
+; with the top bit set are negative Ints; BLAKE2b only adds, XORs and
+; rotates them, all of which are two's-complement-identical for signed
+; and unsigned operands.
+;
+; Constant-time: 12 fixed rounds per block, a message schedule indexed
+; by a compile-time constant table, and no branch on any message or key
+; byte. The one length-dependent decision -- whether a block is the
+; last -- depends on the message length, which is public.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+
+; ===========================================================================
+; CONSTANTS
+; ===========================================================================
+
+; The BLAKE2b IV: the same eight words as SHA-512's initial state
+; (fractional parts of the square roots of the first eight primes).
+; Returns: Int
+(defn blake2b-iv ((arena Int))
+  (let p (w-alloc arena 8)
+    (begin
+      (w-set p 0 7640891576956012808)
+      (w-set p 1 -4942790177534073029)
+      (w-set p 2 4354685564936845355)
+      (w-set p 3 -6534734903238641935)
+      (w-set p 4 5840696475078001361)
+      (w-set p 5 -7276294671716946913)
+      (w-set p 6 2270897969802886507)
+      (w-set p 7 6620516959819538809)
+      p)))
+
+; The message-word permutation sigma, 12 rounds of 16 indices, flattened.
+; Returns: Int
+(defn blake2b-sigma ((arena Int))
+  (let p (w-alloc arena 192)
+    (begin
+      (w-set p 0 0)
+      (w-set p 1 1)
+      (w-set p 2 2)
+      (w-set p 3 3)
+      (w-set p 4 4)
+      (w-set p 5 5)
+      (w-set p 6 6)
+      (w-set p 7 7)
+      (w-set p 8 8)
+      (w-set p 9 9)
+      (w-set p 10 10)
+      (w-set p 11 11)
+      (w-set p 12 12)
+      (w-set p 13 13)
+      (w-set p 14 14)
+      (w-set p 15 15)
+      (w-set p 16 14)
+      (w-set p 17 10)
+      (w-set p 18 4)
+      (w-set p 19 8)
+      (w-set p 20 9)
+      (w-set p 21 15)
+      (w-set p 22 13)
+      (w-set p 23 6)
+      (w-set p 24 1)
+      (w-set p 25 12)
+      (w-set p 26 0)
+      (w-set p 27 2)
+      (w-set p 28 11)
+      (w-set p 29 7)
+      (w-set p 30 5)
+      (w-set p 31 3)
+      (w-set p 32 11)
+      (w-set p 33 8)
+      (w-set p 34 12)
+      (w-set p 35 0)
+      (w-set p 36 5)
+      (w-set p 37 2)
+      (w-set p 38 15)
+      (w-set p 39 13)
+      (w-set p 40 10)
+      (w-set p 41 14)
+      (w-set p 42 3)
+      (w-set p 43 6)
+      (w-set p 44 7)
+      (w-set p 45 1)
+      (w-set p 46 9)
+      (w-set p 47 4)
+      (w-set p 48 7)
+      (w-set p 49 9)
+      (w-set p 50 3)
+      (w-set p 51 1)
+      (w-set p 52 13)
+      (w-set p 53 12)
+      (w-set p 54 11)
+      (w-set p 55 14)
+      (w-set p 56 2)
+      (w-set p 57 6)
+      (w-set p 58 5)
+      (w-set p 59 10)
+      (w-set p 60 4)
+      (w-set p 61 0)
+      (w-set p 62 15)
+      (w-set p 63 8)
+      (w-set p 64 9)
+      (w-set p 65 0)
+      (w-set p 66 5)
+      (w-set p 67 7)
+      (w-set p 68 2)
+      (w-set p 69 4)
+      (w-set p 70 10)
+      (w-set p 71 15)
+      (w-set p 72 14)
+      (w-set p 73 1)
+      (w-set p 74 11)
+      (w-set p 75 12)
+      (w-set p 76 6)
+      (w-set p 77 8)
+      (w-set p 78 3)
+      (w-set p 79 13)
+      (w-set p 80 2)
+      (w-set p 81 12)
+      (w-set p 82 6)
+      (w-set p 83 10)
+      (w-set p 84 0)
+      (w-set p 85 11)
+      (w-set p 86 8)
+      (w-set p 87 3)
+      (w-set p 88 4)
+      (w-set p 89 13)
+      (w-set p 90 7)
+      (w-set p 91 5)
+      (w-set p 92 15)
+      (w-set p 93 14)
+      (w-set p 94 1)
+      (w-set p 95 9)
+      (w-set p 96 12)
+      (w-set p 97 5)
+      (w-set p 98 1)
+      (w-set p 99 15)
+      (w-set p 100 14)
+      (w-set p 101 13)
+      (w-set p 102 4)
+      (w-set p 103 10)
+      (w-set p 104 0)
+      (w-set p 105 7)
+      (w-set p 106 6)
+      (w-set p 107 3)
+      (w-set p 108 9)
+      (w-set p 109 2)
+      (w-set p 110 8)
+      (w-set p 111 11)
+      (w-set p 112 13)
+      (w-set p 113 11)
+      (w-set p 114 7)
+      (w-set p 115 14)
+      (w-set p 116 12)
+      (w-set p 117 1)
+      (w-set p 118 3)
+      (w-set p 119 9)
+      (w-set p 120 5)
+      (w-set p 121 0)
+      (w-set p 122 15)
+      (w-set p 123 4)
+      (w-set p 124 8)
+      (w-set p 125 6)
+      (w-set p 126 2)
+      (w-set p 127 10)
+      (w-set p 128 6)
+      (w-set p 129 15)
+      (w-set p 130 14)
+      (w-set p 131 9)
+      (w-set p 132 11)
+      (w-set p 133 3)
+      (w-set p 134 0)
+      (w-set p 135 8)
+      (w-set p 136 12)
+      (w-set p 137 2)
+      (w-set p 138 13)
+      (w-set p 139 7)
+      (w-set p 140 1)
+      (w-set p 141 4)
+      (w-set p 142 10)
+      (w-set p 143 5)
+      (w-set p 144 10)
+      (w-set p 145 2)
+      (w-set p 146 8)
+      (w-set p 147 4)
+      (w-set p 148 7)
+      (w-set p 149 6)
+      (w-set p 150 1)
+      (w-set p 151 5)
+      (w-set p 152 15)
+      (w-set p 153 11)
+      (w-set p 154 9)
+      (w-set p 155 14)
+      (w-set p 156 3)
+      (w-set p 157 12)
+      (w-set p 158 13)
+      (w-set p 159 0)
+      (w-set p 160 0)
+      (w-set p 161 1)
+      (w-set p 162 2)
+      (w-set p 163 3)
+      (w-set p 164 4)
+      (w-set p 165 5)
+      (w-set p 166 6)
+      (w-set p 167 7)
+      (w-set p 168 8)
+      (w-set p 169 9)
+      (w-set p 170 10)
+      (w-set p 171 11)
+      (w-set p 172 12)
+      (w-set p 173 13)
+      (w-set p 174 14)
+      (w-set p 175 15)
+      (w-set p 176 14)
+      (w-set p 177 10)
+      (w-set p 178 4)
+      (w-set p 179 8)
+      (w-set p 180 9)
+      (w-set p 181 15)
+      (w-set p 182 13)
+      (w-set p 183 6)
+      (w-set p 184 1)
+      (w-set p 185 12)
+      (w-set p 186 0)
+      (w-set p 187 2)
+      (w-set p 188 11)
+      (w-set p 189 7)
+      (w-set p 190 5)
+      (w-set p 191 3)
+      p)))
+
+; ===========================================================================
+; COMPRESSION
+; ===========================================================================
+
+; The G mixing function on four words of the working state, indexed
+; rather than passed by value so the caller can keep the state in one
+; array.
+; Returns: Int
+(defn blake2b-g ((v Int) (ia Int) (ib Int) (ic Int) (id Int) (x Int) (y Int))
+  (begin
+    (blake2b-g-half v ia ib ic id x 32 24)
+    (blake2b-g-half v ia ib ic id y 16 63)
+    0))
+
+; One half of G: a += b + m; d = rotr(d^a, r1); c += d; b = rotr(b^c, r2).
+; Returns: Int
+(defn blake2b-g-half ((v Int) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
+  (let a (+ (+ (w-get v ia) (w-get v ib)) m)
+    (let d (rotr64 (bit-xor (w-get v id) a) r1)
+      (let c (+ (w-get v ic) d)
+        (let b (rotr64 (bit-xor (w-get v ib) c) r2)
+          (begin
+            (w-set v ia a)
+            (w-set v id d)
+            (w-set v ic c)
+            (w-set v ib b)
+            0))))))
+
+; One round: four column mixes then four diagonal mixes.
+; Returns: Int
+(defn blake2b-round ((v Int) (m Int) (sigma Int) (r Int))
+  (let s (* r 16)
+    (begin
+      (blake2b-g v 0 4 8 12 (w-get m (w-get sigma s)) (w-get m (w-get sigma (+ s 1))))
+      (blake2b-g v 1 5 9 13 (w-get m (w-get sigma (+ s 2))) (w-get m (w-get sigma (+ s 3))))
+      (blake2b-g v 2 6 10 14 (w-get m (w-get sigma (+ s 4))) (w-get m (w-get sigma (+ s 5))))
+      (blake2b-g v 3 7 11 15 (w-get m (w-get sigma (+ s 6))) (w-get m (w-get sigma (+ s 7))))
+      (blake2b-g v 0 5 10 15 (w-get m (w-get sigma (+ s 8))) (w-get m (w-get sigma (+ s 9))))
+      (blake2b-g v 1 6 11 12 (w-get m (w-get sigma (+ s 10))) (w-get m (w-get sigma (+ s 11))))
+      (blake2b-g v 2 7 8 13 (w-get m (w-get sigma (+ s 12))) (w-get m (w-get sigma (+ s 13))))
+      (blake2b-g v 3 4 9 14 (w-get m (w-get sigma (+ s 14))) (w-get m (w-get sigma (+ s 15))))
+      0)))
+
+; Compress one 128-byte block into the state. `t` is the byte counter
+; including this block; `last` is 1 for the final block, which inverts
+; v[14] and is what stops a block of one message being reusable as the
+; final block of another.
+; Returns: Int
+(defn blake2b-compress ((arena Int) (h Int) (m Int) (t Int) (last Int))
+  (let v (w-alloc arena 16)
+    (let iv (blake2b-iv arena)
+      (let sigma (blake2b-sigma arena)
+        (begin
+          (w-copy v h 8)
+          (for (i 0) (< i 8)
+            (begin (w-set v (+ 8 i) (w-get iv i)) (set! i (+ i 1))))
+          (w-set v 12 (bit-xor (w-get v 12) t))
+          (w-set v 14 (bit-xor (w-get v 14) (ct-mask last)))
+          (for (r 0) (< r 12)
+            (begin (blake2b-round v m sigma r) (set! r (+ r 1))))
+          (for (j 0) (< j 8)
+            (begin
+              (w-set h j (bit-xor (w-get h j) (bit-xor (w-get v j) (w-get v (+ 8 j)))))
+              (set! j (+ j 1))))
+          0)))))
+
+; ===========================================================================
+; SPONGE-STYLE DRIVER
+; ===========================================================================
+
+; Load 16 little-endian 64-bit words from a 128-byte block of the
+; message, zero-padding a short final block.
+; Returns: Int
+(defn blake2b-load-block ((arena Int) (msg Int) (off Int) (len Int))
+  (let m (w-alloc arena 16)
+    (begin
+      (for (i 0) (< i 16)
+        (begin
+          (w-set m i (blake2b-le64 msg (+ off (* i 8)) len))
+          (set! i (+ i 1))))
+      m)))
+
+; Returns: Int
+(defn blake2b-le64 ((msg Int) (off Int) (len Int))
+  (blake2b-le64-loop msg off len 7 0))
+
+; Returns: Int
+(defn blake2b-le64-loop ((msg Int) (off Int) (len Int) (i Int) (acc Int))
+  (if (< i 0)
+    acc
+    (let byte (if (< (+ off i) len) (w-get msg (+ off i)) 0)
+      (blake2b-le64-loop msg off len (- i 1) (bit-or (shl acc 8) (bit-and byte 255))))))
+
+; Initial state: the IV with the parameter block XORed into the first
+; word. The parameter block encodes digest length, key length, fanout
+; and depth, which is what makes a keyed 32-byte BLAKE2b a different
+; function from an unkeyed 64-byte one rather than a truncation of it.
+; Returns: Int
+(defn blake2b-init ((arena Int) (outlen Int) (keylen Int))
+  (let h (w-copy (w-alloc arena 8) (blake2b-iv arena) 8)
+    (begin
+      (w-set h 0 (bit-xor (w-get h 0) (bit-or 16842752 (bit-or (shl keylen 8) outlen))))
+      h)))
+
+; BLAKE2b with an optional key. `keylen` of 0 means unkeyed; a keyed
+; hash prepends a zero-padded 128-byte block holding the key, exactly
+; as RFC 7693 s3.3 specifies.
+; Returns: Int
+(defn blake2b ((arena Int) (msg Int) (msglen Int) (key Int) (keylen Int) (outlen Int))
+  (let h (blake2b-init arena outlen keylen)
+    (let input (blake2b-prepare arena msg msglen key keylen)
+      (let total (+ msglen (if (> keylen 0) 128 0))
+        (begin
+          (blake2b-absorb arena h input total)
+          (blake2b-emit arena h outlen))))))
+
+; The message with the key block in front of it, when keyed.
+; Returns: Int
+(defn blake2b-prepare ((arena Int) (msg Int) (msglen Int) (key Int) (keylen Int))
+  (if (= keylen 0)
+    msg
+    (let buf (w-alloc arena (+ msglen 128))
+      (begin
+        (w-copy buf key keylen)
+        (for (i 0) (< i msglen)
+          (begin (w-set buf (+ 128 i) (w-get msg i)) (set! i (+ i 1))))
+        buf))))
+
+; Absorb the whole input. An empty input still compresses one zero
+; block -- BLAKE2b's definition, not an edge case to skip.
+; Returns: Int
+(defn blake2b-absorb ((arena Int) (h Int) (input Int) (total Int))
+  (if (= total 0)
+    (blake2b-compress arena h (w-alloc arena 16) 0 1)
+    (blake2b-absorb-loop arena h input total 0)))
+
+; Returns: Int
+(defn blake2b-absorb-loop ((arena Int) (h Int) (input Int) (total Int) (off Int))
+  (if (>= off total)
+    0
+    (let last (if (>= (+ off 128) total) 1 0)
+      (let counter (if (= last 1) total (+ off 128))
+        (begin
+          (blake2b-compress arena h (blake2b-load-block arena input off total) counter last)
+          (blake2b-absorb-loop arena h input total (+ off 128)))))))
+
+; The first `outlen` bytes of the state, little-endian.
+; Returns: Int
+(defn blake2b-emit ((arena Int) (h Int) (outlen Int))
+  (let out (w-alloc arena outlen)
+    (begin
+      (for (i 0) (< i outlen)
+        (begin
+          (w-set out i (bit-and (shr (w-get h (/ i 8)) (* 8 (% i 8))) 255))
+          (set! i (+ i 1))))
+      out)))
+
+; Unkeyed BLAKE2b-512.
+; Returns: Int
+(defn blake2b-512 ((arena Int) (msg Int) (msglen Int))
+  (blake2b arena msg msglen (w-alloc arena 1) 0 64))
+
+; Returns: String
+(defn blake2b-hex-of-string ((arena Int) (s String) (outlen Int))
+  (let msg (w-from-string arena s)
+    (w-hex-bytes (blake2b arena msg (w-string-len s) (w-alloc arena 1) 0 outlen) outlen)))

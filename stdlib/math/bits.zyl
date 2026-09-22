@@ -1,0 +1,169 @@
+; === Zyl Standard Library — Word & Bit Primitives ===
+; Module: math/bits
+; Provides: 32/64-bit word arithmetic, rotations, byte packing
+;
+; Zyl's only integer type is a 64-bit signed Int (type_system.zyl's
+; TInt), so every 32-bit quantity here is an Int carrying its value in
+; the low 32 bits with the upper 32 bits held at zero by `u32`. That
+; invariant is what makes `(== a b)` on two u32 values mean what it
+; looks like it means; a function that can overflow 32 bits (add32,
+; shl32, rotations) re-establishes it before returning.
+;
+; 64-bit words need no masking -- they ARE the machine word -- but note
+; that a 64-bit value with the top bit set is a NEGATIVE Int. That is
+; only visible to `<`, `>` and `/`: `+`, `-`, `*` and every bitwise op
+; are two's-complement-identical for signed and unsigned operands, and
+; `shr` is the LOGICAL shift (zero-fill, icnf.zyl opcode 15), so hash
+; and cipher code that only uses those never has to care. Code that
+; needs an unsigned COMPARISON must use `u64-lt` below rather than `<`.
+;
+; Shift counts outside 0..63 are defined, not undefined: shl/shr give
+; 0 and ashr saturates to the sign bit (codegen.zyl's cg-bit-mnem).
+; The rotations below rely on that directly -- `(rotl64 x 0)` computes
+; `(bit-or (shl x 0) (shr x 64))`, whose second term is 0 only because
+; of that rule, not because of x86's own mod-64 count masking.
+
+(use core/core)
+
+; ===========================================================================
+; MASKS
+; ===========================================================================
+
+; 0xFFFFFFFF — low 32 bits set.
+; Returns: Int
+(defn mask32 () 4294967295)
+
+; 0xFFFF — low 16 bits set.
+; Returns: Int
+(defn mask16 () 65535)
+
+; 0xFF — low 8 bits set.
+; Returns: Int
+(defn mask8 () 255)
+
+; ===========================================================================
+; 32-BIT WORD OPS (value kept in the low 32 bits, upper 32 bits zero)
+; ===========================================================================
+
+; Truncate to 32 bits. Every 32-bit-producing function ends in this.
+; Returns: Int
+(defn u32 ((x Int))
+  (bit-and x 4294967295))
+
+; Wrapping 32-bit addition.
+; Returns: Int
+(defn add32 ((a Int) (b Int))
+  (u32 (+ a b)))
+
+; Wrapping 32-bit subtraction.
+; Returns: Int
+(defn sub32 ((a Int) (b Int))
+  (u32 (- a b)))
+
+; Wrapping 32-bit multiplication. Both operands must already be 32-bit,
+; so the exact 64-bit product cannot overflow the machine word before
+; it is truncated.
+; Returns: Int
+(defn mul32 ((a Int) (b Int))
+  (u32 (* (u32 a) (u32 b))))
+
+; 32-bit left shift (bits shifted past bit 31 are dropped).
+; Returns: Int
+(defn shl32 ((x Int) (n Int))
+  (u32 (shl (u32 x) n)))
+
+; 32-bit logical right shift (zero fill).
+; Returns: Int
+(defn shr32 ((x Int) (n Int))
+  (shr (u32 x) n))
+
+; 32-bit rotate left by n (0 <= n < 32).
+; Returns: Int
+(defn rotl32 ((x Int) (n Int))
+  (let v (u32 x)
+    (bit-or (shl32 v n) (shr v (- 32 n)))))
+
+; 32-bit rotate right by n (0 <= n < 32).
+; Returns: Int
+(defn rotr32 ((x Int) (n Int))
+  (let v (u32 x)
+    (bit-or (shr v n) (shl32 v (- 32 n)))))
+
+; 32-bit one's complement.
+; Returns: Int
+(defn not32 ((x Int))
+  (u32 (bit-not x)))
+
+; ===========================================================================
+; 64-BIT WORD OPS
+; ===========================================================================
+
+; 64-bit rotate left by n (0 <= n < 64).
+; Returns: Int
+(defn rotl64 ((x Int) (n Int))
+  (bit-or (shl x n) (shr x (- 64 n))))
+
+; 64-bit rotate right by n (0 <= n < 64).
+; Returns: Int
+(defn rotr64 ((x Int) (n Int))
+  (bit-or (shr x n) (shl x (- 64 n))))
+
+; 64-bit one's complement.
+; Returns: Int
+(defn not64 ((x Int))
+  (bit-not x))
+
+; Unsigned 64-bit less-than. Plain `<` is a SIGNED comparison, so it
+; gets the wrong answer whenever exactly one of the two values has its
+; top bit set. Flipping both top bits maps the unsigned order onto the
+; signed one (the standard bias trick) without branching on either
+; value.
+; Returns: Bool
+(defn u64-lt ((a Int) (b Int))
+  (< (bit-xor a -9223372036854775808) (bit-xor b -9223372036854775808)))
+
+; Unsigned 64-bit greater-than.
+; Returns: Bool
+(defn u64-gt ((a Int) (b Int))
+  (u64-lt b a))
+
+; Unsigned 64-bit less-or-equal.
+; Returns: Bool
+(defn u64-le ((a Int) (b Int))
+  (not (u64-lt b a)))
+
+; Unsigned 64-bit greater-or-equal.
+; Returns: Bool
+(defn u64-ge ((a Int) (b Int))
+  (not (u64-lt a b)))
+
+; ===========================================================================
+; BYTE EXTRACTION / PACKING
+; ===========================================================================
+
+; Byte i (0 = least significant) of a 64-bit word, as 0..255.
+; Returns: Int
+(defn byte-of ((x Int) (i Int))
+  (bit-and (shr x (* 8 i)) 255))
+
+; Big-endian byte i (0 = most significant) of a 32-bit word.
+; Returns: Int
+(defn be-byte32 ((x Int) (i Int))
+  (bit-and (shr (u32 x) (* 8 (- 3 i))) 255))
+
+; Big-endian byte i (0 = most significant) of a 64-bit word.
+; Returns: Int
+(defn be-byte64 ((x Int) (i Int))
+  (bit-and (shr x (* 8 (- 7 i))) 255))
+
+; Assemble a 32-bit word from four big-endian bytes.
+; Returns: Int
+(defn be-pack32 ((b0 Int) (b1 Int) (b2 Int) (b3 Int))
+  (let hi (bit-or (shl (bit-and b0 255) 24) (shl (bit-and b1 255) 16))
+    (let lo (bit-or (shl (bit-and b2 255) 8) (bit-and b3 255))
+      (bit-or hi lo))))
+
+; Assemble a 32-bit word from four little-endian bytes.
+; Returns: Int
+(defn le-pack32 ((b0 Int) (b1 Int) (b2 Int) (b3 Int))
+  (be-pack32 b3 b2 b1 b0))

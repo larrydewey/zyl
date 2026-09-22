@@ -1220,18 +1220,41 @@
           (parse-body-from args 2))))
     None))
 
+; The binding section of a `for` accepts two shapes:
+;
+;   (for ((i 0) (j 1)) cond body)   a LIST of bindings
+;   (for (i 0) cond body)           ONE binding, unwrapped
+;
+; The second is what every `for` in this corpus actually writes, and it
+; used to be mis-parsed: the list was walked element by element, so
+; `(i 16)` became the two bindings `i` (no initializer) and `16`
+; (unnamed) -- and a binding with no initializer starts at 0. A loop
+; written `(for (i 16) ...)` therefore silently started at 0, which is
+; invisible for the overwhelmingly common `(for (i 0) ...)` and a
+; miscompile for anything else.
+;
+; The two shapes are told apart by the first element: an identifier
+; means the shorthand, a nested list means a real binding list.
 (defn parse-for-bindings (bindings)
   (match bindings
     (AList lst
       (match lst
         (Nil Nil)
         ((Cons binding rest)
-          (let hd (parse-for-binding binding)
-            (let tl (parse-for-bindings (AList rest))
-              (Cons hd tl))))))
+          (if (> (parse-for-is-ident binding) 0)
+            (Cons (parse-for-binding (AList lst)) Nil)
+            (let hd (parse-for-binding binding)
+              (let tl (parse-for-bindings (AList rest))
+                (Cons hd tl)))))))
     (d1 Nil))
 
 )
+
+; 1 when the Ast node is a bare identifier.
+(defn parse-for-is-ident (node)
+  (match node
+    (AstIdent d1 1)
+    (d2 0)))
 (defn parse-for-binding (binding)
   ; same nested-field-position bug as parse-adt-variant above.
   (match binding

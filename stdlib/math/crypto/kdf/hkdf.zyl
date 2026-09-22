@@ -1,0 +1,107 @@
+; === Zyl Standard Library — HKDF-SHA256 ===
+; Module: math/crypto/kdf/hkdf
+; Provides: HKDF extract/expand (RFC 5869) over HMAC-SHA256
+;
+; HKDF is two steps, and keeping them separate matters: `extract`
+; concentrates a possibly-non-uniform input keying material into a
+; uniform 32-byte pseudorandom key, and `expand` stretches that PRK
+; into as much output as needed, bound to an `info` label.
+;
+; The `info` label is the domain separation mechanism and should never
+; be empty in a real protocol: two different uses of the same PRK with
+; the same (or absent) label produce the same bytes, which silently
+; turns two independent keys into one. Pass a distinct, versioned,
+; protocol-specific label for every derivation.
+;
+; The salt is NOT secret and may be empty (RFC 5869 s3.1 specifies a
+; zero-filled hash-length salt in that case, which is what an empty
+; salt argument produces here). A random salt improves the extract step
+; when the input keying material is weak.
+;
+; Output length is capped at 255 * 32 = 8160 bytes by the counter byte
+; in the expand step; longer requests return a zero-length result
+; rather than silently wrapping the counter.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/hash/hmac)
+
+; ===========================================================================
+; EXTRACT
+; ===========================================================================
+
+; PRK = HMAC-SHA256(salt, ikm). A zero-length salt becomes the 32 zero
+; bytes RFC 5869 s2.2 specifies.
+; Returns: Int
+(defn hkdf-extract ((arena Int) (salt Int) (saltlen Int) (ikm Int) (ikmlen Int))
+  (if (= saltlen 0)
+    (hmac-sha256 arena (w-alloc arena 32) 32 ikm ikmlen)
+    (hmac-sha256 arena salt saltlen ikm ikmlen)))
+
+; ===========================================================================
+; EXPAND
+; ===========================================================================
+
+; Maximum output length: 255 blocks of 32 bytes.
+; Returns: Int
+(defn hkdf-max-len () 8160)
+
+; OKM = first `len` bytes of T(1) || T(2) || ..., where
+; T(i) = HMAC(PRK, T(i-1) || info || i).
+; Returns: Int
+(defn hkdf-expand ((arena Int) (prk Int) (info Int) (infolen Int) (len Int))
+  (if (> len 8160)
+    (w-alloc arena 0)
+    (let out (w-alloc arena (+ len 32))
+      (let prev (w-alloc arena 32)
+        (begin
+          (hkdf-expand-loop arena prk info infolen len out prev)
+          out)))))
+
+; Each round hashes the previous block (empty for the first), the info
+; label, and a one-byte counter, then appends the result.
+; Returns: Int
+(defn hkdf-expand-loop ((arena Int) (prk Int) (info Int) (infolen Int) (len Int) (out Int) (prev Int))
+  (begin
+    (for (i 0) (< (* i 32) len)
+      (begin
+        (hkdf-expand-step arena prk info infolen out prev i)
+        (set! i (+ i 1))))
+    0))
+
+; Returns: Int
+(defn hkdf-expand-step ((arena Int) (prk Int) (info Int) (infolen Int) (out Int) (prev Int) (i Int))
+  (let prevlen (if (= i 0) 0 32)
+    (let buf (w-alloc arena (+ (+ prevlen infolen) 1))
+      (begin
+        (w-copy buf prev prevlen)
+        (hkdf-copy-at buf prevlen info infolen)
+        (w-set buf (+ prevlen infolen) (+ i 1))
+        (hkdf-store-block arena prk buf (+ (+ prevlen infolen) 1) out prev i)
+        0))))
+
+; Returns: Int
+(defn hkdf-store-block ((arena Int) (prk Int) (buf Int) (buflen Int) (out Int) (prev Int) (i Int))
+  (let t (hmac-sha256 arena prk 32 buf buflen)
+    (begin
+      (w-copy prev t 32)
+      (hkdf-copy-at out (* i 32) t 32)
+      0)))
+
+; Returns: Int
+(defn hkdf-copy-at ((dst Int) (off Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
+    0))
+
+; ===========================================================================
+; ONE-SHOT
+; ===========================================================================
+
+; extract followed by expand, the usual entry point.
+; Returns: Int
+(defn hkdf ((arena Int) (ikm Int) (ikmlen Int) (salt Int) (saltlen Int) (info Int) (infolen Int) (len Int))
+  (let prk (hkdf-extract arena salt saltlen ikm ikmlen)
+    (hkdf-expand arena prk info infolen len)))

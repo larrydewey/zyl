@@ -106,6 +106,14 @@ long long zyl_arena_capacity(long long arena);
 void zyl_ensure_arenas(void);
 long long zyl_heap_alloc(long long size);
 long long zyl_pin_alloc(long long size);
+long long zyl_mlock(long long addr, long long len);
+long long zyl_zeroize(long long addr, long long len);
+long long zyl_random_fill(long long addr, long long len);
+long long zyl_random_words(long long base, long long n);
+long long zyl_cpuid_features(void);
+long long zyl_aesni_available(void);
+long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
+                                long long inbase, long long outbase);
 
 /* Atomic operations. */
 long long zyl_atomic_load(long long addr);

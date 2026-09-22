@@ -1,0 +1,29 @@
+; Argon2id Known-Answer Tests (RFC 9106 parameters, cross-checked
+; against pyca/cryptography).
+;
+; The memory costs here are deliberately tiny (32-64 KiB). Real
+; parameters start at 64 MiB and would make this suite take minutes;
+; the algorithm is identical either way, and the memory cost is an
+; input to the hash rather than a mode switch.
+
+(use math/crypto/kdf/argon2)
+(use math/words)
+(use allocator/allocator)
+
+(defn _ar_arena () (arena-create 0))
+
+(defn _ar_hash ((m Int) (t Int) (p Int) (taglen Int))
+  (let a (_ar_arena)
+    (let pwd (w-from-string a "password")
+      (let salt (w-from-string a "somesalt12345678")
+        (w-hex-bytes (argon2id-hash a pwd 8 salt 16 m t p taglen) taglen)))))
+
+(test "argon2id-m32-t1-p1"
+  (assert-equal (_ar_hash 32 1 1 32) "d9bc939174cecff705ca7bd6e2a66c00defa130d8f978d92a3fe0ce9bbc8dc03"))
+(test "argon2id-m32-t3-p4"
+  (assert-equal (_ar_hash 32 3 4 32) "cd342db86d5658c8e3267ba1c32c14f66bd95c49ca2c842dbff0e298d37817c9"))
+(test "argon2id-m64-t2-p2"
+  (assert-equal (_ar_hash 64 2 2 32) "bc418ea5103abc2ba7105df54a95022fd755ef3cef33bbc8c0f7a4666acaddbc"))
+(test "argon2id-64-byte-tag"
+  (assert-equal (_ar_hash 32 3 1 64) "cfd94b71a47aa3d5293110049006a26a4b8ad8e20a7f2d9b167e1b13bd2f9509ee8b2a9d68e6225f6d56253e9b1fbe95d21157ff88a1d2b3664c303f07f87c54"))
+(run-tests)

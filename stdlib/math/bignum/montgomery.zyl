@@ -1,0 +1,294 @@
+; === Zyl Standard Library — Montgomery Arithmetic ===
+; Module: math/bignum/montgomery
+; Provides: Montgomery multiplication and constant-time modular
+;           exponentiation over math/bignum Nats
+;
+; Montgomery form replaces "reduce modulo m" -- which in general needs
+; a division, and a constant-time division is both hard and slow --
+; with "multiply and shift", which is neither. A value a is represented
+; as aR mod m for R = 2^(24n), and the Montgomery product
+; (aR)(bR)R^-1 = abR keeps everything in that form, so a whole
+; exponentiation runs without a single division.
+;
+; Everything here is constant-time with respect to the VALUES involved:
+; the loop counts come from the limb count and the exponent's bit
+; LENGTH, both of which are public parameters of a key, and the one
+; value-dependent decision in the algorithm -- the final conditional
+; subtraction -- is done with a mask, never a branch. The exponent's
+; BITS are consumed by a Montgomery ladder whose two operations are
+; identical in every iteration, so the sequence of multiplications
+; reveals nothing about the exponent.
+;
+; The modulus must be ODD. That is not a limitation in practice (RSA
+; moduli and prime field characteristics are odd) and it is what makes
+; m[0] invertible mod 2^24.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+
+; ===========================================================================
+; SETUP
+; ===========================================================================
+
+; n0 = -m[0]^-1 mod 2^24, the multiplier that makes each CIOS step
+; clear the bottom limb. Newton's iteration doubles the number of
+; correct bits each round: x = x * (2 - m0*x). Five rounds from a
+; 3-bit-correct start (x = m0 for odd m0) is more than the 24 needed.
+; Returns: Int
+(defn mont-n0 ((m Int))
+  (let m0 (w-get m 0)
+    (let x (mont-n0-iter m0 m0 5)
+      (bit-and (- 0 x) 16777215))))
+
+; Returns: Int
+(defn mont-n0-iter ((m0 Int) (x Int) (rounds Int))
+  (if (<= rounds 0)
+    x
+    (let t (bit-and (- 2 (bit-and (* m0 x) 16777215)) 16777215)
+      (mont-n0-iter m0 (bit-and (* x t) 16777215) (- rounds 1)))))
+
+; R^2 mod m, the constant that converts a plain value into Montgomery
+; form. Computed by doubling 1 exactly 48n times, reducing after each
+; doubling -- 2^(48n) mod m is R^2 mod m by definition. Each step is a
+; shift and a masked conditional subtract, both constant-time.
+; Returns: Int
+(defn mont-r2 ((arena Int) (m Int) (n Int))
+  (let t (bn-alloc arena n)
+    (begin
+      (bn-set-small t n 1)
+      (for (i 0) (< i (* 48 n))
+        (begin
+          (mont-double-mod arena t m n)
+          (set! i (+ i 1))))
+      t)))
+
+; t = 2t mod m. The doubling may overflow the top limb, so the
+; conditional subtraction triggers on EITHER that overflow or t >= m.
+; Returns: Int
+(defn mont-double-mod ((arena Int) (t Int) (m Int) (n Int))
+  (let carry (bn-shl1 t n)
+    (let scratch (bn-alloc arena n)
+      (let borrow (bn-sub scratch t m n)
+        (let cond (bit-or (ct-is-nonzero carry) (- 1 borrow))
+          (begin
+            (bn-cond-copy t scratch n (ct-mask cond))
+            0))))))
+
+; ===========================================================================
+; MONTGOMERY MULTIPLICATION (CIOS)
+; ===========================================================================
+
+; out = a * b * R^-1 mod m, for n-limb operands. `t` is scratch of
+; n+2 limbs supplied by the caller so a long exponentiation does not
+; allocate per multiply.
+; Returns: Int
+(defn mont-mul ((arena Int) (out Int) (a Int) (b Int) (m Int) (n Int) (n0 Int))
+  (let t (bn-alloc arena (+ n 2))
+    (begin
+      (for (i 0) (< i n)
+        (begin
+          (mont-mul-step arena t a b m n n0 i)
+          (set! i (+ i 1))))
+      (mont-mul-final arena out t m n)
+      out)))
+
+; One outer iteration: accumulate a * b[i], then eliminate the bottom
+; limb by adding the right multiple of m and shifting down one limb.
+; Returns: Int
+(defn mont-mul-step ((arena Int) (t Int) (a Int) (b Int) (m Int) (n Int) (n0 Int) (i Int))
+  (begin
+    (mont-accumulate t a n (w-get b i))
+    (mont-reduce-limb t m n n0)
+    0))
+
+; t += a * bi, with t one limb wider than a.
+; Returns: Int
+(defn mont-accumulate ((t Int) (a Int) (n Int) (bi Int))
+  (let carry (mont-accumulate-loop t a n 0 bi 0)
+    (let s (+ (w-get t n) carry)
+      (begin
+        (w-set t n (bit-and s 16777215))
+        (w-set t (+ n 1) (+ (w-get t (+ n 1)) (shr s 24)))
+        0))))
+
+; Returns: Int
+(defn mont-accumulate-loop ((t Int) (a Int) (n Int) (j Int) (bi Int) (carry Int))
+  (if (>= j n)
+    carry
+    (let v (+ (+ (w-get t j) (* (w-get a j) bi)) carry)
+      (begin
+        (w-set t j (bit-and v 16777215))
+        (mont-accumulate-loop t a n (+ j 1) bi (shr v 24))))))
+
+; Add (t[0] * n0 mod 2^24) * m to t -- which makes t[0] zero -- then
+; shift t down by one limb. This is the step that keeps t bounded
+; instead of growing to 2n limbs.
+; Returns: Int
+(defn mont-reduce-limb ((t Int) (m Int) (n Int) (n0 Int))
+  (let u (bit-and (* (w-get t 0) n0) 16777215)
+    (let carry (mont-reduce-loop t m n 0 u 0)
+      (let s (+ (w-get t n) carry)
+        (begin
+          (w-set t n (bit-and s 16777215))
+          (w-set t (+ n 1) (+ (w-get t (+ n 1)) (shr s 24)))
+          (mont-shift-down t n)
+          0)))))
+
+; Returns: Int
+(defn mont-reduce-loop ((t Int) (m Int) (n Int) (j Int) (u Int) (carry Int))
+  (if (>= j n)
+    carry
+    (let v (+ (+ (w-get t j) (* (w-get m j) u)) carry)
+      (begin
+        (w-set t j (bit-and v 16777215))
+        (mont-reduce-loop t m n (+ j 1) u (shr v 24))))))
+
+; Shift the accumulator down one limb (the bottom limb is zero by
+; construction after the reduction step).
+; Returns: Int
+(defn mont-shift-down ((t Int) (n Int))
+  (begin
+    (for (j 0) (< j (+ n 1))
+      (begin (w-set t j (w-get t (+ j 1))) (set! j (+ j 1))))
+    (w-set t (+ n 1) 0)
+    0))
+
+; Copy the low n limbs out, subtracting m once if the accumulator is at
+; or above it (or overflowed into limb n). Masked, not branched.
+; Returns: Int
+(defn mont-mul-final ((arena Int) (out Int) (t Int) (m Int) (n Int))
+  (let scratch (bn-alloc arena n)
+    (let borrow (bn-sub scratch t m n)
+      (let cond (bit-or (ct-is-nonzero (w-get t n)) (- 1 borrow))
+        (begin
+          (bn-copy out t n)
+          (bn-cond-copy out scratch n (ct-mask cond))
+          0)))))
+
+; ===========================================================================
+; FORM CONVERSION
+; ===========================================================================
+
+; out = a * R mod m (plain value into Montgomery form).
+; Returns: Int
+(defn mont-to ((arena Int) (out Int) (a Int) (m Int) (n Int) (n0 Int) (r2 Int))
+  (mont-mul arena out a r2 m n n0))
+
+; out = a * R^-1 mod m (Montgomery form back to a plain value), done by
+; multiplying by 1 in the Montgomery domain.
+; Returns: Int
+(defn mont-from ((arena Int) (out Int) (a Int) (m Int) (n Int) (n0 Int))
+  (let one (bn-alloc arena n)
+    (begin
+      (bn-set-small one n 1)
+      (mont-mul arena out a one m n n0))))
+
+; ===========================================================================
+; MODULAR EXPONENTIATION
+; ===========================================================================
+
+; out = base^exp mod m, with `expbits` bits of exponent examined.
+;
+; A Montgomery ladder: two accumulators with the invariant R1 = R0*base
+; are updated by the SAME pair of operations every iteration, and the
+; exponent bit only selects which accumulator plays which role, via a
+; constant-time conditional swap. Compare with square-and-multiply,
+; where a set bit performs an extra multiplication -- an observable
+; difference that has been turned into full key recovery repeatedly.
+;
+; `expbits` is the declared bit length of the exponent, not its value:
+; passing the modulus's bit length keeps even the exponent's magnitude
+; out of the timing.
+;
+; Precondition: `base` must already be less than `m`. Montgomery
+; multiplication reduces by at most one subtraction of the modulus, so
+; it cannot absorb an operand that starts out larger; callers holding a
+; possibly-oversized value must reduce it first.
+; Returns: Int
+(defn mont-exp ((arena Int) (out Int) (base Int) (exp Int) (expbits Int) (m Int) (n Int))
+  (let n0 (mont-n0 m)
+    (let r2 (mont-r2 arena m n)
+      (let r0 (bn-alloc arena n)
+        (let r1 (bn-alloc arena n)
+          (begin
+            (bn-set-small r0 n 1)
+            (mont-to arena r0 r0 m n n0 r2)
+            (mont-to arena r1 base m n n0 r2)
+            (mont-ladder arena r0 r1 exp expbits m n n0)
+            (mont-from arena out r0 m n n0)
+            out))))))
+
+; Returns: Int
+(defn mont-ladder ((arena Int) (r0 Int) (r1 Int) (exp Int) (expbits Int) (m Int) (n Int) (n0 Int))
+  (begin
+    (for (i 0) (< i expbits)
+      (begin
+        (mont-ladder-step arena r0 r1 exp (- (- expbits 1) i) m n n0)
+        (set! i (+ i 1))))
+    0))
+
+; Returns: Int
+(defn mont-ladder-step ((arena Int) (r0 Int) (r1 Int) (exp Int) (k Int) (m Int) (n Int) (n0 Int))
+  (let b (bn-bit exp k)
+    (begin
+      (mont-cswap arena r0 r1 n b)
+      (mont-mul arena r1 r0 r1 m n n0)
+      (mont-mul arena r0 r0 r0 m n n0)
+      (mont-cswap arena r0 r1 n b)
+      0)))
+
+; Exchange a and b when `cond` is 1, leave them when it is 0. Both
+; arrays are read and written either way.
+; Returns: Int
+(defn mont-cswap ((arena Int) (a Int) (b Int) (n Int) (cond Int))
+  (let mask (ct-mask cond)
+    (begin
+      (for (i 0) (< i n)
+        (begin
+          (mont-cswap-limb a b i mask)
+          (set! i (+ i 1))))
+      0)))
+
+; Returns: Int
+(defn mont-cswap-limb ((a Int) (b Int) (i Int) (mask Int))
+  (let d (bit-and mask (bit-xor (w-get a i) (w-get b i)))
+    (begin
+      (w-set a i (bit-xor (w-get a i) d))
+      (w-set b i (bit-xor (w-get b i) d))
+      0)))
+
+; out = base^exp mod m with BOTH base and result in Montgomery form.
+;
+; The curve and signature code below runs whole algorithms in the
+; Montgomery domain -- converting in and out around every multiply
+; would cost more than the multiplies themselves -- so it needs an
+; exponentiation that stays there. Same ladder, same constant-time
+; properties; only the entry and exit conversions are omitted.
+;
+; `one-mont` is R mod m, the Montgomery form of 1, which the caller
+; already has from its own setup.
+; Returns: Int
+(defn mont-exp-form ((arena Int) (out Int) (base Int) (exp Int) (expbits Int) (m Int) (n Int) (n0 Int) (one-mont Int))
+  (let r0 (bn-alloc arena n)
+    (let r1 (bn-alloc arena n)
+      (begin
+        (bn-copy r0 one-mont n)
+        (bn-copy r1 base n)
+        (mont-ladder arena r0 r1 exp expbits m n n0)
+        (bn-copy out r0 n)
+        out))))
+
+; The Montgomery form of 1, i.e. R mod m. Obtained by running one
+; Montgomery multiplication of R^2 by 1, which is the cheapest way to
+; get it without a division.
+; Returns: Int
+(defn mont-one ((arena Int) (m Int) (n Int) (n0 Int) (r2 Int))
+  (let one (bn-alloc arena n)
+    (let out (bn-alloc arena n)
+      (begin
+        (bn-set-small one n 1)
+        (mont-mul arena out one r2 m n n0)
+        out))))

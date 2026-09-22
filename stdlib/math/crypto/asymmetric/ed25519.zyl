@@ -1,0 +1,685 @@
+; === Zyl Standard Library — Ed25519 ===
+; Module: math/crypto/asymmetric/ed25519
+; Provides: Ed25519 signing and verification (RFC 8032)
+;
+; Twisted Edwards arithmetic in extended (X:Y:Z:T) coordinates over
+; 2^255-19, with the field supplied by math/bignum's Montgomery layer
+; and scalars reduced modulo the group order by Barrett's method. As in
+; math/crypto/asymmetric/x25519, using the generic field costs speed
+; and buys the property that every arithmetic primitive underneath is
+; separately tested rather than being a second bespoke carry chain.
+;
+; Ed25519 is deterministic by construction -- this is not an option
+; this module offers but the scheme's own definition. The per-signature
+; nonce is SHA-512(prefix || message), where `prefix` is the half of
+; the expanded secret key that is never used as a scalar. There is no
+; random number generator anywhere in signing, so there is no way for a
+; weak or repeated RNG to leak the private key, which is the failure
+; mode that has cost real deployments their ECDSA keys.
+;
+; Constant-time discipline: scalar multiplication runs a fixed 256
+; iterations of double-then-conditionally-add, with the addition always
+; computed and only its write-back masked, so the operation sequence is
+; identical for every scalar. Field inversion is a fixed exponentiation
+; by p-2. Signature VERIFICATION works only on public data, so its
+; timing is not security-relevant, but it shares the same code and is
+; therefore constant-time anyway.
+;
+; What this module does NOT do: batch verification, and the
+; cofactored/cofactorless distinction of RFC 8032 s8.2 is resolved by
+; checking the cofactorless equation [S]B = R + [k]A, which is what
+; interoperable implementations check.
+
+(use core/core)
+(use core/option)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+(use math/bignum/montgomery)
+(use math/bignum/modular)
+(use math/bignum/barrett)
+(use math/hash/sha512)
+
+; ===========================================================================
+; CONTEXT
+;
+; The field and group constants are gathered into one array of
+; addresses so that every function below takes a single `ctx` rather
+; than eight separate parameters. Building it costs a handful of
+; exponentiations and is done once per signing or verification.
+;
+;   0 p          the field prime, 11 limbs
+;   1 n0         Montgomery constant for p
+;   2 r2         R^2 mod p
+;   3 one        1 in Montgomery form
+;   4 d2         2*d in Montgomery form (the curve constant, doubled,
+;                which is the form the addition formula wants)
+;   5 order      the group order L, 11 limbs
+;   6 mu         Barrett reciprocal for L, 12 limbs
+;   7 sqrtm1     sqrt(-1) in Montgomery form, for point decompression
+;   8 base       the base point in extended Montgomery coordinates
+; ===========================================================================
+
+; Returns: Int
+(defn ed-ctx-p ((ctx Int)) (w-get ctx 0))
+; Returns: Int
+(defn ed-ctx-n0 ((ctx Int)) (w-get ctx 1))
+; Returns: Int
+(defn ed-ctx-r2 ((ctx Int)) (w-get ctx 2))
+; Returns: Int
+(defn ed-ctx-one ((ctx Int)) (w-get ctx 3))
+; Returns: Int
+(defn ed-ctx-d2 ((ctx Int)) (w-get ctx 4))
+; Returns: Int
+(defn ed-ctx-order ((ctx Int)) (w-get ctx 5))
+; Returns: Int
+(defn ed-ctx-mu ((ctx Int)) (w-get ctx 6))
+; Returns: Int
+(defn ed-ctx-sqrtm1 ((ctx Int)) (w-get ctx 7))
+; Returns: Int
+(defn ed-ctx-base ((ctx Int)) (w-get ctx 8))
+
+; A big-endian hex constant as an 11-limb Nat.
+; Returns: Int
+(defn ed-const ((arena Int) (hex String))
+  (let bytes (w-from-hex arena hex)
+    (let v (bn-alloc arena 11)
+      (bn-from-bytes-be v 11 bytes (w-hex-len hex)))))
+
+; The same, converted into Montgomery form.
+; Returns: Int
+(defn ed-const-mont ((arena Int) (hex String) (p Int) (n0 Int) (r2 Int))
+  (let v (ed-const arena hex)
+    (let out (bn-alloc arena 11)
+      (mont-to arena out v p 11 n0 r2))))
+
+; Build the context.
+; Returns: Int
+(defn ed-ctx ((arena Int))
+  (let p (ed-const arena "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed")
+    (let n0 (mont-n0 p)
+      (let r2 (mont-r2 arena p 11)
+        (let ctx (w-alloc arena 9)
+          (begin
+            (w-set ctx 0 p)
+            (w-set ctx 1 n0)
+            (w-set ctx 2 r2)
+            (w-set ctx 3 (mont-one arena p 11 n0 r2))
+            (w-set ctx 4 (ed-const-mont arena "2406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f159" p n0 r2))
+            (w-set ctx 5 (ed-const arena "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed"))
+            (w-set ctx 6 (ed-mu arena))
+            (w-set ctx 7 (ed-const-mont arena "2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0" p n0 r2))
+            (w-set ctx 8 (ed-base-point arena ctx))
+            ctx))))))
+
+; The Barrett reciprocal floor(2^528 / L), 12 limbs.
+; Returns: Int
+(defn ed-mu ((arena Int))
+  (let bytes (w-from-hex arena "000fffffffffffffffffffffffffffffffeb2106215d086329a7ed9ce5a30a2c131b3994")
+    (let v (bn-alloc arena 12)
+      (bn-from-bytes-be v 12 bytes 36))))
+
+; ===========================================================================
+; FIELD SHORTHAND (all operands in Montgomery form)
+; ===========================================================================
+
+; Returns: Int
+(defn edf-mul ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (mont-mul arena out a b (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx)))
+
+; Returns: Int
+(defn edf-add ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (mod-add arena out a b (ed-ctx-p ctx) 11))
+
+; Returns: Int
+(defn edf-sub ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (mod-sub arena out a b (ed-ctx-p ctx) 11))
+
+; out = a^e mod p, with a and out in Montgomery form.
+; Returns: Int
+(defn edf-pow ((arena Int) (ctx Int) (out Int) (a Int) (e Int))
+  (mont-exp-form arena out a e 255 (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx) (ed-ctx-one ctx)))
+
+; out = a^-1 mod p, by Fermat.
+; Returns: Int
+(defn edf-inv ((arena Int) (ctx Int) (out Int) (a Int))
+  (edf-pow arena ctx out a (ed-const arena "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb")))
+
+; ===========================================================================
+; POINTS
+;
+; A point is 44 words: four 11-limb field elements X, Y, Z, T, each in
+; Montgomery form, satisfying x = X/Z, y = Y/Z and T = XY/Z.
+; ===========================================================================
+
+; Returns: Int
+(defn ed-pt-slot ((pt Int) (i Int)) (+ pt (* i 88)))
+; Returns: Int
+(defn ed-pt-x ((pt Int)) (ed-pt-slot pt 0))
+; Returns: Int
+(defn ed-pt-y ((pt Int)) (ed-pt-slot pt 1))
+; Returns: Int
+(defn ed-pt-z ((pt Int)) (ed-pt-slot pt 2))
+; Returns: Int
+(defn ed-pt-t ((pt Int)) (ed-pt-slot pt 3))
+
+; Returns: Int
+(defn ed-pt-new ((arena Int)) (w-alloc arena 44))
+
+; Returns: Int
+(defn ed-pt-copy ((dst Int) (src Int)) (w-copy dst src 44))
+
+; The neutral element (0, 1) in extended coordinates.
+; Returns: Int
+(defn ed-pt-identity ((arena Int) (ctx Int))
+  (let pt (ed-pt-new arena)
+    (begin
+      (bn-zero (ed-pt-x pt) 11)
+      (bn-copy (ed-pt-y pt) (ed-ctx-one ctx) 11)
+      (bn-copy (ed-pt-z pt) (ed-ctx-one ctx) 11)
+      (bn-zero (ed-pt-t pt) 11)
+      pt)))
+
+; The standard base point, built from its published affine coordinates.
+; Returns: Int
+(defn ed-base-point ((arena Int) (ctx Int))
+  (let pt (ed-pt-new arena)
+    (let p (w-get ctx 0)
+      (let n0 (w-get ctx 1)
+        (let r2 (w-get ctx 2)
+          (begin
+            (mont-to arena (ed-pt-x pt) (ed-const arena "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a") p 11 n0 r2)
+            (mont-to arena (ed-pt-y pt) (ed-const arena "6666666666666666666666666666666666666666666666666666666666666658") p 11 n0 r2)
+            (bn-copy (ed-pt-z pt) (w-get ctx 3) 11)
+            (mont-mul arena (ed-pt-t pt) (ed-pt-x pt) (ed-pt-y pt) p 11 n0)
+            pt))))))
+
+; out = 2 * a, by the extended-coordinate doubling formula (Hisil et
+; al.), which needs no curve constant.
+; Returns: Int
+(defn ed-double ((arena Int) (ctx Int) (out Int) (a Int))
+  (let ta (bn-alloc arena 11)
+    (let tb (bn-alloc arena 11)
+      (let tc (bn-alloc arena 11)
+        (let th (bn-alloc arena 11)
+          (begin
+            (edf-mul arena ctx ta (ed-pt-x a) (ed-pt-x a))
+            (edf-mul arena ctx tb (ed-pt-y a) (ed-pt-y a))
+            (edf-mul arena ctx tc (ed-pt-z a) (ed-pt-z a))
+            (edf-add arena ctx tc tc tc)
+            (edf-add arena ctx th ta tb)
+            (ed-double2 arena ctx out a ta tb tc th)))))))
+
+; Returns: Int
+(defn ed-double2 ((arena Int) (ctx Int) (out Int) (a Int) (ta Int) (tb Int) (tc Int) (th Int))
+  (let te (bn-alloc arena 11)
+    (let tg (bn-alloc arena 11)
+      (let tf (bn-alloc arena 11)
+        (let tmp (bn-alloc arena 11)
+          (begin
+            (edf-add arena ctx tmp (ed-pt-x a) (ed-pt-y a))
+            (edf-mul arena ctx tmp tmp tmp)
+            (edf-sub arena ctx te th tmp)
+            (edf-sub arena ctx tg ta tb)
+            (edf-add arena ctx tf tc tg)
+            (ed-store-egfh arena ctx out te tf tg th)))))))
+
+; X = E*F, Y = G*H, T = E*H, Z = F*G -- the shared tail of both the
+; addition and the doubling formula.
+; Returns: Int
+(defn ed-store-egfh ((arena Int) (ctx Int) (out Int) (te Int) (tf Int) (tg Int) (th Int))
+  (let x (bn-alloc arena 11)
+    (let y (bn-alloc arena 11)
+      (let t (bn-alloc arena 11)
+        (let z (bn-alloc arena 11)
+          (begin
+            (edf-mul arena ctx x te tf)
+            (edf-mul arena ctx y tg th)
+            (edf-mul arena ctx t te th)
+            (edf-mul arena ctx z tf tg)
+            (bn-copy (ed-pt-x out) x 11)
+            (bn-copy (ed-pt-y out) y 11)
+            (bn-copy (ed-pt-t out) t 11)
+            (bn-copy (ed-pt-z out) z 11)
+            0))))))
+
+; out = a + b, by the unified extended-coordinate addition formula for
+; a = -1 twisted Edwards curves. "Unified" matters: it is correct for
+; every input pair including a == b and the neutral element, so scalar
+; multiplication needs no special cases -- and special cases are
+; exactly what turns into a timing signal.
+; Returns: Int
+(defn ed-add ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (let ta (bn-alloc arena 11)
+    (let tb (bn-alloc arena 11)
+      (let tc (bn-alloc arena 11)
+        (let td (bn-alloc arena 11)
+          (begin
+            (ed-add-a arena ctx ta a b)
+            (ed-add-b arena ctx tb a b)
+            (ed-add-c arena ctx tc a b)
+            (ed-add-d arena ctx td a b)
+            (ed-add2 arena ctx out ta tb tc td)))))))
+
+; A = (Y1-X1)*(Y2-X2)
+; Returns: Int
+(defn ed-add-a ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (let u (bn-alloc arena 11)
+    (let v (bn-alloc arena 11)
+      (begin
+        (edf-sub arena ctx u (ed-pt-y a) (ed-pt-x a))
+        (edf-sub arena ctx v (ed-pt-y b) (ed-pt-x b))
+        (edf-mul arena ctx out u v)))))
+
+; B = (Y1+X1)*(Y2+X2)
+; Returns: Int
+(defn ed-add-b ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (let u (bn-alloc arena 11)
+    (let v (bn-alloc arena 11)
+      (begin
+        (edf-add arena ctx u (ed-pt-y a) (ed-pt-x a))
+        (edf-add arena ctx v (ed-pt-y b) (ed-pt-x b))
+        (edf-mul arena ctx out u v)))))
+
+; C = T1 * 2d * T2
+; Returns: Int
+(defn ed-add-c ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (let u (bn-alloc arena 11)
+    (begin
+      (edf-mul arena ctx u (ed-pt-t a) (ed-ctx-d2 ctx))
+      (edf-mul arena ctx out u (ed-pt-t b)))))
+
+; D = 2 * Z1 * Z2
+; Returns: Int
+(defn ed-add-d ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+  (let u (bn-alloc arena 11)
+    (begin
+      (edf-mul arena ctx u (ed-pt-z a) (ed-pt-z b))
+      (edf-add arena ctx out u u))))
+
+; Returns: Int
+(defn ed-add2 ((arena Int) (ctx Int) (out Int) (ta Int) (tb Int) (tc Int) (td Int))
+  (let te (bn-alloc arena 11)
+    (let tf (bn-alloc arena 11)
+      (let tg (bn-alloc arena 11)
+        (let th (bn-alloc arena 11)
+          (begin
+            (edf-sub arena ctx te tb ta)
+            (edf-sub arena ctx tf td tc)
+            (edf-add arena ctx tg td tc)
+            (edf-add arena ctx th tb ta)
+            (ed-store-egfh arena ctx out te tf tg th)))))))
+
+; out = k * pt, for a 32-byte little-endian scalar.
+;
+; Double-and-always-add: each of the 256 iterations doubles, computes
+; the sum unconditionally, and then selects between the two with a
+; mask. The classic double-and-add would skip the addition on a zero
+; bit, and that skipped multiplication is visible in timing, power and
+; cache behaviour -- it is the standard way scalar bits leak.
+; Returns: Int
+(defn ed-scalar-mul ((arena Int) (ctx Int) (out Int) (pt Int) (k Int))
+  (let acc (ed-pt-identity arena ctx)
+    (begin
+      (ed-scalar-loop arena ctx acc pt k 255)
+      (ed-pt-copy out acc)
+      out)))
+
+; Returns: Int
+(defn ed-scalar-loop ((arena Int) (ctx Int) (acc Int) (pt Int) (k Int) (i Int))
+  (if (< i 0)
+    0
+    (begin
+      (ed-scalar-step arena ctx acc pt k i)
+      (ed-scalar-loop arena ctx acc pt k (- i 1)))))
+
+; Returns: Int
+(defn ed-scalar-step ((arena Int) (ctx Int) (acc Int) (pt Int) (k Int) (i Int))
+  (let sum (ed-pt-new arena)
+    (let bit (bit-and (shr (w-get k (/ i 8)) (% i 8)) 1)
+      (begin
+        (ed-double arena ctx acc acc)
+        (ed-add arena ctx sum acc pt)
+        (bn-cond-copy acc sum 44 (ct-mask bit))
+        0))))
+
+; ===========================================================================
+; ENCODING
+; ===========================================================================
+
+; Encode a point as 32 little-endian bytes: y, with x's low bit in the
+; top bit position.
+; Returns: Int
+(defn ed-encode ((arena Int) (ctx Int) (pt Int))
+  (let zinv (bn-alloc arena 11)
+    (let x (bn-alloc arena 11)
+      (let y (bn-alloc arena 11)
+        (begin
+          (edf-inv arena ctx zinv (ed-pt-z pt))
+          (edf-mul arena ctx x (ed-pt-x pt) zinv)
+          (edf-mul arena ctx y (ed-pt-y pt) zinv)
+          (mont-from arena x x (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
+          (mont-from arena y y (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
+          (ed-encode-bytes arena x y))))))
+
+; Returns: Int
+(defn ed-encode-bytes ((arena Int) (x Int) (y Int))
+  (let out (w-alloc arena 32)
+    (begin
+      (bn-to-bytes-le out 32 y 11)
+      (w-set out 31 (bit-or (w-get out 31) (shl (bit-and (w-get x 0) 1) 7)))
+      out)))
+
+; Decode a 32-byte little-endian point encoding. Returns None when the
+; y coordinate has no matching x on the curve, which is what a
+; corrupted or hostile encoding produces.
+; Returns: Option
+(defn ed-decode ((arena Int) (ctx Int) (bytes Int))
+  (let yb (w-copy (w-alloc arena 32) bytes 32)
+    (let sign (bit-and (shr (w-get bytes 31) 7) 1)
+      (let y (bn-alloc arena 11)
+        (begin
+          (w-set yb 31 (bit-and (w-get yb 31) 127))
+          (bn-from-bytes-le y 11 yb 32)
+          (ed-decode-x arena ctx y sign))))))
+
+; Solve x^2 = (y^2 - 1) / (d*y^2 + 1) for x, choosing the root whose
+; low bit matches `sign`.
+; Returns: Option
+(defn ed-decode-x ((arena Int) (ctx Int) (y Int) (sign Int))
+  (let ym (bn-alloc arena 11)
+    (let u (bn-alloc arena 11)
+      (let v (bn-alloc arena 11)
+        (begin
+          (mont-to arena ym y (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx) (ed-ctx-r2 ctx))
+          (ed-decode-uv arena ctx ym u v)
+          (ed-decode-root arena ctx ym u v sign))))))
+
+; u = y^2 - 1, v = d*y^2 + 1. The context carries 2d, so d is recovered
+; by halving it -- which modulo an odd prime is a multiplication by the
+; inverse of 2, done here once per decode.
+; Returns: Int
+(defn ed-decode-uv ((arena Int) (ctx Int) (ym Int) (u Int) (v Int))
+  (let y2 (bn-alloc arena 11)
+    (let d (bn-alloc arena 11)
+      (begin
+        (edf-mul arena ctx y2 ym ym)
+        (edf-sub arena ctx u y2 (ed-ctx-one ctx))
+        (ed-half arena ctx d (ed-ctx-d2 ctx))
+        (edf-mul arena ctx v y2 d)
+        (edf-add arena ctx v v (ed-ctx-one ctx))
+        0))))
+
+; out = a / 2 mod p. For odd p, halving is exact: an even value shifts
+; down, an odd one has p added first (which makes it even) before the
+; shift. Both branches are computed and selected by mask.
+; Returns: Int
+(defn ed-half ((arena Int) (ctx Int) (out Int) (a Int))
+  (let plain (bn-alloc arena 11)
+    (let alt (bn-alloc arena 11)
+      (begin
+        (mont-from arena plain a (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
+        (bn-copy alt plain 11)
+        (bn-add alt alt (ed-ctx-p ctx) 11)
+        (bn-cond-copy plain alt 11 (ct-mask (bit-and (w-get plain 0) 1)))
+        (bn-shr1 plain 11)
+        (mont-to arena out plain (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx) (ed-ctx-r2 ctx))
+        0))))
+
+; The candidate root x = u*v^3 * (u*v^7)^((p-5)/8), then the two checks
+; RFC 8032 s5.1.3 specifies: accept it if v*x^2 = u, otherwise multiply
+; by sqrt(-1) and check again, otherwise fail.
+; Returns: Option
+(defn ed-decode-root ((arena Int) (ctx Int) (ym Int) (u Int) (v Int) (sign Int))
+  (let x (bn-alloc arena 11)
+    (begin
+      (ed-decode-candidate arena ctx x u v)
+      (ed-decode-select arena ctx ym x u v sign))))
+
+; Returns: Int
+(defn ed-decode-candidate ((arena Int) (ctx Int) (x Int) (u Int) (v Int))
+  (let v2 (bn-alloc arena 11)
+    (let v3 (bn-alloc arena 11)
+      (let v7 (bn-alloc arena 11)
+        (let t (bn-alloc arena 11)
+          (begin
+            (edf-mul arena ctx v2 v v)
+            (edf-mul arena ctx v3 v2 v)
+            (edf-mul arena ctx v7 v3 v3)
+            (edf-mul arena ctx v7 v7 v)
+            (edf-mul arena ctx t u v7)
+            (edf-pow arena ctx t t (ed-const arena "0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd"))
+            (edf-mul arena ctx x u v3)
+            (edf-mul arena ctx x x t)
+            0))))))
+
+; Returns: Option
+(defn ed-decode-select ((arena Int) (ctx Int) (ym Int) (x Int) (u Int) (v Int) (sign Int))
+  (let chk (bn-alloc arena 11)
+    (begin
+      (edf-mul arena ctx chk x x)
+      (edf-mul arena ctx chk chk v)
+      (if (= (bn-eq chk u 11) 1)
+        (ed-decode-finish arena ctx ym x sign)
+        (ed-decode-retry arena ctx ym x u v sign)))))
+
+; Returns: Option
+(defn ed-decode-retry ((arena Int) (ctx Int) (ym Int) (x Int) (u Int) (v Int) (sign Int))
+  (let chk (bn-alloc arena 11)
+    (begin
+      (edf-mul arena ctx x x (ed-ctx-sqrtm1 ctx))
+      (edf-mul arena ctx chk x x)
+      (edf-mul arena ctx chk chk v)
+      (if (= (bn-eq chk u 11) 1)
+        (ed-decode-finish arena ctx ym x sign)
+        None))))
+
+; Fix the root's sign and assemble the point. x = 0 with a sign bit of
+; 1 is the one encoding RFC 8032 rejects outright.
+; Returns: Option
+(defn ed-decode-finish ((arena Int) (ctx Int) (ym Int) (x Int) (sign Int))
+  (let plain (bn-alloc arena 11)
+    (begin
+      (mont-from arena plain x (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
+      (if (= (bit-and (bn-is-zero plain 11) sign) 1)
+        None
+        (begin
+          (ed-decode-fix-sign arena ctx x plain sign)
+          (Some (ed-decode-point arena ctx ym x)))))))
+
+; Returns: Int
+(defn ed-decode-fix-sign ((arena Int) (ctx Int) (x Int) (plain Int) (sign Int))
+  (let neg (bn-alloc arena 11)
+    (let differs (bit-xor (bit-and (w-get plain 0) 1) sign)
+      (begin
+        (bn-zero neg 11)
+        (edf-sub arena ctx neg neg x)
+        (bn-cond-copy x neg 11 (ct-mask differs))
+        0))))
+
+; Returns: Int
+(defn ed-decode-point ((arena Int) (ctx Int) (ym Int) (x Int))
+  (let pt (ed-pt-new arena)
+    (begin
+      (bn-copy (ed-pt-x pt) x 11)
+      (bn-copy (ed-pt-y pt) ym 11)
+      (bn-copy (ed-pt-z pt) (ed-ctx-one ctx) 11)
+      (edf-mul arena ctx (ed-pt-t pt) x ym)
+      pt)))
+
+; ===========================================================================
+; SCALARS MOD L
+; ===========================================================================
+
+; Reduce a 64-byte little-endian value modulo the group order.
+; Returns: Int
+(defn ed-reduce64 ((arena Int) (ctx Int) (bytes Int))
+  (let wide (bn-alloc arena 22)
+    (let out (bn-alloc arena 11)
+      (begin
+        (bn-from-bytes-le wide 22 bytes 64)
+        (barrett-reduce arena out wide (ed-ctx-order ctx) (ed-ctx-mu ctx) 11)
+        out))))
+
+; s = (r + k*a) mod L.
+; Returns: Int
+(defn ed-mul-add ((arena Int) (ctx Int) (k Int) (a Int) (r Int))
+  (let wide (bn-alloc arena 22)
+    (let t (bn-alloc arena 11)
+      (begin
+        (bn-mul wide k a 11)
+        (barrett-reduce arena t wide (ed-ctx-order ctx) (ed-ctx-mu ctx) 11)
+        (mod-add arena t t r (ed-ctx-order ctx) 11)
+        t))))
+
+; ===========================================================================
+; KEYS
+; ===========================================================================
+
+; Expand a 32-byte seed into the scalar half and the nonce prefix half
+; of the secret key, as RFC 8032 s5.1.5 specifies. The scalar is
+; clamped exactly as X25519 clamps, and for the same reasons.
+; Returns: Int
+(defn ed-expand ((arena Int) (seed Int))
+  (let h (sha512-bytes arena seed 32)
+    (begin
+      (w-set h 0 (bit-and (w-get h 0) 248))
+      (w-set h 31 (bit-and (w-get h 31) 63))
+      (w-set h 31 (bit-or (w-get h 31) 64))
+      h)))
+
+; The 32-byte public key for a 32-byte seed.
+; Returns: Int
+(defn ed25519-public-key ((arena Int) (seed Int))
+  (let ctx (ed-ctx arena)
+    (let h (ed-expand arena seed)
+      (let pt (ed-pt-new arena)
+        (begin
+          (ed-scalar-mul arena ctx pt (ed-ctx-base ctx) h)
+          (ed-encode arena ctx pt))))))
+
+; ===========================================================================
+; SIGN / VERIFY
+; ===========================================================================
+
+; Sign `msglen` message bytes with a 32-byte seed, returning the
+; 64-byte signature R || S.
+; Returns: Int
+(defn ed25519-sign ((arena Int) (seed Int) (msg Int) (msglen Int))
+  (let ctx (ed-ctx arena)
+    (let h (ed-expand arena seed)
+      (let pub (ed25519-public-key arena seed)
+        (ed-sign-with arena ctx h pub msg msglen)))))
+
+; Returns: Int
+(defn ed-sign-with ((arena Int) (ctx Int) (h Int) (pub Int) (msg Int) (msglen Int))
+  (let prefix (ed-slice arena h 32 32)
+    (let rin (ed-concat arena prefix 32 msg msglen)
+      (let r (ed-reduce64 arena ctx (sha512-bytes arena rin (+ 32 msglen)))
+        (let rpt (ed-pt-new arena)
+          (begin
+            (ed-scalar-mul arena ctx rpt (ed-ctx-base ctx) (ed-scalar-bytes arena r))
+            (ed-sign-finish arena ctx h pub msg msglen r (ed-encode arena ctx rpt))))))))
+
+; Returns: Int
+(defn ed-sign-finish ((arena Int) (ctx Int) (h Int) (pub Int) (msg Int) (msglen Int) (r Int) (renc Int))
+  (let kin (ed-concat3 arena renc 32 pub 32 msg msglen)
+    (let k (ed-reduce64 arena ctx (sha512-bytes arena kin (+ 64 msglen)))
+      (let a (bn-alloc arena 11)
+        (begin
+          (bn-from-bytes-le a 11 h 32)
+          (ed-sign-emit arena ctx renc (ed-mul-add arena ctx k a r)))))))
+
+; Returns: Int
+(defn ed-sign-emit ((arena Int) (ctx Int) (renc Int) (s Int))
+  (let sig (w-alloc arena 64)
+    (begin
+      (w-copy sig renc 32)
+      (bn-to-bytes-le (+ sig 256) 32 s 11)
+      sig)))
+
+; A scalar as 32 little-endian bytes, the form ed-scalar-mul consumes.
+; Returns: Int
+(defn ed-scalar-bytes ((arena Int) (s Int))
+  (let out (w-alloc arena 32)
+    (bn-to-bytes-le out 32 s 11)))
+
+; Verify a 64-byte signature. Returns false for a malformed encoding,
+; an out-of-range S, or a failed group equation -- all of which are
+; equally "invalid signature" to a caller.
+;
+; The S < L check is not optional: without it a signature can be
+; malleated by adding L to S, producing a second distinct signature
+; that still verifies. Protocols that treat a signature as a unique
+; identifier break on exactly that.
+; Returns: Bool
+(defn ed25519-verify ((arena Int) (pub Int) (msg Int) (msglen Int) (sig Int))
+  (let ctx (ed-ctx arena)
+    (match (ed-decode arena ctx pub)
+      (None false)
+      (Some apt (ed-verify-with arena ctx apt pub msg msglen sig)))))
+
+; Returns: Bool
+(defn ed-verify-with ((arena Int) (ctx Int) (apt Int) (pub Int) (msg Int) (msglen Int) (sig Int))
+  (let renc (ed-slice arena sig 0 32)
+    (let senc (ed-slice arena sig 32 32)
+      (let s (bn-alloc arena 11)
+        (begin
+          (bn-from-bytes-le s 11 senc 32)
+          (if (= (ed-scalar-in-range arena s (ed-ctx-order ctx)) 0)
+            false
+            (ed-verify-equation arena ctx apt pub msg msglen renc senc)))))))
+
+; 1 when s < L.
+; Returns: Int
+(defn ed-scalar-in-range ((arena Int) (s Int) (order Int))
+  (let scratch (bn-alloc arena 11)
+    (bn-sub scratch s order 11)))
+
+; Check [S]B = R + [k]A.
+; Returns: Bool
+(defn ed-verify-equation ((arena Int) (ctx Int) (apt Int) (pub Int) (msg Int) (msglen Int) (renc Int) (senc Int))
+  (let kin (ed-concat3 arena renc 32 pub 32 msg msglen)
+    (let k (ed-reduce64 arena ctx (sha512-bytes arena kin (+ 64 msglen)))
+      (let lhs (ed-pt-new arena)
+        (let ka (ed-pt-new arena)
+          (begin
+            (ed-scalar-mul arena ctx lhs (ed-ctx-base ctx) senc)
+            (ed-scalar-mul arena ctx ka apt (ed-scalar-bytes arena k))
+            (ed-verify-compare arena ctx lhs ka renc)))))))
+
+; Returns: Bool
+(defn ed-verify-compare ((arena Int) (ctx Int) (lhs Int) (ka Int) (renc Int))
+  (match (ed-decode arena ctx renc)
+    (None false)
+    (Some rpt
+      (let sum (ed-pt-new arena)
+        (begin
+          (ed-add arena ctx sum rpt ka)
+          (ct-eq-words-bool (ed-encode arena ctx lhs) (ed-encode arena ctx sum) 32))))))
+
+; ===========================================================================
+; BYTE HELPERS
+; ===========================================================================
+
+; Returns: Int
+(defn ed-slice ((arena Int) (src Int) (off Int) (n Int))
+  (let out (w-alloc arena n)
+    (begin
+      (for (i 0) (< i n)
+        (begin (w-set out i (w-get src (+ off i))) (set! i (+ i 1))))
+      out)))
+
+; Returns: Int
+(defn ed-concat ((arena Int) (a Int) (alen Int) (b Int) (blen Int))
+  (let out (w-alloc arena (+ alen blen))
+    (begin
+      (w-copy out a alen)
+      (for (i 0) (< i blen)
+        (begin (w-set out (+ alen i) (w-get b i)) (set! i (+ i 1))))
+      out)))
+
+; Returns: Int
+(defn ed-concat3 ((arena Int) (a Int) (alen Int) (b Int) (blen Int) (c Int) (clen Int))
+  (ed-concat arena (ed-concat arena a alen b blen) (+ alen blen) c clen))

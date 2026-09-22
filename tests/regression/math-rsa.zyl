@@ -1,0 +1,84 @@
+; RSA-PSS and RSA-OAEP Known-Answer Tests.
+;
+; The key is a freshly generated 2048-bit RSA key; the PSS salt and the
+; OAEP seed are fixed here so the expected values are reproducible.
+; Real signing and encryption MUST use fresh randomness for both --
+; a fixed PSS salt voids the scheme's security proof, and a fixed OAEP
+; seed makes encryption deterministic and therefore replayable.
+;
+; Private-key operations run two 1024-bit exponentiations through the
+; CRT; this is the slowest test file in the suite.
+
+(use math/crypto/asymmetric/rsa)
+(use math/hash/sha2)
+(use math/words)
+(use allocator/allocator)
+(use core/option)
+
+(defn _rsa_arena () (arena-create 0))
+
+(defn _rsa_pub ((a Int))
+  (rsa-public-key a
+    "9ddffe8b8d613d4f4fcc3d567b29a40f38f405cc076f3555875977437a69342e4e11a8187c2b1a2cddedebc68cdf1ed33390d1a6c79abc1eaff6196b57e5633f1a918beec974276eb59e2d627005e47a51b561610e94bc285203718c2e364907035006d1eb5d842e7dacef3a1eec69c1be0867e55231e5224900e11e484f2a6802d511556e9bd17b0e81a4f17d85f9824c7dc320a736629747fc3512ee7b44f648657d35f700225ca61997e55e7bfa8756c360c1f981eef4ae302b2f6080ab8287acc185448b4a721712ec05083ff8b70304b61945da12405f58837dbd5972224427ce8fb6ae72648ce41478302103547e56a1354b9784c9609461fcc2a22c0d"
+    65537))
+
+(defn _rsa_priv ((a Int))
+  (rsa-private-key a (_rsa_pub a)
+    "d73d0bba4725eb7882e010be63b75b3d18fc1c002bd745fdb9eb3b44543999570fe62528dd75f46afbea2619992c49c456f3bc0f11523b073138511dc48981819f0ec514bc10d9ee8ab0ee400bb6d6de19ba7897a8f8aa8c9eb45d377e251f8d13752223b6ad6ecd0a8cb8c953ab2e48447268b5b62ec5fe234689a9128adccf"
+    "bbc5ea4f47f62a73fb7c3fde89b5f8baf963185fad29fafa2178a835371a0cb91edf40242edb5b9085d4699083484814ce9a7ffe6e049d462e6fc0cb588e523a3a2459e28afb9f9805151a3070396a7986751a62b4de2e48da053c0f321f4141066c0ac1ab75e8b1fbc6f4667fac584af98ecf54404cda7a69a2253546a6b863"
+    "705dd84f89714c7affa846557eed6c5e7b3ab2cb8c17b8dc7b414911a4fee504c4b21bd837b5aac2677d9822690aebffea7d1842ad82467abcc16fe7a08140f110bebf38d1ede2385c837dfe459f509166d128bfd460ed78b829e538614cb42a0c6c6c4444cc4a3a1535de0a8cf9a311eb59e73c663e08f3622b2316f72d3395"
+    "83bc8fedbd63f456d8ba4c28f9dea439b15b97af10532294b844e96624596f51b55a15ab0d00b2d5cb3ec22d341dd30c5e02c107a4f231d11a252752c2b75ef320f57de65571c17f2b19a9fd0fcf08676830e2291c11c0d135bc746d88d1aabb4f211fcece5773c0e30eab4afa09d50c0cd7e797896121eabe0f972130872957"
+    "452223d8282485d9cdd8c6ffebbb08d23523d428f74e00df0f5e99e4d2f8cb464c4e3f4c5e967dac8116fd53f66c0970a78e438a16d442958511f599bd55dc92cf6a3323cc8987340de8857e76c47ed3ac33c361b4ea4597b18c672017d481fc0d0e895decc34fd248a08e16c7f04b568cb8b15730bf37e9791751c09ffd783f"))
+
+(test "rsa-pss-sign"
+  (let a (_rsa_arena)
+    (let mhash (w-from-hex a "07aefd757a38dbeab9e631dd9c7bde1a88dd36c5ebe9aa55d420c1ef8030d45c")
+      (let salt (w-from-hex a "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+        (assert-equal (w-hex-bytes (option-unwrap-or (rsa-pss-sign a (_rsa_priv a) mhash salt) 0) 256)
+          "5081c2b64b3073ddeed40c305bd347287e478f9e385b593082e14f1f5c40cc629aa0c2371b7a7e281ee3a70969c6ba241a15dbaad93555111ec91da0987757e0c2658b7cde2ec77862a64b3b101aae3393a9d6b53b5a493a87ef82f4a7f7df07b5b8990cc633d01355443bdca75fd89ace12f55f4a9ae8a87ee6650e746d1278f8d2338b2c72ba53bf02b967a7a36eb4c4ca74c1365d40a99e58079867dd0dfe06b96a91aa2f57ac71c891f303a17a68554758d49d6be8a3848b7fa8db3b79ea70a975eaf86d0b7491d0c1ec5f382e58bd8ae948ea2bf9bfdaad0863595d19e51852cf04a62849d87cdbb7e1ec77cd5c69d31606eb9a92f0b59a021e79c8d105")))))
+
+(test "rsa-pss-verify"
+  (let a (_rsa_arena)
+    (let mhash (w-from-hex a "07aefd757a38dbeab9e631dd9c7bde1a88dd36c5ebe9aa55d420c1ef8030d45c")
+      (let sig (w-from-hex a "5081c2b64b3073ddeed40c305bd347287e478f9e385b593082e14f1f5c40cc629aa0c2371b7a7e281ee3a70969c6ba241a15dbaad93555111ec91da0987757e0c2658b7cde2ec77862a64b3b101aae3393a9d6b53b5a493a87ef82f4a7f7df07b5b8990cc633d01355443bdca75fd89ace12f55f4a9ae8a87ee6650e746d1278f8d2338b2c72ba53bf02b967a7a36eb4c4ca74c1365d40a99e58079867dd0dfe06b96a91aa2f57ac71c891f303a17a68554758d49d6be8a3848b7fa8db3b79ea70a975eaf86d0b7491d0c1ec5f382e58bd8ae948ea2bf9bfdaad0863595d19e51852cf04a62849d87cdbb7e1ec77cd5c69d31606eb9a92f0b59a021e79c8d105")
+        (assert-true (rsa-pss-verify a (_rsa_pub a) mhash sig))))))
+
+(test "rsa-pss-verify-rejects-modified-digest"
+  (let a (_rsa_arena)
+    (let mhash (w-from-hex a "07aefd757a38dbeab9e631dd9c7bde1a88dd36c5ebe9aa55d420c1ef8030d45c")
+      (let sig (w-from-hex a "5081c2b64b3073ddeed40c305bd347287e478f9e385b593082e14f1f5c40cc629aa0c2371b7a7e281ee3a70969c6ba241a15dbaad93555111ec91da0987757e0c2658b7cde2ec77862a64b3b101aae3393a9d6b53b5a493a87ef82f4a7f7df07b5b8990cc633d01355443bdca75fd89ace12f55f4a9ae8a87ee6650e746d1278f8d2338b2c72ba53bf02b967a7a36eb4c4ca74c1365d40a99e58079867dd0dfe06b96a91aa2f57ac71c891f303a17a68554758d49d6be8a3848b7fa8db3b79ea70a975eaf86d0b7491d0c1ec5f382e58bd8ae948ea2bf9bfdaad0863595d19e51852cf04a62849d87cdbb7e1ec77cd5c69d31606eb9a92f0b59a021e79c8d105")
+        (begin
+          (w-set mhash 0 (bit-xor (w-get mhash 0) 1))
+          (assert-false (rsa-pss-verify a (_rsa_pub a) mhash sig)))))))
+
+(test "rsa-oaep-encrypt"
+  (let a (_rsa_arena)
+    (let msg (w-from-string a "attack at dawn")
+      (let seed (w-from-hex a "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
+        (assert-equal (w-hex-bytes (option-unwrap-or (rsa-oaep-encrypt a (_rsa_pub a) msg 14 seed) 0) 256)
+          "2ce753dcef1fb1dd1a62d52b211e912ce0c66f108a4b6f92bae83bc476c9bddd25d1c5778f15157326aa7b58857d8165135bfc222fa3bc4e89cacde0a71287ef1eac9f3318612c96da33f25d1e8804451a4e92550bcee217d873e8479f27ae022edfd7de645c6387d874486e54117a4e1d63d0955432b80edde4e198fd93b80f4ab1805e63f86707358ec3dd650f4e2da93f4b537485e456741d98b1ae2584be8358207f4d8bc6e4e227eba0835d80f3dcc4df264394030234f8a79f75ab9035dc3b5d0e7e924bcd800833cd6f98c2eb031f659fbd9afd17d6f0bdc0ec52bc15629205163c244f48d5e093a4c23e554444b1a974ff6de22de160297239acc377")))))
+
+(test "rsa-oaep-decrypt"
+  (let a (_rsa_arena)
+    (let ct (w-from-hex a "2ce753dcef1fb1dd1a62d52b211e912ce0c66f108a4b6f92bae83bc476c9bddd25d1c5778f15157326aa7b58857d8165135bfc222fa3bc4e89cacde0a71287ef1eac9f3318612c96da33f25d1e8804451a4e92550bcee217d873e8479f27ae022edfd7de645c6387d874486e54117a4e1d63d0955432b80edde4e198fd93b80f4ab1805e63f86707358ec3dd650f4e2da93f4b537485e456741d98b1ae2584be8358207f4d8bc6e4e227eba0835d80f3dcc4df264394030234f8a79f75ab9035dc3b5d0e7e924bcd800833cd6f98c2eb031f659fbd9afd17d6f0bdc0ec52bc15629205163c244f48d5e093a4c23e554444b1a974ff6de22de160297239acc377")
+      (let outlen (w-alloc a 1)
+        (let pt (rsa-oaep-decrypt a (_rsa_priv a) ct outlen)
+          (assert-equal (w-hex-bytes (option-unwrap-or pt 0) 14) "61747461636b206174206461776e"))))))
+
+(test "rsa-oaep-decrypt-length"
+  (let a (_rsa_arena)
+    (let ct (w-from-hex a "2ce753dcef1fb1dd1a62d52b211e912ce0c66f108a4b6f92bae83bc476c9bddd25d1c5778f15157326aa7b58857d8165135bfc222fa3bc4e89cacde0a71287ef1eac9f3318612c96da33f25d1e8804451a4e92550bcee217d873e8479f27ae022edfd7de645c6387d874486e54117a4e1d63d0955432b80edde4e198fd93b80f4ab1805e63f86707358ec3dd650f4e2da93f4b537485e456741d98b1ae2584be8358207f4d8bc6e4e227eba0835d80f3dcc4df264394030234f8a79f75ab9035dc3b5d0e7e924bcd800833cd6f98c2eb031f659fbd9afd17d6f0bdc0ec52bc15629205163c244f48d5e093a4c23e554444b1a974ff6de22de160297239acc377")
+      (let outlen (w-alloc a 1)
+        (begin
+          (rsa-oaep-decrypt a (_rsa_priv a) ct outlen)
+          (assert-equal (w-get outlen 0) 14))))))
+
+(test "rsa-oaep-decrypt-rejects-corrupt"
+  (let a (_rsa_arena)
+    (let ct (w-from-hex a "2ce753dcef1fb1dd1a62d52b211e912ce0c66f108a4b6f92bae83bc476c9bddd25d1c5778f15157326aa7b58857d8165135bfc222fa3bc4e89cacde0a71287ef1eac9f3318612c96da33f25d1e8804451a4e92550bcee217d873e8479f27ae022edfd7de645c6387d874486e54117a4e1d63d0955432b80edde4e198fd93b80f4ab1805e63f86707358ec3dd650f4e2da93f4b537485e456741d98b1ae2584be8358207f4d8bc6e4e227eba0835d80f3dcc4df264394030234f8a79f75ab9035dc3b5d0e7e924bcd800833cd6f98c2eb031f659fbd9afd17d6f0bdc0ec52bc15629205163c244f48d5e093a4c23e554444b1a974ff6de22de160297239acc377")
+      (let outlen (w-alloc a 1)
+        (begin
+          (w-set ct 200 (bit-xor (w-get ct 200) 1))
+          (assert-true (option-is-none (rsa-oaep-decrypt a (_rsa_priv a) ct outlen))))))))
+
+(run-tests)

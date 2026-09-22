@@ -1,0 +1,63 @@
+; SHA-256 Known-Answer Tests (FIPS 180-4 / RFC 6234 vectors plus the
+; padding boundary lengths: 55 and 56 bytes straddle the point where
+; the length field no longer fits in the first block, and 63/64/65 and
+; 119/120 cover the block-count transitions either side of that.)
+
+(use math/hash/sha2)
+(use math/words)
+(use allocator/allocator)
+
+; One arena for the whole file; every digest allocates from it and
+; nothing is freed until the process exits, which is what a test binary
+; wants.
+(defn _sha_arena () (arena-create 0))
+
+(defn _sha_hex ((s String))
+  (sha256-hex-of-string (_sha_arena) s))
+
+(test "sha256-empty"
+  (assert-equal (_sha_hex "") "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+(test "sha256-abc"
+  (assert-equal (_sha_hex "abc") "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
+(test "sha256-single-a"
+  (assert-equal (_sha_hex "a") "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"))
+(test "sha256-message-digest"
+  (assert-equal (_sha_hex "message digest") "f7846f55cf23e14eebeab5b4e1550cad5b509e3348fbc4efa3a1413d393cb650"))
+(test "sha256-alphabet"
+  (assert-equal (_sha_hex "abcdefghijklmnopqrstuvwxyz") "71c480df93d6ae2f1efad1447c66c9525e316218cf51fc8d9ed832f2daf18b73"))
+(test "sha256-rfc6234-448bit"
+  (assert-equal (_sha_hex "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"))
+(test "sha256-rfc6234-896bit"
+  (assert-equal (_sha_hex "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu") "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"))
+(test "sha256-len-55"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"))
+(test "sha256-len-56"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"))
+(test "sha256-len-63"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34"))
+(test "sha256-len-64"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"))
+(test "sha256-len-65"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0"))
+(test "sha256-len-119"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb"))
+(test "sha256-len-120"
+  (assert-equal (_sha_hex "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c"))
+
+; Digest-as-bytes path (one byte per word) must agree with the hex path.
+(test "sha256-bytes-abc"
+  (let a (_sha_arena)
+    (let msg (w-from-string a "abc")
+      (let d (sha256-bytes a msg 3)
+        (assert-equal (w-hex-bytes d 32) "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")))))
+
+(test "sha256-padded-len-0"
+  (assert-equal (sha256-padded-len 0) 64))
+(test "sha256-padded-len-55"
+  (assert-equal (sha256-padded-len 55) 64))
+(test "sha256-padded-len-56"
+  (assert-equal (sha256-padded-len 56) 128))
+(test "sha256-padded-len-64"
+  (assert-equal (sha256-padded-len 64) 128))
+
+(run-tests)

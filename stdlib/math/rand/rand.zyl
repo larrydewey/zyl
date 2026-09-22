@@ -1,0 +1,67 @@
+; === Zyl Standard Library — Random Number Interface ===
+; Module: math/rand/rand
+; Provides: shared helpers for the generators in this directory
+;
+; Zyl's trait dispatch is not yet wired end to end (see
+; tests/regression/traits.zyl), so "Rng" is a CONVENTION here rather
+; than a trait: every generator exposes `<name>-fill` (fill n bytes
+; into a word array) and `<name>-next-u64`, and the helpers below turn
+; one into the other. When trait dispatch lands, these become the
+; blanket implementations of an `Rng` trait without changing the
+; generators themselves.
+;
+; The distinction the crypto plan makes between a `CryptoRng` and a
+; `DeterministicRng` is a distinction about WHAT MAY USE THEM, not
+; about their interface:
+;
+;   - math/rand/crypto      unpredictable, from the kernel. The only
+;                           acceptable source for keys, nonces and
+;                           signature scalars.
+;   - math/rand/deterministic  reproducible from a seed. For tests,
+;                           simulations and anything that must replay
+;                           identically. NEVER for key material, since
+;                           anyone who learns the seed learns every
+;                           byte it will ever produce.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+
+; Assemble a 64-bit value from 8 bytes held one-per-word, little-endian.
+; Returns: Int
+(defn rand-u64-from-bytes ((buf Int) (off Int))
+  (let lo (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3)))
+    (let hi (le-pack32 (w-get buf (+ off 4)) (w-get buf (+ off 5)) (w-get buf (+ off 6)) (w-get buf (+ off 7)))
+      (bit-or (shl hi 32) lo))))
+
+; Uniform value in [0, bound) from a 64-bit sample, or -1 when the
+; sample must be REJECTED and the caller should draw again.
+;
+; Rejection rather than modulo: `(% sample bound)` is biased toward the
+; small residues whenever bound does not divide the sample space, and
+; for the bounds that matter in cryptography (a curve order, a prime
+; range) that bias is exactly what a nonce must not have.
+;
+; The sample is first reduced to its low 62 bits. That is not a
+; weakening of the generator so much as a consequence of Zyl's Int
+; being SIGNED: `%` and `/` are signed operations, so computing the
+; rejection threshold over the full unsigned 64-bit range would need an
+; unsigned division this language does not have. Working in [0, 2^62)
+; keeps every intermediate positive and the arithmetic exact, and 62
+; bits of uniformity is far beyond what any bound below 2^62 can
+; consume. Callers needing a full 64-bit uniform value should take the
+; raw sample instead; this function is for bounded draws.
+;
+; Rejection probability is under bound/2^62, so a caller that redraws
+; on -1 terminates immediately in practice.
+; Returns: Int
+(defn rand-below ((sample Int) (bound Int))
+  (if (<= bound 0)
+    -1
+    (if (>= bound 4611686018427387904)
+      -1
+      (let s (bit-and sample 4611686018427387903)
+        (let limit (* (/ 4611686018427387904 bound) bound)
+          (if (< s limit)
+            (% s bound)
+            -1))))))

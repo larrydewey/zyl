@@ -338,7 +338,7 @@
        (cg-fbinop st env op l r)
        (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of st env l) 1) (= (kind-of st env r) 1)) 1 0) 0) 0)
          (cg-strbinop st env op l r)
-         (if (> (if (> op 4) (if (or (= (kind-of st env l) 3) (= (kind-of st env r) 3)) 1 0) 0) 0)
+         (if (> (if (and (> op 4) (< op 11)) (if (or (= (kind-of st env l) 3) (= (kind-of st env r) 3)) 1 0) 0) 0)
            (cg-variantbinop st env op l r)
            (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-args st env name args true 0))
@@ -518,7 +518,9 @@
           (let st6 (cg-emit-line st5 "    pop rax")
             (if (< op 5)
               (cg-arith-mnem st6 op)
-              (cg-cmp-set st6 op))))))))
+              (if (> op 10)
+                (cg-bit-mnem st6 op)
+                (cg-cmp-set st6 op)))))))))
 
 ; String `=`/`!=`: content comparison via the C runtime (zyl_cstr_eq),
 ; reusing cg-call-args' proven-safe ABI/stack-alignment handling instead
@@ -574,6 +576,45 @@
         (if (= op 4)
           (cg-emit-line st3 "    mov rax, rdx")
           st3)))))
+
+; Bitwise ops (11 bit-and, 12 bit-or, 13 bit-xor, 14 shl, 15 shr,
+; 16 ashr) with lhs in rax and rhs in rcx, same register contract as
+; cg-arith-mnem/cg-cmp-set above.
+;
+; Shift counts are NOT left to the bare x86 semantics. `shl rax, cl`
+; masks its count to 6 bits, so `(shl x 64)` would silently mean
+; `(shl x 0)` -- i.e. x unchanged where every language and every piece
+; of crypto code means 0. Both logical shifts therefore AND the result
+; with a mask that is all-ones only when the count is in 0..63:
+; `cmp rdx, 64` + `sbb rdx, rdx` leaves rdx = -1 when the (unsigned)
+; count is below 64 and 0 otherwise, which also catches a negative
+; count (huge as unsigned). `ashr` instead saturates: an out-of-range
+; count clamps to 63 via cmovae, so the result is the sign bit
+; replicated, which is what an arithmetic shift means in the limit.
+;
+; Every sequence here is branchless and its instruction stream does not
+; depend on the operand VALUES -- only on the opcode, which is a
+; compile-time constant. That is what makes these usable as the
+; building blocks of constant-time code.
+(defn cg-bit-mnem (st op)
+  (if (= op 11) (cg-emit-line st "    and rax, rcx")
+  (if (= op 12) (cg-emit-line st "    or rax, rcx")
+  (if (= op 13) (cg-emit-line st "    xor rax, rcx")
+  (if (= op 16) (cg-bit-ashr st)
+    (cg-bit-logical-shift st op))))))
+
+(defn cg-bit-logical-shift (st op)
+  (let st2 (cg-emit-line st "    mov rdx, rcx")
+    (let st3 (cg-emit-line st2 (if (= op 14) "    shl rax, cl" "    shr rax, cl"))
+      (let st4 (cg-emit-line st3 "    cmp rdx, 64")
+        (let st5 (cg-emit-line st4 "    sbb rdx, rdx")
+          (cg-emit-line st5 "    and rax, rdx"))))))
+
+(defn cg-bit-ashr (st)
+  (let st2 (cg-emit-line st "    mov rdx, 63")
+    (let st3 (cg-emit-line st2 "    cmp rcx, 64")
+      (let st4 (cg-emit-line st3 "    cmovae rcx, rdx")
+        (cg-emit-line st4 "    sar rax, cl")))))
 
 (defn cg-cmp-set (st op)
   (let st2 (cg-emit-line st "    cmp rax, rcx")
@@ -1479,7 +1520,11 @@
 (defn cg-format-strings (st)
   (let st1 (cg-emit-line st ".section .rodata")
     (let st2 (cg-emit-line st1 ".Lfmtd:")
-      (let st3 (cg-emit-line st2 "    .string \"%d\\n\"")
+      ; %lld, not %d: an Int is a 64-bit machine word, and printf
+      ; reading only 32 bits of it silently truncated every value at or
+      ; above 2^31 (a hash constant, a large product, any pointer-shaped
+      ; value) to a wrong, usually negative, number.
+      (let st3 (cg-emit-line st2 "    .string \"%lld\\n\"")
         (let st4 (cg-emit-line st3 ".Lfmtf:")
           (let st5 (cg-emit-line st4 "    .string \"%f\\n\"")
             (let st6 (cg-emit-line st5 ".Lfmts:")

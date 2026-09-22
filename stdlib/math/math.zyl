@@ -1,0 +1,66 @@
+; === Zyl Standard Library — Math/Crypto Parent Module ===
+; Module: math
+; Provides: re-export of every math submodule
+;
+; `(use math/math)` pulls in the whole tree. Module resolution inlines
+; each dependency exactly once (module_resolver.zyl's seen-list), so
+; importing both this module and one of its submodules directly is
+; harmless -- though importing only what a program uses keeps its
+; compile time and binary size down, and the crypto tree is large.
+;
+; Layout:
+;   math/bits                             word and bit primitives
+;   math/words                            flat arena-backed Int arrays
+;   math/secret/secret                    constant-time compare, erasure
+;   math/bignum/bignum                    fixed-width naturals
+;   math/bignum/montgomery                Montgomery arithmetic, modexp
+;   math/bignum/barrett                   reduction by a fixed modulus
+;   math/bignum/modular                   modular add/sub/inverse, primality
+;   math/rand/rand                        generator helpers
+;   math/rand/crypto                      system entropy (getrandom)
+;   math/rand/deterministic               ChaCha20 seeded generator
+;   math/hash/sha2                        SHA-256
+;   math/hash/sha512                      SHA-512
+;   math/hash/sha3                        SHA3-256/512, SHAKE128/256
+;   math/hash/blake2b                     BLAKE2b
+;   math/hash/blake3                      BLAKE3
+;   math/hash/hmac                        HMAC-SHA256
+;   math/crypto/symmetric/chacha20        ChaCha20
+;   math/crypto/symmetric/poly1305        Poly1305
+;   math/crypto/symmetric/chacha20poly    ChaCha20-Poly1305 AEAD
+;   math/crypto/symmetric/aesgcm          AES-GCM (AES-NI only)
+;   math/crypto/asymmetric/x25519         X25519
+;   math/crypto/asymmetric/ed25519        Ed25519
+;   math/crypto/asymmetric/ecdsa          ECDSA (P-256, secp256k1, P-384)
+;   math/crypto/asymmetric/rsa            RSA-PSS and RSA-OAEP
+;   math/crypto/kdf/hkdf                  HKDF-SHA256
+;   math/crypto/kdf/pbkdf2                PBKDF2-HMAC-SHA256
+;   math/crypto/kdf/argon2                Argon2id
+
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+(use math/bignum/montgomery)
+(use math/bignum/barrett)
+(use math/bignum/modular)
+(use math/rand/rand)
+(use math/rand/crypto)
+(use math/rand/deterministic)
+(use math/hash/sha2)
+(use math/hash/sha512)
+(use math/hash/sha3)
+(use math/hash/blake2b)
+(use math/hash/blake3)
+(use math/hash/hmac)
+(use math/crypto/symmetric/chacha20)
+(use math/crypto/symmetric/poly1305)
+(use math/crypto/symmetric/chacha20poly)
+(use math/crypto/symmetric/aesgcm)
+(use math/crypto/asymmetric/x25519)
+(use math/crypto/asymmetric/ed25519)
+(use math/crypto/asymmetric/ecdsa)
+(use math/crypto/asymmetric/rsa)
+(use math/crypto/kdf/hkdf)
+(use math/crypto/kdf/pbkdf2)
+(use math/crypto/kdf/argon2)

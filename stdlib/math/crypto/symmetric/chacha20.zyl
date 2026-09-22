@@ -1,0 +1,173 @@
+; === Zyl Standard Library — ChaCha20 ===
+; Module: math/crypto/symmetric/chacha20
+; Provides: ChaCha20 block function and keystream XOR (RFC 8439)
+;
+; Keys, nonces, plaintexts and ciphertexts are math/words byte arrays
+; (one byte per 8-byte word), the same representation the hashes use.
+; A key is 32 bytes, a nonce 12 bytes, and the block counter is a
+; 32-bit value supplied by the caller -- RFC 8439 starts AEAD payload
+; encryption at counter 1 and reserves counter 0 for the Poly1305 key.
+;
+; Constant-time by construction: ChaCha20 is an ARX cipher, so every
+; operation on key- or plaintext-derived data is add32, bit-xor or
+; rotl32, each a single branchless instruction sequence. The number of
+; rounds is fixed at 20 and the loop bounds come from the message
+; LENGTH, which is not secret. There is no S-box, no table lookup, and
+; no branch anywhere on a secret value.
+;
+; The caller owns nonce discipline: reusing a (key, nonce) pair with
+; different plaintexts destroys confidentiality outright, since the
+; keystream is then identical and the XOR of two ciphertexts is the
+; XOR of the two plaintexts. This module cannot detect that and does
+; not try to.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+
+; ===========================================================================
+; STATE SETUP
+; ===========================================================================
+
+; "expand 32-byte k" as four little-endian 32-bit words (RFC 8439 s2.3).
+; Returns: Int
+(defn chacha20-constant ((i Int))
+  (if (= i 0) 1634760805
+  (if (= i 1) 857760878
+  (if (= i 2) 2036477234
+    1797285236))))
+
+; Read a little-endian 32-bit word from four bytes at `off`.
+; Returns: Int
+(defn chacha20-word-at ((buf Int) (off Int))
+  (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3))))
+
+; Build the 16-word initial state: 4 constant words, 8 key words, the
+; block counter, then 3 nonce words.
+; Returns: Int
+(defn chacha20-state ((arena Int) (key Int) (nonce Int) (counter Int))
+  (let st (w-alloc arena 16)
+    (begin
+      (for (i 0) (< i 4)
+        (begin (w-set st i (chacha20-constant i)) (set! i (+ i 1))))
+      (for (j 0) (< j 8)
+        (begin (w-set st (+ 4 j) (chacha20-word-at key (* j 4))) (set! j (+ j 1))))
+      (w-set st 12 (u32 counter))
+      (for (k 0) (< k 3)
+        (begin (w-set st (+ 13 k) (chacha20-word-at nonce (* k 4))) (set! k (+ k 1))))
+      st)))
+
+; ===========================================================================
+; QUARTER ROUND
+; ===========================================================================
+
+; The ChaCha quarter round on four state indices (RFC 8439 s2.1):
+;   a += b; d ^= a; d <<<= 16
+;   c += d; b ^= c; b <<<= 12
+;   a += b; d ^= a; d <<<= 8
+;   c += d; b ^= c; b <<<= 7
+; Returns: Int
+(defn chacha20-qr ((st Int) (ia Int) (ib Int) (ic Int) (id Int))
+  (begin
+    (chacha20-qr-half st ia ib ic id 16 12)
+    (chacha20-qr-half st ia ib ic id 8 7)
+    0))
+
+; One half of a quarter round: the two (add, xor, rotate) pairs share
+; an identical shape and differ only in their rotation amounts.
+; Returns: Int
+(defn chacha20-qr-half ((st Int) (ia Int) (ib Int) (ic Int) (id Int) (r1 Int) (r2 Int))
+  (let a (add32 (w-get st ia) (w-get st ib))
+    (let d (rotl32 (bit-xor (w-get st id) a) r1)
+      (let c (add32 (w-get st ic) d)
+        (let b (rotl32 (bit-xor (w-get st ib) c) r2)
+          (begin
+            (w-set st ia a)
+            (w-set st id d)
+            (w-set st ic c)
+            (w-set st ib b)
+            0))))))
+
+; One double round: four column rounds then four diagonal rounds.
+; Returns: Int
+(defn chacha20-double-round ((st Int))
+  (begin
+    (chacha20-qr st 0 4 8 12)
+    (chacha20-qr st 1 5 9 13)
+    (chacha20-qr st 2 6 10 14)
+    (chacha20-qr st 3 7 11 15)
+    (chacha20-qr st 0 5 10 15)
+    (chacha20-qr st 1 6 11 12)
+    (chacha20-qr st 2 7 8 13)
+    (chacha20-qr st 3 4 9 14)
+    0))
+
+; ===========================================================================
+; BLOCK FUNCTION
+; ===========================================================================
+
+; The 64-byte keystream block for (key, nonce, counter), as a 64-entry
+; byte array. Twenty rounds (ten double rounds) over a working copy,
+; then the original state is added back in word by word and each word
+; serialized little-endian.
+; Returns: Int
+(defn chacha20-block ((arena Int) (key Int) (nonce Int) (counter Int))
+  (let init (chacha20-state arena key nonce counter)
+    (let work (w-copy (w-alloc arena 16) init 16)
+      (begin
+        (for (r 0) (< r 10)
+          (begin (chacha20-double-round work) (set! r (+ r 1))))
+        (for (i 0) (< i 16)
+          (begin
+            (w-set work i (add32 (w-get work i) (w-get init i)))
+            (set! i (+ i 1))))
+        (chacha20-serialize arena work)))))
+
+; Serialize 16 words little-endian into 64 bytes.
+; Returns: Int
+(defn chacha20-serialize ((arena Int) (work Int))
+  (let out (w-alloc arena 64)
+    (begin
+      (for (i 0) (< i 16)
+        (begin
+          (chacha20-put-word out (w-get work i) (* i 4))
+          (set! i (+ i 1))))
+      out)))
+
+; Returns: Int
+(defn chacha20-put-word ((out Int) (v Int) (o Int))
+  (begin
+    (w-set out o (bit-and v 255))
+    (w-set out (+ o 1) (bit-and (shr v 8) 255))
+    (w-set out (+ o 2) (bit-and (shr v 16) 255))
+    (w-set out (+ o 3) (bit-and (shr v 24) 255))
+    0))
+
+; ===========================================================================
+; KEYSTREAM XOR
+; ===========================================================================
+
+; XOR `len` bytes at `msg` with the ChaCha20 keystream for (key, nonce)
+; starting at `counter`, returning a fresh byte array. Encryption and
+; decryption are the same operation.
+; Returns: Int
+(defn chacha20-xor ((arena Int) (key Int) (nonce Int) (counter Int) (msg Int) (len Int))
+  (let out (w-alloc arena len)
+    (begin
+      (for (off 0) (< off len)
+        (begin
+          (chacha20-xor-block arena key nonce (+ counter (/ off 64)) msg out off len)
+          (set! off (+ off 64))))
+      out)))
+
+; XOR one block's worth of bytes (or fewer, at the end of the message).
+; Returns: Int
+(defn chacha20-xor-block ((arena Int) (key Int) (nonce Int) (counter Int) (msg Int) (out Int) (off Int) (len Int))
+  (let ks (chacha20-block arena key nonce counter)
+    (let n (if (< (- len off) 64) (- len off) 64)
+      (begin
+        (for (i 0) (< i n)
+          (begin
+            (w-set out (+ off i) (bit-xor (w-get msg (+ off i)) (w-get ks i)))
+            (set! i (+ i 1))))
+        0))))

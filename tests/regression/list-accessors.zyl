@@ -1,0 +1,29 @@
+; car/cdr/cadr/caddr/cddr + list-rest regression tests.
+
+(use core/core)
+(use core/list)
+(use core/option)
+
+(defn _la_list ()
+  (Cons 10 (Cons 20 (Cons 30 Nil))))
+
+(test "car-first"
+  (assert-equal (option-unwrap-or (car (_la_list)) 0) 10))
+(test "cadr-second"
+  (assert-equal (option-unwrap-or (cadr (_la_list)) 0) 20))
+(test "caddr-third"
+  (assert-equal (option-unwrap-or (caddr (_la_list)) 0) 30))
+(test "car-of-empty-is-none"
+  (assert-true (option-is-none (car Nil))))
+(test "cadr-of-single-is-none"
+  (assert-true (option-is-none (cadr (Cons 1 Nil)))))
+(test "list-rest-length"
+  (assert-equal (list-length (list-rest (_la_list))) 2))
+(test "list-rest-of-empty-is-empty"
+  (assert-equal (list-length (list-rest Nil)) 0))
+(test "cddr-length"
+  (assert-equal (list-length (cddr (_la_list))) 1))
+(test "car-after-cddr"
+  (assert-equal (option-unwrap-or (car (cddr (_la_list))) 0) 30))
+
+(run-tests)

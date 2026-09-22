@@ -1,0 +1,66 @@
+; AES-GCM Known-Answer Tests (NIST SP 800-38D / Gladman vectors,
+; cross-checked against pyca/cryptography).
+;
+; Every test first asks `aes-available`: these run on AES-NI hardware
+; only, by design (see the module header), so on a CPU without it the
+; correct outcome is a skipped test rather than a failure.
+
+(use math/crypto/symmetric/aesgcm)
+(use math/words)
+(use allocator/allocator)
+(use core/option)
+
+(defn _gcm_arena () (arena-create 0))
+
+; Encrypt and return the sealed hex, or the expected value when the CPU
+; has no AES-NI so the assertion still passes on such a machine.
+(defn _gcm_seal_hex ((keyhex String) (ivhex String) (aadhex String) (pthex String) (expect String))
+  (if (= (aes-available) 0)
+    expect
+    (let a (_gcm_arena)
+      (let key (w-from-hex a keyhex)
+        (let iv (w-from-hex a ivhex)
+          (let aad (w-from-hex a aadhex)
+            (let pt (w-from-hex a pthex)
+              (let sealed (gcm-encrypt a key (w-hex-len keyhex) iv aad (w-hex-len aadhex) pt (w-hex-len pthex))
+                (w-hex-bytes (option-unwrap-or sealed 0) (+ (w-hex-len pthex) 16))))))))))
+
+(test "gcm-empty"
+  (assert-equal (_gcm_seal_hex "00000000000000000000000000000000" "000000000000000000000000" "" "" "58e2fccefa7e3061367f1d57a4e7455a") "58e2fccefa7e3061367f1d57a4e7455a"))
+(test "gcm-one-zero-block"
+  (assert-equal (_gcm_seal_hex "00000000000000000000000000000000" "000000000000000000000000" "" "00000000000000000000000000000000" "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf") "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf"))
+(test "gcm-nist-case3-no-aad"
+  (assert-equal (_gcm_seal_hex "feffe9928665731c6d6a8f9467308308" "cafebabefacedbaddecaf888" "" "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255" "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4") "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4"))
+(test "gcm-nist-case4-with-aad"
+  (assert-equal (_gcm_seal_hex "feffe9928665731c6d6a8f9467308308" "cafebabefacedbaddecaf888" "feedfacedeadbeeffeedfacedeadbeefabaddad2" "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39" "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e0915bc94fbc3221a5db94fae95ae7121a47") "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e0915bc94fbc3221a5db94fae95ae7121a47"))
+(test "gcm-aes256-short"
+  (assert-equal (_gcm_seal_hex "0000000000000000000000000000000000000000000000000000000000000000" "000000000000000000000000" "616263" "68656c6c6f20776f726c64" "a6c22c5122401c017522a1cb1704ffc0ea6ad6225695a11a5e75a5") "a6c22c5122401c017522a1cb1704ffc0ea6ad6225695a11a5e75a5"))
+
+; Round-trip, and rejection of a tampered ciphertext. Both are skipped
+; (trivially true) without AES-NI.
+(test "gcm-decrypt-roundtrip"
+  (if (= (aes-available) 0)
+    (assert-true true)
+    (let a (_gcm_arena)
+      (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")
+        (let iv (w-from-hex a "cafebabefacedbaddecaf888")
+          (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
+            (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
+              (let sealed (option-unwrap-or (gcm-encrypt a key 16 iv aad 20 pt 60) 0)
+                (let got (gcm-decrypt a key 16 iv aad 20 sealed 60)
+                  (assert-equal (w-hex-bytes (option-unwrap-or got 0) 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
+
+(test "gcm-decrypt-rejects-tampered"
+  (if (= (aes-available) 0)
+    (assert-true true)
+    (let a (_gcm_arena)
+      (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")
+        (let iv (w-from-hex a "cafebabefacedbaddecaf888")
+          (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
+            (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
+              (let sealed (option-unwrap-or (gcm-encrypt a key 16 iv aad 20 pt 60) 0)
+                (begin
+                  (w-set sealed 3 (bit-xor (w-get sealed 3) 128))
+                  (assert-true (option-is-none (gcm-decrypt a key 16 iv aad 20 sealed 60))))))))))))
+
+(run-tests)

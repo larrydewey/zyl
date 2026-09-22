@@ -2005,7 +2005,21 @@
         (infer-expr-call-fn inferer expr "___unknown" args))))
 
 (defn is-builtin-binop (name)
-    (or (= name "+") (or (= name "-") (or (= name "*") (= name "/")))))
+    (or (= name "+") (or (= name "-") (or (= name "*") (or (= name "/")
+      (is-builtin-bitop name))))))
+
+; The bitwise family (icnf.zyl's opcodes 11-16, plus the unary
+; `bit-not`) is Int-in/Int-out with no Float form at all -- routing it
+; through infer-expr-builtin-binop is right for the arithmetic shape
+; but its "Float if any operand is Float" rule can never fire here,
+; since a Float operand to a bitwise op is not a meaningful program.
+(defn is-builtin-bitop (name)
+    (or (= name "bit-and")
+      (or (= name "bit-or")
+        (or (= name "bit-xor")
+          (or (= name "bit-not")
+            (or (= name "shl")
+              (or (= name "shr") (= name "ashr"))))))))
 
 (defn is-builtin-unop (name)
     (or (= name "not") (or (= name "and") (= name "or"))))

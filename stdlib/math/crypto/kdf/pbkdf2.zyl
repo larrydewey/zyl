@@ -1,0 +1,84 @@
+; === Zyl Standard Library — PBKDF2-HMAC-SHA256 ===
+; Module: math/crypto/kdf/pbkdf2
+; Provides: PBKDF2 (RFC 8018 s5.2) with HMAC-SHA256 as the PRF
+;
+; PBKDF2 is a PASSWORD-based KDF, and its only defence is iteration
+; count: it is cheap to evaluate in parallel on a GPU, so a modern
+; parameter choice is at least 600,000 iterations for HMAC-SHA256 (the
+; current OWASP figure) and memory-hard Argon2id is the better choice
+; where it is available. This module exists because PBKDF2 is what
+; existing formats and standards require, not because it is the right
+; default for new designs.
+;
+; The iteration loop is a fixed count and the message lengths are
+; public, so the work done is independent of the password's CONTENT,
+; though not of its length -- which is inherent to the construction.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/hash/hmac)
+
+; DK = T(1) || T(2) || ... truncated to `dklen` bytes, where
+; T(i) = U(1) ^ U(2) ^ ... ^ U(c), U(1) = PRF(P, S || INT32BE(i)) and
+; U(j) = PRF(P, U(j-1)).
+; Returns: Int
+(defn pbkdf2-sha256 ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (iters Int) (dklen Int))
+  (let out (w-alloc arena (+ dklen 32))
+    (begin
+      (for (i 0) (< (* i 32) dklen)
+        (begin
+          (pbkdf2-block arena pw pwlen salt saltlen iters out i)
+          (set! i (+ i 1))))
+      out)))
+
+; One output block: the XOR of all `iters` chained HMAC results.
+; Returns: Int
+(defn pbkdf2-block ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (iters Int) (out Int) (i Int))
+  (let first (pbkdf2-first-u arena pw pwlen salt saltlen (+ i 1))
+    (let acc (w-copy (w-alloc arena 32) first 32)
+      (begin
+        (pbkdf2-iterate arena pw pwlen first acc iters)
+        (pbkdf2-copy-at out (* i 32) acc 32)
+        0))))
+
+; U(1) = HMAC(P, S || INT32BE(i)).
+; Returns: Int
+(defn pbkdf2-first-u ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (index Int))
+  (let buf (w-alloc arena (+ saltlen 4))
+    (begin
+      (w-copy buf salt saltlen)
+      (w-set buf saltlen (bit-and (shr index 24) 255))
+      (w-set buf (+ saltlen 1) (bit-and (shr index 16) 255))
+      (w-set buf (+ saltlen 2) (bit-and (shr index 8) 255))
+      (w-set buf (+ saltlen 3) (bit-and index 255))
+      (hmac-sha256 arena pw pwlen buf (+ saltlen 4)))))
+
+; Chain U(2)..U(c), accumulating the XOR into `acc`. `cur` is mutated
+; in place to hold the running U.
+; Returns: Int
+(defn pbkdf2-iterate ((arena Int) (pw Int) (pwlen Int) (cur Int) (acc Int) (iters Int))
+  (begin
+    (for (j 1) (< j iters)
+      (begin
+        (pbkdf2-step arena pw pwlen cur acc)
+        (set! j (+ j 1))))
+    0))
+
+; Returns: Int
+(defn pbkdf2-step ((arena Int) (pw Int) (pwlen Int) (cur Int) (acc Int))
+  (let next (hmac-sha256 arena pw pwlen cur 32)
+    (begin
+      (w-copy cur next 32)
+      (for (k 0) (< k 32)
+        (begin
+          (w-set acc k (bit-xor (w-get acc k) (w-get next k)))
+          (set! k (+ k 1))))
+      0)))
+
+; Returns: Int
+(defn pbkdf2-copy-at ((dst Int) (off Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
+    0))

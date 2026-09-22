@@ -1,5 +1,95 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-22)
+
+**Implemented `stdlib/math/` — the cryptography and number library from
+`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` — plus the four compiler fixes it
+turned out to need. Full suite 65/65; the math group is 17/17.**
+
+### Compiler and runtime changes (all required by the library)
+
+1. **Bitwise operators did not exist** (`icnf.zyl`, `codegen.zyl`,
+   `optimization.zyl`, `type_inference.zyl`). `bit-and`, `bit-or`,
+   `bit-xor`, `bit-not`, `shl`, `shr` (logical) and `ashr` are new
+   opcodes 11-17 lowering to single instructions. Shift counts outside
+   0..63 are DEFINED rather than left to x86's mod-64 masking: logical
+   shifts give 0, `ashr` saturates to the sign bit. Constant folding
+   deliberately does not cover them — folding a `bit-and` inside the
+   compiler would need the compiler's own source to use `bit-and`,
+   which the previous-generation seed cannot compile — and the `op > 10`
+   guard added to `opt-fold-binop` is load-bearing: without it a
+   constant `bit-and` folded to an inequality test.
+2. **`for` silently ignored a non-zero initializer** (`expr_inner.zyl`).
+   `(for (i 16) ...)` was parsed as two bindings — `i` with no
+   initializer, and an unnamed `16` — so the loop started at 0. Every
+   `for` in the corpus happens to start at 0, which is why this had
+   never surfaced. `parse-for-bindings` now distinguishes the
+   single-binding shorthand from a real binding list by whether the
+   first element is an identifier.
+3. **`print` truncated every Int to 32 bits** (`codegen.zyl`): the
+   format string was `"%d\n"` for a 64-bit value. Now `%lld`.
+4. **AES-NI FFI needed stack realignment** (`actor_runtime.c`):
+   generated code does not guarantee the SysV 16-byte alignment at a
+   call, and the key expansion keeps `__m128i` on its stack, so
+   reaching it through one call depth rather than another segfaulted.
+   `__attribute__((force_align_arg_pointer))` on the FFI entry point.
+5. Runtime additions: `zyl_zeroize` (volatile, survives dead-store
+   elimination), `zyl_mlock`, `zyl_random_fill`/`zyl_random_words`
+   (getrandom(2) with a /dev/urandom fallback), `zyl_cpuid_features`,
+   `zyl_aesni_available`, `zyl_aes_encrypt_block`. `zyl_pin_alloc` now
+   mlocks what it hands out, best-effort.
+6. `--filter` in `run_regression_tests.sh` was compared backwards (the
+   test name was matched against the filter text), so `--filter math`
+   selected nothing. It is now a substring of the test's own name.
+7. `car`/`cdr`/`cadr`/`caddr`/`cddr`/`list-rest` added to
+   `core/list.zyl` as plain functions — each takes one argument and
+   evaluates it once, so a macro would buy nothing, and a function can
+   be passed to a higher-order function.
+
+### The library (`stdlib/math/`, ~7,500 lines)
+
+Hashes (SHA-256/512, SHA3-256/512, SHAKE128/256, BLAKE2b, BLAKE3,
+HMAC-SHA256), symmetric (ChaCha20, Poly1305, ChaCha20-Poly1305,
+AES-GCM via AES-NI), asymmetric (X25519, Ed25519, ECDSA over P-256 /
+secp256k1 / P-384 with RFC 6979 nonces, RSA-PSS and RSA-OAEP), KDFs
+(HKDF, PBKDF2, Argon2id), big numbers (fixed-width naturals,
+Montgomery, Barrett, Miller-Rabin), RNG (getrandom, seeded ChaCha20),
+and the constant-time primitives everything else is built on. See
+`docs/math-crypto.md` for the representation conventions and the
+deliberate omissions (no PKCS#1 v1.5, no software AES, no RSA key
+generation, no randomized ECDSA nonces).
+
+### Verification
+
+- 16 new `tests/regression/math-*.zyl` files of published vectors
+  (NIST, FIPS, RFC) plus `tests/integration/math-protocol.zyl`, a
+  miniature authenticated key exchange across four modules.
+- `verify/sha2.py` and `verify/crypto.py` cross-check randomized inputs
+  against Python's `hashlib` and `cryptography` — 414 SHA digests over
+  lengths 0..1000, plus AEAD, curve and KDF cases.
+- `verify/timing.py` is a dudect-style leakage harness with a
+  deliberately leaky comparison as a positive control; it fails if it
+  cannot detect that control. Run it with `--filter timing`.
+- Every algorithm was first mirrored in Python against its reference
+  (CIOS Montgomery, Keccak's index conventions, the RCB complete
+  addition formulas, Argon2's addressing, BLAKE3's tree) before being
+  written in Zyl, which is why the first compile-and-run cycle found
+  compiler bugs rather than algorithm bugs.
+
+### Not done (from the plan)
+
+- Phase 0's compiler-side work: the `TSecret` capability kind, the
+  constant-time effect checker, zeroization on scope exit, and debug
+  redaction. The library uses explicit `zeroize` and branchless
+  primitives instead, so the behaviour is there but unenforced.
+- BLAKE3's SIMD backend; the portable compression function is used.
+- ctgrind/valgrind instrumentation (`verify/timing.py` is the
+  statistical substitute).
+
+**The seed was re-cut twice** (`./boot.sh --bootstrap-from-self`,
+converging in 2 and 3 rounds); `build/boot/stage2.s`/`stage2.bin` are
+modified and not yet committed.
+
 ## Current Session (2026-09-19)
 
 **Wired the native paren/bracket balance validator into the real compile path; fixed a latent paren-deficit bug in error_codes.zyl found along the way.**

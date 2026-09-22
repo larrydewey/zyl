@@ -1,0 +1,139 @@
+; ChaCha20 / Poly1305 / ChaCha20-Poly1305 Known-Answer Tests
+; All vectors from RFC 8439 (sections 2.3.2, 2.4.2, 2.5.2, 2.8.2).
+
+(use math/crypto/symmetric/chacha20)
+(use math/crypto/symmetric/poly1305)
+(use math/crypto/symmetric/chacha20poly)
+(use math/words)
+(use allocator/allocator)
+(use core/option)
+
+(defn _cc_arena () (arena-create 0))
+
+; --- RFC 8439 s2.3.2: the block function ---------------------------------
+
+(test "chacha20-block-rfc-2.3.2"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+      (let n (w-from-hex a "000000090000004a00000000")
+        (let b (chacha20-block a k n 1)
+          (assert-equal (w-hex-bytes b 64)
+            "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e"))))))
+
+; --- RFC 8439 s2.4.2: encryption -----------------------------------------
+
+(test "chacha20-encrypt-rfc-2.4.2"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+      (let n (w-from-hex a "000000000000004a00000000")
+        (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+          (let ct (chacha20-xor a k n 1 pt 114)
+            (assert-equal (w-hex-bytes ct 114)
+              "6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d")))))))
+
+; Encryption is its own inverse: decrypting the ciphertext with the same
+; key/nonce/counter recovers the plaintext.
+(test "chacha20-roundtrip"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+      (let n (w-from-hex a "000000000000004a00000000")
+        (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+          (let ct (chacha20-xor a k n 1 pt 114)
+            (let back (chacha20-xor a k n 1 ct 114)
+              (assert-equal (w-hex-bytes back 114) (w-hex-bytes pt 114)))))))))
+
+; --- RFC 8439 s2.5.2: Poly1305 -------------------------------------------
+
+(test "poly1305-rfc-2.5.2"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+      (let m (w-from-string a "Cryptographic Forum Research Group")
+        (let tag (poly1305-mac a k m 34)
+          (assert-equal (w-hex-bytes tag 16) "a8061dc1305136c6c22b8baf0c0127a9"))))))
+
+(test "poly1305-verify-accepts"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+      (let m (w-from-string a "Cryptographic Forum Research Group")
+        (let tag (w-from-hex a "a8061dc1305136c6c22b8baf0c0127a9")
+          (assert-true (poly1305-verify a k m 34 tag)))))))
+
+(test "poly1305-verify-rejects-flipped-bit"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+      (let m (w-from-string a "Cryptographic Forum Research Group")
+        (let tag (w-from-hex a "a8061dc1305136c6c22b8baf0c0127a8")
+          (assert-false (poly1305-verify a k m 34 tag)))))))
+
+; Empty message: the authenticator is defined for zero blocks.
+(test "poly1305-empty-message"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "0000000000000000000000000000000036e5f6b5c5e06070f0efca96227a863e")
+      (let m (w-alloc a 1)
+        (let tag (poly1305-mac a k m 0)
+          (assert-equal (w-hex-bytes tag 16) "36e5f6b5c5e06070f0efca96227a863e"))))))
+
+; --- RFC 8439 s2.8.2: the AEAD -------------------------------------------
+
+(test "aead-encrypt-rfc-2.8.2-ciphertext"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+      (let n (w-from-hex a "070000004041424344454647")
+        (let aad (w-from-hex a "50515253c0c1c2c3c4c5c6c7")
+          (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+            (let sealed (aead-encrypt a k n aad 12 pt 114)
+              (assert-equal (w-hex-bytes sealed 114)
+                "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116"))))))))
+
+(test "aead-encrypt-rfc-2.8.2-tag"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+      (let n (w-from-hex a "070000004041424344454647")
+        (let aad (w-from-hex a "50515253c0c1c2c3c4c5c6c7")
+          (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+            (let sealed (aead-encrypt a k n aad 12 pt 114)
+              (let tag (aead-tag-of a sealed 114)
+                (assert-equal (w-hex-bytes tag 16) "1ae10b594f09e26a7e902ecbd0600691")))))))))
+
+(test "aead-decrypt-roundtrip"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+      (let n (w-from-hex a "070000004041424344454647")
+        (let aad (w-from-hex a "50515253c0c1c2c3c4c5c6c7")
+          (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+            (let sealed (aead-encrypt a k n aad 12 pt 114)
+              (let got (aead-decrypt a k n aad 12 sealed 114)
+                (assert-equal (w-hex-bytes (option-unwrap-or got 0) 114) (w-hex-bytes pt 114))))))))))
+
+; A single flipped ciphertext bit must fail the tag check, and the
+; failure must be a None rather than a decrypted-anyway plaintext.
+(test "aead-decrypt-rejects-tampered-ciphertext"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+      (let n (w-from-hex a "070000004041424344454647")
+        (let aad (w-from-hex a "50515253c0c1c2c3c4c5c6c7")
+          (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+            (let sealed (aead-encrypt a k n aad 12 pt 114)
+              (begin
+                (w-set sealed 0 (bit-xor (w-get sealed 0) 1))
+                (assert-true (option-is-none (aead-decrypt a k n aad 12 sealed 114)))))))))))
+
+(test "aead-decrypt-rejects-tampered-aad"
+  (let a (_cc_arena)
+    (let k (w-from-hex a "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+      (let n (w-from-hex a "070000004041424344454647")
+        (let aad (w-from-hex a "50515253c0c1c2c3c4c5c6c7")
+          (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+            (let sealed (aead-encrypt a k n aad 12 pt 114)
+              (begin
+                (w-set aad 0 0)
+                (assert-true (option-is-none (aead-decrypt a k n aad 12 sealed 114)))))))))))
+
+(test "aead-pad16-boundaries"
+  (begin
+    (assert-equal (aead-pad16 0) 0)
+    (assert-equal (aead-pad16 1) 15)
+    (assert-equal (aead-pad16 16) 0)
+    (assert-equal (aead-pad16 17) 15)))
+
+(run-tests)

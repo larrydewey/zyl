@@ -1,0 +1,50 @@
+; === Zyl Standard Library — System Entropy ===
+; Module: math/rand/crypto
+; Provides: SystemRng — cryptographically secure random bytes
+;
+; Every call goes to the kernel (getrandom(2) on Linux, /dev/urandom
+; otherwise; see zyl_random_fill in runtime/actor_runtime.c). There is
+; no userspace pool, no buffer and no internal state, which makes this
+; fork-safe by construction: a forked child shares no buffered bytes
+; with its parent, because there are none. That is the failure mode
+; behind a long list of duplicate-key incidents, and the cheapest way
+; to be immune to it is to not hold state at all.
+;
+; Failure is REPORTED, never papered over: if entropy cannot be
+; obtained the fill functions return -1 and the convenience wrappers
+; return None. A generator that silently returns zeros on failure is
+; worse than one that stops, because the caller proceeds to build keys
+; out of the zeros.
+
+(use core/core)
+(use core/option)
+(use math/bits)
+(use math/words)
+(use math/rand/rand)
+
+; Fill `n` bytes (one per word) at `out` with kernel entropy.
+; Returns the byte count, or -1 on failure.
+; Returns: Int
+(defn sysrng-fill ((out Int) (n Int))
+  (ffi-call "zyl_random_words" out n 1000))
+
+; A fresh array of `n` random bytes, or None if entropy failed.
+; Returns: Option
+(defn sysrng-bytes ((arena Int) (n Int))
+  (let out (w-alloc arena n)
+    (if (= (sysrng-fill out n) n)
+      (Some out)
+      None)))
+
+; A random 64-bit value, or None if entropy failed.
+; Returns: Option
+(defn sysrng-next-u64 ((arena Int))
+  (let buf (w-alloc arena 8)
+    (if (= (sysrng-fill buf 8) 8)
+      (Some (rand-u64-from-bytes buf 0))
+      None)))
+
+; A random 32-byte key, the shape most of this library wants.
+; Returns: Option
+(defn sysrng-key32 ((arena Int))
+  (sysrng-bytes arena 32))

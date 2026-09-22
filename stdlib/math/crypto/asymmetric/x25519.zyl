@@ -1,0 +1,283 @@
+; === Zyl Standard Library — X25519 ===
+; Module: math/crypto/asymmetric/x25519
+; Provides: X25519 Diffie-Hellman (RFC 7748)
+;
+; The Montgomery ladder of RFC 7748 s5, running over the generic
+; Montgomery field arithmetic in math/bignum rather than a hand-written
+; 2^255-19 representation. That costs speed -- a specialized 10-limb
+; field would be several times faster -- and buys the property that
+; matters more here: every field operation is code that is already
+; exercised and verified on its own, instead of a second, bespoke,
+; carry-chain implementation whose bugs would be silent.
+;
+; Constant-time throughout: the ladder performs the identical sequence
+; of field operations for every scalar bit, the two conditional swaps
+; are masked, and the final inversion is a fixed exponentiation by
+; p-2 (Fermat) rather than a variable-time extended Euclid.
+;
+; Scalar clamping (RFC 7748 s5): the low three bits are cleared, bit
+; 254 is set and bit 255 cleared. Clearing the low bits puts the scalar
+; in the prime-order subgroup, which is what makes the small-subgroup
+; and low-order-point attacks harmless; setting bit 254 fixes the
+; scalar's length so the ladder always runs the same number of
+; iterations.
+;
+; Low-order inputs: the RFC specifies that an all-zero output MAY be
+; rejected, and `x25519-checked` does so. An all-zero shared secret
+; means the peer sent a low-order point, which forces a known key --
+; accepting it silently is the vulnerability.
+
+(use core/core)
+(use core/option)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+(use math/bignum/montgomery)
+(use math/bignum/modular)
+
+; ===========================================================================
+; FIELD SETUP — p = 2^255 - 19
+; ===========================================================================
+
+; Limbs needed for a 255-bit field element (24 bits each).
+; Returns: Int
+(defn x25519-limbs () 11)
+
+; The prime 2^255 - 19, as an 11-limb Nat. Built by subtracting 19 from
+; 2^255 rather than written out as limbs, so the value is checkable by
+; eye against its definition.
+; Returns: Int
+(defn x25519-p ((arena Int))
+  (let p (bn-alloc arena 11)
+    (let nineteen (bn-alloc arena 11)
+      (begin
+        (bn-zero p 11)
+        ; 2^255: bit 255 is bit 15 of limb 10 (10*24 = 240, 240+15 = 255).
+        (w-set p 10 32768)
+        (bn-set-small nineteen 11 19)
+        (bn-sub p p nineteen 11)
+        p))))
+
+; Decode 32 little-endian bytes as a field element, clearing the top
+; bit as RFC 7748 s5 requires of a received u-coordinate.
+; Returns: Int
+(defn x25519-decode-u ((arena Int) (bytes Int))
+  (let be (w-alloc arena 32)
+    (let out (bn-alloc arena 11)
+      (begin
+        (for (i 0) (< i 32)
+          (begin (w-set be i (w-get bytes (- 31 i))) (set! i (+ i 1))))
+        (w-set be 0 (bit-and (w-get be 0) 127))
+        (bn-from-bytes-be out 11 be 32)
+        out))))
+
+; Encode a field element as 32 little-endian bytes.
+; Returns: Int
+(defn x25519-encode ((arena Int) (v Int))
+  (let be (w-alloc arena 32)
+    (let out (w-alloc arena 32)
+      (begin
+        (bn-to-bytes-be be 32 v 11)
+        (for (i 0) (< i 32)
+          (begin (w-set out i (w-get be (- 31 i))) (set! i (+ i 1))))
+        out))))
+
+; Clamp a 32-byte scalar in place (RFC 7748 s5).
+; Returns: Int
+(defn x25519-clamp ((k Int))
+  (begin
+    (w-set k 0 (bit-and (w-get k 0) 248))
+    (w-set k 31 (bit-and (w-get k 31) 127))
+    (w-set k 31 (bit-or (w-get k 31) 64))
+    k))
+
+; Bit `i` of a little-endian 32-byte scalar.
+; Returns: Int
+(defn x25519-scalar-bit ((k Int) (i Int))
+  (bit-and (shr (w-get k (/ i 8)) (% i 8)) 1))
+
+; ===========================================================================
+; LADDER
+;
+; State is five Montgomery-domain field elements (x2, z2, x3, z3 and
+; the input x1), each an 11-limb Nat. They are passed as one array of
+; pointers would be in a language with structs; here each is its own
+; allocation and the step function takes them explicitly.
+; ===========================================================================
+
+; The five working values live in one array of five 11-limb slots, so
+; the whole ladder state is a single allocation: slot i starts at
+; i * 11 words.
+; Returns: Int
+(defn x25519-slot ((st Int) (i Int))
+  (+ st (* (* i 11) 8)))
+
+; Conditional swap of (x2, z2) with (x3, z3).
+; Returns: Int
+(defn x25519-cswap ((arena Int) (st Int) (b Int))
+  (begin
+    (mont-cswap arena (x25519-slot st 0) (x25519-slot st 2) 11 b)
+    (mont-cswap arena (x25519-slot st 1) (x25519-slot st 3) 11 b)
+    0))
+
+; The arithmetic of one ladder step, with x2,z2 in slots 0,1 and
+; x3,z3 in slots 2,3.
+; Returns: Int
+(defn x25519-core ((arena Int) (st Int) (x1 Int) (p Int) (n0 Int) (a24 Int))
+  (let a (bn-alloc arena 11)
+    (let b (bn-alloc arena 11)
+      (let c (bn-alloc arena 11)
+        (let d (bn-alloc arena 11)
+          (begin
+            (mod-add arena a (x25519-slot st 0) (x25519-slot st 1) p 11)
+            (mod-sub arena b (x25519-slot st 0) (x25519-slot st 1) p 11)
+            (mod-add arena c (x25519-slot st 2) (x25519-slot st 3) p 11)
+            (mod-sub arena d (x25519-slot st 2) (x25519-slot st 3) p 11)
+            (x25519-core2 arena st x1 p n0 a24 a b c d)))))))
+
+; Returns: Int
+(defn x25519-core2 ((arena Int) (st Int) (x1 Int) (p Int) (n0 Int) (a24 Int) (a Int) (b Int) (c Int) (d Int))
+  (let aa (bn-alloc arena 11)
+    (let bb (bn-alloc arena 11)
+      (let da (bn-alloc arena 11)
+        (let cb (bn-alloc arena 11)
+          (begin
+            (mont-mul arena aa a a p 11 n0)
+            (mont-mul arena bb b b p 11 n0)
+            (mont-mul arena da d a p 11 n0)
+            (mont-mul arena cb c b p 11 n0)
+            (x25519-core3 arena st x1 p n0 a24 aa bb da cb)))))))
+
+; Returns: Int
+(defn x25519-core3 ((arena Int) (st Int) (x1 Int) (p Int) (n0 Int) (a24 Int) (aa Int) (bb Int) (da Int) (cb Int))
+  (let e (bn-alloc arena 11)
+    (let t1 (bn-alloc arena 11)
+      (let t2 (bn-alloc arena 11)
+        (let t3 (bn-alloc arena 11)
+          (begin
+            (mod-sub arena e aa bb p 11)
+            (mod-add arena t1 da cb p 11)
+            (mod-sub arena t2 da cb p 11)
+            (mont-mul arena (x25519-slot st 2) t1 t1 p 11 n0)
+            (mont-mul arena t3 t2 t2 p 11 n0)
+            (mont-mul arena (x25519-slot st 3) t3 x1 p 11 n0)
+            (mont-mul arena (x25519-slot st 0) aa bb p 11 n0)
+            (x25519-z2 arena st p n0 a24 e aa)))))))
+
+; z2 = E * (AA + a24 * E)
+; Returns: Int
+(defn x25519-z2 ((arena Int) (st Int) (p Int) (n0 Int) (a24 Int) (e Int) (aa Int))
+  (let t (bn-alloc arena 11)
+    (begin
+      (mont-mul arena t e a24 p 11 n0)
+      (mod-add arena t t aa p 11)
+      (mont-mul arena (x25519-slot st 1) e t p 11 n0)
+      0)))
+
+; ===========================================================================
+; TOP LEVEL
+; ===========================================================================
+
+; X25519(scalar, u-coordinate). Both inputs are 32-byte little-endian
+; arrays; the result is a fresh 32-byte array. The scalar is clamped
+; into a copy, so the caller's array is not modified.
+; Returns: Int
+(defn x25519 ((arena Int) (scalar Int) (upoint Int))
+  (let k (w-copy (w-alloc arena 32) scalar 32)
+    (let p (x25519-p arena)
+      (let n0 (mont-n0 p)
+        (let r2 (mont-r2 arena p 11)
+          (begin
+            (x25519-clamp k)
+            (x25519-run arena k upoint p n0 r2)))))))
+
+; Returns: Int
+(defn x25519-run ((arena Int) (k Int) (upoint Int) (p Int) (n0 Int) (r2 Int))
+  (let st (w-alloc arena 55)
+    (let x1 (bn-alloc arena 11)
+      (let one (mont-one arena p 11 n0 r2)
+        (let a24 (x25519-a24 arena p n0 r2)
+          (begin
+            (mont-to arena x1 (x25519-decode-u arena upoint) p 11 n0 r2)
+            (bn-copy (x25519-slot st 0) one 11)
+            (bn-zero (x25519-slot st 1) 11)
+            (bn-copy (x25519-slot st 2) x1 11)
+            (bn-copy (x25519-slot st 3) one 11)
+            (x25519-ladder arena st k x1 p n0 a24)
+            (x25519-finish arena st p n0 one)))))))
+
+; 121665 in Montgomery form, the curve constant (A-2)/4.
+; Returns: Int
+(defn x25519-a24 ((arena Int) (p Int) (n0 Int) (r2 Int))
+  (let v (bn-alloc arena 11)
+    (let out (bn-alloc arena 11)
+      (begin
+        (bn-zero v 11)
+        (w-set v 0 (bit-and 121665 16777215))
+        (w-set v 1 (bit-and (shr 121665 24) 16777215))
+        (mont-to arena out v p 11 n0 r2)
+        out))))
+
+; The 255 ladder iterations, most significant scalar bit first. The
+; conditional-swap bookkeeping follows RFC 7748: the swap flag carries
+; the XOR of successive bits so that only one swap happens per step.
+; Returns: Int
+(defn x25519-ladder ((arena Int) (st Int) (k Int) (x1 Int) (p Int) (n0 Int) (a24 Int))
+  (x25519-ladder-loop arena st k x1 p n0 a24 254 0))
+
+; Returns: Int
+(defn x25519-ladder-loop ((arena Int) (st Int) (k Int) (x1 Int) (p Int) (n0 Int) (a24 Int) (t Int) (swap Int))
+  (if (< t 0)
+    (begin
+      (x25519-cswap arena st swap)
+      0)
+    (let kt (x25519-scalar-bit k t)
+      (begin
+        (x25519-cswap arena st (bit-xor swap kt))
+        (x25519-core arena st x1 p n0 a24)
+        (x25519-ladder-loop arena st k x1 p n0 a24 (- t 1) kt)))))
+
+; x2 * z2^(p-2), converted out of Montgomery form and encoded.
+; Returns: Int
+(defn x25519-finish ((arena Int) (st Int) (p Int) (n0 Int) (one Int))
+  (let e (bn-alloc arena 11)
+    (let two (bn-alloc arena 11)
+      (let zinv (bn-alloc arena 11)
+        (let res (bn-alloc arena 11)
+          (begin
+            (bn-set-small two 11 2)
+            (bn-sub e p two 11)
+            (mont-exp-form arena zinv (x25519-slot st 1) e 255 p 11 n0 one)
+            (mont-mul arena res (x25519-slot st 0) zinv p 11 n0)
+            (mont-from arena res res p 11 n0)
+            (x25519-encode arena res)))))))
+
+; The RFC 7748 base point u = 9.
+; Returns: Int
+(defn x25519-basepoint ((arena Int))
+  (let b (w-alloc arena 32)
+    (begin
+      (w-set b 0 9)
+      b)))
+
+; The public key for a secret scalar: X25519(scalar, 9).
+; Returns: Int
+(defn x25519-public ((arena Int) (scalar Int))
+  (x25519 arena scalar (x25519-basepoint arena)))
+
+; X25519 with the all-zero-output check RFC 7748 s6.1 allows. An
+; all-zero shared secret means the peer supplied a low-order point and
+; forced the result; returning None is the only safe response.
+; Returns: Option
+(defn x25519-checked ((arena Int) (scalar Int) (upoint Int))
+  (let out (x25519 arena scalar upoint)
+    (if (= (ct-is-zero (x25519-or-acc out 0 0)) 1)
+      None
+      (Some out))))
+
+; Returns: Int
+(defn x25519-or-acc ((out Int) (i Int) (acc Int))
+  (if (>= i 32)
+    acc
+    (x25519-or-acc out (+ i 1) (bit-or acc (w-get out i)))))

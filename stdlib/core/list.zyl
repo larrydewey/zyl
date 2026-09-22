@@ -30,6 +30,45 @@
     (Cons w4x rest rest)
     (Nil None)))
 
+; Total tail: Nil for the empty list rather than list-cdr's None, so a
+; chain of tails type-checks as List all the way down (list-cdr's Cons
+; arm yields the tail itself, a List, while its Nil arm yields None --
+; fine for a single "is there a tail" question, not composable).
+(defn list-rest (xs)
+  (match xs
+    (Cons w6x rest rest)
+    (Nil Nil)))
+
+; ---------------------------------------------------------------------------
+; LISP-TRADITIONAL ACCESSOR NAMES
+;
+; Plain functions, not macros: each takes exactly one argument and
+; evaluates it exactly once, so a macro would buy no evaluation-order
+; or syntax-capture advantage, and a function can be passed to a
+; higher-order function (map/filter) where a macro name cannot.
+; ---------------------------------------------------------------------------
+
+; First element as Option<T>. Alias of list-car.
+(defn car (xs)
+  (list-car xs))
+
+; Tail as returned by list-cdr (None for the empty list). Use list-rest
+; when the result must always be a List.
+(defn cdr (xs)
+  (list-cdr xs))
+
+; Second element as Option<T>.
+(defn cadr (xs)
+  (list-car (list-rest xs)))
+
+; Third element as Option<T>.
+(defn caddr (xs)
+  (list-car (list-rest (list-rest xs))))
+
+; Tail of the tail, total (Nil when shorter than two elements).
+(defn cddr (xs)
+  (list-rest (list-rest xs)))
+
 ; Length
 (defn list-length (xs)
   (match xs

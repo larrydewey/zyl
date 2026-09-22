@@ -1,0 +1,101 @@
+; Cross-module integration: a miniature authenticated key exchange,
+; exercising every layer of stdlib/math together rather than one
+; primitive at a time.
+;
+; The flow is the one a real protocol uses:
+;   1. each side derives an X25519 public key from its private scalar
+;   2. both sides compute the same shared secret
+;   3. HKDF turns that secret into a directional traffic key, with a
+;      label that keeps the two directions from colliding
+;   4. ChaCha20-Poly1305 protects a message under that key
+;   5. Ed25519 signs the transcript, and the other side verifies it
+;
+; Every expected value is derived inside the test from the other side's
+; computation, so this checks that the pieces AGREE -- the individual
+; known-answer vectors live in tests/regression/math-*.zyl.
+
+(use math/crypto/asymmetric/x25519)
+(use math/crypto/asymmetric/ed25519)
+(use math/crypto/kdf/hkdf)
+(use math/crypto/symmetric/chacha20poly)
+(use math/hash/sha2)
+(use math/words)
+(use allocator/allocator)
+(use core/option)
+
+(defn _mp_arena () (arena-create 0))
+
+; Alice's and Bob's fixed private scalars (fixed so the test is
+; reproducible; a real peer draws these from math/rand/crypto).
+(defn _mp_alice_priv ((a Int))
+  (w-from-hex a "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"))
+
+(defn _mp_bob_priv ((a Int))
+  (w-from-hex a "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb"))
+
+(test "integration-x25519-agreement"
+  (let a (_mp_arena)
+    (let apub (x25519-public a (_mp_alice_priv a))
+      (let bpub (x25519-public a (_mp_bob_priv a))
+        (let s1 (x25519 a (_mp_alice_priv a) bpub)
+          (let s2 (x25519 a (_mp_bob_priv a) apub)
+            (assert-equal (w-hex-bytes s1 32) (w-hex-bytes s2 32))))))))
+
+(test "integration-hkdf-separates-directions"
+  (let a (_mp_arena)
+    (let bpub (x25519-public a (_mp_bob_priv a))
+      (let shared (x25519 a (_mp_alice_priv a) bpub)
+        (let salt (w-from-string a "zyl-integration-salt")
+          (let c2s (hkdf a shared 32 salt 20 (w-from-string a "client->server") 14 32)
+            (let s2c (hkdf a shared 32 salt 20 (w-from-string a "server->client") 14 32)
+              (assert-false (str-eq-bool (w-hex-bytes c2s 32) (w-hex-bytes s2c 32))))))))))
+
+(defn str-eq-bool ((x String) (y String))
+  (= x y))
+
+(test "integration-aead-under-derived-key"
+  (let a (_mp_arena)
+    (let bpub (x25519-public a (_mp_bob_priv a))
+      (let shared (x25519 a (_mp_alice_priv a) bpub)
+        (let key (hkdf a shared 32 (w-from-string a "zyl-integration-salt") 20 (w-from-string a "client->server") 14 32)
+          (let nonce (w-from-hex a "000000000000000000000001")
+            (let aad (w-from-string a "hdr")
+              (let pt (w-from-string a "the attack begins at dawn")
+                (let sealed (aead-encrypt a key nonce aad 3 pt 25)
+                  (assert-equal
+                    (w-hex-bytes (option-unwrap-or (aead-decrypt a key nonce aad 3 sealed 25) 0) 25)
+                    (w-hex-bytes pt 25)))))))))))
+
+(test "integration-aead-rejects-wrong-direction-key"
+  (let a (_mp_arena)
+    (let bpub (x25519-public a (_mp_bob_priv a))
+      (let shared (x25519 a (_mp_alice_priv a) bpub)
+        (let k1 (hkdf a shared 32 (w-from-string a "zyl-integration-salt") 20 (w-from-string a "client->server") 14 32)
+          (let k2 (hkdf a shared 32 (w-from-string a "zyl-integration-salt") 20 (w-from-string a "server->client") 14 32)
+            (let nonce (w-from-hex a "000000000000000000000001")
+              (let aad (w-from-string a "hdr")
+                (let pt (w-from-string a "the attack begins at dawn")
+                  (let sealed (aead-encrypt a k1 nonce aad 3 pt 25)
+                    (assert-true (option-is-none (aead-decrypt a k2 nonce aad 3 sealed 25)))))))))))))
+
+; The transcript signature binds both public keys and the ciphertext,
+; which is what stops an attacker from swapping in their own key share.
+(test "integration-ed25519-signed-transcript"
+  (let a (_mp_arena)
+    (let seed (w-from-hex a "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+      (let apub (x25519-public a (_mp_alice_priv a))
+        (let transcript (sha256-bytes a apub 32)
+          (let sig (ed25519-sign a seed transcript 32)
+            (assert-true (ed25519-verify a (ed25519-public-key a seed) transcript 32 sig))))))))
+
+(test "integration-ed25519-rejects-swapped-transcript"
+  (let a (_mp_arena)
+    (let seed (w-from-hex a "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+      (let apub (x25519-public a (_mp_alice_priv a))
+        (let bpub (x25519-public a (_mp_bob_priv a))
+          (let transcript (sha256-bytes a apub 32)
+            (let other (sha256-bytes a bpub 32)
+              (let sig (ed25519-sign a seed transcript 32)
+                (assert-false (ed25519-verify a (ed25519-public-key a seed) other 32 sig))))))))))
+
+(run-tests)

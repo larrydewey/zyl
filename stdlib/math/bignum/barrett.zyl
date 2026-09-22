@@ -1,0 +1,112 @@
+; === Zyl Standard Library — Barrett Reduction ===
+; Module: math/bignum/barrett
+; Provides: constant-time reduction of a wide value modulo a fixed
+;           modulus, using a precomputed reciprocal
+;
+; Montgomery arithmetic (math/bignum/montgomery) handles every
+; reduction INSIDE a multiplication chain, but some values arrive from
+; outside one: a hash output that must be reduced modulo a group order,
+; a scalar read off the wire. Those are wider than the modulus and are
+; not in Montgomery form, and reducing them needs a division -- which
+; is exactly what Barrett's method replaces with two multiplications
+; and a shift, given a reciprocal mu = floor(b^2k / m) computed once.
+;
+; Constant-time: every step is a fixed-size multiply, shift or masked
+; subtraction. The textbook algorithm ends with "while r >= m: r -= m",
+; which runs at most twice; that loop is unrolled into exactly two
+; masked conditional subtractions here, so the running time does not
+; depend on how many were actually needed.
+;
+; The caller supplies mu. It depends only on the modulus, so it is a
+; compile-time constant of each curve or group, not something to
+; recompute per operation.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+
+; out = x mod m, where x has 2k limbs, m has k limbs, and mu has k+1
+; limbs and equals floor(2^(24*2k) / m).
+; Returns: Int
+(defn barrett-reduce ((arena Int) (out Int) (x Int) (m Int) (mu Int) (k Int))
+  (let q1 (bn-alloc arena (+ k 1))
+    (let q2 (bn-alloc arena (* 2 (+ k 2)))
+      (let q3 (bn-alloc arena (+ k 1))
+        (begin
+          (barrett-shift-limbs q1 x (- k 1) (+ k 1))
+          (barrett-mul-wide arena q2 q1 mu (+ k 1))
+          (barrett-shift-limbs q3 q2 (+ k 1) (+ k 1))
+          (barrett-finish arena out x m q3 k))))))
+
+; dst[0..n) = src[start .. start+n), i.e. a shift down by whole limbs.
+; Returns: Int
+(defn barrett-shift-limbs ((dst Int) (src Int) (start Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst i (w-get src (+ start i))) (set! i (+ i 1))))
+    dst))
+
+; A plain schoolbook multiply of two n-limb values into 2n limbs,
+; reusing bignum's own routine.
+; Returns: Int
+(defn barrett-mul-wide ((arena Int) (out Int) (a Int) (b Int) (n Int))
+  (bn-mul out a b n))
+
+; r = (x mod b^(k+1)) - (q3 * m mod b^(k+1)), corrected into [0, m).
+; Returns: Int
+(defn barrett-finish ((arena Int) (out Int) (x Int) (m Int) (q3 Int) (k Int))
+  (let w (+ k 1)
+    (let r1 (bn-alloc arena w)
+      (let r2full (bn-alloc arena (* 2 w))
+        (let r2 (bn-alloc arena w)
+          (begin
+            (barrett-shift-limbs r1 x 0 w)
+            (barrett-mul-mod-pow arena r2full q3 m w)
+            (barrett-shift-limbs r2 r2full 0 w)
+            (bn-sub r1 r1 r2 w)
+            (barrett-correct arena out r1 m k)))))))
+
+; q3 * m, truncated to the low w limbs by the caller. m has k limbs and
+; q3 has w = k+1, so the operands are zero-extended to a common width
+; before the schoolbook multiply.
+; Returns: Int
+(defn barrett-mul-mod-pow ((arena Int) (out Int) (q3 Int) (m Int) (w Int))
+  (let mm (bn-alloc arena w)
+    (begin
+      (bn-zero mm w)
+      (barrett-copy-into mm m (- w 1))
+      (bn-mul out q3 mm w)
+      out)))
+
+; Returns: Int
+(defn barrett-copy-into ((dst Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst i (w-get src i)) (set! i (+ i 1))))
+    dst))
+
+; Two masked conditional subtractions bring r below m -- the textbook
+; bound on how many the estimate can be off by. Both always execute.
+; Returns: Int
+(defn barrett-correct ((arena Int) (out Int) (r Int) (m Int) (k Int))
+  (let w (+ k 1)
+    (let mm (bn-alloc arena w)
+      (begin
+        (bn-zero mm w)
+        (barrett-copy-into mm m k)
+        (barrett-sub-once arena r mm w)
+        (barrett-sub-once arena r mm w)
+        (barrett-copy-into out r k)
+        out))))
+
+; r = r - m when r >= m, unchanged otherwise; the subtraction always
+; runs and only its write-back is masked.
+; Returns: Int
+(defn barrett-sub-once ((arena Int) (r Int) (m Int) (w Int))
+  (let scratch (bn-alloc arena w)
+    (let borrow (bn-sub scratch r m w)
+      (begin
+        (bn-cond-copy r scratch w (ct-mask (- 1 borrow)))
+        0))))

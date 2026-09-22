@@ -18,6 +18,7 @@ static void* g_pin_arena = NULL;
 
 #include <sys/resource.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <pthread.h>
 
 /* Run `fn` on a worker thread with a very large stack and return its
@@ -1340,7 +1341,282 @@ long long zyl_variant_field(long long ptr, long long idx) {
 
 long long zyl_pin_alloc(long long size) {
     if (!g_pin_arena || size <= 0) return 0;
-    return zyl_arena_alloc((long long)(size_t)g_pin_arena, size);
+    long long p = zyl_arena_alloc((long long)(size_t)g_pin_arena, size);
+    /* Pin means "this memory must not reach a swap file or a core
+       dump": an FFI callee holds a raw pointer to it for the duration
+       of the call, and anything pinned here is by construction the
+       kind of value (key material, a scalar, a buffer handed to C)
+       whose appearance in swap would outlive the process that owned
+       it. mlock is best-effort on purpose -- RLIMIT_MEMLOCK is 64 KiB
+       by default on many systems, so a hard failure here would turn a
+       hardening measure into a crash for ordinary FFI use. The pin
+       itself (a stable address for the callee) is correct either
+       way. */
+    if (p) zyl_mlock(p, size);
+    return p;
+}
+
+/* Best-effort page-locking of an address range. Page-granular, so it
+   rounds down to the containing page; overlapping calls are harmless
+   (mlock is idempotent per page). Returns 1 on success, 0 otherwise --
+   callers that genuinely require locked memory must check. */
+long long zyl_mlock(long long addr, long long len) {
+    if (!addr || len <= 0) return 0;
+    size_t page = (size_t)sysconf(_SC_PAGESIZE);
+    if (page == 0 || page == (size_t)-1) page = 4096;
+    size_t a = (size_t)addr;
+    size_t start = a & ~(page - 1);
+    size_t span = (a - start) + (size_t)len;
+    return mlock((void*)start, span) == 0 ? 1 : 0;
+}
+
+/* ==========================================================================
+   AES-NI (math/crypto/symmetric/aesgcm.zyl).
+
+   Hardware AES only. There is deliberately NO software fallback: a
+   portable AES implementation is a table lookup indexed by key-dependent
+   bytes, and those lookups leak the key through the data cache -- the
+   attack is old, practical, and the reason this library would rather
+   refuse to encrypt than encrypt insecurely. Callers ask
+   zyl_aesni_available() first and get an explicit failure if the CPU
+   cannot do it.
+
+   The AES-NI instructions themselves are constant-time by construction:
+   aesenc/aesenclast are fixed-latency, operate entirely in registers,
+   and touch no memory that depends on the key.
+
+   Byte buffers arrive in the math/words one-byte-per-8-byte-word form
+   the Zyl crypto library uses, and are packed/unpacked here so no Zyl
+   caller has to reason about two representations.
+   ========================================================================== */
+
+#if defined(__x86_64__)
+#include <immintrin.h>
+#include <cpuid.h>
+
+long long zyl_cpuid_features(void) {
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return 0;
+    long long f = 0;
+    if (ecx & (1u << 25)) f |= 1;  /* AES-NI   */
+    if (ecx & (1u << 1))  f |= 2;  /* PCLMULQDQ */
+    if (ecx & (1u << 19)) f |= 4;  /* SSE4.1   */
+    if (ecx & (1u << 28)) f |= 8;  /* AVX      */
+    return f;
+}
+
+long long zyl_aesni_available(void) { return (zyl_cpuid_features() & 1) ? 1 : 0; }
+
+/* Pack 16 one-byte-per-word Ints into a 16-byte block. */
+static void zyl_words_to_block(long long base, unsigned char* out) {
+    const long long* w = (const long long*)(size_t)base;
+    for (int i = 0; i < 16; i++) out[i] = (unsigned char)(w[i] & 0xff);
+}
+
+static void zyl_block_to_words(const unsigned char* in, long long base) {
+    long long* w = (long long*)(size_t)base;
+    for (int i = 0; i < 16; i++) w[i] = (long long)in[i];
+}
+
+/* AES-256 expands two words per round constant: the even step mixes in
+   aeskeygenassist's rotated word (0xff lane), the odd step its
+   un-rotated SubWord (0xaa lane). The round constant must be a
+   compile-time immediate, which is why both steps are macros unrolled
+   at each index rather than a loop. */
+#define ZYL_AES_EXPAND_256_EVEN(rk, i, rcon) \
+    do { \
+        __m128i t = _mm_aeskeygenassist_si128(rk[i - 1], rcon); \
+        t = _mm_shuffle_epi32(t, 0xff); \
+        __m128i k = rk[i - 2]; \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        rk[i] = _mm_xor_si128(k, t); \
+    } while (0)
+
+#define ZYL_AES_EXPAND_256_ODD(rk, i) \
+    do { \
+        __m128i t = _mm_aeskeygenassist_si128(rk[i - 1], 0x00); \
+        t = _mm_shuffle_epi32(t, 0xaa); \
+        __m128i k = rk[i - 2]; \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        rk[i] = _mm_xor_si128(k, t); \
+    } while (0)
+
+#define ZYL_AES_EXPAND_128(rk, i, rcon) \
+    do { \
+        __m128i t = _mm_aeskeygenassist_si128(rk[i - 1], rcon); \
+        t = _mm_shuffle_epi32(t, 0xff); \
+        __m128i k = rk[i - 1]; \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        k = _mm_xor_si128(k, _mm_slli_si128(k, 4)); \
+        rk[i] = _mm_xor_si128(k, t); \
+    } while (0)
+
+__attribute__((target("aes,sse4.1")))
+static int zyl_aes_expand(const unsigned char* key, int keybytes, __m128i* rk) {
+    if (keybytes == 16) {
+        rk[0] = _mm_loadu_si128((const __m128i*)key);
+        ZYL_AES_EXPAND_128(rk, 1, 0x01); ZYL_AES_EXPAND_128(rk, 2, 0x02);
+        ZYL_AES_EXPAND_128(rk, 3, 0x04); ZYL_AES_EXPAND_128(rk, 4, 0x08);
+        ZYL_AES_EXPAND_128(rk, 5, 0x10); ZYL_AES_EXPAND_128(rk, 6, 0x20);
+        ZYL_AES_EXPAND_128(rk, 7, 0x40); ZYL_AES_EXPAND_128(rk, 8, 0x80);
+        ZYL_AES_EXPAND_128(rk, 9, 0x1b); ZYL_AES_EXPAND_128(rk, 10, 0x36);
+        return 10;
+    }
+    if (keybytes == 32) {
+        rk[0] = _mm_loadu_si128((const __m128i*)key);
+        rk[1] = _mm_loadu_si128((const __m128i*)(key + 16));
+        ZYL_AES_EXPAND_256_EVEN(rk, 2, 0x01);  ZYL_AES_EXPAND_256_ODD(rk, 3);
+        ZYL_AES_EXPAND_256_EVEN(rk, 4, 0x02);  ZYL_AES_EXPAND_256_ODD(rk, 5);
+        ZYL_AES_EXPAND_256_EVEN(rk, 6, 0x04);  ZYL_AES_EXPAND_256_ODD(rk, 7);
+        ZYL_AES_EXPAND_256_EVEN(rk, 8, 0x08);  ZYL_AES_EXPAND_256_ODD(rk, 9);
+        ZYL_AES_EXPAND_256_EVEN(rk, 10, 0x10); ZYL_AES_EXPAND_256_ODD(rk, 11);
+        ZYL_AES_EXPAND_256_EVEN(rk, 12, 0x20); ZYL_AES_EXPAND_256_ODD(rk, 13);
+        ZYL_AES_EXPAND_256_EVEN(rk, 14, 0x40);
+        return 14;
+    }
+    return -1;
+}
+
+__attribute__((target("aes,sse4.1")))
+static void zyl_aes_encrypt_raw(const __m128i* rk, int rounds,
+                                const unsigned char* in, unsigned char* out) {
+    __m128i b = _mm_loadu_si128((const __m128i*)in);
+    b = _mm_xor_si128(b, rk[0]);
+    for (int i = 1; i < rounds; i++) b = _mm_aesenc_si128(b, rk[i]);
+    b = _mm_aesenclast_si128(b, rk[rounds]);
+    _mm_storeu_si128((__m128i*)out, b);
+}
+
+/* Encrypt ONE 16-byte block. `keybase`/`inbase`/`outbase` are
+   math/words byte arrays; `keybytes` is 16 or 32. Returns 1 on success,
+   0 when the CPU lacks AES-NI or the key size is unsupported.
+
+   The round keys live in a stack array that is wiped before returning:
+   they are as sensitive as the key itself, and leaving them in a stack
+   frame that later calls reuse is how key material ends up in a core
+   dump. */
+/* force_align_arg_pointer: the generated Zyl code does not guarantee the
+   16-byte stack alignment the SysV ABI requires at a call boundary, and
+   this function keeps __m128i values on its stack -- which the compiler
+   spills with aligned moves. Without the realignment in the prologue,
+   reaching this function through one call depth rather than another was
+   the difference between working and a SIGSEGV inside the key
+   expansion. The attribute makes the function independent of its
+   caller's alignment; it belongs here, at the FFI boundary, rather than
+   as an assumption about codegen. */
+__attribute__((target("aes,sse4.1")))
+__attribute__((force_align_arg_pointer))
+long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
+                                long long inbase, long long outbase) {
+    if (!zyl_aesni_available()) return 0;
+    if (keybytes != 16 && keybytes != 32) return 0;
+    unsigned char key[32], in[16], out[16];
+    __m128i rk[15];
+    long long* kw = (long long*)(size_t)keybase;
+    for (long long i = 0; i < keybytes; i++) key[i] = (unsigned char)(kw[i] & 0xff);
+    zyl_words_to_block(inbase, in);
+    int rounds = zyl_aes_expand(key, (int)keybytes, rk);
+    if (rounds < 0) return 0;
+    zyl_aes_encrypt_raw(rk, rounds, in, out);
+    zyl_block_to_words(out, outbase);
+    zyl_zeroize((long long)(size_t)rk, (long long)sizeof rk);
+    zyl_zeroize((long long)(size_t)key, (long long)sizeof key);
+    return 1;
+}
+
+#else /* not x86_64 */
+
+long long zyl_cpuid_features(void) { return 0; }
+long long zyl_aesni_available(void) { return 0; }
+long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
+                                long long inbase, long long outbase) {
+    (void)keybase; (void)keybytes; (void)inbase; (void)outbase;
+    return 0;
+}
+
+#endif
+
+/* ==========================================================================
+   System entropy (math/rand/crypto.zyl).
+
+   Writes `n` random BYTES as one-per-word Ints at `base`, matching the
+   math/words representation the Zyl crypto library uses everywhere, so
+   no separate packing step is needed on the Zyl side.
+
+   getrandom(2) is the right primitive: unlike reading /dev/urandom it
+   cannot fail because of a missing device node, an exhausted file
+   descriptor table or a chroot, and it blocks only until the pool is
+   initialized at boot. It is also inherently fork-safe -- every call
+   goes to the kernel, so a forked child cannot inherit and replay a
+   userspace buffer, which is the classic way a fork duplicates key
+   material. The /dev/urandom fallback exists for kernels older than
+   3.17 and returns the same bytes, with the same per-call freshness.
+
+   Returns the number of bytes written, or -1 if entropy could not be
+   obtained -- callers MUST check: silently returning zeros here would
+   be a catastrophic failure mode for key generation.
+   ========================================================================== */
+
+long long zyl_random_words(long long base, long long n) {
+    if (!base || n <= 0) return -1;
+    unsigned char buf[256];
+    long long* out = (long long*)(size_t)base;
+    long long done = 0;
+    while (done < n) {
+        size_t want = (size_t)(n - done);
+        if (want > sizeof(buf)) want = sizeof(buf);
+        long long got = zyl_random_fill((long long)(size_t)buf, (long long)want);
+        if (got != (long long)want) return -1;
+        for (size_t i = 0; i < want; i++) out[done + (long long)i] = (long long)buf[i];
+        done += (long long)want;
+    }
+    return done;
+}
+
+/* Fill `len` raw bytes at `addr`. Kept separate from zyl_random_words so
+   FFI callers that already hold a packed byte buffer (a ByteBuf, a C
+   struct being pinned) can use it directly. */
+long long zyl_random_fill(long long addr, long long len) {
+    if (!addr || len <= 0) return -1;
+    unsigned char* p = (unsigned char*)(size_t)addr;
+    long long done = 0;
+#if defined(__linux__) && defined(SYS_getrandom)
+    while (done < len) {
+        long r = syscall(SYS_getrandom, p + done, (size_t)(len - done), 0);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            break; /* fall through to the /dev/urandom path */
+        }
+        done += (long long)r;
+    }
+    if (done == len) return done;
+#endif
+    {
+        FILE* f = fopen("/dev/urandom", "rb");
+        if (!f) return -1;
+        size_t got = fread(p + done, 1, (size_t)(len - done), f);
+        fclose(f);
+        done += (long long)got;
+    }
+    return done == len ? done : -1;
+}
+
+/* Overwrite a range with zeros in a way the C compiler is not allowed
+   to delete. A plain memset before a free is dead-store-eliminated at
+   -O2 in every mainstream compiler, which is exactly how key material
+   survives in freed memory; writing through a volatile pointer keeps
+   the stores. Byte-at-a-time is deliberate -- it needs no assumptions
+   about alignment or length, and erasure is never on a hot path. */
+long long zyl_zeroize(long long addr, long long len) {
+    if (!addr || len <= 0) return 0;
+    volatile unsigned char* p = (volatile unsigned char*)(size_t)addr;
+    for (long long i = 0; i < len; i++) p[i] = 0;
+    return len;
 }
 
 /* ==========================================================================

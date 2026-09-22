@@ -1,0 +1,147 @@
+; === Zyl Standard Library — ChaCha20-Poly1305 AEAD ===
+; Module: math/crypto/symmetric/chacha20poly
+; Provides: RFC 8439 s2.8 authenticated encryption
+;
+; Encryption returns ciphertext with the 16-byte tag APPENDED, which is
+; the wire format every deployed protocol using this AEAD expects, and
+; which removes the chance of a caller pairing a ciphertext with the
+; wrong tag. Decryption returns Option: `None` for a failed tag check,
+; and it returns None WITHOUT decrypting -- releasing unverified
+; plaintext is the standard misuse of an AEAD, and an implementation
+; that decrypts first and checks afterwards invites callers to use the
+; plaintext they can already see.
+;
+; The one-time Poly1305 key is derived from ChaCha20 block 0 under the
+; message's own (key, nonce), so it differs per message as Poly1305's
+; one-time requirement demands, and payload encryption starts at block
+; counter 1.
+;
+; Nonce reuse breaks this construction completely: it repeats the
+; keystream AND repeats the Poly1305 key, which leaks r and allows
+; forgery. A 96-bit nonce is too small for random generation at high
+; volume; use a counter.
+
+(use core/core)
+(use core/option)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/crypto/symmetric/chacha20)
+(use math/crypto/symmetric/poly1305)
+
+; ===========================================================================
+; POLY1305 KEY DERIVATION
+; ===========================================================================
+
+; The first 32 bytes of ChaCha20 block 0 under (key, nonce)
+; (RFC 8439 s2.6). The remaining 32 bytes of that block are discarded.
+; Returns: Int
+(defn aead-poly-key ((arena Int) (key Int) (nonce Int))
+  (let blk (chacha20-block arena key nonce 0)
+    (let pk (w-alloc arena 32)
+      (begin
+        (for (i 0) (< i 32)
+          (begin (w-set pk i (w-get blk i)) (set! i (+ i 1))))
+        pk))))
+
+; ===========================================================================
+; MAC INPUT CONSTRUCTION
+; ===========================================================================
+
+; Bytes of zero padding needed to round `n` up to a 16-byte boundary.
+; Returns: Int
+(defn aead-pad16 ((n Int))
+  (let r (% n 16)
+    (if (= r 0) 0 (- 16 r))))
+
+; Total length of the Poly1305 input:
+;   aad || pad || ciphertext || pad || len(aad) || len(ciphertext)
+; Returns: Int
+(defn aead-mac-len ((aadlen Int) (ctlen Int))
+  (let a (+ aadlen (aead-pad16 aadlen))
+    (let c (+ ctlen (aead-pad16 ctlen))
+      (+ (+ a c) 16))))
+
+; Build that input. The two length fields are 64-bit little-endian and
+; are what stops an attacker shifting bytes between the associated data
+; and the ciphertext while keeping the concatenation identical.
+; Returns: Int
+(defn aead-mac-input ((arena Int) (aad Int) (aadlen Int) (ct Int) (ctlen Int))
+  (let total (aead-mac-len aadlen ctlen)
+    (let buf (w-alloc arena total)
+      (let capos (+ aadlen (aead-pad16 aadlen))
+        (begin
+          (w-copy buf aad aadlen)
+          (aead-copy-at buf capos ct ctlen)
+          (aead-put64 buf (- total 16) aadlen)
+          (aead-put64 buf (- total 8) ctlen)
+          buf)))))
+
+; Copy n bytes into dst starting at `off`.
+; Returns: Int
+(defn aead-copy-at ((dst Int) (off Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
+    0))
+
+; Write a 64-bit little-endian length.
+; Returns: Int
+(defn aead-put64 ((buf Int) (off Int) (v Int))
+  (begin
+    (for (i 0) (< i 8)
+      (begin
+        (w-set buf (+ off i) (bit-and (shr v (* 8 i)) 255))
+        (set! i (+ i 1))))
+    0))
+
+; ===========================================================================
+; ENCRYPT / DECRYPT
+; ===========================================================================
+
+; Encrypt and authenticate. Returns a byte array of `ptlen + 16` bytes:
+; the ciphertext followed by the tag.
+; Returns: Int
+(defn aead-encrypt ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (pt Int) (ptlen Int))
+  (let pk (aead-poly-key arena key nonce)
+    (let ct (chacha20-xor arena key nonce 1 pt ptlen)
+      (let macin (aead-mac-input arena aad aadlen ct ptlen)
+        (let tag (poly1305-mac arena pk macin (aead-mac-len aadlen ptlen))
+          (let out (w-alloc arena (+ ptlen 16))
+            (begin
+              (w-copy out ct ptlen)
+              (aead-copy-at out ptlen tag 16)
+              out)))))))
+
+; The tag Poly1305 would produce for this (key, nonce, aad, ciphertext).
+; Returns: Int
+(defn aead-expected-tag ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (ct Int) (ctlen Int))
+  (let pk (aead-poly-key arena key nonce)
+    (let macin (aead-mac-input arena aad aadlen ct ctlen)
+      (poly1305-mac arena pk macin (aead-mac-len aadlen ctlen)))))
+
+; Verify and decrypt a `ctlen + 16` byte sealed message (ciphertext
+; followed by its tag). Returns Some(plaintext bytes) or None.
+;
+; The tag is checked FIRST, with a constant-time comparison, and the
+; ChaCha20 pass runs only after it passes -- no unverified plaintext is
+; ever produced, let alone returned. The `if` on the verdict is the one
+; deliberate branch on a secret-derived value in this module, and it
+; reveals only the accept/reject bit the caller is about to learn
+; anyway.
+; Returns: Option
+(defn aead-decrypt ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (sealed Int) (ctlen Int))
+  (let expect (aead-expected-tag arena key nonce aad aadlen sealed ctlen)
+    (let given (aead-tag-of arena sealed ctlen)
+      (if (ct-eq-words-bool expect given 16)
+        (Some (chacha20-xor arena key nonce 1 sealed ctlen))
+        None))))
+
+; The trailing 16 tag bytes of a sealed message, as their own array.
+; Returns: Int
+(defn aead-tag-of ((arena Int) (sealed Int) (ctlen Int))
+  (let t (w-alloc arena 16)
+    (begin
+      (for (i 0) (< i 16)
+        (begin (w-set t i (w-get sealed (+ ctlen i))) (set! i (+ i 1))))
+      t)))

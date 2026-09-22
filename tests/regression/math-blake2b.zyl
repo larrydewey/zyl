@@ -1,0 +1,26 @@
+; BLAKE2b Known-Answer Tests (RFC 7693 / hashlib cross-check).
+
+(use math/hash/blake2b)
+(use math/words)
+(use allocator/allocator)
+
+(defn _b2_arena () (arena-create 0))
+
+(test "blake2b-empty"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "" 64) "786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce"))
+(test "blake2b-abc"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "abc" 64) "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"))
+(test "blake2b-abc-32"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "abc" 32) "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"))
+(test "blake2b-len-127"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" 64) "94596b9d6199c807c40ae1a935f3633ba5a8dd5655f7f1bd44f5285b1ce8dbb0054771eba409539df85a963296d28788807105153c90fa3ec3d761228e90f8b8"))
+(test "blake2b-len-128"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" 64) "fc6c71f688f43ea7d60817478808f3cac753e61571865c95adbc2d9122c943a76b92c2cb1047ef3fe7bf6e436ec1d0a99a9e5b216780bf7fed9d7ca91d3a8f3b"))
+(test "blake2b-len-129"
+  (assert-equal (blake2b-hex-of-string (_b2_arena) "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" 64) "55e6e0eb418149a8af92fd9ddc99254781b2f522a131b4f4d984404b71a00e1167b8124d5dcddd4c6977b299392335d6edd303da6d344d74bbef2d38101b232b"))
+(test "blake2b-keyed"
+  (let a (_b2_arena)
+    (let msg (w-from-string a "abc")
+      (let key (w-from-hex a "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b")
+        (assert-equal (w-hex-bytes (blake2b a msg 3 key 32 64) 64) "2ca403f5c2ab8f47e1168b8432648cd87dfb5fb846204c7ff0ee4783926e74bffa97610aa84b22b0ca0d6a76171702b863c8c6cd97f3accd06d92b2d9ad571f8")))))
+(run-tests)

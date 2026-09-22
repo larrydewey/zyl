@@ -1,0 +1,70 @@
+; === Zyl Standard Library — HMAC-SHA256 ===
+; Module: math/hash/hmac
+; Provides: HMAC-SHA256 (RFC 2104 / FIPS 198-1)
+;
+; HMAC(K, m) = H((K0 ^ opad) || H((K0 ^ ipad) || m)), where K0 is the
+; key hashed down if it is longer than the 64-byte block and zero-padded
+; to the block otherwise.
+;
+; Constant-time in the message and in the key: the only control flow
+; that depends on either is the "key longer than a block" test, and a
+; key's LENGTH is a structural property the attacker already knows (it
+; is fixed by the protocol), not a secret bit of the key itself.
+; Verification uses the constant-time comparison rather than `=` on the
+; two tags -- a byte-at-a-time comparison that stops at the first
+; difference is how HMAC verification gets broken in practice.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/hash/sha2)
+
+; SHA-256's block size in bytes. The PADDING block, not the digest.
+; Returns: Int
+(defn hmac-block-len () 64)
+
+; The 64-byte key block K0: the key itself when it fits, its digest
+; when it does not, zero-padded either way.
+; Returns: Int
+(defn hmac-key-block ((arena Int) (key Int) (keylen Int))
+  (let k0 (w-alloc arena 64)
+    (if (> keylen 64)
+      (w-copy k0 (sha256-bytes arena key keylen) 32)
+      (w-copy k0 key keylen))))
+
+; k0 XOR a repeated pad byte, as a fresh 64-byte array.
+; Returns: Int
+(defn hmac-xor-pad ((arena Int) (k0 Int) (pad Int))
+  (let out (w-alloc arena 64)
+    (begin
+      (for (i 0) (< i 64)
+        (begin (w-set out i (bit-xor (w-get k0 i) pad)) (set! i (+ i 1))))
+      out)))
+
+; Concatenate two byte arrays into a fresh one.
+; Returns: Int
+(defn hmac-concat ((arena Int) (a Int) (alen Int) (b Int) (blen Int))
+  (let out (w-alloc arena (+ alen blen))
+    (begin
+      (w-copy out a alen)
+      (for (i 0) (< i blen)
+        (begin (w-set out (+ alen i) (w-get b i)) (set! i (+ i 1))))
+      out)))
+
+; HMAC-SHA256 tag (32 bytes).
+; Returns: Int
+(defn hmac-sha256 ((arena Int) (key Int) (keylen Int) (msg Int) (msglen Int))
+  (let k0 (hmac-key-block arena key keylen)
+    (let inner-key (hmac-xor-pad arena k0 54)
+      (let outer-key (hmac-xor-pad arena k0 92)
+        (let inner-in (hmac-concat arena inner-key 64 msg msglen)
+          (let inner (sha256-bytes arena inner-in (+ 64 msglen))
+            (let outer-in (hmac-concat arena outer-key 64 inner 32)
+              (sha256-bytes arena outer-in 96))))))))
+
+; Constant-time tag verification.
+; Returns: Bool
+(defn hmac-sha256-verify ((arena Int) (key Int) (keylen Int) (msg Int) (msglen Int) (tag Int))
+  (let computed (hmac-sha256 arena key keylen msg msglen)
+    (ct-eq-words-bool computed tag 32)))

@@ -1,0 +1,656 @@
+; === Zyl Standard Library — ECDSA ===
+; Module: math/crypto/asymmetric/ecdsa
+; Provides: ECDSA over P-256, secp256k1 and P-384, with RFC 6979
+;           deterministic nonces
+;
+; Nonces are ALWAYS derived deterministically (RFC 6979, HMAC-SHA256).
+; This is not a configurable option. A repeated or biased ECDSA nonce
+; reveals the private key from two signatures by elementary algebra,
+; and that is not a theoretical concern: it is how the PlayStation 3
+; code-signing key, and a long line of Bitcoin wallets, were extracted.
+; Removing the RNG from signing removes the entire failure class.
+;
+; Point arithmetic uses the complete addition formulas of Renes,
+; Costello and Batina (2015). "Complete" means the single formula is
+; correct for every input pair -- including P + P, P + (-P) and the
+; point at infinity -- so there are no special cases to branch on, and
+; therefore no branch whose timing depends on secret scalar bits. The
+; cost is roughly twice the field multiplications of the classic
+; Jacobian formulas, paid deliberately.
+;
+; Scalar multiplication is double-and-always-add over the full bit
+; length of the group order, with the conditional addition applied by
+; mask. Field inversion (for the affine x-coordinate and for k^-1) is
+; a fixed exponentiation by p-2 and n-2 respectively.
+;
+; Signature encoding is the raw fixed-width (r || s) form, not DER:
+; DER's variable-length integers have produced a steady stream of
+; parsing vulnerabilities, and every modern protocol that can choose
+; uses the fixed form.
+
+(use core/core)
+(use core/option)
+(use math/bits)
+(use math/words)
+(use math/secret/secret)
+(use math/bignum/bignum)
+(use math/bignum/montgomery)
+(use math/bignum/modular)
+(use math/bignum/barrett)
+(use math/hash/sha2)
+(use math/hash/hmac)
+
+; ===========================================================================
+; CURVE CONTEXT
+;
+;   0 p        field prime
+;   1 n0       Montgomery constant for p
+;   2 r2       R^2 mod p
+;   3 one      1 in Montgomery form
+;   4 a        curve coefficient a, Montgomery form
+;   5 b3       3*b, Montgomery form
+;   6 order    group order n
+;   7 mu       Barrett reciprocal for n (limbs+1 limbs)
+;   8 g        base point, projective Montgomery coordinates
+;   9 limbs    field limb count
+;  10 nbytes   field element size in bytes
+;  11 n0n      Montgomery constant for the ORDER (scalar arithmetic)
+;  12 r2n      R^2 mod n
+;  13 onen     1 in Montgomery form modulo n
+; ===========================================================================
+
+; Returns: Int
+(defn ec-p ((c Int)) (w-get c 0))
+; Returns: Int
+(defn ec-n0 ((c Int)) (w-get c 1))
+; Returns: Int
+(defn ec-r2 ((c Int)) (w-get c 2))
+; Returns: Int
+(defn ec-one ((c Int)) (w-get c 3))
+; Returns: Int
+(defn ec-a ((c Int)) (w-get c 4))
+; Returns: Int
+(defn ec-b3 ((c Int)) (w-get c 5))
+; Returns: Int
+(defn ec-order ((c Int)) (w-get c 6))
+; Returns: Int
+(defn ec-mu ((c Int)) (w-get c 7))
+; Returns: Int
+(defn ec-g ((c Int)) (w-get c 8))
+; Returns: Int
+(defn ec-limbs ((c Int)) (w-get c 9))
+; Returns: Int
+(defn ec-nbytes ((c Int)) (w-get c 10))
+; Returns: Int
+(defn ec-n0n ((c Int)) (w-get c 11))
+; Returns: Int
+(defn ec-r2n ((c Int)) (w-get c 12))
+; Returns: Int
+(defn ec-onen ((c Int)) (w-get c 13))
+
+; Load a big-endian hex constant into `limbs` limbs.
+; Returns: Int
+(defn ec-const ((arena Int) (hex String) (limbs Int))
+  (let v (bn-alloc arena limbs)
+    (bn-from-bytes-be v limbs (w-from-hex arena hex) (w-hex-len hex))))
+
+; Build a curve context from its published parameters.
+; Returns: Int
+(defn ec-curve ((arena Int) (phex String) (ahex String) (b3hex String) (nhex String) (gxhex String) (gyhex String) (muhex String) (limbs Int))
+  (let p (ec-const arena phex limbs)
+    (let n0 (mont-n0 p)
+      (let r2 (mont-r2 arena p limbs)
+        (let c (w-alloc arena 14)
+          (begin
+            (w-set c 0 p)
+            (w-set c 1 n0)
+            (w-set c 2 r2)
+            (w-set c 3 (mont-one arena p limbs n0 r2))
+            (w-set c 4 (ec-to-mont arena (ec-const arena ahex limbs) p limbs n0 r2))
+            (w-set c 5 (ec-to-mont arena (ec-const arena b3hex limbs) p limbs n0 r2))
+            (w-set c 6 (ec-const arena nhex limbs))
+            (w-set c 7 (ec-const arena muhex (+ limbs 1)))
+            (w-set c 9 limbs)
+            (w-set c 10 (w-hex-len phex))
+            (ec-finish-ctx arena c gxhex gyhex limbs)))))))
+
+; Returns: Int
+(defn ec-finish-ctx ((arena Int) (c Int) (gxhex String) (gyhex String) (limbs Int))
+  (let order (w-get c 6)
+    (let n0n (mont-n0 order)
+      (let r2n (mont-r2 arena order limbs)
+        (begin
+          (w-set c 11 n0n)
+          (w-set c 12 r2n)
+          (w-set c 13 (mont-one arena order limbs n0n r2n))
+          (w-set c 8 (ec-point-from-affine arena c (ec-const arena gxhex limbs) (ec-const arena gyhex limbs)))
+          c)))))
+
+; Returns: Int
+(defn ec-to-mont ((arena Int) (v Int) (p Int) (limbs Int) (n0 Int) (r2 Int))
+  (let out (bn-alloc arena limbs)
+    (mont-to arena out v p limbs n0 r2)))
+
+; ===========================================================================
+; NAMED CURVES
+; ===========================================================================
+
+; NIST P-256 (secp256r1).
+; Returns: Int
+(defn ec-p256 ((arena Int))
+  (ec-curve arena
+    "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"
+    "ffffffff00000001000000000000000000000000fffffffffffffffffffffffc"
+    "1052a18afeafbbb61bc3380063c994352f57141164fb12e2b36ab4ba777720e2"
+    "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"
+    "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+    "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+    "0100000000fffffffffffffffeffffffff43190552df1a6c21012ffd85eedf9bfe66e1"
+    11))
+
+; secp256k1, the Bitcoin curve.
+; Returns: Int
+(defn ec-secp256k1 ((arena Int))
+  (ec-curve arena
+    "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+    "0000000000000000000000000000000000000000000000000000000000000000"
+    "0000000000000000000000000000000000000000000000000000000000000015"
+    "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+    "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+    "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+    "01000000000000000000000000000000014551231950b75fc4402da1732fc9bec09d67"
+    11))
+
+; NIST P-384 (secp384r1).
+; Returns: Int
+(defn ec-p384 ((arena Int))
+  (ec-curve arena
+    "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff"
+    "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc"
+    "19938ef7a6bcb7adc9aa1043abe8874b4858d54cfb83c336093c19adf03a96125302acaa9e8c74d77f915ac77bc480cf"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973"
+    "aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7"
+    "3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f"
+    "01000000000000000000000000000000000000000000000000389cb27e0bc8d220a7e5f24db74f58851313e695333ad68d"
+    16))
+
+; ===========================================================================
+; FIELD SHORTHAND
+; ===========================================================================
+
+; Returns: Int
+(defn ecf-mul ((arena Int) (c Int) (out Int) (x Int) (y Int))
+  (mont-mul arena out x y (ec-p c) (ec-limbs c) (ec-n0 c)))
+; Returns: Int
+(defn ecf-add ((arena Int) (c Int) (out Int) (x Int) (y Int))
+  (mod-add arena out x y (ec-p c) (ec-limbs c)))
+; Returns: Int
+(defn ecf-sub ((arena Int) (c Int) (out Int) (x Int) (y Int))
+  (mod-sub arena out x y (ec-p c) (ec-limbs c)))
+
+; out = x^-1 mod p by Fermat.
+; Returns: Int
+(defn ecf-inv ((arena Int) (c Int) (out Int) (x Int))
+  (let e (bn-alloc arena (ec-limbs c))
+    (let two (bn-alloc arena (ec-limbs c))
+      (begin
+        (bn-set-small two (ec-limbs c) 2)
+        (bn-sub e (ec-p c) two (ec-limbs c))
+        (mont-exp-form arena out x e (* 24 (ec-limbs c)) (ec-p c) (ec-limbs c) (ec-n0 c) (ec-one c))
+        out))))
+
+; ===========================================================================
+; POINTS (projective X:Y:Z, Montgomery-form coordinates)
+; ===========================================================================
+
+; Returns: Int
+(defn ec-pt-new ((arena Int) (c Int))
+  (w-alloc arena (* 3 (ec-limbs c))))
+
+; Returns: Int
+(defn ec-pt-slot ((c Int) (pt Int) (i Int))
+  (+ pt (* (* i (ec-limbs c)) 8)))
+; Returns: Int
+(defn ec-pt-x ((c Int) (pt Int)) (ec-pt-slot c pt 0))
+; Returns: Int
+(defn ec-pt-y ((c Int) (pt Int)) (ec-pt-slot c pt 1))
+; Returns: Int
+(defn ec-pt-z ((c Int) (pt Int)) (ec-pt-slot c pt 2))
+
+; Returns: Int
+(defn ec-pt-copy ((c Int) (dst Int) (src Int))
+  (w-copy dst src (* 3 (ec-limbs c))))
+
+; The point at infinity, (0 : 1 : 0).
+; Returns: Int
+(defn ec-pt-identity ((arena Int) (c Int))
+  (let pt (ec-pt-new arena c)
+    (begin
+      (bn-zero (ec-pt-x c pt) (ec-limbs c))
+      (bn-copy (ec-pt-y c pt) (ec-one c) (ec-limbs c))
+      (bn-zero (ec-pt-z c pt) (ec-limbs c))
+      pt)))
+
+; Returns: Int
+(defn ec-point-from-affine ((arena Int) (c Int) (x Int) (y Int))
+  (let pt (ec-pt-new arena c)
+    (begin
+      (mont-to arena (ec-pt-x c pt) x (ec-p c) (ec-limbs c) (ec-n0 c) (ec-r2 c))
+      (mont-to arena (ec-pt-y c pt) y (ec-p c) (ec-limbs c) (ec-n0 c) (ec-r2 c))
+      (bn-copy (ec-pt-z c pt) (ec-one c) (ec-limbs c))
+      pt)))
+
+; Scratch register file for the addition formula: eleven field
+; elements in one allocation.
+; Returns: Int
+(defn ec-regs ((arena Int) (c Int))
+  (w-alloc arena (* 11 (ec-limbs c))))
+
+; Returns: Int
+(defn ec-reg ((c Int) (r Int) (i Int))
+  (+ r (* (* i (ec-limbs c)) 8)))
+
+; out = P + Q, by the complete formula of Renes-Costello-Batina 2015
+; (Algorithm 1, valid for any curve coefficient a). Every input pair is
+; handled by this one sequence, including doubling and the identity.
+; Returns: Int
+(defn ec-add ((arena Int) (c Int) (out Int) (pp Int) (qq Int))
+  (let r (ec-regs arena c)
+    (begin
+      (ec-add-stage1 arena c r pp qq)
+      (ec-add-stage2 arena c r pp qq)
+      (ec-add-stage3 arena c r)
+      (ec-add-stage4 arena c r out)
+      out)))
+
+; t0 = X1*X2, t1 = Y1*Y2, t2 = Z1*Z2, t3 = (X1+Y1)*(X2+Y2) - t0 - t1
+; Returns: Int
+(defn ec-add-stage1 ((arena Int) (c Int) (r Int) (pp Int) (qq Int))
+  (let u (ec-reg c r 9)
+    (let v (ec-reg c r 10)
+      (begin
+        (ecf-mul arena c (ec-reg c r 0) (ec-pt-x c pp) (ec-pt-x c qq))
+        (ecf-mul arena c (ec-reg c r 1) (ec-pt-y c pp) (ec-pt-y c qq))
+        (ecf-mul arena c (ec-reg c r 2) (ec-pt-z c pp) (ec-pt-z c qq))
+        (ecf-add arena c u (ec-pt-x c pp) (ec-pt-y c pp))
+        (ecf-add arena c v (ec-pt-x c qq) (ec-pt-y c qq))
+        (ecf-mul arena c (ec-reg c r 3) u v)
+        (ecf-sub arena c (ec-reg c r 3) (ec-reg c r 3) (ec-reg c r 0))
+        (ecf-sub arena c (ec-reg c r 3) (ec-reg c r 3) (ec-reg c r 1))
+        0))))
+
+; t4 = (X1+Z1)*(X2+Z2) - t0 - t2, t5 = (Y1+Z1)*(Y2+Z2) - t1 - t2
+; Returns: Int
+(defn ec-add-stage2 ((arena Int) (c Int) (r Int) (pp Int) (qq Int))
+  (let u (ec-reg c r 9)
+    (let v (ec-reg c r 10)
+      (begin
+        (ecf-add arena c u (ec-pt-x c pp) (ec-pt-z c pp))
+        (ecf-add arena c v (ec-pt-x c qq) (ec-pt-z c qq))
+        (ecf-mul arena c (ec-reg c r 4) u v)
+        (ecf-sub arena c (ec-reg c r 4) (ec-reg c r 4) (ec-reg c r 0))
+        (ecf-sub arena c (ec-reg c r 4) (ec-reg c r 4) (ec-reg c r 2))
+        (ecf-add arena c u (ec-pt-y c pp) (ec-pt-z c pp))
+        (ecf-add arena c v (ec-pt-y c qq) (ec-pt-z c qq))
+        (ecf-mul arena c (ec-reg c r 5) u v)
+        (ecf-sub arena c (ec-reg c r 5) (ec-reg c r 5) (ec-reg c r 1))
+        (ecf-sub arena c (ec-reg c r 5) (ec-reg c r 5) (ec-reg c r 2))
+        0))))
+
+; The curve-constant folding: registers 6, 7, 8 become the intermediate
+; X3, Y3, Z3 of the reference algorithm.
+; Returns: Int
+(defn ec-add-stage3 ((arena Int) (c Int) (r Int))
+  (let u (ec-reg c r 9)
+    (begin
+      (ecf-mul arena c (ec-reg c r 8) (ec-a c) (ec-reg c r 4))
+      (ecf-mul arena c (ec-reg c r 6) (ec-b3 c) (ec-reg c r 2))
+      (ecf-add arena c (ec-reg c r 8) (ec-reg c r 6) (ec-reg c r 8))
+      (ecf-sub arena c (ec-reg c r 6) (ec-reg c r 1) (ec-reg c r 8))
+      (ecf-add arena c (ec-reg c r 8) (ec-reg c r 1) (ec-reg c r 8))
+      (ecf-mul arena c (ec-reg c r 7) (ec-reg c r 6) (ec-reg c r 8))
+      (ecf-add arena c u (ec-reg c r 0) (ec-reg c r 0))
+      (ecf-add arena c (ec-reg c r 1) u (ec-reg c r 0))
+      (ecf-mul arena c (ec-reg c r 2) (ec-a c) (ec-reg c r 2))
+      (ecf-mul arena c (ec-reg c r 4) (ec-b3 c) (ec-reg c r 4))
+      (ecf-add arena c (ec-reg c r 1) (ec-reg c r 1) (ec-reg c r 2))
+      (ecf-sub arena c (ec-reg c r 2) (ec-reg c r 0) (ec-reg c r 2))
+      (ecf-mul arena c (ec-reg c r 2) (ec-a c) (ec-reg c r 2))
+      (ecf-add arena c (ec-reg c r 4) (ec-reg c r 4) (ec-reg c r 2))
+      0)))
+
+; Returns: Int
+(defn ec-add-stage4 ((arena Int) (c Int) (r Int) (out Int))
+  (let u (ec-reg c r 9)
+    (begin
+      (ecf-mul arena c u (ec-reg c r 1) (ec-reg c r 4))
+      (ecf-add arena c (ec-reg c r 7) (ec-reg c r 7) u)
+      (ecf-mul arena c u (ec-reg c r 5) (ec-reg c r 4))
+      (ecf-mul arena c (ec-reg c r 6) (ec-reg c r 3) (ec-reg c r 6))
+      (ecf-sub arena c (ec-reg c r 6) (ec-reg c r 6) u)
+      (ecf-mul arena c u (ec-reg c r 3) (ec-reg c r 1))
+      (ecf-mul arena c (ec-reg c r 8) (ec-reg c r 5) (ec-reg c r 8))
+      (ecf-add arena c (ec-reg c r 8) (ec-reg c r 8) u)
+      (bn-copy (ec-pt-x c out) (ec-reg c r 6) (ec-limbs c))
+      (bn-copy (ec-pt-y c out) (ec-reg c r 7) (ec-limbs c))
+      (bn-copy (ec-pt-z c out) (ec-reg c r 8) (ec-limbs c))
+      0)))
+
+; out = k * P, for a big-endian scalar Nat. Double-and-always-add over
+; the full bit length: the addition happens on every iteration and only
+; its result is selected, so the scalar's bits change no timing.
+; Returns: Int
+(defn ec-scalar-mul ((arena Int) (c Int) (out Int) (pt Int) (k Int))
+  (let acc (ec-pt-identity arena c)
+    (let sum (ec-pt-new arena c)
+      (begin
+        (ec-scalar-loop arena c acc sum pt k (- (* 24 (ec-limbs c)) 1))
+        (ec-pt-copy c out acc)
+        out))))
+
+; Returns: Int
+(defn ec-scalar-loop ((arena Int) (c Int) (acc Int) (sum Int) (pt Int) (k Int) (i Int))
+  (if (< i 0)
+    0
+    (begin
+      (ec-scalar-step arena c acc sum pt k i)
+      (ec-scalar-loop arena c acc sum pt k (- i 1)))))
+
+; Returns: Int
+(defn ec-scalar-step ((arena Int) (c Int) (acc Int) (sum Int) (pt Int) (k Int) (i Int))
+  (let bit (bn-bit k i)
+    (begin
+      (ec-add arena c acc acc acc)
+      (ec-add arena c sum acc pt)
+      (bn-cond-copy acc sum (* 3 (ec-limbs c)) (ct-mask bit))
+      0)))
+
+; The affine x-coordinate of a point, as a plain (non-Montgomery) Nat.
+; Returns: Int
+(defn ec-affine-x ((arena Int) (c Int) (pt Int))
+  (let zinv (bn-alloc arena (ec-limbs c))
+    (let x (bn-alloc arena (ec-limbs c))
+      (begin
+        (ecf-inv arena c zinv (ec-pt-z c pt))
+        (ecf-mul arena c x (ec-pt-x c pt) zinv)
+        (mont-from arena x x (ec-p c) (ec-limbs c) (ec-n0 c))
+        x))))
+
+; ===========================================================================
+; SCALAR ARITHMETIC MODULO THE GROUP ORDER
+; ===========================================================================
+
+; out = a * b mod n.
+; Returns: Int
+(defn ecn-mul ((arena Int) (c Int) (out Int) (a Int) (b Int))
+  (let am (bn-alloc arena (ec-limbs c))
+    (begin
+      (mont-to arena am a (ec-order c) (ec-limbs c) (ec-n0n c) (ec-r2n c))
+      (mont-mul arena out am b (ec-order c) (ec-limbs c) (ec-n0n c))
+      out)))
+
+; out = a^-1 mod n, by Fermat (n is prime for every curve here).
+; Returns: Int
+(defn ecn-inv ((arena Int) (c Int) (out Int) (a Int))
+  (let e (bn-alloc arena (ec-limbs c))
+    (let two (bn-alloc arena (ec-limbs c))
+      (begin
+        (bn-set-small two (ec-limbs c) 2)
+        (bn-sub e (ec-order c) two (ec-limbs c))
+        (mont-exp arena out a e (* 24 (ec-limbs c)) (ec-order c) (ec-limbs c))
+        out))))
+
+; out = a + b mod n.
+; Returns: Int
+(defn ecn-add ((arena Int) (c Int) (out Int) (a Int) (b Int))
+  (mod-add arena out a b (ec-order c) (ec-limbs c)))
+
+; Reduce a field-width value modulo the group order.
+; Returns: Int
+(defn ecn-reduce ((arena Int) (c Int) (out Int) (v Int))
+  (let wide (bn-alloc arena (* 2 (ec-limbs c)))
+    (begin
+      (bn-copy wide v (ec-limbs c))
+      (barrett-reduce arena out wide (ec-order c) (ec-mu c) (ec-limbs c))
+      out)))
+
+; ===========================================================================
+; RFC 6979 DETERMINISTIC NONCE
+; ===========================================================================
+
+; k = HMAC_DRBG(private key, message hash), exactly as RFC 6979 s3.2
+; defines it, with SHA-256 as the PRF. The nonce is a deterministic
+; function of the key and the message: signing the same message twice
+; gives the same signature, and no entropy source is involved at all.
+;
+; The candidate loop is bounded. With a 256-bit or 384-bit order the
+; first candidate is accepted with overwhelming probability; the loop
+; exists because the specification requires it, and the bound exists so
+; that a pathological input can never hang a signer.
+; Returns: Int
+(defn ec-rfc6979-k ((arena Int) (c Int) (priv Int) (h1 Int))
+  (let nb (ec-nbytes c)
+    (let seed (ec-6979-seed arena c priv h1)
+      (let v (w-fill (w-alloc arena 32) 32 1)
+        (let kk (w-alloc arena 32)
+          (begin
+            (ec-6979-update arena kk v seed (* 2 nb) 0)
+            (ec-6979-update arena kk v seed (* 2 nb) 1)
+            (ec-6979-candidates arena c kk v 16)))))))
+
+; int2octets(x) || bits2octets(h1). bits2octets reduces the hash modulo
+; the group order first, which is what keeps the two halves the same
+; width even when the hash is narrower than the order (SHA-256 with
+; P-384, for instance).
+; Returns: Int
+(defn ec-6979-seed ((arena Int) (c Int) (priv Int) (h1 Int))
+  (let nb (ec-nbytes c)
+    (let seed (w-alloc arena (* 2 nb))
+      (let z (bn-alloc arena (ec-limbs c))
+        (begin
+          (bn-to-bytes-be seed nb priv (ec-limbs c))
+          (bn-from-bytes-be z (ec-limbs c) h1 32)
+          (ecn-reduce arena c z z)
+          (bn-to-bytes-be (+ seed (* nb 8)) nb z (ec-limbs c))
+          seed)))))
+
+; K = HMAC_K(V || byte || seed); V = HMAC_K(V).
+; Returns: Int
+(defn ec-6979-update ((arena Int) (kk Int) (v Int) (seed Int) (seedlen Int) (byte Int))
+  (let buf (w-alloc arena (+ 33 seedlen))
+    (begin
+      (ec-copy-at buf 0 v 32)
+      (w-set buf 32 byte)
+      (ec-copy-at buf 33 seed seedlen)
+      (w-copy kk (hmac-sha256 arena kk 32 buf (+ 33 seedlen)) 32)
+      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      0)))
+
+; K = HMAC_K(V || 0x00); V = HMAC_K(V) -- the reseed step taken when a
+; candidate is rejected.
+; Returns: Int
+(defn ec-6979-reseed ((arena Int) (kk Int) (v Int))
+  (let buf (w-alloc arena 33)
+    (begin
+      (ec-copy-at buf 0 v 32)
+      (w-set buf 32 0)
+      (w-copy kk (hmac-sha256 arena kk 32 buf 33) 32)
+      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      0)))
+
+; Draw candidates until one lies in [1, n-1].
+; Returns: Int
+(defn ec-6979-candidates ((arena Int) (c Int) (kk Int) (v Int) (tries Int))
+  (if (<= tries 0)
+    (bn-alloc arena (ec-limbs c))
+    (let k (ec-6979-candidate arena c kk v)
+      (if (= (ec-6979-acceptable arena c k) 1)
+        k
+        (begin
+          (ec-6979-reseed arena kk v)
+          (ec-6979-candidates arena c kk v (- tries 1)))))))
+
+; One candidate: T = V || V || ... until it is at least as wide as the
+; order, read big-endian.
+; Returns: Int
+(defn ec-6979-candidate ((arena Int) (c Int) (kk Int) (v Int))
+  (let nb (ec-nbytes c)
+    (let t (w-alloc arena (+ nb 32))
+      (let k (bn-alloc arena (ec-limbs c))
+        (begin
+          (ec-6979-fill arena kk v t nb 0)
+          (bn-from-bytes-be k (ec-limbs c) t nb)
+          k)))))
+
+; Returns: Int
+(defn ec-6979-fill ((arena Int) (kk Int) (v Int) (t Int) (nb Int) (off Int))
+  (if (>= off nb)
+    0
+    (begin
+      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      (ec-copy-at t off v 32)
+      (ec-6979-fill arena kk v t nb (+ off 32)))))
+
+; 1 when 0 < k < n.
+; Returns: Int
+(defn ec-6979-acceptable ((arena Int) (c Int) (k Int))
+  (let scratch (bn-alloc arena (ec-limbs c))
+    (bit-and (- 1 (bn-is-zero k (ec-limbs c)))
+             (bn-sub scratch k (ec-order c) (ec-limbs c)))))
+
+; Returns: Int
+(defn ec-copy-at ((dst Int) (off Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
+    0))
+
+; ===========================================================================
+; SIGN / VERIFY
+; ===========================================================================
+
+; Sign a 32-byte SHA-256 digest. Returns the raw (r || s) signature,
+; 2*nbytes long, or None in the (negligible) case that r or s is zero.
+; Returns: Option
+(defn ecdsa-sign ((arena Int) (c Int) (priv Int) (hash Int))
+  (let z (bn-alloc arena (ec-limbs c))
+    (let k (ec-rfc6979-k arena c priv hash)
+      (begin
+        (bn-from-bytes-be z (ec-limbs c) hash 32)
+        (ecn-reduce arena c z z)
+        (ecdsa-sign-with arena c priv z k)))))
+
+; Returns: Option
+(defn ecdsa-sign-with ((arena Int) (c Int) (priv Int) (z Int) (k Int))
+  (let rpt (ec-pt-new arena c)
+    (let r (bn-alloc arena (ec-limbs c))
+      (begin
+        (ec-scalar-mul arena c rpt (ec-g c) k)
+        (ecn-reduce arena c r (ec-affine-x arena c rpt))
+        (if (= (bn-is-zero r (ec-limbs c)) 1)
+          None
+          (ecdsa-sign-s arena c priv z k r))))))
+
+; s = k^-1 * (z + r*d) mod n
+; Returns: Option
+(defn ecdsa-sign-s ((arena Int) (c Int) (priv Int) (z Int) (k Int) (r Int))
+  (let rd (bn-alloc arena (ec-limbs c))
+    (let sum (bn-alloc arena (ec-limbs c))
+      (let kinv (bn-alloc arena (ec-limbs c))
+        (let s (bn-alloc arena (ec-limbs c))
+          (begin
+            (ecn-mul arena c rd r priv)
+            (ecn-add arena c sum z rd)
+            (ecn-inv arena c kinv k)
+            (ecn-mul arena c s kinv sum)
+            (if (= (bn-is-zero s (ec-limbs c)) 1)
+              None
+              (Some (ecdsa-encode arena c r s)))))))))
+
+; Returns: Int
+(defn ecdsa-encode ((arena Int) (c Int) (r Int) (s Int))
+  (let nb (ec-nbytes c)
+    (let out (w-alloc arena (* 2 nb))
+      (begin
+        (bn-to-bytes-be out nb r (ec-limbs c))
+        (bn-to-bytes-be (+ out (* nb 8)) nb s (ec-limbs c))
+        out))))
+
+; Verify a raw (r || s) signature over a 32-byte SHA-256 digest.
+; Returns: Bool
+(defn ecdsa-verify ((arena Int) (c Int) (pub Int) (hash Int) (sig Int))
+  (let nb (ec-nbytes c)
+    (let r (bn-alloc arena (ec-limbs c))
+      (let s (bn-alloc arena (ec-limbs c))
+        (begin
+          (bn-from-bytes-be r (ec-limbs c) sig nb)
+          (bn-from-bytes-be s (ec-limbs c) (+ sig (* nb 8)) nb)
+          (ecdsa-verify-range arena c pub hash r s))))))
+
+; r and s must both lie in [1, n-1]; a zero or out-of-range value is
+; rejected before any point arithmetic, since those are the degenerate
+; signatures that verify against anything under a careless
+; implementation.
+; Returns: Bool
+(defn ecdsa-verify-range ((arena Int) (c Int) (pub Int) (hash Int) (r Int) (s Int))
+  (let scratch (bn-alloc arena (ec-limbs c))
+    (let rok (bit-and (- 1 (bn-is-zero r (ec-limbs c))) (bn-sub scratch r (ec-order c) (ec-limbs c)))
+      (let sok (bit-and (- 1 (bn-is-zero s (ec-limbs c))) (bn-sub scratch s (ec-order c) (ec-limbs c)))
+        (if (= (bit-and rok sok) 1)
+          (ecdsa-verify-equation arena c pub hash r s)
+          false)))))
+
+; Returns: Bool
+(defn ecdsa-verify-equation ((arena Int) (c Int) (pub Int) (hash Int) (r Int) (s Int))
+  (let z (bn-alloc arena (ec-limbs c))
+    (let sinv (bn-alloc arena (ec-limbs c))
+      (let u1 (bn-alloc arena (ec-limbs c))
+        (let u2 (bn-alloc arena (ec-limbs c))
+          (begin
+            (bn-from-bytes-be z (ec-limbs c) hash 32)
+            (ecn-reduce arena c z z)
+            (ecn-inv arena c sinv s)
+            (ecn-mul arena c u1 z sinv)
+            (ecn-mul arena c u2 r sinv)
+            (ecdsa-verify-points arena c pub r u1 u2)))))))
+
+; Returns: Bool
+(defn ecdsa-verify-points ((arena Int) (c Int) (pub Int) (r Int) (u1 Int) (u2 Int))
+  (let p1 (ec-pt-new arena c)
+    (let p2 (ec-pt-new arena c)
+      (let sum (ec-pt-new arena c)
+        (let got (bn-alloc arena (ec-limbs c))
+          (begin
+            (ec-scalar-mul arena c p1 (ec-g c) u1)
+            (ec-scalar-mul arena c p2 pub u2)
+            (ec-add arena c sum p1 p2)
+            (if (= (bn-is-zero (ec-pt-z c sum) (ec-limbs c)) 1)
+              false
+              (begin
+                (ecn-reduce arena c got (ec-affine-x arena c sum))
+                (= (bn-eq got r (ec-limbs c)) 1)))))))))
+
+; The public key for a private scalar: the point d*G.
+; Returns: Int
+(defn ecdsa-public-key ((arena Int) (c Int) (priv Int))
+  (let pt (ec-pt-new arena c)
+    (ec-scalar-mul arena c pt (ec-g c) priv)))
+
+; The affine encoding of a public key: 0x04 || X || Y (SEC1
+; uncompressed), the form every interoperating implementation accepts.
+; Returns: Int
+(defn ecdsa-encode-public ((arena Int) (c Int) (pt Int))
+  (let nb (ec-nbytes c)
+    (let out (w-alloc arena (+ (* 2 nb) 1))
+      (let zinv (bn-alloc arena (ec-limbs c))
+        (let t (bn-alloc arena (ec-limbs c))
+          (begin
+            (w-set out 0 4)
+            (ecf-inv arena c zinv (ec-pt-z c pt))
+            (ecf-mul arena c t (ec-pt-x c pt) zinv)
+            (mont-from arena t t (ec-p c) (ec-limbs c) (ec-n0 c))
+            (bn-to-bytes-be (+ out 8) nb t (ec-limbs c))
+            (ecf-mul arena c t (ec-pt-y c pt) zinv)
+            (mont-from arena t t (ec-p c) (ec-limbs c) (ec-n0 c))
+            (bn-to-bytes-be (+ out (* (+ nb 1) 8)) nb t (ec-limbs c))
+            out))))))

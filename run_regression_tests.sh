@@ -41,6 +41,12 @@ while [[ $# -gt 0 ]]; do
         --dry-run) DRY_RUN=1; shift ;;
         --boot) BOOT=1; shift ;;
         --no-boot) NO_BOOT=1; shift ;;
+        # The filter is a case-insensitive SUBSTRING of the test's own
+        # name -- `--filter math` runs every math-* file, `--filter
+        # structs` runs the struct tests. It used to be compared the
+        # other way round (test name matched against the filter text),
+        # so a filter could only ever select a test whose whole name it
+        # contained: `--filter math` matched nothing at all.
         --filter) FILTER="$2"; shift 2 ;;
         --verbose) VERBOSE=1; shift ;;
         --depth) DEPTH="$2"; shift 2 ;;
@@ -173,7 +179,7 @@ echo ""
 
 # Run unit test (comprehensive harness)
 if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
-    if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "unit"; then
+    if [ -z "$FILTER" ] || echo "unit_test" | grep -qi -- "$FILTER"; then
         run_test "unit_test" "${TESTS_DIR}/unit_test.zyl"
     fi
 fi
@@ -183,7 +189,7 @@ if [ "$MODE" = "quick" ]; then
     for f in "${TESTS_DIR}"/smoke/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "smoke/${local_name}" "$f"
         fi
     done
@@ -194,7 +200,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/regression/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "regression/${local_name}" "$f"
         fi
     done
@@ -205,7 +211,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/stress/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "stress/${local_name}" "$f"
         fi
     done
@@ -216,7 +222,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/integration/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "integration/${local_name}" "$f"
         fi
     done
@@ -227,10 +233,32 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$FILTER" | grep -qi "$local_name"; then
+        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_fail_test "compile-fail/${local_name}" "$f"
         fi
     done
+fi
+
+# Constant-time (timing leakage) harness — OPT IN with `--filter timing`.
+#
+# Deliberately not part of a plain `--full` run: it spawns thousands of
+# short processes and takes longer than every other test combined, and
+# its result is a statistic rather than a pass/fail of the code itself.
+# It is the check that stdlib/math's constant-time claims are about, so
+# it lives here rather than in a developer's shell history. The script
+# fails if its own positive control (a deliberately leaky comparison)
+# goes undetected, so a green result means the measurement worked.
+if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER"; then
+    TOTAL=$((TOTAL + 1))
+    if python3 "${SCRIPT_DIR}/verify/timing.py" --quick > /tmp/zyl_timing.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} timing-leakage"
+        sed 's/^/      /' /tmp/zyl_timing.log
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} timing-leakage"
+        sed 's/^/      /' /tmp/zyl_timing.log
+    fi
 fi
 
 # Self-hosting fixed-point verification (default in --full; slow)

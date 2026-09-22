@@ -66,6 +66,17 @@
 
 ; Binop opcodes (instruction payloads, not node kinds):
 ; 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
+; 11 bit-and 12 bit-or 13 bit-xor 14 shl 15 shr (logical) 16 ashr
+;
+; The bitwise family (11-16) is what makes hash/cipher/bignum code
+; expressible at all -- every one of them was previously an ordinary
+; unknown-function call that failed to link. Semantics are DEFINED for
+; every shift count, not left to x86's mod-64 masking: a count outside
+; 0..63 shifts a logical shl/shr to 0 and saturates ashr to the sign
+; bit (see cg-bit-mnem). Constant folding deliberately does NOT cover
+; them (optimization.zyl) -- folding a bit-and inside the compiler
+; would require the compiler's OWN source to use bit-and, which the
+; previous-generation seed binary cannot compile.
 
 (defn ic-op-of (arena s)
   (if (> (str-eq s (str-intern arena "+")) 0) 0
@@ -80,7 +91,14 @@
   (if (> (str-eq s (str-intern arena "==")) 0) 9
   (if (> (str-eq s (str-intern arena "=")) 0) 9
   (if (> (str-eq s (str-intern arena "!=")) 0) 10
-  -1)))))))))))))
+  (if (> (str-eq s (str-intern arena "bit-and")) 0) 11
+  (if (> (str-eq s (str-intern arena "bit-or")) 0) 12
+  (if (> (str-eq s (str-intern arena "bit-xor")) 0) 13
+  (if (> (str-eq s (str-intern arena "shl")) 0) 14
+  (if (> (str-eq s (str-intern arena "shr")) 0) 15
+  (if (> (str-eq s (str-intern arena "ashr")) 0) 16
+  (if (> (str-eq s (str-intern arena "bit-not")) 0) 17
+  -1))))))))))))))))))))
 
 ; Typed empty lists (bare `Nil` values unify ambiguously as Option vs
 ; List depending on module load order — always name the element type).
@@ -1168,6 +1186,8 @@
 ; previously lowered to (IConst 0) SILENTLY — the source of the
 ; "computed count is 0 in stage>=2 binaries" miscompile class.
 (defn ic-binop (arena op args vt)
+  (if (= op 17)
+    (ic-bit-not arena args vt)
   (if (= (list-length args) 2)
     (IBinop op
             (ic-expr arena (first-expr args) vt)
@@ -1178,7 +1198,18 @@
         (IConst 0))
       (if (> (list-length args) 2)
         (ic-binop-fold arena op args vt)
-        (IConst 0)))))
+        (IConst 0))))))
+
+; bit-not is the one bitwise op with no two-operand machine form here:
+; `(bit-not x)` lowers to `x XOR -1`, which is exactly one's complement
+; on a 64-bit two's-complement Int and needs no new codegen path.
+; Arity is checked rather than silently folded to 0 -- a silently-zero
+; lowering is the exact miscompile class ic-binop's own comment above
+; describes.
+(defn ic-bit-not (arena args vt)
+  (if (= (list-length args) 1)
+    (IBinop 13 (ic-expr arena (first-expr args) vt) (IConst -1))
+    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bit-not takes exactly one argument" 1000)))
 
 ; Left-associative n-ary fold: (op a b c) -> (op (op a b) c).
 ; The tree must nest LEFT so subtraction/division evaluate in source

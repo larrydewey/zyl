@@ -1,0 +1,317 @@
+; === Zyl Standard Library — SHA-512 ===
+; Module: math/hash/sha512
+; Provides: SHA-512 (FIPS 180-4 / RFC 6234)
+;
+; Same shape as math/hash/sha2's SHA-256, one width up: 80 rounds over
+; 64-bit words, 128-byte blocks, and a 128-bit length field.
+;
+; The 64-bit constants are written as SIGNED Int literals, because that
+; is what Zyl's only integer type can hold: every constant at or above
+; 2^63 appears here as its value minus 2^64. The bit patterns are
+; identical, and SHA-512 only ever feeds them through `+`, `bit-xor`,
+; `bit-and` and rotations, all of which are two's-complement-identical
+; for signed and unsigned operands. Nothing in this file compares two
+; state words with `<`, which is the one place the distinction would
+; matter.
+;
+; The length field is 128 bits wide in the standard. Only the low 64
+; are written: the high 64 stay zero, which is exact for any message
+; under 2^61 bytes -- i.e. every message that fits in this addressable
+; universe, since the message is held one byte per 8-byte word here.
+;
+; Constant-time for the same reason SHA-256 is: control flow depends on
+; the message LENGTH (public) and never on message content, and every
+; content-dependent operation is a single branchless instruction
+; sequence.
+
+(use core/core)
+(use math/bits)
+(use math/words)
+
+; ===========================================================================
+; CONSTANTS
+; ===========================================================================
+
+; The 80 round constants: first 64 bits of the fractional parts of the
+; cube roots of the first 80 primes (FIPS 180-4 s4.2.3).
+; Returns: Int
+(defn sha512-k-table ((arena Int))
+  (let p (w-alloc arena 80)
+    (begin
+      (w-set p 0 4794697086780616226)
+      (w-set p 1 8158064640168781261)
+      (w-set p 2 -5349999486874862801)
+      (w-set p 3 -1606136188198331460)
+      (w-set p 4 4131703408338449720)
+      (w-set p 5 6480981068601479193)
+      (w-set p 6 -7908458776815382629)
+      (w-set p 7 -6116909921290321640)
+      (w-set p 8 -2880145864133508542)
+      (w-set p 9 1334009975649890238)
+      (w-set p 10 2608012711638119052)
+      (w-set p 11 6128411473006802146)
+      (w-set p 12 8268148722764581231)
+      (w-set p 13 -9160688886553864527)
+      (w-set p 14 -7215885187991268811)
+      (w-set p 15 -4495734319001033068)
+      (w-set p 16 -1973867731355612462)
+      (w-set p 17 -1171420211273849373)
+      (w-set p 18 1135362057144423861)
+      (w-set p 19 2597628984639134821)
+      (w-set p 20 3308224258029322869)
+      (w-set p 21 5365058923640841347)
+      (w-set p 22 6679025012923562964)
+      (w-set p 23 8573033837759648693)
+      (w-set p 24 -7476448914759557205)
+      (w-set p 25 -6327057829258317296)
+      (w-set p 26 -5763719355590565569)
+      (w-set p 27 -4658551843659510044)
+      (w-set p 28 -4116276920077217854)
+      (w-set p 29 -3051310485924567259)
+      (w-set p 30 489312712824947311)
+      (w-set p 31 1452737877330783856)
+      (w-set p 32 2861767655752347644)
+      (w-set p 33 3322285676063803686)
+      (w-set p 34 5560940570517711597)
+      (w-set p 35 5996557281743188959)
+      (w-set p 36 7280758554555802590)
+      (w-set p 37 8532644243296465576)
+      (w-set p 38 -9096487096722542874)
+      (w-set p 39 -7894198246740708037)
+      (w-set p 40 -6719396339535248540)
+      (w-set p 41 -6333637450476146687)
+      (w-set p 42 -4446306890439682159)
+      (w-set p 43 -4076793802049405392)
+      (w-set p 44 -3345356375505022440)
+      (w-set p 45 -2983346525034927856)
+      (w-set p 46 -860691631967231958)
+      (w-set p 47 1182934255886127544)
+      (w-set p 48 1847814050463011016)
+      (w-set p 49 2177327727835720531)
+      (w-set p 50 2830643537854262169)
+      (w-set p 51 3796741975233480872)
+      (w-set p 52 4115178125766777443)
+      (w-set p 53 5681478168544905931)
+      (w-set p 54 6601373596472566643)
+      (w-set p 55 7507060721942968483)
+      (w-set p 56 8399075790359081724)
+      (w-set p 57 8693463985226723168)
+      (w-set p 58 -8878714635349349518)
+      (w-set p 59 -8302665154208450068)
+      (w-set p 60 -8016688836872298968)
+      (w-set p 61 -6606660893046293015)
+      (w-set p 62 -4685533653050689259)
+      (w-set p 63 -4147400797238176981)
+      (w-set p 64 -3880063495543823972)
+      (w-set p 65 -3348786107499101689)
+      (w-set p 66 -1523767162380948706)
+      (w-set p 67 -757361751448694408)
+      (w-set p 68 500013540394364858)
+      (w-set p 69 748580250866718886)
+      (w-set p 70 1242879168328830382)
+      (w-set p 71 1977374033974150939)
+      (w-set p 72 2944078676154940804)
+      (w-set p 73 3659926193048069267)
+      (w-set p 74 4368137639120453308)
+      (w-set p 75 4836135668995329356)
+      (w-set p 76 5532061633213252278)
+      (w-set p 77 6448918945643986474)
+      (w-set p 78 6902733635092675308)
+      (w-set p 79 7801388544844847127)
+      p)))
+
+; Initial state: first 64 bits of the fractional parts of the square
+; roots of the first 8 primes (FIPS 180-4 s5.3.5).
+; Returns: Int
+(defn sha512-init ((arena Int))
+  (let p (w-alloc arena 8)
+    (begin
+      (w-set p 0 7640891576956012808)
+      (w-set p 1 -4942790177534073029)
+      (w-set p 2 4354685564936845355)
+      (w-set p 3 -6534734903238641935)
+      (w-set p 4 5840696475078001361)
+      (w-set p 5 -7276294671716946913)
+      (w-set p 6 2270897969802886507)
+      (w-set p 7 6620516959819538809)
+      p)))
+
+; ===========================================================================
+; MESSAGE SCHEDULE
+; ===========================================================================
+
+; w[i] = w[i-16] + s0(w[i-15]) + w[i-7] + s1(w[i-2]).
+; Returns: Int
+(defn sha512-schedule-step ((wp Int) (i Int))
+  (let x (w-get wp (- i 15))
+    (let y (w-get wp (- i 2))
+      (let s0 (bit-xor (rotr64 x 1) (rotr64 x 8) (shr x 7))
+        (let s1 (bit-xor (rotr64 y 19) (rotr64 y 61) (shr y 6))
+          (let lhs (+ (w-get wp (- i 16)) s0)
+            (let rhs (+ (w-get wp (- i 7)) s1)
+              (w-set wp i (+ lhs rhs)))))))))
+
+; Returns: Int
+(defn sha512-schedule ((wp Int))
+  (begin
+    (for (i 16) (< i 80)
+      (begin
+        (sha512-schedule-step wp i)
+        (set! i (+ i 1))))
+    wp))
+
+; Load one 64-bit big-endian word from 8 message bytes.
+; Returns: Int
+(defn sha512-load-word ((wp Int) (msg Int) (o Int) (t Int))
+  (let hi (be-pack32 (w-get msg o) (w-get msg (+ o 1)) (w-get msg (+ o 2)) (w-get msg (+ o 3)))
+    (let lo (be-pack32 (w-get msg (+ o 4)) (w-get msg (+ o 5)) (w-get msg (+ o 6)) (w-get msg (+ o 7)))
+      (w-set wp t (bit-or (shl hi 32) lo)))))
+
+; Returns: Int
+(defn sha512-load-block ((arena Int) (msg Int) (off Int))
+  (let wp (w-alloc arena 80)
+    (begin
+      (for (t 0) (< t 16)
+        (begin
+          (sha512-load-word wp msg (+ off (* t 8)) t)
+          (set! t (+ t 1))))
+      (sha512-schedule wp))))
+
+; ===========================================================================
+; COMPRESSION
+; ===========================================================================
+
+; t1 = h + S1(e) + Ch(e,f,g) + K[i] + W[i], wrapping at 64 bits.
+; Returns: Int
+(defn sha512-t1 ((h Int) (s1 Int) (ch Int) (k Int) (w Int))
+  (let p1 (+ h s1)
+    (let p2 (+ ch k)
+      (+ (+ p1 p2) w))))
+
+; Returns: Int
+(defn sha512-shift-vars ((wv Int) (a Int) (b Int) (c Int) (d Int) (e Int) (f Int) (g Int) (t1 Int) (t2 Int))
+  (begin
+    (w-set wv 7 g)
+    (w-set wv 6 f)
+    (w-set wv 5 e)
+    (w-set wv 4 (+ d t1))
+    (w-set wv 3 c)
+    (w-set wv 2 b)
+    (w-set wv 1 a)
+    (w-set wv 0 (+ t1 t2))
+    0))
+
+; Returns: Int
+(defn sha512-round ((wv Int) (kp Int) (wp Int) (i Int))
+  (let a (w-get wv 0)
+    (let b (w-get wv 1)
+      (let c (w-get wv 2)
+        (let d (w-get wv 3)
+          (let e (w-get wv 4)
+            (let f (w-get wv 5)
+              (let g (w-get wv 6)
+                (let h (w-get wv 7)
+                  (let s1 (bit-xor (rotr64 e 14) (rotr64 e 18) (rotr64 e 41))
+                    (let ch (bit-xor (bit-and e f) (bit-and (not64 e) g))
+                      (let s0 (bit-xor (rotr64 a 28) (rotr64 a 34) (rotr64 a 39))
+                        (let mj (bit-xor (bit-and a b) (bit-and a c) (bit-and b c))
+                          (let t1 (sha512-t1 h s1 ch (w-get kp i) (w-get wp i))
+                            (let t2 (+ s0 mj)
+                              (sha512-shift-vars wv a b c d e f g t1 t2))))))))))))))))
+
+; Returns: Int
+(defn sha512-compress ((arena Int) (state Int) (msg Int) (off Int) (kp Int))
+  (let wp (sha512-load-block arena msg off)
+    (let wv (w-alloc arena 8)
+      (begin
+        (w-copy wv state 8)
+        (for (i 0) (< i 80)
+          (begin
+            (sha512-round wv kp wp i)
+            (set! i (+ i 1))))
+        (for (j 0) (< j 8)
+          (begin
+            (w-set state j (+ (w-get state j) (w-get wv j)))
+            (set! j (+ j 1))))
+        state))))
+
+; ===========================================================================
+; PADDING (128-byte blocks, 112 mod 128 boundary)
+; ===========================================================================
+
+; Returns: Int
+(defn sha512-pad-zeros ((len Int))
+  (let r (% (+ len 1) 128)
+    (if (<= r 112) (- 112 r) (- 240 r))))
+
+; Returns: Int
+(defn sha512-padded-len ((len Int))
+  (+ (+ len 17) (sha512-pad-zeros len)))
+
+; Returns: Int
+(defn sha512-write-length ((p Int) (total Int) (bits Int))
+  (begin
+    (for (i 0) (< i 8)
+      (begin
+        (w-set p (+ (- total 8) i) (be-byte64 bits i))
+        (set! i (+ i 1))))
+    p))
+
+; Returns: Int
+(defn sha512-pad ((arena Int) (msg Int) (len Int))
+  (let total (sha512-padded-len len)
+    (let p (w-alloc arena total)
+      (begin
+        (w-copy p msg len)
+        (w-set p len 128)
+        (sha512-write-length p total (* len 8))
+        p))))
+
+; ===========================================================================
+; TOP-LEVEL DIGEST
+; ===========================================================================
+
+; SHA-512 of `len` message bytes held one-per-word at `msg`, as an
+; 8-word state (each word a 64-bit big-endian digest word).
+; Returns: Int
+(defn sha512-words ((arena Int) (msg Int) (len Int))
+  (let kp (sha512-k-table arena)
+    (let st (sha512-init arena)
+      (let padded (sha512-pad arena msg len)
+        (let total (sha512-padded-len len)
+          (begin
+            (for (off 0) (< off total)
+              (begin
+                (sha512-compress arena st padded off kp)
+                (set! off (+ off 128))))
+            st))))))
+
+; Returns: Int
+(defn sha512-spread-word ((out Int) (st Int) (i Int))
+  (let v (w-get st i)
+    (begin
+      (for (j 0) (< j 8)
+        (begin
+          (w-set out (+ (* i 8) j) (be-byte64 v j))
+          (set! j (+ j 1))))
+      0)))
+
+; SHA-512 digest as a 64-entry byte array (one byte per word).
+; Returns: Int
+(defn sha512-bytes ((arena Int) (msg Int) (len Int))
+  (let st (sha512-words arena msg len)
+    (let out (w-alloc arena 64)
+      (begin
+        (for (i 0) (< i 8)
+          (begin
+            (sha512-spread-word out st i)
+            (set! i (+ i 1))))
+        out))))
+
+; SHA-512 of a String as a 128-character lowercase hex String.
+; Returns: String
+(defn sha512-hex-of-string ((arena Int) (s String))
+  (let msg (w-from-string arena s)
+    (let len (w-string-len s)
+      (let d (sha512-bytes arena msg len)
+        (w-hex-bytes d 64)))))

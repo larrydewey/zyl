@@ -1,0 +1,146 @@
+; Big-number arithmetic tests: limb add/sub/multiply, byte conversion,
+; constant-time comparison, Montgomery exponentiation and Barrett
+; reduction.
+
+(use math/bignum/bignum)
+(use math/bignum/montgomery)
+(use math/bignum/modular)
+(use math/bignum/barrett)
+(use math/words)
+(use allocator/allocator)
+
+(defn _bn_arena () (arena-create 0))
+
+(defn _bn_from ((a Int) (hex String) (n Int))
+  (let v (bn-alloc a n)
+    (bn-from-bytes-be v n (w-from-hex a hex) (w-hex-len hex))))
+
+(defn _bn_hex ((a Int) (v Int) (n Int) (nbytes Int))
+  (w-hex-bytes (bn-to-bytes-be (w-alloc a nbytes) nbytes v n) nbytes))
+
+(test "bn-limbs-for-bits"
+  (begin
+    (assert-equal (bn-limbs-for-bits 24) 1)
+    (assert-equal (bn-limbs-for-bits 25) 2)
+    (assert-equal (bn-limbs-for-bits 256) 11)))
+
+(test "bn-roundtrip-bytes"
+  (let a (_bn_arena)
+    (assert-equal (_bn_hex a (_bn_from a "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11) 11 32) "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d")))
+
+(test "bn-add"
+  (let ar (_bn_arena)
+    (let x (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 12)
+      (let y (_bn_from ar "01e72e7a830c71c2cdcc69292f45e678309d6b79965eda32dae445508201e2bd" 12)
+        (let out (bn-alloc ar 12)
+          (begin
+            (bn-add out x y 12)
+            (assert-equal (_bn_hex ar out 12 33) "0003b5db9bfa41498495ca512f1bdef7060bf8cb2525ac185ab8858e9cf5d1082a")))))))
+
+(test "bn-sub"
+  (let ar (_bn_arena)
+    (let x (_bn_from ar "01e72e7a830c71c2cdcc69292f45e678309d6b79965eda32dae445508201e2bd" 11)
+      (let y (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11)
+        (let out (bn-alloc ar 11)
+          (begin
+            (bn-sub out x y 11)
+            (assert-equal (_bn_hex ar out 11 32) "001881590bd79a0105ce812342acd5ea55420bce07119c0afd42fc040e32bd50")))))))
+
+(test "bn-sub-borrow"
+  (let ar (_bn_arena)
+    (let x (_bn_from ar "01" 11)
+      (let y (_bn_from ar "02" 11)
+        (let out (bn-alloc ar 11)
+          (assert-equal (bn-sub out x y 11) 1))))))
+
+(test "bn-mul"
+  (let ar (_bn_arena)
+    (let x (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11)
+      (let y (_bn_from ar "01e72e7a830c71c2cdcc69292f45e678309d6b79965eda32dae445508201e2bd" 11)
+        (let out (bn-alloc ar 22)
+          (begin
+            (bn-mul out x y 11)
+            (assert-equal (_bn_hex ar out 22 64) "0003707f5b3123fa97a7a43e143d458881292d38c4dd4a29d327855b470d02783bb15ae8a4f4b1b8935e9e0d46d229a910bc575a37d208b24bca538ede65db79")))))))
+
+(test "bn-is-zero"
+  (let ar (_bn_arena)
+    (begin
+      (assert-equal (bn-is-zero (bn-alloc ar 11) 11) 1)
+      (assert-equal (bn-is-zero (_bn_from ar "01" 11) 11) 0))))
+
+(test "bn-eq"
+  (let ar (_bn_arena)
+    (begin
+      (assert-equal (bn-eq (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11) (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11) 11) 1)
+      (assert-equal (bn-eq (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11) (_bn_from ar "01e72e7a830c71c2cdcc69292f45e678309d6b79965eda32dae445508201e2bd" 11) 11) 0))))
+
+(test "bn-shl1-shr1"
+  (let ar (_bn_arena)
+    (let x (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 12)
+      (begin
+        (bn-shl1 x 12)
+        (bn-shr1 x 12)
+        (assert-equal (_bn_hex ar x 12 32) "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d")))))
+
+(test "bn-bit-length"
+  (let ar (_bn_arena)
+    (assert-equal (bn-bit-length (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11) 11) 249)))
+
+(test "mont-exp"
+  (let ar (_bn_arena)
+    (let m (_bn_from ar "a44caf9c4dabb4817253edc6181879932fa91425cb0088539d2c67eda13ffe79" 11)
+      (let b (_bn_from ar "986e86cb0ab8ab67a26b7f62b1852f27e3eff9c0cf44dd3f89e7d15f17362f25" 11)
+        (let e (_bn_from ar "00000000000000000000000000000000102b938b8743feb6d4ea65d003d71684" 11)
+          (let out (bn-alloc ar 11)
+            (begin
+              (mont-exp ar out b e 128 m 11)
+              (assert-equal (_bn_hex ar out 11 32) "2b46ffa81e0cf339ab40c4b5b33c9d03e66177462fab6f32a2a587c3e9dab728"))))))))
+
+(test "mod-add"
+  (let ar (_bn_arena)
+    (let m (_bn_from ar "a44caf9c4dabb4817253edc6181879932fa91425cb0088539d2c67eda13ffe79" 11)
+      (let x (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11)
+        (let y (_bn_from ar "01e72e7a830c71c2cdcc69292f45e678309d6b79965eda32dae445508201e2bd" 11)
+          (let out (bn-alloc ar 11)
+            (begin
+              (mod-add ar out x y m 11)
+              (assert-equal (_bn_hex ar out 11 32) "03b5db9bfa41498495ca512f1bdef7060bf8cb2525ac185ab8858e9cf5d1082a"))))))))
+
+(test "mod-sub-wraps"
+  (let ar (_bn_arena)
+    (let m (_bn_from ar "a44caf9c4dabb4817253edc6181879932fa91425cb0088539d2c67eda13ffe79" 11)
+      (let x (_bn_from ar "01" 11)
+        (let y (_bn_from ar "02" 11)
+          (let out (bn-alloc ar 11)
+            (begin
+              (mod-sub ar out x y m 11)
+              (assert-equal (_bn_hex ar out 11 32) "a44caf9c4dabb4817253edc6181879932fa91425cb0088539d2c67eda13ffe78"))))))))
+
+(test "mod-inverse-prime"
+  (let ar (_bn_arena)
+    (let p (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed" 11)
+      (let x (_bn_from ar "01cead217734d7c1c7fde805ec99108ddb5b5fab8f4d3e27dda1494c73cf256d" 11)
+        (let out (bn-alloc ar 11)
+          (begin
+            (mod-inverse-prime ar out x p 11)
+            (assert-equal (_bn_hex ar out 11 32) "466c43b9392ff20ffd334acc90e1c72b064f095ceb1d9c154b2083006e5d35a9")))))))
+
+(test "barrett-reduce"
+  (let ar (_bn_arena)
+    (let l (_bn_from ar "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed" 11)
+      (let mu (_bn_from ar "000fffffffffffffffffffffffffffffffeb2106215d086329a7ed9ce5a30a2c131b3994" 12)
+        (let wide (_bn_from ar "0003707f5b3123fa97a7a43e143d458881292d38c4dd4a29d327855b470d02783bb15ae8a4f4b1b8935e9e0d46d229a910bc575a37d208b24bca538ede65db79" 22)
+          (let out (bn-alloc ar 11)
+            (begin
+              (barrett-reduce ar out wide l mu 11)
+              (assert-equal (_bn_hex ar out 11 32) "05ad35c09e383b283ec06f0a316361d28f7214d8bd50612b8bbbd695cc7e050c"))))))))
+
+(test "miller-rabin-prime"
+  (let ar (_bn_arena)
+    (assert-equal (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed" 11) 11 2) 1)))
+
+(test "miller-rabin-composite"
+  (let ar (_bn_arena)
+    (assert-equal (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb" 11) 11 2) 0)))
+
+(run-tests)

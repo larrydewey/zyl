@@ -1,0 +1,79 @@
+; Bitwise Operator Regression Tests — bit-and/bit-or/bit-xor/bit-not,
+; shl/shr/ashr, defined out-of-range shift behaviour, n-ary folding.
+
+(test "bit-and-basic"
+  (assert-equal (bit-and 12 10) 8))
+(test "bit-or-basic"
+  (assert-equal (bit-or 12 10) 14))
+(test "bit-xor-basic"
+  (assert-equal (bit-xor 12 10) 6))
+(test "bit-and-zero"
+  (assert-equal (bit-and 12 0) 0))
+(test "bit-xor-self"
+  (assert-equal (bit-xor 123456789 123456789) 0))
+(test "bit-not-zero"
+  (assert-equal (bit-not 0) -1))
+(test "bit-not-neg-one"
+  (assert-equal (bit-not -1) 0))
+(test "bit-not-involutive"
+  (assert-equal (bit-not (bit-not 42)) 42))
+
+; n-ary folding, left-associative, same as the arithmetic operators.
+(test "bit-xor-nary"
+  (assert-equal (bit-xor 1 2 4) 7))
+(test "bit-and-nary"
+  (assert-equal (bit-and 15 12 10) 8))
+(test "bit-or-nary"
+  (assert-equal (bit-or 1 2 4 8) 15))
+
+; Shifts.
+(test "shl-basic"
+  (assert-equal (shl 1 10) 1024))
+(test "shr-basic"
+  (assert-equal (shr 1024 10) 1))
+(test "shl-zero-count"
+  (assert-equal (shl 7 0) 7))
+(test "shr-zero-count"
+  (assert-equal (shr 7 0) 7))
+
+; shr is LOGICAL (zero fill): -1 is all ones, so shifting right by 60
+; leaves exactly 4 set bits.
+(test "shr-is-logical"
+  (assert-equal (shr -1 60) 15))
+; ashr is ARITHMETIC (sign fill).
+(test "ashr-is-arithmetic"
+  (assert-equal (ashr -1 60) -1))
+(test "ashr-positive"
+  (assert-equal (ashr 1024 10) 1))
+
+; Out-of-range shift counts are DEFINED, not x86's mod-64 masking:
+; logical shifts give 0, arithmetic shift saturates to the sign bit.
+(test "shl-count-64"
+  (assert-equal (shl 1 64) 0))
+(test "shl-count-65"
+  (assert-equal (shl 1 65) 0))
+(test "shr-count-64"
+  (assert-equal (shr -1 64) 0))
+(test "ashr-count-64-negative"
+  (assert-equal (ashr -1 64) -1))
+(test "ashr-count-64-positive"
+  (assert-equal (ashr 1024 64) 0))
+(test "shl-negative-count"
+  (assert-equal (shl 1 -1) 0))
+(test "shr-negative-count"
+  (assert-equal (shr 1024 -1) 0))
+
+; Top-bit values round-trip: 1 << 63 is the most negative Int, and
+; shifting it back right logically recovers the bit.
+(test "shl-63-is-min-int"
+  (assert-equal (shl 1 63) -9223372036854775808))
+(test "shr-63-of-min-int"
+  (assert-equal (shr (shl 1 63) 63) 1))
+
+; Bitwise ops compose with ordinary arithmetic and with let bindings.
+(test "bit-ops-in-let"
+  (assert-equal (let x 240 (let y 15 (bit-or (shr x 4) (shl y 4)))) 255))
+(test "bit-mask-low-byte"
+  (assert-equal (bit-and 66051 255) 3))
+
+(run-tests)

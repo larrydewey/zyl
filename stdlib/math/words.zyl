@@ -1,0 +1,196 @@
+; === Zyl Standard Library — Flat Word Arrays ===
+; Module: math/words
+; Provides: fixed-size arena-backed Int arrays for numeric/crypto code
+;
+; Everything in stdlib/math needs the same thing: a fixed-size, densely
+; indexed, MUTABLE array of Ints (a hash's message schedule, a cipher's
+; state, a bignum's limbs). The two existing options do not fit:
+;
+;   - `List` is a linked structure with O(n) indexing and no in-place
+;     update at all.
+;   - `Vec` (collections/vec) is arena-backed and indexable, but its
+;     length lives in the returned Vec STRUCT, not in the arena, so
+;     `vec-set` must be threaded through every call site; ignoring its
+;     result leaves `vec-len` stale and makes `vec-get` return -1 for
+;     the slots just written. A 64-round loop of `(vec-set v i x)`
+;     inside a `begin` therefore silently reads back nothing.
+;
+; A word array is just a base address into an arena with an 8-byte
+; stride and NO length header: the length is whatever the caller
+; allocated and tracks. That means w-get/w-set are unchecked -- they are
+; the primitive these libraries build bounds-checked structures ON, and
+; every caller in stdlib/math indexes with a loop counter whose bound is
+; a compile-time constant of the algorithm (64 rounds, 16 words, 8
+; state slots), never with attacker-controlled data.
+
+(use allocator/allocator)
+
+; Allocate `n` zeroed words. Returns the base address.
+; Returns: Int
+(defn w-alloc ((arena Int) (n Int))
+  (arena-alloc-zeroed arena (* n 8)))
+
+; Read word i.
+; Returns: Int
+(defn w-get ((base Int) (i Int))
+  (alloc-read-int (+ base (* i 8))))
+
+; Write word i. Returns the value written.
+; Returns: Int
+(defn w-set ((base Int) (i Int) (v Int))
+  (alloc-write-int (+ base (* i 8)) v))
+
+; Set words [0, n) to v.
+; Returns: Int
+(defn w-fill ((base Int) (n Int) (v Int))
+  (begin
+    (for (i 0) (< i n) (begin (w-set base i v) (set! i (+ i 1))))
+    base))
+
+; Copy n words from src to dst.
+; Returns: Int
+(defn w-copy ((dst Int) (src Int) (n Int))
+  (begin
+    (for (i 0) (< i n) (begin (w-set dst i (w-get src i)) (set! i (+ i 1))))
+    dst))
+
+; ===========================================================================
+; STRING BRIDGE
+;
+; Message bytes come in as Strings in tests and in most callers, so the
+; conversion lives here rather than being repeated per primitive. Bytes
+; are read through the C runtime one at a time (`zyl_cstr_byte_at`,
+; already the lexer's own byte accessor) and masked to 0..255 so a
+; high-bit byte can never arrive as a negative Int.
+; ===========================================================================
+
+; Length of a String in bytes.
+; Returns: Int
+(defn w-string-len ((s String))
+  (ffi-call "zyl_cstr_len" s 1000))
+
+; Copy a String's bytes into a fresh word array, one byte per word.
+; Returns: Int
+(defn w-from-string ((arena Int) (s String))
+  (let n (ffi-call "zyl_cstr_len" s 1000)
+    (let p (w-alloc arena n)
+      (begin
+        (for (i 0) (< i n)
+          (begin
+            (w-set p i (bit-and (ffi-call "zyl_cstr_byte_at" s i 1000) 255))
+            (set! i (+ i 1))))
+        p))))
+
+; ===========================================================================
+; HEX FORMATTING
+; ===========================================================================
+
+; One lowercase hex digit for a 0..15 value.
+; Returns: String
+(defn w-hex-digit ((n Int))
+  (if (= n 0) "0"
+  (if (= n 1) "1"
+  (if (= n 2) "2"
+  (if (= n 3) "3"
+  (if (= n 4) "4"
+  (if (= n 5) "5"
+  (if (= n 6) "6"
+  (if (= n 7) "7"
+  (if (= n 8) "8"
+  (if (= n 9) "9"
+  (if (= n 10) "a"
+  (if (= n 11) "b"
+  (if (= n 12) "c"
+  (if (= n 13) "d"
+  (if (= n 14) "e" "f"))))))))))))))))
+
+; A byte (0..255) as two lowercase hex digits.
+; Returns: String
+(defn w-hex-byte ((b Int))
+  (str-concat (w-hex-digit (bit-and (shr b 4) 15)) (w-hex-digit (bit-and b 15))))
+
+; A 32-bit word as eight lowercase hex digits, most significant first.
+; Returns: String
+(defn w-hex-word32 ((x Int))
+  (let b0 (w-hex-byte (bit-and (shr x 24) 255))
+    (let b1 (w-hex-byte (bit-and (shr x 16) 255))
+      (let b2 (w-hex-byte (bit-and (shr x 8) 255))
+        (let b3 (w-hex-byte (bit-and x 255))
+          (str-concat (str-concat b0 b1) (str-concat b2 b3)))))))
+
+; The accumulating helpers are defined BEFORE the functions that call
+; them, and that order is load-bearing: codegen infers a function's
+; return kind from its body, and a call to a function defined LATER in
+; the program is not yet in that table, so the caller would fall back
+; to "Int" and turn `=` on its result into a pointer comparison.
+; Returns: String
+(defn w-hex-words-acc ((base Int) (n Int) (i Int) (acc String))
+  (if (>= i n)
+    (str-concat acc "")
+    (w-hex-words-acc base n (+ i 1) (str-concat acc (w-hex-word32 (w-get base i))))))
+
+; `n` 32-bit words as hex, in order.
+; Returns: String
+(defn w-hex-words ((base Int) (n Int))
+  (w-hex-words-acc base n 0 ""))
+
+; The base case returns `(str-concat acc "")` rather than `acc` itself.
+; That looks redundant and is not: a bare parameter has no inferable
+; kind, so the caller treated the result as an Int -- which made `=` on
+; two computed hex strings a pointer comparison that was always false,
+; and `print` of one show a pointer value. Ending in a call that is
+; known to return a String makes the kind visible.
+; Returns: String
+(defn w-hex-bytes-acc ((base Int) (n Int) (i Int) (acc String))
+  (if (>= i n)
+    (str-concat acc "")
+    (w-hex-bytes-acc base n (+ i 1) (str-concat acc (w-hex-byte (w-get base i))))))
+
+; `n` bytes (one per word) as hex, in order.
+; Returns: String
+(defn w-hex-bytes ((base Int) (n Int))
+  (w-hex-bytes-acc base n 0 ""))
+
+; ===========================================================================
+; HEX PARSING
+;
+; Binary test vectors (keys, nonces, ciphertexts) cannot be written as
+; Zyl string literals, so they are carried as hex text and decoded
+; here. This is the INVERSE of w-hex-bytes and is used by tests and by
+; callers reading configuration; it is not constant-time and must not
+; be used on secret material in a context where its timing is
+; observable (parsing a key from a config file at startup is fine --
+; the timing reveals only the length, which is already fixed).
+; ===========================================================================
+
+; Value 0..15 of a hex digit's byte code, or -1 if it is not one.
+; Returns: Int
+(defn w-hex-val ((c Int))
+  (if (and (>= c 48) (<= c 57)) (- c 48)
+  (if (and (>= c 97) (<= c 102)) (- c 87)
+  (if (and (>= c 65) (<= c 70)) (- c 55)
+    -1))))
+
+; Decode a hex String into a fresh byte array (one byte per word).
+; Returns: Int
+(defn w-from-hex ((arena Int) (s String))
+  (let n (/ (ffi-call "zyl_cstr_len" s 1000) 2)
+    (let p (w-alloc arena n)
+      (begin
+        (for (i 0) (< i n)
+          (begin
+            (w-set p i (w-hex-pair s (* i 2)))
+            (set! i (+ i 1))))
+        p))))
+
+; The byte encoded by the two hex digits at `off`.
+; Returns: Int
+(defn w-hex-pair ((s String) (off Int))
+  (let hi (w-hex-val (ffi-call "zyl_cstr_byte_at" s off 1000))
+    (let lo (w-hex-val (ffi-call "zyl_cstr_byte_at" s (+ off 1) 1000))
+      (+ (* hi 16) lo))))
+
+; Number of bytes a hex String decodes to.
+; Returns: Int
+(defn w-hex-len ((s String))
+  (/ (ffi-call "zyl_cstr_len" s 1000) 2))

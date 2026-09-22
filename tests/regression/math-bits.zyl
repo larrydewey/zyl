@@ -1,0 +1,83 @@
+; math/bits Regression Tests — 32-bit word ops, rotations, unsigned
+; comparison, byte packing.
+
+(use math/bits)
+
+(test "u32-truncates"
+  (assert-equal (u32 -1) 4294967295))
+(test "u32-identity"
+  (assert-equal (u32 123456) 123456))
+(test "add32-wraps"
+  (assert-equal (add32 4294967295 1) 0))
+(test "add32-plain"
+  (assert-equal (add32 100 23) 123))
+(test "sub32-wraps"
+  (assert-equal (sub32 0 1) 4294967295))
+(test "mul32-wraps"
+  (assert-equal (mul32 65536 65536) 0))
+(test "mul32-plain"
+  (assert-equal (mul32 12345 6789) 83810205))
+(test "not32"
+  (assert-equal (not32 0) 4294967295))
+
+(test "shl32-drops-high-bits"
+  (assert-equal (shl32 4294967295 4) 4294967280))
+(test "shr32-basic"
+  (assert-equal (shr32 4294967295 28) 15))
+
+; Rotations: the count-0 cases exercise the defined shl/shr-by-width
+; rule directly (the other half of the rotate shifts by the full width).
+(test "rotl32-zero"
+  (assert-equal (rotl32 305419896 0) 305419896))
+(test "rotr32-zero"
+  (assert-equal (rotr32 305419896 0) 305419896))
+(test "rotl32-by-8"
+  (assert-equal (rotl32 305419896 8) 878082066))
+(test "rotr32-by-8"
+  (assert-equal (rotr32 305419896 8) 2014458966))
+(test "rotl32-roundtrip"
+  (assert-equal (rotr32 (rotl32 3735928559 7) 7) 3735928559))
+(test "rotl64-zero"
+  (assert-equal (rotl64 1311768467294899695 0) 1311768467294899695))
+(test "rotl64-by-1"
+  (assert-equal (rotl64 1 63) -9223372036854775808))
+(test "rotr64-by-1"
+  (assert-equal (rotr64 1 1) -9223372036854775808))
+(test "rotr64-roundtrip"
+  (assert-equal (rotl64 (rotr64 1311768467294899695 13) 13) 1311768467294899695))
+
+; Unsigned comparison: 2^63 as an Int is negative, so the SIGNED `<`
+; would call it the smaller of the two.
+(test "u64-lt-signed-trap"
+  (assert-true (u64-lt 1 -9223372036854775808)))
+(test "u64-lt-plain"
+  (assert-true (u64-lt 1 2)))
+(test "u64-lt-equal-false"
+  (assert-false (u64-lt 5 5)))
+(test "u64-gt"
+  (assert-true (u64-gt -1 9223372036854775807)))
+(test "u64-le-equal"
+  (assert-true (u64-le 5 5)))
+(test "u64-ge-equal"
+  (assert-true (u64-ge 5 5)))
+
+; Byte extraction / packing.
+(test "byte-of-low"
+  (assert-equal (byte-of 66051 0) 3))
+(test "byte-of-high"
+  (assert-equal (byte-of 66051 2) 1))
+(test "be-byte32-first"
+  (assert-equal (be-byte32 305419896 0) 18))
+(test "be-byte32-last"
+  (assert-equal (be-byte32 305419896 3) 120))
+(test "be-byte64-first"
+  (assert-equal (be-byte64 1311768467294899695 0) 18))
+(test "be-pack32"
+  (assert-equal (be-pack32 18 52 86 120) 305419896))
+(test "le-pack32"
+  (assert-equal (le-pack32 120 86 52 18) 305419896))
+(test "be-pack32-roundtrip"
+  (let x 3735928559
+    (assert-equal (be-pack32 (be-byte32 x 0) (be-byte32 x 1) (be-byte32 x 2) (be-byte32 x 3)) x)))
+
+(run-tests)

@@ -87,7 +87,16 @@
 
 ; op codes, matching codegen.zyl's cg-arith-mnem/cg-cmp-set exactly:
 ; 0 + , 1 - , 2 * , 3 / , 4 % , 5 < , 6 > , 7 <= , 8 >= , 9 = , 10 !=
+;
+; The bitwise family (11-16, cg-bit-mnem) is deliberately NOT folded,
+; and the `op > 10` guard below is load-bearing: this chain's final
+; else-branch means "!=", so without the guard a constant `bit-and`
+; would have folded to an inequality test -- a silent miscompile. Not
+; folding them is also the only option available: computing a bit-and
+; HERE would mean writing bit-and in the compiler's own source, which
+; the previous-generation seed binary (no bitwise ops) cannot compile.
 (defn opt-fold-binop (op a b)
+  (if (> op 10) (IBinop op (IConst a) (IConst b))
   (if (= op 0) (IConst (+ a b))
   (if (= op 1) (IConst (- a b))
   (if (= op 2) (IConst (* a b))
@@ -98,7 +107,7 @@
   (if (= op 7) (IConst (if (<= a b) 1 0))
   (if (= op 8) (IConst (if (>= a b) 1 0))
   (if (= op 9) (IConst (if (= a b) 1 0))
-  (IConst (if (= a b) 0 1)))))))))))))
+  (IConst (if (= a b) 0 1))))))))))))))
 
 (defn opt-expr (e)
   (match e
