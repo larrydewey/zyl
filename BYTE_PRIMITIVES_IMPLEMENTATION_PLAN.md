@@ -300,24 +300,34 @@ pipeline) — no new logic was needed.
 
 ---
 
-## 10. Testing — Minimal; fuzzing and property tests are TODO
+## 10. Testing — Now a real regression file (see §15)
 
-Done: a standalone C smoke test for the runtime layer (§7), a manual
-end-to-end smoke test compiled and run through the actual self-hosted
-pipeline (byte literal, `store-u8`/`load-u8`/`load-i8`, `bytebuf`,
-`bytebuf-atomic-store`/`load`/`add`/`cas`, `align-check`), and the existing
-`run_regression_tests.sh` suite (unaffected, still 6/6).
+`tests/regression/byte-primitives.zyl` covers allocation and capacity,
+zero-initialisation, store/load round-trips at several offsets, offset
+independence, `load-u8` zero-extension against `load-i8` sign-extension,
+both endian selectors, fail-closed behaviour past capacity and at a
+negative offset, slices and sub-slices (including writing through a
+slice and seeing it in the parent), every atomic operation, and each
+region.
 
-Not done, real follow-up work: a dedicated `tests/byte-primitives.zyl`
-regression file, property tests (roundtrip, boundary bounds checks,
-concurrent atomic linearizability), and any fuzzing harness. None of this
-existed before this plan's implementation and none of it was added.
+The round-trip assertions are the point: the earlier "manual end-to-end
+smoke test" listed here compiled and ran the forms without checking that
+any value came back, which is exactly why the lowering bug in §15 went
+unnoticed.
+
+Still not done, real follow-up work: property tests (boundary sweeps,
+concurrent atomic linearizability) and a fuzzing harness.
 
 ---
 
-## 11. Documentation — Not done
+## 11. Documentation — Done, in the book
 
-No `docs/byte-primitives.md` was written. Follow-up work, not covered here.
+Chapter 32 of the book, *Bits, Bytes, and Buffers*
+(`book/src/part4/ch32-bits-and-bytes.md`), documents the bitwise
+operators and this whole family: buffers and regions, loads and stores,
+slices, atomics, alignment, the fail-closed bounds behaviour, and a
+table of exactly what is implemented against what is reserved. Appendix
+C lists the forms; Appendix A lists the error codes.
 
 ---
 
@@ -384,6 +394,39 @@ user to commit deliberately.
       of scope, no supporting machinery exists (§5)
 - [ ] Dedicated codegen path / constant-time bounds checks — not needed for
       correctness, `IFfi` covers it (§6)
+- [x] Round-trip regression tests (`tests/regression/byte-primitives.zyl`, §10)
+- [x] Documentation (book Chapter 32, §11)
+- [x] Load/store argument-order bug found and fixed (§15)
 - [ ] Property tests / fuzzing (§10)
-- [ ] Documentation (§11)
 - [ ] New seed committed (`build/boot/stage2.s`/`.bin`) — left for the user
+
+---
+
+## 15. The load/store argument-order bug
+
+**Symptom.** Every `load-u8`/`load-i8` returned 0 and every
+`store-u8`/`store-i8` silently did nothing, while both compiled and ran
+without a diagnostic.
+
+**Cause.** The `Expr` fields are `(endian, buf, offset)`, matching the
+source form `(load-u8 :le buf off)`; the runtime entry points are
+declared `(endian, offset, buf)`. The four ICNF arms in `icnf.zyl` bound
+the fields as `endian offset buf` — reading the second field as the
+offset and the third as the buffer — and then emitted them in that same
+order. The runtime therefore received the buffer handle as its offset
+and the offset as its handle. `zyl_bytes_view` resolved a small integer
+as a handle, found no magic tag, and returned an invalid view, at which
+point every load short-circuited to 0 and every store returned without
+writing.
+
+Nothing caught it because nothing asserted a round-trip: the manual
+smoke test ran the forms and checked that the program did not crash.
+
+**Fix.** Bind in field order, emit in runtime order — `icnf.zyl`'s
+`ELoadByte`, `ELoadByteSigned`, `EStoreByte` and `EStoreByteSigned`
+arms, with a comment recording why the two orders differ.
+
+**Verification.** `tests/regression/byte-primitives.zyl` (§10), and a
+fresh seed: the change alters the compiler's own source, so the seed was
+re-cut with `./boot.sh --bootstrap-from-self` and the fixed point
+re-verified.

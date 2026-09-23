@@ -43,6 +43,8 @@
 (use compiler/ast)
 (use compiler/expr_inner)
 (use compiler/sexp_balance)
+(use lsp/source_index)
+(use lsp/builtins)
 
 ; ===========================================================================
 ; BALANCE -> DIAGNOSTIC
@@ -76,10 +78,82 @@
         (Diag rng (Some DSError) None (Some (Left code)) None (Some "zyl") message None
               (Some (LSPObject (map-insert (map-new) "fixIt" (LSPString hint)))))))))
 
-; A caught compiler panic (see lsp/document_manager) has no location at
-; all -- reported at the top of the file, still with the real message.
-(defn diagnostic-from-panic (msg)
-  (Diag (Rng (Pos 0 0) (Pos 0 0)) (Some DSError) None None None (Some "zyl") msg None None))
+; A caught compiler panic (see lsp/document_manager) carries no
+; location: every checker in stdlib/compiler/ reports by calling
+; `zyl_panic` with a formatted message, and the Expr tree it walked has
+; no position to report from (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
+;
+; The messages are not shapeless, though. Every one of them is
+;   E_SOME_CODE: ...`offending-name`...
+; so the code comes off the front, the offending name comes out of the
+; first pair of backticks, and the name is then looked up in the
+; document text to get a range that actually points at something. A
+; message with no backticked name, or a name that does not appear in
+; this file, still reports at the top of the file -- the old behavior,
+; now only the fallback.
+(defn diagnostic-from-panic (msg text)
+  (let code (bridge-error-code msg)
+    (let name (bridge-backticked msg)
+      (let rng (bridge-range-for-name text name)
+        (Diag rng (Some DSError) None (bridge-code-field code) None (Some "zyl") msg None None)))))
+
+(defn bridge-code-field (code)
+  (if (> (str-length code) 0) (Some (Left code)) None))
+
+; The "E_..."/"W_..." token and everything up to its ':'. Usually the
+; message starts with it, but not always -- secret_check prefixes the
+; enclosing function (``in `leak`: E_SECRET_DEBUG: ...``), so the search
+; is for the marker anywhere rather than only at position 0.
+(defn bridge-error-code (msg)
+  (let n (str-length msg)
+    (let start (bridge-code-start msg 0 n)
+      (if (< start 0)
+        ""
+        (let end (bridge-upto-colon msg start n)
+          (if (< end 0) "" (str-substring msg start (- end start))))))))
+
+(defn bridge-code-start (msg i n)
+  (if (> (+ i 2) n)
+    (- 0 1)
+    (let lead (str-substring msg i 2)
+      (if (> (str-eq lead "E_") 0)
+        i
+        (if (> (str-eq lead "W_") 0)
+          i
+          (bridge-code-start msg (+ i 1) n))))))
+
+(defn bridge-upto-colon (s i n)
+  (if (>= i n)
+    (- 0 1)
+    (if (> (str-eq (str-substring s i 1) ":") 0)
+      i
+      (bridge-upto-colon s (+ i 1) n))))
+
+; Text between the first two backticks, or "".
+(defn bridge-backticked (msg)
+  (let n (str-length msg)
+    (let open (bridge-index-of msg "`" 0 n)
+      (if (< open 0)
+        ""
+        (let close (bridge-index-of msg "`" (+ open 1) n)
+          (if (< close 0)
+            ""
+            (str-substring msg (+ open 1) (- close (+ open 1)))))))))
+
+(defn bridge-index-of (s needle i n)
+  (if (>= i n)
+    (- 0 1)
+    (if (> (str-eq (str-substring s i 1) needle) 0)
+      i
+      (bridge-index-of s needle (+ i 1) n))))
+
+(defn bridge-range-for-name (text name)
+  (if (= (str-length name) 0)
+    (Rng (Pos 0 0) (Pos 0 0))
+    (match (si-find-word text name)
+      (Some p (Rng (Pos (Pair2.line p) (Pair2.col p))
+                   (Pos (Pair2.line p) (+ (Pair2.col p) (str-length name)))))
+      (None (Rng (Pos 0 0) (Pos 0 0))))))
 
 ; ===========================================================================
 ; SYMBOL TABLE — name -> declared signature / variant info
@@ -87,17 +161,22 @@
 
 (deftype FnInfo (FI String (List Param)))          ; name, params
 (deftype AdtInfo (AI2 String (List ADTVariant) (List String))) ; name, variants, generic params
+(deftype StructInfo (SI2 String (List String))) ; name, field names
 
 (deftype SymTable
-  (SymT (Map String FnInfo)   ; function name -> FnInfo
-        (Map String AdtInfo)  ; ADT type name -> AdtInfo
-        (Map String String))) ; variant constructor name -> owning ADT name
+  (SymT (Map String FnInfo)      ; function name -> FnInfo
+        (Map String AdtInfo)     ; ADT type name -> AdtInfo
+        (Map String String)      ; variant constructor name -> owning ADT name
+        (Map String StructInfo)  ; struct name -> StructInfo
+        (Map String String)))    ; field name -> owning struct name
 
-(defn st-new () (SymT (map-new) (map-new) (map-new)))
+(defn st-new () (SymT (map-new) (map-new) (map-new) (map-new) (map-new)))
 
-(defn st-fns (t) (match t (SymT f d1 d2 f)))
-(defn st-adts (t) (match t (SymT d1 a d2 a)))
-(defn st-variant-owners (t) (match t (SymT d1 d2 v v)))
+(defn st-fns (t) (match t (SymT f d1 d2 d3 d4 f)))
+(defn st-adts (t) (match t (SymT d1 a d2 d3 d4 a)))
+(defn st-variant-owners (t) (match t (SymT d1 d2 v d3 d4 v)))
+(defn st-structs (t) (match t (SymT d1 d2 d3 s d4 s)))
+(defn st-field-owners (t) (match t (SymT d1 d2 d3 d4 f f)))
 
 (defn st-build (exprs)
   (st-build-acc exprs (st-new)))
@@ -108,19 +187,66 @@
     (Cons e rest
       (match (Expr.inner e)
         (EDefn name params d1 (st-build-acc rest (st-add-fn acc name params)))
-        (EDeftype name variants gparams d2 (st-build-acc rest (st-add-adt acc name variants gparams)))
-        (EStructDef sd extra (st-build-acc rest acc))
+        (EDeftype name variants gparams marker
+          (st-build-acc rest (st-add-type acc name variants gparams marker)))
         (d3 (st-build-acc rest acc))))))
+
+; `defstruct` is not a node of its own: expr_inner.zyl lowers it to an
+; EDeftype with one variant named after the type and the marker
+; `(Some "struct")` in the fourth field, so icnf.zyl can give structs a
+; globally-unique tag. That marker is the only thing distinguishing a
+; struct from a one-variant ADT at this stage, so it is what decides
+; which map a definition lands in here -- and it matters, because a
+; struct should hover as a struct, complete as a struct, and offer its
+; fields.
+(defn st-add-type (t name variants gparams marker)
+  (match marker
+    (Some tag
+      (if (> (str-eq tag "struct") 0)
+        (st-add-struct t name variants)
+        (st-add-adt t name variants gparams)))
+    (None (st-add-adt t name variants gparams))))
 
 (defn st-add-fn (t name params)
   (match t
-    (SymT fns adts vo (SymT (map-insert fns name (FI name params)) adts vo))))
+    (SymT fns adts vo sts fo
+      (SymT (map-insert fns name (FI name params)) adts vo sts fo))))
 
 (defn st-add-adt (t name variants gparams)
   (match t
-    (SymT fns adts vo
+    (SymT fns adts vo sts fo
       (SymT fns (map-insert adts name (AI2 name variants gparams))
-            (st-register-variants vo variants name)))))
+            (st-register-variants vo variants name) sts fo))))
+
+; The struct's own constructor is registered as a variant too, since
+; `(Point 1 2)` is how one is built -- so go-to-definition and
+; completion see it -- while the type itself goes in the struct map.
+;
+; Field type annotations are NOT available: parse-defstruct drops them
+; on the floor when it builds the variant (see its comment), so the
+; field list here is names only, and hover says so rather than
+; inventing types.
+(defn st-add-struct (t name variants)
+  (let fields (st-first-variant-fields variants)
+    (match t
+      (SymT fns adts vo sts fo
+        (SymT fns adts (map-insert vo name name)
+              (map-insert sts name (SI2 name fields))
+              (st-register-fields fo fields name))))))
+
+(defn st-first-variant-fields (variants)
+  (match variants
+    (Nil Nil)
+    (Cons v d1 (match v (AV d2 fields fields)))))
+
+; A field name maps to the struct that declared it. Two structs sharing
+; a field name is ordinary and harmless here -- the later declaration
+; wins, and the only consumer is a hover on a field name, where naming
+; one plausible owner beats naming none.
+(defn st-register-fields (fo fields owner)
+  (match fields
+    (Nil fo)
+    (Cons fname rest (st-register-fields (map-insert fo fname owner) rest owner))))
 
 (defn st-register-variants (vo variants owner)
   (match variants
@@ -136,6 +262,9 @@
 (defn st-is-known-fn (t name) (map-has (st-fns t) name))
 (defn st-is-known-adt (t name) (map-has (st-adts t) name))
 (defn st-is-known-variant (t name) (map-has (st-variant-owners t) name))
+(defn st-lookup-struct (t name) (map-get (st-structs t) name))
+(defn st-is-known-struct (t name) (map-has (st-structs t) name))
+(defn st-field-owner (t name) (map-get (st-field-owners t) name))
 
 ; ===========================================================================
 ; HOVER TEXT
@@ -146,23 +275,23 @@
     (Some info
       (match info
         (FI d1 params
-          (Some (str-concat "```\nfn " (str-concat name (str-concat "(" (str-concat (bridge-params-to-string params) ")\n```"))))))))
+          (Some (str-concat "```zyl\n(defn " (str-concat name (str-concat " (" (str-concat (bridge-params-to-string params) ") ...)\n```"))))))))
     (None None)))
 
 (defn bridge-params-to-string (params)
   (match params
     (Nil "")
-    (Cons p t
+    (Cons p rest
       (match p
         (P pname ptyOpt
           (let this-str (bridge-param-to-string pname ptyOpt)
-            (match t
+            (match rest
               (Nil this-str)
-              (Cons d1 d2 (str-concat this-str (str-concat ", " (bridge-params-to-string t)))))))))))
+              (Cons d1 d2 (str-concat this-str (str-concat " " (bridge-params-to-string rest)))))))))))
 
 (defn bridge-param-to-string (pname ptyOpt)
   (match ptyOpt
-    (Some tyExpr (str-concat pname (str-concat ": " (bridge-type-expr-to-string tyExpr))))
+    (Some tyExpr (str-concat "(" (str-concat pname (str-concat " " (str-concat (bridge-type-expr-to-string tyExpr) ")")))))
     (None pname)))
 
 ; Best-effort unparse of a param's type annotation Expr back to display
@@ -183,18 +312,18 @@
     (Some info
       (match info
         (AI2 d1 variants d2
-          (Some (str-concat "```\ndeftype " (str-concat name (str-concat "\n  " (str-concat (bridge-variants-to-string variants) "\n```"))))))))
+          (Some (str-concat "```zyl\n(deftype " (str-concat name (str-concat "\n  " (str-concat (bridge-variants-to-string variants) ")\n```"))))))))
     (None None)))
 
 (defn bridge-variants-to-string (variants)
   (match variants
     (Nil "")
-    (Cons v t
+    (Cons v rest
       (match v
         (AV vname fields
-          (match t
+          (match rest
             (Nil (bridge-variant-line vname fields))
-            (Cons d1 d2 (str-concat (bridge-variant-line vname fields) (str-concat "\n  " (bridge-variants-to-string t))))))))))
+            (Cons d1 d2 (str-concat (bridge-variant-line vname fields) (str-concat "\n  " (bridge-variants-to-string rest))))))))))
 
 (defn bridge-variant-line (vname fields)
   (if (is-nil fields)
@@ -204,9 +333,70 @@
 (defn str-join-spaces (xs)
   (match xs
     (Nil "")
-    (Cons h t (match t (Nil h) (Cons d1 d2 (str-concat h (str-concat " " (str-join-spaces t))))))))
+    (Cons h rest (match rest (Nil h) (Cons d1 d2 (str-concat h (str-concat " " (str-join-spaces rest))))))))
 
+(defn bridge-struct-hover (t name)
+  (match (st-lookup-struct t name)
+    (Some info
+      (match info
+        (SI2 d1 fields
+          (Some (str-concat "```zyl\n(defstruct " (str-concat name
+                  (str-concat " " (str-concat (str-join-spaces fields)
+                    ")\n```\n\nFields are immutable: read one with `struct-get`, and build a changed copy rather than assigning to it."))))))))
+    (None None)))
+
+; A variant constructor hovers as the variant plus the type it belongs
+; to -- the thing you actually want to know when the cursor is on
+; `Cons` or `Err`.
+(defn bridge-variant-hover (t name)
+  (match (st-variant-owner t name)
+    (Some owner
+      (match (st-lookup-adt t owner)
+        (Some info
+          (match info
+            (AI2 d1 variants d2
+              (Some (str-concat "```zyl\n"
+                      (str-concat (bridge-find-variant-line variants name)
+                        (str-concat "\n```\n\nVariant of `" (str-concat owner "`."))))))))
+        (None (Some (str-concat "Variant of `" (str-concat owner "`."))))))
+    (None None)))
+
+(defn bridge-find-variant-line (variants name)
+  (match variants
+    (Nil name)
+    (Cons v rest
+      (match v
+        (AV vname fields
+          (if (> (str-eq vname name) 0)
+            (bridge-variant-line vname fields)
+            (bridge-find-variant-line rest name)))))))
+
+(defn bridge-field-hover (t name)
+  (match (st-field-owner t name)
+    (Some owner (Some (str-concat "Field `" (str-concat name (str-concat "` of struct `" (str-concat owner "`."))))))
+    (None None)))
+
+; Resolution order: the document's own definitions first, then the
+; language's built-ins. A user function named `min` should hover as
+; that function, not as the table entry it happens to share a name with.
 (defn bridge-hover-for-name (t name)
   (match (bridge-fn-hover t name)
     (Some h (Some h))
-    (None (bridge-adt-hover t name))))
+    (None
+      (match (bridge-struct-hover t name)
+        (Some h (Some h))
+        (None
+          (match (bridge-adt-hover t name)
+            (Some h (Some h))
+            (None
+              (match (bridge-variant-hover t name)
+                (Some h (Some h))
+                (None
+                  (match (bridge-field-hover t name)
+                    (Some h (Some h))
+                    (None (bridge-builtin-hover name))))))))))))
+
+(defn bridge-builtin-hover (name)
+  (match (builtin-lookup name)
+    (Some b (Some (builtin-hover-markdown b)))
+    (None None)))

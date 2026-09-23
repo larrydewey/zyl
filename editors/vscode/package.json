@@ -1,17 +1,27 @@
 {
   "name": "zyl",
   "displayName": "Zyl",
-  "description": "Language support for Zyl (deterministic Lisp systems language)",
-  "version": "0.1.0",
+  "description": "Language support for Zyl: a deterministic Lisp systems language with region-based memory, capability types, and actor concurrency.",
+  "version": "0.2.0",
   "publisher": "zyl-lang",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "keywords": [
+    "zyl",
+    "lisp",
+    "systems",
+    "deterministic"
   ],
   "activationEvents": [
-    "onLanguage:zyl"
+    "onLanguage:zyl",
+    "workspaceContains:**/*.zyl"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -30,31 +40,134 @@
         "path": "./syntaxes/zyl.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "zyl",
+        "path": "./snippets/zyl.json"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "zyl",
+        "scopes": {
+          "keyword": ["keyword.control.zyl"],
+          "function": ["entity.name.function.zyl"],
+          "type": ["entity.name.type.zyl"],
+          "enumMember": ["variable.other.enummember.zyl"],
+          "property": ["variable.other.property.zyl"],
+          "operator": ["keyword.operator.zyl"],
+          "macro": ["entity.name.function.macro.zyl"],
+          "comment": ["comment.line.semicolon.zyl"],
+          "string": ["string.quoted.double.zyl"],
+          "number": ["constant.numeric.zyl"]
+        }
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Zyl",
       "properties": {
+        "zyl.lsp.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the Zyl language server. Turn this off to keep syntax highlighting and snippets without diagnostics or navigation."
+        },
         "zyl.lsp.path": {
           "type": "string",
-          "default": "zyl-lsp",
-          "description": "Path to the Zyl LSP server binary (zyl-lsp)."
+          "default": "",
+          "description": "Path to the zyl-lsp binary. Leave empty to search $ZYL_HOME/bin, ~/.zyl/bin, the workspace's build/boot directory, and finally $PATH."
+        },
+        "zyl.lsp.arguments": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Extra arguments passed to the language server on start."
         },
         "zyl.lsp.trace.server": {
           "type": "string",
           "enum": ["off", "messages", "verbose"],
           "default": "off",
-          "description": "Traces the communication between VS Code and the Zyl LSP server."
+          "description": "Log the JSON-RPC traffic between VS Code and the Zyl language server."
+        },
+        "zyl.inlayHints.parameterNames": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show parameter-name hints at call sites."
+        },
+        "zyl.compiler.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the zyl compiler, used by the build task. Leave empty to search $ZYL_HOME/bin, ~/.zyl/bin and $PATH."
         }
       }
     },
     "commands": [
       {
         "command": "zyl.restartLSP",
-        "title": "Zyl: Restart Language Server"
+        "title": "Restart Language Server",
+        "category": "Zyl"
+      },
+      {
+        "command": "zyl.stopLSP",
+        "title": "Stop Language Server",
+        "category": "Zyl"
       },
       {
         "command": "zyl.evalDocument",
-        "title": "Zyl: Evaluate Document"
+        "title": "Run Current File",
+        "category": "Zyl"
+      },
+      {
+        "command": "zyl.showServerLog",
+        "title": "Show Language Server Log",
+        "category": "Zyl"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "zyl.evalDocument",
+          "when": "editorLangId == zyl",
+          "group": "z_commands"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "zyl.evalDocument",
+          "when": "editorLangId == zyl"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "zyl.evalDocument",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorLangId == zyl"
+      }
+    ],
+    "configurationDefaults": {
+      "[zyl]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "editor.wordSeparators": "`~!@#$%^&*()=+[{]}\\|;:'\",<>?",
+        "editor.semanticHighlighting.enabled": true
+      }
+    },
+    "taskDefinitions": [
+      {
+        "type": "zyl",
+        "required": ["file"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The .zyl file to compile."
+          },
+          "output": {
+            "type": "string",
+            "description": "Output binary path. Defaults to the source file without its extension."
+          }
+        }
       }
     ]
   },
@@ -63,7 +176,7 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "package": "vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"

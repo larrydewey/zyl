@@ -1,14 +1,29 @@
 ; === Zyl LSP — Semantic Tokens Service ===
 ; Module: lsp/services/semantic_tokens
 ;
-; Real per-token classification, computed the same way as
-; lsp/source_index (a raw scan over the document text -- see its header
-; comment for why: nothing in the real lexer/parser carries a source
-; position). Classifies: line comments, string literals, numbers, and
-; identifiers that resolve against the document's own SymTable (known
-; function names -> "function", known variant constructors -> "variant"
-; -- the two categories this LSP actually has real data for). Plain
-; local variables are left unhighlighted rather than guessed at.
+; Real per-token classification over the raw document text (the same
+; technique as lsp/source_index -- see its header for why: nothing in
+; the real lexer or parser carries a source position).
+;
+; Every word the scan meets is classified, in this order:
+;   1. a special form or operator from lsp/builtins      -> keyword / operator
+;   2. a built-in type, region or capability name        -> type
+;   3. a built-in function from the same table           -> function
+;   4. a name this document defines (SymTable)           -> function / type / enumMember
+;   5. a struct field name                               -> property
+;   6. anything else starting with a capital letter      -> type
+;   7. anything else                                     -> left unclassified
+;
+; Step 7 is deliberate. Emitting `variable` for every remaining word
+; would colour ordinary locals in whatever the theme picks for
+; variables, overriding the syntax colouring the client already applies
+; from the TextMate grammar and making a Zyl file noisier, not clearer.
+; A token this scan cannot name is better left to the grammar.
+;
+; The name a word is classified against comes from the document's own
+; SymTable, so a declaration and its call sites colour identically, and
+; a name that resolves to nothing stays plain -- which is itself a
+; useful signal while typing.
 ;
 ; Token-type indices are plain nullary functions, not top-level `def`
 ; constants: a top-level `(def name val)` never actually becomes a
@@ -22,6 +37,7 @@
 (use core/option)
 (use lsp/lsp_types)
 (use lsp/compiler_bridge)
+(use lsp/builtins)
 (use compiler/sexp_balance)
 
 ; Array literal syntax (`[...]`) reliably crashes or mislinks under the
@@ -30,92 +46,124 @@
 ; deep stack overflow in monomorphize-loop depending on context) --
 ; explicit Cons/Nil chains are the proven-safe equivalent used
 ; throughout this LSP's own code.
+;
+; The type names are the standard LSP ones, so a client theme that
+; knows nothing about Zyl still colours a Zyl file correctly.
 (defn semantic-tokens-legend ()
   (STLeg
-    (Cons "function" (Cons "keyword" (Cons "variant" (Cons "comment" (Cons "string" (Cons "number" Nil))))))
-    Nil))
+    (Cons "keyword" (Cons "function" (Cons "type" (Cons "enumMember"
+      (Cons "property" (Cons "comment" (Cons "string" (Cons "number"
+        (Cons "operator" (Cons "macro" Nil))))))))))
+    (Cons "declaration" (Cons "definition" (Cons "defaultLibrary" Nil)))))
 
-(defn st-tt-function () 0)
-(defn st-tt-keyword () 1)
-(defn st-tt-variant () 2)
-(defn st-tt-comment () 3)
-(defn st-tt-string () 4)
-(defn st-tt-number () 5)
+(defn st-tt-keyword () 0)
+(defn st-tt-function () 1)
+(defn st-tt-type () 2)
+(defn st-tt-variant () 3)
+(defn st-tt-property () 4)
+(defn st-tt-comment () 5)
+(defn st-tt-string () 6)
+(defn st-tt-number () 7)
+(defn st-tt-operator () 8)
+(defn st-tt-macro () 9)
 
-(deftype RawTok (RT Int Int Int Int)) ; line, col, length, token-type
+(defn st-mod-none () 0)
+(defn st-mod-declaration () 1)
+(defn st-mod-definition () 2)
+(defn st-mod-default-library () 4)
 
-(defn st-keywords ()
-  (Cons "defn" (Cons "let" (Cons "let-mut" (Cons "if" (Cons "match" (Cons "while" (Cons "for" (Cons "fn" (Cons "lambda" (Cons "spawn" (Cons "send" (Cons "ffi-call" (Cons "ffi-pin" (Cons "ffi-unpin" (Cons "try" (Cons "catch" (Cons "assert" (Cons "begin" (Cons "use" (Cons "deftype" (Cons "defstruct" (Cons "defstruct+" (Cons "trait" (Cons "impl" (Cons "struct-get" (Cons "print" (Cons "set!" (Cons "error" (Cons "run-tests" (Cons "test" (Cons "test-suite" (Cons "cond" (Cons "def" Nil))))))))))))))))))))))))))))))))))
+(deftype RawTok (RT Int Int Int Int Int)) ; line, col, length, token-type, modifiers
 
-(defn st-is-keyword (w) (> (st-list-contains (st-keywords) w) 0))
+(defn RawTok.line (t) (match t (RT l d1 d2 d3 d4 l)))
 
-(defn st-list-contains (xs w)
-  (match xs
-    (Nil 0)
-    (Cons h t (if (> (str-eq h w) 0) 1 (st-list-contains t w)))))
+; Kept for callers that want the bare keyword list (completion's static
+; source); the table itself lives in lsp/builtins.
+(defn st-keywords () (builtin-names))
+
+(defn st-is-keyword (w) (> (builtin-is-syntax-word w) 0))
 
 (defn st-byte-at (text i) (sb-char-code (str-substring text i 1)))
 
 (defn st-is-digit (b) (and (>= b 48) (<= b 57)))
+
+(defn st-is-upper (b) (and (>= b 65) (<= b 90)))
 
 (defn st-is-word-char (b)
   (not (or (= b 32) (or (= b 9) (or (= b 10) (or (= b 13)
       (or (= b 40) (or (= b 41) (or (= b 91) (or (= b 93)
       (or (= b 123) (or (= b 125) (or (= b 34) (= b 59))))))))))))))
 
-; Compute the flat LSP SemanticTokens int array from raw text + this
-; document's SymTable.
-(defn semantic-tokens-for (text tbl)
-  (st-encode (st-scan text 0 (str-length text) 0 0 Nil) 0 0))
+; ===========================================================================
+; ENTRY POINTS
+; ===========================================================================
 
-(defn st-scan (text i len line col acc)
+(defn semantic-tokens-for (text tbl)
+  (st-encode (st-scan text 0 (str-length text) 0 0 tbl Nil) 0 0))
+
+; textDocument/semanticTokens/range: the same scan, filtered to the
+; requested line span before delta-encoding. Filtering after the scan
+; rather than scanning a slice keeps line and column numbers absolute,
+; which is what the protocol wants.
+(defn semantic-tokens-range-for (text tbl startline endline)
+  (st-encode (st-in-line-range (st-scan text 0 (str-length text) 0 0 tbl Nil) startline endline) 0 0))
+
+(defn st-in-line-range (toks startline endline)
+  (match toks
+    (Nil Nil)
+    (Cons t rest
+      (if (and (>= (RawTok.line t) startline) (<= (RawTok.line t) endline))
+        (Cons t (st-in-line-range rest startline endline))
+        (st-in-line-range rest startline endline)))))
+
+; ===========================================================================
+; SCAN
+; ===========================================================================
+
+(defn st-scan (text i len line col tbl acc)
   (if (>= i len)
     (list-reverse acc)
     (let b (st-byte-at text i)
       (if (= b 34)
-        (st-scan-string text (+ i 1) len line (+ col 1) line col acc)
+        (st-scan-string text (+ i 1) len line (+ col 1) line col tbl acc)
         (if (= b 59)
-          (st-scan-comment text (+ i 1) len line (+ col 1) line col acc)
+          (st-scan-comment text (+ i 1) len line (+ col 1) line col tbl acc)
           (if (= b 10)
-            (st-scan text (+ i 1) len (+ line 1) 0 acc)
+            (st-scan text (+ i 1) len (+ line 1) 0 tbl acc)
             (if (st-is-digit b)
-              (st-scan-number text i len line col acc)
+              (st-scan-number text i len line col tbl acc)
               (if (> (st-is-word-char b) 0)
-                (st-scan-word text i len line col acc)
-                (st-scan text (+ i 1) len line (+ col 1) acc)))))))))
+                (st-scan-word text i len line col tbl acc)
+                (st-scan text (+ i 1) len line (+ col 1) tbl acc)))))))))
 
-(defn st-scan-string (text i len line col startline startcol acc)
+(defn st-scan-string (text i len line col startline startcol tbl acc)
   (if (>= i len)
-    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-string)) acc))
+    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-string) 0) acc))
     (let b (st-byte-at text i)
       (if (= b 92)
-        (st-scan-string text (+ i 2) len line (+ col 2) startline startcol acc)
+        (st-scan-string text (+ i 2) len line (+ col 2) startline startcol tbl acc)
         (if (= b 34)
-          (st-scan text (+ i 1) len line (+ col 1) (Cons (RT startline startcol (+ (- col startcol) 1) (st-tt-string)) acc))
+          (st-scan text (+ i 1) len line (+ col 1) tbl (Cons (RT startline startcol (+ (- col startcol) 1) (st-tt-string) 0) acc))
           (if (= b 10)
-            (st-scan-string text (+ i 1) len (+ line 1) 0 startline startcol acc)
-            (st-scan-string text (+ i 1) len line (+ col 1) startline startcol acc)))))))
+            (st-scan-string text (+ i 1) len (+ line 1) 0 startline startcol tbl acc)
+            (st-scan-string text (+ i 1) len line (+ col 1) startline startcol tbl acc)))))))
 
-(defn st-scan-comment (text i len line col startline startcol acc)
+(defn st-scan-comment (text i len line col startline startcol tbl acc)
   (if (>= i len)
-    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-comment)) acc))
+    (list-reverse (Cons (RT startline startcol (- col startcol) (st-tt-comment) 0) acc))
     (let b (st-byte-at text i)
       (if (= b 10)
-        (st-scan text i len line col (Cons (RT startline startcol (- col startcol) (st-tt-comment)) acc))
-        (st-scan-comment text (+ i 1) len line (+ col 1) startline startcol acc)))))
+        (st-scan text i len line col tbl (Cons (RT startline startcol (- col startcol) (st-tt-comment) 0) acc))
+        (st-scan-comment text (+ i 1) len line (+ col 1) startline startcol tbl acc)))))
 
-(defn st-scan-number (text i len line col acc)
+(defn st-scan-number (text i len line col tbl acc)
   (let end (st-word-end text i len)
-    (st-scan text end len line (+ col (- end i)) (Cons (RT line col (- end i) (st-tt-number)) acc))))
+    (st-scan text end len line (+ col (- end i)) tbl (Cons (RT line col (- end i) (st-tt-number) 0) acc))))
 
-(defn st-scan-word (text i len line col acc)
+(defn st-scan-word (text i len line col tbl acc)
   (let end (st-word-end text i len)
     (let word (str-substring text i (- end i))
-      (let tok
-        (if (st-is-keyword word)
-          (Some (RT line col (- end i) (st-tt-keyword)))
-          None)
-        (st-scan text end len line (+ col (- end i)) (st-cons-opt tok acc))))))
+      (st-scan text end len line (+ col (- end i)) tbl
+               (st-cons-opt (st-classify word tbl line col (- end i)) acc)))))
 
 (defn st-cons-opt (tok acc)
   (match tok (Some t (Cons t acc)) (None acc)))
@@ -127,27 +175,70 @@
       (st-word-end text (+ i 1) len)
       i)))
 
-; Post-classify identifiers against the SymTable (function/variant),
-; THEN delta-encode into the flat LSP int array (deltaLine,
-; deltaStartChar, length, tokenType, tokenModifiers). Sorted already
-; (the scan is left-to-right), so no separate sort step is needed.
-(defn semantic-tokens-classify (toks tbl)
-  (match toks
-    (Nil Nil)
-    (Cons t rest
-      (match t
-        (RT line col length ttype
-          (Cons (st-reclassify t tbl) (semantic-tokens-classify rest tbl)))))))
+; ===========================================================================
+; CLASSIFICATION — see the header comment for the order and for why the
+; last case emits nothing.
+; ===========================================================================
 
-(defn st-reclassify (t tbl) t) ; keywords/strings/comments/numbers already final; identifiers never entered `acc` unless keyword, so nothing left to reclassify today (function/variant name coloring is future work once a document-text substring lookup is threaded through -- see services/semantic_tokens header).
+(defn st-classify (word tbl line col length)
+  (match (builtin-lookup word)
+    (Some b (Some (RT line col length (st-builtin-token-type b) (st-mod-default-library))))
+    (None (st-classify-user word tbl line col length))))
+
+(defn st-builtin-token-type (b)
+  (let kind (ZB.kind b)
+    (if (> (str-eq kind "operator") 0) (st-tt-operator)
+      (if (> (str-eq kind "special-form") 0) (st-tt-keyword)
+        (if (> (str-eq kind "builtin") 0) (st-tt-function)
+          (st-tt-type))))))
+
+(defn st-classify-user (word tbl line col length)
+  (if (> (st-is-syntax-extra word) 0)
+    (Some (RT line col length (st-tt-keyword) (st-mod-default-library)))
+    (if (> (st-is-known-fn tbl word) 0)
+      (Some (RT line col length (st-tt-function) 0))
+      (if (> (st-is-known-variant tbl word) 0)
+        (Some (RT line col length (st-tt-variant) 0))
+        (if (> (st-is-known-adt tbl word) 0)
+          (Some (RT line col length (st-tt-type) 0))
+          (if (> (st-is-known-struct tbl word) 0)
+            (Some (RT line col length (st-tt-type) 0))
+            (st-classify-shape word tbl line col length)))))))
+
+; `catch` is part of `try`'s syntax rather than a form of its own, and
+; `:le`/`:be` lead the byte operations; none has a builtins table entry,
+; but all three are syntax and should read as such.
+(defn st-is-syntax-extra (word)
+  (if (> (str-eq word "catch") 0) 1
+    (if (> (str-eq word ":le") 0) 1
+      (if (> (str-eq word ":be") 0) 1 0))))
+
+; Last resort: a struct field name colours as a property, and Zyl's
+; naming convention (types and variant constructors capitalised,
+; everything else not) resolves a capitalised leftover to a type. An
+; uncapitalised leftover is a local binding this scan has no data for
+; and is left alone.
+(defn st-classify-shape (word tbl line col length)
+  (match (st-field-owner tbl word)
+    (Some d1 (Some (RT line col length (st-tt-property) 0)))
+    (None
+      (if (> (st-is-upper (sb-char-code (str-substring word 0 1))) 0)
+        (Some (RT line col length (st-tt-type) 0))
+        None))))
+
+; ===========================================================================
+; DELTA ENCODING — (deltaLine, deltaStartChar, length, tokenType,
+; tokenModifiers). The scan is left-to-right, so the list is already
+; sorted and no separate sort step is needed.
+; ===========================================================================
 
 (defn st-encode (toks prevline prevcol)
   (match toks
     (Nil Nil)
     (Cons t rest
       (match t
-        (RT line col length ttype
+        (RT line col length ttype mods
           (let dline (- line prevline)
             (let dcol (if (= dline 0) (- col prevcol) col)
-              (list-append (Cons dline (Cons dcol (Cons length (Cons ttype (Cons 0 Nil)))))
+              (list-append (Cons dline (Cons dcol (Cons length (Cons ttype (Cons mods Nil)))))
                 (st-encode rest line col)))))))))

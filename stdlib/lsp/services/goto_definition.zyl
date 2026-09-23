@@ -1,18 +1,23 @@
-; === Zyl LSP — Go-to-Definition + Rename Service ===
+; === Zyl LSP — Go-to-Definition / Type Definition / Implementation /
+; References / Document Highlight / Rename Service ===
 ; Module: lsp/services/goto_definition
-; Name-based: resolve the identifier under the cursor via
-; lsp/source_index's word-at-position, confirm it's a real known name
-; via the document's SymTable, then find WHERE it was declared via
-; lsp/source_index's own top-level-form scan (position lookup by name,
-; the mirror image of hover's name lookup by position).
 ;
-; Rename lives here too: same name resolution, but produces a
-; WorkspaceEdit renaming every top-level occurrence of the declaration
-; site's own header token (the def/deftype name itself) -- NOT every
-; reference across the file, since references aren't position-tracked
-; either. Honest, reduced scope: renames the declaration; call sites
-; are left for the user, same as this LSP's hover: real data, no
-; fabricated precision.
+; Everything here resolves the identifier under the cursor with
+; lsp/source_index's word-at-position and then answers with positions
+; from the same module's two text scans: the top-level form index (where
+; was this name DECLARED) and the whole-word occurrence scan (where is
+; this name USED).
+;
+; The occurrence scan is what makes references, document highlight and a
+; whole-file rename real rather than declaration-only. It skips string
+; literals and comments, so a name mentioned in prose is never touched.
+; What it does NOT do is distinguish a local binding from a top-level
+; one of the same name: Zyl rejects duplicate top-level definitions
+; (compiler/duplicate_check.zyl), so a top-level name is unambiguous
+; file-wide, but a `let` that shadows one would be renamed with it.
+; Shadowing a function you are also calling in the same body is rare and
+; already confusing; renaming through it is the same tradeoff every
+; textual-rename tool makes, and it is stated here rather than hidden.
 
 (use core/core)
 (use core/list)
@@ -22,13 +27,29 @@
 (use lsp/source_index)
 (use lsp/compiler_bridge)
 
+; ===========================================================================
+; DEFINITION
+; ===========================================================================
+
 (defn definition-at (text tbl uri line col)
   (let word (si-word-at text line col)
     (if (= (str-length word) 0)
       None
-      (if (or (> (st-is-known-fn tbl word) 0) (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-variant tbl word) 0)))
-        (goto-find-form text uri word)
-        None))))
+      (match (goto-find-form text uri word)
+        (Some loc (Some loc))
+        (None (goto-owning-type text tbl uri word))))))
+
+; A variant constructor has no top-level form of its own -- it is
+; declared inside its `deftype`. Jumping to that deftype is the useful
+; answer, and the same fallback serves a struct field, which lands on
+; its `defstruct`.
+(defn goto-owning-type (text tbl uri word)
+  (match (st-variant-owner tbl word)
+    (Some owner (goto-find-form text uri owner))
+    (None
+      (match (st-field-owner tbl word)
+        (Some owner (goto-find-form text uri owner))
+        (None None)))))
 
 (defn goto-find-form (text uri word)
   (goto-search (si-top-level-forms text) uri word))
@@ -38,39 +59,140 @@
     (Nil None)
     (Cons f rest
       (if (> (str-eq (TopForm.name f) word) 0)
-        (Some (Loc uri (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length word))))))
+        (Some (Loc uri (goto-name-range f)))
         (goto-search rest uri word)))))
+
+(defn goto-name-range (f)
+  (let start (+ (TopForm.col f) (+ 2 (str-length (TopForm.kind f))))
+    (Rng (Pos (TopForm.line f) start)
+         (Pos (TopForm.line f) (+ start (str-length (TopForm.name f)))))))
+
+; ===========================================================================
+; TYPE DEFINITION — "what type is this?", answered for the two cases
+; where the answer is knowable without inference: a variant belongs to
+; its ADT, a field belongs to its struct.
+; ===========================================================================
+
+(defn type-definition-at (text tbl uri line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      None
+      (match (goto-owning-type text tbl uri word)
+        (Some loc (Some loc))
+        (None
+          (if (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-struct tbl word) 0))
+            (goto-find-form text uri word)
+            None))))))
+
+; ===========================================================================
+; IMPLEMENTATION — every `(impl Trait ...)` form naming the trait under
+; the cursor. Returns a list, since a trait usually has several.
+; ===========================================================================
+
+(defn implementations-at (text uri line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      Nil
+      (impl-search (si-top-level-forms text) uri word))))
+
+(defn impl-search (forms uri word)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (if (and (> (str-eq (TopForm.kind f) "impl") 0) (> (str-eq (TopForm.name f) word) 0))
+        (Cons (Loc uri (goto-name-range f)) (impl-search rest uri word))
+        (impl-search rest uri word)))))
+
+; ===========================================================================
+; REFERENCES + DOCUMENT HIGHLIGHT
+; ===========================================================================
+
+; `include-decl` is the client's `context.includeDeclaration`. When it
+; is off, the one occurrence that IS the declaration -- the name token
+; in the `defn`/`deftype`/... header -- is dropped and only the uses
+; remain.
+(defn references-at (text uri line col include-decl)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      Nil
+      (let occs (si-word-occurrences text word)
+        (let kept (if (> include-decl 0) occs (refs-without-declaration text occs word))
+          (refs-to-locations kept uri (str-length word)))))))
+
+(defn refs-without-declaration (text occs word)
+  (match (goto-find-form text "" word)
+    (Some loc
+      (match loc
+        (Loc d1 rng
+          (match rng
+            (Rng start d2 (refs-drop-at occs (Pos.line-of-pos start) (Pos.col-of-pos start)))))))
+    (None occs)))
+
+(defn Pos.line-of-pos (p) (match p (Pos l d1 l)))
+(defn Pos.col-of-pos (p) (match p (Pos d1 c c)))
+
+(defn refs-drop-at (occs line col)
+  (match occs
+    (Nil Nil)
+    (Cons p rest
+      (if (and (= (Pair2.line p) line) (= (Pair2.col p) col))
+        (refs-drop-at rest line col)
+        (Cons p (refs-drop-at rest line col))))))
+
+(defn refs-to-locations (occs uri width)
+  (match occs
+    (Nil Nil)
+    (Cons p rest
+      (Cons (Loc uri (Rng (Pos (Pair2.line p) (Pair2.col p))
+                          (Pos (Pair2.line p) (+ (Pair2.col p) width))))
+            (refs-to-locations rest uri width)))))
+
+; Document highlight is the same occurrence set, ranged rather than
+; located, which is what the client wants for "highlight the symbol
+; under the cursor" as you move around a file.
+(defn document-highlights-at (text line col)
+  (let word (si-word-at text line col)
+    (if (= (str-length word) 0)
+      Nil
+      (highlights-of (si-word-occurrences text word) (str-length word)))))
+
+(defn highlights-of (occs width)
+  (match occs
+    (Nil Nil)
+    (Cons p rest
+      (Cons (Rng (Pos (Pair2.line p) (Pair2.col p))
+                 (Pos (Pair2.line p) (+ (Pair2.col p) width)))
+            (highlights-of rest width)))))
+
+; ===========================================================================
+; RENAME
+; ===========================================================================
 
 (defn prepare-rename-at (text line col)
   (let word (si-word-at text line col)
     (if (= (str-length word) 0)
       None
-      (Some (Rng (Pos line (- col (si-word-back-offset text line col))) (Pos line col))))))
+      (let offset (si-offset-of-pos text line col)
+        (let start (si-word-scan-back text offset)
+          (let startcol (- col (- offset start))
+            (Some (Rng (Pos line startcol) (Pos line (+ startcol (str-length word)))))))))))
 
-; Column offset back to the start of the identifier at (line, col), for
-; PrepareRename's requested range.
-(defn si-word-back-offset (text line col)
-  (let offset (si-offset-of-pos text line col)
-    (- offset (si-word-start-offset text offset))))
-
-(defn si-word-start-offset (text offset)
-  (if (<= offset 0)
-    0
-    (if (> (si-is-ident-char (str-substring text (- offset 1) 1)) 0)
-      (si-word-start-offset text (- offset 1))
-      offset)))
-
-; Renames only the declaration header's own name token (see header
-; comment) -- one TextEdit at the declaration site.
-(defn rename-at (text uri tbl line col new-name)
+; Every occurrence in the document, not just the declaration -- see the
+; header comment for the one case this over-reaches on.
+(defn rename-at (text uri line col new-name)
   (let word (si-word-at text line col)
     (if (= (str-length word) 0)
       None
-      (if (or (> (st-is-known-fn tbl word) 0) (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-variant tbl word) 0)))
-        (match (goto-find-form text uri word)
-          (Some loc
-            (match loc
-              (Loc d1 rng
-                (Some (WE (Some (map-insert (map-new) uri (Cons (TE rng new-name) Nil))) None None)))))
-          (None None))
-        None))))
+      (let edits (rename-edits (si-word-occurrences text word) (str-length word) new-name)
+        (match edits
+          (Nil None)
+          (Cons d1 d2 (Some (WE (Some (map-insert (map-new) uri edits)) None None))))))))
+
+(defn rename-edits (occs width new-name)
+  (match occs
+    (Nil Nil)
+    (Cons p rest
+      (Cons (TE (Rng (Pos (Pair2.line p) (Pair2.col p))
+                     (Pos (Pair2.line p) (+ (Pair2.col p) width)))
+                new-name)
+            (rename-edits rest width new-name)))))

@@ -1,0 +1,404 @@
+; === Zyl LSP — Built-in and Special-Form Table ===
+; Module: lsp/builtins
+;
+; One table, four consumers: hover (signature + prose), completion
+; (label + detail + documentation), signature help (parameter list), and
+; semantic tokens (is this word a keyword?).
+;
+; The names here are not a curated subset -- they are every head symbol
+; `dispatch-special` in stdlib/compiler/expr_inner.zyl actually
+; recognizes, every operator icnf.zyl lowers to a machine instruction,
+; and every type/region/capability name the annotation reader accepts.
+; A form that parses specially but is missing from this table shows up
+; in the editor as an ordinary unresolved identifier, which is exactly
+; the bug this file exists to prevent; keep it in sync when
+; expr_inner.zyl gains a form.
+;
+; Shape note: the table is split into a dozen small functions rather
+; than one giant Cons chain. Both compile, but a single ~200-deep
+; nesting is a needlessly large single expression for monomorphization
+; to walk, and the split gives each group a name that says what it is.
+; Nullary functions, not top-level `def`: a `def` never becomes a
+; readable global in this compiler (see codegen.zyl's cg-load-nonslot).
+
+(use core/core)
+(use core/list)
+(use core/option)
+
+; name, kind, signature, one-line documentation.
+;
+; kind is one of: "special-form", "operator", "builtin", "type",
+; "region", "capability" -- it selects the completion item kind and the
+; hover header, nothing else.
+(deftype ZylBuiltin (ZB String String String String))
+
+(defn ZB.name (b) (match b (ZB n d1 d2 d3 n)))
+(defn ZB.kind (b) (match b (ZB d1 k d2 d3 k)))
+(defn ZB.sig (b) (match b (ZB d1 d2 s d3 s)))
+(defn ZB.doc (b) (match b (ZB d1 d2 d3 d d)))
+
+; ===========================================================================
+; THE TABLE
+; ===========================================================================
+
+(defn builtins-all ()
+  (list-append (builtins-binding)
+    (list-append (builtins-control)
+      (list-append (builtins-data)
+        (list-append (builtins-modules)
+          (list-append (builtins-operators)
+            (list-append (builtins-bitwise)
+              (list-append (builtins-strings)
+                (list-append (builtins-io)
+                  (list-append (builtins-actors)
+                    (list-append (builtins-ffi)
+                      (list-append (builtins-bytes)
+                        (list-append (builtins-byte-loads)
+                          (list-append (builtins-byte-stores)
+                            (list-append (builtins-atomics)
+                              (list-append (builtins-contracts)
+                                (list-append (builtins-testing)
+                                  (list-append (builtins-types)
+                                    (builtins-regions)))))))))))))))))))
+
+(defn builtins-binding ()
+  (Cons (ZB "defn" "special-form" "(defn name (param ...) body)"
+          "Define a top-level function. Parameters may carry a type annotation: `(k Secret)`, `(n Int)`.")
+  (Cons (ZB "def" "special-form" "(def name value)"
+          "Bind a name at top level. Note that a `def` is not a readable global in the current backend; prefer a nullary `defn`.")
+  (Cons (ZB "let" "special-form" "(let name value body)"
+          "Bind `name` to `value` for the extent of `body`. Immutable; shadowing an outer binding is allowed.")
+  (Cons (ZB "let-mut" "special-form" "(let-mut name value body)"
+          "Bind a mutable name. `set!` may rebind it; this is the only route to mutation, since struct fields are immutable.")
+  (Cons (ZB "set!" "special-form" "(set! name value)"
+          "Rebind a `let-mut` name. Direct field mutation -- `(set! (struct-get p \"x\") 5)` -- is rejected.")
+  (Cons (ZB "fn" "special-form" "(fn (param ...) body)"
+          "Anonymous closure. Identical to `lambda`; captures are analyzed at compile time and recorded on the closure.")
+  (Cons (ZB "lambda" "special-form" "(lambda (param ...) body)"
+          "Anonymous closure. Identical to `fn`.")
+  Nil))))))))
+
+(defn builtins-control ()
+  (Cons (ZB "if" "special-form" "(if cond then else)"
+          "Two-armed conditional. Both arms are required and must agree in type.")
+  (Cons (ZB "cond" "special-form" "(cond (test body) ... )"
+          "Multi-way conditional, tested top to bottom.")
+  (Cons (ZB "when" "special-form" "(when cond body)"
+          "One-armed conditional; the absent arm yields unit.")
+  (Cons (ZB "while" "special-form" "(while cond body)"
+          "Loop while `cond` holds.")
+  (Cons (ZB "for" "special-form" "(for (i start) limit body)"
+          "Counted loop. `(for (i 16) n body)` starts at 16 -- a bare `(for (i) ...)` starts at 0.")
+  (Cons (ZB "match" "special-form" "(match subject (Variant binding ... body) ...)"
+          "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `dN` arm is the wildcard convention.")
+  (Cons (ZB "begin" "special-form" "(begin expr ...)"
+          "Sequence expressions left to right; the value is the last one.")
+  (Cons (ZB "try" "special-form" "(try body (catch e handler))"
+          "Catch a runtime panic and bind its message to `e`.")
+  (Cons (ZB "unwrap" "special-form" "(unwrap expr)"
+          "Project the payload out of an `Ok`/`Some`, panicking on `Err`/`None`.")
+  (Cons (ZB "error" "special-form" "(error \"message\")"
+          "Raise a runtime error with a literal message.")
+  (Cons (ZB "assert" "special-form" "(assert expr)"
+          "Abort unless `expr` is true. Lowered by the assert-lowering pass, not a library call.")
+  (Cons (ZB "range" "special-form" "(range start end)"
+          "Integer range, used by loop forms.")
+  (Cons (ZB "with-resource" "special-form" "(with-resource name acquire body)"
+          "Bind an acquired resource and release it when `body` ends, on every exit path.")
+  Nil))))))))))))))
+
+(defn builtins-data ()
+  (Cons (ZB "deftype" "special-form" "(deftype Name (Variant Field ...) ...)"
+          "Declare an algebraic data type. Generic parameters follow the name.")
+  (Cons (ZB "defstruct" "special-form" "(defstruct Name (field Type) ...)"
+          "Declare a struct. Fields are immutable; build a changed copy rather than mutating.")
+  (Cons (ZB "defstruct+" "special-form" "(defstruct+ Name (field Type) ...)"
+          "Declare a struct with generated accessors.")
+  (Cons (ZB "struct-get" "special-form" "(struct-get value \"field\")"
+          "Read a struct field. It is a read only -- there is no field-assignment form.")
+  (Cons (ZB "make-struct" "special-form" "(make-struct Name field ...)"
+          "Construct a struct from positional field values.")
+  (Cons (ZB "make-variant" "special-form" "(make-variant Type Variant field ...)"
+          "Construct an ADT variant explicitly; usually written as the bare constructor call.")
+  (Cons (ZB "trait" "special-form" "(trait Name (method (param ...) ReturnType) ...)"
+          "Declare a trait: a set of method signatures a type can implement.")
+  (Cons (ZB "impl" "special-form" "(impl Trait Type (defn method (self ...) body) ...)"
+          "Implement a trait for a type. Duplicate impls are rejected at compile time.")
+  (Cons (ZB "derive" "special-form" "(derive Type Trait ...)"
+          "Derive trait implementations mechanically. Only derivable traits are accepted.")
+  (Cons (ZB "macro" "special-form" "(macro name (param ...) template)"
+          "Define a macro. Expansion is innermost-first with gensym hygiene.")
+  (Cons (ZB "defmacro" "special-form" "(defmacro name (param ...) template)"
+          "Define a macro; a spelling of `macro`.")
+  Nil))))))))))))
+
+(defn builtins-modules ()
+  (Cons (ZB "use" "special-form" "(use path/to/module)"
+          "Import a module. Paths resolve against `stdlib/`, then the current file's directory.")
+  (Cons (ZB "module" "special-form" "(module name)"
+          "Declare this file's module name.")
+  (Cons (ZB "export" "special-form" "(export name)"
+          "Mark a name as part of the module's public surface.")
+  Nil))))
+
+(defn builtins-operators ()
+  (Cons (ZB "+" "operator" "(+ a b)" "Integer or float addition.")
+  (Cons (ZB "-" "operator" "(- a b)" "Subtraction.")
+  (Cons (ZB "*" "operator" "(* a b)" "Multiplication.")
+  (Cons (ZB "/" "operator" "(/ a b)" "Division. Rejected on a `Secret` operand: the divider is variable-latency.")
+  (Cons (ZB "%" "operator" "(% a b)" "Remainder. Rejected on a `Secret` operand, same reason as `/`.")
+  (Cons (ZB "=" "operator" "(= a b)" "Equality. On two dynamically built strings this compares pointers -- use `str-eq`.")
+  (Cons (ZB "!=" "operator" "(!= a b)" "Inequality.")
+  (Cons (ZB "<" "operator" "(< a b)" "Less than.")
+  (Cons (ZB ">" "operator" "(> a b)" "Greater than.")
+  (Cons (ZB "<=" "operator" "(<= a b)" "Less than or equal.")
+  (Cons (ZB ">=" "operator" "(>= a b)" "Greater than or equal.")
+  (Cons (ZB "and" "operator" "(and a b)" "Logical conjunction.")
+  (Cons (ZB "or" "operator" "(or a b)" "Logical disjunction.")
+  (Cons (ZB "not" "operator" "(not a)" "Logical negation.")
+  Nil)))))))))))))))
+
+(defn builtins-bitwise ()
+  (Cons (ZB "bit-and" "operator" "(bit-and a b)" "Bitwise AND over 64-bit integers. One instruction; constant-time.")
+  (Cons (ZB "bit-or" "operator" "(bit-or a b)" "Bitwise OR over 64-bit integers.")
+  (Cons (ZB "bit-xor" "operator" "(bit-xor a b)" "Bitwise XOR over 64-bit integers.")
+  (Cons (ZB "bit-not" "operator" "(bit-not a)" "Bitwise complement.")
+  (Cons (ZB "shl" "operator" "(shl a n)"
+          "Logical left shift. A count outside 0..63 yields 0 -- defined, not x86's mod-64 masking.")
+  (Cons (ZB "shr" "operator" "(shr a n)"
+          "Logical right shift. A count outside 0..63 yields 0.")
+  (Cons (ZB "ashr" "operator" "(ashr a n)"
+          "Arithmetic right shift. An out-of-range count saturates to the sign bit.")
+  Nil))))))))
+
+(defn builtins-strings ()
+  (Cons (ZB "str-concat" "builtin" "(str-concat a b)" "Concatenate two strings into a fresh one.")
+  (Cons (ZB "str-length" "builtin" "(str-length s)" "Length of a string in bytes.")
+  (Cons (ZB "str-len" "builtin" "(str-len s)" "Length of a string in bytes; a spelling of `str-length`.")
+  (Cons (ZB "str-substring" "builtin" "(str-substring s start len)" "Byte-indexed substring.")
+  (Cons (ZB "str-eq" "builtin" "(str-eq a b)" "Compare string CONTENTS, returning 1 or 0. `=` compares pointers.")
+  (Cons (ZB "str-intern" "builtin" "(str-intern arena s)" "Intern a string in an arena so `=` on it is meaningful.")
+  Nil)))))))
+
+(defn builtins-io ()
+  (Cons (ZB "print" "special-form" "(print expr ...)"
+          "Write values to stdout. Rejected on a `Secret` operand -- a debug sink is still a sink.")
+  (Cons (ZB "read-line" "special-form" "(read-line)" "Read one line from stdin.")
+  (Cons (ZB "exit" "special-form" "(exit code)" "Terminate the process with a status code.")
+  (Cons (ZB "close" "special-form" "(close handle)" "Close a handle.")
+  (Cons (ZB "file-open" "special-form" "(file-open path mode)" "Open a file, returning a descriptor.")
+  (Cons (ZB "file-read" "special-form" "(file-read fd nbytes)" "Read up to `nbytes` from a descriptor.")
+  (Cons (ZB "file-write" "special-form" "(file-write fd text)"
+          "Write to a descriptor. Rejected on a `Secret` operand: it leaves the process.")
+  (Cons (ZB "file-close" "special-form" "(file-close fd)" "Close a descriptor.")
+  (Cons (ZB "buf-append" "builtin" "(buf-append buf s)" "Append to a string buffer.")
+  Nil))))))))))
+
+(defn builtins-actors ()
+  (Cons (ZB "spawn" "special-form" "(spawn expr)"
+          "Spawn an actor. Rejected on a `Secret` operand: a secret must not cross an actor boundary.")
+  (Cons (ZB "send" "special-form" "(send actor message)"
+          "Send a message to an actor. Delivery order is deterministic. Rejected on a `Secret` operand.")
+  Nil)))
+
+(defn builtins-ffi ()
+  (Cons (ZB "ffi-call" "special-form" "(ffi-call \"symbol\" arg ... timeout)"
+          "Call a C symbol. The trailing argument is a mandatory timeout in milliseconds.")
+  (Cons (ZB "ffi-pin" "special-form" "(ffi-pin value)"
+          "Move a value into the Pin region for the duration of an FFI call. A `Secret` reaches C only this way.")
+  (Cons (ZB "ffi-unpin" "special-form" "(ffi-unpin value)" "Release a pinned value.")
+  Nil))))
+
+(defn builtins-bytes ()
+  (Cons (ZB "byte" "special-form" "(byte n)" "A single byte literal, 0..255.")
+  (Cons (ZB "bytebuf" "special-form" "(bytebuf region capacity)"
+          "Allocate a byte buffer in a region: Stack, Heap, Global, Circular or Pin.")
+  (Cons (ZB "bytebuf-append" "special-form" "(bytebuf-append buf byte)" "Append one byte, growing the length.")
+  (Cons (ZB "bytebuf-len" "special-form" "(bytebuf-len buf)" "Bytes currently in the buffer.")
+  (Cons (ZB "bytebuf-cap" "special-form" "(bytebuf-cap buf)" "Allocated capacity of the buffer.")
+  (Cons (ZB "bytebuf-ptr" "special-form" "(bytebuf-ptr buf)" "Raw address of the buffer's first byte, for FFI.")
+  (Cons (ZB "byteslice" "special-form" "(byteslice buf offset length)" "Borrow a sub-range of a buffer.")
+  (Cons (ZB "byteslice-sub" "special-form" "(byteslice-sub slice offset length)" "Narrow an existing slice.")
+  (Cons (ZB "align-check" "special-form" "(align-check ptr alignment)" "Assert a pointer's alignment before a wide access.")
+  Nil))))))))))
+
+(defn builtins-byte-loads ()
+  (Cons (ZB ":le" "special-form" ":le" "Little-endian selector, leading a byte load or store.")
+  (Cons (ZB ":be" "special-form" ":be" "Big-endian selector, leading a byte load or store.")
+  (Cons (ZB "load-u8" "special-form" "(load-u8 :le buf offset)" "Load an unsigned byte. The endian keyword is `:le` or `:be`.")
+  (Cons (ZB "load-i8" "special-form" "(load-i8 :le buf offset)" "Load a signed byte, sign-extended.")
+  (Cons (ZB "load-u16" "special-form" "(load-u16 :le buf offset)" "Load an unsigned 16-bit value.")
+  (Cons (ZB "load-i16" "special-form" "(load-i16 :le buf offset)" "Load a signed 16-bit value.")
+  (Cons (ZB "load-u32" "special-form" "(load-u32 :le buf offset)" "Load an unsigned 32-bit value.")
+  (Cons (ZB "load-i32" "special-form" "(load-i32 :le buf offset)" "Load a signed 32-bit value.")
+  (Cons (ZB "load-u64" "special-form" "(load-u64 :le buf offset)" "Load an unsigned 64-bit value.")
+  (Cons (ZB "load-i64" "special-form" "(load-i64 :le buf offset)" "Load a signed 64-bit value.")
+  Nil)))))))))))
+
+(defn builtins-byte-stores ()
+  (Cons (ZB "store-u8" "special-form" "(store-u8 :le buf offset value)" "Store an unsigned byte.")
+  (Cons (ZB "store-i8" "special-form" "(store-i8 :le buf offset value)" "Store a signed byte.")
+  (Cons (ZB "store-u16" "special-form" "(store-u16 :le buf offset value)" "Store an unsigned 16-bit value.")
+  (Cons (ZB "store-i16" "special-form" "(store-i16 :le buf offset value)" "Store a signed 16-bit value.")
+  (Cons (ZB "store-u32" "special-form" "(store-u32 :le buf offset value)" "Store an unsigned 32-bit value.")
+  (Cons (ZB "store-i32" "special-form" "(store-i32 :le buf offset value)" "Store a signed 32-bit value.")
+  (Cons (ZB "store-u64" "special-form" "(store-u64 :le buf offset value)" "Store an unsigned 64-bit value.")
+  (Cons (ZB "store-i64" "special-form" "(store-i64 :le buf offset value)" "Store a signed 64-bit value.")
+  Nil)))))))))
+
+(defn builtins-atomics ()
+  (Cons (ZB "bytebuf-atomic-load" "special-form" "(bytebuf-atomic-load buf offset)" "Atomic load from a byte buffer.")
+  (Cons (ZB "bytebuf-atomic-store" "special-form" "(bytebuf-atomic-store buf offset value)" "Atomic store into a byte buffer.")
+  (Cons (ZB "bytebuf-atomic-add" "special-form" "(bytebuf-atomic-add buf offset value)" "Atomic add, returning nothing.")
+  (Cons (ZB "bytebuf-atomic-sub" "special-form" "(bytebuf-atomic-sub buf offset value)" "Atomic subtract.")
+  (Cons (ZB "bytebuf-atomic-cas" "special-form" "(bytebuf-atomic-cas buf offset expected desired)" "Atomic compare-and-swap.")
+  (Cons (ZB "bytebuf-atomic-fetch-add" "special-form" "(bytebuf-atomic-fetch-add buf offset value)" "Atomic add, returning the previous value.")
+  (Cons (ZB "bytebuf-atomic-max" "special-form" "(bytebuf-atomic-max buf offset value)" "Atomic maximum.")
+  (Cons (ZB "bytebuf-atomic-min" "special-form" "(bytebuf-atomic-min buf offset value)" "Atomic minimum.")
+  Nil)))))))))
+
+(defn builtins-contracts ()
+  (Cons (ZB "requires" "special-form" "(requires condition)"
+          "Precondition. Contracts are an overlay: they never change inference, ownership, regions or scheduling.")
+  (Cons (ZB "ensures" "special-form" "(ensures condition)" "Postcondition, checked on return.")
+  (Cons (ZB "contracts" "special-form" "(contracts (requires ...) (ensures ...))" "Group a function's contract clauses.")
+  (Cons (ZB "recover" "special-form" "(recover body handler)" "Recover from a contract violation at a checkpoint.")
+  (Cons (ZB "checkpoint" "special-form" "(checkpoint name)" "Mark a recovery point.")
+  Nil))))))
+
+(defn builtins-testing ()
+  (Cons (ZB "test" "special-form" "(test \"name\" body)" "One test case.")
+  (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" test ...)" "Group test cases and nested suites.")
+  (Cons (ZB "assert-equal" "special-form" "(assert-equal actual expected)" "Assert two values are equal.")
+  (Cons (ZB "assert-true" "special-form" "(assert-true expr)" "Assert a value is true.")
+  (Cons (ZB "assert-false" "special-form" "(assert-false expr)" "Assert a value is false.")
+  (Cons (ZB "assert-fail" "special-form" "(assert-fail expr)" "Assert an expression fails.")
+  (Cons (ZB "test-property" "special-form" "(test-property \"name\" generator body)" "Property test over generated inputs.")
+  (Cons (ZB "test-compile" "special-form" "(test-compile expr)" "Assert a fragment does or does not compile.")
+  (Cons (ZB "setup" "special-form" "(setup expr ...)" "Run before each test in the enclosing suite.")
+  (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Run after each test in the enclosing suite.")
+  (Cons (ZB "run-tests" "special-form" "(run-tests)" "Run every declared suite and report.")
+  Nil))))))))))))
+
+(defn builtins-types ()
+  (Cons (ZB "Int" "type" "Int" "64-bit signed integer.")
+  (Cons (ZB "Float" "type" "Float" "64-bit floating point.")
+  (Cons (ZB "Bool" "type" "Bool" "Boolean.")
+  (Cons (ZB "String" "type" "String" "Immutable byte string.")
+  (Cons (ZB "Unit" "type" "Unit" "The empty type, returned by expressions evaluated for effect.")
+  (Cons (ZB "List" "type" "(List T)" "Cons list: `Nil` or `(Cons head tail)`.")
+  (Cons (ZB "Option" "type" "(Option T)" "`None` or `(Some value)`.")
+  (Cons (ZB "Result" "type" "(Result T E)" "`(Ok value)` or `(Err error)`.")
+  (Cons (ZB "Vec" "type" "(Vec T)" "Growable vector.")
+  (Cons (ZB "Map" "type" "(Map K V)" "Ordered map; iteration order is deterministic.")
+  (Cons (ZB "Secret" "capability" "(Secret T)"
+          "Secret capability. A secret may not steer control flow, index memory, divide, print, spawn, send or be written to a file, and reaches FFI only through `ffi-pin`. Leave it with `declassify`, `ct-eq-bool` or `ct-eq-words-bool`.")
+  (Cons (ZB "TCap" "capability" "TCap" "Shared immutable access; any number of references may coexist.")
+  (Cons (ZB "TMut" "capability" "TMut" "Exclusive mutable ownership; exactly one reference exists.")
+  (Cons (ZB "declassify" "builtin" "(declassify value)"
+          "Deliberately drop the Secret capability. The one explicit escape hatch; every use is a decision worth a comment.")
+  Nil)))))))))))))))
+
+(defn builtins-regions ()
+  (Cons (ZB "Stack" "region" "Stack" "Stack region: reclaimed at scope exit. Promoted to Heap if a value escapes.")
+  (Cons (ZB "Heap" "region" "Heap" "Heap region: reclaimed when its owning region ends.")
+  (Cons (ZB "Global" "region" "Global" "Global region: lives for the whole program.")
+  (Cons (ZB "Circular" "region" "Circular" "Circular region: a fixed-size ring, reused in order.")
+  (Cons (ZB "Pin" "region" "Pin" "Pin region: a fixed address for the duration of an FFI call. Required for every FFI argument.")
+  Nil))))))
+
+; ===========================================================================
+; LOOKUP
+; ===========================================================================
+
+(defn builtin-lookup (name)
+  (builtin-find (builtins-all) name))
+
+(defn builtin-find (bs name)
+  (match bs
+    (Nil None)
+    (Cons b rest
+      (if (> (str-eq (ZB.name b) name) 0) (Some b) (builtin-find rest name)))))
+
+(defn builtin-is-known (name)
+  (match (builtin-lookup name) (Some d1 1) (None 0)))
+
+; A "keyword" for colouring purposes: a special form or an operator,
+; not a type/region/capability name (those colour as types).
+(defn builtin-is-keyword (name)
+  (match (builtin-lookup name)
+    (Some b (if (> (str-eq (ZB.kind b) "special-form") 0) 1
+              (if (> (str-eq (ZB.kind b) "operator") 0) 1 0)))
+    (None 0)))
+
+(defn builtin-is-type-name (name)
+  (match (builtin-lookup name)
+    (Some b (if (> (str-eq (ZB.kind b) "type") 0) 1
+              (if (> (str-eq (ZB.kind b) "region") 0) 1
+                (if (> (str-eq (ZB.kind b) "capability") 0) 1 0))))
+    (None 0)))
+
+; `catch` is part of `try`'s syntax rather than a form of its own, and
+; the endian keywords lead the byte ops; neither has a table entry, but
+; both should still colour as syntax.
+(defn builtin-is-syntax-word (name)
+  (if (> (str-eq name "catch") 0) 1
+    (if (> (str-eq name ":le") 0) 1
+      (if (> (str-eq name ":be") 0) 1
+        (builtin-is-keyword name)))))
+
+; ===========================================================================
+; RENDERING
+; ===========================================================================
+
+(defn builtin-hover-markdown (b)
+  (match b
+    (ZB name kind sig doc
+      (str-concat "```zyl\n"
+        (str-concat sig
+          (str-concat "\n```\n\n"
+            (str-concat doc (str-concat "\n\n*" (str-concat kind "*")))))))))
+
+(defn builtin-detail (b)
+  (match b (ZB d1 kind sig d2 (str-concat sig (str-concat "  -- " kind)))))
+
+; Every table name, for completion and for the semantic-token scan.
+(defn builtin-names ()
+  (builtin-names-of (builtins-all)))
+
+(defn builtin-names-of (bs)
+  (match bs
+    (Nil Nil)
+    (Cons b rest (Cons (ZB.name b) (builtin-names-of rest)))))
+
+; The stdlib module paths `(use ...)` accepts, for path completion.
+(defn builtin-stdlib-modules ()
+  (list-append (builtin-stdlib-core)
+    (list-append (builtin-stdlib-math) (builtin-stdlib-tools))))
+
+(defn builtin-stdlib-core ()
+  (Cons "core/core" (Cons "core/list" (Cons "core/option" (Cons "core/result"
+  (Cons "core/map" (Cons "collections/collections" (Cons "collections/map"
+  (Cons "collections/set" (Cons "collections/vec" (Cons "allocator/allocator"
+  (Cons "actor/actor" (Cons "atomic/atomic" (Cons "ffi/ffi" (Cons "io/io"
+  (Cons "testing/testing" Nil))))))))))))))))
+
+(defn builtin-stdlib-math ()
+  (Cons "math/math" (Cons "math/bits" (Cons "math/words"
+  (Cons "math/secret/secret" (Cons "math/bignum/bignum" (Cons "math/bignum/modular"
+  (Cons "math/bignum/montgomery" (Cons "math/bignum/barrett"
+  (Cons "math/hash/sha2" (Cons "math/hash/sha512" (Cons "math/hash/sha3"
+  (Cons "math/hash/blake2b" (Cons "math/hash/blake3" (Cons "math/hash/hmac"
+  (Cons "math/crypto/symmetric/chacha20" (Cons "math/crypto/symmetric/poly1305"
+  (Cons "math/crypto/symmetric/chacha20poly" (Cons "math/crypto/symmetric/aesgcm"
+  (Cons "math/crypto/asymmetric/x25519" (Cons "math/crypto/asymmetric/ed25519"
+  (Cons "math/crypto/asymmetric/ecdsa" (Cons "math/crypto/asymmetric/rsa"
+  (Cons "math/crypto/kdf/hkdf" (Cons "math/crypto/kdf/pbkdf2" (Cons "math/crypto/kdf/argon2"
+  (Cons "math/rand/rand" (Cons "math/rand/crypto" (Cons "math/rand/deterministic"
+  Nil)))))))))))))))))))))))))))))
+
+(defn builtin-stdlib-tools ()
+  (Cons "compiler/ast" (Cons "compiler/lexer" (Cons "compiler/parser"
+  (Cons "compiler/expr_inner" (Cons "compiler/type_inference" (Cons "compiler/icnf"
+  (Cons "compiler/codegen" (Cons "compiler/sexp_balance" (Cons "mlib/deep"
+  Nil))))))))))

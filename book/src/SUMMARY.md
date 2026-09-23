@@ -50,6 +50,20 @@
 
 ---
 
+## Part IV: Low-Level and Cryptographic Programming
+
+- [Chapter 32: Bits, Bytes, and Buffers](part4/ch32-bits-and-bytes.md)
+- [Chapter 33: Secrets and Constant-Time Code](part4/ch33-secrets.md)
+- [Chapter 34: The Cryptography Library](part4/ch34-cryptography.md)
+
+---
+
+## Part V: Tooling
+
+- [Chapter 35: Editors and the Language Server](part5/ch35-tooling.md)
+
+---
+
 ## Appendices
 
 - [Appendix A: Error Codes Reference](appendix/appendix-a-errors.md)

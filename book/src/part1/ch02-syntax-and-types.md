@@ -194,18 +194,30 @@ Only line comments (`;`) exist. No block comments (`/* */` or `#| |#`).
 
 ### Multiple Bindings
 
+`let` binds exactly one name. Several bindings means several `let`s,
+nested — and each one can refer to the ones outside it:
+
 ```lisp
-;; Sequential let (each can refer to previous)
 (let (x 10)
   (let (y (+ x 5))
     (+ x y)))               ; 25
-
-;; Parallel let (all evaluated in outer scope)
-(let (x 10 y 20 z 30)      ; All three evaluated before any binding
-  (+ x y z))               ; 60
 ```
 
-**Zyl uses parallel let semantics** — all initializers evaluate in the *outer* scope, then bindings are created simultaneously. This avoids ordering dependencies.
+Both spellings of a single binding are accepted, and they mean the same
+thing:
+
+```lisp
+(let (x 10) (+ x 1))        ; binding list
+(let x 10 (+ x 1))          ; bare name and value
+```
+
+The second is what the standard library and the compiler's own source
+use throughout, and it is what you will see in the rest of this book.
+
+There is no parallel or multi-binding form: `(let (x 10 y 20) ...)`
+binds `x` and stops, and the reference to `y` is then an
+`E_UNBOUND_VARIABLE` error at compile time rather than a silent
+surprise.
 
 ## 2.6 Function Calls and Core Operations
 
@@ -387,9 +399,10 @@ true / false    ; Bool
 unit            ; Unit
 
 ;; Bindings
-(def name expr)                 ; Top-level constant (Global)
-(let (name expr) body)          ; Local immutable (Stack)
-(let-mut (name expr) body)      ; Local mutable (Stack, use set!)
+(def name expr)                 ; Top-level -- see the note below
+(let name expr body)            ; Local immutable (Stack)
+(let (name expr) body)          ; The same, with a binding list
+(let-mut name expr body)        ; Local mutable (Stack, use set!)
 
 ;; Control (details in Chapter 3)
 (if cond then else)
@@ -400,14 +413,14 @@ unit            ; Unit
 ;; Functions (details in Chapter 3)
 (defn name (params) body)
 (fn (params) body)              ; Anonymous closure
-(lambda (params) body)          ; Same as fn
+(lambda (params) body)          ; The same form, other name
 
 ;; Data structures
 (vec-create init cap)           ; Vec (via collections/vec)
 (map-create init cap)           ; Map (via collections/map)
-(tuple elem...)                 ; Tuple
 (Ok val) / (Err err)            ; Result
 (Some val) / None               ; Option
+(Cons head tail) / Nil          ; List
 
 ;; Operations
 (+ - * / %)                     ; Arithmetic
@@ -416,7 +429,13 @@ unit            ; Unit
 (set! var value)                ; Rebinding (let-mut only)
 (print expr...)                 ; Output to stdout
 (struct-get struct "field")     ; Struct field access
+(bit-and bit-or bit-xor bit-not); Bitwise (Chapter 32)
+(shl shr ashr)                  ; Shifts -- shr logical, ashr arithmetic
 ```
+
+A note on `def`: a top-level `(def name expr)` does not currently
+become a readable global — every reference to one compiles to 0. Use a
+nullary `(defn name () expr)` for a constant until that is fixed.
 
 ---
 

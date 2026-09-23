@@ -115,13 +115,43 @@ Known limitations:
   that already contains a top-level `print` shows the intended value
   followed by an extra `0`.
 
+## Editor Support
+
+`./boot.sh` also builds `zyl-lsp`, a language server written in Zyl and
+built from the same self-hosted compiler — so the editor and the
+command line run the same parser, macro expander and checkers, and
+cannot disagree about whether a program is valid.
+
+```bash
+./install.sh                 # installs zyl-lsp alongside zyl and zyl-repl
+./install.sh --with-vscode   # also builds and installs the VS Code extension
+```
+
+It provides diagnostics (with the compiler's own `E_*` codes), hover,
+go-to-definition, type definition and implementation, find references,
+document highlight, rename, completion, signature help, document and
+workspace symbols, semantic tokens, folding, selection ranges, call
+hierarchy, inlay hints, and formatting. The VS Code extension in
+`editors/vscode` adds a TextMate grammar, snippets, a build task, and
+a **Run Current File** command that compiles and runs the unsaved
+buffer.
+
+Any LSP client works; the server takes no arguments and needs no
+configuration file. See `editors/vscode/README.md` and Chapter 35 of
+the book for per-editor setup.
+
+```bash
+./run_regression_tests.sh --filter lsp   # protocol tests against the real binary
+```
+
 ## Self-Hosting Status
 
 **Self-hosting: complete, no Rust in the active path.** The Zyl
 compiler written in Zyl (`stdlib/compiler/*.zyl`, `selfhost/`) compiles
 itself end-to-end with a strict byte-identical fixed point, verified by
 `./boot.sh`, and passes the full regression suite (`./run_regression_tests.sh
---full`) — 43/43 as of the latest survey in `docs/rust-eviction-plan.md`.
+--full`) — 77/77 as of this writing, including the fixed-point check and
+the language-server protocol tests.
 
 The original Rust bootstrap compiler is archived at
 `archive/rust-bootstrap-2026/` (see its own README) — kept only as a
@@ -154,6 +184,10 @@ Code Generation → Linking.
 - **Try/catch** — error handling with catch variable binding
 - **I/O** — read-line via sys_read syscall
 - **Contract Injection (Phase 10)** — optional overlay for requires/ensures/invariant/recover/checkpoint
+- **Bitwise operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr`, each one instruction, with defined out-of-range shift counts
+- **The `Secret` capability** — a compile-time constant-time discipline: a secret may not steer a branch, index memory, divide, print, escape to an actor, or cross FFI unpinned
+- **Cryptography library** — `stdlib/math`, ~7,500 lines of pure Zyl: SHA-2/3, BLAKE2b/3, HMAC, ChaCha20-Poly1305, AES-GCM, X25519, Ed25519, ECDSA, RSA-PSS/OAEP, HKDF, PBKDF2, Argon2id, big-number arithmetic
+- **Language server** — `zyl-lsp`, written in Zyl, plus a VS Code extension
 
 ## Compilation Pipeline
 
@@ -218,15 +252,35 @@ stdlib/compiler/              # Zyl-written compiler (self-hosted, active)
 ├── module_resolver.zyl       # Module resolution
 └── resolver.zyl              # Name resolution
 
+stdlib/math/                  # Cryptography and number libraries (pure Zyl)
+├── bits.zyl, words.zyl       # Word operations, byte-string representation
+├── secret/secret.zyl         # Constant-time primitives
+├── bignum/                   # Fixed-width naturals, Montgomery, Barrett, modular
+├── hash/                     # SHA-2, SHA-3, BLAKE2b, BLAKE3, HMAC
+├── crypto/                   # Symmetric, asymmetric, KDFs
+└── rand/                     # System entropy and a seeded generator
+
+stdlib/lsp/                   # Language server (see editors/vscode)
+├── lsp_server.zyl            # JSON-RPC request loop
+├── compiler_bridge.zyl       # Compiler data -> LSP types, symbol table
+├── source_index.zyl          # Position tracking by text scan
+├── builtins.zyl              # Built-in table behind hover and completion
+└── services/                 # hover, goto, completion, symbols, ...
+
+editors/vscode/               # VS Code extension (grammar, snippets, client)
+
 selfhost/                     # Self-hosting driver
 ├── driver.zyl                # Boot pipeline entry point
+├── lsp_main.zyl              # Language server entry point
 └── zyl_selfhost_compiler.zyl # Assembled self-hosted compiler
 
 tests/                        # Regression test suite
 ├── smoke/                    # Basic smoke tests
 ├── regression/               # Feature regression tests
 ├── stress/                   # Stress tests (deep recursion, balanced parens)
-└── integration/              # Integration tests (selfhost-codegen)
+├── integration/              # Integration tests (selfhost-codegen)
+├── compile-fail/             # Programs that must be rejected, one per error code
+└── lsp/                      # Language-server protocol tests
 ```
 
 ## Requirements
@@ -246,10 +300,13 @@ The canonical language specification is `zyl_specification.txt` (v4.2). Structur
 
 ## Resources
 
+- [The Zyl Programming Language](book/src/SUMMARY.md) — the book
 - [Architecture Decisions](docs/architecture-decisions.md)
 - [Compiler Pipeline](docs/compiler-pipeline.md)
 - [Implementation Status](docs/implementation-status.md)
 - [Regression Tests](docs/regression-tests.md)
+- [Cryptography and Number Libraries](docs/math-crypto.md)
+- [LSP Architecture](LSP_ARCHITECTURE_PLAN.md)
 
 ## License
 

@@ -1,0 +1,105 @@
+; Parameter Representation Regression Tests — String and Float
+; parameters.
+;
+; Codegen picks a printf format, a comparison strategy and an
+; arithmetic unit from a value's "kind": 0 for a machine word, 1 for a
+; String, 2 for a Float. Every parameter used to be recorded as kind 0
+; regardless of its declared type, because the ICNF function node
+; carried only parameter names. A String parameter therefore printed as
+; a pointer and compared by address, and a Float parameter went through
+; the integer unit. Each of the three shows up only when the value
+; reaches a parameter, which is why none of the existing per-operator
+; tests caught it.
+
+; --- String parameters -----------------------------------------------------
+
+(defn pk-id-string ((s String)) s)
+
+(test "string-parameter-returned-unchanged"
+  (assert-equal (str-eq (pk-id-string "abc") "abc") 1))
+
+(defn pk-string-eq ((a String) (b String))
+  (if (= a b) 1 0))
+
+; Two strings built different ways live at different addresses, so an
+; address comparison answers 0 here and a content comparison answers 1.
+(test "string-parameters-compare-by-content"
+  (assert-equal (pk-string-eq "ab" (str-concat "a" "b")) 1))
+
+(test "distinct-string-parameters-are-not-equal"
+  (assert-equal (pk-string-eq "ab" "ba") 0))
+
+(defn pk-string-neq ((a String) (b String))
+  (if (!= a b) 1 0))
+
+(test "string-parameter-inequality-is-content-based"
+  (assert-equal (pk-string-neq "ab" (str-concat "a" "b")) 0))
+
+(defn pk-concat-param ((a String) (b String))
+  (str-concat a b))
+
+(test "string-parameters-concatenate"
+  (assert-equal (str-eq (pk-concat-param "foo" "bar") "foobar") 1))
+
+; --- Float parameters ------------------------------------------------------
+
+(defn pk-double ((f Float)) (* f 2.0))
+
+(test "float-parameter-multiplies"
+  (assert-equal (pk-double 1.5) 3.0))
+
+(defn pk-add-floats ((a Float) (b Float)) (+ a b))
+
+(test "float-parameters-add"
+  (assert-equal (pk-add-floats 1.25 2.5) 3.75))
+
+(defn pk-id-float ((f Float)) f)
+
+(test "float-parameter-returned-unchanged"
+  (assert-equal (pk-id-float 2.5) 2.5))
+
+; A float returned from a call is itself a float, so the caller must
+; keep treating it as one rather than falling back to Int.
+(test "float-through-two-calls"
+  (assert-equal (pk-double (pk-id-float 2.0)) 4.0))
+
+; --- Int parameters still behave ------------------------------------------
+
+(defn pk-add-ints ((a Int) (b Int)) (+ a b))
+
+(test "int-parameters-add"
+  (assert-equal (pk-add-ints 2 3) 5))
+
+; An unannotated parameter has no declared kind and stays a machine
+; word, exactly as before.
+(defn pk-unannotated (x) (+ x 1))
+
+(test "unannotated-parameter-is-an-int"
+  (assert-equal (pk-unannotated 41) 42))
+
+; --- Printing --------------------------------------------------------------
+
+; `print` on a Float sets al to 1, which is printf's signal to spill the
+; SSE argument registers with `movaps` -- an instruction that faults on
+; an unaligned stack. Every other print leaves al at 0 and never gets
+; there, so this was the only call site where the frame alignment
+; mattered, and nothing printed a float: the arithmetic tests only
+; compare. A crash here is a segfault, not a failed assertion.
+(test "printing-a-float-does-not-crash"
+  (begin
+    (print 3.5)
+    (assert-equal 1 1)))
+
+(defn pk-print-float ((f Float))
+  (begin (print f) 1))
+
+(test "printing-a-float-parameter-does-not-crash"
+  (assert-equal (pk-print-float 1.25) 1))
+
+(defn pk-print-string ((s String))
+  (begin (print s) 1))
+
+(test "printing-a-string-parameter-does-not-crash"
+  (assert-equal (pk-print-string "printed") 1))
+
+(run-tests)

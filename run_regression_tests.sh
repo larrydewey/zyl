@@ -247,6 +247,28 @@ if [ "$MODE" = "full" ]; then
     done
 fi
 
+# Language-server protocol tests. Real JSON-RPC over stdio against
+# build/boot/zyl-lsp -- the same transport an editor uses -- so a pass
+# means an editor sees what the assertions describe. Cheap (a handful of
+# short-lived server processes), so it runs in both quick and full mode.
+if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
+    if [ -z "$FILTER" ] || echo "lsp" | grep -qi -- "$FILTER"; then
+        if [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
+            TOTAL=$((TOTAL + 1))
+            if python3 "${SCRIPT_DIR}/tests/lsp/lsp_protocol_test.py" > /tmp/zyl_lsp_test.log 2>&1; then
+                PASS=$((PASS + 1))
+                echo -e "  ${GREEN}✓${NC} lsp/protocol"
+            else
+                FAIL=$((FAIL + 1))
+                echo -e "  ${RED}✗${NC} lsp/protocol"
+                sed 's/^/      /' /tmp/zyl_lsp_test.log
+            fi
+        else
+            echo -e "  ${YELLOW}-${NC} lsp/protocol (build/boot/zyl-lsp missing -- run ./boot.sh)"
+        fi
+    fi
+fi
+
 # Constant-time (timing leakage) harness — OPT IN with `--filter timing`.
 #
 # Deliberately not part of a plain `--full` run: it spawns thousands of

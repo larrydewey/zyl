@@ -41,7 +41,17 @@
   (ISeq (List Icnf))
   (IVariant String Int (List Icnf))    ; variant name, tag, field values
   (IMatch Icnf (List IArm))
-  (IFn String (List String) Icnf)      ; top-level function def: name, params, body
+  ; Top-level function def: name, params, body, param kinds.
+  ; The kind list is appended AFTER the body rather than beside the
+  ; param names so that every existing three-binder `(IFn name params
+  ; body ...)` pattern keeps binding the same three fields. Kinds are
+  ; codegen's representation tags (0 int/pointer, 1 String, 2 Float);
+  ; without them a String or Float parameter was indistinguishable from
+  ; an Int at emission time, which printed strings as pointers, compared
+  ; them by address and ran float arithmetic through the integer unit.
+  ; Shorter than the param list (or empty, as for a lambda, whose
+  ; parameters carry no annotation) means "0 for the rest".
+  (IFn String (List String) Icnf (List Int))
   ; Call a LOCAL name known (via VTClosureFn) to hold a capturing closure
   ; value -- a heap [tag,code,env] triple, not a bare code pointer. Real
   ; args are staged exactly like ICall's; codegen additionally unpacks
@@ -209,7 +219,7 @@
   (let tname (str-intern arena (str-concat "_test_" name))
     (let h (ic-hoist (ic-expr arena body vt))
       (let tbody (ISeq (Cons (hoist-node h) (Cons (IConst 0) Nil)))
-        (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody) (hoist-fns h)) acc)
+        (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody (no-ints)) (hoist-fns h)) acc)
           (tlacc-push-stmt (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) acc2))))))
 
 ; If there are leftover top-level statements, wrap them in an implicit
@@ -222,7 +232,7 @@
     (Cons d1 d2
       (if (> (ic-has-main fns) 0)
         (ffi-call "zyl_panic" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
-        (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil)))) fns)))))
+        (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil))) (no-ints)) fns)))))
 
 (defn ic-has-main (fns)
   (match fns
@@ -367,12 +377,44 @@
 ; in the top-level function list, not stay nested inside an expression.
 (defn ic-defn (arena name params body vt)
   (let h (ic-hoist (ic-expr arena body vt))
-    (Cons (IFn (str-intern arena name) (param-names params (no-strs)) (hoist-node h)) (hoist-fns h))))
+    (Cons (IFn (str-intern arena name) (param-names params (no-strs)) (hoist-node h) (param-kinds params (no-ints))) (hoist-fns h))))
 
 (defn param-names (params acc)
   (match params
     (Nil (list-reverse acc))
     (Cons p rest (param-names rest (Cons (P.name p) acc)))))
+
+; Empty param-kind list.
+(defn no-ints () Nil)
+
+; A parameter's codegen representation kind, read straight off its
+; declared type. Only String and Float have a representation that
+; differs from a plain machine word; everything else (Int, Bool, an ADT,
+; a generic parameter, an unannotated parameter) is 0.
+(defn param-kind-of (p)
+  (match (P.type p)
+    (Some t (type-name-kind t))
+    (None 0)))
+
+; A declared type annotation is an Expr, not a String, despite Param's
+; declaration -- `(P name (Some (convert-ast typ)))` in expr_inner.zyl.
+; Only a bare identifier can name String or Float; an applied type such
+; as `(Vec Float)` is a pointer, so kind 0 is right for it.
+(defn type-name-kind (t)
+  (match (Expr.inner t)
+    (EAtom a
+      (match a
+        (AIdent n
+          (if (> (str-eq n "String") 0)
+            1
+            (if (> (str-eq n "Float") 0) 2 0)))
+        (d1 0)))
+    (d2 0)))
+
+(defn param-kinds (params acc)
+  (match params
+    (Nil (list-reverse acc))
+    (Cons p rest (param-kinds rest (Cons (param-kind-of p) acc)))))
 
 ; ===========================================================================
 ; EXPRESSION LOWERING
@@ -529,10 +571,21 @@
     ; endian is a bare `Endian` ADT value (ELe/EBe), not an Expr -- same
     ; type-confusion hazard as EByteBuf's region above: goes through
     ; endian-to-int + IConst directly, never ic-expr.
-    (ELoadByte endian offset buf (IFfi "zyl_load_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
-    (ELoadByteSigned endian offset buf (IFfi "zyl_load_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
-    (EStoreByte endian offset buf val (IFfi "zyl_store_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
-    (EStoreByteSigned endian offset buf val (IFfi "zyl_store_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
+    ;
+    ; ARGUMENT ORDER: the Expr fields are (endian, buf, offset), matching
+    ; the source form `(load-u8 :le buf off)`, while the runtime entry
+    ; points are declared `(endian, offset, buf)`. These two arms used to
+    ; bind the fields as `endian offset buf` -- reading the second field
+    ; as the offset and the third as the buffer -- and then emit them in
+    ; that same order, which handed the runtime the buffer handle as its
+    ; offset and the offset as its handle. `zyl_bytes_view` then resolved
+    ; a small integer as a handle, found no magic, and every load
+    ; returned 0 while every store silently did nothing. Bind in field
+    ; order, emit in runtime order.
+    (ELoadByte endian buf offset (IFfi "zyl_load_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
+    (ELoadByteSigned endian buf offset (IFfi "zyl_load_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
+    (EStoreByte endian buf offset val (IFfi "zyl_store_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
+    (EStoreByteSigned endian buf offset val (IFfi "zyl_store_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
     (EByteSlice buf start len (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     (EByteSliceSub buf start len (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     ; region is a bare `Region` ADT value (not an Expr -- see ExprInner's
@@ -678,19 +731,22 @@
       (let lname (str-intern arena (str-concat "_lambda_" (ic-int-to-str (ic-fresh-id arena))))
         (let fvs (ic-free-vars arena body pnames vt)
           (if (is-nil fvs)
-            (IFn lname pnames (ic-expr arena body vt))
+            (IFn lname pnames (ic-expr arena body vt) (param-kinds params (no-ints)))
             (if (>= (list-length pnames) 6)
               (IConst 0)
-              (ic-lambda-closure arena lname pnames body fvs vt)))))
+              (ic-lambda-closure arena lname pnames (param-kinds params (no-ints)) body fvs vt)))))
       (IConst 0))))
 
-(defn ic-lambda-closure (arena lname pnames body fvs vt)
+; The lifted closure body takes one extra trailing parameter, the
+; captured environment, which is a plain pointer -- kind 0.
+(defn ic-lambda-closure (arena lname pnames pkinds body fvs vt)
   (let envname (str-intern arena "_clos_env")
     (let wrapped (ic-wrap-env-binds envname fvs 0 (ic-expr arena body vt))
       (let allparams (list-append pnames (Cons envname Nil))
-        (IVariant lname 0
-          (Cons (IFn lname allparams wrapped)
-            (Cons (IVariant lname 0 (ic-build-env-fields fvs)) Nil)))))))
+        (let allkinds (list-append pkinds (Cons 0 Nil))
+          (IVariant lname 0
+            (Cons (IFn lname allparams wrapped allkinds)
+              (Cons (IVariant lname 0 (ic-build-env-fields fvs)) Nil))))))))
 
 (defn ic-wrap-env-binds (envname fvs idx body)
   (match fvs
@@ -1011,9 +1067,9 @@
       (let hs (ic-hoist scr)
         (let ha (ic-hoist-arms arms)
           (HoistAcc (IMatch (hoist-node hs) (hoista-arms ha)) (list-append (hoist-fns hs) (hoista-fns ha))))))
-    (IFn nm params body
+    (IFn nm params body kinds
       (let hb (ic-hoist body)
-        (HoistAcc (ILoad nm) (Cons (IFn nm params (hoist-node hb)) (hoist-fns hb)))))))
+        (HoistAcc (ILoad nm) (Cons (IFn nm params (hoist-node hb) kinds) (hoist-fns hb)))))))
 
 ; (struct-get obj "field"): self-host has no static type info flowing
 ; into ICNF lowering, so which concrete struct `obj` is can't be known

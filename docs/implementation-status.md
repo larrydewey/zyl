@@ -1,21 +1,64 @@
 # Implementation Status
 
-> **Note (2026-09-17):** this document predates the Rust eviction (see `docs/rust-eviction-plan.md`) and may still reference `src/*.rs` or Cargo. The active compiler implementation is `stdlib/compiler/*.zyl` + `selfhost/`; the Rust bootstrap it describes is archived at `archive/rust-bootstrap-2026/`. See `AGENTS.md` for current build commands.
+## Current state
 
-## Overview
+**Self-hosting is complete and there is no Rust in the active path.**
+The compiler written in Zyl (`stdlib/compiler/*.zyl` plus
+`selfhost/driver.zyl`, assembled by `selfhost/assemble.py`) compiles
+itself to a byte-identical fixed point, verified by `./boot.sh`.
+Building Zyl needs `cc` and `pthread` and nothing else.
 
-All 9 core compilation phases plus linking are complete and tested. The compiler builds and runs successfully. The full language feature set — struct system, ADT system, float support, actor concurrency, closure support, FFI, try/catch, and I/O — has full pipeline coverage across all phases.
+| | |
+|---|---|
+| Compiler | ~15,500 lines of Zyl across 27 files in `stdlib/compiler/` |
+| Standard library | `core`, `collections`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing` |
+| Cryptography | `stdlib/math/`, ~7,500 lines of Zyl |
+| Language server | `stdlib/lsp/`, ~3,000 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
+| Runtime | `runtime/actor_runtime.c` |
+| Tests | 77/77 passing on `./run_regression_tests.sh --full`, including the fixed-point check and the LSP protocol suite |
 
-**Self-hosting: COMPLETE and deterministic (2026-08-25).** The Zyl compiler
-written in Zyl (`selfhost/zyl_selfhost_compiler.zyl`, assembled from
-`stdlib/compiler/*` + `stdlib/allocator` + `selfhost/driver.zyl`) compiles
-itself end-to-end: stage1 (Rust-compiled) → stage2 → stage3, with stage2 and
-stage3 producing byte-identical assembly for the same input (fixed point /
-Phase 5 determinism check). Programs compiled by stage2/stage3 run correctly.
-See `PROGRESS.md` ("SELF-HOSTING COMPLETE") for details and remaining
-non-blocking hardening items.
+### Language features
 
-**Total source lines:** ~20,000 (19,559 lines Rust + 208 lines C)
+Complete and tested: S-expression syntax; Hindley–Milner inference with
+trait resolution; ADTs with compile-time exhaustiveness; structs
+(immutable, rebinding only); generics with monomorphization; traits and
+derivation; closures; actors with deterministic mailboxes; FFI with
+mandatory pinning and timeouts; hygienic macros; regions with escape
+analysis; capability types (`TCap`, `TMut`); float64; try/catch;
+bitwise operators; and the `Secret` capability with its constant-time
+checker.
+
+Byte-level primitives (buffers, slices, 8-bit loads and stores,
+atomics, alignment) work; the 16-, 32- and 64-bit load and store widths
+are reserved names that the compiler rejects rather than implements.
+
+### Known gaps
+
+- `contract_injection.zyl` is written but not wired into the driver —
+  its accessors do not match the real `DefnNode`/`TestDecl` shapes. See
+  the comment in `selfhost/driver.zyl`.
+- A top-level `def` does not become a readable global; references to one
+  compile to 0.
+- The REPL (`tools/repl.zyl`) is an unfinished skeleton.
+- Spec v5.0 features — package management, workspaces, feature flags —
+  are not implemented and are not planned here.
+
+### Where to look
+
+- `PROGRESS.md` — what changed, session by session, and what is open.
+- `docs/rust-eviction-plan.md` — the self-hosting story and the
+  fixed-point invariant.
+- `docs/codebase-map.md` — where things live.
+- `book/` — the language book, including the standard library and
+  tooling.
+
+---
+
+## Historical phase detail
+
+Everything below was written against the Rust bootstrap and is kept as
+a record of how each phase was built. File names in it refer to
+`archive/rust-bootstrap-2026/src/`, not to the active compiler.
 
 ---
 

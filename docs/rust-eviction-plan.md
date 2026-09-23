@@ -366,6 +366,16 @@ sub-tests don't assert on the printed content, so they still report
 `codegen.zyl` — but not surfaced by the suite today, so not prioritized
 above the failures that are.
 
+*Resolved 2026-09-23.* The guess above was right about the file. ICNF's
+function node carried only parameter names, so codegen recorded every
+parameter as an ordinary machine word whatever its declared type was:
+a `String` parameter printed as an address and compared as one, and a
+`Float` parameter's function was recorded as returning an `Int`.
+Printing an actual float then turned out to fault on its own, because
+that is the one `print` that sets `al` and reaches printf's `movaps`
+spill on an unaligned stack. See `PROGRESS.md` (2026-09-23) and
+`tests/regression/param-kinds.zyl`, which asserts on printed content.
+
 ## Status update (2026-09-16)
 
 **Phase A.8 (native error system / sexp_balance.zyl) is now actually

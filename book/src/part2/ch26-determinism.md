@@ -42,7 +42,10 @@ All compiler-internal collections use **ordered, deterministic variants**:
 - **Symbol tables**: Sorted by symbol name
 - **Type environments**: Ordered by insertion (preserved)
 
-Implementation: `src/deterministic.rs` — `DeterministicMap<K,V>`, `DeterministicSet<T>`
+Implementation: `stdlib/core/map.zyl` — the ordered `Map` the compiler
+uses for every internal table. Its iteration order is a function of the
+keys alone, which is what lets the same source produce the same binary
+on every run.
 
 ## 26.4 Compilation Pipeline (11 Phases, Strict Order)
 

@@ -28,6 +28,7 @@
 (use lsp/services/code_action)
 (use lsp/services/call_hierarchy)
 (use lsp/services/inlay_hints)
+(use lsp/services/signature_help)
 (use lsp/repl_integration)
 
 (defn lsp-run-server (arena)
@@ -95,11 +96,13 @@
           (lsp-on-did-change arena dm ws paramsOpt)
           (if (> (str-eq method "textDocument/didClose") 0)
             (lsp-on-did-close arena dm ws paramsOpt)
+            (if (> (str-eq method "textDocument/didSave") 0)
+              (lsp-on-did-save arena dm ws paramsOpt)
             (if (> (str-eq method "initialized") 0)
               (lsp-loop arena dm ws 1)
               (if (> (str-eq method "exit") 0)
                 (lsp-loop arena dm ws 0)
-                (lsp-loop arena dm ws 1)))))))))
+                (lsp-loop arena dm ws 1))))))))))
 
 (defn lsp-on-did-open (arena dm ws paramsOpt)
   (match (lsp-obj-get paramsOpt "textDocument")
@@ -155,6 +158,24 @@
     (Some (LSPObject p) (Pos (lsp-any-int (map-get p "line")) (lsp-any-int (map-get p "character"))))
     (d1 (Pos 0 0))))
 
+; didSave is advertised with includeText, so the notification carries
+; the saved text and the document is re-analysed from it. A client that
+; sends the notification WITHOUT text still gets a re-analysis, of the
+; buffer the server already holds -- which is the same text, since a
+; save cannot change it.
+(defn lsp-on-did-save (arena dm ws paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (match (lsp-obj-get paramsOpt "text")
+      (Some (LSPString text)
+        (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
+          (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
+      (d1
+        (match (dm-get-text dm uri)
+          (Some text
+            (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
+              (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
+          (None (lsp-loop arena dm ws 1)))))))
+
 (defn lsp-on-did-close (arena dm ws paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
     (lsp-loop arena (dm-on-close dm uri) ws 1)))
@@ -180,7 +201,17 @@
         (let obj1 (map-insert obj0 "message" (LSPString message))
           (let obj2 (match sev (Some s (map-insert obj1 "severity" (LSPInt (lsp-severity-int s)))) (None obj1))
             (let obj3 (match source (Some s (map-insert obj2 "source" (LSPString s))) (None obj2))
-              (LSPObject obj3))))))))
+              (LSPObject (lsp-diag-code-field obj3 code)))))))))
+
+; The error code (`E_ARITY_MISMATCH`, `E_CT_VIOLATION`, ...) as the
+; protocol's `code` field, so a client can group, filter or link on it
+; rather than only matching the message text. Appendix A of the book
+; lists what each one means.
+(defn lsp-diag-code-field (obj code)
+  (match code
+    (Some (Left s) (map-insert obj "code" (LSPString s)))
+    (Some (Right n) (map-insert obj "code" (LSPInt n)))
+    (None obj)))
 
 (defn lsp-severity-int (s)
   (match s (DSError 1) (DSWarning 2) (DSInformation 3) (DSHint 4)))
@@ -238,12 +269,188 @@
                                             (lsp-req-outgoing-calls arena dm ws id paramsOpt)
                                             (if (> (str-eq method "textDocument/inlayHint") 0)
                                               (lsp-req-inlay-hint arena dm ws id paramsOpt)
-                                              (begin
-                                                (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
-                                                (lsp-loop arena dm ws running)))))))))))))))))))))))))
+                                              (lsp-handle-request-2 arena dm ws id method paramsOpt running))))))))))))))))))))))))
 
 (defn lsp-respond (id result error)
   (jr-write-message (jr-encode-response (RespMsg "2.0" id result error))))
+
+; The request table is split in two purely for shape: one `if` chain
+; deep enough to hold every method this server answers nests further
+; than is readable (or than is kind to the code generator). Methods
+; added after the original set live here; there is no other difference
+; between the two halves.
+(defn lsp-handle-request-2 (arena dm ws id method paramsOpt running)
+  (if (> (str-eq method "textDocument/references") 0)
+    (lsp-req-references arena dm ws id paramsOpt)
+    (if (> (str-eq method "textDocument/documentHighlight") 0)
+      (lsp-req-document-highlight arena dm ws id paramsOpt)
+      (if (> (str-eq method "textDocument/signatureHelp") 0)
+        (lsp-req-signature-help arena dm ws id paramsOpt)
+        (if (> (str-eq method "textDocument/typeDefinition") 0)
+          (lsp-req-type-definition arena dm ws id paramsOpt)
+          (if (> (str-eq method "textDocument/implementation") 0)
+            (lsp-req-implementation arena dm ws id paramsOpt)
+            (if (> (str-eq method "textDocument/semanticTokens/range") 0)
+              (lsp-req-semantic-tokens-range arena dm ws id paramsOpt)
+              (if (> (str-eq method "textDocument/rangeFormatting") 0)
+                (lsp-req-formatting arena dm ws id paramsOpt)
+                (begin
+                  (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
+                  (lsp-loop arena dm ws running))))))))))
+
+(defn lsp-req-references (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (lsp-respond id (Some (LSPArray (lsp-loc-list-any
+              (references-at text uri (Pos.line-of pos) (Pos.col-of pos) (lsp-include-declaration paramsOpt))))) None))
+          (None (lsp-respond id (Some (LSPArray Nil)) None)))
+        (lsp-loop arena dm ws 1)))))
+
+; context.includeDeclaration, defaulting to true when the client omits
+; the context entirely -- which is what the protocol says a server
+; should assume.
+(defn lsp-include-declaration (paramsOpt)
+  (match (lsp-obj-get paramsOpt "context")
+    (Some (LSPObject ctx)
+      (match (map-get ctx "includeDeclaration")
+        (Some (LSPBool b) b)
+        (d1 1)))
+    (d2 1)))
+
+(defn lsp-loc-list-any (locs)
+  (match locs
+    (Nil Nil)
+    (Cons l rest (Cons (lsp-location-any l) (lsp-loc-list-any rest)))))
+
+(defn lsp-req-document-highlight (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (lsp-respond id (Some (LSPArray (lsp-highlight-list-any (document-highlights-at text (Pos.line-of pos) (Pos.col-of pos))))) None))
+          (None (lsp-respond id (Some (LSPArray Nil)) None)))
+        (lsp-loop arena dm ws 1)))))
+
+; DocumentHighlightKind 1 is Text -- this server does not distinguish
+; a read from a write, and saying "Text" is the honest answer rather
+; than colouring every occurrence as if it were a write.
+(defn lsp-highlight-list-any (rngs)
+  (match rngs
+    (Nil Nil)
+    (Cons r rest
+      (Cons (LSPObject (map-insert (map-insert (map-new) "range" (lsp-range-to-any r)) "kind" (LSPInt 1)))
+            (lsp-highlight-list-any rest)))))
+
+(defn lsp-req-signature-help (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (match (dm-get-symtable dm uri)
+              (Some tbl
+                (match (signature-help-at text tbl (Pos.line-of pos) (Pos.col-of pos))
+                  (Some sh (lsp-respond id (Some (lsp-sighelp-any sh)) None))
+                  (None (lsp-respond id (Some LSPNull) None))))
+              (None (lsp-respond id (Some LSPNull) None))))
+          (None (lsp-respond id (Some LSPNull) None)))
+        (lsp-loop arena dm ws 1)))))
+
+(defn lsp-sighelp-any (sh)
+  (match sh
+    (SigHelp sigs activeSig activeParam
+      (LSPObject
+        (map-insert
+          (map-insert
+            (map-insert (map-new) "signatures" (LSPArray (lsp-siginfo-list-any sigs)))
+            "activeSignature" (LSPInt (lsp-opt-int activeSig)))
+          "activeParameter" (LSPInt (lsp-opt-int activeParam)))))))
+
+(defn lsp-opt-int (o) (match o (Some n n) (None 0)))
+
+(defn lsp-siginfo-list-any (sigs)
+  (match sigs
+    (Nil Nil)
+    (Cons s rest (Cons (lsp-siginfo-any s) (lsp-siginfo-list-any rest)))))
+
+(defn lsp-siginfo-any (s)
+  (match s
+    (SigInfo label docOpt params activeParam
+      (LSPObject
+        (map-insert
+          (map-insert
+            (map-insert (map-new) "label" (LSPString label))
+            "documentation" (match docOpt (Some d (LSPString d)) (None LSPNull)))
+          "parameters" (LSPArray (lsp-paraminfo-list-any params)))))))
+
+(defn lsp-paraminfo-list-any (params)
+  (match params
+    (Nil Nil)
+    (Cons p rest
+      (match p
+        (ParamInfo label d1
+          (Cons (LSPObject (map-insert (map-new) "label" (LSPString label)))
+                (lsp-paraminfo-list-any rest)))))))
+
+(defn lsp-req-type-definition (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (match (dm-get-symtable dm uri)
+              (Some tbl
+                (match (type-definition-at text tbl uri (Pos.line-of pos) (Pos.col-of pos))
+                  (Some loc (lsp-respond id (Some (lsp-location-any loc)) None))
+                  (None (lsp-respond id (Some LSPNull) None))))
+              (None (lsp-respond id (Some LSPNull) None))))
+          (None (lsp-respond id (Some LSPNull) None)))
+        (lsp-loop arena dm ws 1)))))
+
+(defn lsp-req-implementation (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (lsp-respond id (Some (LSPArray (lsp-loc-list-any (implementations-at text uri (Pos.line-of pos) (Pos.col-of pos))))) None))
+          (None (lsp-respond id (Some (LSPArray Nil)) None)))
+        (lsp-loop arena dm ws 1)))))
+
+(defn lsp-req-semantic-tokens-range (arena dm ws id paramsOpt)
+  (let uri (lsp-text-document-uri paramsOpt)
+    (begin
+      (match (dm-get-text dm uri)
+        (Some text
+          (match (dm-get-symtable dm uri)
+            (Some tbl
+              (lsp-respond id
+                (Some (LSPObject (map-insert (map-new) "data"
+                        (LSPArray (lsp-int-list-any
+                          (semantic-tokens-range-for text tbl (lsp-range-start-line paramsOpt) (lsp-range-end-line paramsOpt)))))))
+                None))
+            (None (lsp-respond id (Some LSPNull) None))))
+        (None (lsp-respond id (Some LSPNull) None)))
+      (lsp-loop arena dm ws 1))))
+
+(defn lsp-range-start-line (paramsOpt)
+  (match (lsp-obj-get paramsOpt "range")
+    (Some (LSPObject r) (lsp-pos-line-of r "start"))
+    (d1 0)))
+
+(defn lsp-range-end-line (paramsOpt)
+  (match (lsp-obj-get paramsOpt "range")
+    (Some (LSPObject r) (lsp-pos-line-of r "end"))
+    (d1 1000000)))
+
+(defn lsp-pos-line-of (r key)
+  (match (map-get r key)
+    (Some (LSPObject p) (lsp-any-int (map-get p "line")))
+    (d1 0)))
 
 (defn lsp-req-initialize (arena dm ws id paramsOpt)
   (let ws2
@@ -275,11 +482,11 @@
 
 (defn lsp-capabilities-any ()
   (let m0 (map-new)
-    (let m1 (map-insert m0 "textDocumentSync" (LSPInt 2))
+    (let m1 (map-insert m0 "textDocumentSync" (lsp-sync-options-any))
       (let m2 (map-insert m1 "hoverProvider" (LSPBool 1))
         (let m3 (map-insert m2 "definitionProvider" (LSPBool 1))
           (let m4 (map-insert m3 "documentSymbolProvider" (LSPBool 1))
-            (let m5 (map-insert m4 "completionProvider" (LSPObject (map-new)))
+            (let m5 (map-insert m4 "completionProvider" (lsp-completion-options-any))
               (let m6 (map-insert m5 "semanticTokensProvider" (lsp-semantic-legend-any))
                 (let m7 (map-insert m6 "codeActionProvider" (LSPBool 1))
                   (let m8 (map-insert m7 "foldingRangeProvider" (LSPBool 1))
@@ -290,12 +497,58 @@
                             (let m13 (map-insert m12 "executeCommandProvider" (LSPObject (map-insert (map-new) "commands" (LSPArray (Cons (LSPString "zyl.evalDocument") Nil)))))
                               (let m14 (map-insert m13 "callHierarchyProvider" (LSPBool 1))
                                 (let m15 (map-insert m14 "inlayHintProvider" (LSPBool 1))
-                                  (LSPObject m15))))))))))))))))))
+                                  (LSPObject (lsp-capabilities-rest m15)))))))))))))))))))
+
+; The second half of the advertisement, split off for the same reason
+; the request table is: one `let` chain holding every capability nests
+; past readable. Everything here was added alongside the handlers in
+; lsp-handle-request-2.
+(defn lsp-capabilities-rest (m)
+  (let n1 (map-insert m "referencesProvider" (LSPBool 1))
+    (let n2 (map-insert n1 "documentHighlightProvider" (LSPBool 1))
+      (let n3 (map-insert n2 "typeDefinitionProvider" (LSPBool 1))
+        (let n4 (map-insert n3 "implementationProvider" (LSPBool 1))
+          (let n5 (map-insert n4 "documentRangeFormattingProvider" (LSPBool 1))
+            (map-insert n5 "signatureHelpProvider" (lsp-sighelp-options-any))))))))
+
+; Open/close notifications wanted, incremental sync, and didSave with
+; the full text attached -- the server re-analyses on save as well as on
+; change, and needs the text to do it.
+(defn lsp-sync-options-any ()
+  (LSPObject
+    (map-insert
+      (map-insert
+        (map-insert (map-new) "openClose" (LSPBool 1))
+        "change" (LSPInt 2))
+      "save" (LSPObject (map-insert (map-new) "includeText" (LSPBool 1))))))
+
+; `(` starts a form and is where a completion list is most useful; `:`
+; leads a keyword atom such as `:le`; `/` separates the segments of a
+; module path inside `(use ...)`.
+(defn lsp-completion-options-any ()
+  (LSPObject
+    (map-insert
+      (map-insert (map-new) "triggerCharacters"
+        (LSPArray (Cons (LSPString "(") (Cons (LSPString ":") (Cons (LSPString "/") Nil)))))
+      "resolveProvider" (LSPBool 0))))
+
+(defn lsp-sighelp-options-any ()
+  (LSPObject
+    (map-insert
+      (map-insert (map-new) "triggerCharacters" (LSPArray (Cons (LSPString "(") (Cons (LSPString " ") Nil))))
+      "retriggerCharacters" (LSPArray (Cons (LSPString " ") Nil)))))
 
 (defn lsp-semantic-legend-any ()
   (match (semantic-tokens-legend)
     (STLeg types mods
-      (LSPObject (map-insert (map-insert (map-new) "tokenTypes" (LSPArray (lsp-str-list-any types))) "tokenModifiers" (LSPArray (lsp-str-list-any mods)))))))
+      (LSPObject
+        (map-insert
+          (map-insert
+            (map-insert (map-new) "legend"
+              (LSPObject (map-insert (map-insert (map-new) "tokenTypes" (LSPArray (lsp-str-list-any types)))
+                                     "tokenModifiers" (LSPArray (lsp-str-list-any mods)))))
+            "full" (LSPBool 1))
+          "range" (LSPBool 1))))))
 
 (defn lsp-str-list-any (xs)
   (match xs (Nil Nil) (Cons h t (Cons (LSPString h) (lsp-str-list-any t)))))
@@ -318,11 +571,26 @@
 (defn Pos.line-of (p) (match p (Pos l d1 l)))
 (defn Pos.col-of (p) (match p (Pos d1 c c)))
 
+; `contents` as a MarkupContent object rather than a bare string: the
+; hover text is markdown (fenced code plus prose) and a bare string is
+; rendered as plaintext by every client that follows the spec.
 (defn lsp-hover-any (h)
   (match h
     (Hov mc rngOpt
       (match mc
-        (MC kind value (LSPObject (map-insert (map-new) "contents" (LSPString value))))))))
+        (MC kind value
+          (let base (map-insert (map-new) "contents" (lsp-markup-any kind value))
+            (LSPObject (match rngOpt
+                         (Some rng (map-insert base "range" (lsp-range-to-any rng)))
+                         (None base)))))))))
+
+(defn lsp-markup-any (kind value)
+  (LSPObject
+    (map-insert (map-insert (map-new) "kind" (LSPString (lsp-markup-kind-str kind)))
+                "value" (LSPString value))))
+
+(defn lsp-markup-kind-str (kind)
+  (match kind (MKMarkdown "markdown") (MKPlainText "plaintext")))
 
 (defn lsp-req-definition (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -346,11 +614,17 @@
 
 (defn lsp-req-completion (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
-    (begin
-      (match (dm-get-symtable dm uri)
-        (Some tbl (lsp-respond id (Some (LSPArray (lsp-completion-list-any (completion-items-for tbl)))) None))
-        (None (lsp-respond id (Some (LSPArray Nil)) None)))
-      (lsp-loop arena dm ws 1))))
+    (let pos (lsp-position-of paramsOpt)
+      (begin
+        (match (dm-get-text dm uri)
+          (Some text
+            (match (dm-get-symtable dm uri)
+              (Some tbl
+                (lsp-respond id (Some (LSPArray (lsp-completion-list-any
+                  (completion-items-at text tbl (Pos.line-of pos) (Pos.col-of pos))))) None))
+              (None (lsp-respond id (Some (LSPArray Nil)) None))))
+          (None (lsp-respond id (Some (LSPArray Nil)) None)))
+        (lsp-loop arena dm ws 1)))))
 
 (defn lsp-completion-list-any (items)
   (match items
@@ -359,10 +633,23 @@
 
 (defn lsp-completion-item-any (ci)
   (match ci
-    (CI label kind d1 d2 d3 d4 detail d5 d6 d7 d8 d9 d10 d11 d12
+    (CI label kind d1 d2 d3 d4 detail documentation d5 d6 d7 d8 d9 d10 d11
       (let obj0 (map-insert (map-new) "label" (LSPString label))
-        (LSPObject (match kind (Some k (map-insert obj0 "kind" (LSPInt (lsp-cik-int k)))) (None obj0)))))))
+        (let obj1 (match kind (Some k (map-insert obj0 "kind" (LSPInt (lsp-cik-int k)))) (None obj0))
+          (let obj2 (match detail (Some d (map-insert obj1 "detail" (LSPString d))) (None obj1))
+            (LSPObject (match documentation
+                         (Some mc (map-insert obj2 "documentation" (lsp-mc-any mc)))
+                         (None obj2)))))))))
 
+(defn lsp-mc-any (mc)
+  (match mc (MC kind value (lsp-markup-any kind value))))
+
+; The first twenty-five are the protocol's own numbering. The six after
+; them are Zyl-specific kinds with no protocol number of their own, each
+; mapped to the standard kind a client already renders sensibly --
+; a capability and a region read as constants, a variant as an enum
+; member, a trait method as a method, and both an FFI call and an actor
+; spawn as functions.
 (defn lsp-cik-int (k)
   (match k
     (CIKText 1) (CIKMethod 2) (CIKFunction 3) (CIKConstructor 4) (CIKField 5)
@@ -370,6 +657,8 @@
     (CIKUnit 11) (CIKValue 12) (CIKEnum 13) (CIKKeyword 14) (CIKSnippet 15) (CIKColor 16)
     (CIKFile 17) (CIKReference 18) (CIKFolder 19) (CIKEnumMember 20) (CIKConstant 21)
     (CIKStruct 22) (CIKEvent 23) (CIKOperator 24) (CIKTypeParameter 25)
+    (CIKCapability 21) (CIKRegion 21) (CIKVariant 20) (CIKTraitMethod 2)
+    (CIKFFICall 3) (CIKActorSpawn 3)
     (d1 22)))
 
 (defn lsp-req-document-symbol (arena dm ws id paramsOpt)
@@ -513,11 +802,8 @@
         (begin
           (match (dm-get-text dm uri)
             (Some text
-              (match (dm-get-symtable dm uri)
-                (Some tbl
-                  (match (rename-at text uri tbl (Pos.line-of pos) (Pos.col-of pos) new-name)
-                    (Some we (lsp-respond id (Some (lsp-workspace-edit-any we)) None))
-                    (None (lsp-respond id (Some LSPNull) None))))
+              (match (rename-at text uri (Pos.line-of pos) (Pos.col-of pos) new-name)
+                (Some we (lsp-respond id (Some (lsp-workspace-edit-any we)) None))
                 (None (lsp-respond id (Some LSPNull) None))))
             (None (lsp-respond id (Some LSPNull) None)))
           (lsp-loop arena dm ws 1))))))

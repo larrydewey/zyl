@@ -1,208 +1,279 @@
 # Appendix C: Built-in Operations
 
-Complete reference for all built-in operators and special forms.
+Every head symbol the compiler recognises specially, plus the operators
+it lowers to single instructions. The authority is
+`dispatch-special` in `stdlib/compiler/expr_inner.zyl` and the operator
+table in `stdlib/compiler/icnf.zyl`; this appendix mirrors both.
 
-## C.1 Arithmetic Operators
+The same table backs the language server's hover and completion
+(`stdlib/lsp/builtins.zyl`), so anything listed here can be hovered in
+an editor for its signature and a one-line description.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `+` | `(+ Int...)` → `Int` | Sum (unary: identity) |
-|  | `(+ Float...)` → `Float` | Sum (unary: identity) |
-| `-` | `(- Int Int)` → `Int` | Difference (unary: negation) |
-|  | `(- Float Float)` → `Float` | Difference (unary: negation) |
-| `*` | `(* Int...)` → `Int` | Product (unary: identity) |
-|  | `(* Float...)` → `Float` | Product (unary: identity) |
-| `/` | `(/ Int Int)` → `Int` | Quotient (truncates toward 0) |
-|  | `(/ Float Float)` → `Float` | Quotient (IEEE-754) |
-| `%` | `(% Int Int)` → `Int` | Remainder (sign follows dividend) |
+## C.1 Arithmetic
 
-**All arithmetic is n-ary (except unary forms) and left-associative.**
+| Operator | Form | Notes |
+|---|---|---|
+| `+` | `(+ a b ...)` | n-ary, left-associative |
+| `-` | `(- a b ...)` | unary form negates |
+| `*` | `(* a b ...)` | n-ary, left-associative |
+| `/` | `(/ a b)` | truncates toward zero; rejected on a `Secret` operand |
+| `%` | `(% a b)` | sign follows the dividend; rejected on a `Secret` operand |
 
-### Overflow Behavior (Int)
+Integers are 64-bit signed. Floats are IEEE-754 binary64; integer
+division by zero is `E_DIVISION_BY_ZERO`, while float division follows
+IEEE-754 and yields an infinity or a NaN.
 
-- **Checked** (default): Runtime error `E_OVERFLOW`
-- **Wrapping**: Not yet exposed
-- **Saturating**: Not yet exposed
+## C.2 Comparison
 
-### Division by Zero
+| Operator | Form | Notes |
+|---|---|---|
+| `=`, `==` | `(= a b)` | the same operation; `=` is the spelling used throughout the stdlib |
+| `!=` | `(!= a b)` | |
+| `<`, `>`, `<=`, `>=` | `(< a b)` | |
 
-- **Int**: Runtime error `E_DIVISION_BY_ZERO`
-- **Float**: Returns `inf`, `-inf`, or `nan` per IEEE-754
+**`=` on two dynamically built strings compares addresses, not
+contents.** Use `str-eq`, which returns 1 or 0. For secret data use
+`ct-eq` or `ct-eq-words` (Chapter 33) — a comparison that stops at the
+first difference leaks the length of the matching prefix.
 
-## C.2 Comparison Operators
+Structs and ADTs compare by identity, not structure: two separately
+constructed equal structs are not `=`. Compare their fields.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `==` | `(== a b)` → `Bool` | Structural equality |
-| `!=` | `(!= a b)` → `Bool` | Structural inequality |
-| `<` | `(< a b)` → `Bool` | Less than (Int, Float) |
-| `>` | `(> a b)` → `Bool` | Greater than |
-| `<=` | `(<= a b)` → `Bool` | Less or equal |
-| `>=` | `(>= a b)` → `Bool` | Greater or equal |
+## C.3 Bitwise and Shifts
 
-**Structural equality** works on primitives — `Int`, `Float`, `Bool`, `String` —
-and on values compared field-by-field. For structs and ADTs, `==` compares
-identity (pointer), **not** structure: two separately-constructed equal structs
-are *not* equal. Compare struct fields individually instead
-(e.g. `(== (struct-get p "x") (struct-get q "x"))`).
+| Operator | Form | Notes |
+|---|---|---|
+| `bit-and` | `(bit-and a b ...)` | n-ary, left-associative |
+| `bit-or` | `(bit-or a b ...)` | n-ary |
+| `bit-xor` | `(bit-xor a b ...)` | n-ary |
+| `bit-not` | `(bit-not a)` | |
+| `shl` | `(shl a n)` | logical left shift |
+| `shr` | `(shr a n)` | **logical** right shift, zero fill |
+| `ashr` | `(ashr a n)` | **arithmetic** right shift, sign fill |
 
-## C.3 Boolean Operators (Short-Circuiting)
+Each lowers to a single machine instruction and is constant-time, which
+is what makes them the vocabulary of `math/secret/secret`.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `and` | `(and Bool...)` → `Bool` | Short-circuit AND |
-| `or` | `(or Bool...)` → `Bool` | Short-circuit OR |
-| `not` | `(not Bool)` → `Bool` | Logical negation |
+**Out-of-range shift counts are defined**, not left to x86's mod-64
+masking: a logical shift by 64 or more gives 0, and `ashr` saturates to
+the sign bit.
 
-**Implemented as macros** expanding to `if` — not special forms.
+```lisp
+(shl 1 64)     ; 0, not 1
+(shr -1 64)    ; 0
+(ashr -1 64)   ; -1
+(ashr 1024 64) ; 0
+```
 
-## C.4 Type Predicates
+Constant folding deliberately does not cover these operators. Folding a
+`bit-and` inside the compiler would require the compiler's own source
+to use `bit-and`, which the previous-generation seed cannot compile.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `int?` | `(int? x)` → `Bool` | Is Int? |
-| `float?` | `(float? x)` → `Bool` | Is Float? |
-| `bool?` | `(bool? x)` → `Bool` | Is Bool? |
-| `string?` | `(string? x)` → `Bool` | Is String? |
-| `struct?` | `(struct? x)` → `Bool` | Is struct? |
-| `alias?` | `(alias? x)` → `Bool` | Is alias? |
+## C.4 Logical
 
-## C.5 Collection Operations
+| Operator | Form |
+|---|---|
+| `and` | `(and a b)` |
+| `or` | `(or a b)` |
+| `not` | `(not a)` |
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `len` | `(len Vec/Map/String)` → `Int` | Length |
-| `vec` | `(vec Elem...)` → `Vec` | **Not a builtin** — use `vec-create` |
-| `map` | `(map K V...)` → `Map` | **Not a builtin** — use `map-create` |
-| `tuple` | `(tuple Elem...)` → `Tuple` | **Not implemented** — reserved name |
+## C.5 Strings
 
-**Note**: `vec`, `map`, and `tuple` are reserved identifiers but the literal
-forms themselves are not implemented yet — use the stdlib collection functions
-and structs for grouping values.
+| Operator | Form | Notes |
+|---|---|---|
+| `str-concat` | `(str-concat a b)` | returns a fresh string |
+| `str-length`, `str-len` | `(str-length s)` | length in bytes |
+| `str-substring` | `(str-substring s start len)` | byte-indexed |
+| `str-eq` | `(str-eq a b)` | compares **contents**, returns 1 or 0 |
+| `str-intern` | `(str-intern arena s)` | interns in an arena so `=` becomes meaningful |
 
-## C.6 Mutation
+## C.6 Binding and Mutation
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `set!` | `(set! var value)` → `Unit` | Rebinding (let-mut only) |
+| Form | Syntax |
+|---|---|
+| `def` | `(def name value)` |
+| `defn` | `(defn name (param ...) body)` |
+| `let` | `(let name value body)` |
+| `let-mut` | `(let-mut name value body)` |
+| `set!` | `(set! name value)` |
+| `fn` | `(fn (param ...) body)` |
+| `lambda` | `(lambda (param ...) body)` |
 
-**No field mutation** — `set! (struct-get p "x") 5` is forbidden.
+`let` and `let-mut` take the name and value directly — not a binding
+list. `set!` rebinds a `let-mut` name and nothing else: field mutation,
+`(set! (struct-get p "x") 5)`, is rejected.
 
-## C.7 I/O Operations
+`fn` and `lambda` are the same form under two names: both take a
+parameter list and a body, and neither takes a name.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `print` | `(print Expr...)` → `Unit` | Write to stdout |
-| `read-line` | `(read-line)` → `Result<String, String>` | Read stdin line |
-| `exit` | `(exit Int)` → `Never` | Terminate program |
-| `close` | `(close Handle)` → `Unit` | Close resource |
-| `file-open` | `(file-open Path Mode)` → `Int` | Open file (Mode: `"r"`, `"w"`, `"a"`) |
-| `file-read` | `(file-read Handle Count)` → `String` | Read bytes from file |
-| `file-write` | `(file-write Handle Data)` → `Int` | Write data to file |
-| `file-close` | `(file-close Handle)` → `Unit` | Close file |
+A top-level `def` does **not** currently become a readable global;
+every reference to one compiles to 0. Use a nullary `defn` for a
+constant.
 
-## C.8 Error Operations
+A parameter may carry a type annotation: `(defn f ((n Int) (k Secret)) ...)`.
 
-| Operator | Signature | Description |
-|----------|-----------|-------------|
-| `error` | `(error String)` → `Result<T, String>` | Creates `(Err msg)` |
-| `unwrap` | `(unwrap Result)` → `T` | Extracts `Ok` or panics |
+## C.7 Control Flow
 
-## C.9 Special Forms (Core Syntax)
+| Form | Syntax | Notes |
+|---|---|---|
+| `if` | `(if cond then else)` | both arms required |
+| `cond` | `(cond (test body) ... (else body))` | tested top to bottom; `else` is recognised and always matches |
+| `when` | `(when cond body)` | absent arm yields unit |
+| `while` | `(while cond body)` | |
+| `for` | `(for (i start) limit body)` | `(for (i 16) ...)` starts at 16 |
+| `match` | `(match subject (Variant binding ... body) ...)` | exhaustive or it is an error |
+| `begin` | `(begin expr ...)` | value is the last expression |
+| `try` | `(try body (catch e handler))` | catches a runtime panic |
+| `unwrap` | `(unwrap expr)` | panics on `Err`/`None` |
+| `error` | `(error "message")` | |
+| `assert` | `(assert expr)` | lowered by the assert pass |
+| `range` | `(range start end)` | |
+| `with-resource` | `(with-resource name acquire body)` | releases on every exit path |
 
-| Form | Syntax | Description |
-|------|--------|-------------|
-| `def` | `(def Name Expr)` | Top-level constant |
-| `defn` | `(defn Name (Params...) Body)` | Function definition |
-| `defun` | Same as `defn` | Synonym |
-| `let` | `(let (Name Expr) Body)` | Immutable binding |
-| `let-mut` | `(let-mut (Name Expr) Body)` | Mutable binding |
-| `if` | `(if Cond Then Else)` | Conditional (3-armed) |
-| `try` | `(try Expr (catch Name Expr))` | Error handling |
-| `match` | `(match Expr (Variant Pat Body)...)` | Pattern match |
-| `spawn` | `(spawn Expr)` → `ActorRef` | Spawn actor |
-| `send` | `(send ActorRef Expr)` → `Unit` | Send message |
-| `ffi-call` | `(ffi-call String Expr* Int)` → `Result` | FFI call |
-| `ffi-pin` | `(ffi-pin Expr)` → `TPin` | Pin for FFI |
-| `ffi-unpin` | `(ffi-unpin Expr)` → `Unit` | Unpin memory |
-| `assert` | `(assert Expr String)` → `Unit` | Runtime check |
-| `while` | `(while Cond Body)` → `Unit` | Loop |
-| `for` | `(for (Bindings) Cond Body)` → `Unit` | Loop with init |
-| `cond` | `(cond (Cond Body)... (else Body))` | Multi-way branch |
-| `begin` | `(begin Expr+)` → `Last Expr` | Sequence |
-| `error` | See C.8 | Create error |
-| `unwrap` | See C.8 | Extract or panic |
+A `match` arm named `dN` (`d1`, `d2`, …) is the wildcard convention
+used throughout this codebase; those names are also exempt from the
+unused-binding warning.
 
-## C.10 Definition Forms (Extended)
+## C.8 Data Definition
 
-| Form | Syntax | Description |
-|------|--------|-------------|
-| `trait` | `(trait Name (Methods...) Bound?)` | Trait declaration |
-| `impl` | `(impl Trait Type (ImplBody...))` | Trait implementation |
-| `deftype` | `(deftype Name (Variants...) Bound?)` | ADT declaration |
-| `defstruct` | `(defstruct Name (Fields...) Derive?)` | Struct declaration |
-| `defstruct+` | `(defstruct+ Name (Fields...) Derive?)` | Struct with derive |
-| `alias` | `(alias Name Type)` | Type alias |
-| `derive` | `(derive Type [Traits...])` | Standalone derive |
-| `defmacro` | `(defmacro Name (Patterns...) Template)` | Macro definition |
-| `with-resource` | `(with-resource (Name Expr) Body)` | RAII |
-| `module` | `(module Name)` | Module declaration |
-| `use` | `(use Module ImportSpec)` | Import |
-| `export` | `(export Name)` | Export symbol |
-| `requires` | `(requires Expr)` | Precondition |
-| `ensures` | `(ensures Expr)` | Postcondition |
-| `invariant` | `(invariant Expr)` | Loop invariant |
-| `recover` | `(recover ((ErrorType Expr)...))` | Recovery |
-| `checkpoint` | `(checkpoint Expr)` | Checkpoint scope |
-| `contracts` | `(contracts Profile)` | Contract profile |
+| Form | Syntax |
+|---|---|
+| `deftype` | `(deftype Name (Variant Field ...) ...)` |
+| `defstruct` | `(defstruct Name (field Type) ...)` |
+| `defstruct+` | `(defstruct+ Name (field Type) ...)` |
+| `struct-get` | `(struct-get value "field")` |
+| `make-struct` | `(make-struct Name field ...)` |
+| `make-variant` | `(make-variant Type Variant field ...)` |
+| `trait` | `(trait Name (method (param ...) ReturnType) ...)` |
+| `impl` | `(impl Trait Type (defn method (self ...) body) ...)` |
+| `derive` | `(derive Type Trait ...)` |
+| `alias` | `(alias Name Type)` |
+| `macro`, `defmacro` | `(macro name (param ...) template)` |
 
-## C.11 Testing Forms
+`defstruct` is sugar: it lowers to a single-variant `deftype` whose
+variant is named after the type, so the existing ADT machinery builds
+and reads struct values with no separate field-offset system. **Field
+type annotations are dropped** in that lowering — they document intent
+and are not currently checked.
 
-| Form | Syntax | Description |
-|------|--------|-------------|
-| `test-suite` | `(test-suite String (Tests...) Keywords?)` | Test group |
-| `test` | `(test String Body Keywords?)` | Test case |
-| `assert-equal` | `(assert-equal Expr Expr)` | Equality check |
-| `assert-fail` | `(assert-fail Expr String?)` | Expect error |
-| `assert-true` | `(assert-true Expr String?)` | Expect true |
-| `assert-false` | `(assert-false Expr String?)` | Expect false |
-| `test-property` | `(test-property String Gen Property)` | Property test |
-| `setup` | `(setup Body+)` | Per-test setup |
-| `teardown` | `(teardown Body+)` | Per-test teardown |
-| `run-tests` | `(run-tests Keywords?)` | Execute tests |
-| `test-compile` | `(test-compile Expr ExpectError?)` | Compile test |
+## C.9 Modules
 
-## C.12 REPL Commands
+| Form | Syntax |
+|---|---|
+| `use` | `(use path/to/module)` |
+| `module` | `(module name)` |
+| `export` | `(export name)` |
 
-| Command | Description |
-|---------|-------------|
-| `:help` | Show commands |
-| `:quit` | Exit REPL |
-| `:type <expr>` | Show inferred type |
-| `:ast <expr>` | Show parsed AST |
-| `:icnf <expr>` | Show ICNF |
-| `:macroexpand <expr>` | Show macro expansion |
-| `:macroexpand-all <expr>` | Full macro expansion |
+## C.10 I/O
 
-## C.13 Compiler Flags
+| Form | Syntax | Notes |
+|---|---|---|
+| `print` | `(print expr ...)` | rejected on a `Secret` operand |
+| `read-line` | `(read-line)` | |
+| `exit` | `(exit code)` | |
+| `close` | `(close handle)` | |
+| `file-open` | `(file-open path mode)` | mode is `"r"`, `"w"` or `"a"` |
+| `file-read` | `(file-read fd nbytes)` | |
+| `file-write` | `(file-write fd text)` | rejected on a `Secret` operand |
+| `file-close` | `(file-close fd)` | |
+| `buf-append` | `(buf-append buf s)` | |
 
-> **Status**: `-o` is implemented; the `--emit-*` family, `--test`,
-> `--filter`, and `--boot`/`--no-boot` flags are on the compiler roadmap. For
-> phase dumps today, the Rust bootstrap accepts `--dump-icnf <path>` (ICNF
-> JSON) and `--emit-zyl <path>`.
+`print` chooses its format from the type of its argument, including
+when that argument is a parameter: `(defn greet ((s String)) (print s))`
+prints the string, not its address. `core/core`'s `print-int`,
+`print-float`, `print-string` and `print-bool` are thin wrappers over it
+and behave the same.
+
+## C.11 Actors and FFI
+
+| Form | Syntax | Notes |
+|---|---|---|
+| `spawn` | `(spawn expr)` | rejected on a `Secret` operand |
+| `send` | `(send actor message)` | rejected on a `Secret` operand |
+| `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the trailing timeout, in milliseconds, is mandatory |
+| `ffi-pin` | `(ffi-pin value)` | moves into the Pin region for the call |
+| `ffi-unpin` | `(ffi-unpin value)` | |
+
+## C.12 Bytes, Buffers and Atomics
+
+| Form | Syntax | Notes |
+|---|---|---|
+| `byte` | `(byte n)` | literal, 0..255 |
+| `bytebuf` | `(bytebuf region capacity)` | region and capacity are compile-time literals |
+| `bytebuf-len` / `bytebuf-cap` | `(bytebuf-len buf)` | |
+| `bytebuf-ptr` | `(bytebuf-ptr buf)` | Pin region only |
+| `bytebuf-append` | `(bytebuf-append buf slice)` | takes a **slice**, not a single byte |
+| `byteslice` | `(byteslice buf offset length)` | |
+| `byteslice-sub` | `(byteslice-sub slice offset length)` | |
+| `align-check` | `(align-check ptr alignment)` | |
+| `load-u8`, `load-i8` | `(load-u8 :le buf offset)` | |
+| `store-u8`, `store-i8` | `(store-u8 :le buf offset value)` | |
+| `bytebuf-atomic-load` / `-store` / `-add` / `-sub` / `-cas` / `-fetch-add` / `-max` / `-min` | `(bytebuf-atomic-add buf offset value)` | |
+
+The wider load and store widths — `load-u16`/`u32`/`u64` and their
+signed and store counterparts — are **reserved names that are not
+implemented**. Using one is rejected with `E_RESERVED_KEYWORD` rather
+than silently lowered. Chapter 32 covers this family in full.
+
+## C.13 Contracts
+
+| Form | Syntax |
+|---|---|
+| `requires` | `(requires condition)` |
+| `ensures` | `(ensures condition)` |
+| `contracts` | `(contracts (requires ...) (ensures ...))` |
+| `recover` | `(recover body handler)` |
+| `checkpoint` | `(checkpoint name)` |
+
+Contracts are an optional overlay and never alter type inference,
+ownership, regions or scheduling.
+
+## C.14 Testing
+
+| Form | Syntax |
+|---|---|
+| `test` | `(test "name" body)` |
+| `test-suite` | `(test-suite "name" test ...)` |
+| `assert-equal` | `(assert-equal actual expected)` |
+| `assert-true` / `assert-false` | `(assert-true expr)` |
+| `assert-fail` | `(assert-fail expr)` |
+| `test-property` | `(test-property "name" generator body)` |
+| `test-compile` | `(test-compile expr)` |
+| `setup` / `teardown` | `(setup expr ...)` |
+| `run-tests` | `(run-tests)` |
+
+## C.15 Types, Regions and Capabilities
+
+Written in parameter annotations, not as expressions:
+
+| Category | Names |
+|---|---|
+| Primitive types | `Int`, `Float`, `Bool`, `String`, `Unit` |
+| Constructed types | `List`, `Option`, `Result`, `Vec`, `Map` |
+| Regions | `Stack`, `Heap`, `Global`, `Circular`, `Pin` |
+| Capabilities | `Secret`, `TCap`, `TMut` |
+
+## C.16 Compiler Flags
+
+The compiler takes a source file and, optionally:
 
 | Flag | Description |
-|------|-------------|
-| `--emit-ast` | Output Phase 1 AST |
-| `--emit-expanded` | Output Phase 2 expanded AST |
-| `--emit-typed` | Output Phase 3 typed AST |
-| `--emit-regions` | Output Phase 4 region AST |
-| `--emit-mono` | Output Phase 5 monomorphized AST |
-| `--emit-icnf` | Output Phase 6 ICNF |
-| `--emit-opt` | Output Phase 7 optimized ICNF |
-| `--emit-asm` | Output Phase 8 assembly |
-| `-o <file>` | Output executable name |
-| `--test` | Run tests in file |
-| `--filter <pattern>` | Filter tests |
-| `--no-boot` | Skip boot fixed point in tests |
-| `--boot` | Force boot fixed point in tests |
+|---|---|
+| `-o <file>` | Output binary path |
+| `--emit-asm` | Write x86-64 assembly instead of linking |
+
+```bash
+zyl hello.zyl -o hello
+zyl hello.zyl --emit-asm -o hello.s
+```
+
+That is the whole command line. Phase dumps beyond `--emit-asm` are not
+implemented in the self-hosted driver.
+
+## C.17 The REPL
+
+`zyl` with no arguments starts `zyl-repl`. It accepts `:q` or `:quit`
+to exit. It is an unfinished skeleton — `tools/repl.zyl` is honest
+about this — and is not the way to explore the language today. Compile
+a file instead, or use **Zyl: Run Current File** in the editor
+(Chapter 35).

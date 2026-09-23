@@ -1,0 +1,87 @@
+{
+  "Function definition": {
+    "prefix": "defn",
+    "body": ["(defn ${1:name} (${2:args})", "  $0)"],
+    "description": "Define a top-level function"
+  },
+  "Algebraic data type": {
+    "prefix": "deftype",
+    "body": ["(deftype ${1:Name}", "  (${2:Variant} ${3:Int})", "  (${4:Other}))"],
+    "description": "Declare an algebraic data type"
+  },
+  "Struct": {
+    "prefix": "defstruct",
+    "body": ["(defstruct ${1:Name}", "  (${2:field} ${3:Int}))"],
+    "description": "Declare a struct (fields are immutable)"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": ["(match ${1:subject}", "  (${2:Variant} ${3:binding} $0)", "  (${4:Other} 0))"],
+    "description": "Exhaustive match over an ADT"
+  },
+  "Let binding": {
+    "prefix": "let",
+    "body": ["(let ${1:name} ${2:value}", "  $0)"],
+    "description": "Immutable binding"
+  },
+  "Mutable binding": {
+    "prefix": "let-mut",
+    "body": ["(let-mut ${1:name} ${2:value}", "  $0)"],
+    "description": "Mutable binding, rebound with set!"
+  },
+  "Trait": {
+    "prefix": "trait",
+    "body": ["(trait ${1:Name}", "  (${2:method} (${3:self}) ${4:Int}))"],
+    "description": "Declare a trait"
+  },
+  "Trait implementation": {
+    "prefix": "impl",
+    "body": ["(impl ${1:Trait} ${2:Type}", "  (defn ${3:method} (${4:self})", "    $0))"],
+    "description": "Implement a trait for a type"
+  },
+  "FFI call": {
+    "prefix": "ffi-call",
+    "body": ["(ffi-call \"${1:zyl_symbol}\" ${2:arg} ${3:1000})"],
+    "description": "Call a C symbol; the last argument is a timeout in milliseconds"
+  },
+  "Pinned FFI call": {
+    "prefix": "ffi-pin",
+    "body": ["(ffi-pin ${1:value})"],
+    "description": "Pin a value for the duration of an FFI call"
+  },
+  "Test": {
+    "prefix": "test",
+    "body": ["(test \"${1:name}\"", "  (assert-equal ${2:actual} ${3:expected}))"],
+    "description": "One test case"
+  },
+  "Test suite": {
+    "prefix": "test-suite",
+    "body": ["(test-suite \"${1:name}\"", "  (test \"${2:case}\"", "    (assert-equal ${3:actual} ${4:expected})))"],
+    "description": "Group test cases"
+  },
+  "Actor spawn": {
+    "prefix": "spawn",
+    "body": ["(spawn ${1:expr})"],
+    "description": "Spawn an actor"
+  },
+  "Byte buffer": {
+    "prefix": "bytebuf",
+    "body": ["(bytebuf ${1|Stack,Heap,Global,Circular,Pin|} ${2:64})"],
+    "description": "Allocate a byte buffer in a region"
+  },
+  "Secret parameter": {
+    "prefix": "secret",
+    "body": ["(defn ${1:name} ((${2:key} Secret))", "  $0)"],
+    "description": "A function taking a Secret-capability parameter"
+  },
+  "Module import": {
+    "prefix": "use",
+    "body": ["(use ${1:core/core})"],
+    "description": "Import a module"
+  },
+  "Main": {
+    "prefix": "main",
+    "body": ["(defn main ()", "  $0)"],
+    "description": "Program entry point"
+  }
+}

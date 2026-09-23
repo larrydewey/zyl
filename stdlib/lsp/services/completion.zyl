@@ -1,11 +1,23 @@
 ; === Zyl LSP — Completion Service ===
 ; Module: lsp/services/completion
-; Sources: static keywords, known top-level function names, known ADT
-; type names, known variant constructor names -- everything this LSP
-; actually has real data for (see compiler_bridge.zyl's SymTable). No
-; "local variables in scope" source: that needs real position-aware
-; scoping this compiler's Ast/Expr can't provide (LSP_ARCHITECTURE_
-; PLAN.md's "Wall 1") -- omitted rather than guessed at.
+;
+; Context first, then candidates.
+;
+; Inside a `(use ...)` form the only sensible completions are module
+; paths, so that is all this offers there -- a list of every module
+; stdlib actually ships (lsp/builtins). Everywhere else the candidates
+; are the language's own special forms, operators, built-in functions,
+; types, regions and capability names, plus everything the current
+; document defines: functions, ADTs and their variant constructors,
+; structs and their field names.
+;
+; Each item carries a `detail` (the signature) and, for built-ins, the
+; same documentation hover shows -- so the completion popup explains
+; itself without a second round trip.
+;
+; There is still no "local variables in scope" source: that needs real
+; position-aware scoping this compiler's Ast/Expr cannot provide
+; (LSP_ARCHITECTURE_PLAN.md's "Wall 1"). Omitted rather than guessed at.
 
 (use core/core)
 (use core/list)
@@ -13,20 +25,67 @@
 (use core/map)
 (use lsp/lsp_types)
 (use lsp/compiler_bridge)
-(use lsp/services/semantic_tokens)
+(use lsp/source_index)
+(use lsp/builtins)
 
+(defn completion-items-at (text tbl line col)
+  (match (si-call-context text line col)
+    (Some ctx
+      (if (> (str-eq (CallCtx.head ctx) "use") 0)
+        (completion-modules)
+        (completion-general tbl)))
+    (None (completion-general tbl))))
+
+; Kept for callers with no position to work from (and for tests): the
+; full candidate set, no context filtering.
 (defn completion-items-for (tbl)
-  (list-append (completion-keywords)
+  (completion-general tbl))
+
+(defn completion-general (tbl)
+  (list-append (completion-builtins)
     (list-append (completion-fns tbl)
-      (list-append (completion-adts tbl) (completion-variants tbl)))))
+      (list-append (completion-adts tbl)
+        (list-append (completion-variants tbl)
+          (list-append (completion-structs tbl) (completion-fields tbl)))))))
 
-(defn completion-keywords ()
-  (cmp-kw-items (st-keywords)))
+; ===========================================================================
+; BUILT-INS
+; ===========================================================================
 
-(defn cmp-kw-items (xs)
-  (match xs
+(defn completion-builtins ()
+  (cmp-builtin-items (builtins-all)))
+
+(defn cmp-builtin-items (bs)
+  (match bs
     (Nil Nil)
-    (Cons h t (Cons (CI h (Some CIKKeyword) None None None None None None None None None None None None None) (cmp-kw-items t)))))
+    (Cons b rest
+      (Cons (cmp-item (ZB.name b) (Some (cmp-builtin-kind b)) (Some (ZB.sig b)) (Some (builtin-hover-markdown b)))
+            (cmp-builtin-items rest)))))
+
+(defn cmp-builtin-kind (b)
+  (let kind (ZB.kind b)
+    (if (> (str-eq kind "special-form") 0) CIKKeyword
+      (if (> (str-eq kind "operator") 0) CIKOperator
+        (if (> (str-eq kind "builtin") 0) CIKFunction
+          (if (> (str-eq kind "type") 0) CIKClass
+            CIKConstant))))))
+
+; ===========================================================================
+; MODULE PATHS — offered only inside `(use ...)`.
+; ===========================================================================
+
+(defn completion-modules ()
+  (cmp-module-items (builtin-stdlib-modules)))
+
+(defn cmp-module-items (paths)
+  (match paths
+    (Nil Nil)
+    (Cons p rest
+      (Cons (cmp-item p (Some CIKModule) (Some "stdlib module") None) (cmp-module-items rest)))))
+
+; ===========================================================================
+; THIS DOCUMENT'S OWN NAMES
+; ===========================================================================
 
 (defn completion-fns (tbl)
   (cmp-fn-items (map-entries (st-fns tbl))))
@@ -34,8 +93,23 @@
 (defn cmp-fn-items (entries)
   (match entries
     (Nil Nil)
-    (Cons e t
-      (Cons (CI (ME.key e) (Some CIKFunction) None None None None None None None None None None None None None) (cmp-fn-items t)))))
+    (Cons e rest
+      (Cons (cmp-item (ME.key e) (Some CIKFunction) (Some (cmp-fn-detail (ME.value e))) None)
+            (cmp-fn-items rest)))))
+
+(defn cmp-fn-detail (info)
+  (match info
+    (FI name params (str-concat "(" (str-concat name (str-concat " " (str-concat (cmp-params params) ")")))))))
+
+(defn cmp-params (params)
+  (match params
+    (Nil "")
+    (Cons p rest
+      (match p
+        (P pname d1
+          (match rest
+            (Nil pname)
+            (Cons d2 d3 (str-concat pname (str-concat " " (cmp-params rest))))))))))
 
 (defn completion-adts (tbl)
   (cmp-adt-items (map-entries (st-adts tbl))))
@@ -43,8 +117,8 @@
 (defn cmp-adt-items (entries)
   (match entries
     (Nil Nil)
-    (Cons e t
-      (Cons (CI (ME.key e) (Some CIKEnum) None None None None None None None None None None None None None) (cmp-adt-items t)))))
+    (Cons e rest
+      (Cons (cmp-item (ME.key e) (Some CIKEnum) (Some "algebraic data type") None) (cmp-adt-items rest)))))
 
 (defn completion-variants (tbl)
   (cmp-variant-items (map-entries (st-variant-owners tbl))))
@@ -52,5 +126,43 @@
 (defn cmp-variant-items (entries)
   (match entries
     (Nil Nil)
-    (Cons e t
-      (Cons (CI (ME.key e) (Some CIKVariant) None None None None (Some (str-concat "variant of " (ME.value e))) None None None None None None None None) (cmp-variant-items t)))))
+    (Cons e rest
+      (Cons (cmp-item (ME.key e) (Some CIKEnumMember)
+                      (Some (str-concat "variant of " (ME.value e))) None)
+            (cmp-variant-items rest)))))
+
+(defn completion-structs (tbl)
+  (cmp-struct-items (map-entries (st-structs tbl))))
+
+(defn cmp-struct-items (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest
+      (Cons (cmp-item (ME.key e) (Some CIKStruct) (Some "struct") None) (cmp-struct-items rest)))))
+
+(defn completion-fields (tbl)
+  (cmp-field-items (map-entries (st-field-owners tbl))))
+
+(defn cmp-field-items (entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest
+      (Cons (cmp-item (ME.key e) (Some CIKField)
+                      (Some (str-concat "field of " (ME.value e))) None)
+            (cmp-field-items rest)))))
+
+; ===========================================================================
+; ITEM CONSTRUCTION — CompletionItem has fifteen fields and this server
+; fills four of them; one helper beats fifteen literal `None`s at every
+; call site. `documentation` arrives as plain text and is wrapped as
+; MarkupContent here, which is what the field actually holds.
+; ===========================================================================
+
+(defn cmp-item (label kind detail documentation)
+  (CI label kind None None None None detail (cmp-markup documentation)
+      None None None None None None None))
+
+(defn cmp-markup (documentation)
+  (match documentation
+    (Some md (Some (MC MKMarkdown md)))
+    (None None)))

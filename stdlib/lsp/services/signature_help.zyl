@@ -1,0 +1,67 @@
+; === Zyl LSP — Signature Help Service ===
+; Module: lsp/services/signature_help
+;
+; `(some-function a b|` -> which function, which parameter. The "which
+; form am I inside" half comes from lsp/source_index's call-context
+; scan; the signature itself comes from the document's SymTable when the
+; head is a function defined here, and from lsp/builtins when it is a
+; special form or an operator.
+;
+; A function defined in this document gives real parameter NAMES, taken
+; from its `defn`, including any type annotation the author wrote. A
+; built-in gives the signature string from the table. Both highlight the
+; parameter the cursor is actually on.
+
+(use core/core)
+(use core/list)
+(use core/option)
+(use lsp/lsp_types)
+(use lsp/source_index)
+(use lsp/compiler_bridge)
+(use lsp/builtins)
+
+(defn signature-help-at (text tbl line col)
+  (match (si-call-context text line col)
+    (Some ctx (sh-for-head tbl (CallCtx.head ctx) (CallCtx.arg ctx)))
+    (None None)))
+
+(defn sh-for-head (tbl head argidx)
+  (match (st-lookup-fn tbl head)
+    (Some info (Some (sh-from-fn head info argidx)))
+    (None
+      (match (builtin-lookup head)
+        (Some b (Some (sh-from-builtin b argidx)))
+        (None None)))))
+
+(defn sh-from-fn (head info argidx)
+  (match info
+    (FI d1 params
+      (let label (str-concat "(" (str-concat head (str-concat " " (str-concat (sh-params-label params) ")"))))
+        (SigHelp (Cons (SigInfo label None (sh-param-infos params) (Some argidx)) Nil)
+                 (Some 0) (Some argidx))))))
+
+(defn sh-params-label (params)
+  (match params
+    (Nil "")
+    (Cons p t
+      (match p
+        (P pname d1
+          (match t
+            (Nil pname)
+            (Cons d2 d3 (str-concat pname (str-concat " " (sh-params-label t))))))))))
+
+(defn sh-param-infos (params)
+  (match params
+    (Nil Nil)
+    (Cons p t
+      (match p
+        (P pname d1 (Cons (ParamInfo pname None) (sh-param-infos t)))))))
+
+; A built-in's parameter list is not structured data -- the table holds
+; the signature as written text. The whole signature is offered as a
+; single labelled parameter rather than being re-parsed into pieces:
+; guessing at word boundaries inside `(ffi-call "symbol" arg ... timeout)`
+; would produce confident nonsense.
+(defn sh-from-builtin (b argidx)
+  (SigHelp (Cons (SigInfo (ZB.sig b) (Some (ZB.doc b)) Nil (Some argidx)) Nil)
+           (Some 0) (Some argidx)))

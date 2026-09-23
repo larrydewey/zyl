@@ -143,7 +143,7 @@
 
 (defn ri-transform-fn (f)
   (match f
-    (IFn name params body (IFn name params (ri-transform-expr body)))
+    (IFn name params body kinds (IFn name params (ri-transform-expr body) kinds))
     (d1 (ri-transform-expr f))))
 
 (defn ri-to-stack-variant (val)
@@ -192,5 +192,5 @@
     (IVariant nm tag fields (IVariant nm tag (ri-transform-list fields)))
     (IStackVariant nm tag fields (IStackVariant nm tag (ri-transform-list fields)))
     (IMatch scr arms (IMatch (ri-transform-expr scr) (ri-transform-arms arms)))
-    (IFn name params body (IFn name params (ri-transform-expr body)))
+    (IFn name params body kinds (IFn name params (ri-transform-expr body) kinds))
     (ITryCatch tbody cvar cbody (ITryCatch (ri-transform-expr tbody) cvar (ri-transform-expr cbody)))))

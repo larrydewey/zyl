@@ -1,5 +1,267 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — tooling: language server, editor support, documentation
+
+**The language server now covers the language as it stands, the VS Code
+extension is rebuilt around it, `install.sh` builds and verifies it, and
+the book gained four chapters plus two rewritten appendices. One real
+compiler bug was found and fixed along the way, and three more turned up
+while writing this session's own documentation. Full suite 77/77
+including the fixed point, on a re-cut seed.**
+
+### The one compiler change: byte load/store argument order
+
+`stdlib/compiler/icnf.zyl`'s four byte load/store arms bound the `Expr`
+fields as `endian offset buf` when the real field order is
+`(endian, buf, offset)`, then emitted them in that order to runtime
+entry points declared `(endian, offset, buf)`. The runtime received the
+buffer handle as its offset and the offset as its handle, so
+`zyl_bytes_view` resolved a small integer as a handle, found no magic
+tag, and every `load-u8`/`load-i8` returned 0 while every
+`store-u8`/`store-i8` silently did nothing — all without a diagnostic.
+
+Nothing caught it because nothing asserted a round-trip. The previous
+"manual end-to-end smoke test" recorded in
+`BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md` §10 ran the forms and checked
+only that the program did not crash.
+
+Fixed by binding in field order and emitting in runtime order, with a
+comment recording why the two differ.
+`tests/regression/byte-primitives.zyl` is new: 29 cases covering
+allocation, zero-initialisation, store/load round-trips at several
+offsets, offset independence, zero- against sign-extension, both endian
+selectors, fail-closed behaviour past capacity and at a negative offset,
+slices and sub-slices including writing through a slice, every atomic
+operation, and each region.
+
+Because this changes the compiler's own source, the seed was re-cut with
+`./boot.sh --bootstrap-from-self` (converged in 2 rounds) and the fixed
+point re-verified. **`build/boot/stage2.s` and `build/boot/stage2.bin`
+are modified and not yet committed.**
+
+### Language server (`stdlib/lsp/`)
+
+New `stdlib/lsp/builtins.zyl`: one table of 143 entries — every head
+symbol `dispatch-special` recognises, every operator `icnf.zyl` lowers
+to an instruction (including the bitwise family and the byte and atomic
+primitives), and every type, region and capability name, each with a
+signature and a one-line description. It is the single source behind
+hover, completion, signature help and token colouring, so a form added
+to `expr_inner.zyl` and not to this table shows up in an editor as an
+unresolved identifier.
+
+Requests added: `references`, `documentHighlight`, `signatureHelp`,
+`typeDefinition`, `implementation`, `semanticTokens/range`,
+`rangeFormatting`, and the `didSave` notification (advertised with
+`includeText`, so the document is re-analysed from the saved text). The
+request table is split in two — `lsp-handle-request-2` — because one
+`if` chain holding every method nested further than is readable.
+
+Rewritten or substantially extended:
+
+- **`source_index.zyl`** — top-level forms now record their FULL extent
+  (opening paren through matching close), not just a start position, so
+  symbol ranges, folding and selection ranges are exact; the def-keyword
+  set grew from five to ten (`impl`, `macro`, `defmacro`, `def`,
+  `alias`); new whole-word occurrence scan (skipping strings and
+  comments) behind references, highlight and rename; new call-context
+  scan giving the innermost open form's head and argument index, behind
+  signature help and `(use ...)`-aware completion. Fixed a real bug on
+  the way: `si-scan-skip-comment` passed a hard-coded depth of 0 back
+  in, so any top-level form containing a comment line was treated as
+  having closed.
+- **`compiler_bridge.zyl`** — the symbol table gained structs and their
+  fields. `defstruct` is not a node of its own (`expr_inner.zyl` lowers
+  it to an `EDeftype` with the marker `(Some "struct")`), so that marker
+  is what now routes a definition to the struct map rather than the ADT
+  map. Hover answers for structs, fields, variants (naming the owning
+  ADT) and built-ins, not just functions and ADTs. Caught panics are
+  parsed for their `E_*` code and their first backticked name, and the
+  name is located in the document text — so a diagnostic points at the
+  offending symbol instead of line 0, and carries its code in the LSP
+  `code` field.
+- **`semantic_tokens.zyl`** — the legend is now the ten standard LSP
+  token types with three modifiers, and identifiers are actually
+  classified (built-in, function, type, variant, property) instead of
+  being dropped; `st-reclassify` was a no-op returning its input.
+  Unresolvable words are still left uncoloured rather than guessed at.
+- **`document_manager.zyl`** — runs the same checks
+  `selfhost/driver.zyl` runs, in the same order (`dc`, `ac`, `mc`, `ec`,
+  `sc`). `unused_check` is deliberately excluded: it reports by printing
+  to stdout, which is the server's JSON-RPC channel. The symbol table is
+  now built before the checks and kept whatever they say, so a document
+  that fails one still offers hover and navigation.
+- **`completion.zyl`** — context-aware (module paths inside `(use ...)`),
+  items carry a signature and documentation, and structs and fields are
+  offered.
+- **`goto_definition.zyl`** — variants resolve to their `deftype` and
+  fields to their `defstruct`; type definition and implementation added;
+  rename now covers every occurrence in the file rather than the
+  declaration alone, and `references` honours
+  `context.includeDeclaration`.
+- **`signature_help.zyl`** — new.
+
+Corrected while writing the table: `fn` and `lambda` are the same form
+and neither takes a name; the `SignatureHelpOptions` type referenced a
+`SignatureHelpTriggerCharacter` that no `deftype` ever defined.
+
+### Tests
+
+`tests/lsp/lsp_protocol_test.py` drives the real binary over real
+JSON-RPC on stdio and asserts on the responses — 88 checks across
+capabilities, hover, navigation, symbols, completion, semantic tokens,
+rename, and one diagnostic case per compiler check. Wired into
+`run_regression_tests.sh` in both quick and full mode
+(`--filter lsp`).
+
+### VS Code extension (`editors/vscode/`, v0.2.0)
+
+Grammar rewritten to cover every special form, the bitwise family, the
+byte and atomic primitives, regions, capabilities and keyword atoms,
+with definition forms colouring the introduced name. Added: 17
+snippets, semantic token scope mapping, a `zyl` build task, a status bar
+item wired to the server log, `zyl.lsp.enable`/`arguments`/
+`inlayHints`/`compiler.path` settings, restart-on-config-change, a
+four-step server search (setting, `$ZYL_HOME`, `~/.zyl`, workspace
+`build/boot`, `$PATH`), and **Run Current File**
+(`Ctrl+Shift+Enter`). The duplicate `zyl-language-configuration.json`
+was removed and the two merged. Compiles clean with `tsc`.
+
+A problem matcher was deliberately NOT added: the compiler's CLI errors
+carry no file or line, so one could not locate anything.
+
+### install.sh
+
+Builds the REPL and the server with `ZYL_HOME` pinned to the install
+target (both were previously compiled against whatever `~/.zyl` already
+held), then sends the installed server a real `initialize` request and
+reports whether it answered. New `--with-vscode` builds and installs the
+extension; new `--help`.
+
+### Documentation
+
+Book: four new chapters —
+
+- **32, Bits, Bytes, and Buffers** — the bitwise operators, the two
+  right shifts, defined out-of-range shift counts, buffers and regions,
+  loads and stores, slices, atomics, and a table of what is implemented
+  against what is reserved.
+- **33, Secrets and Constant-Time Code** — the `Secret` capability, the
+  five prohibitions, branchless idioms, declassification, erasure, and
+  why the check is syntactic.
+- **34, The Cryptography Library** — the two representation
+  conventions, the module map, worked examples, the deliberate
+  omissions, and the three verification layers.
+- **35, Editors and the Language Server** — installation, VS Code,
+  Neovim/Emacs/Helix, what the server provides, how it works, and its
+  limits.
+
+Appendix A (error codes) and Appendix C (built-ins) were rewritten
+against the compiler rather than the specification; both had drifted.
+Appendix A listed codes that do not exist and pointed at `src/error.rs`;
+Appendix C claimed `int?`/`len`/`defun`/`invariant`, a `(let (x 10 y 20))`
+multi-binding form, and a compiler flag list of which only `-o` and
+`--emit-asm` are real. Appendix B gained the math and LSP trees and had
+every `use` path corrected (`(use core)` → `(use core/core)`).
+Appendix D gained entries for the new vocabulary. Chapter 1 gained
+installation and editor-setup sections; Chapter 2's "parallel let"
+section was corrected — `let` binds exactly one name.
+
+`README.md`, `docs/regression-tests.md`,
+`LSP_ARCHITECTURE_PLAN.md` and
+`BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md` were brought up to date.
+
+### Parameter representation: String and Float parameters
+
+Chasing the `print-string` defect below found a single root cause behind
+three separate wrong behaviours.
+
+Codegen picks a printf format, a comparison strategy and an arithmetic
+unit from a value's *kind*: 0 for a machine word, 1 for a String, 2 for
+a Float. Kinds are read out of the environment, and `cg-param-env`
+recorded every parameter as kind 0 no matter what its declared type
+was — because `IFn`, the ICNF node for a function, carried only
+parameter *names*. The declared type never reached the backend at all.
+
+So, for any value that arrived as a parameter rather than a literal:
+
+- `print` on a `String` printed its address.
+- `=` and `!=` on two `String`s compared addresses, not contents, and
+  answered "not equal" for equal strings built different ways.
+- a `Float` returned from a function was recorded as returning an `Int`.
+
+`core/core`'s `print-string` is a one-line wrapper around `print`, which
+is exactly why it looked like a bug in the wrapper.
+
+The fix gives `IFn` a fourth field, a per-parameter kind list, appended
+after the body so that every existing three-binder `(IFn name params
+body ...)` pattern keeps binding the same three fields. `ic-defn` fills
+it from each `Param`'s declared type; a lambda, whose parameters carry
+no annotation, gets an empty list, which `cg-param-env` reads as "0 for
+the rest". Codegen also measures a function's return kind in an
+environment holding its own parameters, so a function that returns a
+`String` parameter is now recorded as returning one.
+
+One subtlety worth recording: `Param` is declared as
+`(P String (Option String))`, but `expr_inner.zyl` actually stores
+`(Some (convert-ast typ))` — an `Expr`, not a `String`. Reading it as a
+string compiles and silently compares a pointer against a literal, which
+is exactly what the first attempt at this fix did. `secret_check.zyl`
+reads the same field correctly and was the model for the second.
+
+### printf call alignment
+
+With Floats printing as Floats, `(print 1.5)` segfaulted — and it
+segfaulted before this change too, which nothing had noticed because
+nothing printed a float.
+
+`print` on a Float sets `al` to 1, printf's signal to spill the SSE
+argument registers with `movaps`, which faults unless the stack is
+16-byte aligned. Every other `print` leaves `al` at 0 and never reaches
+that instruction, which is why misalignment had been invisible. The
+frame size `cg-function` picks leaves `rsp` at 8 mod 16 inside a body,
+and staged call arguments shift it again, so the alignment at any given
+call site is not something this backend predicts.
+
+`cg-print` now wraps the call in the same `mov r12, rsp` / `and rsp,
+-16` / `mov rsp, r12` idiom `cg-variant` already uses for
+`zyl_heap_alloc` and `cg-trycatch` uses for `setjmp`. r12 is
+callee-saved, so printf returns it intact.
+
+The systemic version of this — a body's `rsp` being 8 mod 16 at all —
+is left alone. Nothing else observably depends on it, and changing the
+frame formula would shift every call site in the compiler at once.
+
+### A String stored where an Expr belonged
+
+Reading the declared type turned the existing representation confusion
+into a crash, which is how it got found. Two places in
+`monomorphization.zyl` built a `Param` from a type *name* and stored the
+bare string: `subst-defn-param`, for a substituted generic parameter,
+and `annotate-first-param`, for the receiver of an `impl` block's
+method. Every reader of that field starts with `(Expr.inner t)`, so the
+compiler read a string's bytes as a variant block. Before this session
+that produced a quiet wrong answer in `secret_check.zyl`; with
+`param-kind-of` reading the same field it segfaulted the compiler on
+`tests/integration/trait-dispatch.zyl`. Both sites now wrap the name as
+an identifier expression.
+
+### `tests/regression/param-kinds.zyl`
+
+14 tests: String parameters printed, returned, concatenated and
+compared both ways; Float parameters through arithmetic, through a
+return and through two calls; Int and unannotated parameters unchanged;
+and three tests that print, which assert nothing but crash if the stack
+is misaligned.
+
+### One defect found and documented, not fixed
+
+- **A byte-buffer handle is an integer, and passing a non-buffer where
+  one is expected is not a type error.** The runtime dereferences it and
+  segfaults. Noted in Chapter 32.
+
+---
+
 ## Current Session (2026-09-22)
 
 **Implemented `stdlib/math/` — the cryptography and number library from

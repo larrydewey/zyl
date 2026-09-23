@@ -579,10 +579,22 @@
       (Cons (subst-expr e type-map var-renames var-types)
         (subst-expr-list rest type-map var-renames var-types)))))
 
+; A Param's type slot holds an Expr, not a String, despite the deftype
+; saying String: expr_inner.zyl's parse-param stores
+; `(Some (convert-ast typ))`. Every reader of the field -- secret_check's
+; sc-type-is-secret, icnf's param-kind-of -- therefore starts with
+; `(Expr.inner t)`, which reads a bare String as if it were a variant
+; block. Both places below build a param type from a type NAME, so they
+; have to wrap it as an identifier expression rather than store the
+; string itself.
+(defn param-type-expr (name)
+  (let atom (AIdent name)
+    (Expr (EAtom atom))))
+
 (defn subst-defn-param (p type-map)
   (if (is-uppercase-ident (P.name p))
     (if (kv-contains type-map (P.name p))
-      (P (P.name p) (Some (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit)))))
+      (P (P.name p) (Some (param-type-expr (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit))))))
       p)
     p))
 
@@ -715,7 +727,7 @@
 (defn annotate-first-param (params type_name)
   (match params
     (Nil Nil)
-    ((Cons p rest) (Cons (P (P.name p) (Some type_name)) rest))))
+    ((Cons p rest) (Cons (P (P.name p) (Some (param-type-expr type_name))) rest))))
 
 (defn monomorphize-push-instantiations (result instantiations)
   (match instantiations

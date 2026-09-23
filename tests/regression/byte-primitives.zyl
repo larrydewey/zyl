@@ -1,0 +1,165 @@
+; Byte-Level Primitive Regression Tests — bytebuf allocation, byte
+; loads and stores, slices, atomics and alignment.
+;
+; These exist because the argument order between `(load-u8 :le buf off)`
+; and the runtime's `zyl_load_byte(endian, offset, buf)` was silently
+; swapped in ICNF lowering: every load returned 0 and every store did
+; nothing, while both still compiled and ran. A round-trip assertion is
+; the only thing that catches that class of bug, and there was none.
+
+(test "bytebuf-cap-is-the-declared-capacity"
+  (assert-equal (bytebuf-cap (bytebuf Heap 16)) 16))
+
+(test "bytebuf-starts-empty"
+  (assert-equal (bytebuf-len (bytebuf Heap 16)) 0))
+
+; The whole capacity is zero-initialized up front, so reading past len
+; but within cap is well defined.
+(test "load-of-untouched-byte-is-zero"
+  (let b (bytebuf Heap 16)
+    (assert-equal (load-u8 :le b 0) 0)))
+
+(test "store-then-load-round-trips"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 0 65)
+      (assert-equal (load-u8 :le b 0) 65))))
+
+(test "stores-are-independent-per-offset"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 0 1)
+      (let d2 (store-u8 :le b 1 2)
+        (assert-equal (+ (load-u8 :le b 0) (* 10 (load-u8 :le b 1))) 21)))))
+
+(test "store-at-a-high-offset-lands-there"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 15 200)
+      (assert-equal (load-u8 :le b 15) 200))))
+
+(test "a-store-at-one-offset-does-not-disturb-another"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 4 99)
+      (assert-equal (load-u8 :le b 5) 0))))
+
+; load-u8 zero-extends, load-i8 sign-extends: 0xFF is 255 unsigned and
+; -1 signed.
+(test "load-u8-zero-extends"
+  (let b (bytebuf Heap 8)
+    (let d1 (store-u8 :le b 0 255)
+      (assert-equal (load-u8 :le b 0) 255))))
+
+(test "load-i8-sign-extends"
+  (let b (bytebuf Heap 8)
+    (let d1 (store-u8 :le b 0 255)
+      (assert-equal (load-i8 :le b 0) -1))))
+
+(test "store-i8-round-trips-a-negative-value"
+  (let b (bytebuf Heap 8)
+    (let d1 (store-i8 :le b 0 -2)
+      (assert-equal (load-i8 :le b 0) -2))))
+
+; :be and :le agree for a single byte -- the selector exists for the
+; wider widths, which are reserved and not yet implemented.
+(test "endianness-is-a-no-op-for-one-byte"
+  (let b (bytebuf Heap 8)
+    (let d1 (store-u8 :be b 2 77)
+      (assert-equal (load-u8 :le b 2) 77))))
+
+; Out-of-range access fails closed: a load gives 0, a store does
+; nothing, and neither corrupts memory.
+(test "load-past-capacity-returns-zero"
+  (let b (bytebuf Heap 8)
+    (assert-equal (load-u8 :le b 64) 0)))
+
+(test "store-past-capacity-does-nothing"
+  (let b (bytebuf Heap 8)
+    (let d1 (store-u8 :le b 64 7)
+      (assert-equal (load-u8 :le b 0) 0))))
+
+(test "negative-offset-fails-closed"
+  (let b (bytebuf Heap 8)
+    (assert-equal (load-u8 :le b -1) 0)))
+
+; A slice is a view of the same bytes, not a copy.
+(test "slice-sees-the-buffers-bytes"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 4 42)
+      (let s (byteslice b 4 4)
+        (assert-equal (load-u8 :le s 0) 42)))))
+
+(test "writing-through-a-slice-reaches-the-buffer"
+  (let b (bytebuf Heap 16)
+    (let s (byteslice b 8 4)
+      (let d1 (store-u8 :le s 0 33)
+        (assert-equal (load-u8 :le b 8) 33)))))
+
+(test "slice-bounds-are-its-own"
+  (let b (bytebuf Heap 16)
+    (let s (byteslice b 0 2)
+      (assert-equal (load-u8 :le s 8) 0))))
+
+(test "sub-slice-narrows-an-existing-view"
+  (let b (bytebuf Heap 16)
+    (let d1 (store-u8 :le b 6 91)
+      (let s (byteslice b 4 8)
+        (let t (byteslice-sub s 2 2)
+          (assert-equal (load-u8 :le t 0) 91))))))
+
+; Atomics operate on the same memory, at real offsets.
+(test "atomic-store-then-load"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 7)
+      (assert-equal (bytebuf-atomic-load b 0) 7))))
+
+(test "atomic-offsets-are-independent"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 7)
+      (assert-equal (bytebuf-atomic-load b 8) 0))))
+
+(test "atomic-add-accumulates"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 10)
+      (let d2 (bytebuf-atomic-add b 0 5)
+        (assert-equal (bytebuf-atomic-load b 0) 15)))))
+
+(test "atomic-fetch-add-returns-the-previous-value"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 10)
+      (assert-equal (bytebuf-atomic-fetch-add b 0 5) 10))))
+
+(test "atomic-cas-swaps-on-a-match"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 3)
+      (let d2 (bytebuf-atomic-cas b 0 3 9)
+        (assert-equal (bytebuf-atomic-load b 0) 9)))))
+
+(test "atomic-cas-leaves-a-mismatch-alone"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 3)
+      (let d2 (bytebuf-atomic-cas b 0 4 9)
+        (assert-equal (bytebuf-atomic-load b 0) 3)))))
+
+(test "atomic-max-keeps-the-larger"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 5)
+      (let d2 (bytebuf-atomic-max b 0 2)
+        (assert-equal (bytebuf-atomic-load b 0) 5)))))
+
+(test "atomic-min-keeps-the-smaller"
+  (let b (bytebuf Heap 16)
+    (let d1 (bytebuf-atomic-store b 0 5)
+      (let d2 (bytebuf-atomic-min b 0 2)
+        (assert-equal (bytebuf-atomic-load b 0) 2)))))
+
+; Regions other than Heap allocate too.
+(test "a-global-buffer-allocates"
+  (assert-equal (bytebuf-cap (bytebuf Global 32)) 32))
+
+(test "a-pin-buffer-allocates"
+  (assert-equal (bytebuf-cap (bytebuf Pin 32)) 32))
+
+; A byte literal is just its value; the parser rejects anything outside
+; 0..255 at compile time.
+(test "byte-literal"
+  (assert-equal (byte 200) 200))
+
+(run-tests)

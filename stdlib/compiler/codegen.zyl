@@ -893,6 +893,15 @@
 ; always evaluates to a clean, deterministic 0 -- the ordinary "this
 ; statement has no useful value" convention -- by zeroing eax again
 ; right after the call, regardless of what printf itself returned.
+; printf is called through the same rsp save/AND/restore idiom
+; cg-variant uses: the frame size cg-function picks leaves rsp at 8 mod
+; 16 inside a body, and a call staging its arguments on the stack
+; shifts it again, so the alignment at any given call site is not
+; something this backend can predict. printf tolerated that as long as
+; al was 0 -- with no vararg floats it never reaches the `movaps` that
+; spills the SSE argument registers. `print` on a Float sets al to 1 and
+; does reach it, so an unaligned frame there was a hard crash rather
+; than a wrong answer. r12 is callee-saved, so printf gives it back.
 (defn cg-print (st env a)
   (let k (kind-of st env a)
     (let st2 (cg-expr st env a)
@@ -900,19 +909,24 @@
         (let st3 (cg-emit-line st2 "    movq xmm0, rax")
           (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtf]")
             (let st5 (cg-emit-line st4 "    mov eax, 1")
-              (let st6 (cg-emit-line st5 "    call printf")
-                (cg-emit-line st6 "    xor eax, eax")))))
+              (cg-emit-line (cg-print-call st5) "    xor eax, eax"))))
         (if (= k 1)
           (let st3 (cg-emit-line st2 "    mov rsi, rax")
             (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmts]")
               (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (let st6 (cg-emit-line st5 "    call printf")
-                  (cg-emit-line st6 "    xor eax, eax")))))
+                (cg-emit-line (cg-print-call st5) "    xor eax, eax"))))
           (let st3 (cg-emit-line st2 "    mov rsi, rax")
             (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtd]")
               (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (let st6 (cg-emit-line st5 "    call printf")
-                  (cg-emit-line st6 "    xor eax, eax"))))))))))
+                (cg-emit-line (cg-print-call st5) "    xor eax, eax")))))))))
+
+; The call itself, on a 16-byte-aligned stack. Emitted after rdi/rsi/al
+; are already set, so aligning here cannot disturb them.
+(defn cg-print-call (st)
+  (let st2 (cg-emit-line st "    mov r12, rsp")
+    (let st3 (cg-emit-line st2 "    and rsp, -16")
+      (let st4 (cg-emit-line st3 "    call printf")
+        (cg-emit-line st4 "    mov rsp, r12")))))
 
 ; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
 ; (not raw malloc) so the runtime's hidden qword-count header lands
@@ -1344,7 +1358,7 @@
     (let name (ifn-tag-name f)
       (let params (ifn-tag-params f)
         (let body (ifn-tag-body f)
-     (let env (cg-param-env params 0 (EnvNil))
+     (let env (cg-param-env params (ifn-tag-kinds f) 0 (EnvNil))
 ; Frame sized from actual slot usage: param slots + one per ILet /
         ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
         ; The old uniform 16*(64+icnf-size) wasted ~16x stack.
@@ -1389,16 +1403,36 @@
     (IFn a b c c)
     (d1 (no-icnfs))))
 
+; Declared representation kind per parameter (see icnf.zyl's IFn).
+(defn ifn-tag-kinds (f)
+  (match f
+    (IFn a b c k k)
+    (d1 Nil)))
+
 (defn cg-reset-slots (st next-off)
   (match st
     (CGS a b n d69 rd fns (CGS a b n next-off rd fns))))
 
-; Immutable param environment: param i -> offset -(8*(i+1)).
-(defn cg-param-env (params i acc)
+; Immutable param environment: param i -> offset -(8*(i+1)), carrying
+; the declared kind so a String or Float parameter is emitted as one.
+; A kind list shorter than the param list (a lambda's, which is empty)
+; simply falls back to 0, the behaviour before kinds existed.
+(defn cg-param-env (params kinds i acc)
   (if (is-nil params)
     acc
-    (cg-param-env (tl2 params) (+ i 1)
-                  (EnvBind (shd params) (- (* 8 (+ i 1))) 0 acc))))
+    (cg-param-env (tl2 params) (cg-kinds-tail kinds) (+ i 1)
+                  (EnvBind (shd params) (- (* 8 (+ i 1)))
+                           (cg-kinds-head kinds) acc))))
+
+(defn cg-kinds-head (kinds)
+  (match kinds
+    (Cons h d1 h)
+    (Nil 0)))
+
+(defn cg-kinds-tail (kinds)
+  (match kinds
+    (Cons d1 t t)
+    (Nil Nil)))
 
 ; Spill incoming args to param slots: indices 0..5 from SysV registers,
 ; indices >= 6 from the caller's stack frame ([rbp+16] is stack arg 6).
@@ -1439,12 +1473,18 @@
 
 ; Head of a List(IFunc); empty placeholder when exhausted.
 (defn fnhead-if (xs)
-  (list-head-or xs (IFn "" Nil (IConst 0))))
+  (list-head-or xs (IFn "" Nil (IConst 0) Nil)))
 
+; A function's recorded return kind is read off its body. That body is
+; measured in an environment holding its own parameters, so a function
+; that returns a String or Float parameter is recorded as returning one
+; rather than defaulting to Int.
 (defn cg-collect-one (st f rest)
   (match f
-    (IFn nm d78 body
-      (cg-collect-fnnames (cg-with-fnname st nm (kind-of st (EnvNil) body)) rest))
+    (IFn nm ps body ks
+      (cg-collect-fnnames
+        (cg-with-fnname st nm (kind-of st (cg-param-env ps ks 0 (EnvNil)) body))
+        rest))
     (d80 (cg-collect-fnnames st rest))))
 
 (defn cg-program (st fns)
@@ -1636,7 +1676,7 @@
   (list-head-or xs (IConst 0)))
 
 (defn fh-if (xs)
-  (list-head-or xs (IFn "" Nil (IConst 0))))
+  (list-head-or xs (IFn "" Nil (IConst 0) Nil)))
 
 (defn hd-ia (xs)
   (list-head-or xs (IArm "" -1 Nil (IConst 0))))

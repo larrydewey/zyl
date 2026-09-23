@@ -6,14 +6,31 @@
 ; SymTable pass, rather than running compiler/type_inference's
 ; collect-definitions.
 ;
-; Every real diagnostic-producing check that DOES run here (parser syntax
-; errors, mutability_check's E_MUT_CONFLICT/E_CAPABILITY_LEAK/
-; E_INVALID_CAPABILITY, secret_check's E_CT_VIOLATION/E_SECRET_*/
-; E_FFI_PIN_REQUIRED) reports failure by calling `zyl_panic`, which is
-; `exit(1)` if uncaught -- fine for a one-shot CLI compile, fatal for a
-; server that must keep running across many edits of not-yet-valid code.
-; Everything past the balance check therefore runs inside `try`/`catch`;
-; a panic becomes one Diagnostic instead of killing the process.
+; The checks that run here are the same ones selfhost/driver.zyl runs,
+; in the same order: duplicate definitions, call arity, mutability and
+; capability rules, match exhaustiveness, and the Secret capability's
+; constant-time obligations. Each reports failure by calling
+; `zyl_panic`, which is `exit(1)` if uncaught -- fine for a one-shot CLI
+; compile, fatal for a server that must keep running across many edits
+; of not-yet-valid code. Everything past the balance check therefore
+; runs inside `try`/`catch`; a panic becomes one Diagnostic instead of
+; killing the process.
+;
+; Two passes from the driver are deliberately NOT run:
+;
+;   - unused_check, because it reports by PRINTING warnings to stdout,
+;     which is this server's JSON-RPC channel. A single W_UNUSED_
+;     PARAMETER line written there desynchronises the framing and the
+;     client drops the connection. Surfacing those warnings needs the
+;     check to return them rather than print them.
+;   - type_inference's collect-definitions, for the reasons set out at
+;     length in lsp/compiler_bridge.zyl's header.
+;
+; Because every check panics on its FIRST problem, a document reports
+; one diagnostic at a time -- fix it, save, see the next. That matches
+; the compiler's own behavior exactly, which is the point: the editor
+; should never claim a program is fine that `zyl` would reject, nor the
+; reverse.
 
 (use allocator/allocator)
 (use core/core)
@@ -30,6 +47,10 @@
 (use compiler/module_resolver)
 (use compiler/macro_expand)
 (use compiler/mutability_check)
+(use compiler/duplicate_check)
+(use compiler/arity_check)
+(use compiler/exhaustiveness_check)
+(use compiler/secret_check)
 (use compiler/sexp_balance)
 (use lsp/compiler_bridge)
 
@@ -115,15 +136,36 @@
     (None Nil)))
 
 (defn dm-analyze-parsed (arena doc text)
-  (let outcome (try (Ok (dm-run-pipeline arena text)) (catch e (Err e)))
-    (match outcome
-      (Ok tbl (DS doc (Document.version doc) tbl Nil))
-      (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg) Nil))))))
+  (let front (try (Ok (dm-frontend arena text)) (catch e (Err e)))
+    (match front
+      (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg text) Nil)))
+      (Ok exprs (dm-check-and-index doc text exprs)))))
 
-(defn dm-run-pipeline (arena text)
+; Parse, resolve modules, expand macros. Anything that fails here left
+; no usable program behind, so there is nothing to index and the
+; document reports one diagnostic and an empty symbol table.
+(defn dm-frontend (arena text)
   (let prog (zyl-parse arena text)
     (let exprs0 (convert-ast-list prog)
       (let exprs1 (mr-resolve-program arena exprs0)
-        (let exprs (me-expand-program exprs1)
-          (let d1 (mc-check-program exprs)
-            (st-build exprs)))))))
+        (me-expand-program exprs1)))))
+
+; Past the front end there IS a program, so the symbol table is built
+; first and kept whatever the checks then say. A document that fails
+; exhaustiveness still offers hover, completion and go-to-definition
+; for every name it declares -- which is exactly when you want them.
+(defn dm-check-and-index (doc text exprs)
+  (let tbl (st-build exprs)
+    (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
+      (match outcome
+        (Ok d1 (DS doc (Document.version doc) tbl Nil))
+        (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) Nil)))))))
+
+; The same checks selfhost/driver.zyl runs, in the same order. See this
+; file's header for the two it leaves out and why.
+(defn dm-run-checks (exprs)
+  (let d203 (dc-check-program exprs)
+    (let d201 (ac-check-program exprs)
+      (let d200 (mc-check-program exprs)
+        (let d202 (ec-check-program exprs)
+          (sc-check-program exprs))))))

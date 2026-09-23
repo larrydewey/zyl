@@ -221,9 +221,13 @@
 (deftype HoverOptions
   (HOpt (Option Bool)))
 
+; Trigger and retrigger characters are plain strings -- there was a
+; `SignatureHelpTriggerCharacter` named here that no `deftype` ever
+; defined, which type annotations in this pipeline are loose enough to
+; have let through unnoticed.
 (deftype SignatureHelpOptions
-  (SHOpt (Option (List SignatureHelpTriggerCharacter))
-         (Option (List SignatureHelpTriggerCharacter))
+  (SHOpt (Option (List String))
+         (Option (List String))
          (Option Bool)
          (Option Bool)))
 
@@ -606,6 +610,35 @@
 
 (deftype ExecuteCommandParams
   (ECP String (Option (List LSPAny)) (Option (Either Bool (List Range)))))
+
+; ===========================================================================
+; SIGNATURE HELP
+; ===========================================================================
+
+; One parameter of a signature: its label as it appears in the
+; signature string, and optional documentation.
+(deftype ParameterInformation
+  (ParamInfo String (Option String)))
+
+; A whole signature: the label the client shows, documentation, its
+; parameters, and which one the cursor is currently on.
+(deftype SignatureInformation
+  (SigInfo String (Option String) (List ParameterInformation) (Option Int)))
+
+(deftype SignatureHelp
+  (SigHelp (List SignatureInformation) (Option Int) (Option Int)))
+
+; ===========================================================================
+; DOCUMENT HIGHLIGHT
+; ===========================================================================
+
+(deftype DocumentHighlightKind
+  (DHKText)
+  (DHKRead)
+  (DHKWrite))
+
+(deftype DocumentHighlight
+  (DocHL Range (Option DocumentHighlightKind)))
 
 ; ===========================================================================
 ; JSON-RPC MESSAGES

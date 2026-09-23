@@ -1,9 +1,15 @@
 ; === Zyl LSP — Hover Service ===
 ; Module: lsp/services/hover
-; Name-based hover: resolve the identifier under the cursor via
-; lsp/source_index (text scan, no real position tracking exists in the
-; compiler -- see compiler_bridge.zyl's header), then look it up in the
-; document's SymTable.
+;
+; Resolve the identifier under the cursor via lsp/source_index (a text
+; scan -- no real position tracking exists in the compiler, see
+; compiler_bridge.zyl's header), then look the NAME up: first among the
+; document's own definitions, then among the language's built-in forms
+; and operators (lsp/builtins). Hovering `shl`, `Secret` or `ffi-pin`
+; now answers with the language's own documentation rather than nothing.
+;
+; The reported range is the identifier itself, so the client highlights
+; exactly the word the answer is about.
 
 (use core/core)
 (use core/list)
@@ -17,5 +23,11 @@
     (if (= (str-length word) 0)
       None
       (match (bridge-hover-for-name tbl word)
-        (Some md (Some (Hov (MC MKMarkdown md) None)))
+        (Some md (Some (Hov (MC MKMarkdown md) (Some (hover-word-range text line col word)))))
         (None None)))))
+
+(defn hover-word-range (text line col word)
+  (let offset (si-offset-of-pos text line col)
+    (let start (si-word-scan-back text offset)
+      (let startcol (- col (- offset start))
+        (Rng (Pos line startcol) (Pos line (+ startcol (str-length word))))))))

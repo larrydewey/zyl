@@ -488,20 +488,93 @@ tests/lsp/
 
 ## Status
 
-**Phases 0-4 and most of Phase 6 real and verified; Phase 5 partial.**
-`zyl-lsp` builds via `./boot.sh` (separate from the compiler's own
-self-hosting bundle — see "Bootstrap Integration" above) and has been
-exercised end-to-end over real stdio: `initialize` → real capabilities,
-`didOpen` → real `publishDiagnostics`, `hover`/`definition`/
-`documentSymbol`/`completion`/`shutdown` all return real, correct data
-against a live compile of `document_manager.zyl`'s own analysis
-pipeline. Self-hosting fixed point verified unaffected (byte-identical
-stage2/stage3 output) after every compiler-side change this work made.
-Full regression suite: 46/46. `zyl_system_cmd` fixed (posix_spawn,
-matching `zyl_cc_compile`/`zyl_run_bin`) and REPL-eval + call hierarchy
-+ parameter-name inlay hints all wired in and verified over real stdio
-since. Remaining honest gaps are listed inline per-phase above (type
-inlay hints and caught-panic fix-its, both genuinely blocked on the
-same missing source-position data; `zyl.toml` DAG parsing, deferred
-because the format itself doesn't exist yet, not for lack of time)
-rather than claimed as done.
+**Complete for the language as it stands today.** `zyl-lsp` builds via
+`./boot.sh` and is exercised end-to-end by `tests/lsp/lsp_protocol_test.py`,
+which drives the real binary over real JSON-RPC on stdio and asserts on
+the responses (`./run_regression_tests.sh --filter lsp`, in both quick
+and full mode). Full regression suite: 77/77 including the self-hosting
+fixed point.
+
+### What the server answers today
+
+`initialize` (with every provider below advertised), `shutdown`,
+`exit`; `didOpen`, `didChange`, `didSave` (with text), `didClose`;
+`publishDiagnostics`; and the requests:
+
+| Request | Notes |
+|---|---|
+| `hover` | MarkupContent, with a range; resolves the document's own definitions first, then the built-in table |
+| `definition` | Functions, types, structs, traits, macros, constants; a variant resolves to its `deftype`, a field to its `defstruct` |
+| `typeDefinition` | Variant to ADT, field to struct |
+| `implementation` | Every `impl` naming the trait under the cursor |
+| `references` | Whole-word occurrences, honouring `context.includeDeclaration` |
+| `documentHighlight` | The same occurrence set, as ranges |
+| `rename` / `prepareRename` | Declaration plus every reference in the file |
+| `completion` | Context-aware: module paths inside `(use ...)`, otherwise built-ins (with signature and documentation) plus the document's functions, ADTs, variants, structs and fields |
+| `signatureHelp` | Real parameter names from `defn`; built-in signatures from the table; correct `activeParameter` |
+| `documentSymbol` | Full-form `range`, name-only `selectionRange` |
+| `workspace/symbol` | Across every open document |
+| `semanticTokens/full` and `/range` | Ten standard token types, three modifiers |
+| `foldingRange` | Per multi-line top-level form |
+| `selectionRange` | Identifier, then enclosing form |
+| `codeAction` | Quick-fixes from balance diagnostics' fix-it hints |
+| `formatting` / `rangeFormatting` | Re-indent by paren depth |
+| `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls` | Per-document |
+| `inlayHint` | Parameter names at call sites |
+| `workspace/executeCommand` | `zyl.evalDocument` |
+
+### Diagnostics
+
+`document_manager.zyl` runs the same checks `selfhost/driver.zyl` runs,
+in the same order — `dc-check-program`, `ac-check-program`,
+`mc-check-program`, `ec-check-program`, `sc-check-program` — inside
+`try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead
+of killing the server. Each diagnostic carries its `E_*` code in the
+LSP `code` field and a range located by finding the message's
+backticked name in the document text.
+
+The symbol table is built BEFORE the checks run and kept whatever they
+say, so a document that fails exhaustiveness still offers hover,
+completion and go-to-definition for the names it declares.
+
+### Coverage of the language
+
+`stdlib/lsp/builtins.zyl` is the single table behind hover, completion,
+signature help and token colouring. It holds every head symbol
+`dispatch-special` recognises, every operator `icnf.zyl` lowers to an
+instruction — including the bitwise family and the byte/atomic
+primitives — and every type, region and capability name, each with a
+signature and a one-line description. Keep it in step when
+`expr_inner.zyl` gains a form; a form missing from it appears in the
+editor as an ordinary unresolved identifier.
+
+### Honest gaps, unchanged
+
+Both remain blocked on the same missing data (Wall 1: nothing in the
+compiler's AST carries a source position):
+
+- **Type inlay hints** and **inference-driven hover**. Hover shows the
+  declared annotation, not an inferred type.
+- **Local-variable completion**. There is no scope to read at a cursor.
+
+Three further limits are stated rather than worked around:
+
+- **One diagnostic at a time**, because each checker stops at its first
+  problem — the same behaviour as a command-line build.
+- **`unused_check` is not run**, because it reports by printing to
+  stdout, which is the server's JSON-RPC channel. Surfacing those
+  warnings needs the check to return them rather than print them.
+- **Navigation is per-document.** Workspace symbol search covers open
+  documents only; `zyl.toml` DAG parsing stays deferred because the
+  format does not exist yet.
+
+### Editor integration
+
+`editors/vscode/` v0.2.0: the language client above, a TextMate grammar
+covering every special form, bitwise and byte operation, atomic, region
+and capability name, 17 snippets, a `zyl` build task, a status bar item
+wired to the server log, configuration for the server path, arguments,
+trace and inlay hints, and a **Run Current File** command
+(`Ctrl+Shift+Enter`). `./install.sh --with-vscode` builds and installs
+it. Chapter 35 of the book documents per-editor setup for Neovim, Emacs
+and Helix as well.

@@ -9,14 +9,24 @@
 ; compiler/sexp_balance.zyl already uses for its own line/col tracking,
 ; reusing its character classifiers.
 ;
-; Two things this module answers, independent of each other:
+; Four things this module answers, independent of each other:
 ;   1. byte offset <-> (line, col), and "what identifier is at this
 ;      position" -- for hover/goto-definition/completion, which then
 ;      look the resolved NAME up in lsp/compiler_bridge's SymTable.
-;   2. a flat list of top-level (defn/deftype/defstruct/trait) forms
-;      with their name, kind, and position -- for document-symbols and
-;      for "go to the definition of this name" (position lookup, not
-;      NAME lookup: given a name, where in the text was it declared).
+;   2. a list of top-level (defn/deftype/defstruct/trait/impl/macro/def)
+;      forms with their name, kind, and FULL extent -- start position of
+;      the opening paren through the position just past its matching
+;      close. Document symbols, folding ranges and selection ranges all
+;      read the extent; go-to-definition reads the start.
+;   3. every whole-word occurrence of a name, skipping string literals
+;      and comments -- for find-references, document highlight and
+;      rename.
+;   4. the enclosing top-level form for a given line.
+;
+; The single scan in `si-scan` does (2) and is the only place bracket
+; depth is tracked; (3) and (4) are separate, simpler walks over the
+; same character classification, kept apart rather than fused so each
+; stays readable.
 
 (use allocator/allocator)
 (use core/core)
@@ -91,25 +101,37 @@
       (si-word-scan-fwd text (+ i 1) len)
       i)))
 
+; The word ending at `offset`, scanning BACKWARDS only. Completion needs
+; this: the cursor sits just past the last character typed, where
+; si-word-at would read the character under the caret (often a space or
+; a close paren) and give "".
+(defn si-word-before (text line col)
+  (let offset (si-offset-of-pos text line col)
+    (let start (si-word-scan-back text offset)
+      (if (> offset start) (str-substring text start (- offset start)) ""))))
+
 ; ===========================================================================
-; TOP-LEVEL FORM INDEX — name, kind, position, by a single depth-tracked
-; scan (same character classification as sexp_balance, but recording
-; instead of just validating).
+; TOP-LEVEL FORM INDEX
 ; ===========================================================================
 
-(deftype TopForm (TF String String Int Int)) ; kind ("defn"/"deftype"/"defstruct"/"trait"), name, line, col
+; kind, name, start line, start col, end line, end col. An end of
+; (-1, -1) means the form's closing paren was never reached -- the file
+; is mid-edit; consumers treat the start line as the end.
+(deftype TopForm (TF String String Int Int Int Int))
 
-(defn TopForm.kind (f) (match f (TF k d1 d2 d3 k)))
-(defn TopForm.name (f) (match f (TF d1 n d2 d3 n)))
-(defn TopForm.line (f) (match f (TF d1 d2 l d3 l)))
-(defn TopForm.col (f) (match f (TF d1 d2 d3 c c)))
+(defn TopForm.kind (f) (match f (TF k d1 d2 d3 d4 d5 k)))
+(defn TopForm.name (f) (match f (TF d1 n d2 d3 d4 d5 n)))
+(defn TopForm.line (f) (match f (TF d1 d2 l d3 d4 d5 l)))
+(defn TopForm.col (f) (match f (TF d1 d2 d3 c d4 d5 c)))
+(defn TopForm.end-line (f) (match f (TF d1 d2 l d3 e d4 (if (< e 0) l e))))
+(defn TopForm.end-col (f) (match f (TF d1 d2 d3 c d4 e (if (< e 0) c e))))
 
 (defn si-top-level-forms (text)
   (list-reverse (si-scan text 0 (str-length text) 0 0 0 0 Nil)))
 
-; depth: paren/bracket/brace nesting depth. in-string/in-comment/escape:
-; same three-flag context as sexp_balance's CheckState, tracked the same
-; way so string/comment contents never get misread as code.
+; depth: paren/bracket/brace nesting depth. in-string: same context flag
+; as sexp_balance's CheckState, tracked the same way so string and
+; comment contents never get misread as code.
 (defn si-scan (text i len line col depth in-string acc)
   (if (>= i len)
     acc
@@ -123,11 +145,11 @@
         (if (sb-is-quote ch)
           (si-scan text (+ i 1) len line (+ col 1) depth 1 acc)
           (if (sb-is-semicolon ch)
-            (si-scan-skip-comment text i len line acc)
+            (si-scan-skip-comment text i len line depth acc)
             (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
               (si-scan-open text i len line col depth acc ch)
               (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
-                (si-scan text (+ i 1) len line (+ col 1) (- depth 1) 0 acc)
+                (si-scan-close text i len line col depth acc)
                 (si-scan-advance text i len line col depth in-string acc ch)))))))))
 
 (defn si-scan-advance (text i len line col depth in-string acc ch)
@@ -135,12 +157,15 @@
     (si-scan text (+ i 1) len (+ line 1) 0 depth in-string acc)
     (si-scan text (+ i 1) len line (+ col 1) depth in-string acc)))
 
-(defn si-scan-skip-comment (text i len line acc)
+; A comment inside a form must not reset the depth -- the previous
+; version of this function passed a hard-coded 0 back in, which silently
+; treated every form containing a comment line as if it had closed.
+(defn si-scan-skip-comment (text i len line depth acc)
   (if (>= i len)
     acc
     (if (sb-is-newline (str-substring text i 1))
-      (si-scan text (+ i 1) len (+ line 1) 0 0 0 acc)
-      (si-scan-skip-comment text (+ i 1) len line acc))))
+      (si-scan text (+ i 1) len (+ line 1) 0 depth 0 acc)
+      (si-scan-skip-comment text (+ i 1) len line depth acc))))
 
 ; Opening a bracket AT depth 0 is the start of a candidate top-level
 ; form; try to read a "(keyword name" header right after it.
@@ -151,6 +176,25 @@
       (None (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
     (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
 
+; Returning to depth 0 closes the most recently opened form -- but only
+; if that form is still open, since an unrecognized top-level form
+; (a bare call, say) pushes nothing onto `acc`.
+(defn si-scan-close (text i len line col depth acc)
+  (let newdepth (- depth 1)
+    (if (= newdepth 0)
+      (si-scan text (+ i 1) len line (+ col 1) newdepth 0 (si-close-head acc line (+ col 1)))
+      (si-scan text (+ i 1) len line (+ col 1) newdepth 0 acc))))
+
+(defn si-close-head (acc endline endcol)
+  (match acc
+    (Nil Nil)
+    (Cons f rest
+      (match f
+        (TF kind name l c el ec
+          (if (< el 0)
+            (Cons (TF kind name l c endline endcol) rest)
+            acc))))))
+
 (defn si-try-header (text pos len line col)
   (let p1 (si-skip-ws text pos len)
     (let kwend (si-word-scan-fwd text p1 len)
@@ -160,20 +204,182 @@
             (let nameend (si-word-scan-fwd text p2 len)
               (let name (str-substring text p2 (- nameend p2))
                 (if (> (str-length name) 0)
-                  (Some (TF kw name line col))
-                  None)))
-            )
+                  (Some (TF kw name line col (- 0 1) (- 0 1)))
+                  None))))
           None)))))
 
+; Every head symbol that introduces a named top-level definition. Kept
+; deliberately in step with expr_inner.zyl's own dispatch: a form that
+; defines a name and is missing here is a name the outline, the
+; breadcrumb bar and go-to-definition all silently cannot see.
 (defn si-is-def-keyword (kw)
-  (or (> (str-eq kw "defn") 0)
-    (or (> (str-eq kw "deftype") 0)
-      (or (> (str-eq kw "defstruct") 0)
-        (or (> (str-eq kw "defstruct+") 0)
-          (> (str-eq kw "trait") 0))))))
+  (if (> (str-eq kw "defn") 0) 1
+    (if (> (str-eq kw "deftype") 0) 1
+      (if (> (str-eq kw "defstruct") 0) 1
+        (if (> (str-eq kw "defstruct+") 0) 1
+          (if (> (str-eq kw "trait") 0) 1
+            (if (> (str-eq kw "impl") 0) 1
+              (if (> (str-eq kw "macro") 0) 1
+                (if (> (str-eq kw "defmacro") 0) 1
+                  (if (> (str-eq kw "def") 0) 1
+                    (if (> (str-eq kw "alias") 0) 1 0)))))))))))
 
 (defn si-skip-ws (text i len)
   (if (>= i len)
     i
     (let c (sb-char-code (str-substring text i 1))
       (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (si-skip-ws text (+ i 1) len) i))))
+
+; The innermost top-level form containing `line`, if any.
+(defn si-form-at-line (text line)
+  (si-form-at-line-search (si-top-level-forms text) line))
+
+(defn si-form-at-line-search (forms line)
+  (match forms
+    (Nil None)
+    (Cons f rest
+      (if (and (<= (TopForm.line f) line) (>= (TopForm.end-line f) line))
+        (Some f)
+        (si-form-at-line-search rest line)))))
+
+; ===========================================================================
+; WHOLE-WORD OCCURRENCES — the basis for find-references, document
+; highlight and rename. Skips string literals and comments, so a name
+; mentioned in prose or in an error message is never renamed.
+; ===========================================================================
+
+(defn si-word-occurrences (text word)
+  (if (= (str-length word) 0)
+    Nil
+    (list-reverse (si-occ-scan text 0 (str-length text) 0 0 0 word Nil))))
+
+(defn si-occ-scan (text i len line col in-string word acc)
+  (if (>= i len)
+    acc
+    (let ch (str-substring text i 1)
+      (if (> in-string 0)
+        (if (sb-is-backslash ch)
+          (si-occ-scan text (+ i 2) len line (+ col 2) in-string word acc)
+          (if (sb-is-quote ch)
+            (si-occ-scan text (+ i 1) len line (+ col 1) 0 word acc)
+            (si-occ-advance text i len line col in-string word acc ch)))
+        (if (sb-is-quote ch)
+          (si-occ-scan text (+ i 1) len line (+ col 1) 1 word acc)
+          (if (sb-is-semicolon ch)
+            (si-occ-skip-comment text i len line word acc)
+            (if (> (si-is-ident-char ch) 0)
+              (si-occ-word text i len line col word acc)
+              (si-occ-advance text i len line col in-string word acc ch))))))))
+
+(defn si-occ-advance (text i len line col in-string word acc ch)
+  (if (sb-is-newline ch)
+    (si-occ-scan text (+ i 1) len (+ line 1) 0 in-string word acc)
+    (si-occ-scan text (+ i 1) len line (+ col 1) in-string word acc)))
+
+(defn si-occ-skip-comment (text i len line word acc)
+  (if (>= i len)
+    acc
+    (if (sb-is-newline (str-substring text i 1))
+      (si-occ-scan text (+ i 1) len (+ line 1) 0 0 word acc)
+      (si-occ-skip-comment text (+ i 1) len line word acc))))
+
+(defn si-occ-word (text i len line col word acc)
+  (let end (si-word-scan-fwd text i len)
+    (let found (str-substring text i (- end i))
+      (let acc2 (if (> (str-eq found word) 0) (Cons (Pair2 line col) acc) acc)
+        (si-occ-scan text end len line (+ col (- end i)) 0 word acc2)))))
+
+(defn si-find-word (text word)
+  (match (si-word-occurrences text word)
+    (Cons p d1 (Some p))
+    (Nil None)))
+
+; ===========================================================================
+; CALL CONTEXT — the innermost form still open at a position, as its head
+; symbol plus how many arguments precede the cursor.
+;
+; Signature help needs both (which function, which parameter); context-
+; aware completion needs the head alone (inside `(use ...)` the useful
+; candidates are module paths, not functions). One forward scan builds a
+; stack of open forms; whatever is on top at the cursor is the answer.
+; ===========================================================================
+
+(deftype CallCtx (CC String Int)) ; head symbol, index of the argument at the cursor
+
+(defn CallCtx.head (c) (match c (CC h d1 h)))
+(defn CallCtx.arg (c) (match c (CC d1 a a)))
+
+(defn si-call-context (text line col)
+  (let target (si-offset-of-pos text line col)
+    (si-ctx-scan text 0 target (str-length text) 0 Nil)))
+
+(defn si-ctx-scan (text i target len in-string stack)
+  (if (>= i target)
+    (si-ctx-top stack)
+    (let ch (str-substring text i 1)
+      (if (> in-string 0)
+        (if (sb-is-backslash ch)
+          (si-ctx-scan text (+ i 2) target len 1 stack)
+          (if (sb-is-quote ch)
+            (si-ctx-scan text (+ i 1) target len 0 (si-ctx-count stack))
+            (si-ctx-scan text (+ i 1) target len 1 stack)))
+        (if (sb-is-quote ch)
+          (si-ctx-scan text (+ i 1) target len 1 stack)
+          (if (sb-is-semicolon ch)
+            (si-ctx-skip-comment text i target len stack)
+            (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+              (si-ctx-scan text (+ i 1) target len 0 (Cons (CC "" 0) stack))
+              (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
+                (si-ctx-scan text (+ i 1) target len 0 (si-ctx-pop stack))
+                (if (> (si-is-ident-char ch) 0)
+                  (si-ctx-word text i target len stack)
+                  (si-ctx-scan text (+ i 1) target len 0 stack))))))))))
+
+; A word the cursor is still inside is the one being TYPED, so it is
+; not counted as a supplied argument -- `(f a b|` is editing argument 1,
+; not standing after argument 2. If the head itself is what is being
+; typed there is no call context yet at all.
+(defn si-ctx-word (text i target len stack)
+  (let end (si-word-scan-fwd text i len)
+    (let word (str-substring text i (- end i))
+      (if (>= end target)
+        (si-ctx-top stack)
+        (si-ctx-scan text end target len 0 (si-ctx-see-word stack word))))))
+
+; The first word inside a form names it; every later one is an argument
+; already supplied, so the cursor sits at the next index along.
+(defn si-ctx-see-word (stack word)
+  (match stack
+    (Nil Nil)
+    (Cons c rest
+      (match c
+        (CC head seen
+          (if (= (str-length head) 0)
+            (Cons (CC word 0) rest)
+            (Cons (CC head (+ seen 1)) rest)))))))
+
+; A closed string literal counts as one supplied argument.
+(defn si-ctx-count (stack)
+  (match stack
+    (Nil Nil)
+    (Cons c rest
+      (match c
+        (CC head seen
+          (if (= (str-length head) 0) (Cons (CC head seen) rest) (Cons (CC head (+ seen 1)) rest)))))))
+
+(defn si-ctx-pop (stack)
+  (match stack
+    (Nil Nil)
+    (Cons d1 rest (si-ctx-count rest))))
+
+(defn si-ctx-skip-comment (text i target len stack)
+  (if (>= i target)
+    (si-ctx-top stack)
+    (if (sb-is-newline (str-substring text i 1))
+      (si-ctx-scan text (+ i 1) target len 0 stack)
+      (si-ctx-skip-comment text (+ i 1) target len stack))))
+
+(defn si-ctx-top (stack)
+  (match stack
+    (Nil None)
+    (Cons c d1 (if (= (str-length (CallCtx.head c)) 0) None (Some c)))))

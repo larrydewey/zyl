@@ -104765,6 +104765,50 @@ call _ZYL_subst_expr_list
     mov rsp, rbp
     pop rbp
     ret
+_ZYL_param_type_expr:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 4
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov rsp, rbp
+    pop rbp
+    ret
 _ZYL_subst_defn_param:
     push rbp
     mov rbp, rsp
@@ -104814,6 +104858,7 @@ call _ZYL_P_name
     push rax
     sub rsp, 8
     sub rsp, 8
+    sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -104860,6 +104905,11 @@ call _ZYL_kv_get
     mov [rsp], rax
     mov rdi, [rsp+0]
 call _ZYL_type_to_string
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_param_type_expr
     add rsp, 16
     push rax
     mov r12, rsp
@@ -107335,7 +107385,13 @@ _ZYL_annotate_first_param:
 call _ZYL_P_name
     add rsp, 16
     push rax
+    sub rsp, 8
     mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_param_type_expr
+    add rsp, 16
     push rax
     mov r12, rsp
     and rsp, -16
@@ -112757,13 +112813,18 @@ call _ZYL_no_strs
     push rax
     mov rax, [rbp-64]
     push rax
+call _ZYL_no_ints
+    add rsp, 0
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -113000,13 +113061,18 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     push rax
+call _ZYL_no_ints
+    add rsp, 0
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -113825,13 +113891,27 @@ call _ZYL_param_names
 call _ZYL_hoist_node
     add rsp, 16
     push rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+call _ZYL_no_ints
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_param_kinds
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -113935,6 +114015,236 @@ call _ZYL_param_names
     mov rsp, rbp
     pop rbp
     ret
+_ZYL_no_ints:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_param_kind_of:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_P_type
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L5382
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_type_name_kind
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L5380
+.L5382:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L5381
+    mov rax, 0
+    mov [rsp], rax
+    jmp .L5380
+.L5381:
+    mov qword ptr [rsp], 0
+.L5380:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_type_name_kind:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_Expr_inner
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L5385
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 4
+    jne .L5388
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L5391]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5389
+    mov rax, 1
+    jmp .L5390
+.L5389:
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L5394]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L5392
+    mov rax, 2
+    jmp .L5393
+.L5392:
+    mov rax, 0
+.L5393:
+.L5390:
+    mov [rsp], rax
+    jmp .L5386
+.L5388:
+    mov rax, 0
+    mov [rsp], rax
+    jmp .L5386
+.L5387:
+    mov qword ptr [rsp], 0
+.L5386:
+    pop rax
+    mov [rsp], rax
+    jmp .L5383
+.L5385:
+    mov rax, 0
+    mov [rsp], rax
+    jmp .L5383
+.L5384:
+    mov qword ptr [rsp], 0
+.L5383:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_param_kinds:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L5397
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_list_reverse
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L5395
+.L5397:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L5396
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-24], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_param_kind_of
+    add rsp, 16
+    push rax
+    mov rax, [rbp-16]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_param_kinds
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L5395
+.L5396:
+    mov qword ptr [rsp], 0
+.L5395:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
 _ZYL_ic_expr:
     push rbp
     mov rbp, rsp
@@ -113953,7 +114263,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5382
+    jne .L5400
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -113973,12 +114283,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_atom
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5382:
+    jmp .L5398
+.L5400:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5383
+    jne .L5401
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -114004,12 +114314,12 @@ call _ZYL_ic_atom
 call _ZYL_ic_call_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5383:
+    jmp .L5398
+.L5401:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5384
+    jne .L5402
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -114035,12 +114345,12 @@ call _ZYL_ic_call_expr
 call _ZYL_ic_apply
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5384:
+    jmp .L5398
+.L5402:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5385
+    jne .L5403
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -114074,12 +114384,12 @@ call _ZYL_ic_apply
 call _ZYL_ic_lower_let
     add rsp, 48
     mov [rsp], rax
-    jmp .L5380
-.L5385:
+    jmp .L5398
+.L5403:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5386
+    jne .L5404
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -114113,12 +114423,12 @@ call _ZYL_ic_lower_let
 call _ZYL_ic_lower_let
     add rsp, 48
     mov [rsp], rax
-    jmp .L5380
-.L5386:
+    jmp .L5398
+.L5404:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 40
-    jne .L5387
+    jne .L5405
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -114186,12 +114496,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5387:
+    jmp .L5398
+.L5405:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5388
+    jne .L5406
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -114264,12 +114574,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5388:
+    jmp .L5398
+.L5406:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L5389
+    jne .L5407
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -114321,12 +114631,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5389:
+    jmp .L5398
+.L5407:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 27
-    jne .L5390
+    jne .L5408
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -114373,12 +114683,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5390:
+    jmp .L5398
+.L5408:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L5391
+    jne .L5409
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -114409,19 +114719,19 @@ call _ZYL_ic_expr_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5391:
+    jmp .L5398
+.L5409:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 35
-    jne .L5392
+    jne .L5410
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-216], rax
-    lea rax, [rip+.L5393]
+    lea rax, [rip+.L5411]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -114503,19 +114813,19 @@ call _ZYL_ic_file_mode
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5392:
+    jmp .L5398
+.L5410:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 36
-    jne .L5394
+    jne .L5412
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-232], rax
-    lea rax, [rip+.L5395]
+    lea rax, [rip+.L5413]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -114597,19 +114907,19 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5394:
+    jmp .L5398
+.L5412:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 37
-    jne .L5396
+    jne .L5414
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-240], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-248], rax
-    lea rax, [rip+.L5397]
+    lea rax, [rip+.L5415]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -114691,16 +115001,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5396:
+    jmp .L5398
+.L5414:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 38
-    jne .L5398
+    jne .L5416
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-256], rax
-    lea rax, [rip+.L5399]
+    lea rax, [rip+.L5417]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -114753,12 +115063,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5398:
+    jmp .L5398
+.L5416:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 31
-    jne .L5400
+    jne .L5418
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -114778,12 +115088,12 @@ call _ZYL_ic_expr
 call _ZYL_ic_print
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5400:
+    jmp .L5398
+.L5418:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L5401
+    jne .L5419
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-272], rax
@@ -114809,12 +115119,12 @@ call _ZYL_ic_print
 call _ZYL_ic_match
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5401:
+    jmp .L5398
+.L5419:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L5402
+    jne .L5420
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
@@ -114855,12 +115165,12 @@ call _ZYL_ic_expr_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5402:
+    jmp .L5398
+.L5420:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 50
-    jne .L5403
+    jne .L5421
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-312], rax
@@ -114882,7 +115192,7 @@ call _ZYL_ic_looks_float
     setg al
     movzx rax, al
     test rax, rax
-    je .L5404
+    je .L5422
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -114901,8 +115211,8 @@ call _ZYL_ic_looks_float
     mov rdi, [rsp+24]
 call _ZYL_ic_assert_float_eq
     add rsp, 32
-    jmp .L5405
-.L5404:
+    jmp .L5423
+.L5422:
     sub rsp, 8
     mov rax, [rbp-320]
     sub rsp, 8
@@ -114918,7 +115228,7 @@ call _ZYL_ic_looks_float
     setg al
     movzx rax, al
     test rax, rax
-    je .L5406
+    je .L5424
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -114937,8 +115247,8 @@ call _ZYL_ic_looks_float
     mov rdi, [rsp+24]
 call _ZYL_ic_assert_float_eq
     add rsp, 32
-    jmp .L5407
-.L5406:
+    jmp .L5425
+.L5424:
     mov rax, 9
     push rax
     sub rsp, 8
@@ -115001,9 +115311,9 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    lea rax, [rip+.L5408]
+    lea rax, [rip+.L5426]
     push rax
-    lea rax, [rip+.L5409]
+    lea rax, [rip+.L5427]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -115065,15 +115375,15 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5407:
-.L5405:
+.L5425:
+.L5423:
     mov [rsp], rax
-    jmp .L5380
-.L5403:
+    jmp .L5398
+.L5421:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 52
-    jne .L5410
+    jne .L5428
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-328], rax
@@ -115109,9 +115419,9 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    lea rax, [rip+.L5411]
+    lea rax, [rip+.L5429]
     push rax
-    lea rax, [rip+.L5412]
+    lea rax, [rip+.L5430]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -115174,12 +115484,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5410:
+    jmp .L5398
+.L5428:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 53
-    jne .L5413
+    jne .L5431
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-344], rax
@@ -115202,9 +115512,9 @@ call _ZYL_ic_expr
 call _ZYL_ic_expr
     add rsp, 32
     push rax
-    lea rax, [rip+.L5414]
+    lea rax, [rip+.L5432]
     push rax
-    lea rax, [rip+.L5415]
+    lea rax, [rip+.L5433]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -115280,12 +115590,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5413:
+    jmp .L5398
+.L5431:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 51
-    jne .L5416
+    jne .L5434
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-360], rax
@@ -115367,12 +115677,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5416:
+    jmp .L5398
+.L5434:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 24
-    jne .L5417
+    jne .L5435
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-376], rax
@@ -115398,12 +115708,12 @@ call _ZYL_ic_expr
 call _ZYL_ic_struct_get
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5417:
+    jmp .L5398
+.L5435:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 19
-    jne .L5418
+    jne .L5436
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-392], rax
@@ -115437,16 +115747,16 @@ call _ZYL_ic_struct_get
 call _ZYL_ic_for
     add rsp, 48
     mov [rsp], rax
-    jmp .L5380
-.L5418:
+    jmp .L5398
+.L5436:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L5419
+    jne .L5437
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-416], rax
-    lea rax, [rip+.L5420]
+    lea rax, [rip+.L5438]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -115499,16 +115809,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5419:
+    jmp .L5398
+.L5437:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L5421
+    jne .L5439
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-424], rax
-    lea rax, [rip+.L5422]
+    lea rax, [rip+.L5440]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -115561,16 +115871,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5421:
+    jmp .L5398
+.L5439:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L5423
+    jne .L5441
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-432], rax
-    lea rax, [rip+.L5424]
+    lea rax, [rip+.L5442]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -115649,19 +115959,19 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5423:
+    jmp .L5398
+.L5441:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L5425
+    jne .L5443
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-440], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-448], rax
-    lea rax, [rip+.L5426]
+    lea rax, [rip+.L5444]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -115743,12 +116053,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5425:
+    jmp .L5398
+.L5443:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L5427
+    jne .L5445
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-456], rax
@@ -115816,12 +116126,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5427:
+    jmp .L5398
+.L5445:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5428
+    jne .L5446
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-480], rax
@@ -115850,12 +116160,12 @@ call _ZYL_ic_expr
 call _ZYL_ic_lambda
     add rsp, 32
     mov [rsp], rax
-    jmp .L5380
-.L5428:
+    jmp .L5398
+.L5446:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 62
-    jne .L5429
+    jne .L5447
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-504], rax
@@ -115872,12 +116182,12 @@ call _ZYL_ic_lambda
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5429:
+    jmp .L5398
+.L5447:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 63
-    jne .L5430
+    jne .L5448
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-512], rax
@@ -115887,7 +116197,7 @@ call _ZYL_ic_lambda
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-528], rax
-    lea rax, [rip+.L5431]
+    lea rax, [rip+.L5449]
     push rax
     sub rsp, 8
     mov rax, [rbp-512]
@@ -115912,7 +116222,7 @@ call _ZYL_endian_to_int
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-520]
+    mov rax, [rbp-528]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -115928,7 +116238,7 @@ call _ZYL_ic_expr
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-528]
+    mov rax, [rbp-520]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116001,12 +116311,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5430:
+    jmp .L5398
+.L5448:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 64
-    jne .L5432
+    jne .L5450
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-536], rax
@@ -116016,7 +116326,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-552], rax
-    lea rax, [rip+.L5433]
+    lea rax, [rip+.L5451]
     push rax
     sub rsp, 8
     mov rax, [rbp-536]
@@ -116041,7 +116351,7 @@ call _ZYL_endian_to_int
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-544]
+    mov rax, [rbp-552]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116057,7 +116367,7 @@ call _ZYL_ic_expr
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-552]
+    mov rax, [rbp-544]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116130,12 +116440,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5432:
+    jmp .L5398
+.L5450:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 65
-    jne .L5434
+    jne .L5452
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-560], rax
@@ -116148,7 +116458,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+32]
     mov [rbp-584], rax
-    lea rax, [rip+.L5435]
+    lea rax, [rip+.L5453]
     push rax
     sub rsp, 8
     mov rax, [rbp-560]
@@ -116173,7 +116483,7 @@ call _ZYL_endian_to_int
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-568]
+    mov rax, [rbp-576]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116189,7 +116499,7 @@ call _ZYL_ic_expr
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-576]
+    mov rax, [rbp-568]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116291,12 +116601,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5434:
+    jmp .L5398
+.L5452:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 66
-    jne .L5436
+    jne .L5454
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-592], rax
@@ -116309,7 +116619,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+32]
     mov [rbp-616], rax
-    lea rax, [rip+.L5437]
+    lea rax, [rip+.L5455]
     push rax
     sub rsp, 8
     mov rax, [rbp-592]
@@ -116334,7 +116644,7 @@ call _ZYL_endian_to_int
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-600]
+    mov rax, [rbp-608]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116350,7 +116660,7 @@ call _ZYL_ic_expr
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-608]
+    mov rax, [rbp-600]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -116452,12 +116762,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5436:
+    jmp .L5398
+.L5454:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 67
-    jne .L5438
+    jne .L5456
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-624], rax
@@ -116467,7 +116777,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-640], rax
-    lea rax, [rip+.L5439]
+    lea rax, [rip+.L5457]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -116578,12 +116888,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5438:
+    jmp .L5398
+.L5456:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 68
-    jne .L5440
+    jne .L5458
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-648], rax
@@ -116593,7 +116903,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-664], rax
-    lea rax, [rip+.L5441]
+    lea rax, [rip+.L5459]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -116704,19 +117014,19 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5440:
+    jmp .L5398
+.L5458:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 69
-    jne .L5442
+    jne .L5460
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-672], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-680], rax
-    lea rax, [rip+.L5443]
+    lea rax, [rip+.L5461]
     push rax
     sub rsp, 8
     mov rax, [rbp-672]
@@ -116798,19 +117108,19 @@ call _ZYL_region_to_int
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5442:
+    jmp .L5398
+.L5460:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 70
-    jne .L5444
+    jne .L5462
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-688], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-696], rax
-    lea rax, [rip+.L5445]
+    lea rax, [rip+.L5463]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -116892,16 +117202,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5444:
+    jmp .L5398
+.L5462:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 71
-    jne .L5446
+    jne .L5464
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-704], rax
-    lea rax, [rip+.L5447]
+    lea rax, [rip+.L5465]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -116954,16 +117264,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5446:
+    jmp .L5398
+.L5464:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 72
-    jne .L5448
+    jne .L5466
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-712], rax
-    lea rax, [rip+.L5449]
+    lea rax, [rip+.L5467]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117016,16 +117326,16 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5448:
+    jmp .L5398
+.L5466:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 73
-    jne .L5450
+    jne .L5468
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-720], rax
-    lea rax, [rip+.L5451]
+    lea rax, [rip+.L5469]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117078,19 +117388,19 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5450:
+    jmp .L5398
+.L5468:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 74
-    jne .L5452
+    jne .L5470
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-728], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-736], rax
-    lea rax, [rip+.L5453]
+    lea rax, [rip+.L5471]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117169,19 +117479,19 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5452:
+    jmp .L5398
+.L5470:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 75
-    jne .L5454
+    jne .L5472
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-744], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-752], rax
-    lea rax, [rip+.L5455]
+    lea rax, [rip+.L5473]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117263,12 +117573,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5454:
+    jmp .L5398
+.L5472:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 76
-    jne .L5456
+    jne .L5474
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-760], rax
@@ -117278,7 +117588,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-776], rax
-    lea rax, [rip+.L5457]
+    lea rax, [rip+.L5475]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117389,12 +117699,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5456:
+    jmp .L5398
+.L5474:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 77
-    jne .L5458
+    jne .L5476
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-784], rax
@@ -117404,7 +117714,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-800], rax
-    lea rax, [rip+.L5459]
+    lea rax, [rip+.L5477]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117515,12 +117825,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5458:
+    jmp .L5398
+.L5476:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 78
-    jne .L5460
+    jne .L5478
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-808], rax
@@ -117530,7 +117840,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-824], rax
-    lea rax, [rip+.L5461]
+    lea rax, [rip+.L5479]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117641,12 +117951,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5460:
+    jmp .L5398
+.L5478:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 79
-    jne .L5462
+    jne .L5480
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-832], rax
@@ -117659,7 +117969,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+32]
     mov [rbp-856], rax
-    lea rax, [rip+.L5463]
+    lea rax, [rip+.L5481]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117799,12 +118109,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5462:
+    jmp .L5398
+.L5480:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 80
-    jne .L5464
+    jne .L5482
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-864], rax
@@ -117814,7 +118124,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-880], rax
-    lea rax, [rip+.L5465]
+    lea rax, [rip+.L5483]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -117925,12 +118235,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5464:
+    jmp .L5398
+.L5482:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 81
-    jne .L5466
+    jne .L5484
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-888], rax
@@ -117940,7 +118250,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-904], rax
-    lea rax, [rip+.L5467]
+    lea rax, [rip+.L5485]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -118051,12 +118361,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5466:
+    jmp .L5398
+.L5484:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 82
-    jne .L5468
+    jne .L5486
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-912], rax
@@ -118066,7 +118376,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-928], rax
-    lea rax, [rip+.L5469]
+    lea rax, [rip+.L5487]
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -118177,8 +118487,8 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5468:
+    jmp .L5398
+.L5486:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -118192,10 +118502,10 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5380
-.L5381:
+    jmp .L5398
+.L5399:
     mov qword ptr [rsp], 0
-.L5380:
+.L5398:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -118240,91 +118550,13 @@ _ZYL_ic_digit_str:
     sete al
     movzx rax, al
     test rax, rax
-    je .L5470
-    lea rax, [rip+.L5472]
-    jmp .L5471
-.L5470:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 1
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L5473
-    lea rax, [rip+.L5475]
-    jmp .L5474
-.L5473:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 2
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L5476
-    lea rax, [rip+.L5478]
-    jmp .L5477
-.L5476:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 3
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L5479
-    lea rax, [rip+.L5481]
-    jmp .L5480
-.L5479:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 4
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L5482
-    lea rax, [rip+.L5484]
-    jmp .L5483
-.L5482:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 5
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L5485
-    lea rax, [rip+.L5487]
-    jmp .L5486
-.L5485:
-    mov rax, [rbp-8]
-    push rax
-    mov rax, 6
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
     je .L5488
     lea rax, [rip+.L5490]
     jmp .L5489
 .L5488:
     mov rax, [rbp-8]
     push rax
-    mov rax, 7
+    mov rax, 1
     mov rcx, rax
     pop rax
     cmp rax, rcx
@@ -118337,7 +118569,7 @@ _ZYL_ic_digit_str:
 .L5491:
     mov rax, [rbp-8]
     push rax
-    mov rax, 8
+    mov rax, 2
     mov rcx, rax
     pop rax
     cmp rax, rcx
@@ -118348,16 +118580,94 @@ _ZYL_ic_digit_str:
     lea rax, [rip+.L5496]
     jmp .L5495
 .L5494:
-    lea rax, [rip+.L5497]
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 3
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5497
+    lea rax, [rip+.L5499]
+    jmp .L5498
+.L5497:
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 4
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5500
+    lea rax, [rip+.L5502]
+    jmp .L5501
+.L5500:
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 5
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5503
+    lea rax, [rip+.L5505]
+    jmp .L5504
+.L5503:
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 6
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5506
+    lea rax, [rip+.L5508]
+    jmp .L5507
+.L5506:
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 7
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5509
+    lea rax, [rip+.L5511]
+    jmp .L5510
+.L5509:
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 8
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L5512
+    lea rax, [rip+.L5514]
+    jmp .L5513
+.L5512:
+    lea rax, [rip+.L5515]
+.L5513:
+.L5510:
+.L5507:
+.L5504:
+.L5501:
+.L5498:
 .L5495:
 .L5492:
 .L5489:
-.L5486:
-.L5483:
-.L5480:
-.L5477:
-.L5474:
-.L5471:
     mov rsp, rbp
     pop rbp
     ret
@@ -118375,7 +118685,7 @@ _ZYL_ic_int_to_str:
     setl al
     movzx rax, al
     test rax, rax
-    je .L5498
+    je .L5516
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -118383,8 +118693,8 @@ _ZYL_ic_int_to_str:
     mov rdi, [rsp+0]
 call _ZYL_ic_digit_str
     add rsp, 16
-    jmp .L5499
-.L5498:
+    jmp .L5517
+.L5516:
     sub rsp, 8
     mov rax, [rbp-8]
     push rax
@@ -118420,7 +118730,7 @@ call _ZYL_ic_digit_str
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L5499:
+.L5517:
     mov rsp, rbp
     pop rbp
     ret
@@ -118440,7 +118750,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5502
+    jne .L5520
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -118449,28 +118759,28 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5505
+    jne .L5523
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5503
-.L5505:
+    jmp .L5521
+.L5523:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5503
-.L5504:
+    jmp .L5521
+.L5522:
     mov qword ptr [rsp], 0
-.L5503:
+.L5521:
     pop rax
     mov [rsp], rax
-    jmp .L5500
-.L5502:
+    jmp .L5518
+.L5520:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5506
+    jne .L5524
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -118485,12 +118795,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_looks_float_any
     add rsp, 16
     mov [rsp], rax
-    jmp .L5500
-.L5506:
+    jmp .L5518
+.L5524:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5507
+    jne .L5525
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -118505,14 +118815,14 @@ call _ZYL_ic_looks_float_any
 call _ZYL_ic_looks_float_any
     add rsp, 16
     mov [rsp], rax
-    jmp .L5500
-.L5507:
+    jmp .L5518
+.L5525:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5500
-.L5501:
+    jmp .L5518
+.L5519:
     mov qword ptr [rsp], 0
-.L5500:
+.L5518:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -118527,15 +118837,15 @@ _ZYL_ic_looks_float_any:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5510
+    jne .L5528
     mov rax, 0
     mov [rsp], rax
-    jmp .L5508
-.L5510:
+    jmp .L5526
+.L5528:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5509
+    jne .L5527
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -118557,10 +118867,10 @@ call _ZYL_ic_looks_float
     setg al
     movzx rax, al
     test rax, rax
-    je .L5511
+    je .L5529
     mov rax, 1
-    jmp .L5512
-.L5511:
+    jmp .L5530
+.L5529:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -118568,12 +118878,12 @@ call _ZYL_ic_looks_float
     mov rdi, [rsp+0]
 call _ZYL_ic_looks_float_any
     add rsp, 16
-.L5512:
+.L5530:
     mov [rsp], rax
-    jmp .L5508
-.L5509:
+    jmp .L5526
+.L5527:
     mov qword ptr [rsp], 0
-.L5508:
+.L5526:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -118596,7 +118906,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5515
+    jne .L5533
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -118605,7 +118915,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5518
+    jne .L5536
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -118625,9 +118935,9 @@ call _ZYL_Expr_inner
 call _ZYL_ic_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5516
-.L5518:
-    lea rax, [rip+.L5519]
+    jmp .L5534
+.L5536:
+    lea rax, [rip+.L5537]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118640,15 +118950,15 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5516
-.L5517:
+    jmp .L5534
+.L5535:
     mov qword ptr [rsp], 0
-.L5516:
+.L5534:
     pop rax
     mov [rsp], rax
-    jmp .L5513
-.L5515:
-    lea rax, [rip+.L5520]
+    jmp .L5531
+.L5533:
+    lea rax, [rip+.L5538]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118661,10 +118971,10 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5513
-.L5514:
+    jmp .L5531
+.L5532:
     mov qword ptr [rsp], 0
-.L5513:
+.L5531:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -118677,7 +118987,7 @@ _ZYL_ic_assert_float_eq:
     mov [rbp-16], rsi
     mov [rbp-24], rdx
     mov [rbp-32], rcx
-    lea rax, [rip+.L5521]
+    lea rax, [rip+.L5539]
     push rax
     mov rax, 1
     push rax
@@ -118731,7 +119041,7 @@ call _ZYL_ic_expr
     mov rax, 7
     push rax
     sub rsp, 8
-    lea rax, [rip+.L5522]
+    lea rax, [rip+.L5540]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118749,7 +119059,7 @@ call _ZYL_ic_expr
 call _ZYL_ic_fabs
     add rsp, 16
     push rax
-    lea rax, [rip+.L5523]
+    lea rax, [rip+.L5541]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118790,9 +119100,9 @@ call _ZYL_ic_fabs
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    lea rax, [rip+.L5524]
+    lea rax, [rip+.L5542]
     push rax
-    lea rax, [rip+.L5525]
+    lea rax, [rip+.L5543]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118881,7 +119191,7 @@ _ZYL_ic_fabs:
     push rax
     mov rax, [rbp-8]
     push rax
-    lea rax, [rip+.L5526]
+    lea rax, [rip+.L5544]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -118911,7 +119221,7 @@ _ZYL_ic_fabs:
     push rax
     mov rax, 1
     push rax
-    lea rax, [rip+.L5527]
+    lea rax, [rip+.L5545]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -119006,11 +119316,11 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5528
+    je .L5546
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5530]
+    lea rax, [rip+.L5548]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -119066,7 +119376,7 @@ call _ZYL_ic_free_vars
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5531
+    je .L5549
     mov rax, [rbp-48]
     push rax
     mov rax, [rbp-40]
@@ -119087,13 +119397,27 @@ call _ZYL_is_nil
 call _ZYL_ic_expr
     add rsp, 32
     push rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+call _ZYL_no_ints
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_param_kinds
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -119101,8 +119425,8 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5532
-.L5531:
+    jmp .L5550
+.L5549:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -119118,7 +119442,7 @@ call _ZYL_list_length
     setge al
     movzx rax, al
     test rax, rax
-    je .L5533
+    je .L5551
     mov rax, 0
     push rax
     mov r12, rsp
@@ -119131,8 +119455,8 @@ call _ZYL_list_length
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5534
-.L5533:
+    jmp .L5552
+.L5551:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -119140,6 +119464,19 @@ call _ZYL_list_length
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+call _ZYL_no_ints
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_param_kinds
+    add rsp, 16
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -119151,18 +119488,20 @@ call _ZYL_list_length
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    mov r9, [rsp+0]
-    mov r8, [rsp+8]
-    mov rcx, [rsp+16]
-    mov rdx, [rsp+24]
-    mov rsi, [rsp+32]
-    mov rdi, [rsp+40]
+    mov r10, [rsp+0]
+    push r10
+    mov r9, [rsp+16]
+    mov r8, [rsp+24]
+    mov rcx, [rsp+32]
+    mov rdx, [rsp+40]
+    mov rsi, [rsp+48]
+    mov rdi, [rsp+56]
 call _ZYL_ic_lambda_closure
-    add rsp, 48
-.L5534:
-.L5532:
-    jmp .L5529
-.L5528:
+    add rsp, 64
+.L5552:
+.L5550:
+    jmp .L5547
+.L5546:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -119175,35 +119514,37 @@ call _ZYL_ic_lambda_closure
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5529:
+.L5547:
     mov rsp, rbp
     pop rbp
     ret
 _ZYL_ic_lambda_closure:
     push rbp
     mov rbp, rsp
-    sub rsp, 152
+    sub rsp, 168
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
     mov [rbp-32], rcx
     mov [rbp-40], r8
     mov [rbp-48], r9
+    mov r10, [rbp+16]
+    mov [rbp-56], r10
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5535]
+    lea rax, [rip+.L5553]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_str_intern
     add rsp, 16
-    mov [rbp-56], rax
-    mov rax, [rbp-56]
+    mov [rbp-64], rax
+    mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-40]
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -119213,10 +119554,10 @@ call _ZYL_str_intern
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-32]
+    mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-48]
+    mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -119232,11 +119573,11 @@ call _ZYL_ic_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_wrap_env_binds
     add rsp, 32
-    mov [rbp-64], rax
+    mov [rbp-72], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-56]
+    mov rax, [rbp-64]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -119265,24 +119606,61 @@ call _ZYL_ic_wrap_env_binds
     mov rdi, [rsp+8]
 call _ZYL_list_append
     add rsp, 16
-    mov [rbp-72], rax
+    mov [rbp-80], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_list_append
+    add rsp, 16
+    mov [rbp-88], rax
     mov rax, [rbp-16]
     push rax
     mov rax, 0
     push rax
     mov rax, [rbp-16]
     push rax
+    mov rax, [rbp-80]
+    push rax
     mov rax, [rbp-72]
     push rax
-    mov rax, [rbp-64]
+    mov rax, [rbp-88]
     push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -119296,7 +119674,7 @@ call _ZYL_list_append
     mov rax, 0
     push rax
     sub rsp, 8
-    mov rax, [rbp-40]
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -119383,15 +119761,15 @@ _ZYL_ic_wrap_env_binds:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5538
+    jne .L5556
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L5536
-.L5538:
+    jmp .L5554
+.L5556:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5537
+    jne .L5555
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -119400,7 +119778,7 @@ _ZYL_ic_wrap_env_binds:
     mov [rbp-48], rax
     mov rax, [rbp-40]
     push rax
-    lea rax, [rip+.L5539]
+    lea rax, [rip+.L5557]
     push rax
     mov rax, [rbp-8]
     push rax
@@ -119515,10 +119893,10 @@ call _ZYL_ic_wrap_env_binds
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5536
-.L5537:
+    jmp .L5554
+.L5555:
     mov qword ptr [rsp], 0
-.L5536:
+.L5554:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -119533,7 +119911,7 @@ _ZYL_ic_build_env_fields:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5542
+    jne .L5560
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119543,12 +119921,12 @@ _ZYL_ic_build_env_fields:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5540
-.L5542:
+    jmp .L5558
+.L5560:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5541
+    jne .L5559
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -119589,10 +119967,10 @@ call _ZYL_ic_build_env_fields
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5540
-.L5541:
+    jmp .L5558
+.L5559:
     mov qword ptr [rsp], 0
-.L5540:
+.L5558:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -119608,15 +119986,15 @@ _ZYL_ic_fv_union:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5545
+    jne .L5563
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L5543
-.L5545:
+    jmp .L5561
+.L5563:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5544
+    jne .L5562
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -119641,7 +120019,7 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5546
+    je .L5564
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -119652,8 +120030,8 @@ call _ZYL_ic_name_in_list
     mov rdi, [rsp+8]
 call _ZYL_ic_fv_union
     add rsp, 16
-    jmp .L5547
-.L5546:
+    jmp .L5565
+.L5564:
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -119679,12 +120057,12 @@ call _ZYL_ic_fv_union
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5547:
+.L5565:
     mov [rsp], rax
-    jmp .L5543
-.L5544:
+    jmp .L5561
+.L5562:
     mov qword ptr [rsp], 0
-.L5543:
+.L5561:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -119702,7 +120080,7 @@ _ZYL_ic_fv_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5550
+    jne .L5568
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119712,12 +120090,12 @@ _ZYL_ic_fv_list:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5548
-.L5550:
+    jmp .L5566
+.L5568:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5549
+    jne .L5567
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -119769,10 +120147,10 @@ call _ZYL_ic_fv_list
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5548
-.L5549:
+    jmp .L5566
+.L5567:
     mov qword ptr [rsp], 0
-.L5548:
+.L5566:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -119789,7 +120167,7 @@ _ZYL_ic_fv_atom:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5553
+    jne .L5571
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -119811,7 +120189,7 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5554
+    je .L5572
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119820,8 +120198,8 @@ call _ZYL_ic_name_in_list
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5555
-.L5554:
+    jmp .L5573
+.L5572:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -119840,7 +120218,7 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5556
+    je .L5574
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119849,8 +120227,8 @@ call _ZYL_vt_tag_of
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5557
-.L5556:
+    jmp .L5575
+.L5574:
     mov rax, [rbp-32]
     push rax
     mov r12, rsp
@@ -119874,11 +120252,11 @@ call _ZYL_vt_tag_of
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5557:
-.L5555:
+.L5575:
+.L5573:
     mov [rsp], rax
-    jmp .L5551
-.L5553:
+    jmp .L5569
+.L5571:
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119888,10 +120266,10 @@ call _ZYL_vt_tag_of
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5551
-.L5552:
+    jmp .L5569
+.L5570:
     mov qword ptr [rsp], 0
-.L5551:
+.L5569:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -119921,7 +120299,7 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5558
+    je .L5576
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119930,8 +120308,8 @@ call _ZYL_ic_name_in_list
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5559
-.L5558:
+    jmp .L5577
+.L5576:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -119950,7 +120328,7 @@ call _ZYL_vt_is_fn
     setg al
     movzx rax, al
     test rax, rax
-    je .L5560
+    je .L5578
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -119959,8 +120337,8 @@ call _ZYL_vt_is_fn
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5561
-.L5560:
+    jmp .L5579
+.L5578:
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -119984,8 +120362,8 @@ call _ZYL_vt_is_fn
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5561:
-.L5559:
+.L5579:
+.L5577:
     mov rsp, rbp
     pop rbp
     ret
@@ -120008,7 +120386,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5564
+    jne .L5582
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -120028,12 +120406,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_fv_atom
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5564:
+    jmp .L5580
+.L5582:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5565
+    jne .L5583
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -120085,12 +120463,12 @@ call _ZYL_ic_fv_list
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5565:
+    jmp .L5580
+.L5583:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5566
+    jne .L5584
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -120115,7 +120493,7 @@ call _ZYL_ic_op_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5567
+    je .L5585
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -120124,8 +120502,8 @@ call _ZYL_ic_op_of
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5568
-.L5567:
+    jmp .L5586
+.L5585:
     sub rsp, 8
     mov rax, [rbp-64]
     sub rsp, 8
@@ -120141,7 +120519,7 @@ call _ZYL_ic_op_of
     mov rdi, [rsp+16]
 call _ZYL_ic_fv_callee
     add rsp, 32
-.L5568:
+.L5586:
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -120169,12 +120547,12 @@ call _ZYL_ic_fv_list
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5566:
+    jmp .L5580
+.L5584:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5569
+    jne .L5587
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -120244,12 +120622,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5569:
+    jmp .L5580
+.L5587:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5570
+    jne .L5588
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -120319,12 +120697,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5570:
+    jmp .L5580
+.L5588:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5571
+    jne .L5589
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -120405,12 +120783,12 @@ call _ZYL_ic_fv_union
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5571:
+    jmp .L5580
+.L5589:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L5572
+    jne .L5590
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -120462,12 +120840,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5572:
+    jmp .L5580
+.L5590:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 27
-    jne .L5573
+    jne .L5591
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -120492,7 +120870,7 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5574
+    je .L5592
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -120501,8 +120879,8 @@ call _ZYL_ic_name_in_list
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5575
-.L5574:
+    jmp .L5593
+.L5592:
     mov rax, [rbp-168]
     push rax
     mov r12, rsp
@@ -120526,7 +120904,7 @@ call _ZYL_ic_name_in_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5575:
+.L5593:
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -120554,12 +120932,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5573:
+    jmp .L5580
+.L5591:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L5576
+    jne .L5594
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -120582,12 +120960,12 @@ call _ZYL_ic_fv_union
 call _ZYL_ic_fv_list
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5576:
+    jmp .L5580
+.L5594:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 31
-    jne .L5577
+    jne .L5595
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -120610,12 +120988,12 @@ call _ZYL_ic_fv_list
 call _ZYL_ic_fv_list
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5577:
+    jmp .L5580
+.L5595:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 50
-    jne .L5578
+    jne .L5596
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -120667,12 +121045,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_fv_union
     add rsp, 16
     mov [rsp], rax
-    jmp .L5562
-.L5578:
+    jmp .L5580
+.L5596:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 52
-    jne .L5579
+    jne .L5597
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -120698,12 +121076,12 @@ call _ZYL_ic_fv_union
 call _ZYL_ic_free_vars
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5579:
+    jmp .L5580
+.L5597:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 53
-    jne .L5580
+    jne .L5598
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-232], rax
@@ -120729,12 +121107,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_free_vars
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5580:
+    jmp .L5580
+.L5598:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 24
-    jne .L5581
+    jne .L5599
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -120760,12 +121138,12 @@ call _ZYL_ic_free_vars
 call _ZYL_ic_free_vars
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5581:
+    jmp .L5580
+.L5599:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5582
+    jne .L5600
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -120813,8 +121191,8 @@ call _ZYL_list_append
 call _ZYL_ic_free_vars
     add rsp, 32
     mov [rsp], rax
-    jmp .L5562
-.L5582:
+    jmp .L5580
+.L5600:
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -120824,10 +121202,10 @@ call _ZYL_ic_free_vars
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5562
-.L5563:
+    jmp .L5580
+.L5581:
     mov qword ptr [rsp], 0
-.L5562:
+.L5580:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -120867,10 +121245,10 @@ call _ZYL_list_length
     setge al
     movzx rax, al
     test rax, rax
-    je .L5583
+    je .L5601
     mov rax, 0
-    jmp .L5584
-.L5583:
+    jmp .L5602
+.L5601:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -120889,7 +121267,7 @@ call _ZYL_list_length
     mov rdi, [rsp+24]
 call _ZYL_ic_is_closure_shaped_fn2
     add rsp, 32
-.L5584:
+.L5602:
     mov rsp, rbp
     pop rbp
     ret
@@ -120927,10 +121305,10 @@ call _ZYL_ic_safe_expr
     sete al
     movzx rax, al
     test rax, rax
-    je .L5585
+    je .L5603
     mov rax, 0
-    jmp .L5586
-.L5585:
+    jmp .L5604
+.L5603:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -120956,13 +121334,13 @@ call _ZYL_ic_free_vars
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5587
+    je .L5605
     mov rax, 0
-    jmp .L5588
-.L5587:
+    jmp .L5606
+.L5605:
     mov rax, 1
-.L5588:
-.L5586:
+.L5606:
+.L5604:
     mov rsp, rbp
     pop rbp
     ret
@@ -120985,7 +121363,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5591
+    jne .L5609
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -121014,12 +121392,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_is_closure_shaped_fn
     add rsp, 32
     mov [rsp], rax
-    jmp .L5589
-.L5591:
+    jmp .L5607
+.L5609:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5592
+    jne .L5610
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -121037,12 +121415,12 @@ call _ZYL_ic_is_closure_shaped_fn
 call _ZYL_vt_call_returns_closure
     add rsp, 16
     mov [rsp], rax
-    jmp .L5589
-.L5592:
+    jmp .L5607
+.L5610:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5593
+    jne .L5611
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -121071,12 +121449,12 @@ call _ZYL_vt_call_returns_closure
 call _ZYL_ic_is_closure_shaped
     add rsp, 32
     mov [rsp], rax
-    jmp .L5589
-.L5593:
+    jmp .L5607
+.L5611:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5594
+    jne .L5612
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -121105,14 +121483,14 @@ call _ZYL_ic_is_closure_shaped
 call _ZYL_ic_is_closure_shaped
     add rsp, 32
     mov [rsp], rax
-    jmp .L5589
-.L5594:
+    jmp .L5607
+.L5612:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5589
-.L5590:
+    jmp .L5607
+.L5608:
     mov qword ptr [rsp], 0
-.L5589:
+.L5607:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121133,7 +121511,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5597
+    jne .L5615
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -121145,12 +121523,12 @@ call _ZYL_Expr_inner
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5595
-.L5597:
+    jmp .L5613
+.L5615:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5598
+    jne .L5616
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -121168,12 +121546,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_tail_is_fn
     add rsp, 16
     mov [rsp], rax
-    jmp .L5595
-.L5598:
+    jmp .L5613
+.L5616:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5599
+    jne .L5617
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -121191,14 +121569,14 @@ call _ZYL_ic_tail_is_fn
 call _ZYL_ic_tail_is_fn
     add rsp, 16
     mov [rsp], rax
-    jmp .L5595
-.L5599:
+    jmp .L5613
+.L5617:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5595
-.L5596:
+    jmp .L5613
+.L5614:
     mov qword ptr [rsp], 0
-.L5595:
+.L5613:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121219,7 +121597,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5602
+    jne .L5620
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -121237,14 +121615,14 @@ call _ZYL_Expr_inner
 call _ZYL_ic_tail_is_fn
     add rsp, 16
     mov [rsp], rax
-    jmp .L5600
-.L5602:
+    jmp .L5618
+.L5620:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5600
-.L5601:
+    jmp .L5618
+.L5619:
     mov qword ptr [rsp], 0
-.L5600:
+.L5618:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121296,7 +121674,7 @@ call _ZYL_ic_is_closure_shaped
     setg al
     movzx rax, al
     test rax, rax
-    je .L5603
+    je .L5621
     mov rax, [rbp-48]
     push rax
     mov rax, [rbp-40]
@@ -121313,10 +121691,10 @@ call _ZYL_ic_is_closure_shaped
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5604
-.L5603:
+    jmp .L5622
+.L5621:
     mov rax, [rbp-40]
-.L5604:
+.L5622:
     mov [rbp-56], rax
     sub rsp, 8
     mov rax, [rbp-24]
@@ -121333,7 +121711,7 @@ call _ZYL_ic_val_calls_return_closure
     setg al
     movzx rax, al
     test rax, rax
-    je .L5605
+    je .L5623
     mov rax, [rbp-48]
     push rax
     mov rax, [rbp-56]
@@ -121350,10 +121728,10 @@ call _ZYL_ic_val_calls_return_closure
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5606
-.L5605:
+    jmp .L5624
+.L5623:
     mov rax, [rbp-56]
-.L5606:
+.L5624:
     mov [rbp-64], rax
     mov rax, [rbp-48]
     push rax
@@ -121417,15 +121795,15 @@ _ZYL_ic_name_in_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5609
+    jne .L5627
     mov rax, 0
     mov [rsp], rax
-    jmp .L5607
-.L5609:
+    jmp .L5625
+.L5627:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5608
+    jne .L5626
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -121450,10 +121828,10 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5610
+    je .L5628
     mov rax, 1
-    jmp .L5611
-.L5610:
+    jmp .L5629
+.L5628:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121464,12 +121842,12 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_ic_name_in_list
     add rsp, 16
-.L5611:
+.L5629:
     mov [rsp], rax
-    jmp .L5607
-.L5608:
+    jmp .L5625
+.L5626:
     mov qword ptr [rsp], 0
-.L5607:
+.L5625:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121486,20 +121864,20 @@ _ZYL_ic_safe_atom:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5614
+    jne .L5632
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5612
-.L5614:
+    jmp .L5630
+.L5632:
     mov rax, 1
     mov [rsp], rax
-    jmp .L5612
-.L5613:
+    jmp .L5630
+.L5631:
     mov qword ptr [rsp], 0
-.L5612:
+.L5630:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121517,15 +121895,15 @@ _ZYL_ic_safe_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5617
+    jne .L5635
     mov rax, 1
     mov [rsp], rax
-    jmp .L5615
-.L5617:
+    jmp .L5633
+.L5635:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5616
+    jne .L5634
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -121558,7 +121936,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5618
+    je .L5636
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121577,15 +121955,15 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_list
     add rsp, 32
-    jmp .L5619
-.L5618:
+    jmp .L5637
+.L5636:
     mov rax, 0
-.L5619:
+.L5637:
     mov [rsp], rax
-    jmp .L5615
-.L5616:
+    jmp .L5633
+.L5634:
     mov qword ptr [rsp], 0
-.L5615:
+.L5633:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -121616,10 +121994,10 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5620
+    je .L5638
     mov rax, 1
-    jmp .L5621
-.L5620:
+    jmp .L5639
+.L5638:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121638,10 +122016,10 @@ call _ZYL_ic_op_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5622
+    je .L5640
     mov rax, 1
-    jmp .L5623
-.L5622:
+    jmp .L5641
+.L5640:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -121660,14 +122038,14 @@ call _ZYL_vt_is_fn
     setg al
     movzx rax, al
     test rax, rax
-    je .L5624
+    je .L5642
     mov rax, 1
-    jmp .L5625
-.L5624:
+    jmp .L5643
+.L5642:
     mov rax, 0
-.L5625:
-.L5623:
-.L5621:
+.L5643:
+.L5641:
+.L5639:
     mov rsp, rbp
     pop rbp
     ret
@@ -121690,7 +122068,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5628
+    jne .L5646
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -121710,12 +122088,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_safe_atom
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5628:
+    jmp .L5644
+.L5646:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5629
+    jne .L5647
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -121748,7 +122126,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5630
+    je .L5648
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121767,17 +122145,17 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_list
     add rsp, 32
-    jmp .L5631
-.L5630:
+    jmp .L5649
+.L5648:
     mov rax, 0
-.L5631:
+.L5649:
     mov [rsp], rax
-    jmp .L5626
-.L5629:
+    jmp .L5644
+.L5647:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5632
+    jne .L5650
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -121810,7 +122188,7 @@ call _ZYL_ic_safe_callee
     setg al
     movzx rax, al
     test rax, rax
-    je .L5633
+    je .L5651
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121829,17 +122207,17 @@ call _ZYL_ic_safe_callee
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_list
     add rsp, 32
-    jmp .L5634
-.L5633:
+    jmp .L5652
+.L5651:
     mov rax, 0
-.L5634:
+.L5652:
     mov [rsp], rax
-    jmp .L5626
-.L5632:
+    jmp .L5644
+.L5650:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5635
+    jne .L5653
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -121875,7 +122253,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5636
+    je .L5654
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121909,17 +122287,17 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5637
-.L5636:
+    jmp .L5655
+.L5654:
     mov rax, 0
-.L5637:
+.L5655:
     mov [rsp], rax
-    jmp .L5626
-.L5635:
+    jmp .L5644
+.L5653:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5638
+    jne .L5656
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -121955,7 +122333,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5639
+    je .L5657
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -121989,17 +122367,17 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5640
-.L5639:
+    jmp .L5658
+.L5657:
     mov rax, 0
-.L5640:
+.L5658:
     mov [rsp], rax
-    jmp .L5626
-.L5638:
+    jmp .L5644
+.L5656:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5641
+    jne .L5659
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -122035,7 +122413,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5642
+    je .L5660
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -122062,7 +122440,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5644
+    je .L5662
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -122081,21 +122459,21 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5645
-.L5644:
+    jmp .L5663
+.L5662:
     mov rax, 0
-.L5645:
-    jmp .L5643
-.L5642:
+.L5663:
+    jmp .L5661
+.L5660:
     mov rax, 0
-.L5643:
+.L5661:
     mov [rsp], rax
-    jmp .L5626
-.L5641:
+    jmp .L5644
+.L5659:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L5646
+    jne .L5664
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -122128,7 +122506,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5647
+    je .L5665
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -122147,17 +122525,17 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5648
-.L5647:
+    jmp .L5666
+.L5665:
     mov rax, 0
-.L5648:
+.L5666:
     mov [rsp], rax
-    jmp .L5626
-.L5646:
+    jmp .L5644
+.L5664:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 27
-    jne .L5649
+    jne .L5667
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -122182,7 +122560,7 @@ call _ZYL_ic_name_in_list
     setg al
     movzx rax, al
     test rax, rax
-    je .L5650
+    je .L5668
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -122201,17 +122579,17 @@ call _ZYL_ic_name_in_list
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5651
-.L5650:
+    jmp .L5669
+.L5668:
     mov rax, 0
-.L5651:
+.L5669:
     mov [rsp], rax
-    jmp .L5626
-.L5649:
+    jmp .L5644
+.L5667:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L5652
+    jne .L5670
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -122234,12 +122612,12 @@ call _ZYL_ic_safe_expr
 call _ZYL_ic_safe_list
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5652:
+    jmp .L5644
+.L5670:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 31
-    jne .L5653
+    jne .L5671
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -122262,12 +122640,12 @@ call _ZYL_ic_safe_list
 call _ZYL_ic_safe_list
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5653:
+    jmp .L5644
+.L5671:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 50
-    jne .L5654
+    jne .L5672
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -122300,7 +122678,7 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L5655
+    je .L5673
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -122319,17 +122697,17 @@ call _ZYL_ic_safe_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_safe_expr
     add rsp, 32
-    jmp .L5656
-.L5655:
+    jmp .L5674
+.L5673:
     mov rax, 0
-.L5656:
+.L5674:
     mov [rsp], rax
-    jmp .L5626
-.L5654:
+    jmp .L5644
+.L5672:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 52
-    jne .L5657
+    jne .L5675
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -122355,12 +122733,12 @@ call _ZYL_ic_safe_expr
 call _ZYL_ic_safe_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5657:
+    jmp .L5644
+.L5675:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 53
-    jne .L5658
+    jne .L5676
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-232], rax
@@ -122386,12 +122764,12 @@ call _ZYL_ic_safe_expr
 call _ZYL_ic_safe_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5658:
+    jmp .L5644
+.L5676:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 24
-    jne .L5659
+    jne .L5677
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -122417,12 +122795,12 @@ call _ZYL_ic_safe_expr
 call _ZYL_ic_safe_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5659:
+    jmp .L5644
+.L5677:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L5660
+    jne .L5678
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -122470,14 +122848,14 @@ call _ZYL_list_append
 call _ZYL_ic_safe_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5626
-.L5660:
+    jmp .L5644
+.L5678:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5626
-.L5627:
+    jmp .L5644
+.L5645:
     mov qword ptr [rsp], 0
-.L5626:
+.L5644:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122492,7 +122870,7 @@ _ZYL_hoist_node:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5662
+    jne .L5680
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122501,10 +122879,10 @@ _ZYL_hoist_node:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L5661
-.L5662:
+    jmp .L5679
+.L5680:
     mov qword ptr [rsp], 0
-.L5661:
+.L5679:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122519,7 +122897,7 @@ _ZYL_hoist_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5664
+    jne .L5682
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122528,10 +122906,10 @@ _ZYL_hoist_fns:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5663
-.L5664:
+    jmp .L5681
+.L5682:
     mov qword ptr [rsp], 0
-.L5663:
+.L5681:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122546,7 +122924,7 @@ _ZYL_hoistl_nodes:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5666
+    jne .L5684
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122555,10 +122933,10 @@ _ZYL_hoistl_nodes:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L5665
-.L5666:
+    jmp .L5683
+.L5684:
     mov qword ptr [rsp], 0
-.L5665:
+.L5683:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122573,7 +122951,7 @@ _ZYL_hoistl_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5668
+    jne .L5686
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122582,10 +122960,10 @@ _ZYL_hoistl_fns:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5667
-.L5668:
+    jmp .L5685
+.L5686:
     mov qword ptr [rsp], 0
-.L5667:
+.L5685:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122600,7 +122978,7 @@ _ZYL_hoista_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5670
+    jne .L5688
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122609,10 +122987,10 @@ _ZYL_hoista_arms:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L5669
-.L5670:
+    jmp .L5687
+.L5688:
     mov qword ptr [rsp], 0
-.L5669:
+.L5687:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122627,7 +123005,7 @@ _ZYL_hoista_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5672
+    jne .L5690
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122636,10 +123014,10 @@ _ZYL_hoista_fns:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5671
-.L5672:
+    jmp .L5689
+.L5690:
     mov qword ptr [rsp], 0
-.L5671:
+.L5689:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122654,7 +123032,7 @@ _ZYL_ic_hoist_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5675
+    jne .L5693
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -122686,12 +123064,12 @@ _ZYL_ic_hoist_list:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5673
-.L5675:
+    jmp .L5691
+.L5693:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5674
+    jne .L5692
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122779,10 +123157,10 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5673
-.L5674:
+    jmp .L5691
+.L5692:
     mov qword ptr [rsp], 0
-.L5673:
+.L5691:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122797,7 +123175,7 @@ _ZYL_ic_hoist_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5678
+    jne .L5696
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -122829,12 +123207,12 @@ _ZYL_ic_hoist_arms:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5676
-.L5678:
+    jmp .L5694
+.L5696:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5677
+    jne .L5695
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -122846,7 +123224,7 @@ _ZYL_ic_hoist_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5680
+    jne .L5698
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -122963,16 +123341,16 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5679
-.L5680:
+    jmp .L5697
+.L5698:
     mov qword ptr [rsp], 0
-.L5679:
+.L5697:
     pop rax
     mov [rsp], rax
-    jmp .L5676
-.L5677:
+    jmp .L5694
+.L5695:
     mov qword ptr [rsp], 0
-.L5676:
+.L5694:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -122987,7 +123365,7 @@ _ZYL_ic_hoist:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5683
+    jne .L5701
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -123015,12 +123393,12 @@ _ZYL_ic_hoist:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5683:
+    jmp .L5699
+.L5701:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5684
+    jne .L5702
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -123048,12 +123426,12 @@ _ZYL_ic_hoist:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5684:
+    jmp .L5699
+.L5702:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L5685
+    jne .L5703
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -123081,12 +123459,12 @@ _ZYL_ic_hoist:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5685:
+    jmp .L5699
+.L5703:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5686
+    jne .L5704
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -123114,12 +123492,12 @@ _ZYL_ic_hoist:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5686:
+    jmp .L5699
+.L5704:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5687
+    jne .L5705
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -123214,12 +123592,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5687:
+    jmp .L5699
+.L5705:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5688
+    jne .L5706
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -123278,12 +123656,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5688:
+    jmp .L5699
+.L5706:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L5689
+    jne .L5707
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -123342,12 +123720,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5689:
+    jmp .L5699
+.L5707:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L5690
+    jne .L5708
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -123442,12 +123820,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5690:
+    jmp .L5699
+.L5708:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5691
+    jne .L5709
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-176], rax
@@ -123506,12 +123884,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5691:
+    jmp .L5699
+.L5709:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L5692
+    jne .L5710
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -123563,12 +123941,12 @@ call _ZYL_hoist_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5692:
+    jmp .L5699
+.L5710:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L5693
+    jne .L5711
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -123692,12 +124070,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5693:
+    jmp .L5699
+.L5711:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L5694
+    jne .L5712
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -123785,12 +124163,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5694:
+    jmp .L5699
+.L5712:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L5695
+    jne .L5713
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-296], rax
@@ -123849,12 +124227,12 @@ call _ZYL_hoist_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5695:
+    jmp .L5699
+.L5713:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L5696
+    jne .L5714
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-320], rax
@@ -123949,12 +124327,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5696:
+    jmp .L5699
+.L5714:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L5697
+    jne .L5715
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-360], rax
@@ -124006,12 +124384,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5697:
+    jmp .L5699
+.L5715:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L5698
+    jne .L5716
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-376], rax
@@ -124077,12 +124455,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5698:
+    jmp .L5699
+.L5716:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L5699
+    jne .L5717
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-408], rax
@@ -124148,12 +124526,12 @@ call _ZYL_hoistl_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5699:
+    jmp .L5699
+.L5717:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L5700
+    jne .L5718
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-440], rax
@@ -124241,12 +124619,12 @@ call _ZYL_list_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5700:
+    jmp .L5699
+.L5718:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L5682
+    jne .L5700
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-472], rax
@@ -124256,6 +124634,9 @@ call _ZYL_list_append
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-488], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-496], rax
     sub rsp, 8
     mov rax, [rbp-488]
     sub rsp, 8
@@ -124263,7 +124644,7 @@ call _ZYL_list_append
     mov rdi, [rsp+0]
 call _ZYL_ic_hoist
     add rsp, 16
-    mov [rbp-496], rax
+    mov [rbp-504], rax
     mov rax, [rbp-472]
     push rax
     mov r12, rsp
@@ -124282,20 +124663,24 @@ call _ZYL_ic_hoist
     mov rax, [rbp-480]
     push rax
     sub rsp, 8
-    mov rax, [rbp-496]
+    mov rax, [rbp-504]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call _ZYL_hoist_node
     add rsp, 16
     push rax
+    mov rax, [rbp-496]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -124305,7 +124690,7 @@ call _ZYL_hoist_node
     mov rax, rbx
     push rax
     sub rsp, 8
-    mov rax, [rbp-496]
+    mov rax, [rbp-504]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -124338,10 +124723,10 @@ call _ZYL_hoist_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5681
-.L5682:
+    jmp .L5699
+.L5700:
     mov qword ptr [rsp], 0
-.L5681:
+.L5699:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -124360,7 +124745,7 @@ _ZYL_ic_for:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5703
+    jne .L5721
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -124406,12 +124791,12 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5701
-.L5703:
+    jmp .L5719
+.L5721:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5702
+    jne .L5720
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -124423,7 +124808,7 @@ call _ZYL_ic_expr
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5705
+    jne .L5723
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -124496,16 +124881,16 @@ call _ZYL_ic_for
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5704
-.L5705:
+    jmp .L5722
+.L5723:
     mov qword ptr [rsp], 0
-.L5704:
+.L5722:
     pop rax
     mov [rsp], rax
-    jmp .L5701
-.L5702:
+    jmp .L5719
+.L5720:
     mov qword ptr [rsp], 0
-.L5701:
+.L5719:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -124522,7 +124907,7 @@ _ZYL_ic_for_init:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5708
+    jne .L5726
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -124542,12 +124927,12 @@ _ZYL_ic_for_init:
 call _ZYL_ic_expr
     add rsp, 32
     mov [rsp], rax
-    jmp .L5706
-.L5708:
+    jmp .L5724
+.L5726:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5707
+    jne .L5725
     mov rax, 0
     push rax
     mov r12, rsp
@@ -124561,10 +124946,10 @@ call _ZYL_ic_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5706
-.L5707:
+    jmp .L5724
+.L5725:
     mov qword ptr [rsp], 0
-.L5706:
+.L5724:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -124601,7 +124986,7 @@ call _ZYL_ic_struct_arms
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5709
+    je .L5727
     mov rax, 0
     push rax
     mov r12, rsp
@@ -124614,8 +124999,8 @@ call _ZYL_is_nil
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5710
-.L5709:
+    jmp .L5728
+.L5727:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -124646,7 +125031,7 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5710:
+.L5728:
     mov rsp, rbp
     pop rbp
     ret
@@ -124662,7 +125047,7 @@ _ZYL_ic_struct_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5713
+    jne .L5731
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -124672,12 +125057,12 @@ _ZYL_ic_struct_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5711
-.L5713:
+    jmp .L5729
+.L5731:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5714
+    jne .L5732
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -124700,12 +125085,12 @@ _ZYL_ic_struct_arms:
 call _ZYL_ic_struct_arms
     add rsp, 32
     mov [rsp], rax
-    jmp .L5711
-.L5714:
+    jmp .L5729
+.L5732:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L5715
+    jne .L5733
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -124728,12 +125113,12 @@ call _ZYL_ic_struct_arms
 call _ZYL_ic_struct_arms
     add rsp, 32
     mov [rsp], rax
-    jmp .L5711
-.L5715:
+    jmp .L5729
+.L5733:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5716
+    jne .L5734
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -124756,12 +125141,12 @@ call _ZYL_ic_struct_arms
 call _ZYL_ic_struct_arms
     add rsp, 32
     mov [rsp], rax
-    jmp .L5711
-.L5716:
+    jmp .L5729
+.L5734:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5712
+    jne .L5730
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -124818,7 +125203,7 @@ call _ZYL_ic_field_index
     setge al
     movzx rax, al
     test rax, rax
-    je .L5717
+    je .L5735
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -124857,15 +125242,15 @@ call _ZYL_ic_struct_arm
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5718
-.L5717:
+    jmp .L5736
+.L5735:
     mov rax, [rbp-120]
-.L5718:
+.L5736:
     mov [rsp], rax
-    jmp .L5711
-.L5712:
+    jmp .L5729
+.L5730:
     mov qword ptr [rsp], 0
-.L5711:
+.L5729:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -124964,15 +125349,15 @@ _ZYL_ic_field_index:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5721
+    jne .L5739
     mov rax, -1
     mov [rsp], rax
-    jmp .L5719
-.L5721:
+    jmp .L5737
+.L5739:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5720
+    jne .L5738
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -124997,10 +125382,10 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5722
+    je .L5740
     mov rax, [rbp-24]
-    jmp .L5723
-.L5722:
+    jmp .L5741
+.L5740:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -125021,12 +125406,12 @@ call _ZYL_str_eq
     mov rdi, [rsp+16]
 call _ZYL_ic_field_index
     add rsp, 32
-.L5723:
+.L5741:
     mov [rsp], rax
-    jmp .L5719
-.L5720:
+    jmp .L5737
+.L5738:
     mov qword ptr [rsp], 0
-.L5719:
+.L5737:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -125042,15 +125427,15 @@ _ZYL_ic_nth_str:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5726
-    lea rax, [rip+.L5727]
+    jne .L5744
+    lea rax, [rip+.L5745]
     mov [rsp], rax
-    jmp .L5724
-.L5726:
+    jmp .L5742
+.L5744:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5725
+    jne .L5743
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -125066,10 +125451,10 @@ _ZYL_ic_nth_str:
     sete al
     movzx rax, al
     test rax, rax
-    je .L5728
+    je .L5746
     mov rax, [rbp-24]
-    jmp .L5729
-.L5728:
+    jmp .L5747
+.L5746:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -125085,12 +125470,12 @@ _ZYL_ic_nth_str:
     mov rdi, [rsp+8]
 call _ZYL_ic_nth_str
     add rsp, 16
-.L5729:
+.L5747:
     mov [rsp], rax
-    jmp .L5724
-.L5725:
+    jmp .L5742
+.L5743:
     mov qword ptr [rsp], 0
-.L5724:
+.L5742:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -125110,7 +125495,7 @@ _ZYL_ic_struct_binders:
     setge al
     movzx rax, al
     test rax, rax
-    je .L5730
+    je .L5748
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -125119,8 +125504,8 @@ _ZYL_ic_struct_binders:
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L5731
-.L5730:
+    jmp .L5749
+.L5748:
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -125157,7 +125542,7 @@ call _ZYL_ic_struct_binders
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5731:
+.L5749:
     mov rsp, rbp
     pop rbp
     ret
@@ -125166,7 +125551,7 @@ _ZYL_ic_struct_binder_name:
     mov rbp, rsp
     sub rsp, 88
     mov [rbp-8], rdi
-    lea rax, [rip+.L5732]
+    lea rax, [rip+.L5750]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -125204,11 +125589,11 @@ _ZYL_ic_underscores:
     setle al
     movzx rax, al
     test rax, rax
-    je .L5733
-    lea rax, [rip+.L5735]
-    jmp .L5734
-.L5733:
-    lea rax, [rip+.L5736]
+    je .L5751
+    lea rax, [rip+.L5753]
+    jmp .L5752
+.L5751:
+    lea rax, [rip+.L5754]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -125229,7 +125614,7 @@ call _ZYL_ic_underscores
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L5734:
+.L5752:
     mov rsp, rbp
     pop rbp
     ret
@@ -125245,7 +125630,7 @@ _ZYL_ic_atom:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5739
+    jne .L5757
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -125265,12 +125650,12 @@ _ZYL_ic_atom:
 call _ZYL_ic_ident
     add rsp, 32
     mov [rsp], rax
-    jmp .L5737
-.L5739:
+    jmp .L5755
+.L5757:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5740
+    jne .L5758
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -125287,12 +125672,12 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5740:
+    jmp .L5755
+.L5758:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5741
+    jne .L5759
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -125309,23 +125694,23 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5741:
+    jmp .L5755
+.L5759:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L5742
+    jne .L5760
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
     mov rax, [rbp-56]
     test rax, rax
-    je .L5743
+    je .L5761
     mov rax, 1
-    jmp .L5744
-.L5743:
+    jmp .L5762
+.L5761:
     mov rax, 0
-.L5744:
+.L5762:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -125338,12 +125723,12 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5742:
+    jmp .L5755
+.L5760:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5745
+    jne .L5763
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -125360,12 +125745,12 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5745:
+    jmp .L5755
+.L5763:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5746
+    jne .L5764
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -125385,12 +125770,12 @@ call _ZYL_ic_ident
 call _ZYL_ic_ident
     add rsp, 32
     mov [rsp], rax
-    jmp .L5737
-.L5746:
+    jmp .L5755
+.L5764:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5747
+    jne .L5765
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -125407,12 +125792,12 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5747:
+    jmp .L5755
+.L5765:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L5738
+    jne .L5756
     mov rax, 0
     push rax
     mov r12, rsp
@@ -125426,10 +125811,10 @@ call _ZYL_ic_ident
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5737
-.L5738:
+    jmp .L5755
+.L5756:
     mov qword ptr [rsp], 0
-.L5737:
+.L5755:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -125470,7 +125855,7 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5748
+    je .L5766
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125501,8 +125886,8 @@ call _ZYL_no_icnfs
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5749
-.L5748:
+    jmp .L5767
+.L5766:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125524,7 +125909,7 @@ call _ZYL_str_intern
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5749:
+.L5767:
     mov rsp, rbp
     pop rbp
     ret
@@ -125542,7 +125927,7 @@ _ZYL_ic_call_expr:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5750]
+    lea rax, [rip+.L5768]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -125580,7 +125965,7 @@ _ZYL_ic_apply:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5753]
+    lea rax, [rip+.L5771]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -125601,7 +125986,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5751
+    je .L5769
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -125617,8 +126002,8 @@ call _ZYL_str_eq
     mov rdi, [rsp+16]
 call _ZYL_ic_ffi
     add rsp, 32
-    jmp .L5752
-.L5751:
+    jmp .L5770
+.L5769:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125645,7 +126030,7 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L5754
+    je .L5772
     mov rax, [rbp-40]
     push rax
     sub rsp, 8
@@ -125676,8 +126061,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5755
-.L5754:
+    jmp .L5773
+.L5772:
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -125693,7 +126078,7 @@ call _ZYL_ic_starts_with_make
     setg al
     movzx rax, al
     test rax, rax
-    je .L5756
+    je .L5774
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125712,8 +126097,8 @@ call _ZYL_ic_starts_with_make
     mov rdi, [rsp+24]
 call _ZYL_ic_make_struct
     add rsp, 32
-    jmp .L5757
-.L5756:
+    jmp .L5775
+.L5774:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125734,7 +126119,7 @@ call _ZYL_ic_op_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5758
+    je .L5776
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125753,8 +126138,8 @@ call _ZYL_ic_op_of
     mov rdi, [rsp+24]
 call _ZYL_ic_binop
     add rsp, 32
-    jmp .L5759
-.L5758:
+    jmp .L5777
+.L5776:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125773,10 +126158,10 @@ call _ZYL_ic_binop
     mov rdi, [rsp+24]
 call _ZYL_ic_call_or_variant
     add rsp, 32
-.L5759:
-.L5757:
-.L5755:
-.L5752:
+.L5777:
+.L5775:
+.L5773:
+.L5770:
     mov rsp, rbp
     pop rbp
     ret
@@ -125800,7 +126185,7 @@ call zyl_cstr_len
     setge al
     movzx rax, al
     test rax, rax
-    je .L5760
+    je .L5778
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -125818,17 +126203,17 @@ call zyl_cstr_substr
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5762]
+    lea rax, [rip+.L5780]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zyl_cstr_eq
     add rsp, 16
-    jmp .L5761
-.L5760:
+    jmp .L5779
+.L5778:
     mov rax, 0
-.L5761:
+.L5779:
     mov rsp, rbp
     pop rbp
     ret
@@ -125880,7 +126265,7 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5763
+    je .L5781
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125924,8 +126309,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5764
-.L5763:
+    jmp .L5782
+.L5781:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -125944,7 +126329,7 @@ call _ZYL_ic_expr_list
     mov rdi, [rsp+24]
 call _ZYL_ic_call_or_variant
     add rsp, 32
-.L5764:
+.L5782:
     mov rsp, rbp
     pop rbp
     ret
@@ -125960,7 +126345,7 @@ _ZYL_ic_str_builtin_sym:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5767]
+    lea rax, [rip+.L5785]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -125981,17 +126366,17 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5765
-    lea rax, [rip+.L5768]
-    jmp .L5766
-.L5765:
+    je .L5783
+    lea rax, [rip+.L5786]
+    jmp .L5784
+.L5783:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5771]
+    lea rax, [rip+.L5789]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -126012,17 +126397,17 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5769
-    lea rax, [rip+.L5772]
-    jmp .L5770
-.L5769:
+    je .L5787
+    lea rax, [rip+.L5790]
+    jmp .L5788
+.L5787:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5775]
+    lea rax, [rip+.L5793]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -126043,17 +126428,17 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5773
-    lea rax, [rip+.L5776]
-    jmp .L5774
-.L5773:
+    je .L5791
+    lea rax, [rip+.L5794]
+    jmp .L5792
+.L5791:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5779]
+    lea rax, [rip+.L5797]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -126074,15 +126459,15 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5777
-    lea rax, [rip+.L5780]
-    jmp .L5778
-.L5777:
-    lea rax, [rip+.L5781]
-.L5778:
-.L5774:
-.L5770:
-.L5766:
+    je .L5795
+    lea rax, [rip+.L5798]
+    jmp .L5796
+.L5795:
+    lea rax, [rip+.L5799]
+.L5796:
+.L5792:
+.L5788:
+.L5784:
     mov rsp, rbp
     pop rbp
     ret
@@ -126123,7 +126508,7 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5782
+    je .L5800
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126167,8 +126552,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5783
-.L5782:
+    jmp .L5801
+.L5800:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -126196,7 +126581,7 @@ call _ZYL_vt_returns_closure
     setg al
     movzx rax, al
     test rax, rax
-    je .L5784
+    je .L5802
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126236,8 +126621,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5785
-.L5784:
+    jmp .L5803
+.L5802:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126277,8 +126662,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5785:
-.L5783:
+.L5803:
+.L5801:
     mov rsp, rbp
     pop rbp
     ret
@@ -126299,7 +126684,7 @@ _ZYL_ic_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L5786
+    je .L5804
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -126315,8 +126700,8 @@ _ZYL_ic_binop:
     mov rdi, [rsp+16]
 call _ZYL_ic_bit_not
     add rsp, 32
-    jmp .L5787
-.L5786:
+    jmp .L5805
+.L5804:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -126332,7 +126717,7 @@ call _ZYL_list_length
     sete al
     movzx rax, al
     test rax, rax
-    je .L5788
+    je .L5806
     mov rax, [rbp-16]
     push rax
     sub rsp, 8
@@ -126393,8 +126778,8 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5789
-.L5788:
+    jmp .L5807
+.L5806:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -126410,7 +126795,7 @@ call _ZYL_list_length
     sete al
     movzx rax, al
     test rax, rax
-    je .L5790
+    je .L5808
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -126420,7 +126805,7 @@ call _ZYL_list_length
     sete al
     movzx rax, al
     test rax, rax
-    je .L5792
+    je .L5810
     mov rax, 1
     push rax
     mov rax, 0
@@ -126472,8 +126857,8 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5793
-.L5792:
+    jmp .L5811
+.L5810:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -126486,9 +126871,9 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5793:
-    jmp .L5791
-.L5790:
+.L5811:
+    jmp .L5809
+.L5808:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -126504,7 +126889,7 @@ call _ZYL_list_length
     setg al
     movzx rax, al
     test rax, rax
-    je .L5794
+    je .L5812
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126523,8 +126908,8 @@ call _ZYL_list_length
     mov rdi, [rsp+24]
 call _ZYL_ic_binop_fold
     add rsp, 32
-    jmp .L5795
-.L5794:
+    jmp .L5813
+.L5812:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -126537,10 +126922,10 @@ call _ZYL_ic_binop_fold
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5795:
-.L5791:
-.L5789:
-.L5787:
+.L5813:
+.L5809:
+.L5807:
+.L5805:
     mov rsp, rbp
     pop rbp
     ret
@@ -126566,7 +126951,7 @@ call _ZYL_list_length
     sete al
     movzx rax, al
     test rax, rax
-    je .L5796
+    je .L5814
     mov rax, 13
     push rax
     sub rsp, 8
@@ -126618,16 +127003,16 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5797
-.L5796:
+    jmp .L5815
+.L5814:
     sub rsp, 8
-    lea rax, [rip+.L5798]
+    lea rax, [rip+.L5816]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zyl_panic
     add rsp, 16
-.L5797:
+.L5815:
     mov rsp, rbp
     pop rbp
     ret
@@ -126654,7 +127039,7 @@ call _ZYL_list_length
     sete al
     movzx rax, al
     test rax, rax
-    je .L5799
+    je .L5817
     mov rax, [rbp-16]
     push rax
     sub rsp, 8
@@ -126715,8 +127100,8 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5800
-.L5799:
+    jmp .L5818
+.L5817:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126792,7 +127177,7 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5800:
+.L5818:
     mov rsp, rbp
     pop rbp
     ret
@@ -126811,7 +127196,7 @@ _ZYL_ic_print:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5801
+    je .L5819
     mov rax, 0
     push rax
     mov r12, rsp
@@ -126824,8 +127209,8 @@ call _ZYL_is_nil
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5802
-.L5801:
+    jmp .L5820
+.L5819:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -126856,7 +127241,7 @@ call _ZYL_rest_expr
     mov rdi, [rsp+24]
 call _ZYL_ic_print_step
     add rsp, 32
-.L5802:
+.L5820:
     mov rsp, rbp
     pop rbp
     ret
@@ -126876,7 +127261,7 @@ _ZYL_ic_print_step:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5803
+    je .L5821
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -126903,8 +127288,8 @@ call _ZYL_ic_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5804
-.L5803:
+    jmp .L5822
+.L5821:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -126987,7 +127372,7 @@ call _ZYL_no_icnfs
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5804:
+.L5822:
     mov rsp, rbp
     pop rbp
     ret
@@ -127003,7 +127388,7 @@ _ZYL_ic_ffi:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5807
+    jne .L5825
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -127025,7 +127410,7 @@ call _ZYL_list_length
     setg al
     movzx rax, al
     test rax, rax
-    je .L5808
+    je .L5826
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -127078,8 +127463,8 @@ call _ZYL_ic_expr_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5809
-.L5808:
+    jmp .L5827
+.L5826:
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -127109,15 +127494,15 @@ call _ZYL_ic_ffi_sym
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L5809:
+.L5827:
     mov [rsp], rax
-    jmp .L5805
-.L5807:
+    jmp .L5823
+.L5825:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5806
-    lea rax, [rip+.L5810]
+    jne .L5824
+    lea rax, [rip+.L5828]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -127141,10 +127526,10 @@ call _ZYL_ic_ffi_sym
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5805
-.L5806:
+    jmp .L5823
+.L5824:
     mov qword ptr [rsp], 0
-.L5805:
+.L5823:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127165,7 +127550,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5813
+    jne .L5831
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -127174,30 +127559,30 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5816
+    jne .L5834
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5814
-.L5816:
-    lea rax, [rip+.L5817]
+    jmp .L5832
+.L5834:
+    lea rax, [rip+.L5835]
     mov [rsp], rax
-    jmp .L5814
-.L5815:
+    jmp .L5832
+.L5833:
     mov qword ptr [rsp], 0
-.L5814:
+.L5832:
     pop rax
     mov [rsp], rax
-    jmp .L5811
-.L5813:
-    lea rax, [rip+.L5818]
+    jmp .L5829
+.L5831:
+    lea rax, [rip+.L5836]
     mov [rsp], rax
-    jmp .L5811
-.L5812:
+    jmp .L5829
+.L5830:
     mov qword ptr [rsp], 0
-.L5811:
+.L5829:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127273,15 +127658,15 @@ _ZYL_ic_has_catchall:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5821
+    jne .L5839
     mov rax, 0
     mov [rsp], rax
-    jmp .L5819
-.L5821:
+    jmp .L5837
+.L5839:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5820
+    jne .L5838
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -127308,10 +127693,10 @@ call _ZYL_ic_arm_is_catchall
     setg al
     movzx rax, al
     test rax, rax
-    je .L5822
+    je .L5840
     mov rax, 1
-    jmp .L5823
-.L5822:
+    jmp .L5841
+.L5840:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -127322,12 +127707,12 @@ call _ZYL_ic_arm_is_catchall
     mov rdi, [rsp+8]
 call _ZYL_ic_has_catchall
     add rsp, 16
-.L5823:
+.L5841:
     mov [rsp], rax
-    jmp .L5819
-.L5820:
+    jmp .L5837
+.L5838:
     mov qword ptr [rsp], 0
-.L5819:
+.L5837:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127343,15 +127728,15 @@ _ZYL_ic_check_variants_exist:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5826
+    jne .L5844
     mov rax, 0
     mov [rsp], rax
-    jmp .L5824
-.L5826:
+    jmp .L5842
+.L5844:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5825
+    jne .L5843
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -127384,14 +127769,14 @@ call _ZYL_vt_tag_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L5827
-    lea rax, [rip+.L5829]
+    je .L5845
+    lea rax, [rip+.L5847]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5830]
+    lea rax, [rip+.L5848]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -127412,8 +127797,8 @@ call zyl_cstr_concat
     mov rdi, [rsp+0]
 call zyl_panic
     add rsp, 16
-    jmp .L5828
-.L5827:
+    jmp .L5846
+.L5845:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -127424,12 +127809,12 @@ call zyl_panic
     mov rdi, [rsp+8]
 call _ZYL_ic_check_variants_exist
     add rsp, 16
-.L5828:
+.L5846:
     mov [rsp], rax
-    jmp .L5824
-.L5825:
+    jmp .L5842
+.L5843:
     mov qword ptr [rsp], 0
-.L5824:
+.L5842:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127445,15 +127830,15 @@ _ZYL_ic_arm_covers_name:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5833
+    jne .L5851
     mov rax, 0
     mov [rsp], rax
-    jmp .L5831
-.L5833:
+    jmp .L5849
+.L5851:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5832
+    jne .L5850
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -127484,10 +127869,10 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5834
+    je .L5852
     mov rax, 1
-    jmp .L5835
-.L5834:
+    jmp .L5853
+.L5852:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -127498,12 +127883,12 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_ic_arm_covers_name
     add rsp, 16
-.L5835:
+.L5853:
     mov [rsp], rax
-    jmp .L5831
-.L5832:
+    jmp .L5849
+.L5850:
     mov qword ptr [rsp], 0
-.L5831:
+.L5849:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127519,15 +127904,15 @@ _ZYL_ic_names_uncovered:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5838
+    jne .L5856
     mov rax, 0
     mov [rsp], rax
-    jmp .L5836
-.L5838:
+    jmp .L5854
+.L5856:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5837
+    jne .L5855
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -127552,7 +127937,7 @@ call _ZYL_ic_arm_covers_name
     setg al
     movzx rax, al
     test rax, rax
-    je .L5839
+    je .L5857
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -127563,15 +127948,15 @@ call _ZYL_ic_arm_covers_name
     mov rdi, [rsp+8]
 call _ZYL_ic_names_uncovered
     add rsp, 16
-    jmp .L5840
-.L5839:
+    jmp .L5858
+.L5857:
     mov rax, 1
-.L5840:
+.L5858:
     mov [rsp], rax
-    jmp .L5836
-.L5837:
+    jmp .L5854
+.L5855:
     mov qword ptr [rsp], 0
-.L5836:
+.L5854:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127588,15 +127973,15 @@ _ZYL_ic_arms_all_gid:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5843
+    jne .L5861
     mov rax, 1
     mov [rsp], rax
-    jmp .L5841
-.L5843:
+    jmp .L5859
+.L5861:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5842
+    jne .L5860
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -127627,7 +128012,7 @@ call _ZYL_vt_gid_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L5844
+    je .L5862
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -127643,15 +128028,15 @@ call _ZYL_vt_gid_of
     mov rdi, [rsp+16]
 call _ZYL_ic_arms_all_gid
     add rsp, 32
-    jmp .L5845
-.L5844:
+    jmp .L5863
+.L5862:
     mov rax, 0
-.L5845:
+.L5863:
     mov [rsp], rax
-    jmp .L5841
-.L5842:
+    jmp .L5859
+.L5860:
     mov qword ptr [rsp], 0
-.L5841:
+.L5859:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127667,15 +128052,15 @@ _ZYL_ic_check_exhaustive_gid:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5848
+    jne .L5866
     mov rax, 0
     mov [rsp], rax
-    jmp .L5846
-.L5848:
+    jmp .L5864
+.L5866:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5847
+    jne .L5865
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -127708,10 +128093,10 @@ call _ZYL_vt_gid_of
     setl al
     movzx rax, al
     test rax, rax
-    je .L5849
+    je .L5867
     mov rax, 0
-    jmp .L5850
-.L5849:
+    jmp .L5868
+.L5867:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -127735,10 +128120,10 @@ call _ZYL_ic_arms_all_gid
     sete al
     movzx rax, al
     test rax, rax
-    je .L5851
+    je .L5869
     mov rax, 0
-    jmp .L5852
-.L5851:
+    jmp .L5870
+.L5869:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -127766,25 +128151,25 @@ call _ZYL_ic_names_uncovered
     setg al
     movzx rax, al
     test rax, rax
-    je .L5853
+    je .L5871
     sub rsp, 8
-    lea rax, [rip+.L5855]
+    lea rax, [rip+.L5873]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zyl_panic
     add rsp, 16
-    jmp .L5854
-.L5853:
+    jmp .L5872
+.L5871:
     mov rax, 0
-.L5854:
-.L5852:
-.L5850:
+.L5872:
+.L5870:
+.L5868:
     mov [rsp], rax
-    jmp .L5846
-.L5847:
+    jmp .L5864
+.L5865:
     mov qword ptr [rsp], 0
-.L5846:
+.L5864:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -127813,10 +128198,10 @@ call _ZYL_ic_has_catchall
     setg al
     movzx rax, al
     test rax, rax
-    je .L5856
+    je .L5874
     mov rax, 0
-    jmp .L5857
-.L5856:
+    jmp .L5875
+.L5874:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -127838,7 +128223,7 @@ call _ZYL_ic_check_variants_exist
     mov rdi, [rsp+8]
 call _ZYL_ic_check_exhaustive_gid
     add rsp, 16
-.L5857:
+.L5875:
     mov rsp, rbp
     pop rbp
     ret
@@ -127931,15 +128316,15 @@ _ZYL_ic_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5860
+    jne .L5878
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5858
-.L5860:
+    jmp .L5876
+.L5878:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5859
+    jne .L5877
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -127994,10 +128379,10 @@ call _ZYL_ic_arm
 call _ZYL_ic_arms
     add rsp, 32
     mov [rsp], rax
-    jmp .L5858
-.L5859:
+    jmp .L5876
+.L5877:
     mov qword ptr [rsp], 0
-.L5858:
+.L5876:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128164,7 +128549,7 @@ _ZYL_ic_arm_binds:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5863
+    jne .L5881
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -128174,12 +128559,12 @@ _ZYL_ic_arm_binds:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5861
-.L5863:
+    jmp .L5879
+.L5881:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5862
+    jne .L5880
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -128221,10 +128606,10 @@ call _ZYL_ic_arm_binds
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5861
-.L5862:
+    jmp .L5879
+.L5880:
     mov qword ptr [rsp], 0
-.L5861:
+.L5879:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128250,11 +128635,11 @@ call _ZYL_ic_pat_is_nested
     setg al
     movzx rax, al
     test rax, rax
-    je .L5864
+    je .L5882
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5866]
+    lea rax, [rip+.L5884]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -128282,15 +128667,15 @@ call zyl_cstr_concat
     mov rdi, [rsp+8]
 call _ZYL_str_intern
     add rsp, 16
-    jmp .L5865
-.L5864:
+    jmp .L5883
+.L5882:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5867]
+    lea rax, [rip+.L5885]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -128303,7 +128688,7 @@ call _ZYL_expr_ident_name
     mov rdi, [rsp+8]
 call _ZYL_str_intern
     add rsp, 16
-.L5865:
+.L5883:
     mov rsp, rbp
     pop rbp
     ret
@@ -128323,7 +128708,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5870
+    jne .L5888
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -128332,12 +128717,12 @@ call _ZYL_Expr_inner
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5868
-.L5870:
+    jmp .L5886
+.L5888:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5871
+    jne .L5889
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -128346,14 +128731,14 @@ call _ZYL_Expr_inner
     mov [rbp-40], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5868
-.L5871:
+    jmp .L5886
+.L5889:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5868
-.L5869:
+    jmp .L5886
+.L5887:
     mov qword ptr [rsp], 0
-.L5868:
+.L5886:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128374,7 +128759,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5874
+    jne .L5892
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -128384,7 +128769,7 @@ call _ZYL_Expr_inner
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5875]
+    lea rax, [rip+.L5893]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -128392,12 +128777,12 @@ call _ZYL_Expr_inner
 call _ZYL_expr_ident_name
     add rsp, 16
     mov [rsp], rax
-    jmp .L5872
-.L5874:
+    jmp .L5890
+.L5892:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5876
+    jne .L5894
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -128406,14 +128791,14 @@ call _ZYL_expr_ident_name
     mov [rbp-40], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L5872
-.L5876:
-    lea rax, [rip+.L5877]
+    jmp .L5890
+.L5894:
+    lea rax, [rip+.L5895]
     mov [rsp], rax
-    jmp .L5872
-.L5873:
+    jmp .L5890
+.L5891:
     mov qword ptr [rsp], 0
-.L5872:
+.L5890:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128434,7 +128819,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5880
+    jne .L5898
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -128443,12 +128828,12 @@ call _ZYL_Expr_inner
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5878
-.L5880:
+    jmp .L5896
+.L5898:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5881
+    jne .L5899
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -128457,8 +128842,8 @@ call _ZYL_Expr_inner
     mov [rbp-40], rax
     mov rax, [rbp-40]
     mov [rsp], rax
-    jmp .L5878
-.L5881:
+    jmp .L5896
+.L5899:
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -128468,10 +128853,10 @@ call _ZYL_Expr_inner
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5878
-.L5879:
+    jmp .L5896
+.L5897:
     mov qword ptr [rsp], 0
-.L5878:
+.L5896:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128487,7 +128872,7 @@ _ZYL_ic_arm_nested:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5884
+    jne .L5902
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -128497,12 +128882,12 @@ _ZYL_ic_arm_nested:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5882
-.L5884:
+    jmp .L5900
+.L5902:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5883
+    jne .L5901
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -128514,7 +128899,7 @@ _ZYL_ic_arm_nested:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5887
+    jne .L5905
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -128524,12 +128909,12 @@ _ZYL_ic_arm_nested:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5885
-.L5887:
+    jmp .L5903
+.L5905:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5886
+    jne .L5904
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -128551,7 +128936,7 @@ call _ZYL_ic_pat_is_nested
     setg al
     movzx rax, al
     test rax, rax
-    je .L5888
+    je .L5906
     mov rax, [rbp-40]
     push rax
     mov rax, [rbp-24]
@@ -128592,8 +128977,8 @@ call _ZYL_ic_arm_nested
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5889
-.L5888:
+    jmp .L5907
+.L5906:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -128604,18 +128989,18 @@ call _ZYL_ic_arm_nested
     mov rdi, [rsp+8]
 call _ZYL_ic_arm_nested
     add rsp, 16
-.L5889:
+.L5907:
     mov [rsp], rax
-    jmp .L5885
-.L5886:
+    jmp .L5903
+.L5904:
     mov qword ptr [rsp], 0
-.L5885:
+.L5903:
     pop rax
     mov [rsp], rax
-    jmp .L5882
-.L5883:
+    jmp .L5900
+.L5901:
     mov qword ptr [rsp], 0
-.L5882:
+.L5900:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128633,15 +129018,15 @@ _ZYL_ic_wrap_nested_all:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5892
+    jne .L5910
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5890
-.L5892:
+    jmp .L5908
+.L5910:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5891
+    jne .L5909
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -128684,10 +129069,10 @@ call _ZYL_ic_wrap_nested_all
 call _ZYL_ic_wrap_one
     add rsp, 32
     mov [rsp], rax
-    jmp .L5890
-.L5891:
+    jmp .L5908
+.L5909:
     mov qword ptr [rsp], 0
-.L5890:
+.L5908:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128705,7 +129090,7 @@ _ZYL_ic_wrap_one:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5894
+    jne .L5912
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -128869,10 +129254,10 @@ call _ZYL_ic_wrap_nested_all
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5893
-.L5894:
+    jmp .L5911
+.L5912:
     mov qword ptr [rsp], 0
-.L5893:
+.L5911:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128895,7 +129280,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5897
+    jne .L5915
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -128922,7 +129307,7 @@ call _ZYL_ic_op_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5898
+    je .L5916
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -128946,19 +129331,19 @@ call _ZYL_ic_op_of
     mov rdi, [rsp+32]
 call _ZYL_ic_arm_guard_count
     add rsp, 48
-    jmp .L5899
-.L5898:
+    jmp .L5917
+.L5916:
     mov rax, 0
-.L5899:
+.L5917:
     mov [rsp], rax
-    jmp .L5895
-.L5897:
+    jmp .L5913
+.L5915:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5895
-.L5896:
+    jmp .L5913
+.L5914:
     mov qword ptr [rsp], 0
-.L5895:
+.L5913:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -128980,7 +129365,7 @@ _ZYL_ic_arm_guard_count:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5900
+    je .L5918
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -128990,7 +129375,7 @@ call _ZYL_is_nil
     setg al
     movzx rax, al
     test rax, rax
-    je .L5902
+    je .L5920
     mov rax, [rbp-40]
     push rax
     mov rax, 1
@@ -129000,24 +129385,24 @@ call _ZYL_is_nil
     setg al
     movzx rax, al
     test rax, rax
-    je .L5904
+    je .L5922
     sub rsp, 8
-    lea rax, [rip+.L5906]
+    lea rax, [rip+.L5924]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zyl_panic
     add rsp, 16
-    jmp .L5905
-.L5904:
+    jmp .L5923
+.L5922:
     mov rax, 0
-.L5905:
-    jmp .L5903
-.L5902:
+.L5923:
+    jmp .L5921
+.L5920:
     mov rax, 0
-.L5903:
-    jmp .L5901
-.L5900:
+.L5921:
+    jmp .L5919
+.L5918:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -129089,7 +129474,7 @@ call _ZYL_ic_arm_guard_is_call
     mov rdi, [rsp+32]
 call _ZYL_ic_arm_guard_count
     add rsp, 48
-.L5901:
+.L5919:
     mov rsp, rbp
     pop rbp
     ret
@@ -129109,7 +129494,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5909
+    jne .L5927
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -129118,52 +129503,52 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5912
+    jne .L5930
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5910
-.L5912:
+    jmp .L5928
+.L5930:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5913
+    jne .L5931
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5910
-.L5913:
+    jmp .L5928
+.L5931:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L5914
+    jne .L5932
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L5910
-.L5914:
+    jmp .L5928
+.L5932:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5910
-.L5911:
+    jmp .L5928
+.L5929:
     mov qword ptr [rsp], 0
-.L5910:
+.L5928:
     pop rax
     mov [rsp], rax
-    jmp .L5907
-.L5909:
+    jmp .L5925
+.L5927:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5907
-.L5908:
+    jmp .L5925
+.L5926:
     mov qword ptr [rsp], 0
-.L5907:
+.L5925:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129186,7 +129571,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5917
+    jne .L5935
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -129209,12 +129594,12 @@ call _ZYL_Expr_inner
 call _ZYL_ic_arm_guard_call_head
     add rsp, 32
     mov [rsp], rax
-    jmp .L5915
-.L5917:
+    jmp .L5933
+.L5935:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5918
+    jne .L5936
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -129228,7 +129613,7 @@ call _ZYL_ic_arm_guard_call_head
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5919]
+    lea rax, [rip+.L5937]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -129246,14 +129631,14 @@ call _ZYL_expr_ident_name
 call _ZYL_ic_arm_guard_call_head
     add rsp, 32
     mov [rsp], rax
-    jmp .L5915
-.L5918:
+    jmp .L5933
+.L5936:
     mov rax, 0
     mov [rsp], rax
-    jmp .L5915
-.L5916:
+    jmp .L5933
+.L5934:
     mov qword ptr [rsp], 0
-.L5915:
+.L5933:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129294,12 +129679,12 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L5920
+    je .L5938
     mov rax, 0
-    jmp .L5921
-.L5920:
+    jmp .L5939
+.L5938:
     mov rax, 1
-.L5921:
+.L5939:
     mov rsp, rbp
     pop rbp
     ret
@@ -129345,7 +129730,7 @@ _ZYL_ic_expr_list_acc:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5924
+    jne .L5942
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -129354,12 +129739,12 @@ _ZYL_ic_expr_list_acc:
 call _ZYL_list_reverse
     add rsp, 16
     mov [rsp], rax
-    jmp .L5922
-.L5924:
+    jmp .L5940
+.L5942:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5923
+    jne .L5941
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -129414,10 +129799,10 @@ call _ZYL_ic_expr
 call _ZYL_ic_expr_list_acc
     add rsp, 32
     mov [rsp], rax
-    jmp .L5922
-.L5923:
+    jmp .L5940
+.L5941:
     mov qword ptr [rsp], 0
-.L5922:
+.L5940:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129431,7 +129816,7 @@ _ZYL_td_dotted:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5925]
+    lea rax, [rip+.L5943]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -129460,13 +129845,13 @@ _ZYL_td_mangle:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5926]
+    lea rax, [rip+.L5944]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L5927]
+    lea rax, [rip+.L5945]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -129533,7 +129918,7 @@ _ZYL_td_collect:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5930
+    jne .L5948
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -129543,12 +129928,12 @@ _ZYL_td_collect:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5928
-.L5930:
+    jmp .L5946
+.L5948:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5929
+    jne .L5947
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -129566,7 +129951,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 43
-    jne .L5933
+    jne .L5951
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -129607,8 +129992,8 @@ call _ZYL_td_collect
 call _ZYL_list_append
     add rsp, 16
     mov [rsp], rax
-    jmp .L5931
-.L5933:
+    jmp .L5949
+.L5951:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -129617,16 +130002,16 @@ call _ZYL_list_append
 call _ZYL_td_collect
     add rsp, 16
     mov [rsp], rax
-    jmp .L5931
-.L5932:
+    jmp .L5949
+.L5950:
     mov qword ptr [rsp], 0
-.L5931:
+.L5949:
     pop rax
     mov [rsp], rax
-    jmp .L5928
-.L5929:
+    jmp .L5946
+.L5947:
     mov qword ptr [rsp], 0
-.L5928:
+.L5946:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129643,7 +130028,7 @@ _ZYL_td_collect_bodies:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5936
+    jne .L5954
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -129653,12 +130038,12 @@ _ZYL_td_collect_bodies:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5934
-.L5936:
+    jmp .L5952
+.L5954:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5935
+    jne .L5953
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -129670,7 +130055,7 @@ _ZYL_td_collect_bodies:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5938
+    jne .L5956
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -129679,7 +130064,7 @@ _ZYL_td_collect_bodies:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5940
+    jne .L5958
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -129762,22 +130147,22 @@ call _ZYL_td_collect_bodies
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5939
-.L5940:
+    jmp .L5957
+.L5958:
     mov qword ptr [rsp], 0
-.L5939:
+.L5957:
     pop rax
     mov [rsp], rax
-    jmp .L5937
-.L5938:
+    jmp .L5955
+.L5956:
     mov qword ptr [rsp], 0
-.L5937:
+.L5955:
     pop rax
     mov [rsp], rax
-    jmp .L5934
-.L5935:
+    jmp .L5952
+.L5953:
     mov qword ptr [rsp], 0
-.L5934:
+.L5952:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129793,7 +130178,7 @@ _ZYL_td_lookup:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5943
+    jne .L5961
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -129803,12 +130188,12 @@ _ZYL_td_lookup:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5941
-.L5943:
+    jmp .L5959
+.L5961:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5942
+    jne .L5960
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -129820,7 +130205,7 @@ _ZYL_td_lookup:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5945
+    jne .L5963
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -129848,7 +130233,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L5946
+    je .L5964
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-8]
@@ -129874,8 +130259,8 @@ call _ZYL_td_lookup
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5947
-.L5946:
+    jmp .L5965
+.L5964:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -129886,18 +130271,18 @@ call _ZYL_td_lookup
     mov rdi, [rsp+8]
 call _ZYL_td_lookup
     add rsp, 16
-.L5947:
+.L5965:
     mov [rsp], rax
-    jmp .L5944
-.L5945:
+    jmp .L5962
+.L5963:
     mov qword ptr [rsp], 0
-.L5944:
+.L5962:
     pop rax
     mov [rsp], rax
-    jmp .L5941
-.L5942:
+    jmp .L5959
+.L5960:
     mov qword ptr [rsp], 0
-.L5941:
+.L5959:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129913,7 +130298,7 @@ _ZYL_td_rewrite_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5950
+    jne .L5968
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -129923,12 +130308,12 @@ _ZYL_td_rewrite_list:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5948
-.L5950:
+    jmp .L5966
+.L5968:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5949
+    jne .L5967
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -129970,10 +130355,10 @@ call _ZYL_td_rewrite_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5948
-.L5949:
+    jmp .L5966
+.L5967:
     mov qword ptr [rsp], 0
-.L5948:
+.L5966:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -129995,7 +130380,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L5953
+    jne .L5971
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -130046,12 +130431,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5953:
+    jmp .L5969
+.L5971:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 49
-    jne .L5954
+    jne .L5972
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -130102,12 +130487,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5954:
+    jmp .L5969
+.L5972:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5955
+    jne .L5973
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -130167,12 +130552,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5955:
+    jmp .L5969
+.L5973:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L5956
+    jne .L5974
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -130232,12 +130617,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5956:
+    jmp .L5969
+.L5974:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L5957
+    jne .L5975
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -130306,12 +130691,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5957:
+    jmp .L5969
+.L5975:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L5958
+    jne .L5976
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -130364,12 +130749,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5958:
+    jmp .L5969
+.L5976:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L5959
+    jne .L5977
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -130406,12 +130791,12 @@ call _ZYL_td_rewrite_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5959:
+    jmp .L5969
+.L5977:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L5960
+    jne .L5978
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -130471,12 +130856,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5960:
+    jmp .L5969
+.L5978:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L5961
+    jne .L5979
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -130529,12 +130914,12 @@ call _ZYL_td_rewrite_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5961:
+    jmp .L5969
+.L5979:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 50
-    jne .L5962
+    jne .L5980
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
@@ -130587,12 +130972,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5962:
+    jmp .L5969
+.L5980:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 52
-    jne .L5963
+    jne .L5981
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
@@ -130636,12 +131021,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5963:
+    jmp .L5969
+.L5981:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 53
-    jne .L5964
+    jne .L5982
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-240], rax
@@ -130685,12 +131070,12 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5964:
+    jmp .L5969
+.L5982:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 31
-    jne .L5965
+    jne .L5983
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-256], rax
@@ -130727,12 +131112,12 @@ call _ZYL_td_rewrite_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5951
-.L5965:
+    jmp .L5969
+.L5983:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5966
+    jne .L5984
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -130755,12 +131140,12 @@ call _ZYL_td_rewrite_list
 call _ZYL_td_rewrite_call
     add rsp, 32
     mov [rsp], rax
-    jmp .L5951
-.L5966:
+    jmp .L5969
+.L5984:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L5967
+    jne .L5985
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-280], rax
@@ -130783,14 +131168,14 @@ call _ZYL_td_rewrite_call
 call _ZYL_td_rewrite_apply
     add rsp, 32
     mov [rsp], rax
-    jmp .L5951
-.L5967:
+    jmp .L5969
+.L5985:
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L5951
-.L5952:
+    jmp .L5969
+.L5970:
     mov qword ptr [rsp], 0
-.L5951:
+.L5969:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -130806,7 +131191,7 @@ _ZYL_td_rewrite_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5970
+    jne .L5988
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -130816,12 +131201,12 @@ _ZYL_td_rewrite_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5968
-.L5970:
+    jmp .L5986
+.L5988:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5969
+    jne .L5987
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -130863,10 +131248,10 @@ call _ZYL_td_rewrite_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5968
-.L5969:
+    jmp .L5986
+.L5987:
     mov qword ptr [rsp], 0
-.L5968:
+.L5986:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -130882,7 +131267,7 @@ _ZYL_td_rewrite_arm:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5972
+    jne .L5990
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -130922,10 +131307,10 @@ call _ZYL_td_rewrite
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5971
-.L5972:
+    jmp .L5989
+.L5990:
     mov qword ptr [rsp], 0
-.L5971:
+.L5989:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -130975,7 +131360,7 @@ call _ZYL_td_lookup
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5973
+    je .L5991
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -131012,8 +131397,8 @@ call _ZYL_td_rewrite
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5974
-.L5973:
+    jmp .L5992
+.L5991:
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
@@ -131024,7 +131409,7 @@ call _ZYL_td_rewrite
     mov rdi, [rsp+8]
 call _ZYL_td_dispatch
     add rsp, 16
-.L5974:
+.L5992:
     mov rsp, rbp
     pop rbp
     ret
@@ -131065,7 +131450,7 @@ call _ZYL_td_lookup
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L5975
+    je .L5993
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-32]
@@ -131093,8 +131478,8 @@ call _ZYL_is_nil
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L5976
-.L5975:
+    jmp .L5994
+.L5993:
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
@@ -131105,7 +131490,7 @@ call _ZYL_is_nil
     mov rdi, [rsp+8]
 call _ZYL_td_dispatch
     add rsp, 16
-.L5976:
+.L5994:
     mov rsp, rbp
     pop rbp
     ret
@@ -131125,7 +131510,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5979
+    jne .L5997
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -131134,30 +131519,30 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L5982
+    jne .L6000
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5980
-.L5982:
-    lea rax, [rip+.L5983]
+    jmp .L5998
+.L6000:
+    lea rax, [rip+.L6001]
     mov [rsp], rax
-    jmp .L5980
-.L5981:
+    jmp .L5998
+.L5999:
     mov qword ptr [rsp], 0
-.L5980:
+.L5998:
     pop rax
     mov [rsp], rax
-    jmp .L5977
-.L5979:
-    lea rax, [rip+.L5984]
+    jmp .L5995
+.L5997:
+    lea rax, [rip+.L6002]
     mov [rsp], rax
-    jmp .L5977
-.L5978:
+    jmp .L5995
+.L5996:
     mov qword ptr [rsp], 0
-.L5977:
+.L5995:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -131173,7 +131558,7 @@ _ZYL_td_dispatch:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5987
+    jne .L6005
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -131205,23 +131590,23 @@ _ZYL_td_dispatch:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5985
-.L5987:
+    jmp .L6003
+.L6005:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5986
+    jne .L6004
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-32], rax
-    lea rax, [rip+.L5988]
+    lea rax, [rip+.L6006]
     push rax
     mov rax, [rbp-24]
     push rax
-    lea rax, [rip+.L5989]
+    lea rax, [rip+.L6007]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -131317,10 +131702,10 @@ call _ZYL_td_dispatch_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5985
-.L5986:
+    jmp .L6003
+.L6004:
     mov qword ptr [rsp], 0
-.L5985:
+.L6003:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -131336,7 +131721,7 @@ _ZYL_td_dispatch_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5992
+    jne .L6010
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -131346,12 +131731,12 @@ _ZYL_td_dispatch_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5990
-.L5992:
+    jmp .L6008
+.L6010:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5991
+    jne .L6009
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -131363,7 +131748,7 @@ _ZYL_td_dispatch_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5994
+    jne .L6012
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -131386,7 +131771,7 @@ _ZYL_td_dispatch_arms:
     push rax
     mov rax, [rbp-56]
     push rax
-    lea rax, [rip+.L5995]
+    lea rax, [rip+.L6013]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -131499,16 +131884,16 @@ call _ZYL_td_dispatch_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5993
-.L5994:
+    jmp .L6011
+.L6012:
     mov qword ptr [rsp], 0
-.L5993:
+.L6011:
     pop rax
     mov [rsp], rax
-    jmp .L5990
-.L5991:
+    jmp .L6008
+.L6009:
     mov qword ptr [rsp], 0
-.L5990:
+.L6008:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -131567,7 +131952,7 @@ _ZYL_ci_map:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L5998
+    jne .L6016
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -131577,12 +131962,12 @@ _ZYL_ci_map:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5996
-.L5998:
+    jmp .L6014
+.L6016:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L5997
+    jne .L6015
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -131634,10 +132019,10 @@ call _ZYL_ci_map
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5996
-.L5997:
+    jmp .L6014
+.L6015:
     mov qword ptr [rsp], 0
-.L5996:
+.L6014:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -131660,7 +132045,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6001
+    jne .L6019
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -131716,12 +132101,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6001:
+    jmp .L6017
+.L6019:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 49
-    jne .L6002
+    jne .L6020
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -131777,12 +132162,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6002:
+    jmp .L6017
+.L6020:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6003
+    jne .L6021
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -131816,12 +132201,12 @@ call _ZYL_ci_expr
 call _ZYL_ci_let
     add rsp, 48
     mov [rsp], rax
-    jmp .L5999
-.L6003:
+    jmp .L6017
+.L6021:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6004
+    jne .L6022
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -131891,12 +132276,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6004:
+    jmp .L6017
+.L6022:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6005
+    jne .L6023
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -131980,12 +132365,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6005:
+    jmp .L6017
+.L6023:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6006
+    jne .L6024
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -132048,12 +132433,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6006:
+    jmp .L6017
+.L6024:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6007
+    jne .L6025
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -132095,12 +132480,12 @@ call _ZYL_ci_map
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6007:
+    jmp .L6017
+.L6025:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6008
+    jne .L6026
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-176], rax
@@ -132170,12 +132555,12 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6008:
+    jmp .L6017
+.L6026:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6009
+    jne .L6027
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -132238,14 +132623,14 @@ call _ZYL_ci_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L5999
-.L6009:
+    jmp .L6017
+.L6027:
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L5999
-.L6000:
+    jmp .L6017
+.L6018:
     mov qword ptr [rsp], 0
-.L5999:
+.L6017:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -132262,7 +132647,7 @@ _ZYL_ci_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6012
+    jne .L6030
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -132272,12 +132657,12 @@ _ZYL_ci_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6010
-.L6012:
+    jmp .L6028
+.L6030:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6011
+    jne .L6029
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -132329,10 +132714,10 @@ call _ZYL_ci_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6010
-.L6011:
+    jmp .L6028
+.L6029:
     mov qword ptr [rsp], 0
-.L6010:
+.L6028:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -132349,7 +132734,7 @@ _ZYL_ci_arm:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6014
+    jne .L6032
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -132394,10 +132779,10 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6013
-.L6014:
+    jmp .L6031
+.L6032:
     mov qword ptr [rsp], 0
-.L6013:
+.L6031:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -132422,7 +132807,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 23
-    jne .L6017
+    jne .L6035
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -132459,8 +132844,8 @@ call _ZYL_Expr_inner
 call _ZYL_ci_let_fn
     add rsp, 48
     mov [rsp], rax
-    jmp .L6015
-.L6017:
+    jmp .L6033
+.L6035:
     mov rax, [rbp-24]
     push rax
     sub rsp, 8
@@ -132521,10 +132906,10 @@ call _ZYL_ci_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6015
-.L6016:
+    jmp .L6033
+.L6034:
     mov qword ptr [rsp], 0
-.L6015:
+.L6033:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -132607,10 +132992,10 @@ call _ZYL_ic_safe_expr
     setg al
     movzx rax, al
     test rax, rax
-    je .L6018
+    je .L6036
     mov rax, [rbp-24]
     push rax
-    lea rax, [rip+.L6020]
+    lea rax, [rip+.L6038]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -132669,8 +133054,8 @@ call _ZYL_ic_safe_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6019
-.L6018:
+    jmp .L6037
+.L6036:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -132689,10 +133074,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6021
+    je .L6039
     mov rax, [rbp-24]
     push rax
-    lea rax, [rip+.L6023]
+    lea rax, [rip+.L6041]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -132751,8 +133136,8 @@ call _ZYL_ci_references
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6022
-.L6021:
+    jmp .L6040
+.L6039:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -132771,10 +133156,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6024
+    je .L6042
     mov rax, [rbp-24]
     push rax
-    lea rax, [rip+.L6026]
+    lea rax, [rip+.L6044]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -132833,8 +133218,8 @@ call _ZYL_ci_escapes
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6025
-.L6024:
+    jmp .L6043
+.L6042:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -132853,9 +133238,9 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+24]
 call _ZYL_ci_inline_calls
     add rsp, 32
-.L6025:
-.L6022:
-.L6019:
+.L6043:
+.L6040:
+.L6037:
     mov rsp, rbp
     pop rbp
     ret
@@ -132876,7 +133261,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6029
+    jne .L6047
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -132885,7 +133270,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6032
+    jne .L6050
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -132907,22 +133292,22 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     mov [rsp], rax
-    jmp .L6030
-.L6032:
+    jmp .L6048
+.L6050:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6030
-.L6031:
+    jmp .L6048
+.L6049:
     mov qword ptr [rsp], 0
-.L6030:
+.L6048:
     pop rax
     mov [rsp], rax
-    jmp .L6027
-.L6029:
+    jmp .L6045
+.L6047:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6033
+    jne .L6051
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -132947,10 +133332,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6034
+    je .L6052
     mov rax, 1
-    jmp .L6035
-.L6034:
+    jmp .L6053
+.L6052:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -132961,14 +133346,14 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references_list
     add rsp, 16
-.L6035:
+.L6053:
     mov [rsp], rax
-    jmp .L6027
-.L6033:
+    jmp .L6045
+.L6051:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L6036
+    jne .L6054
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -132993,10 +133378,10 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6037
+    je .L6055
     mov rax, 1
-    jmp .L6038
-.L6037:
+    jmp .L6056
+.L6055:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133007,14 +133392,14 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_ci_references_list
     add rsp, 16
-.L6038:
+.L6056:
     mov [rsp], rax
-    jmp .L6027
-.L6036:
+    jmp .L6045
+.L6054:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6039
+    jne .L6057
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -133042,10 +133427,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6040
+    je .L6058
     mov rax, 1
-    jmp .L6041
-.L6040:
+    jmp .L6059
+.L6058:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133056,14 +133441,14 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references
     add rsp, 16
-.L6041:
+.L6059:
     mov [rsp], rax
-    jmp .L6027
-.L6039:
+    jmp .L6045
+.L6057:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6042
+    jne .L6060
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -133091,10 +133476,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6043
+    je .L6061
     mov rax, 1
-    jmp .L6044
-.L6043:
+    jmp .L6062
+.L6061:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133105,14 +133490,14 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references
     add rsp, 16
-.L6044:
+.L6062:
     mov [rsp], rax
-    jmp .L6027
-.L6042:
+    jmp .L6045
+.L6060:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6045
+    jne .L6063
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -133140,10 +133525,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6046
+    je .L6064
     mov rax, 1
-    jmp .L6047
-.L6046:
+    jmp .L6065
+.L6064:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133162,10 +133547,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6048
+    je .L6066
     mov rax, 1
-    jmp .L6049
-.L6048:
+    jmp .L6067
+.L6066:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133176,15 +133561,15 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references
     add rsp, 16
-.L6049:
-.L6047:
+.L6067:
+.L6065:
     mov [rsp], rax
-    jmp .L6027
-.L6045:
+    jmp .L6045
+.L6063:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6050
+    jne .L6068
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -133209,10 +133594,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6051
+    je .L6069
     mov rax, 1
-    jmp .L6052
-.L6051:
+    jmp .L6070
+.L6069:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133223,14 +133608,14 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references
     add rsp, 16
-.L6052:
+.L6070:
     mov [rsp], rax
-    jmp .L6027
-.L6050:
+    jmp .L6045
+.L6068:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6053
+    jne .L6071
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -133245,12 +133630,12 @@ call _ZYL_ci_references
 call _ZYL_ci_references_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6027
-.L6053:
+    jmp .L6045
+.L6071:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6054
+    jne .L6072
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -133278,10 +133663,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6055
+    je .L6073
     mov rax, 1
-    jmp .L6056
-.L6055:
+    jmp .L6074
+.L6073:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133292,14 +133677,14 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references
     add rsp, 16
-.L6056:
+.L6074:
     mov [rsp], rax
-    jmp .L6027
-.L6054:
+    jmp .L6045
+.L6072:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6057
+    jne .L6075
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -133324,10 +133709,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6058
+    je .L6076
     mov rax, 1
-    jmp .L6059
-.L6058:
+    jmp .L6077
+.L6076:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133338,16 +133723,16 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references_arms
     add rsp, 16
-.L6059:
+.L6077:
     mov [rsp], rax
-    jmp .L6027
-.L6057:
+    jmp .L6045
+.L6075:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6027
-.L6028:
+    jmp .L6045
+.L6046:
     mov qword ptr [rsp], 0
-.L6027:
+.L6045:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -133363,15 +133748,15 @@ _ZYL_ci_references_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6062
+    jne .L6080
     mov rax, 0
     mov [rsp], rax
-    jmp .L6060
-.L6062:
+    jmp .L6078
+.L6080:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6061
+    jne .L6079
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -133396,10 +133781,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6063
+    je .L6081
     mov rax, 1
-    jmp .L6064
-.L6063:
+    jmp .L6082
+.L6081:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133410,12 +133795,12 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references_list
     add rsp, 16
-.L6064:
+.L6082:
     mov [rsp], rax
-    jmp .L6060
-.L6061:
+    jmp .L6078
+.L6079:
     mov qword ptr [rsp], 0
-.L6060:
+.L6078:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -133431,15 +133816,15 @@ _ZYL_ci_references_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6067
+    jne .L6085
     mov rax, 0
     mov [rsp], rax
-    jmp .L6065
-.L6067:
+    jmp .L6083
+.L6085:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6066
+    jne .L6084
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -133470,10 +133855,10 @@ call _ZYL_ci_references
     setg al
     movzx rax, al
     test rax, rax
-    je .L6068
+    je .L6086
     mov rax, 1
-    jmp .L6069
-.L6068:
+    jmp .L6087
+.L6086:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133484,12 +133869,12 @@ call _ZYL_ci_references
     mov rdi, [rsp+8]
 call _ZYL_ci_references_arms
     add rsp, 16
-.L6069:
+.L6087:
     mov [rsp], rax
-    jmp .L6065
-.L6066:
+    jmp .L6083
+.L6084:
     mov qword ptr [rsp], 0
-.L6065:
+.L6083:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -133511,7 +133896,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6072
+    jne .L6090
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -133520,7 +133905,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6075
+    jne .L6093
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -133542,24 +133927,24 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     mov [rsp], rax
-    jmp .L6073
-.L6075:
+    jmp .L6091
+.L6093:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6073
-.L6074:
+    jmp .L6091
+.L6092:
     mov qword ptr [rsp], 0
-.L6073:
+.L6091:
     pop rax
     mov [rsp], rax
-    jmp .L6070
-.L6072:
+    jmp .L6088
+.L6090:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6070
-.L6071:
+    jmp .L6088
+.L6089:
     mov qword ptr [rsp], 0
-.L6070:
+.L6088:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -133581,7 +133966,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6078
+    jne .L6096
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -133590,7 +133975,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6081
+    jne .L6099
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -133612,22 +133997,22 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     mov [rsp], rax
-    jmp .L6079
-.L6081:
+    jmp .L6097
+.L6099:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6079
-.L6080:
+    jmp .L6097
+.L6098:
     mov qword ptr [rsp], 0
-.L6079:
+.L6097:
     pop rax
     mov [rsp], rax
-    jmp .L6076
-.L6078:
+    jmp .L6094
+.L6096:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6082
+    jne .L6100
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -133650,12 +134035,12 @@ call _ZYL_str_eq
 call _ZYL_ci_escapes_call
     add rsp, 32
     mov [rsp], rax
-    jmp .L6076
-.L6082:
+    jmp .L6094
+.L6100:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L6083
+    jne .L6101
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -133673,12 +134058,12 @@ call _ZYL_ci_escapes_call
 call _ZYL_ci_escapes_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6076
-.L6083:
+    jmp .L6094
+.L6101:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6084
+    jne .L6102
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -133706,10 +134091,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6085
+    je .L6103
     mov rax, 1
-    jmp .L6086
-.L6085:
+    jmp .L6104
+.L6103:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133720,14 +134105,14 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes
     add rsp, 16
-.L6086:
+.L6104:
     mov [rsp], rax
-    jmp .L6076
-.L6084:
+    jmp .L6094
+.L6102:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6087
+    jne .L6105
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -133755,10 +134140,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6088
+    je .L6106
     mov rax, 1
-    jmp .L6089
-.L6088:
+    jmp .L6107
+.L6106:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133769,14 +134154,14 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes
     add rsp, 16
-.L6089:
+.L6107:
     mov [rsp], rax
-    jmp .L6076
-.L6087:
+    jmp .L6094
+.L6105:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6090
+    jne .L6108
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -133804,10 +134189,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6091
+    je .L6109
     mov rax, 1
-    jmp .L6092
-.L6091:
+    jmp .L6110
+.L6109:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133826,10 +134211,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6093
+    je .L6111
     mov rax, 1
-    jmp .L6094
-.L6093:
+    jmp .L6112
+.L6111:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133840,15 +134225,15 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes
     add rsp, 16
-.L6094:
-.L6092:
+.L6112:
+.L6110:
     mov [rsp], rax
-    jmp .L6076
-.L6090:
+    jmp .L6094
+.L6108:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6095
+    jne .L6113
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -133873,10 +134258,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6096
+    je .L6114
     mov rax, 1
-    jmp .L6097
-.L6096:
+    jmp .L6115
+.L6114:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133887,14 +134272,14 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes
     add rsp, 16
-.L6097:
+.L6115:
     mov [rsp], rax
-    jmp .L6076
-.L6095:
+    jmp .L6094
+.L6113:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6098
+    jne .L6116
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -133909,12 +134294,12 @@ call _ZYL_ci_escapes
 call _ZYL_ci_escapes_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6076
-.L6098:
+    jmp .L6094
+.L6116:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6099
+    jne .L6117
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -133942,10 +134327,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6100
+    je .L6118
     mov rax, 1
-    jmp .L6101
-.L6100:
+    jmp .L6119
+.L6118:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -133956,14 +134341,14 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes
     add rsp, 16
-.L6101:
+.L6119:
     mov [rsp], rax
-    jmp .L6076
-.L6099:
+    jmp .L6094
+.L6117:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6102
+    jne .L6120
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -133988,10 +134373,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6103
+    je .L6121
     mov rax, 1
-    jmp .L6104
-.L6103:
+    jmp .L6122
+.L6121:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134002,16 +134387,16 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes_arms
     add rsp, 16
-.L6104:
+.L6122:
     mov [rsp], rax
-    jmp .L6076
-.L6102:
+    jmp .L6094
+.L6120:
     mov rax, 1
     mov [rsp], rax
-    jmp .L6076
-.L6077:
+    jmp .L6094
+.L6095:
     mov qword ptr [rsp], 0
-.L6076:
+.L6094:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -134041,7 +134426,7 @@ call _ZYL_ci_is_bare_name
     setg al
     movzx rax, al
     test rax, rax
-    je .L6105
+    je .L6123
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134052,8 +134437,8 @@ call _ZYL_ci_is_bare_name
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes_list
     add rsp, 16
-    jmp .L6106
-.L6105:
+    jmp .L6124
+.L6123:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134072,10 +134457,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6107
+    je .L6125
     mov rax, 1
-    jmp .L6108
-.L6107:
+    jmp .L6126
+.L6125:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134086,8 +134471,8 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes_list
     add rsp, 16
-.L6108:
-.L6106:
+.L6126:
+.L6124:
     mov rsp, rbp
     pop rbp
     ret
@@ -134102,15 +134487,15 @@ _ZYL_ci_escapes_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6111
+    jne .L6129
     mov rax, 0
     mov [rsp], rax
-    jmp .L6109
-.L6111:
+    jmp .L6127
+.L6129:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6110
+    jne .L6128
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -134135,10 +134520,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6112
+    je .L6130
     mov rax, 1
-    jmp .L6113
-.L6112:
+    jmp .L6131
+.L6130:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134149,12 +134534,12 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes_list
     add rsp, 16
-.L6113:
+.L6131:
     mov [rsp], rax
-    jmp .L6109
-.L6110:
+    jmp .L6127
+.L6128:
     mov qword ptr [rsp], 0
-.L6109:
+.L6127:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -134170,15 +134555,15 @@ _ZYL_ci_escapes_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6116
+    jne .L6134
     mov rax, 0
     mov [rsp], rax
-    jmp .L6114
-.L6116:
+    jmp .L6132
+.L6134:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6115
+    jne .L6133
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -134209,10 +134594,10 @@ call _ZYL_ci_escapes
     setg al
     movzx rax, al
     test rax, rax
-    je .L6117
+    je .L6135
     mov rax, 1
-    jmp .L6118
-.L6117:
+    jmp .L6136
+.L6135:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134223,12 +134608,12 @@ call _ZYL_ci_escapes
     mov rdi, [rsp+8]
 call _ZYL_ci_escapes_arms
     add rsp, 16
-.L6118:
+.L6136:
     mov [rsp], rax
-    jmp .L6114
-.L6115:
+    jmp .L6132
+.L6133:
     mov qword ptr [rsp], 0
-.L6114:
+.L6132:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -134252,7 +134637,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6121
+    jne .L6139
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -134277,7 +134662,7 @@ call _ZYL_ci_is_bare_name
     setg al
     movzx rax, al
     test rax, rax
-    je .L6122
+    je .L6140
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -134310,8 +134695,8 @@ call _ZYL_ci_inline_calls_list
     mov rdi, [rsp+16]
 call _ZYL_ci_beta_reduce
     add rsp, 32
-    jmp .L6123
-.L6122:
+    jmp .L6141
+.L6140:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -134373,14 +134758,14 @@ call _ZYL_ci_inline_calls_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L6123:
+.L6141:
     mov [rsp], rax
-    jmp .L6119
-.L6121:
+    jmp .L6137
+.L6139:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L6124
+    jne .L6142
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -134405,7 +134790,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6125
+    je .L6143
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -134438,8 +134823,8 @@ call _ZYL_ci_inline_calls_list
     mov rdi, [rsp+16]
 call _ZYL_ci_beta_reduce
     add rsp, 32
-    jmp .L6126
-.L6125:
+    jmp .L6144
+.L6143:
     mov rax, [rbp-56]
     push rax
     mov rax, [rbp-8]
@@ -134484,14 +134869,14 @@ call _ZYL_ci_inline_calls_list
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L6126:
+.L6144:
     mov [rsp], rax
-    jmp .L6119
-.L6124:
+    jmp .L6137
+.L6142:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6127
+    jne .L6145
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -134567,12 +134952,12 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6127:
+    jmp .L6137
+.L6145:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6128
+    jne .L6146
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -134648,12 +135033,12 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6128:
+    jmp .L6137
+.L6146:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6129
+    jne .L6147
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -134746,12 +135131,12 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6129:
+    jmp .L6137
+.L6147:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6130
+    jne .L6148
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -134820,12 +135205,12 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6130:
+    jmp .L6137
+.L6148:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6131
+    jne .L6149
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -134870,12 +135255,12 @@ call _ZYL_ci_inline_calls_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6131:
+    jmp .L6137
+.L6149:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6132
+    jne .L6150
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -134951,12 +135336,12 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6132:
+    jmp .L6137
+.L6150:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6133
+    jne .L6151
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -135025,14 +135410,14 @@ call _ZYL_ci_inline_calls_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6119
-.L6133:
+    jmp .L6137
+.L6151:
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L6119
-.L6120:
+    jmp .L6137
+.L6138:
     mov qword ptr [rsp], 0
-.L6119:
+.L6137:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135050,7 +135435,7 @@ _ZYL_ci_inline_calls_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6136
+    jne .L6154
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -135060,12 +135445,12 @@ _ZYL_ci_inline_calls_list:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6134
-.L6136:
+    jmp .L6152
+.L6154:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6135
+    jne .L6153
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -135123,10 +135508,10 @@ call _ZYL_ci_inline_calls_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6134
-.L6135:
+    jmp .L6152
+.L6153:
     mov qword ptr [rsp], 0
-.L6134:
+.L6152:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135144,7 +135529,7 @@ _ZYL_ci_inline_calls_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6139
+    jne .L6157
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -135154,12 +135539,12 @@ _ZYL_ci_inline_calls_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6137
-.L6139:
+    jmp .L6155
+.L6157:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6138
+    jne .L6156
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -135217,10 +135602,10 @@ call _ZYL_ci_inline_calls_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6137
-.L6138:
+    jmp .L6155
+.L6156:
     mov qword ptr [rsp], 0
-.L6137:
+.L6155:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135238,7 +135623,7 @@ _ZYL_ci_inline_calls_arm:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6141
+    jne .L6159
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -135286,10 +135671,10 @@ call _ZYL_ci_inline_calls
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6140
-.L6141:
+    jmp .L6158
+.L6159:
     mov qword ptr [rsp], 0
-.L6140:
+.L6158:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135306,15 +135691,15 @@ _ZYL_ci_beta_reduce:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6144
+    jne .L6162
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6142
-.L6144:
+    jmp .L6160
+.L6162:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6143
+    jne .L6161
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -135326,15 +135711,15 @@ _ZYL_ci_beta_reduce:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6147
+    jne .L6165
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6145
-.L6147:
+    jmp .L6163
+.L6165:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6146
+    jne .L6164
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -135393,16 +135778,16 @@ call _ZYL_ci_beta_reduce
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6145
-.L6146:
+    jmp .L6163
+.L6164:
     mov qword ptr [rsp], 0
-.L6145:
+.L6163:
     pop rax
     mov [rsp], rax
-    jmp .L6142
-.L6143:
+    jmp .L6160
+.L6161:
     mov qword ptr [rsp], 0
-.L6142:
+.L6160:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135460,7 +135845,7 @@ _ZYL_al_map:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6150
+    jne .L6168
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -135470,12 +135855,12 @@ _ZYL_al_map:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6148
-.L6150:
+    jmp .L6166
+.L6168:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6149
+    jne .L6167
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -135527,10 +135912,10 @@ call _ZYL_al_map
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6148
-.L6149:
+    jmp .L6166
+.L6167:
     mov qword ptr [rsp], 0
-.L6148:
+.L6166:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -135553,7 +135938,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 50
-    jne .L6153
+    jne .L6171
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -135579,12 +135964,12 @@ call _ZYL_Expr_inner
 call _ZYL_al_assert_equal
     add rsp, 32
     mov [rsp], rax
-    jmp .L6151
-.L6153:
+    jmp .L6169
+.L6171:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6154
+    jne .L6172
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -135640,12 +136025,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6154:
+    jmp .L6169
+.L6172:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 49
-    jne .L6155
+    jne .L6173
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -135701,12 +136086,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6155:
+    jmp .L6169
+.L6173:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6156
+    jne .L6174
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -135776,12 +136161,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6156:
+    jmp .L6169
+.L6174:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6157
+    jne .L6175
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -135851,12 +136236,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6157:
+    jmp .L6169
+.L6175:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6158
+    jne .L6176
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -135940,12 +136325,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6158:
+    jmp .L6169
+.L6176:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6159
+    jne .L6177
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -136008,12 +136393,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6159:
+    jmp .L6169
+.L6177:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6160
+    jne .L6178
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -136055,12 +136440,12 @@ call _ZYL_al_map
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6160:
+    jmp .L6169
+.L6178:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6161
+    jne .L6179
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -136130,12 +136515,12 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6161:
+    jmp .L6169
+.L6179:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6162
+    jne .L6180
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -136198,14 +136583,14 @@ call _ZYL_al_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6151
-.L6162:
+    jmp .L6169
+.L6180:
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6151
-.L6152:
+    jmp .L6169
+.L6170:
     mov qword ptr [rsp], 0
-.L6151:
+.L6169:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -136222,7 +136607,7 @@ _ZYL_al_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6165
+    jne .L6183
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -136232,12 +136617,12 @@ _ZYL_al_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6163
-.L6165:
+    jmp .L6181
+.L6183:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6164
+    jne .L6182
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -136289,10 +136674,10 @@ call _ZYL_al_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6163
-.L6164:
+    jmp .L6181
+.L6182:
     mov qword ptr [rsp], 0
-.L6163:
+.L6181:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -136309,7 +136694,7 @@ _ZYL_al_arm:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6167
+    jne .L6185
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -136354,10 +136739,10 @@ call _ZYL_al_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6166
-.L6167:
+    jmp .L6184
+.L6185:
     mov qword ptr [rsp], 0
-.L6166:
+.L6184:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -136428,8 +136813,8 @@ call _ZYL_al_should_variant_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6168
-    lea rax, [rip+.L6170]
+    je .L6186
+    lea rax, [rip+.L6188]
     push rax
     mov rax, [rbp-40]
     push rax
@@ -136498,7 +136883,7 @@ call _ZYL_al_should_variant_eq
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    lea rax, [rip+.L6171]
+    lea rax, [rip+.L6189]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -136534,8 +136919,8 @@ call _ZYL_al_should_variant_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6169
-.L6168:
+    jmp .L6187
+.L6186:
     mov rax, [rbp-40]
     push rax
     mov rax, [rbp-48]
@@ -136563,7 +136948,7 @@ call _ZYL_al_should_variant_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L6169:
+.L6187:
     mov rsp, rbp
     pop rbp
     ret
@@ -136590,10 +136975,10 @@ call _ZYL_al_is_primitive_const
     setg al
     movzx rax, al
     test rax, rax
-    je .L6172
+    je .L6190
     mov rax, 0
-    jmp .L6173
-.L6172:
+    jmp .L6191
+.L6190:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -136609,10 +136994,10 @@ call _ZYL_al_is_primitive_const
     setg al
     movzx rax, al
     test rax, rax
-    je .L6174
+    je .L6192
     mov rax, 0
-    jmp .L6175
-.L6174:
+    jmp .L6193
+.L6192:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -136639,10 +137024,10 @@ call _ZYL_al_looks_variant
     setg al
     movzx rax, al
     test rax, rax
-    je .L6176
+    je .L6194
     mov rax, 1
-    jmp .L6177
-.L6176:
+    jmp .L6195
+.L6194:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -136661,9 +137046,9 @@ call _ZYL_al_looks_variant
     mov rdi, [rsp+24]
 call _ZYL_al_looks_variant
     add rsp, 32
-.L6177:
-.L6175:
-.L6173:
+.L6195:
+.L6193:
+.L6191:
     mov rsp, rbp
     pop rbp
     ret
@@ -136683,7 +137068,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6180
+    jne .L6198
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -136692,52 +137077,52 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6183
+    jne .L6201
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6181
-.L6183:
+    jmp .L6199
+.L6201:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6184
+    jne .L6202
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6181
-.L6184:
+    jmp .L6199
+.L6202:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6185
+    jne .L6203
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6181
-.L6185:
+    jmp .L6199
+.L6203:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6181
-.L6182:
+    jmp .L6199
+.L6200:
     mov qword ptr [rsp], 0
-.L6181:
+.L6199:
     pop rax
     mov [rsp], rax
-    jmp .L6178
-.L6180:
+    jmp .L6196
+.L6198:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6178
-.L6179:
+    jmp .L6196
+.L6197:
     mov qword ptr [rsp], 0
-.L6178:
+.L6196:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -136759,10 +137144,10 @@ _ZYL_al_looks_variant:
     setg al
     movzx rax, al
     test rax, rax
-    je .L6186
+    je .L6204
     mov rax, 0
-    jmp .L6187
-.L6186:
+    jmp .L6205
+.L6204:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -136787,7 +137172,7 @@ call _ZYL_al_tail
     mov rdi, [rsp+24]
 call _ZYL_al_looks_variant_tail
     add rsp, 32
-.L6187:
+.L6205:
     mov rsp, rbp
     pop rbp
     ret
@@ -136807,7 +137192,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6190
+    jne .L6208
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -136825,12 +137210,12 @@ call _ZYL_Expr_inner
 call _ZYL_al_tail
     add rsp, 16
     mov [rsp], rax
-    jmp .L6188
-.L6190:
+    jmp .L6206
+.L6208:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6191
+    jne .L6209
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -136848,12 +137233,12 @@ call _ZYL_al_tail
 call _ZYL_al_tail
     add rsp, 16
     mov [rsp], rax
-    jmp .L6188
-.L6191:
+    jmp .L6206
+.L6209:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 21
-    jne .L6192
+    jne .L6210
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -136871,12 +137256,12 @@ call _ZYL_last_expr
 call _ZYL_al_tail
     add rsp, 16
     mov [rsp], rax
-    jmp .L6188
-.L6192:
+    jmp .L6206
+.L6210:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6193
+    jne .L6211
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -136894,14 +137279,14 @@ call _ZYL_al_tail
 call _ZYL_al_tail
     add rsp, 16
     mov [rsp], rax
-    jmp .L6188
-.L6193:
+    jmp .L6206
+.L6211:
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6188
-.L6189:
+    jmp .L6206
+.L6207:
     mov qword ptr [rsp], 0
-.L6188:
+.L6206:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -136925,7 +137310,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6196
+    jne .L6214
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -136938,7 +137323,7 @@ call _ZYL_Expr_inner
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6197]
+    lea rax, [rip+.L6215]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -136960,12 +137345,12 @@ call _ZYL_expr_ident_name
 call _ZYL_al_looks_name
     add rsp, 32
     mov [rsp], rax
-    jmp .L6194
-.L6196:
+    jmp .L6212
+.L6214:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 59
-    jne .L6198
+    jne .L6216
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -136991,12 +137376,12 @@ call _ZYL_al_looks_name
 call _ZYL_al_looks_name
     add rsp, 32
     mov [rsp], rax
-    jmp .L6194
-.L6198:
+    jmp .L6212
+.L6216:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6199
+    jne .L6217
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -137022,12 +137407,12 @@ call _ZYL_al_looks_name
 call _ZYL_al_looks_arms
     add rsp, 32
     mov [rsp], rax
-    jmp .L6194
-.L6199:
+    jmp .L6212
+.L6217:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6200
+    jne .L6218
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -137068,10 +137453,10 @@ call _ZYL_al_looks_variant
     setg al
     movzx rax, al
     test rax, rax
-    je .L6201
+    je .L6219
     mov rax, 1
-    jmp .L6202
-.L6201:
+    jmp .L6220
+.L6219:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -137095,16 +137480,16 @@ call _ZYL_al_looks_variant
     mov rdi, [rsp+24]
 call _ZYL_al_looks_variant
     add rsp, 32
-.L6202:
+.L6220:
     mov [rsp], rax
-    jmp .L6194
-.L6200:
+    jmp .L6212
+.L6218:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6194
-.L6195:
+    jmp .L6212
+.L6213:
     mov qword ptr [rsp], 0
-.L6194:
+.L6212:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137122,15 +137507,15 @@ _ZYL_al_looks_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6205
+    jne .L6223
     mov rax, 0
     mov [rsp], rax
-    jmp .L6203
-.L6205:
+    jmp .L6221
+.L6223:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6204
+    jne .L6222
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -137174,10 +137559,10 @@ call _ZYL_al_looks_variant
     setg al
     movzx rax, al
     test rax, rax
-    je .L6206
+    je .L6224
     mov rax, 1
-    jmp .L6207
-.L6206:
+    jmp .L6225
+.L6224:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -137196,12 +137581,12 @@ call _ZYL_al_looks_variant
     mov rdi, [rsp+24]
 call _ZYL_al_looks_arms
     add rsp, 32
-.L6207:
+.L6225:
     mov [rsp], rax
-    jmp .L6203
-.L6204:
+    jmp .L6221
+.L6222:
     mov qword ptr [rsp], 0
-.L6203:
+.L6221:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137232,10 +137617,10 @@ call _ZYL_vt_tag_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6208
+    je .L6226
     mov rax, 1
-    jmp .L6209
-.L6208:
+    jmp .L6227
+.L6226:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -137250,7 +137635,7 @@ call _ZYL_al_fn_body
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6212
+    jne .L6230
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -137278,20 +137663,20 @@ call _ZYL_al_fn_body
 call _ZYL_al_looks_variant
     add rsp, 32
     mov [rsp], rax
-    jmp .L6210
-.L6212:
+    jmp .L6228
+.L6230:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6211
+    jne .L6229
     mov rax, 0
     mov [rsp], rax
-    jmp .L6210
-.L6211:
+    jmp .L6228
+.L6229:
     mov qword ptr [rsp], 0
-.L6210:
+.L6228:
     pop rax
-.L6209:
+.L6227:
     mov rsp, rbp
     pop rbp
     ret
@@ -137306,7 +137691,7 @@ _ZYL_al_fn_body:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6215
+    jne .L6233
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -137316,12 +137701,12 @@ _ZYL_al_fn_body:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6213
-.L6215:
+    jmp .L6231
+.L6233:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6214
+    jne .L6232
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -137339,7 +137724,7 @@ call _ZYL_Expr_inner
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6218
+    jne .L6236
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -137360,7 +137745,7 @@ call _ZYL_Expr_inner
 call _ZYL_str_eq
     add rsp, 16
     test rax, rax
-    je .L6219
+    je .L6237
     mov rax, [rbp-56]
     push rax
     mov r12, rsp
@@ -137373,8 +137758,8 @@ call _ZYL_str_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6220
-.L6219:
+    jmp .L6238
+.L6237:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -137385,10 +137770,10 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_al_fn_body
     add rsp, 16
-.L6220:
+.L6238:
     mov [rsp], rax
-    jmp .L6216
-.L6218:
+    jmp .L6234
+.L6236:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -137400,16 +137785,16 @@ call _ZYL_al_fn_body
 call _ZYL_al_fn_body
     add rsp, 16
     mov [rsp], rax
-    jmp .L6216
-.L6217:
+    jmp .L6234
+.L6235:
     mov qword ptr [rsp], 0
-.L6216:
+.L6234:
     pop rax
     mov [rsp], rax
-    jmp .L6213
-.L6214:
+    jmp .L6231
+.L6232:
     mov qword ptr [rsp], 0
-.L6213:
+.L6231:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137445,7 +137830,7 @@ _ZYL_cg_label_pair_2:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6222
+    jne .L6240
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -137466,10 +137851,10 @@ _ZYL_cg_label_pair_2:
 call _ZYL_cg_label_second
     add rsp, 16
     mov [rsp], rax
-    jmp .L6221
-.L6222:
+    jmp .L6239
+.L6240:
     mov qword ptr [rsp], 0
-.L6221:
+.L6239:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137491,7 +137876,7 @@ call _ZYL_cg_label_new
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6224
+    jne .L6242
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -137522,10 +137907,10 @@ call _ZYL_cg_label_new
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6223
-.L6224:
+    jmp .L6241
+.L6242:
     mov qword ptr [rsp], 0
-.L6223:
+.L6241:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137610,7 +137995,7 @@ _ZYL_cg_with_fnname:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6226
+    jne .L6244
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -137692,10 +138077,10 @@ _ZYL_cg_with_fnname:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6225
-.L6226:
+    jmp .L6243
+.L6244:
     mov qword ptr [rsp], 0
-.L6225:
+.L6243:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137710,7 +138095,7 @@ _ZYL_cgg_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6228
+    jne .L6246
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -137731,10 +138116,10 @@ _ZYL_cgg_fns:
     mov [rbp-56], rax
     mov rax, [rbp-56]
     mov [rsp], rax
-    jmp .L6227
-.L6228:
+    jmp .L6245
+.L6246:
     mov qword ptr [rsp], 0
-.L6227:
+.L6245:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137778,10 +138163,10 @@ _ZYL_cg_fn_search:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6229
+    je .L6247
     mov rax, 0
-    jmp .L6230
-.L6229:
+    jmp .L6248
+.L6247:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -137809,7 +138194,7 @@ call _ZYL_fntail
     mov rdi, [rsp+16]
 call _ZYL_cg_fn_check_head
     add rsp, 32
-.L6230:
+.L6248:
     mov rsp, rbp
     pop rbp
     ret
@@ -137823,7 +138208,7 @@ _ZYL_fnhead:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6233
+    jne .L6251
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -137832,12 +138217,12 @@ _ZYL_fnhead:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6231
-.L6233:
+    jmp .L6249
+.L6251:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6232
+    jne .L6250
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -137847,10 +138232,10 @@ _ZYL_fnhead:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6231
-.L6232:
+    jmp .L6249
+.L6250:
     mov qword ptr [rsp], 0
-.L6231:
+.L6249:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137865,7 +138250,7 @@ _ZYL_fntail:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6236
+    jne .L6254
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -137874,12 +138259,12 @@ _ZYL_fntail:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6234
-.L6236:
+    jmp .L6252
+.L6254:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6235
+    jne .L6253
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -137889,10 +138274,10 @@ _ZYL_fntail:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6234
-.L6235:
+    jmp .L6252
+.L6253:
     mov qword ptr [rsp], 0
-.L6234:
+.L6252:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137909,7 +138294,7 @@ _ZYL_cg_fn_check_head:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6239
+    jne .L6257
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -137934,10 +138319,10 @@ call _ZYL_str_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L6240
+    je .L6258
     mov rax, 1
-    jmp .L6241
-.L6240:
+    jmp .L6259
+.L6258:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -137948,14 +138333,14 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_cg_fn_search
     add rsp, 16
-.L6241:
+.L6259:
     mov [rsp], rax
-    jmp .L6237
-.L6239:
+    jmp .L6255
+.L6257:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6238
+    jne .L6256
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -137967,10 +138352,10 @@ call _ZYL_cg_fn_search
 call _ZYL_cg_fn_search
     add rsp, 16
     mov [rsp], rax
-    jmp .L6237
-.L6238:
+    jmp .L6255
+.L6256:
     mov qword ptr [rsp], 0
-.L6237:
+.L6255:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -137989,10 +138374,10 @@ _ZYL_cg_fn_kind_search:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6242
+    je .L6260
     mov rax, 0
-    jmp .L6243
-.L6242:
+    jmp .L6261
+.L6260:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -138020,7 +138405,7 @@ call _ZYL_fntail
     mov rdi, [rsp+16]
 call _ZYL_cg_fn_kind_check_head
     add rsp, 32
-.L6243:
+.L6261:
     mov rsp, rbp
     pop rbp
     ret
@@ -138036,7 +138421,7 @@ _ZYL_cg_fn_kind_check_head:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6246
+    jne .L6264
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -138061,10 +138446,10 @@ call _ZYL_str_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L6247
+    je .L6265
     mov rax, [rbp-40]
-    jmp .L6248
-.L6247:
+    jmp .L6266
+.L6265:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -138075,14 +138460,14 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_cg_fn_kind_search
     add rsp, 16
-.L6248:
+.L6266:
     mov [rsp], rax
-    jmp .L6244
-.L6246:
+    jmp .L6262
+.L6264:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6245
+    jne .L6263
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -138094,10 +138479,10 @@ call _ZYL_cg_fn_kind_search
 call _ZYL_cg_fn_kind_search
     add rsp, 16
     mov [rsp], rax
-    jmp .L6244
-.L6245:
+    jmp .L6262
+.L6263:
     mov qword ptr [rsp], 0
-.L6244:
+.L6262:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138127,7 +138512,7 @@ _ZYL_cg_buffer:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6250
+    jne .L6268
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -138148,10 +138533,10 @@ _ZYL_cg_buffer:
     mov [rbp-56], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6249
-.L6250:
+    jmp .L6267
+.L6268:
     mov qword ptr [rsp], 0
-.L6249:
+.L6267:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138167,7 +138552,7 @@ _ZYL_cg_with_rodata:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6252
+    jne .L6270
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -138234,10 +138619,10 @@ _ZYL_cg_with_rodata:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6251
-.L6252:
+    jmp .L6269
+.L6270:
     mov qword ptr [rsp], 0
-.L6251:
+.L6269:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138253,7 +138638,7 @@ _ZYL_cg_emit:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6254
+    jne .L6272
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -138289,10 +138674,10 @@ call zyl_str_append_capped
     add rsp, 32
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6253
-.L6254:
+    jmp .L6271
+.L6272:
     mov qword ptr [rsp], 0
-.L6253:
+.L6271:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138308,7 +138693,7 @@ _ZYL_cg_emit_int:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6256
+    jne .L6274
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -138353,10 +138738,10 @@ call zyl_str_append_capped
     add rsp, 32
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6255
-.L6256:
+    jmp .L6273
+.L6274:
     mov qword ptr [rsp], 0
-.L6255:
+.L6273:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138369,7 +138754,7 @@ _ZYL_cg_nl:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6257]
+    lea rax, [rip+.L6275]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138389,7 +138774,7 @@ _ZYL_cg_label_new:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6259
+    jne .L6277
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -138425,7 +138810,7 @@ call _ZYL_arena_alloc_zeroed
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6260]
+    lea rax, [rip+.L6278]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138514,10 +138899,10 @@ call _ZYL_buf_append
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6258
-.L6259:
+    jmp .L6276
+.L6277:
     mov qword ptr [rsp], 0
-.L6258:
+.L6276:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138532,7 +138917,7 @@ _ZYL_cg_new_slot:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6262
+    jne .L6280
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -138596,7 +138981,7 @@ _ZYL_cg_new_slot:
     pop rax
     sub rax, rcx
     push rax
-    lea rax, [rip+.L6263]
+    lea rax, [rip+.L6281]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -138613,10 +138998,10 @@ _ZYL_cg_new_slot:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6261
-.L6262:
+    jmp .L6279
+.L6280:
     mov qword ptr [rsp], 0
-.L6261:
+.L6279:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138638,7 +139023,7 @@ call _ZYL_cg_label_new
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6265
+    jne .L6283
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -138681,7 +139066,7 @@ call _ZYL_cg_with_rodata
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6266]
+    lea rax, [rip+.L6284]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138704,7 +139089,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6267]
+    lea rax, [rip+.L6285]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138717,10 +139102,10 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6264
-.L6265:
+    jmp .L6282
+.L6283:
     mov qword ptr [rsp], 0
-.L6264:
+.L6282:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138742,7 +139127,7 @@ call _ZYL_cg_label_new
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6269
+    jne .L6287
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -138785,7 +139170,7 @@ call _ZYL_cg_with_rodata
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6270]
+    lea rax, [rip+.L6288]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138808,7 +139193,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6271]
+    lea rax, [rip+.L6289]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138825,7 +139210,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6272]
+    lea rax, [rip+.L6290]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -138838,10 +139223,10 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6268
-.L6269:
+    jmp .L6286
+.L6287:
     mov qword ptr [rsp], 0
-.L6268:
+.L6286:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138856,7 +139241,7 @@ _ZYL_cg_rodata_of:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6274
+    jne .L6292
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -138877,10 +139262,10 @@ _ZYL_cg_rodata_of:
     mov [rbp-56], rax
     mov rax, [rbp-48]
     mov [rsp], rax
-    jmp .L6273
-.L6274:
+    jmp .L6291
+.L6292:
     mov qword ptr [rsp], 0
-.L6273:
+.L6291:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -138890,138 +139275,6 @@ _ZYL_ffi_str_kind:
     mov rbp, rsp
     sub rsp, 88
     mov [rbp-8], rdi
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6277]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6275
-    mov rax, 1
-    jmp .L6276
-.L6275:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6280]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6278
-    mov rax, 1
-    jmp .L6279
-.L6278:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6283]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6281
-    mov rax, 1
-    jmp .L6282
-.L6281:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6286]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6284
-    mov rax, 1
-    jmp .L6285
-.L6284:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6289]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6287
-    mov rax, 1
-    jmp .L6288
-.L6287:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6292]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_str_eq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L6290
-    mov rax, 1
-    jmp .L6291
-.L6290:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -139044,14 +139297,146 @@ call _ZYL_str_eq
     mov rax, 1
     jmp .L6294
 .L6293:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6298]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
     mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6296
+    mov rax, 1
+    jmp .L6297
+.L6296:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6301]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6299
+    mov rax, 1
+    jmp .L6300
+.L6299:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6304]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6302
+    mov rax, 1
+    jmp .L6303
+.L6302:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6307]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6305
+    mov rax, 1
+    jmp .L6306
+.L6305:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6310]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6308
+    mov rax, 1
+    jmp .L6309
+.L6308:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6313]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_str_eq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L6311
+    mov rax, 1
+    jmp .L6312
+.L6311:
+    mov rax, 0
+.L6312:
+.L6309:
+.L6306:
+.L6303:
+.L6300:
+.L6297:
 .L6294:
-.L6291:
-.L6288:
-.L6285:
-.L6282:
-.L6279:
-.L6276:
     mov rsp, rbp
     pop rbp
     ret
@@ -139067,37 +139452,37 @@ _ZYL_kind_of:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6298
+    jne .L6316
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6298:
+    jmp .L6314
+.L6316:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6299
+    jne .L6317
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6296
-.L6299:
+    jmp .L6314
+.L6317:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6300
+    jne .L6318
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 2
     mov [rsp], rax
-    jmp .L6296
-.L6300:
+    jmp .L6314
+.L6318:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6301
+    jne .L6319
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -139112,12 +139497,12 @@ _ZYL_kind_of:
 call _ZYL_env_kind_of
     add rsp, 16
     mov [rsp], rax
-    jmp .L6296
-.L6301:
+    jmp .L6314
+.L6319:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6302
+    jne .L6320
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -139136,10 +139521,10 @@ call _ZYL_env_kind_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6303
+    je .L6321
     mov rax, 0
-    jmp .L6304
-.L6303:
+    jmp .L6322
+.L6321:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139163,10 +139548,10 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6305
+    je .L6323
     mov rax, 2
-    jmp .L6306
-.L6305:
+    jmp .L6324
+.L6323:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139190,21 +139575,21 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6307
+    je .L6325
     mov rax, 2
-    jmp .L6308
-.L6307:
+    jmp .L6326
+.L6325:
     mov rax, 0
-.L6308:
-.L6306:
-.L6304:
+.L6326:
+.L6324:
+.L6322:
     mov [rsp], rax
-    jmp .L6296
-.L6302:
+    jmp .L6314
+.L6320:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6309
+    jne .L6327
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -139230,12 +139615,12 @@ call _ZYL_kind_of
 call _ZYL_kind_of
     add rsp, 32
     mov [rsp], rax
-    jmp .L6296
-.L6309:
+    jmp .L6314
+.L6327:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6310
+    jne .L6328
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -139259,12 +139644,12 @@ call _ZYL_cgg_fns
 call _ZYL_cg_fn_kind_search
     add rsp, 16
     mov [rsp], rax
-    jmp .L6296
-.L6310:
+    jmp .L6314
+.L6328:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6311
+    jne .L6329
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -139279,23 +139664,23 @@ call _ZYL_cg_fn_kind_search
 call _ZYL_ffi_str_kind
     add rsp, 16
     mov [rsp], rax
-    jmp .L6296
-.L6311:
+    jmp .L6314
+.L6329:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6312
+    jne .L6330
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6312:
+    jmp .L6314
+.L6330:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6313
+    jne .L6331
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-144], rax
@@ -139304,12 +139689,12 @@ call _ZYL_ffi_str_kind
     mov [rbp-152], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6313:
+    jmp .L6314
+.L6331:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6314
+    jne .L6332
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -139318,12 +139703,12 @@ call _ZYL_ffi_str_kind
     mov [rbp-168], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6314:
+    jmp .L6314
+.L6332:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6315
+    jne .L6333
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-176], rax
@@ -139349,23 +139734,23 @@ call _ZYL_ffi_str_kind
 call _ZYL_kind_of
     add rsp, 32
     mov [rsp], rax
-    jmp .L6296
-.L6315:
+    jmp .L6314
+.L6333:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6316
+    jne .L6334
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6316:
+    jmp .L6314
+.L6334:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6317
+    jne .L6335
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
@@ -139377,12 +139762,12 @@ call _ZYL_kind_of
     mov [rbp-224], rax
     mov rax, 3
     mov [rsp], rax
-    jmp .L6296
-.L6317:
+    jmp .L6314
+.L6335:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6318
+    jne .L6336
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-232], rax
@@ -139394,12 +139779,12 @@ call _ZYL_kind_of
     mov [rbp-248], rax
     mov rax, 3
     mov [rsp], rax
-    jmp .L6296
-.L6318:
+    jmp .L6314
+.L6336:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6319
+    jne .L6337
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-256], rax
@@ -139408,23 +139793,23 @@ call _ZYL_kind_of
     mov [rbp-264], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6319:
+    jmp .L6314
+.L6337:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6320
+    jne .L6338
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-272], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6320:
+    jmp .L6314
+.L6338:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6321
+    jne .L6339
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-280], rax
@@ -139433,12 +139818,12 @@ call _ZYL_kind_of
     mov [rbp-288], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6321:
+    jmp .L6314
+.L6339:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6297
+    jne .L6315
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-296], rax
@@ -139450,10 +139835,10 @@ call _ZYL_kind_of
     mov [rbp-312], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6296
-.L6297:
+    jmp .L6314
+.L6315:
     mov qword ptr [rsp], 0
-.L6296:
+.L6314:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -139470,14 +139855,14 @@ _ZYL_cg_expr:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6324
+    jne .L6342
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6325]
+    lea rax, [rip+.L6343]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -139504,12 +139889,12 @@ call _ZYL_cg_emit_int
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6322
-.L6324:
+    jmp .L6340
+.L6342:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6326
+    jne .L6344
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -139524,12 +139909,12 @@ call _ZYL_cg_nl
 call _ZYL_cg_string_const
     add rsp, 16
     mov [rsp], rax
-    jmp .L6322
-.L6326:
+    jmp .L6340
+.L6344:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6327
+    jne .L6345
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -139544,12 +139929,12 @@ call _ZYL_cg_string_const
 call _ZYL_cg_float_const
     add rsp, 16
     mov [rsp], rax
-    jmp .L6322
-.L6327:
+    jmp .L6340
+.L6345:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6328
+    jne .L6346
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -139569,12 +139954,12 @@ call _ZYL_cg_float_const
 call _ZYL_cg_load_value
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6328:
+    jmp .L6340
+.L6346:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6329
+    jne .L6347
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -139607,10 +139992,10 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6332
+    je .L6350
     mov rax, 1
-    jmp .L6333
-.L6332:
+    jmp .L6351
+.L6350:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139634,13 +140019,13 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6334
+    je .L6352
     mov rax, 1
-    jmp .L6335
-.L6334:
+    jmp .L6353
+.L6352:
     mov rax, 0
-.L6335:
-.L6333:
+.L6353:
+.L6351:
     push rax
     mov rax, 0
     mov rcx, rax
@@ -139649,7 +140034,7 @@ call _ZYL_kind_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6330
+    je .L6348
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139673,8 +140058,8 @@ call _ZYL_kind_of
     mov rdi, [rsp+32]
 call _ZYL_cg_fbinop
     add rsp, 48
-    jmp .L6331
-.L6330:
+    jmp .L6349
+.L6348:
     mov rax, [rbp-80]
     push rax
     mov rax, 9
@@ -139684,10 +140069,10 @@ call _ZYL_cg_fbinop
     sete al
     movzx rax, al
     test rax, rax
-    je .L6340
+    je .L6358
     mov rax, 1
-    jmp .L6341
-.L6340:
+    jmp .L6359
+.L6358:
     mov rax, [rbp-80]
     push rax
     mov rax, 10
@@ -139696,9 +140081,9 @@ call _ZYL_cg_fbinop
     cmp rax, rcx
     sete al
     movzx rax, al
-.L6341:
+.L6359:
     test rax, rax
-    je .L6338
+    je .L6356
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139722,10 +140107,10 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6344
+    je .L6362
     mov rax, 1
-    jmp .L6345
-.L6344:
+    jmp .L6363
+.L6362:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139748,18 +140133,18 @@ call _ZYL_kind_of
     cmp rax, rcx
     sete al
     movzx rax, al
-.L6345:
+.L6363:
     test rax, rax
-    je .L6342
+    je .L6360
     mov rax, 1
-    jmp .L6343
-.L6342:
+    jmp .L6361
+.L6360:
     mov rax, 0
-.L6343:
-    jmp .L6339
-.L6338:
+.L6361:
+    jmp .L6357
+.L6356:
     mov rax, 0
-.L6339:
+.L6357:
     push rax
     mov rax, 0
     mov rcx, rax
@@ -139768,7 +140153,7 @@ call _ZYL_kind_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6336
+    je .L6354
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139792,8 +140177,8 @@ call _ZYL_kind_of
     mov rdi, [rsp+32]
 call _ZYL_cg_strbinop
     add rsp, 48
-    jmp .L6337
-.L6336:
+    jmp .L6355
+.L6354:
     mov rax, [rbp-80]
     push rax
     mov rax, 4
@@ -139803,7 +140188,7 @@ call _ZYL_cg_strbinop
     setg al
     movzx rax, al
     test rax, rax
-    je .L6350
+    je .L6368
     mov rax, [rbp-80]
     push rax
     mov rax, 11
@@ -139812,12 +140197,12 @@ call _ZYL_cg_strbinop
     cmp rax, rcx
     setl al
     movzx rax, al
-    jmp .L6351
-.L6350:
+    jmp .L6369
+.L6368:
     mov rax, 0
-.L6351:
+.L6369:
     test rax, rax
-    je .L6348
+    je .L6366
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139841,10 +140226,10 @@ call _ZYL_kind_of
     sete al
     movzx rax, al
     test rax, rax
-    je .L6354
+    je .L6372
     mov rax, 1
-    jmp .L6355
-.L6354:
+    jmp .L6373
+.L6372:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139867,18 +140252,18 @@ call _ZYL_kind_of
     cmp rax, rcx
     sete al
     movzx rax, al
-.L6355:
+.L6373:
     test rax, rax
-    je .L6352
+    je .L6370
     mov rax, 1
-    jmp .L6353
-.L6352:
+    jmp .L6371
+.L6370:
     mov rax, 0
-.L6353:
-    jmp .L6349
-.L6348:
+.L6371:
+    jmp .L6367
+.L6366:
     mov rax, 0
-.L6349:
+.L6367:
     push rax
     mov rax, 0
     mov rcx, rax
@@ -139887,7 +140272,7 @@ call _ZYL_kind_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6346
+    je .L6364
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139911,8 +140296,8 @@ call _ZYL_kind_of
     mov rdi, [rsp+32]
 call _ZYL_cg_variantbinop
     add rsp, 48
-    jmp .L6347
-.L6346:
+    jmp .L6365
+.L6364:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -139936,16 +140321,16 @@ call _ZYL_cg_variantbinop
     mov rdi, [rsp+32]
 call _ZYL_cg_ibinop
     add rsp, 48
-.L6347:
-.L6337:
-.L6331:
+.L6365:
+.L6355:
+.L6349:
     mov [rsp], rax
-    jmp .L6322
-.L6329:
+    jmp .L6340
+.L6347:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6356
+    jne .L6374
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -139979,12 +140364,12 @@ call _ZYL_cg_ibinop
 call _ZYL_cg_call_args
     add rsp, 48
     mov [rsp], rax
-    jmp .L6322
-.L6356:
+    jmp .L6340
+.L6374:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6357
+    jne .L6375
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -140010,12 +140395,12 @@ call _ZYL_cg_call_args
 call _ZYL_cg_call_closure_args
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6357:
+    jmp .L6340
+.L6375:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6358
+    jne .L6376
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -140049,12 +140434,12 @@ call _ZYL_cg_call_closure_args
 call _ZYL_cg_call_args
     add rsp, 48
     mov [rsp], rax
-    jmp .L6322
-.L6358:
+    jmp .L6340
+.L6376:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6359
+    jne .L6377
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -140074,12 +140459,12 @@ call _ZYL_cg_call_args
 call _ZYL_cg_print
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6359:
+    jmp .L6340
+.L6377:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6360
+    jne .L6378
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -140113,12 +140498,12 @@ call _ZYL_cg_print
 call _ZYL_cg_if_dispatch
     add rsp, 48
     mov [rsp], rax
-    jmp .L6322
-.L6360:
+    jmp .L6340
+.L6378:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6361
+    jne .L6379
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -140144,12 +140529,12 @@ call _ZYL_cg_if_dispatch
 call _ZYL_cg_while_dispatch
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6361:
+    jmp .L6340
+.L6379:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6362
+    jne .L6380
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -140175,7 +140560,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-216]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6363]
+    lea rax, [rip+.L6381]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140207,7 +140592,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-232]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6364]
+    lea rax, [rip+.L6382]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140220,12 +140605,12 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6322
-.L6362:
+    jmp .L6340
+.L6380:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6365
+    jne .L6383
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-240], rax
@@ -140259,12 +140644,12 @@ call _ZYL_cg_nl
 call _ZYL_cg_let_dispatch
     add rsp, 48
     mov [rsp], rax
-    jmp .L6322
-.L6365:
+    jmp .L6340
+.L6383:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6366
+    jne .L6384
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -140284,12 +140669,12 @@ call _ZYL_cg_let_dispatch
 call _ZYL_cg_seq
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6366:
+    jmp .L6340
+.L6384:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6367
+    jne .L6385
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-272], rax
@@ -140318,12 +140703,12 @@ call _ZYL_cg_seq
 call _ZYL_cg_variant
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6367:
+    jmp .L6340
+.L6385:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6368
+    jne .L6386
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-296], rax
@@ -140352,12 +140737,12 @@ call _ZYL_cg_variant
 call _ZYL_cg_stack_variant
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6368:
+    jmp .L6340
+.L6386:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6369
+    jne .L6387
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-320], rax
@@ -140383,12 +140768,12 @@ call _ZYL_cg_stack_variant
 call _ZYL_cg_match
     add rsp, 32
     mov [rsp], rax
-    jmp .L6322
-.L6369:
+    jmp .L6340
+.L6387:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6370
+    jne .L6388
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-336], rax
@@ -140400,12 +140785,12 @@ call _ZYL_cg_match
     mov [rbp-352], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6322
-.L6370:
+    jmp .L6340
+.L6388:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6323
+    jne .L6341
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-360], rax
@@ -140439,10 +140824,10 @@ call _ZYL_cg_match
 call _ZYL_cg_trycatch
     add rsp, 48
     mov [rsp], rax
-    jmp .L6322
-.L6323:
+    jmp .L6340
+.L6341:
     mov qword ptr [rsp], 0
-.L6322:
+.L6340:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -140472,7 +140857,7 @@ call _ZYL_env_lookup
     sete al
     movzx rax, al
     test rax, rax
-    je .L6371
+    je .L6389
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -140488,8 +140873,8 @@ call _ZYL_env_lookup
     mov rdi, [rsp+16]
 call _ZYL_cg_load_nonslot
     add rsp, 32
-    jmp .L6372
-.L6371:
+    jmp .L6390
+.L6389:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -140514,7 +140899,7 @@ call _ZYL_env_lookup
     mov rdi, [rsp+16]
 call _ZYL_cg_load_slot
     add rsp, 32
-.L6372:
+.L6390:
     mov rsp, rbp
     pop rbp
     ret
@@ -140528,7 +140913,7 @@ _ZYL_cg_load_slot:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6373]
+    lea rax, [rip+.L6391]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140551,7 +140936,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6374]
+    lea rax, [rip+.L6392]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140591,7 +140976,7 @@ call _ZYL_cg_fn_known
     sete al
     movzx rax, al
     test rax, rax
-    je .L6375
+    je .L6393
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -140602,12 +140987,12 @@ call _ZYL_cg_fn_known
     mov rdi, [rsp+8]
 call _ZYL_cg_load_fnref
     add rsp, 16
-    jmp .L6376
-.L6375:
+    jmp .L6394
+.L6393:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6379]
+    lea rax, [rip+.L6397]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140622,7 +141007,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6377
+    je .L6395
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -140630,8 +141015,8 @@ call _ZYL_str_eq
     mov rdi, [rsp+0]
 call _ZYL_cg_load_unresolved
     add rsp, 16
-    jmp .L6378
-.L6377:
+    jmp .L6396
+.L6395:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -140639,8 +141024,8 @@ call _ZYL_cg_load_unresolved
     mov rdi, [rsp+0]
 call _ZYL_cg_fail_unbound
     add rsp, 16
-.L6378:
-.L6376:
+.L6396:
+.L6394:
     mov rsp, rbp
     pop rbp
     ret
@@ -140649,7 +141034,7 @@ _ZYL_cg_fail_unbound:
     mov rbp, rsp
     sub rsp, 120
     mov [rbp-8], rdi
-    lea rax, [rip+.L6380]
+    lea rax, [rip+.L6398]
     mov [rbp-16], rax
     mov rax, [rbp-16]
     sub rsp, 8
@@ -140665,7 +141050,7 @@ call zyl_cstr_concat
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6381]
+    lea rax, [rip+.L6399]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140692,7 +141077,7 @@ _ZYL_cg_load_fnref:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6382]
+    lea rax, [rip+.L6400]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140729,7 +141114,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6383]
+    lea rax, [rip+.L6401]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140756,7 +141141,7 @@ _ZYL_cg_load_unresolved:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6384]
+    lea rax, [rip+.L6402]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -140895,7 +141280,7 @@ _ZYL_cg_while_labels:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6386
+    jne .L6404
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -140932,10 +141317,10 @@ _ZYL_cg_while_labels:
 call _ZYL_cg_while_parts
     add rsp, 48
     mov [rsp], rax
-    jmp .L6385
-.L6386:
+    jmp .L6403
+.L6404:
     mov qword ptr [rsp], 0
-.L6385:
+.L6403:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -140960,7 +141345,7 @@ call _ZYL_cg_new_slot
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6388
+    jne .L6406
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -140997,10 +141382,10 @@ call _ZYL_cg_new_slot
 call _ZYL_cg_let_store
     add rsp, 48
     mov [rsp], rax
-    jmp .L6387
-.L6388:
+    jmp .L6405
+.L6406:
     mov qword ptr [rsp], 0
-.L6387:
+.L6405:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -141050,7 +141435,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6389]
+    lea rax, [rip+.L6407]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141073,7 +141458,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6390]
+    lea rax, [rip+.L6408]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141141,7 +141526,7 @@ _ZYL_cg_if_parts:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6392
+    jne .L6410
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -141170,7 +141555,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6393]
+    lea rax, [rip+.L6411]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141189,7 +141574,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6394]
+    lea rax, [rip+.L6412]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141233,7 +141618,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-112]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6395]
+    lea rax, [rip+.L6413]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141296,10 +141681,10 @@ call _ZYL_cg_expr
 call _ZYL_cg_emit_label
     add rsp, 16
     mov [rsp], rax
-    jmp .L6391
-.L6392:
+    jmp .L6409
+.L6410:
     mov qword ptr [rsp], 0
-.L6391:
+.L6409:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -141325,7 +141710,7 @@ call _ZYL_cg_new_slot
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6397
+    jne .L6415
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -141367,10 +141752,10 @@ call _ZYL_cg_new_slot
 call _ZYL_cg_while_body
     add rsp, 64
     mov [rsp], rax
-    jmp .L6396
-.L6397:
+    jmp .L6414
+.L6415:
     mov qword ptr [rsp], 0
-.L6396:
+.L6414:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -141390,7 +141775,7 @@ _ZYL_cg_while_body:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6398]
+    lea rax, [rip+.L6416]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141437,7 +141822,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6399]
+    lea rax, [rip+.L6417]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141448,7 +141833,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6400]
+    lea rax, [rip+.L6418]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141503,7 +141888,7 @@ call _ZYL_cg_while_store
     mov rax, [rbp-120]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6401]
+    lea rax, [rip+.L6419]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141561,7 +141946,7 @@ _ZYL_cg_while_store:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6402]
+    lea rax, [rip+.L6420]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141583,7 +141968,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6403]
+    lea rax, [rip+.L6421]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141602,7 +141987,7 @@ _ZYL_cg_while_load:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6404]
+    lea rax, [rip+.L6422]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141624,7 +142009,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6405]
+    lea rax, [rip+.L6423]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141674,19 +142059,19 @@ _ZYL_cg_seq:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6406
+    je .L6424
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6408]
+    lea rax, [rip+.L6426]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6407
-.L6406:
+    jmp .L6425
+.L6424:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-24]
@@ -141701,7 +142086,7 @@ call _ZYL_tl2
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6409
+    je .L6427
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -141723,8 +142108,8 @@ call _ZYL_ih_ic
     mov rdi, [rsp+16]
 call _ZYL_cg_expr
     add rsp, 32
-    jmp .L6410
-.L6409:
+    jmp .L6428
+.L6427:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -141768,8 +142153,8 @@ call _ZYL_tl2
     mov rdi, [rsp+16]
 call _ZYL_cg_seq
     add rsp, 32
-.L6410:
-.L6407:
+.L6428:
+.L6425:
     mov rsp, rbp
     pop rbp
     ret
@@ -141801,7 +142186,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6411]
+    lea rax, [rip+.L6429]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141828,7 +142213,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6412]
+    lea rax, [rip+.L6430]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141839,7 +142224,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6413]
+    lea rax, [rip+.L6431]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -141856,7 +142241,7 @@ call _ZYL_cg_emit_line
     setl al
     movzx rax, al
     test rax, rax
-    je .L6414
+    je .L6432
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
@@ -141867,8 +142252,8 @@ call _ZYL_cg_emit_line
     mov rdi, [rsp+8]
 call _ZYL_cg_arith_mnem
     add rsp, 16
-    jmp .L6415
-.L6414:
+    jmp .L6433
+.L6432:
     mov rax, [rbp-24]
     push rax
     mov rax, 10
@@ -141878,7 +142263,7 @@ call _ZYL_cg_arith_mnem
     setg al
     movzx rax, al
     test rax, rax
-    je .L6416
+    je .L6434
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
@@ -141889,8 +142274,8 @@ call _ZYL_cg_arith_mnem
     mov rdi, [rsp+8]
 call _ZYL_cg_bit_mnem
     add rsp, 16
-    jmp .L6417
-.L6416:
+    jmp .L6435
+.L6434:
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
@@ -141901,8 +142286,8 @@ call _ZYL_cg_bit_mnem
     mov rdi, [rsp+8]
 call _ZYL_cg_cmp_set
     add rsp, 16
-.L6417:
-.L6415:
+.L6435:
+.L6433:
     mov rsp, rbp
     pop rbp
     ret
@@ -141922,7 +142307,7 @@ _ZYL_cg_strbinop:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6418]
+    lea rax, [rip+.L6436]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -141992,21 +142377,21 @@ call _ZYL_cg_expr
     sete al
     movzx rax, al
     test rax, rax
-    je .L6419
+    je .L6437
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6421]
+    lea rax, [rip+.L6439]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6420
-.L6419:
+    jmp .L6438
+.L6437:
     mov rax, [rbp-48]
-.L6420:
+.L6438:
     mov rsp, rbp
     pop rbp
     ret
@@ -142028,7 +142413,7 @@ _ZYL_cg_variantbinop:
     setg al
     movzx rax, al
     test rax, rax
-    je .L6422
+    je .L6440
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -142036,7 +142421,7 @@ _ZYL_cg_variantbinop:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6424]
+    lea rax, [rip+.L6442]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -142106,23 +142491,23 @@ call _ZYL_cg_expr
     sete al
     movzx rax, al
     test rax, rax
-    je .L6425
+    je .L6443
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6427]
+    lea rax, [rip+.L6445]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6426
-.L6425:
+    jmp .L6444
+.L6443:
     mov rax, [rbp-48]
-.L6426:
-    jmp .L6423
-.L6422:
+.L6444:
+    jmp .L6441
+.L6440:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -142130,7 +142515,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6428]
+    lea rax, [rip+.L6446]
     push rax
     mov rax, [rbp-32]
     push rax
@@ -142201,7 +142586,7 @@ call _ZYL_cg_expr
     mov rdi, [rsp+8]
 call _ZYL_cg_variant_cmp_set
     add rsp, 16
-.L6423:
+.L6441:
     mov rsp, rbp
     pop rbp
     ret
@@ -142214,7 +142599,7 @@ _ZYL_cg_variant_cmp_set:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6429]
+    lea rax, [rip+.L6447]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142225,7 +142610,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6430]
+    lea rax, [rip+.L6448]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142242,19 +142627,19 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6431
+    je .L6449
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6433]
+    lea rax, [rip+.L6451]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6432
-.L6431:
+    jmp .L6450
+.L6449:
     mov rax, [rbp-16]
     push rax
     mov rax, 6
@@ -142264,19 +142649,19 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6434
+    je .L6452
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6436]
+    lea rax, [rip+.L6454]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6435
-.L6434:
+    jmp .L6453
+.L6452:
     mov rax, [rbp-16]
     push rax
     mov rax, 7
@@ -142286,32 +142671,32 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6437
+    je .L6455
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6439]
+    lea rax, [rip+.L6457]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6438
-.L6437:
+    jmp .L6456
+.L6455:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6440]
+    lea rax, [rip+.L6458]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-.L6438:
-.L6435:
-.L6432:
+.L6456:
+.L6453:
+.L6450:
     mov rsp, rbp
     pop rbp
     ret
@@ -142330,21 +142715,21 @@ _ZYL_cg_arith_mnem:
     setg al
     movzx rax, al
     test rax, rax
-    je .L6441
+    je .L6459
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6443]
+    lea rax, [rip+.L6461]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6442
-.L6441:
+    jmp .L6460
+.L6459:
     mov rax, [rbp-8]
-.L6442:
+.L6460:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     push rax
@@ -142355,10 +142740,10 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6444
-    lea rax, [rip+.L6446]
-    jmp .L6445
-.L6444:
+    je .L6462
+    lea rax, [rip+.L6464]
+    jmp .L6463
+.L6462:
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -142368,10 +142753,10 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6447
-    lea rax, [rip+.L6449]
-    jmp .L6448
-.L6447:
+    je .L6465
+    lea rax, [rip+.L6467]
+    jmp .L6466
+.L6465:
     mov rax, [rbp-16]
     push rax
     mov rax, 2
@@ -142381,14 +142766,14 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6450
-    lea rax, [rip+.L6452]
-    jmp .L6451
-.L6450:
-    lea rax, [rip+.L6453]
-.L6451:
-.L6448:
-.L6445:
+    je .L6468
+    lea rax, [rip+.L6470]
+    jmp .L6469
+.L6468:
+    lea rax, [rip+.L6471]
+.L6469:
+.L6466:
+.L6463:
     mov [rbp-32], rax
     mov rax, [rbp-24]
     sub rsp, 8
@@ -142410,21 +142795,21 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6454
+    je .L6472
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6456]
+    lea rax, [rip+.L6474]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6455
-.L6454:
+    jmp .L6473
+.L6472:
     mov rax, [rbp-40]
-.L6455:
+.L6473:
     mov rsp, rbp
     pop rbp
     ret
@@ -142443,19 +142828,19 @@ _ZYL_cg_bit_mnem:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6457
+    je .L6475
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6459]
+    lea rax, [rip+.L6477]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6458
-.L6457:
+    jmp .L6476
+.L6475:
     mov rax, [rbp-16]
     push rax
     mov rax, 12
@@ -142465,19 +142850,19 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6460
+    je .L6478
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6462]
+    lea rax, [rip+.L6480]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6461
-.L6460:
+    jmp .L6479
+.L6478:
     mov rax, [rbp-16]
     push rax
     mov rax, 13
@@ -142487,19 +142872,19 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6463
+    je .L6481
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6465]
+    lea rax, [rip+.L6483]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6464
-.L6463:
+    jmp .L6482
+.L6481:
     mov rax, [rbp-16]
     push rax
     mov rax, 16
@@ -142509,7 +142894,7 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6466
+    je .L6484
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -142517,8 +142902,8 @@ call _ZYL_cg_emit_line
     mov rdi, [rsp+0]
 call _ZYL_cg_bit_ashr
     add rsp, 16
-    jmp .L6467
-.L6466:
+    jmp .L6485
+.L6484:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -142529,10 +142914,10 @@ call _ZYL_cg_bit_ashr
     mov rdi, [rsp+8]
 call _ZYL_cg_bit_logical_shift
     add rsp, 16
-.L6467:
-.L6464:
-.L6461:
-.L6458:
+.L6485:
+.L6482:
+.L6479:
+.L6476:
     mov rsp, rbp
     pop rbp
     ret
@@ -142545,7 +142930,7 @@ _ZYL_cg_bit_logical_shift:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6468]
+    lea rax, [rip+.L6486]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142565,12 +142950,12 @@ call _ZYL_cg_emit_line
     sete al
     movzx rax, al
     test rax, rax
-    je .L6469
-    lea rax, [rip+.L6471]
-    jmp .L6470
-.L6469:
-    lea rax, [rip+.L6472]
-.L6470:
+    je .L6487
+    lea rax, [rip+.L6489]
+    jmp .L6488
+.L6487:
+    lea rax, [rip+.L6490]
+.L6488:
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142581,7 +142966,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6473]
+    lea rax, [rip+.L6491]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142592,7 +142977,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6474]
+    lea rax, [rip+.L6492]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142603,7 +142988,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6475]
+    lea rax, [rip+.L6493]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142621,7 +143006,7 @@ _ZYL_cg_bit_ashr:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6476]
+    lea rax, [rip+.L6494]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142632,7 +143017,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6477]
+    lea rax, [rip+.L6495]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142643,7 +143028,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6478]
+    lea rax, [rip+.L6496]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142654,7 +143039,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6479]
+    lea rax, [rip+.L6497]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142673,7 +143058,7 @@ _ZYL_cg_cmp_set:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6480]
+    lea rax, [rip+.L6498]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142684,7 +143069,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6481]
+    lea rax, [rip+.L6499]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142701,19 +143086,19 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6482
+    je .L6500
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6484]
+    lea rax, [rip+.L6502]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6483
-.L6482:
+    jmp .L6501
+.L6500:
     mov rax, [rbp-16]
     push rax
     mov rax, 6
@@ -142723,19 +143108,19 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6485
+    je .L6503
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6487]
+    lea rax, [rip+.L6505]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6486
-.L6485:
+    jmp .L6504
+.L6503:
     mov rax, [rbp-16]
     push rax
     mov rax, 7
@@ -142745,19 +143130,19 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6488
+    je .L6506
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6490]
+    lea rax, [rip+.L6508]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6489
-.L6488:
+    jmp .L6507
+.L6506:
     mov rax, [rbp-16]
     push rax
     mov rax, 8
@@ -142767,19 +143152,19 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6491
+    je .L6509
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6493]
+    lea rax, [rip+.L6511]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6492
-.L6491:
+    jmp .L6510
+.L6509:
     mov rax, [rbp-16]
     push rax
     mov rax, 9
@@ -142789,19 +143174,19 @@ call _ZYL_cg_setcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6494
+    je .L6512
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6496]
+    lea rax, [rip+.L6514]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_setcc
     add rsp, 16
-    jmp .L6495
-.L6494:
+    jmp .L6513
+.L6512:
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -142809,11 +143194,11 @@ call _ZYL_cg_setcc
     mov rdi, [rsp+0]
 call _ZYL_cg_setcc_ne
     add rsp, 16
-.L6495:
-.L6492:
-.L6489:
-.L6486:
-.L6483:
+.L6513:
+.L6510:
+.L6507:
+.L6504:
+.L6501:
     mov rsp, rbp
     pop rbp
     ret
@@ -142843,7 +143228,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6497]
+    lea rax, [rip+.L6515]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142862,7 +143247,7 @@ _ZYL_cg_setcc_ne:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6498]
+    lea rax, [rip+.L6516]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142878,7 +143263,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6499]
+    lea rax, [rip+.L6517]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142916,7 +143301,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6500]
+    lea rax, [rip+.L6518]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142943,7 +143328,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6501]
+    lea rax, [rip+.L6519]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142954,7 +143339,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6502]
+    lea rax, [rip+.L6520]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142965,7 +143350,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6503]
+    lea rax, [rip+.L6521]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -142982,7 +143367,7 @@ call _ZYL_cg_emit_line
     setl al
     movzx rax, al
     test rax, rax
-    je .L6504
+    je .L6522
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -142993,8 +143378,8 @@ call _ZYL_cg_emit_line
     mov rdi, [rsp+8]
 call _ZYL_cg_farith
     add rsp, 16
-    jmp .L6505
-.L6504:
+    jmp .L6523
+.L6522:
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -143005,7 +143390,7 @@ call _ZYL_cg_farith
     mov rdi, [rsp+8]
 call _ZYL_cg_fcmp
     add rsp, 16
-.L6505:
+.L6523:
     mov rsp, rbp
     pop rbp
     ret
@@ -143018,7 +143403,7 @@ _ZYL_cg_farith:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6506]
+    lea rax, [rip+.L6524]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143035,19 +143420,19 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6507
+    je .L6525
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6509]
+    lea rax, [rip+.L6527]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit
     add rsp, 16
-    jmp .L6508
-.L6507:
+    jmp .L6526
+.L6525:
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -143057,19 +143442,19 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6510
+    je .L6528
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6512]
+    lea rax, [rip+.L6530]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit
     add rsp, 16
-    jmp .L6511
-.L6510:
+    jmp .L6529
+.L6528:
     mov rax, [rbp-16]
     push rax
     mov rax, 2
@@ -143079,37 +143464,37 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6513
+    je .L6531
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6515]
+    lea rax, [rip+.L6533]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit
     add rsp, 16
-    jmp .L6514
-.L6513:
+    jmp .L6532
+.L6531:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6516]
+    lea rax, [rip+.L6534]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit
     add rsp, 16
-.L6514:
-.L6511:
-.L6508:
+.L6532:
+.L6529:
+.L6526:
     mov [rbp-32], rax
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6517]
+    lea rax, [rip+.L6535]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143120,7 +143505,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6518]
+    lea rax, [rip+.L6536]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143139,7 +143524,7 @@ _ZYL_cg_fcmp:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6519]
+    lea rax, [rip+.L6537]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143150,7 +143535,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6520]
+    lea rax, [rip+.L6538]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143167,19 +143552,19 @@ call _ZYL_cg_emit
     sete al
     movzx rax, al
     test rax, rax
-    je .L6521
+    je .L6539
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6523]
+    lea rax, [rip+.L6541]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_fsetcc
     add rsp, 16
-    jmp .L6522
-.L6521:
+    jmp .L6540
+.L6539:
     mov rax, [rbp-16]
     push rax
     mov rax, 6
@@ -143189,19 +143574,19 @@ call _ZYL_cg_fsetcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6524
+    je .L6542
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6526]
+    lea rax, [rip+.L6544]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_fsetcc
     add rsp, 16
-    jmp .L6525
-.L6524:
+    jmp .L6543
+.L6542:
     mov rax, [rbp-16]
     push rax
     mov rax, 7
@@ -143211,19 +143596,19 @@ call _ZYL_cg_fsetcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6527
+    je .L6545
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6529]
+    lea rax, [rip+.L6547]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_fsetcc
     add rsp, 16
-    jmp .L6528
-.L6527:
+    jmp .L6546
+.L6545:
     mov rax, [rbp-16]
     push rax
     mov rax, 8
@@ -143233,19 +143618,19 @@ call _ZYL_cg_fsetcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6530
+    je .L6548
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6532]
+    lea rax, [rip+.L6550]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_fsetcc
     add rsp, 16
-    jmp .L6531
-.L6530:
+    jmp .L6549
+.L6548:
     mov rax, [rbp-16]
     push rax
     mov rax, 9
@@ -143255,19 +143640,19 @@ call _ZYL_cg_fsetcc
     sete al
     movzx rax, al
     test rax, rax
-    je .L6533
+    je .L6551
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6535]
+    lea rax, [rip+.L6553]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_fsetcc
     add rsp, 16
-    jmp .L6534
-.L6533:
+    jmp .L6552
+.L6551:
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -143275,11 +143660,11 @@ call _ZYL_cg_fsetcc
     mov rdi, [rsp+0]
 call _ZYL_cg_fsetcc_ne
     add rsp, 16
-.L6534:
-.L6531:
-.L6528:
-.L6525:
-.L6522:
+.L6552:
+.L6549:
+.L6546:
+.L6543:
+.L6540:
     mov rsp, rbp
     pop rbp
     ret
@@ -143309,7 +143694,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6536]
+    lea rax, [rip+.L6554]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143328,7 +143713,7 @@ _ZYL_cg_fsetcc_ne:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6537]
+    lea rax, [rip+.L6555]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143344,7 +143729,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6538]
+    lea rax, [rip+.L6556]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143368,10 +143753,10 @@ _ZYL_cg_reg_of:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6539
-    lea rax, [rip+.L6541]
-    jmp .L6540
-.L6539:
+    je .L6557
+    lea rax, [rip+.L6559]
+    jmp .L6558
+.L6557:
     mov rax, [rbp-8]
     push rax
     mov rax, 1
@@ -143381,10 +143766,10 @@ _ZYL_cg_reg_of:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6542
-    lea rax, [rip+.L6544]
-    jmp .L6543
-.L6542:
+    je .L6560
+    lea rax, [rip+.L6562]
+    jmp .L6561
+.L6560:
     mov rax, [rbp-8]
     push rax
     mov rax, 2
@@ -143394,10 +143779,10 @@ _ZYL_cg_reg_of:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6545
-    lea rax, [rip+.L6547]
-    jmp .L6546
-.L6545:
+    je .L6563
+    lea rax, [rip+.L6565]
+    jmp .L6564
+.L6563:
     mov rax, [rbp-8]
     push rax
     mov rax, 3
@@ -143407,10 +143792,10 @@ _ZYL_cg_reg_of:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6548
-    lea rax, [rip+.L6550]
-    jmp .L6549
-.L6548:
+    je .L6566
+    lea rax, [rip+.L6568]
+    jmp .L6567
+.L6566:
     mov rax, [rbp-8]
     push rax
     mov rax, 4
@@ -143420,16 +143805,16 @@ _ZYL_cg_reg_of:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6551
-    lea rax, [rip+.L6553]
-    jmp .L6552
-.L6551:
-    lea rax, [rip+.L6554]
-.L6552:
-.L6549:
-.L6546:
-.L6543:
-.L6540:
+    je .L6569
+    lea rax, [rip+.L6571]
+    jmp .L6570
+.L6569:
+    lea rax, [rip+.L6572]
+.L6570:
+.L6567:
+.L6564:
+.L6561:
+.L6558:
     mov rsp, rbp
     pop rbp
     ret
@@ -143478,21 +143863,21 @@ call _ZYL_cg_stack_count
     sete al
     movzx rax, al
     test rax, rax
-    je .L6555
+    je .L6573
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6557]
+    lea rax, [rip+.L6575]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6556
-.L6555:
+    jmp .L6574
+.L6573:
     mov rax, [rbp-8]
-.L6556:
+.L6574:
     mov [rbp-64], rax
     sub rsp, 8
     mov rax, [rbp-64]
@@ -143573,7 +143958,7 @@ call _ZYL_cg_load_reg_args
     setg al
     movzx rax, al
     test rax, rax
-    je .L6558
+    je .L6576
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -143592,8 +143977,8 @@ call _ZYL_cg_load_reg_args
     mov rdi, [rsp+24]
 call _ZYL_cg_fire_user
     add rsp, 32
-    jmp .L6559
-.L6558:
+    jmp .L6577
+.L6576:
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -143612,7 +143997,7 @@ call _ZYL_cg_fire_user
     mov rdi, [rsp+24]
 call _ZYL_cg_fire_ext
     add rsp, 32
-.L6559:
+.L6577:
     mov rsp, rbp
     pop rbp
     ret
@@ -143630,17 +144015,17 @@ _ZYL_cg_stack_count:
     setg al
     movzx rax, al
     test rax, rax
-    je .L6560
+    je .L6578
     mov rax, [rbp-8]
     push rax
     mov rax, 6
     mov rcx, rax
     pop rax
     sub rax, rcx
-    jmp .L6561
-.L6560:
+    jmp .L6579
+.L6578:
     mov rax, 0
-.L6561:
+.L6579:
     mov rsp, rbp
     pop rbp
     ret
@@ -143659,12 +144044,12 @@ _ZYL_cg_min_int:
     setl al
     movzx rax, al
     test rax, rax
-    je .L6562
+    je .L6580
     mov rax, [rbp-8]
-    jmp .L6563
-.L6562:
+    jmp .L6581
+.L6580:
     mov rax, [rbp-16]
-.L6563:
+.L6581:
     mov rsp, rbp
     pop rbp
     ret
@@ -143683,10 +144068,10 @@ _ZYL_cg_scratch_all:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6564
+    je .L6582
     mov rax, [rbp-8]
-    jmp .L6565
-.L6564:
+    jmp .L6583
+.L6582:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -143712,7 +144097,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6566]
+    lea rax, [rip+.L6584]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143723,7 +144108,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6567]
+    lea rax, [rip+.L6585]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143752,7 +144137,7 @@ call _ZYL_tl2
     mov rdi, [rsp+16]
 call _ZYL_cg_scratch_all
     add rsp, 32
-.L6565:
+.L6583:
     mov rsp, rbp
     pop rbp
     ret
@@ -143773,10 +144158,10 @@ _ZYL_cg_copy_stack_args:
     setl al
     movzx rax, al
     test rax, rax
-    je .L6568
+    je .L6586
     mov rax, [rbp-8]
-    jmp .L6569
-.L6568:
+    jmp .L6587
+.L6586:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -143836,7 +144221,7 @@ call _ZYL_cg_copy_one
     mov rdi, [rsp+24]
 call _ZYL_cg_copy_stack_args
     add rsp, 32
-.L6569:
+.L6587:
     mov rsp, rbp
     pop rbp
     ret
@@ -143849,7 +144234,7 @@ _ZYL_cg_copy_one:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6570]
+    lea rax, [rip+.L6588]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143871,7 +144256,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6571]
+    lea rax, [rip+.L6589]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143890,7 +144275,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6572]
+    lea rax, [rip+.L6590]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -143916,10 +144301,10 @@ _ZYL_cg_load_reg_args:
     setl al
     movzx rax, al
     test rax, rax
-    je .L6573
+    je .L6591
     mov rax, [rbp-8]
-    jmp .L6574
-.L6573:
+    jmp .L6592
+.L6591:
     mov rax, 8
     push rax
     mov rax, [rbp-16]
@@ -143997,7 +144382,7 @@ call _ZYL_cg_load_reg_one
     mov rdi, [rsp+16]
 call _ZYL_cg_load_reg_args
     add rsp, 32
-.L6574:
+.L6592:
     mov rsp, rbp
     pop rbp
     ret
@@ -144011,7 +144396,7 @@ _ZYL_cg_load_reg_one:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6575]
+    lea rax, [rip+.L6593]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144033,7 +144418,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6576]
+    lea rax, [rip+.L6594]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144056,7 +144441,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6577]
+    lea rax, [rip+.L6595]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144095,7 +144480,7 @@ _ZYL_cg_sym_for:
     setg al
     movzx rax, al
     test rax, rax
-    je .L6578
+    je .L6596
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -144106,8 +144491,8 @@ _ZYL_cg_sym_for:
     mov rdi, [rsp+8]
 call _ZYL_cg_sym_mangled
     add rsp, 16
-    jmp .L6579
-.L6578:
+    jmp .L6597
+.L6596:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -144118,7 +144503,7 @@ call _ZYL_cg_sym_mangled
     mov rdi, [rsp+8]
 call zyl_cstr_sanitize
     add rsp, 16
-.L6579:
+.L6597:
     mov rsp, rbp
     pop rbp
     ret
@@ -144145,7 +144530,7 @@ call _ZYL_arena_alloc_zeroed
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6580]
+    lea rax, [rip+.L6598]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144333,7 +144718,7 @@ call _ZYL_cg_arena_of
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6581]
+    lea rax, [rip+.L6599]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144379,7 +144764,7 @@ call _ZYL_env_lookup
     sete al
     movzx rax, al
     test rax, rax
-    je .L6582
+    je .L6600
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -144398,8 +144783,8 @@ call _ZYL_env_lookup
     mov rdi, [rsp+24]
 call _ZYL_cg_user_direct
     add rsp, 32
-    jmp .L6583
-.L6582:
+    jmp .L6601
+.L6600:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -144418,7 +144803,7 @@ call _ZYL_cg_user_direct
     mov rdi, [rsp+24]
 call _ZYL_cg_user_indirect
     add rsp, 32
-.L6583:
+.L6601:
     mov rsp, rbp
     pop rbp
     ret
@@ -144463,7 +144848,7 @@ call _ZYL_cg_stack_count
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6584]
+    lea rax, [rip+.L6602]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144545,7 +144930,7 @@ _ZYL_cg_indirect_target:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6585]
+    lea rax, [rip+.L6603]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144567,7 +144952,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6586]
+    lea rax, [rip+.L6604]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144586,7 +144971,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6587]
+    lea rax, [rip+.L6605]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144680,21 +145065,21 @@ call _ZYL_cg_stack_count
     sete al
     movzx rax, al
     test rax, rax
-    je .L6588
+    je .L6606
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6590]
+    lea rax, [rip+.L6608]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6589
-.L6588:
+    jmp .L6607
+.L6606:
     mov rax, [rbp-8]
-.L6589:
+.L6607:
     mov [rbp-48], rax
     sub rsp, 8
     mov rax, [rbp-48]
@@ -144798,7 +145183,7 @@ _ZYL_cg_closure_fire:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6591]
+    lea rax, [rip+.L6609]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144830,7 +145215,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6592]
+    lea rax, [rip+.L6610]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144846,7 +145231,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6593]
+    lea rax, [rip+.L6611]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144875,7 +145260,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6594]
+    lea rax, [rip+.L6612]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144891,7 +145276,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6595]
+    lea rax, [rip+.L6613]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144902,7 +145287,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6596]
+    lea rax, [rip+.L6614]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -144967,7 +145352,7 @@ call _ZYL_cg_arena_of
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6597]
+    lea rax, [rip+.L6615]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145012,7 +145397,7 @@ call _ZYL_cg_call_cleanup
 _ZYL_cg_print:
     push rbp
     mov rbp, rsp
-    sub rsp, 216
+    sub rsp, 200
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
@@ -145057,11 +145442,11 @@ call _ZYL_cg_expr
     sete al
     movzx rax, al
     test rax, rax
-    je .L6598
+    je .L6616
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6600]
+    lea rax, [rip+.L6618]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145072,7 +145457,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6601]
+    lea rax, [rip+.L6619]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145083,7 +145468,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6602]
+    lea rax, [rip+.L6620]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145091,10 +145476,38 @@ call _ZYL_cg_emit_line
 call _ZYL_cg_emit_line
     add rsp, 16
     mov [rbp-64], rax
+    sub rsp, 8
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6603]
+    mov rdi, [rsp+0]
+call _ZYL_cg_print_call
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6621]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_cg_emit_line
+    add rsp, 16
+    jmp .L6617
+.L6616:
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L6622
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6624]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145105,29 +145518,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6604]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_cg_emit_line
-    add rsp, 16
-    jmp .L6599
-.L6598:
-    mov rax, [rbp-32]
-    push rax
-    mov rax, 1
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L6605
-    mov rax, [rbp-40]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6607]
+    lea rax, [rip+.L6625]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145138,7 +145529,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6608]
+    lea rax, [rip+.L6626]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145146,10 +145537,28 @@ call _ZYL_cg_emit_line
 call _ZYL_cg_emit_line
     add rsp, 16
     mov [rbp-88], rax
+    sub rsp, 8
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6609]
+    mov rdi, [rsp+0]
+call _ZYL_cg_print_call
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6627]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_cg_emit_line
+    add rsp, 16
+    jmp .L6623
+.L6622:
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6628]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145160,7 +145569,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6610]
+    lea rax, [rip+.L6629]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145171,19 +145580,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6611]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_cg_emit_line
-    add rsp, 16
-    jmp .L6606
-.L6605:
-    mov rax, [rbp-40]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6612]
+    lea rax, [rip+.L6630]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145191,51 +145588,75 @@ call _ZYL_cg_emit_line
 call _ZYL_cg_emit_line
     add rsp, 16
     mov [rbp-112], rax
+    sub rsp, 8
     mov rax, [rbp-112]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6613]
+    mov rdi, [rsp+0]
+call _ZYL_cg_print_call
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6631]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    mov [rbp-120], rax
-    mov rax, [rbp-120]
+.L6623:
+.L6617:
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_cg_print_call:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6614]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_cg_emit_line
-    add rsp, 16
-    mov [rbp-128], rax
-    mov rax, [rbp-128]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6615]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call _ZYL_cg_emit_line
-    add rsp, 16
-    mov [rbp-136], rax
-    mov rax, [rbp-136]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L6616]
+    lea rax, [rip+.L6632]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-.L6606:
-.L6599:
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6633]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_cg_emit_line
+    add rsp, 16
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6634]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_cg_emit_line
+    add rsp, 16
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L6635]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call _ZYL_cg_emit_line
+    add rsp, 16
     mov rsp, rbp
     pop rbp
     ret
@@ -145274,7 +145695,7 @@ call _ZYL_cg_push_fields
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6617]
+    lea rax, [rip+.L6636]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145285,7 +145706,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6618]
+    lea rax, [rip+.L6637]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145297,7 +145718,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6619]
+    lea rax, [rip+.L6638]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145332,7 +145753,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6620]
+    lea rax, [rip+.L6639]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145343,7 +145764,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6621]
+    lea rax, [rip+.L6640]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145354,7 +145775,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6622]
+    lea rax, [rip+.L6641]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145365,7 +145786,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6623]
+    lea rax, [rip+.L6642]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145409,7 +145830,7 @@ call _ZYL_cg_pop_fields
     mov rax, [rbp-120]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6624]
+    lea rax, [rip+.L6643]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145434,10 +145855,10 @@ _ZYL_cg_push_fields:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6625
+    je .L6644
     mov rax, [rbp-8]
-    jmp .L6626
-.L6625:
+    jmp .L6645
+.L6644:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -145464,7 +145885,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6627]
+    lea rax, [rip+.L6646]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145490,7 +145911,7 @@ call _ZYL_tl2
     mov rdi, [rsp+16]
 call _ZYL_cg_push_fields
     add rsp, 32
-.L6626:
+.L6645:
     mov rsp, rbp
     pop rbp
     ret
@@ -145509,14 +145930,14 @@ _ZYL_cg_pop_fields:
     setl al
     movzx rax, al
     test rax, rax
-    je .L6628
+    je .L6647
     mov rax, [rbp-8]
-    jmp .L6629
-.L6628:
+    jmp .L6648
+.L6647:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6630]
+    lea rax, [rip+.L6649]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145527,7 +145948,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6631]
+    lea rax, [rip+.L6650]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145560,7 +145981,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6632]
+    lea rax, [rip+.L6651]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145588,7 +146009,7 @@ call _ZYL_cg_nl
     mov rdi, [rsp+8]
 call _ZYL_cg_pop_fields
     add rsp, 16
-.L6629:
+.L6648:
     mov rsp, rbp
     pop rbp
     ret
@@ -145609,7 +146030,7 @@ call _ZYL_cg_new_slot
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6634
+    jne .L6653
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -145628,12 +146049,12 @@ call _ZYL_cg_new_slot
     setle al
     movzx rax, al
     test rax, rax
-    je .L6635
+    je .L6654
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
     push rax
-    lea rax, [rip+.L6637]
+    lea rax, [rip+.L6656]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -145649,8 +146070,8 @@ call _ZYL_cg_new_slot
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6636
-.L6635:
+    jmp .L6655
+.L6654:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -145666,12 +146087,12 @@ call _ZYL_cg_new_slot
     mov rdi, [rsp+8]
 call _ZYL_cg_reserve_block
     add rsp, 16
-.L6636:
+.L6655:
     mov [rsp], rax
-    jmp .L6633
-.L6634:
+    jmp .L6652
+.L6653:
     mov qword ptr [rsp], 0
-.L6633:
+.L6652:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -145711,7 +146132,7 @@ call _ZYL_cg_reserve_block
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6639
+    jne .L6658
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -145724,7 +146145,7 @@ call _ZYL_cg_reserve_block
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6640]
+    lea rax, [rip+.L6659]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145746,7 +146167,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6641]
+    lea rax, [rip+.L6660]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145798,7 +146219,7 @@ call _ZYL_cg_stack_write_fields
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6642]
+    lea rax, [rip+.L6661]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145821,7 +146242,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-120]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6643]
+    lea rax, [rip+.L6662]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145834,10 +146255,10 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6638
-.L6639:
+    jmp .L6657
+.L6658:
     mov qword ptr [rsp], 0
-.L6638:
+.L6657:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -145856,15 +146277,15 @@ _ZYL_cg_stack_write_fields:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6646
+    jne .L6665
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6644
-.L6646:
+    jmp .L6663
+.L6665:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6645
+    jne .L6664
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -145890,7 +146311,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6647]
+    lea rax, [rip+.L6666]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145928,7 +146349,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6648]
+    lea rax, [rip+.L6667]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -145970,10 +146391,10 @@ call _ZYL_cg_nl
 call _ZYL_cg_stack_write_fields
     add rsp, 48
     mov [rsp], rax
-    jmp .L6644
-.L6645:
+    jmp .L6663
+.L6664:
     mov qword ptr [rsp], 0
-.L6644:
+.L6663:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146026,7 +146447,7 @@ _ZYL_cg_match_labels:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6650
+    jne .L6669
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -146063,10 +146484,10 @@ _ZYL_cg_match_labels:
 call _ZYL_cg_match_scrutinee
     add rsp, 48
     mov [rsp], rax
-    jmp .L6649
-.L6650:
+    jmp .L6668
+.L6669:
     mov qword ptr [rsp], 0
-.L6649:
+.L6668:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146100,7 +146521,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6651]
+    lea rax, [rip+.L6670]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146181,7 +146602,7 @@ call _ZYL_cg_emit_label
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6652]
+    lea rax, [rip+.L6671]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146203,7 +146624,7 @@ call _ZYL_cg_emit_label
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6653]
+    lea rax, [rip+.L6672]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146230,10 +146651,10 @@ _ZYL_cg_arms:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6654
+    je .L6673
     mov rax, [rbp-8]
-    jmp .L6655
-.L6654:
+    jmp .L6674
+.L6673:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-32]
@@ -146283,7 +146704,7 @@ call _ZYL_tl2
     mov rdi, [rsp+24]
 call _ZYL_cg_arm_one
     add rsp, 32
-.L6655:
+.L6674:
     mov rsp, rbp
     pop rbp
     ret
@@ -146300,7 +146721,7 @@ _ZYL_cg_arm_one:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6657
+    jne .L6676
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -146315,7 +146736,7 @@ _ZYL_cg_arm_one:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6659
+    jne .L6678
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -146336,7 +146757,7 @@ _ZYL_cg_arm_one:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6660
+    je .L6679
     sub rsp, 8
     mov rax, [rbp-40]
     push rax
@@ -146379,8 +146800,8 @@ call _ZYL_is_nil
     mov rdi, [rsp+32]
 call _ZYL_cg_arm_match
     add rsp, 48
-    jmp .L6661
-.L6660:
+    jmp .L6680
+.L6679:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -146478,18 +146899,18 @@ call _ZYL_cg_emit_label
     mov rdi, [rsp+32]
 call _ZYL_cg_arms
     add rsp, 48
-.L6661:
+.L6680:
     mov [rsp], rax
-    jmp .L6658
-.L6659:
+    jmp .L6677
+.L6678:
     mov qword ptr [rsp], 0
-.L6658:
+.L6677:
     pop rax
     mov [rsp], rax
-    jmp .L6656
-.L6657:
+    jmp .L6675
+.L6676:
     mov qword ptr [rsp], 0
-.L6656:
+.L6675:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146508,7 +146929,7 @@ _ZYL_cg_arm_match:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6663
+    jne .L6682
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -146527,7 +146948,7 @@ _ZYL_cg_arm_match:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6664
+    je .L6683
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
@@ -146550,7 +146971,7 @@ call _ZYL_cg_bind_fields
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6667
+    jne .L6686
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -146576,7 +146997,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6668]
+    lea rax, [rip+.L6687]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146587,7 +147008,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6669]
+    lea rax, [rip+.L6688]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146612,13 +147033,13 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6666
-.L6667:
+    jmp .L6685
+.L6686:
     mov qword ptr [rsp], 0
-.L6666:
+.L6685:
     pop rax
-    jmp .L6665
-.L6664:
+    jmp .L6684
+.L6683:
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
@@ -146633,7 +147054,7 @@ call _ZYL_cg_tag_check
     mov rax, [rbp-112]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6670]
+    lea rax, [rip+.L6689]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146680,7 +147101,7 @@ call _ZYL_cg_bind_fields
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6672
+    jne .L6691
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -146706,7 +147127,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-152]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6673]
+    lea rax, [rip+.L6692]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146717,7 +147138,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-160]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6674]
+    lea rax, [rip+.L6693]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146742,17 +147163,17 @@ call _ZYL_cg_emit
 call _ZYL_cg_nl
     add rsp, 16
     mov [rsp], rax
-    jmp .L6671
-.L6672:
+    jmp .L6690
+.L6691:
     mov qword ptr [rsp], 0
-.L6671:
+.L6690:
     pop rax
-.L6665:
+.L6684:
     mov [rsp], rax
-    jmp .L6662
-.L6663:
+    jmp .L6681
+.L6682:
     mov qword ptr [rsp], 0
-.L6662:
+.L6681:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146767,7 +147188,7 @@ _ZYL_cgr_st:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6676
+    jne .L6695
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -146779,10 +147200,10 @@ _ZYL_cgr_st:
     mov [rbp-32], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6675
-.L6676:
+    jmp .L6694
+.L6695:
     mov qword ptr [rsp], 0
-.L6675:
+.L6694:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146797,7 +147218,7 @@ _ZYL_cgr_str:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6678
+    jne .L6697
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -146809,10 +147230,10 @@ _ZYL_cgr_str:
     mov [rbp-32], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L6677
-.L6678:
+    jmp .L6696
+.L6697:
     mov qword ptr [rsp], 0
-.L6677:
+.L6696:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -146826,7 +147247,7 @@ _ZYL_cg_tag_check:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6679]
+    lea rax, [rip+.L6698]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146837,7 +147258,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6680]
+    lea rax, [rip+.L6699]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146848,7 +147269,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6681]
+    lea rax, [rip+.L6700]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146891,7 +147312,7 @@ _ZYL_cg_bind_fields:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6682
+    je .L6701
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -146908,8 +147329,8 @@ call _ZYL_is_nil
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6683
-.L6682:
+    jmp .L6702
+.L6701:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -146928,7 +147349,7 @@ call _ZYL_is_nil
     mov rdi, [rsp+24]
 call _ZYL_cg_bind_one
     add rsp, 32
-.L6683:
+.L6702:
     mov rsp, rbp
     pop rbp
     ret
@@ -146971,7 +147392,7 @@ call _ZYL_cg_arena_of
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6686]
+    lea rax, [rip+.L6705]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -146992,7 +147413,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6684
+    je .L6703
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
@@ -147022,8 +147443,8 @@ call _ZYL_tl2
     mov rdi, [rsp+24]
 call _ZYL_cg_bind_fields
     add rsp, 32
-    jmp .L6685
-.L6684:
+    jmp .L6704
+.L6703:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -147047,7 +147468,7 @@ call _ZYL_cg_bind_fields
     mov rdi, [rsp+32]
 call _ZYL_cg_bind_slot
     add rsp, 48
-.L6685:
+.L6704:
     mov rsp, rbp
     pop rbp
     ret
@@ -147071,7 +147492,7 @@ call _ZYL_cg_new_slot
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6688
+    jne .L6707
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -147108,10 +147529,10 @@ call _ZYL_cg_new_slot
 call _ZYL_cg_bind_store
     add rsp, 48
     mov [rsp], rax
-    jmp .L6687
-.L6688:
+    jmp .L6706
+.L6707:
     mov qword ptr [rsp], 0
-.L6687:
+.L6706:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -147201,7 +147622,7 @@ _ZYL_cg_load_field:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6689]
+    lea rax, [rip+.L6708]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147212,7 +147633,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6690]
+    lea rax, [rip+.L6709]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147245,7 +147666,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6691]
+    lea rax, [rip+.L6710]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147269,7 +147690,7 @@ _ZYL_cg_store_rax_slot:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6692]
+    lea rax, [rip+.L6711]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147292,7 +147713,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6693]
+    lea rax, [rip+.L6712]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147326,7 +147747,7 @@ call _ZYL_cg_emit
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6694]
+    lea rax, [rip+.L6713]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147350,7 +147771,7 @@ _ZYL_cg_call0_aligned:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6695]
+    lea rax, [rip+.L6714]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147361,7 +147782,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6696]
+    lea rax, [rip+.L6715]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147372,7 +147793,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6697]
+    lea rax, [rip+.L6716]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -147392,7 +147813,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6698]
+    lea rax, [rip+.L6717]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147422,7 +147843,7 @@ call _ZYL_cg_label_pair
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6700
+    jne .L6719
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -147443,7 +147864,7 @@ call _ZYL_cg_new_slot
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6702
+    jne .L6721
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -147490,16 +147911,16 @@ call _ZYL_cg_new_slot
 call _ZYL_cg_trycatch_emit
     add rsp, 80
     mov [rsp], rax
-    jmp .L6701
-.L6702:
+    jmp .L6720
+.L6721:
     mov qword ptr [rsp], 0
-.L6701:
+.L6720:
     pop rax
     mov [rsp], rax
-    jmp .L6699
-.L6700:
+    jmp .L6718
+.L6719:
     mov qword ptr [rsp], 0
-.L6699:
+.L6718:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -147521,7 +147942,7 @@ _ZYL_cg_trycatch_emit:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6703]
+    lea rax, [rip+.L6722]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147532,7 +147953,7 @@ call _ZYL_cg_call0_aligned
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6704]
+    lea rax, [rip+.L6723]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147543,7 +147964,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6705]
+    lea rax, [rip+.L6724]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147554,7 +147975,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6706]
+    lea rax, [rip+.L6725]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147565,7 +147986,7 @@ call _ZYL_cg_call0_aligned
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6707]
+    lea rax, [rip+.L6726]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147576,7 +147997,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6708]
+    lea rax, [rip+.L6727]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147657,7 +148078,7 @@ _ZYL_cg_trycatch_try:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6709]
+    lea rax, [rip+.L6728]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147684,7 +148105,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6710]
+    lea rax, [rip+.L6729]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147695,7 +148116,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6711]
+    lea rax, [rip+.L6730]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147706,7 +148127,7 @@ call _ZYL_cg_call0_aligned
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6712]
+    lea rax, [rip+.L6731]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147717,7 +148138,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6713]
+    lea rax, [rip+.L6732]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147795,7 +148216,7 @@ _ZYL_cg_trycatch_catch:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6714]
+    lea rax, [rip+.L6733]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147806,7 +148227,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6715]
+    lea rax, [rip+.L6734]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147817,7 +148238,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6716]
+    lea rax, [rip+.L6735]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -147934,51 +148355,51 @@ _ZYL_icnf_size:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6719
+    jne .L6738
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6717
-.L6719:
+    jmp .L6736
+.L6738:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6720
+    jne .L6739
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6717
-.L6720:
+    jmp .L6736
+.L6739:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6721
+    jne .L6740
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6717
-.L6721:
+    jmp .L6736
+.L6740:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6722
+    jne .L6741
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6717
-.L6722:
+    jmp .L6736
+.L6741:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6723
+    jne .L6742
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -148016,12 +148437,12 @@ call _ZYL_icnf_size
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6723:
+    jmp .L6736
+.L6742:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6724
+    jne .L6743
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -148045,12 +148466,12 @@ call _ZYL_icnf_count_list
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6717
-.L6724:
+    jmp .L6736
+.L6743:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6725
+    jne .L6744
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -148074,12 +148495,12 @@ call _ZYL_icnf_count_list
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6717
-.L6725:
+    jmp .L6736
+.L6744:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6726
+    jne .L6745
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -148096,12 +148517,12 @@ call _ZYL_icnf_size
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6717
-.L6726:
+    jmp .L6736
+.L6745:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6727
+    jne .L6746
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -148154,12 +148575,12 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6727:
+    jmp .L6736
+.L6746:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6728
+    jne .L6747
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -148194,12 +148615,12 @@ call _ZYL_icnf_size
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6728:
+    jmp .L6736
+.L6747:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6729
+    jne .L6748
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -148219,12 +148640,12 @@ call _ZYL_icnf_size
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6717
-.L6729:
+    jmp .L6736
+.L6748:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6730
+    jne .L6749
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -148262,12 +148683,12 @@ call _ZYL_icnf_size
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6730:
+    jmp .L6736
+.L6749:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6731
+    jne .L6750
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -148284,12 +148705,12 @@ call _ZYL_icnf_count_list
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6717
-.L6731:
+    jmp .L6736
+.L6750:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6732
+    jne .L6751
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -148312,12 +148733,12 @@ call _ZYL_icnf_count_list
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6717
-.L6732:
+    jmp .L6736
+.L6751:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6733
+    jne .L6752
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
@@ -148340,12 +148761,12 @@ call _ZYL_icnf_count_list
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6717
-.L6733:
+    jmp .L6736
+.L6752:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6734
+    jne .L6753
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -148380,12 +148801,12 @@ call _ZYL_icnf_count_arms
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6734:
+    jmp .L6736
+.L6753:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6735
+    jne .L6754
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -148397,12 +148818,12 @@ call _ZYL_icnf_add3
     mov [rbp-280], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6717
-.L6735:
+    jmp .L6736
+.L6754:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6736
+    jne .L6755
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
@@ -148426,12 +148847,12 @@ call _ZYL_icnf_count_list
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6717
-.L6736:
+    jmp .L6736
+.L6755:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6718
+    jne .L6737
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-304], rax
@@ -148469,10 +148890,10 @@ call _ZYL_icnf_size
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6717
-.L6718:
+    jmp .L6736
+.L6737:
     mov qword ptr [rsp], 0
-.L6717:
+.L6736:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -148487,15 +148908,15 @@ _ZYL_icnf_count_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6739
+    jne .L6758
     mov rax, 0
     mov [rsp], rax
-    jmp .L6737
-.L6739:
+    jmp .L6756
+.L6758:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6738
+    jne .L6757
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -148521,10 +148942,10 @@ call _ZYL_icnf_count_list
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6737
-.L6738:
+    jmp .L6756
+.L6757:
     mov qword ptr [rsp], 0
-.L6737:
+.L6756:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -148539,51 +148960,51 @@ _ZYL_icnf_slot_count:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6742
+    jne .L6761
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6740
-.L6742:
+    jmp .L6759
+.L6761:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6743
+    jne .L6762
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6740
-.L6743:
+    jmp .L6759
+.L6762:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6744
+    jne .L6763
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6740
-.L6744:
+    jmp .L6759
+.L6763:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6745
+    jne .L6764
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6740
-.L6745:
+    jmp .L6759
+.L6764:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6746
+    jne .L6765
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -148616,12 +149037,12 @@ call _ZYL_icnf_slot_count
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6746:
+    jmp .L6759
+.L6765:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6747
+    jne .L6766
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -148636,12 +149057,12 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_count_slots_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6747:
+    jmp .L6759
+.L6766:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6748
+    jne .L6767
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -148656,12 +149077,12 @@ call _ZYL_icnf_count_slots_list
 call _ZYL_icnf_count_slots_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6748:
+    jmp .L6759
+.L6767:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6749
+    jne .L6768
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -148673,12 +149094,12 @@ call _ZYL_icnf_count_slots_list
 call _ZYL_icnf_slot_count
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6749:
+    jmp .L6759
+.L6768:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6750
+    jne .L6769
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -148722,12 +149143,12 @@ call _ZYL_icnf_slot_count
 call _ZYL_icnf_add3
     add rsp, 32
     mov [rsp], rax
-    jmp .L6740
-.L6750:
+    jmp .L6759
+.L6769:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6751
+    jne .L6770
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -148762,12 +149183,12 @@ call _ZYL_icnf_add2
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6740
-.L6751:
+    jmp .L6759
+.L6770:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6752
+    jne .L6771
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -148782,12 +149203,12 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_slot_count
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6752:
+    jmp .L6759
+.L6771:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6753
+    jne .L6772
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -148825,12 +149246,12 @@ call _ZYL_icnf_add2
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6740
-.L6753:
+    jmp .L6759
+.L6772:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6754
+    jne .L6773
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -148842,12 +149263,12 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_count_slots_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6754:
+    jmp .L6759
+.L6773:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6755
+    jne .L6774
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-200], rax
@@ -148865,12 +149286,12 @@ call _ZYL_icnf_count_slots_list
 call _ZYL_icnf_count_slots_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6755:
+    jmp .L6759
+.L6774:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6756
+    jne .L6775
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
@@ -148908,12 +149329,12 @@ call _ZYL_icnf_count_slots_list
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6756:
+    jmp .L6759
+.L6775:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6757
+    jne .L6776
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -148943,12 +149364,12 @@ call _ZYL_icnf_count_arm_slots
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6757:
+    jmp .L6759
+.L6776:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6758
+    jne .L6777
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -148960,12 +149381,12 @@ call _ZYL_icnf_add2
     mov [rbp-280], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6740
-.L6758:
+    jmp .L6759
+.L6777:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6759
+    jne .L6778
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
@@ -148980,12 +149401,12 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_count_slots_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6740
-.L6759:
+    jmp .L6759
+.L6778:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6741
+    jne .L6760
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-304], rax
@@ -149023,10 +149444,10 @@ call _ZYL_icnf_add2
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L6740
-.L6741:
+    jmp .L6759
+.L6760:
     mov qword ptr [rsp], 0
-.L6740:
+.L6759:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149044,10 +149465,10 @@ _ZYL_icnf_count_slots_list:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6760
+    je .L6779
     mov rax, 0
-    jmp .L6761
-.L6760:
+    jmp .L6780
+.L6779:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -149082,7 +149503,7 @@ call _ZYL_icnf_count_slots_list
     mov rdi, [rsp+8]
 call _ZYL_icnf_add2
     add rsp, 16
-.L6761:
+.L6780:
     mov rsp, rbp
     pop rbp
     ret
@@ -149099,10 +149520,10 @@ _ZYL_icnf_count_arm_slots:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6762
+    je .L6781
     mov rax, 0
-    jmp .L6763
-.L6762:
+    jmp .L6782
+.L6781:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -149125,7 +149546,7 @@ call _ZYL_tl2
     mov rdi, [rsp+8]
 call _ZYL_icnf_arm_slots
     add rsp, 16
-.L6763:
+.L6782:
     mov rsp, rbp
     pop rbp
     ret
@@ -149140,7 +149561,7 @@ _ZYL_icnf_arm_slots:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6765
+    jne .L6784
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -149194,10 +149615,10 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6764
-.L6765:
+    jmp .L6783
+.L6784:
     mov qword ptr [rsp], 0
-.L6764:
+.L6783:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149216,10 +149637,10 @@ _ZYL_icnf_binds_slots:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6766
+    je .L6785
     mov rax, [rbp-16]
-    jmp .L6767
-.L6766:
+    jmp .L6786
+.L6785:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -149253,7 +149674,7 @@ call _ZYL_icnf_bind_real
     mov rdi, [rsp+8]
 call _ZYL_icnf_binds_slots
     add rsp, 16
-.L6767:
+.L6786:
     mov rsp, rbp
     pop rbp
     ret
@@ -149277,7 +149698,7 @@ call _ZYL_alloc_strlen
     sete al
     movzx rax, al
     test rax, rax
-    je .L6768
+    je .L6787
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -149296,16 +149717,16 @@ call _ZYL_byte_at
     sete al
     movzx rax, al
     test rax, rax
-    je .L6770
+    je .L6789
     mov rax, 0
-    jmp .L6771
-.L6770:
+    jmp .L6790
+.L6789:
     mov rax, 1
-.L6771:
-    jmp .L6769
-.L6768:
+.L6790:
+    jmp .L6788
+.L6787:
     mov rax, 1
-.L6769:
+.L6788:
     mov rsp, rbp
     pop rbp
     ret
@@ -149322,10 +149743,10 @@ _ZYL_icnf_count_arms:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6772
+    je .L6791
     mov rax, 0
-    jmp .L6773
-.L6772:
+    jmp .L6792
+.L6791:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -149348,7 +149769,7 @@ call _ZYL_tl2
     mov rdi, [rsp+8]
 call _ZYL_icnf_arm_size
     add rsp, 16
-.L6773:
+.L6792:
     mov rsp, rbp
     pop rbp
     ret
@@ -149363,7 +149784,7 @@ _ZYL_icnf_arm_size:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6775
+    jne .L6794
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -149408,10 +149829,10 @@ call _ZYL_icnf_add2
 call _ZYL_icnf_add2
     add rsp, 16
     mov [rsp], rax
-    jmp .L6774
-.L6775:
+    jmp .L6793
+.L6794:
     mov qword ptr [rsp], 0
-.L6774:
+.L6793:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149430,7 +149851,7 @@ _ZYL_cg_function:
 call _ZYL_ifn_tag_p
     add rsp, 16
     test rax, rax
-    je .L6776
+    je .L6795
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -149455,8 +149876,16 @@ call _ZYL_ifn_tag_params
 call _ZYL_ifn_tag_body
     add rsp, 16
     mov [rbp-40], rax
-    sub rsp, 8
     mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_ifn_tag_kinds
+    add rsp, 16
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -149472,9 +149901,10 @@ call _ZYL_ifn_tag_body
     mov rax, rbx
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
 call _ZYL_cg_param_env
     add rsp, 32
     mov [rbp-48], rax
@@ -149532,7 +149962,7 @@ call _ZYL_icnf_add2
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6778]
+    lea rax, [rip+.L6797]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149569,7 +149999,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-80]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6779]
+    lea rax, [rip+.L6798]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149580,7 +150010,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6780]
+    lea rax, [rip+.L6799]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149591,7 +150021,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6781]
+    lea rax, [rip+.L6800]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149602,7 +150032,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6782]
+    lea rax, [rip+.L6801]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149695,7 +150125,7 @@ call _ZYL_cg_expr
     mov rax, [rbp-144]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6783]
+    lea rax, [rip+.L6802]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149706,7 +150136,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-152]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6784]
+    lea rax, [rip+.L6803]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -149717,17 +150147,17 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-160]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6785]
+    lea rax, [rip+.L6804]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_cg_emit_line
     add rsp, 16
-    jmp .L6777
-.L6776:
+    jmp .L6796
+.L6795:
     mov rax, [rbp-8]
-.L6777:
+.L6796:
     mov rsp, rbp
     pop rbp
     ret
@@ -149741,7 +150171,7 @@ _ZYL_ifn_tag_p:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6788
+    jne .L6807
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -149753,14 +150183,14 @@ _ZYL_ifn_tag_p:
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6786
-.L6788:
+    jmp .L6805
+.L6807:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6786
-.L6787:
+    jmp .L6805
+.L6806:
     mov qword ptr [rsp], 0
-.L6786:
+.L6805:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149775,7 +150205,7 @@ _ZYL_ifn_tag_name:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6791
+    jne .L6810
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -149787,14 +150217,14 @@ _ZYL_ifn_tag_name:
     mov [rbp-32], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6789
-.L6791:
-    lea rax, [rip+.L6792]
+    jmp .L6808
+.L6810:
+    lea rax, [rip+.L6811]
     mov [rsp], rax
-    jmp .L6789
-.L6790:
+    jmp .L6808
+.L6809:
     mov qword ptr [rsp], 0
-.L6789:
+.L6808:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149809,7 +150239,7 @@ _ZYL_ifn_tag_params:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6795
+    jne .L6814
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -149821,15 +150251,15 @@ _ZYL_ifn_tag_params:
     mov [rbp-32], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6793
-.L6795:
+    jmp .L6812
+.L6814:
 call _ZYL_no_strs
     add rsp, 0
     mov [rsp], rax
-    jmp .L6793
-.L6794:
+    jmp .L6812
+.L6813:
     mov qword ptr [rsp], 0
-.L6793:
+.L6812:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149844,7 +150274,7 @@ _ZYL_ifn_tag_body:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6798
+    jne .L6817
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -149856,15 +150286,59 @@ _ZYL_ifn_tag_body:
     mov [rbp-32], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L6796
-.L6798:
+    jmp .L6815
+.L6817:
 call _ZYL_no_icnfs
     add rsp, 0
     mov [rsp], rax
-    jmp .L6796
-.L6797:
+    jmp .L6815
+.L6816:
     mov qword ptr [rsp], 0
-.L6796:
+.L6815:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_ifn_tag_kinds:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 15
+    jne .L6820
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-40], rax
+    mov rax, [rbp-40]
+    mov [rsp], rax
+    jmp .L6818
+.L6820:
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L6818
+.L6819:
+    mov qword ptr [rsp], 0
+.L6818:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149880,7 +150354,7 @@ _ZYL_cg_reset_slots:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6800
+    jne .L6822
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -149932,10 +150406,10 @@ _ZYL_cg_reset_slots:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6799
-.L6800:
+    jmp .L6821
+.L6822:
     mov qword ptr [rsp], 0
-.L6799:
+.L6821:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -149943,10 +150417,11 @@ _ZYL_cg_reset_slots:
 _ZYL_cg_param_env:
     push rbp
     mov rbp, rsp
-    sub rsp, 104
+    sub rsp, 120
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
+    mov [rbp-32], rcx
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -149955,11 +150430,10 @@ _ZYL_cg_param_env:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6801
-    mov rax, [rbp-24]
-    jmp .L6802
-.L6801:
-    sub rsp, 8
+    je .L6823
+    mov rax, [rbp-32]
+    jmp .L6824
+.L6823:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -149969,7 +150443,16 @@ call _ZYL_tl2
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
+    sub rsp, 8
     mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_cg_kinds_tail
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
     push rax
     mov rax, 1
     mov rcx, rax
@@ -149989,7 +150472,7 @@ call _ZYL_shd
     push rax
     mov rax, 8
     push rax
-    mov rax, [rbp-16]
+    mov rax, [rbp-24]
     push rax
     mov rax, 1
     mov rcx, rax
@@ -150002,9 +150485,15 @@ call _ZYL_shd
     pop rax
     sub rax, rcx
     push rax
-    mov rax, 0
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call _ZYL_cg_kinds_head
+    add rsp, 16
     push rax
-    mov rax, [rbp-24]
+    mov rax, [rbp-32]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -150024,12 +150513,90 @@ call _ZYL_shd
     mov rax, rbx
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
 call _ZYL_cg_param_env
     add rsp, 32
-.L6802:
+.L6824:
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_cg_kinds_head:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L6827
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L6825
+.L6827:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L6826
+    mov rax, 0
+    mov [rsp], rax
+    jmp .L6825
+.L6826:
+    mov qword ptr [rsp], 0
+.L6825:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+_ZYL_cg_kinds_tail:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L6830
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    mov [rsp], rax
+    jmp .L6828
+.L6830:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L6829
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L6828
+.L6829:
+    mov qword ptr [rsp], 0
+.L6828:
+    pop rax
     mov rsp, rbp
     pop rbp
     ret
@@ -150049,10 +150616,10 @@ _ZYL_cg_param_spills:
     setge al
     movzx rax, al
     test rax, rax
-    je .L6803
+    je .L6831
     mov rax, [rbp-8]
-    jmp .L6804
-.L6803:
+    jmp .L6832
+.L6831:
     mov rax, [rbp-16]
     push rax
     mov rax, 6
@@ -150062,7 +150629,7 @@ _ZYL_cg_param_spills:
     setl al
     movzx rax, al
     test rax, rax
-    je .L6805
+    je .L6833
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -150078,8 +150645,8 @@ _ZYL_cg_param_spills:
     mov rdi, [rsp+16]
 call _ZYL_cg_param_spill_reg
     add rsp, 32
-    jmp .L6806
-.L6805:
+    jmp .L6834
+.L6833:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -150095,8 +150662,8 @@ call _ZYL_cg_param_spill_reg
     mov rdi, [rsp+16]
 call _ZYL_cg_param_spill_stack
     add rsp, 32
-.L6806:
-.L6804:
+.L6834:
+.L6832:
     mov rsp, rbp
     pop rbp
     ret
@@ -150110,7 +150677,7 @@ _ZYL_cg_param_spill_reg:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6807]
+    lea rax, [rip+.L6835]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150147,7 +150714,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6808]
+    lea rax, [rip+.L6836]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150211,7 +150778,7 @@ _ZYL_cg_param_spill_stack:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6809]
+    lea rax, [rip+.L6837]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150248,7 +150815,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6810]
+    lea rax, [rip+.L6838]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150267,7 +150834,7 @@ call _ZYL_cg_nl
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6811]
+    lea rax, [rip+.L6839]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150304,7 +150871,7 @@ call _ZYL_cg_emit_int
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6812]
+    lea rax, [rip+.L6840]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150355,10 +150922,10 @@ _ZYL_cg_collect_fnnames:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6813
+    je .L6841
     mov rax, [rbp-8]
-    jmp .L6814
-.L6813:
+    jmp .L6842
+.L6841:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -150386,7 +150953,7 @@ call _ZYL_tl2
     mov rdi, [rsp+16]
 call _ZYL_cg_collect_one
     add rsp, 32
-.L6814:
+.L6842:
     mov rsp, rbp
     pop rbp
     ret
@@ -150398,7 +150965,7 @@ _ZYL_fnhead_if:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6815]
+    lea rax, [rip+.L6843]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -150424,11 +150991,22 @@ _ZYL_fnhead_if:
     push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -150457,7 +151035,7 @@ _ZYL_cg_collect_one:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6818
+    jne .L6846
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -150467,6 +151045,9 @@ _ZYL_cg_collect_one:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-48], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-56], rax
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -150478,6 +151059,15 @@ _ZYL_cg_collect_one:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -150486,6 +151076,14 @@ _ZYL_cg_collect_one:
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call _ZYL_cg_param_env
+    add rsp, 32
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-48]
@@ -150513,8 +151111,8 @@ call _ZYL_cg_with_fnname
 call _ZYL_cg_collect_fnnames
     add rsp, 16
     mov [rsp], rax
-    jmp .L6816
-.L6818:
+    jmp .L6844
+.L6846:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -150526,10 +151124,10 @@ call _ZYL_cg_collect_fnnames
 call _ZYL_cg_collect_fnnames
     add rsp, 16
     mov [rsp], rax
-    jmp .L6816
-.L6817:
+    jmp .L6844
+.L6845:
     mov qword ptr [rsp], 0
-.L6816:
+.L6844:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -150660,15 +151258,15 @@ _ZYL_cg_rev_acc:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6821
+    jne .L6849
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6819
-.L6821:
+    jmp .L6847
+.L6849:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6820
+    jne .L6848
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -150701,10 +151299,10 @@ _ZYL_cg_rev_acc:
 call _ZYL_cg_rev_acc
     add rsp, 16
     mov [rsp], rax
-    jmp .L6819
-.L6820:
+    jmp .L6847
+.L6848:
     mov qword ptr [rsp], 0
-.L6819:
+.L6847:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -150717,7 +151315,7 @@ _ZYL_cg_header:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6822]
+    lea rax, [rip+.L6850]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150728,7 +151326,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6823]
+    lea rax, [rip+.L6851]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150739,7 +151337,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6824]
+    lea rax, [rip+.L6852]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150757,7 +151355,7 @@ _ZYL_cg_entry_stub:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6825]
+    lea rax, [rip+.L6853]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150768,7 +151366,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6826]
+    lea rax, [rip+.L6854]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150779,7 +151377,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6827]
+    lea rax, [rip+.L6855]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150790,7 +151388,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6828]
+    lea rax, [rip+.L6856]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150801,7 +151399,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6829]
+    lea rax, [rip+.L6857]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150812,7 +151410,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6830]
+    lea rax, [rip+.L6858]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150823,7 +151421,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6831]
+    lea rax, [rip+.L6859]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150834,7 +151432,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-64]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6832]
+    lea rax, [rip+.L6860]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150845,7 +151443,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6833]
+    lea rax, [rip+.L6861]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150865,7 +151463,7 @@ _ZYL_cg_format_strings:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6834]
+    lea rax, [rip+.L6862]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150876,7 +151474,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6835]
+    lea rax, [rip+.L6863]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150887,7 +151485,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6836]
+    lea rax, [rip+.L6864]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150898,7 +151496,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6837]
+    lea rax, [rip+.L6865]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150909,7 +151507,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6838]
+    lea rax, [rip+.L6866]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150920,7 +151518,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6839]
+    lea rax, [rip+.L6867]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150931,7 +151529,7 @@ call _ZYL_cg_emit_line
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6840]
+    lea rax, [rip+.L6868]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150946,10 +151544,10 @@ _ZYL_cg_dbg:
     mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
-    lea rax, [rip+.L6841]
+    lea rax, [rip+.L6869]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6842]
+    lea rax, [rip+.L6870]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -150992,10 +151590,10 @@ _ZYL_cg_functions:
 call _ZYL_is_nil
     add rsp, 16
     test rax, rax
-    je .L6843
+    je .L6871
     mov rax, [rbp-8]
-    jmp .L6844
-.L6843:
+    jmp .L6872
+.L6871:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -151023,7 +151621,7 @@ call _ZYL_tl2
     mov rdi, [rsp+16]
 call _ZYL_cg_functions_step
     add rsp, 32
-.L6844:
+.L6872:
     mov rsp, rbp
     pop rbp
     ret
@@ -151039,7 +151637,7 @@ _ZYL_cg_functions_step:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6847
+    jne .L6875
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -151068,8 +151666,8 @@ _ZYL_cg_functions_step:
 call _ZYL_cg_functions_go
     add rsp, 32
     mov [rsp], rax
-    jmp .L6845
-.L6847:
+    jmp .L6873
+.L6875:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -151081,10 +151679,10 @@ call _ZYL_cg_functions_go
 call _ZYL_cg_functions
     add rsp, 16
     mov [rsp], rax
-    jmp .L6845
-.L6846:
+    jmp .L6873
+.L6874:
     mov qword ptr [rsp], 0
-.L6845:
+.L6873:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -151130,7 +151728,7 @@ _ZYL_cg_rodata_entry:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6849
+    jne .L6877
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -151149,7 +151747,7 @@ _ZYL_cg_rodata_entry:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6850
+    je .L6878
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -151165,8 +151763,8 @@ _ZYL_cg_rodata_entry:
     mov rdi, [rsp+16]
 call _ZYL_cg_str_entry
     add rsp, 32
-    jmp .L6851
-.L6850:
+    jmp .L6879
+.L6878:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -151182,12 +151780,12 @@ call _ZYL_cg_str_entry
     mov rdi, [rsp+16]
 call _ZYL_cg_flt_entry
     add rsp, 32
-.L6851:
+.L6879:
     mov [rsp], rax
-    jmp .L6848
-.L6849:
+    jmp .L6876
+.L6877:
     mov qword ptr [rsp], 0
-.L6848:
+.L6876:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -151269,10 +151867,10 @@ _ZYL_cg_esc_loop:
     setge al
     movzx rax, al
     test rax, rax
-    je .L6852
+    je .L6880
     mov rax, [rbp-40]
-    jmp .L6853
-.L6852:
+    jmp .L6881
+.L6880:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -151308,7 +151906,7 @@ call _ZYL_byte_at
     mov rdi, [rsp+40]
 call _ZYL_cg_esc_ch
     add rsp, 48
-.L6853:
+.L6881:
     mov rsp, rbp
     pop rbp
     ret
@@ -151331,7 +151929,7 @@ _ZYL_cg_esc_ch:
     sete al
     movzx rax, al
     test rax, rax
-    je .L6854
+    je .L6882
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -151358,8 +151956,8 @@ _ZYL_cg_esc_ch:
     mov rdi, [rsp+40]
 call _ZYL_cg_esc_both
     add rsp, 48
-    jmp .L6855
-.L6854:
+    jmp .L6883
+.L6882:
     mov rax, [rbp-48]
     push rax
     mov rax, 34
@@ -151369,7 +151967,7 @@ call _ZYL_cg_esc_both
     sete al
     movzx rax, al
     test rax, rax
-    je .L6856
+    je .L6884
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -151396,8 +151994,8 @@ call _ZYL_cg_esc_both
     mov rdi, [rsp+40]
 call _ZYL_cg_esc_quote
     add rsp, 48
-    jmp .L6857
-.L6856:
+    jmp .L6885
+.L6884:
     mov rax, [rbp-48]
     push rax
     mov rax, 10
@@ -151407,7 +152005,7 @@ call _ZYL_cg_esc_quote
     sete al
     movzx rax, al
     test rax, rax
-    je .L6858
+    je .L6886
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -151431,8 +152029,8 @@ call _ZYL_cg_esc_quote
     mov rdi, [rsp+32]
 call _ZYL_cg_esc_newline
     add rsp, 48
-    jmp .L6859
-.L6858:
+    jmp .L6887
+.L6886:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -151459,9 +152057,9 @@ call _ZYL_cg_esc_newline
     mov rdi, [rsp+40]
 call _ZYL_cg_esc_one
     add rsp, 48
-.L6859:
-.L6857:
-.L6855:
+.L6887:
+.L6885:
+.L6883:
     mov rsp, rbp
     pop rbp
     ret
@@ -151644,7 +152242,7 @@ _ZYL_cg_esc_quote:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6860]
+    lea rax, [rip+.L6888]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151730,7 +152328,7 @@ _ZYL_cg_esc_newline:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6861]
+    lea rax, [rip+.L6889]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151749,7 +152347,7 @@ call _ZYL_buf_append
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6862]
+    lea rax, [rip+.L6890]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151814,7 +152412,7 @@ call _ZYL_cg_label_def
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6863]
+    lea rax, [rip+.L6891]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151852,7 +152450,7 @@ call _ZYL_cg_emit
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6864]
+    lea rax, [rip+.L6892]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151886,7 +152484,7 @@ call _ZYL_cg_emit
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6865]
+    lea rax, [rip+.L6893]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151922,7 +152520,7 @@ call _ZYL_cg_label_def
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6866]
+    lea rax, [rip+.L6894]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -151960,15 +152558,15 @@ _ZYL_cg_rodata_emit_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6869
+    jne .L6897
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6867
-.L6869:
+    jmp .L6895
+.L6897:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6868
+    jne .L6896
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -151997,10 +152595,10 @@ call _ZYL_cg_rodata_entry
 call _ZYL_cg_rodata_emit_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6867
-.L6868:
+    jmp .L6895
+.L6896:
     mov qword ptr [rsp], 0
-.L6867:
+.L6895:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152016,7 +152614,7 @@ _ZYL_list_head_or:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6872
+    jne .L6900
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -152025,18 +152623,18 @@ _ZYL_list_head_or:
     mov [rbp-32], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6870
-.L6872:
+    jmp .L6898
+.L6900:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6871
+    jne .L6899
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6870
-.L6871:
+    jmp .L6898
+.L6899:
     mov qword ptr [rsp], 0
-.L6870:
+.L6898:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152078,7 +152676,7 @@ _ZYL_fh_if:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6873]
+    lea rax, [rip+.L6901]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -152104,11 +152702,22 @@ _ZYL_fh_if:
     push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -152133,7 +152742,7 @@ _ZYL_hd_ia:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L6874]
+    lea rax, [rip+.L6902]
     push rax
     mov rax, -1
     push rax
@@ -152194,7 +152803,7 @@ _ZYL_hd_icnf:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6877
+    jne .L6905
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -152203,12 +152812,12 @@ _ZYL_hd_icnf:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6875
-.L6877:
+    jmp .L6903
+.L6905:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6876
+    jne .L6904
     mov rax, 0
     push rax
     mov r12, rsp
@@ -152222,10 +152831,10 @@ _ZYL_hd_icnf:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6875
-.L6876:
+    jmp .L6903
+.L6904:
     mov qword ptr [rsp], 0
-.L6875:
+.L6903:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152240,7 +152849,7 @@ _ZYL_cg_arena_of:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6879
+    jne .L6907
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -152261,10 +152870,10 @@ _ZYL_cg_arena_of:
     mov [rbp-56], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L6878
-.L6879:
+    jmp .L6906
+.L6907:
     mov qword ptr [rsp], 0
-.L6878:
+.L6906:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152279,7 +152888,7 @@ _ZYL_tl2:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6882
+    jne .L6910
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -152288,12 +152897,12 @@ _ZYL_tl2:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L6880
-.L6882:
+    jmp .L6908
+.L6910:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6881
+    jne .L6909
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -152303,10 +152912,10 @@ _ZYL_tl2:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6880
-.L6881:
+    jmp .L6908
+.L6909:
     mov qword ptr [rsp], 0
-.L6880:
+.L6908:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152322,7 +152931,7 @@ _ZYL_ri_is_load_of:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6885
+    jne .L6913
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -152337,14 +152946,14 @@ _ZYL_ri_is_load_of:
 call _ZYL_str_eq
     add rsp, 16
     mov [rsp], rax
-    jmp .L6883
-.L6885:
+    jmp .L6911
+.L6913:
     mov rax, 0
     mov [rsp], rax
-    jmp .L6883
-.L6884:
+    jmp .L6911
+.L6912:
     mov qword ptr [rsp], 0
-.L6883:
+.L6911:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -152360,40 +152969,40 @@ _ZYL_ri_name_safe_in:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6888
+    jne .L6916
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6886
-.L6888:
+    jmp .L6914
+.L6916:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6889
+    jne .L6917
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6886
-.L6889:
+    jmp .L6914
+.L6917:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6890
+    jne .L6918
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L6886
-.L6890:
+    jmp .L6914
+.L6918:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6891
+    jne .L6919
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -152415,19 +153024,19 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L6892
+    je .L6920
     mov rax, 0
-    jmp .L6893
-.L6892:
+    jmp .L6921
+.L6920:
     mov rax, 1
-.L6893:
+.L6921:
     mov [rsp], rax
-    jmp .L6886
-.L6891:
+    jmp .L6914
+.L6919:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6894
+    jne .L6922
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -152455,7 +153064,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6895
+    je .L6923
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
@@ -152466,17 +153075,17 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-    jmp .L6896
-.L6895:
+    jmp .L6924
+.L6923:
     mov rax, 0
-.L6896:
+.L6924:
     mov [rsp], rax
-    jmp .L6886
-.L6894:
+    jmp .L6914
+.L6922:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6897
+    jne .L6925
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -152494,12 +153103,12 @@ call _ZYL_ri_name_safe_in
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6897:
+    jmp .L6914
+.L6925:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6898
+    jne .L6926
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -152517,12 +153126,12 @@ call _ZYL_ri_name_safe_in_list
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6898:
+    jmp .L6914
+.L6926:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6899
+    jne .L6927
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -152540,12 +153149,12 @@ call _ZYL_ri_name_safe_in_list
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6899:
+    jmp .L6914
+.L6927:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6900
+    jne .L6928
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -152567,10 +153176,10 @@ call _ZYL_ri_is_load_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6901
+    je .L6929
     mov rax, 1
-    jmp .L6902
-.L6901:
+    jmp .L6930
+.L6929:
     mov rax, [rbp-128]
     sub rsp, 8
     mov [rsp], rax
@@ -152581,14 +153190,14 @@ call _ZYL_ri_is_load_of
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-.L6902:
+.L6930:
     mov [rsp], rax
-    jmp .L6886
-.L6900:
+    jmp .L6914
+.L6928:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6903
+    jne .L6931
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -152616,7 +153225,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6904
+    je .L6932
     mov rax, [rbp-144]
     sub rsp, 8
     mov [rsp], rax
@@ -152635,7 +153244,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6906
+    je .L6934
     mov rax, [rbp-152]
     sub rsp, 8
     mov [rsp], rax
@@ -152646,21 +153255,21 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-    jmp .L6907
-.L6906:
+    jmp .L6935
+.L6934:
     mov rax, 0
-.L6907:
-    jmp .L6905
-.L6904:
+.L6935:
+    jmp .L6933
+.L6932:
     mov rax, 0
-.L6905:
+.L6933:
     mov [rsp], rax
-    jmp .L6886
-.L6903:
+    jmp .L6914
+.L6931:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6908
+    jne .L6936
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -152685,7 +153294,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6909
+    je .L6937
     mov rax, [rbp-168]
     sub rsp, 8
     mov [rsp], rax
@@ -152696,17 +153305,17 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-    jmp .L6910
-.L6909:
+    jmp .L6938
+.L6937:
     mov rax, 0
-.L6910:
+.L6938:
     mov [rsp], rax
-    jmp .L6886
-.L6908:
+    jmp .L6914
+.L6936:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6911
+    jne .L6939
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-176], rax
@@ -152724,12 +153333,12 @@ call _ZYL_ri_name_safe_in
 call _ZYL_ri_name_safe_in
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6911:
+    jmp .L6914
+.L6939:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6912
+    jne .L6940
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -152757,7 +153366,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6913
+    je .L6941
     mov rax, [rbp-208]
     sub rsp, 8
     mov [rsp], rax
@@ -152768,17 +153377,17 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-    jmp .L6914
-.L6913:
+    jmp .L6942
+.L6941:
     mov rax, 0
-.L6914:
+.L6942:
     mov [rsp], rax
-    jmp .L6886
-.L6912:
+    jmp .L6914
+.L6940:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6915
+    jne .L6943
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -152793,12 +153402,12 @@ call _ZYL_ri_name_safe_in
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6915:
+    jmp .L6914
+.L6943:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6916
+    jne .L6944
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
@@ -152819,12 +153428,12 @@ call _ZYL_ri_name_safe_in_list
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6916:
+    jmp .L6914
+.L6944:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6917
+    jne .L6945
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -152845,12 +153454,12 @@ call _ZYL_ri_name_safe_in_list
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6886
-.L6917:
+    jmp .L6914
+.L6945:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6918
+    jne .L6946
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-272], rax
@@ -152875,7 +153484,7 @@ call _ZYL_ri_is_load_of
     setg al
     movzx rax, al
     test rax, rax
-    je .L6919
+    je .L6947
     mov rax, [rbp-280]
     sub rsp, 8
     mov [rsp], rax
@@ -152886,8 +153495,8 @@ call _ZYL_ri_is_load_of
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in_arms
     add rsp, 16
-    jmp .L6920
-.L6919:
+    jmp .L6948
+.L6947:
     mov rax, [rbp-272]
     sub rsp, 8
     mov [rsp], rax
@@ -152906,7 +153515,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6921
+    je .L6949
     mov rax, [rbp-280]
     sub rsp, 8
     mov [rsp], rax
@@ -152917,18 +153526,18 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in_arms
     add rsp, 16
-    jmp .L6922
-.L6921:
+    jmp .L6950
+.L6949:
     mov rax, 0
-.L6922:
-.L6920:
+.L6950:
+.L6948:
     mov [rsp], rax
-    jmp .L6886
-.L6918:
+    jmp .L6914
+.L6946:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6923
+    jne .L6951
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
@@ -152956,12 +153565,12 @@ call _ZYL_ri_name_referenced
     sete al
     movzx rax, al
     mov [rsp], rax
-    jmp .L6886
-.L6923:
+    jmp .L6914
+.L6951:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6887
+    jne .L6915
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-312], rax
@@ -152989,7 +153598,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6924
+    je .L6952
     mov rax, [rbp-328]
     sub rsp, 8
     mov [rsp], rax
@@ -153000,15 +153609,15 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in
     add rsp, 16
-    jmp .L6925
-.L6924:
+    jmp .L6953
+.L6952:
     mov rax, 0
-.L6925:
+.L6953:
     mov [rsp], rax
-    jmp .L6886
-.L6887:
+    jmp .L6914
+.L6915:
     mov qword ptr [rsp], 0
-.L6886:
+.L6914:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153024,15 +153633,15 @@ _ZYL_ri_name_safe_in_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6928
+    jne .L6956
     mov rax, 1
     mov [rsp], rax
-    jmp .L6926
-.L6928:
+    jmp .L6954
+.L6956:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6927
+    jne .L6955
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -153057,7 +153666,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6929
+    je .L6957
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -153068,15 +153677,15 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in_list
     add rsp, 16
-    jmp .L6930
-.L6929:
+    jmp .L6958
+.L6957:
     mov rax, 0
-.L6930:
+.L6958:
     mov [rsp], rax
-    jmp .L6926
-.L6927:
+    jmp .L6954
+.L6955:
     mov qword ptr [rsp], 0
-.L6926:
+.L6954:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153092,15 +153701,15 @@ _ZYL_ri_name_safe_in_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6933
+    jne .L6961
     mov rax, 1
     mov [rsp], rax
-    jmp .L6931
-.L6933:
+    jmp .L6959
+.L6961:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6932
+    jne .L6960
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -153112,7 +153721,7 @@ _ZYL_ri_name_safe_in_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6935
+    jne .L6963
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -153143,7 +153752,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6936
+    je .L6964
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -153154,21 +153763,21 @@ call _ZYL_ri_name_safe_in
     mov rdi, [rsp+8]
 call _ZYL_ri_name_safe_in_arms
     add rsp, 16
-    jmp .L6937
-.L6936:
+    jmp .L6965
+.L6964:
     mov rax, 0
-.L6937:
+.L6965:
     mov [rsp], rax
-    jmp .L6934
-.L6935:
+    jmp .L6962
+.L6963:
     mov qword ptr [rsp], 0
-.L6934:
+.L6962:
     pop rax
     mov [rsp], rax
-    jmp .L6931
-.L6932:
+    jmp .L6959
+.L6960:
     mov qword ptr [rsp], 0
-.L6931:
+.L6959:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153184,40 +153793,40 @@ _ZYL_ri_name_referenced:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6940
+    jne .L6968
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6938
-.L6940:
+    jmp .L6966
+.L6968:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6941
+    jne .L6969
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6938
-.L6941:
+    jmp .L6966
+.L6969:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L6942
+    jne .L6970
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L6938
-.L6942:
+    jmp .L6966
+.L6970:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L6943
+    jne .L6971
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -153232,12 +153841,12 @@ _ZYL_ri_name_referenced:
 call _ZYL_str_eq
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6943:
+    jmp .L6966
+.L6971:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L6944
+    jne .L6972
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -153265,10 +153874,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6945
+    je .L6973
     mov rax, 1
-    jmp .L6946
-.L6945:
+    jmp .L6974
+.L6973:
     mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
@@ -153279,14 +153888,14 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced
     add rsp, 16
-.L6946:
+.L6974:
     mov [rsp], rax
-    jmp .L6938
-.L6944:
+    jmp .L6966
+.L6972:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L6947
+    jne .L6975
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -153304,12 +153913,12 @@ call _ZYL_ri_name_referenced
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6947:
+    jmp .L6966
+.L6975:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L6948
+    jne .L6976
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -153327,12 +153936,12 @@ call _ZYL_ri_name_referenced_list
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6948:
+    jmp .L6966
+.L6976:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L6949
+    jne .L6977
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -153350,12 +153959,12 @@ call _ZYL_ri_name_referenced_list
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6949:
+    jmp .L6966
+.L6977:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L6950
+    jne .L6978
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -153370,12 +153979,12 @@ call _ZYL_ri_name_referenced_list
 call _ZYL_ri_name_referenced
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6950:
+    jmp .L6966
+.L6978:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L6951
+    jne .L6979
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -153403,10 +154012,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6952
+    je .L6980
     mov rax, 1
-    jmp .L6953
-.L6952:
+    jmp .L6981
+.L6980:
     mov rax, [rbp-144]
     sub rsp, 8
     mov [rsp], rax
@@ -153425,10 +154034,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6954
+    je .L6982
     mov rax, 1
-    jmp .L6955
-.L6954:
+    jmp .L6983
+.L6982:
     mov rax, [rbp-152]
     sub rsp, 8
     mov [rsp], rax
@@ -153439,15 +154048,15 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced
     add rsp, 16
-.L6955:
-.L6953:
+.L6983:
+.L6981:
     mov [rsp], rax
-    jmp .L6938
-.L6951:
+    jmp .L6966
+.L6979:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L6956
+    jne .L6984
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-160], rax
@@ -153472,10 +154081,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6957
+    je .L6985
     mov rax, 1
-    jmp .L6958
-.L6957:
+    jmp .L6986
+.L6985:
     mov rax, [rbp-168]
     sub rsp, 8
     mov [rsp], rax
@@ -153486,14 +154095,14 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced
     add rsp, 16
-.L6958:
+.L6986:
     mov [rsp], rax
-    jmp .L6938
-.L6956:
+    jmp .L6966
+.L6984:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L6959
+    jne .L6987
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-176], rax
@@ -153511,12 +154120,12 @@ call _ZYL_ri_name_referenced
 call _ZYL_ri_name_referenced
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6959:
+    jmp .L6966
+.L6987:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L6960
+    jne .L6988
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-192], rax
@@ -153544,10 +154153,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6961
+    je .L6989
     mov rax, 1
-    jmp .L6962
-.L6961:
+    jmp .L6990
+.L6989:
     mov rax, [rbp-208]
     sub rsp, 8
     mov [rsp], rax
@@ -153558,14 +154167,14 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced
     add rsp, 16
-.L6962:
+.L6990:
     mov [rsp], rax
-    jmp .L6938
-.L6960:
+    jmp .L6966
+.L6988:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L6963
+    jne .L6991
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -153580,12 +154189,12 @@ call _ZYL_ri_name_referenced
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6963:
+    jmp .L6966
+.L6991:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6964
+    jne .L6992
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-224], rax
@@ -153606,12 +154215,12 @@ call _ZYL_ri_name_referenced_list
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6964:
+    jmp .L6966
+.L6992:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L6965
+    jne .L6993
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-248], rax
@@ -153632,12 +154241,12 @@ call _ZYL_ri_name_referenced_list
 call _ZYL_ri_name_referenced_list
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6965:
+    jmp .L6966
+.L6993:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L6966
+    jne .L6994
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-272], rax
@@ -153662,10 +154271,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6967
+    je .L6995
     mov rax, 1
-    jmp .L6968
-.L6967:
+    jmp .L6996
+.L6995:
     mov rax, [rbp-280]
     sub rsp, 8
     mov [rsp], rax
@@ -153676,14 +154285,14 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced_arms
     add rsp, 16
-.L6968:
+.L6996:
     mov [rsp], rax
-    jmp .L6938
-.L6966:
+    jmp .L6966
+.L6994:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6969
+    jne .L6997
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
@@ -153704,12 +154313,12 @@ call _ZYL_ri_name_referenced_arms
 call _ZYL_ri_name_referenced
     add rsp, 16
     mov [rsp], rax
-    jmp .L6938
-.L6969:
+    jmp .L6966
+.L6997:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L6939
+    jne .L6967
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-312], rax
@@ -153737,10 +154346,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6970
+    je .L6998
     mov rax, 1
-    jmp .L6971
-.L6970:
+    jmp .L6999
+.L6998:
     mov rax, [rbp-328]
     sub rsp, 8
     mov [rsp], rax
@@ -153751,12 +154360,12 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced
     add rsp, 16
-.L6971:
+.L6999:
     mov [rsp], rax
-    jmp .L6938
-.L6939:
+    jmp .L6966
+.L6967:
     mov qword ptr [rsp], 0
-.L6938:
+.L6966:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153772,15 +154381,15 @@ _ZYL_ri_name_referenced_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6974
+    jne .L7002
     mov rax, 0
     mov [rsp], rax
-    jmp .L6972
-.L6974:
+    jmp .L7000
+.L7002:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6973
+    jne .L7001
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -153805,10 +154414,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6975
+    je .L7003
     mov rax, 1
-    jmp .L6976
-.L6975:
+    jmp .L7004
+.L7003:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -153819,12 +154428,12 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced_list
     add rsp, 16
-.L6976:
+.L7004:
     mov [rsp], rax
-    jmp .L6972
-.L6973:
+    jmp .L7000
+.L7001:
     mov qword ptr [rsp], 0
-.L6972:
+.L7000:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153840,15 +154449,15 @@ _ZYL_ri_name_referenced_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6979
+    jne .L7007
     mov rax, 0
     mov [rsp], rax
-    jmp .L6977
-.L6979:
+    jmp .L7005
+.L7007:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6978
+    jne .L7006
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -153860,7 +154469,7 @@ _ZYL_ri_name_referenced_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6981
+    jne .L7009
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -153891,10 +154500,10 @@ call _ZYL_ri_name_referenced
     setg al
     movzx rax, al
     test rax, rax
-    je .L6982
+    je .L7010
     mov rax, 1
-    jmp .L6983
-.L6982:
+    jmp .L7011
+.L7010:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -153905,18 +154514,18 @@ call _ZYL_ri_name_referenced
     mov rdi, [rsp+8]
 call _ZYL_ri_name_referenced_arms
     add rsp, 16
-.L6983:
+.L7011:
     mov [rsp], rax
-    jmp .L6980
-.L6981:
+    jmp .L7008
+.L7009:
     mov qword ptr [rsp], 0
-.L6980:
+.L7008:
     pop rax
     mov [rsp], rax
-    jmp .L6977
-.L6978:
+    jmp .L7005
+.L7006:
     mov qword ptr [rsp], 0
-.L6977:
+.L7005:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -153931,7 +154540,7 @@ _ZYL_ri_transform_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L6986
+    jne .L7014
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -153941,12 +154550,12 @@ _ZYL_ri_transform_fns:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6984
-.L6986:
+    jmp .L7012
+.L7014:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6985
+    jne .L7013
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -153982,10 +154591,10 @@ call _ZYL_ri_transform_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6984
-.L6985:
+    jmp .L7012
+.L7013:
     mov qword ptr [rsp], 0
-.L6984:
+.L7012:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154000,7 +154609,7 @@ _ZYL_ri_transform_fn:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L6989
+    jne .L7017
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -154010,6 +154619,9 @@ _ZYL_ri_transform_fn:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-40], rax
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -154022,13 +154634,17 @@ _ZYL_ri_transform_fn:
 call _ZYL_ri_transform_expr
     add rsp, 16
     push rax
+    mov rax, [rbp-40]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -154037,8 +154653,8 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6987
-.L6989:
+    jmp .L7015
+.L7017:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -154047,10 +154663,10 @@ call _ZYL_ri_transform_expr
 call _ZYL_ri_transform_expr
     add rsp, 16
     mov [rsp], rax
-    jmp .L6987
-.L6988:
+    jmp .L7015
+.L7016:
     mov qword ptr [rsp], 0
-.L6987:
+.L7015:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154065,7 +154681,7 @@ _ZYL_ri_to_stack_variant:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6992
+    jne .L7020
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -154096,14 +154712,14 @@ _ZYL_ri_to_stack_variant:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6990
-.L6992:
+    jmp .L7018
+.L7020:
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L6990
-.L6991:
+    jmp .L7018
+.L7019:
     mov qword ptr [rsp], 0
-.L6990:
+.L7018:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154136,7 +154752,7 @@ call _ZYL_ri_transform_expr
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L6995
+    jne .L7023
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -154164,7 +154780,7 @@ call _ZYL_ri_name_safe_in
     setg al
     movzx rax, al
     test rax, rax
-    je .L6996
+    je .L7024
     mov rax, [rbp-8]
     push rax
     sub rsp, 8
@@ -154191,8 +154807,8 @@ call _ZYL_ri_to_stack_variant
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L6997
-.L6996:
+    jmp .L7025
+.L7024:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-32]
@@ -154213,10 +154829,10 @@ call _ZYL_ri_to_stack_variant
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L6997:
+.L7025:
     mov [rsp], rax
-    jmp .L6993
-.L6995:
+    jmp .L7021
+.L7023:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-32]
@@ -154238,10 +154854,10 @@ call _ZYL_ri_to_stack_variant
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6993
-.L6994:
+    jmp .L7021
+.L7022:
     mov qword ptr [rsp], 0
-.L6993:
+.L7021:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154256,7 +154872,7 @@ _ZYL_ri_transform_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7000
+    jne .L7028
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -154266,12 +154882,12 @@ _ZYL_ri_transform_list:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6998
-.L7000:
+    jmp .L7026
+.L7028:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L6999
+    jne .L7027
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -154307,10 +154923,10 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L6998
-.L6999:
+    jmp .L7026
+.L7027:
     mov qword ptr [rsp], 0
-.L6998:
+.L7026:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154325,7 +154941,7 @@ _ZYL_ri_transform_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7003
+    jne .L7031
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -154335,12 +154951,12 @@ _ZYL_ri_transform_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7001
-.L7003:
+    jmp .L7029
+.L7031:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7002
+    jne .L7030
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -154352,7 +154968,7 @@ _ZYL_ri_transform_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7005
+    jne .L7033
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -154417,16 +155033,16 @@ call _ZYL_ri_transform_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7004
-.L7005:
+    jmp .L7032
+.L7033:
     mov qword ptr [rsp], 0
-.L7004:
+.L7032:
     pop rax
     mov [rsp], rax
-    jmp .L7001
-.L7002:
+    jmp .L7029
+.L7030:
     mov qword ptr [rsp], 0
-.L7001:
+.L7029:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -154441,51 +155057,51 @@ _ZYL_ri_transform_expr:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7008
+    jne .L7036
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7006
-.L7008:
+    jmp .L7034
+.L7036:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7009
+    jne .L7037
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7006
-.L7009:
+    jmp .L7034
+.L7037:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7010
+    jne .L7038
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7006
-.L7010:
+    jmp .L7034
+.L7038:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7011
+    jne .L7039
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7006
-.L7011:
+    jmp .L7034
+.L7039:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7012
+    jne .L7040
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -154528,12 +155144,12 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7012:
+    jmp .L7034
+.L7040:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L7013
+    jne .L7041
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -154563,12 +155179,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7013:
+    jmp .L7034
+.L7041:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L7014
+    jne .L7042
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -154598,12 +155214,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7014:
+    jmp .L7034
+.L7042:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L7015
+    jne .L7043
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -154633,12 +155249,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7015:
+    jmp .L7034
+.L7043:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L7016
+    jne .L7044
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -154661,12 +155277,12 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7016:
+    jmp .L7034
+.L7044:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L7017
+    jne .L7045
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -154715,12 +155331,12 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7017:
+    jmp .L7034
+.L7045:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L7018
+    jne .L7046
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -154756,12 +155372,12 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7018:
+    jmp .L7034
+.L7046:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L7019
+    jne .L7047
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -154791,12 +155407,12 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7019:
+    jmp .L7034
+.L7047:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L7020
+    jne .L7048
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -154822,12 +155438,12 @@ call _ZYL_ri_transform_expr
 call _ZYL_ri_transform_let
     add rsp, 32
     mov [rsp], rax
-    jmp .L7006
-.L7020:
+    jmp .L7034
+.L7048:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L7021
+    jne .L7049
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
@@ -154850,12 +155466,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7021:
+    jmp .L7034
+.L7049:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L7022
+    jne .L7050
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -154892,12 +155508,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7022:
+    jmp .L7034
+.L7050:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L7023
+    jne .L7051
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-240], rax
@@ -154934,12 +155550,12 @@ call _ZYL_ri_transform_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7023:
+    jmp .L7034
+.L7051:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L7024
+    jne .L7052
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -154975,12 +155591,12 @@ call _ZYL_ri_transform_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7024:
+    jmp .L7034
+.L7052:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L7025
+    jne .L7053
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-280], rax
@@ -154990,6 +155606,9 @@ call _ZYL_ri_transform_arms
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-296], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-304], rax
     mov rax, [rbp-280]
     push rax
     mov rax, [rbp-288]
@@ -155002,13 +155621,17 @@ call _ZYL_ri_transform_arms
 call _ZYL_ri_transform_expr
     add rsp, 16
     push rax
+    mov rax, [rbp-304]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -155017,33 +155640,33 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7025:
+    jmp .L7034
+.L7053:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L7007
+    jne .L7035
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-304], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
     mov [rbp-312], rax
     mov rax, [rsp]
-    mov rax, [rax+24]
+    mov rax, [rax+16]
     mov [rbp-320], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-328], rax
     sub rsp, 8
-    mov rax, [rbp-304]
+    mov rax, [rbp-312]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call _ZYL_ri_transform_expr
     add rsp, 16
     push rax
-    mov rax, [rbp-312]
+    mov rax, [rbp-320]
     push rax
     sub rsp, 8
-    mov rax, [rbp-320]
+    mov rax, [rbp-328]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -155065,10 +155688,10 @@ call _ZYL_ri_transform_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7006
-.L7007:
+    jmp .L7034
+.L7035:
     mov qword ptr [rsp], 0
-.L7006:
+.L7034:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -155083,7 +155706,7 @@ _ZYL_opt_optimize_fns:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7028
+    jne .L7056
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -155093,12 +155716,12 @@ _ZYL_opt_optimize_fns:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7026
-.L7028:
+    jmp .L7054
+.L7056:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7027
+    jne .L7055
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -155134,10 +155757,10 @@ call _ZYL_opt_optimize_fns
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7026
-.L7027:
+    jmp .L7054
+.L7055:
     mov qword ptr [rsp], 0
-.L7026:
+.L7054:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -155152,7 +155775,7 @@ _ZYL_opt_optimize_fn:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L7031
+    jne .L7059
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -155162,6 +155785,9 @@ _ZYL_opt_optimize_fn:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-40], rax
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155174,13 +155800,17 @@ _ZYL_opt_optimize_fn:
 call _ZYL_opt_expr
     add rsp, 16
     push rax
+    mov rax, [rbp-40]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -155189,8 +155819,8 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7029
-.L7031:
+    jmp .L7057
+.L7059:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -155199,10 +155829,10 @@ call _ZYL_opt_expr
 call _ZYL_opt_expr
     add rsp, 16
     mov [rsp], rax
-    jmp .L7029
-.L7030:
+    jmp .L7057
+.L7058:
     mov qword ptr [rsp], 0
-.L7029:
+.L7057:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -155217,7 +155847,7 @@ _ZYL_opt_list:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7034
+    jne .L7062
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -155227,12 +155857,12 @@ _ZYL_opt_list:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7032
-.L7034:
+    jmp .L7060
+.L7062:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7033
+    jne .L7061
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -155268,10 +155898,10 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7032
-.L7033:
+    jmp .L7060
+.L7061:
     mov qword ptr [rsp], 0
-.L7032:
+.L7060:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -155286,7 +155916,7 @@ _ZYL_opt_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7037
+    jne .L7065
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -155296,12 +155926,12 @@ _ZYL_opt_arms:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7035
-.L7037:
+    jmp .L7063
+.L7065:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7036
+    jne .L7064
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -155313,7 +155943,7 @@ _ZYL_opt_arms:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7039
+    jne .L7067
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -155378,16 +156008,16 @@ call _ZYL_opt_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7038
-.L7039:
+    jmp .L7066
+.L7067:
     mov qword ptr [rsp], 0
-.L7038:
+.L7066:
     pop rax
     mov [rsp], rax
-    jmp .L7035
-.L7036:
+    jmp .L7063
+.L7064:
     mov qword ptr [rsp], 0
-.L7035:
+.L7063:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -155408,7 +156038,7 @@ _ZYL_opt_fold_binop:
     setg al
     movzx rax, al
     test rax, rax
-    je .L7040
+    je .L7068
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -155451,8 +156081,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7041
-.L7040:
+    jmp .L7069
+.L7068:
     mov rax, [rbp-8]
     push rax
     mov rax, 0
@@ -155462,7 +156092,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7042
+    je .L7070
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155480,8 +156110,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7043
-.L7042:
+    jmp .L7071
+.L7070:
     mov rax, [rbp-8]
     push rax
     mov rax, 1
@@ -155491,7 +156121,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7044
+    je .L7072
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155509,8 +156139,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7045
-.L7044:
+    jmp .L7073
+.L7072:
     mov rax, [rbp-8]
     push rax
     mov rax, 2
@@ -155520,7 +156150,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7046
+    je .L7074
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155538,8 +156168,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7047
-.L7046:
+    jmp .L7075
+.L7074:
     mov rax, [rbp-8]
     push rax
     mov rax, 3
@@ -155549,7 +156179,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7048
+    je .L7076
     mov rax, [rbp-24]
     push rax
     mov rax, 0
@@ -155559,7 +156189,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7050
+    je .L7078
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -155602,8 +156232,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7051
-.L7050:
+    jmp .L7079
+.L7078:
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155622,9 +156252,9 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L7051:
-    jmp .L7049
-.L7048:
+.L7079:
+    jmp .L7077
+.L7076:
     mov rax, [rbp-8]
     push rax
     mov rax, 4
@@ -155634,7 +156264,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7052
+    je .L7080
     mov rax, [rbp-24]
     push rax
     mov rax, 0
@@ -155644,7 +156274,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7054
+    je .L7082
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -155687,8 +156317,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7055
-.L7054:
+    jmp .L7083
+.L7082:
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155708,9 +156338,9 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L7055:
-    jmp .L7053
-.L7052:
+.L7083:
+    jmp .L7081
+.L7080:
     mov rax, [rbp-8]
     push rax
     mov rax, 5
@@ -155720,7 +156350,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7056
+    je .L7084
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155730,12 +156360,12 @@ _ZYL_opt_fold_binop:
     setl al
     movzx rax, al
     test rax, rax
-    je .L7058
+    je .L7086
     mov rax, 1
-    jmp .L7059
-.L7058:
+    jmp .L7087
+.L7086:
     mov rax, 0
-.L7059:
+.L7087:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -155747,8 +156377,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7057
-.L7056:
+    jmp .L7085
+.L7084:
     mov rax, [rbp-8]
     push rax
     mov rax, 6
@@ -155758,7 +156388,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7060
+    je .L7088
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155768,12 +156398,12 @@ _ZYL_opt_fold_binop:
     setg al
     movzx rax, al
     test rax, rax
-    je .L7062
+    je .L7090
     mov rax, 1
-    jmp .L7063
-.L7062:
+    jmp .L7091
+.L7090:
     mov rax, 0
-.L7063:
+.L7091:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -155785,8 +156415,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7061
-.L7060:
+    jmp .L7089
+.L7088:
     mov rax, [rbp-8]
     push rax
     mov rax, 7
@@ -155796,7 +156426,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7064
+    je .L7092
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155806,12 +156436,12 @@ _ZYL_opt_fold_binop:
     setle al
     movzx rax, al
     test rax, rax
-    je .L7066
+    je .L7094
     mov rax, 1
-    jmp .L7067
-.L7066:
+    jmp .L7095
+.L7094:
     mov rax, 0
-.L7067:
+.L7095:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -155823,8 +156453,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7065
-.L7064:
+    jmp .L7093
+.L7092:
     mov rax, [rbp-8]
     push rax
     mov rax, 8
@@ -155834,7 +156464,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7068
+    je .L7096
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155844,12 +156474,12 @@ _ZYL_opt_fold_binop:
     setge al
     movzx rax, al
     test rax, rax
-    je .L7070
+    je .L7098
     mov rax, 1
-    jmp .L7071
-.L7070:
+    jmp .L7099
+.L7098:
     mov rax, 0
-.L7071:
+.L7099:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -155861,8 +156491,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7069
-.L7068:
+    jmp .L7097
+.L7096:
     mov rax, [rbp-8]
     push rax
     mov rax, 9
@@ -155872,7 +156502,7 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7072
+    je .L7100
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155882,12 +156512,12 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7074
+    je .L7102
     mov rax, 1
-    jmp .L7075
-.L7074:
+    jmp .L7103
+.L7102:
     mov rax, 0
-.L7075:
+.L7103:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -155899,8 +156529,8 @@ _ZYL_opt_fold_binop:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7073
-.L7072:
+    jmp .L7101
+.L7100:
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -155910,34 +156540,34 @@ _ZYL_opt_fold_binop:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7076
+    je .L7104
     mov rax, 0
-    jmp .L7077
-.L7076:
+    jmp .L7105
+.L7104:
     mov rax, 1
+.L7105:
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+.L7101:
+.L7097:
+.L7093:
+.L7089:
+.L7085:
+.L7081:
 .L7077:
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 16
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
+.L7075:
 .L7073:
+.L7071:
 .L7069:
-.L7065:
-.L7061:
-.L7057:
-.L7053:
-.L7049:
-.L7047:
-.L7045:
-.L7043:
-.L7041:
     mov rsp, rbp
     pop rbp
     ret
@@ -155951,51 +156581,51 @@ _ZYL_opt_expr:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7080
+    jne .L7108
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7078
-.L7080:
+    jmp .L7106
+.L7108:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7081
+    jne .L7109
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7078
-.L7081:
+    jmp .L7106
+.L7109:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7082
+    jne .L7110
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7078
-.L7082:
+    jmp .L7106
+.L7110:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7083
+    jne .L7111
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L7078
-.L7083:
+    jmp .L7106
+.L7111:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7084
+    jne .L7112
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -156033,12 +156663,12 @@ call _ZYL_opt_expr
 call _ZYL_opt_binop
     add rsp, 32
     mov [rsp], rax
-    jmp .L7078
-.L7084:
+    jmp .L7106
+.L7112:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L7085
+    jne .L7113
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -156068,12 +156698,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7085:
+    jmp .L7106
+.L7113:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 16
-    jne .L7086
+    jne .L7114
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -156103,12 +156733,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7086:
+    jmp .L7106
+.L7114:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L7087
+    jne .L7115
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -156138,12 +156768,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7087:
+    jmp .L7106
+.L7115:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L7088
+    jne .L7116
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -156166,12 +156796,12 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7088:
+    jmp .L7106
+.L7116:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L7089
+    jne .L7117
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -156203,12 +156833,12 @@ call _ZYL_opt_expr
 call _ZYL_opt_if
     add rsp, 32
     mov [rsp], rax
-    jmp .L7078
-.L7089:
+    jmp .L7106
+.L7117:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L7090
+    jne .L7118
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -156232,12 +156862,12 @@ call _ZYL_opt_expr
 call _ZYL_opt_while
     add rsp, 16
     mov [rsp], rax
-    jmp .L7078
-.L7090:
+    jmp .L7106
+.L7118:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L7091
+    jne .L7119
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -156267,12 +156897,12 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7091:
+    jmp .L7106
+.L7119:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L7092
+    jne .L7120
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -156315,12 +156945,12 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7092:
+    jmp .L7106
+.L7120:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L7093
+    jne .L7121
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
@@ -156343,12 +156973,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7093:
+    jmp .L7106
+.L7121:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L7094
+    jne .L7122
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-216], rax
@@ -156385,12 +157015,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7094:
+    jmp .L7106
+.L7122:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 18
-    jne .L7095
+    jne .L7123
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-240], rax
@@ -156427,12 +157057,12 @@ call _ZYL_opt_list
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7095:
+    jmp .L7106
+.L7123:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 14
-    jne .L7096
+    jne .L7124
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-264], rax
@@ -156468,12 +157098,12 @@ call _ZYL_opt_arms
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7096:
+    jmp .L7106
+.L7124:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L7097
+    jne .L7125
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-280], rax
@@ -156483,6 +157113,9 @@ call _ZYL_opt_arms
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-296], rax
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov [rbp-304], rax
     mov rax, [rbp-280]
     push rax
     mov rax, [rbp-288]
@@ -156495,13 +157128,17 @@ call _ZYL_opt_arms
 call _ZYL_opt_expr
     add rsp, 16
     push rax
+    mov rax, [rbp-304]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 32
+    mov rdi, 40
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 15
+    pop rax
+    mov [rbx+32], rax
     pop rax
     mov [rbx+24], rax
     pop rax
@@ -156510,33 +157147,33 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7097:
+    jmp .L7106
+.L7125:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 17
-    jne .L7079
+    jne .L7107
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-304], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
     mov [rbp-312], rax
     mov rax, [rsp]
-    mov rax, [rax+24]
+    mov rax, [rax+16]
     mov [rbp-320], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-328], rax
     sub rsp, 8
-    mov rax, [rbp-304]
+    mov rax, [rbp-312]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call _ZYL_opt_expr
     add rsp, 16
     push rax
-    mov rax, [rbp-312]
+    mov rax, [rbp-320]
     push rax
     sub rsp, 8
-    mov rax, [rbp-320]
+    mov rax, [rbp-328]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -156558,10 +157195,10 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7078
-.L7079:
+    jmp .L7106
+.L7107:
     mov qword ptr [rsp], 0
-.L7078:
+.L7106:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -156578,7 +157215,7 @@ _ZYL_opt_binop:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7100
+    jne .L7128
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -156587,7 +157224,7 @@ _ZYL_opt_binop:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7103
+    jne .L7131
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -156607,8 +157244,8 @@ _ZYL_opt_binop:
 call _ZYL_opt_fold_binop
     add rsp, 32
     mov [rsp], rax
-    jmp .L7101
-.L7103:
+    jmp .L7129
+.L7131:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -156630,14 +157267,14 @@ call _ZYL_opt_fold_binop
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7101
-.L7102:
+    jmp .L7129
+.L7130:
     mov qword ptr [rsp], 0
-.L7101:
+.L7129:
     pop rax
     mov [rsp], rax
-    jmp .L7098
-.L7100:
+    jmp .L7126
+.L7128:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -156659,10 +157296,10 @@ call _ZYL_opt_fold_binop
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7098
-.L7099:
+    jmp .L7126
+.L7127:
     mov qword ptr [rsp], 0
-.L7098:
+.L7126:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -156679,7 +157316,7 @@ _ZYL_opt_if:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7106
+    jne .L7134
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -156692,7 +157329,7 @@ _ZYL_opt_if:
     setg al
     movzx rax, al
     test rax, rax
-    je .L7107
+    je .L7135
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -156700,8 +157337,8 @@ _ZYL_opt_if:
     mov rdi, [rsp+0]
 call _ZYL_opt_expr
     add rsp, 16
-    jmp .L7108
-.L7107:
+    jmp .L7136
+.L7135:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -156709,10 +157346,10 @@ call _ZYL_opt_expr
     mov rdi, [rsp+0]
 call _ZYL_opt_expr
     add rsp, 16
-.L7108:
+.L7136:
     mov [rsp], rax
-    jmp .L7104
-.L7106:
+    jmp .L7132
+.L7134:
     mov rax, [rbp-8]
     push rax
     sub rsp, 8
@@ -156746,10 +157383,10 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7104
-.L7105:
+    jmp .L7132
+.L7133:
     mov qword ptr [rsp], 0
-.L7104:
+.L7132:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -156765,7 +157402,7 @@ _ZYL_opt_while:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7111
+    jne .L7139
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -156778,7 +157415,7 @@ _ZYL_opt_while:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7112
+    je .L7140
     mov rax, 0
     push rax
     mov r12, rsp
@@ -156791,8 +157428,8 @@ _ZYL_opt_while:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7113
-.L7112:
+    jmp .L7141
+.L7140:
     mov rax, [rbp-8]
     push rax
     sub rsp, 8
@@ -156815,10 +157452,10 @@ call _ZYL_opt_expr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L7113:
+.L7141:
     mov [rsp], rax
-    jmp .L7109
-.L7111:
+    jmp .L7137
+.L7139:
     mov rax, [rbp-8]
     push rax
     sub rsp, 8
@@ -156842,10 +157479,10 @@ call _ZYL_opt_expr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7109
-.L7110:
+    jmp .L7137
+.L7138:
     mov qword ptr [rsp], 0
-.L7109:
+.L7137:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157099,7 +157736,7 @@ _ZYL_sb_advance:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7115
+    jne .L7143
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157170,10 +157807,10 @@ _ZYL_sb_advance:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7114
-.L7115:
+    jmp .L7142
+.L7143:
     mov qword ptr [rsp], 0
-.L7114:
+.L7142:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157189,7 +157826,7 @@ _ZYL_sb_advance_escape:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7117
+    jne .L7145
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157260,10 +157897,10 @@ _ZYL_sb_advance_escape:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7116
-.L7117:
+    jmp .L7144
+.L7145:
     mov qword ptr [rsp], 0
-.L7116:
+.L7144:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157279,7 +157916,7 @@ _ZYL_sb_consume_escaped:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7119
+    jne .L7147
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157350,10 +157987,10 @@ _ZYL_sb_consume_escaped:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7118
-.L7119:
+    jmp .L7146
+.L7147:
     mov qword ptr [rsp], 0
-.L7118:
+.L7146:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157369,7 +158006,7 @@ _ZYL_sb_enter_string:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7121
+    jne .L7149
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157440,10 +158077,10 @@ _ZYL_sb_enter_string:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7120
-.L7121:
+    jmp .L7148
+.L7149:
     mov qword ptr [rsp], 0
-.L7120:
+.L7148:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157459,7 +158096,7 @@ _ZYL_sb_exit_string:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7123
+    jne .L7151
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157530,10 +158167,10 @@ _ZYL_sb_exit_string:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7122
-.L7123:
+    jmp .L7150
+.L7151:
     mov qword ptr [rsp], 0
-.L7122:
+.L7150:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157549,7 +158186,7 @@ _ZYL_sb_enter_comment:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7125
+    jne .L7153
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -157620,10 +158257,10 @@ _ZYL_sb_enter_comment:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7124
-.L7125:
+    jmp .L7152
+.L7153:
     mov qword ptr [rsp], 0
-.L7124:
+.L7152:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157638,7 +158275,7 @@ _ZYL_sb_new_line:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7127
+    jne .L7155
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -157709,10 +158346,10 @@ _ZYL_sb_new_line:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7126
-.L7127:
+    jmp .L7154
+.L7155:
     mov qword ptr [rsp], 0
-.L7126:
+.L7154:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157729,7 +158366,7 @@ _ZYL_sb_open_bracket:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7129
+    jne .L7157
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -157845,10 +158482,10 @@ _ZYL_sb_open_bracket:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7128
-.L7129:
+    jmp .L7156
+.L7157:
     mov qword ptr [rsp], 0
-.L7128:
+.L7156:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -157865,7 +158502,7 @@ _ZYL_sb_close_bracket:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7131
+    jne .L7159
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -157895,7 +158532,7 @@ _ZYL_sb_close_bracket:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7134
+    jne .L7162
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -157963,12 +158600,12 @@ _ZYL_sb_close_bracket:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7132
-.L7134:
+    jmp .L7160
+.L7162:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7133
+    jne .L7161
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -157980,7 +158617,7 @@ _ZYL_sb_close_bracket:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7136
+    jne .L7164
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -157992,7 +158629,7 @@ _ZYL_sb_close_bracket:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7138
+    jne .L7166
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-136], rax
@@ -158017,7 +158654,7 @@ call _ZYL_str_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L7139
+    je .L7167
     mov rax, [rbp-32]
     push rax
     mov rax, [rbp-40]
@@ -158063,8 +158700,8 @@ call _ZYL_str_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7140
-.L7139:
+    jmp .L7168
+.L7167:
     mov rax, [rbp-120]
     push rax
     mov rax, [rbp-24]
@@ -158135,30 +158772,30 @@ call _ZYL_str_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L7140:
+.L7168:
     mov [rsp], rax
-    jmp .L7137
-.L7138:
+    jmp .L7165
+.L7166:
     mov qword ptr [rsp], 0
-.L7137:
+.L7165:
     pop rax
     mov [rsp], rax
-    jmp .L7135
-.L7136:
+    jmp .L7163
+.L7164:
     mov qword ptr [rsp], 0
-.L7135:
+.L7163:
     pop rax
     mov [rsp], rax
-    jmp .L7132
-.L7133:
+    jmp .L7160
+.L7161:
     mov qword ptr [rsp], 0
-.L7132:
+.L7160:
     pop rax
     mov [rsp], rax
-    jmp .L7130
-.L7131:
+    jmp .L7158
+.L7159:
     mov qword ptr [rsp], 0
-.L7130:
+.L7158:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -158174,7 +158811,7 @@ _ZYL_sb_process_char:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7142
+    jne .L7170
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -158208,7 +158845,7 @@ _ZYL_sb_process_char:
     sete al
     movzx rax, al
     test rax, rax
-    je .L7143
+    je .L7171
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158219,8 +158856,8 @@ _ZYL_sb_process_char:
     mov rdi, [rsp+8]
 call _ZYL_sb_consume_escaped
     add rsp, 16
-    jmp .L7144
-.L7143:
+    jmp .L7172
+.L7171:
     mov rax, [rbp-64]
     push rax
     mov rax, 1
@@ -158230,7 +158867,7 @@ call _ZYL_sb_consume_escaped
     sete al
     movzx rax, al
     test rax, rax
-    je .L7145
+    je .L7173
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158241,8 +158878,8 @@ call _ZYL_sb_consume_escaped
     mov rdi, [rsp+8]
 call _ZYL_sb_process_comment_char
     add rsp, 16
-    jmp .L7146
-.L7145:
+    jmp .L7174
+.L7173:
     mov rax, [rbp-56]
     push rax
     mov rax, 1
@@ -158252,7 +158889,7 @@ call _ZYL_sb_process_comment_char
     sete al
     movzx rax, al
     test rax, rax
-    je .L7147
+    je .L7175
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158263,8 +158900,8 @@ call _ZYL_sb_process_comment_char
     mov rdi, [rsp+8]
 call _ZYL_sb_process_string_char
     add rsp, 16
-    jmp .L7148
-.L7147:
+    jmp .L7176
+.L7175:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158275,14 +158912,14 @@ call _ZYL_sb_process_string_char
     mov rdi, [rsp+8]
 call _ZYL_sb_process_normal_char
     add rsp, 16
-.L7148:
-.L7146:
-.L7144:
+.L7176:
+.L7174:
+.L7172:
     mov [rsp], rax
-    jmp .L7141
-.L7142:
+    jmp .L7169
+.L7170:
     mov qword ptr [rsp], 0
-.L7141:
+.L7169:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -158301,7 +158938,7 @@ _ZYL_sb_process_comment_char:
 call _ZYL_sb_is_newline
     add rsp, 16
     test rax, rax
-    je .L7149
+    je .L7177
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -158309,8 +158946,8 @@ call _ZYL_sb_is_newline
     mov rdi, [rsp+0]
 call _ZYL_sb_new_line
     add rsp, 16
-    jmp .L7150
-.L7149:
+    jmp .L7178
+.L7177:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158321,7 +158958,7 @@ call _ZYL_sb_new_line
     mov rdi, [rsp+8]
 call _ZYL_sb_advance
     add rsp, 16
-.L7150:
+.L7178:
     mov rsp, rbp
     pop rbp
     ret
@@ -158339,7 +158976,7 @@ _ZYL_sb_process_string_char:
 call _ZYL_sb_is_backslash
     add rsp, 16
     test rax, rax
-    je .L7151
+    je .L7179
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158350,8 +158987,8 @@ call _ZYL_sb_is_backslash
     mov rdi, [rsp+8]
 call _ZYL_sb_advance_escape
     add rsp, 16
-    jmp .L7152
-.L7151:
+    jmp .L7180
+.L7179:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158360,7 +158997,7 @@ call _ZYL_sb_advance_escape
 call _ZYL_sb_is_quote
     add rsp, 16
     test rax, rax
-    je .L7153
+    je .L7181
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158371,8 +159008,8 @@ call _ZYL_sb_is_quote
     mov rdi, [rsp+8]
 call _ZYL_sb_exit_string
     add rsp, 16
-    jmp .L7154
-.L7153:
+    jmp .L7182
+.L7181:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158381,7 +159018,7 @@ call _ZYL_sb_exit_string
 call _ZYL_sb_is_newline
     add rsp, 16
     test rax, rax
-    je .L7155
+    je .L7183
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -158389,8 +159026,8 @@ call _ZYL_sb_is_newline
     mov rdi, [rsp+0]
 call _ZYL_sb_new_line
     add rsp, 16
-    jmp .L7156
-.L7155:
+    jmp .L7184
+.L7183:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158401,9 +159038,9 @@ call _ZYL_sb_new_line
     mov rdi, [rsp+8]
 call _ZYL_sb_advance
     add rsp, 16
-.L7156:
-.L7154:
-.L7152:
+.L7184:
+.L7182:
+.L7180:
     mov rsp, rbp
     pop rbp
     ret
@@ -158421,7 +159058,7 @@ _ZYL_sb_process_normal_char:
 call _ZYL_sb_is_paren_open
     add rsp, 16
     test rax, rax
-    je .L7157
+    je .L7185
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158429,7 +159066,7 @@ call _ZYL_sb_is_paren_open
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7159]
+    lea rax, [rip+.L7187]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158437,8 +159074,8 @@ call _ZYL_sb_is_paren_open
     mov rdi, [rsp+16]
 call _ZYL_sb_open_bracket
     add rsp, 32
-    jmp .L7158
-.L7157:
+    jmp .L7186
+.L7185:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158447,7 +159084,7 @@ call _ZYL_sb_open_bracket
 call _ZYL_sb_is_bracket_open
     add rsp, 16
     test rax, rax
-    je .L7160
+    je .L7188
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158455,7 +159092,7 @@ call _ZYL_sb_is_bracket_open
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7162]
+    lea rax, [rip+.L7190]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158463,8 +159100,8 @@ call _ZYL_sb_is_bracket_open
     mov rdi, [rsp+16]
 call _ZYL_sb_open_bracket
     add rsp, 32
-    jmp .L7161
-.L7160:
+    jmp .L7189
+.L7188:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158473,7 +159110,7 @@ call _ZYL_sb_open_bracket
 call _ZYL_sb_is_brace_open
     add rsp, 16
     test rax, rax
-    je .L7163
+    je .L7191
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158481,7 +159118,7 @@ call _ZYL_sb_is_brace_open
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7165]
+    lea rax, [rip+.L7193]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158489,8 +159126,8 @@ call _ZYL_sb_is_brace_open
     mov rdi, [rsp+16]
 call _ZYL_sb_open_bracket
     add rsp, 32
-    jmp .L7164
-.L7163:
+    jmp .L7192
+.L7191:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158499,7 +159136,7 @@ call _ZYL_sb_open_bracket
 call _ZYL_sb_is_paren_close
     add rsp, 16
     test rax, rax
-    je .L7166
+    je .L7194
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158507,7 +159144,7 @@ call _ZYL_sb_is_paren_close
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7168]
+    lea rax, [rip+.L7196]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158515,8 +159152,8 @@ call _ZYL_sb_is_paren_close
     mov rdi, [rsp+16]
 call _ZYL_sb_close_bracket
     add rsp, 32
-    jmp .L7167
-.L7166:
+    jmp .L7195
+.L7194:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158525,7 +159162,7 @@ call _ZYL_sb_close_bracket
 call _ZYL_sb_is_bracket_close
     add rsp, 16
     test rax, rax
-    je .L7169
+    je .L7197
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158533,7 +159170,7 @@ call _ZYL_sb_is_bracket_close
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7171]
+    lea rax, [rip+.L7199]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158541,8 +159178,8 @@ call _ZYL_sb_is_bracket_close
     mov rdi, [rsp+16]
 call _ZYL_sb_close_bracket
     add rsp, 32
-    jmp .L7170
-.L7169:
+    jmp .L7198
+.L7197:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158551,7 +159188,7 @@ call _ZYL_sb_close_bracket
 call _ZYL_sb_is_brace_close
     add rsp, 16
     test rax, rax
-    je .L7172
+    je .L7200
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158559,7 +159196,7 @@ call _ZYL_sb_is_brace_close
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7174]
+    lea rax, [rip+.L7202]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -158567,8 +159204,8 @@ call _ZYL_sb_is_brace_close
     mov rdi, [rsp+16]
 call _ZYL_sb_close_bracket
     add rsp, 32
-    jmp .L7173
-.L7172:
+    jmp .L7201
+.L7200:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158577,7 +159214,7 @@ call _ZYL_sb_close_bracket
 call _ZYL_sb_is_quote
     add rsp, 16
     test rax, rax
-    je .L7175
+    je .L7203
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158588,8 +159225,8 @@ call _ZYL_sb_is_quote
     mov rdi, [rsp+8]
 call _ZYL_sb_enter_string
     add rsp, 16
-    jmp .L7176
-.L7175:
+    jmp .L7204
+.L7203:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158598,7 +159235,7 @@ call _ZYL_sb_enter_string
 call _ZYL_sb_is_semicolon
     add rsp, 16
     test rax, rax
-    je .L7177
+    je .L7205
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158609,8 +159246,8 @@ call _ZYL_sb_is_semicolon
     mov rdi, [rsp+8]
 call _ZYL_sb_enter_comment
     add rsp, 16
-    jmp .L7178
-.L7177:
+    jmp .L7206
+.L7205:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158619,7 +159256,7 @@ call _ZYL_sb_enter_comment
 call _ZYL_sb_is_newline
     add rsp, 16
     test rax, rax
-    je .L7179
+    je .L7207
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -158627,8 +159264,8 @@ call _ZYL_sb_is_newline
     mov rdi, [rsp+0]
 call _ZYL_sb_new_line
     add rsp, 16
-    jmp .L7180
-.L7179:
+    jmp .L7208
+.L7207:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -158639,15 +159276,15 @@ call _ZYL_sb_new_line
     mov rdi, [rsp+8]
 call _ZYL_sb_advance
     add rsp, 16
-.L7180:
-.L7178:
-.L7176:
-.L7173:
-.L7170:
-.L7167:
-.L7164:
-.L7161:
-.L7158:
+.L7208:
+.L7206:
+.L7204:
+.L7201:
+.L7198:
+.L7195:
+.L7192:
+.L7189:
+.L7186:
     mov rsp, rbp
     pop rbp
     ret
@@ -158761,7 +159398,7 @@ _ZYL_sb_scan_index:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7182
+    jne .L7210
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -158795,10 +159432,10 @@ _ZYL_sb_scan_index:
     setge al
     movzx rax, al
     test rax, rax
-    je .L7183
+    je .L7211
     mov rax, [rbp-32]
-    jmp .L7184
-.L7183:
+    jmp .L7212
+.L7211:
     sub rsp, 8
     mov rax, [rbp-96]
     sub rsp, 8
@@ -158814,7 +159451,7 @@ call _ZYL_sb_result_balanced
     sete al
     movzx rax, al
     test rax, rax
-    je .L7185
+    je .L7213
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -158863,16 +159500,16 @@ call _ZYL_sb_process_char
     mov rdi, [rsp+24]
 call _ZYL_sb_scan_index
     add rsp, 32
-    jmp .L7186
-.L7185:
+    jmp .L7214
+.L7213:
     mov rax, [rbp-32]
-.L7186:
-.L7184:
+.L7214:
+.L7212:
     mov [rsp], rax
-    jmp .L7181
-.L7182:
+    jmp .L7209
+.L7210:
     mov qword ptr [rsp], 0
-.L7181:
+.L7209:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -158887,7 +159524,7 @@ _ZYL_sb_finalize:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7188
+    jne .L7216
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -158927,7 +159564,7 @@ call _ZYL_sb_result_balanced
     sete al
     movzx rax, al
     test rax, rax
-    je .L7189
+    je .L7217
     mov rax, [rbp-48]
     push rax
     mov rax, 1
@@ -158937,7 +159574,7 @@ call _ZYL_sb_result_balanced
     sete al
     movzx rax, al
     test rax, rax
-    je .L7191
+    je .L7219
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -158946,14 +159583,14 @@ call _ZYL_sb_result_balanced
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L7192
-.L7191:
+    jmp .L7220
+.L7219:
     mov rax, [rbp-32]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7195
+    jne .L7223
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -158963,12 +159600,12 @@ call _ZYL_sb_result_balanced
     mov qword ptr [rbx], 0
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7193
-.L7195:
+    jmp .L7221
+.L7223:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7194
+    jne .L7222
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -158980,7 +159617,7 @@ call _ZYL_sb_result_balanced
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7197
+    jne .L7225
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -158992,7 +159629,7 @@ call _ZYL_sb_result_balanced
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7199
+    jne .L7227
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-112], rax
@@ -159020,33 +159657,33 @@ call _ZYL_sb_result_balanced
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7198
-.L7199:
+    jmp .L7226
+.L7227:
     mov qword ptr [rsp], 0
-.L7198:
+.L7226:
     pop rax
     mov [rsp], rax
-    jmp .L7196
-.L7197:
+    jmp .L7224
+.L7225:
     mov qword ptr [rsp], 0
-.L7196:
+.L7224:
     pop rax
     mov [rsp], rax
-    jmp .L7193
-.L7194:
+    jmp .L7221
+.L7222:
     mov qword ptr [rsp], 0
-.L7193:
+.L7221:
     pop rax
-.L7192:
-    jmp .L7190
-.L7189:
+.L7220:
+    jmp .L7218
+.L7217:
     mov rax, [rbp-72]
-.L7190:
+.L7218:
     mov [rsp], rax
-    jmp .L7187
-.L7188:
+    jmp .L7215
+.L7216:
     mov qword ptr [rsp], 0
-.L7187:
+.L7215:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159061,23 +159698,23 @@ _ZYL_sb_result_balanced:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7202
+    jne .L7230
     mov rax, 1
     mov [rsp], rax
-    jmp .L7200
-.L7202:
+    jmp .L7228
+.L7230:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7203
+    jne .L7231
     mov rax, 0
     mov [rsp], rax
-    jmp .L7200
-.L7203:
+    jmp .L7228
+.L7231:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7204
+    jne .L7232
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -159089,12 +159726,12 @@ _ZYL_sb_result_balanced:
     mov [rbp-32], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L7200
-.L7204:
+    jmp .L7228
+.L7232:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7205
+    jne .L7233
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -159106,12 +159743,12 @@ _ZYL_sb_result_balanced:
     mov [rbp-56], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L7200
-.L7205:
+    jmp .L7228
+.L7233:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7201
+    jne .L7229
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -159126,10 +159763,10 @@ _ZYL_sb_result_balanced:
     mov [rbp-88], rax
     mov rax, 0
     mov [rsp], rax
-    jmp .L7200
-.L7201:
+    jmp .L7228
+.L7229:
     mov qword ptr [rsp], 0
-.L7200:
+.L7228:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159144,23 +159781,23 @@ _ZYL_sb_result_error:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7208
+    jne .L7236
     mov rax, 0
     mov [rsp], rax
-    jmp .L7206
-.L7208:
+    jmp .L7234
+.L7236:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7209
+    jne .L7237
     mov rax, 1
     mov [rsp], rax
-    jmp .L7206
-.L7209:
+    jmp .L7234
+.L7237:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7210
+    jne .L7238
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -159172,12 +159809,12 @@ _ZYL_sb_result_error:
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7206
-.L7210:
+    jmp .L7234
+.L7238:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7211
+    jne .L7239
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -159189,12 +159826,12 @@ _ZYL_sb_result_error:
     mov [rbp-56], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7206
-.L7211:
+    jmp .L7234
+.L7239:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7207
+    jne .L7235
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -159209,10 +159846,10 @@ _ZYL_sb_result_error:
     mov [rbp-88], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7206
-.L7207:
+    jmp .L7234
+.L7235:
     mov qword ptr [rsp], 0
-.L7206:
+.L7234:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159227,23 +159864,23 @@ _ZYL_sb_cli_status:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7214
+    jne .L7242
     mov rax, 0
     mov [rsp], rax
-    jmp .L7212
-.L7214:
+    jmp .L7240
+.L7242:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7215
+    jne .L7243
     mov rax, 1
     mov [rsp], rax
-    jmp .L7212
-.L7215:
+    jmp .L7240
+.L7243:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7216
+    jne .L7244
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -159255,12 +159892,12 @@ _ZYL_sb_cli_status:
     mov [rbp-32], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7212
-.L7216:
+    jmp .L7240
+.L7244:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7217
+    jne .L7245
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -159272,12 +159909,12 @@ _ZYL_sb_cli_status:
     mov [rbp-56], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7212
-.L7217:
+    jmp .L7240
+.L7245:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7213
+    jne .L7241
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -159292,10 +159929,10 @@ _ZYL_sb_cli_status:
     mov [rbp-88], rax
     mov rax, 1
     mov [rsp], rax
-    jmp .L7212
-.L7213:
+    jmp .L7240
+.L7241:
     mov qword ptr [rsp], 0
-.L7212:
+.L7240:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159310,33 +159947,39 @@ _ZYL_sb_report:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7220
-    lea rax, [rip+.L7221]
+    jne .L7248
+    lea rax, [rip+.L7249]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov [rsp], rax
-    jmp .L7218
-.L7220:
+    jmp .L7246
+.L7248:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7222
-    lea rax, [rip+.L7223]
+    jne .L7250
+    lea rax, [rip+.L7251]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov [rsp], rax
-    jmp .L7218
-.L7222:
+    jmp .L7246
+.L7250:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7224
+    jne .L7252
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -159346,31 +159989,40 @@ _ZYL_sb_report:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-32], rax
-    lea rax, [rip+.L7225]
+    lea rax, [rip+.L7253]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-24]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-32]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov [rsp], rax
-    jmp .L7218
-.L7224:
+    jmp .L7246
+.L7252:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7226
+    jne .L7254
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -159380,31 +160032,40 @@ _ZYL_sb_report:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-56], rax
-    lea rax, [rip+.L7227]
+    lea rax, [rip+.L7255]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-48]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-56]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov [rsp], rax
-    jmp .L7218
-.L7226:
+    jmp .L7246
+.L7254:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7219
+    jne .L7247
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -159417,29 +160078,38 @@ _ZYL_sb_report:
     mov rax, [rsp]
     mov rax, [rax+32]
     mov [rbp-88], rax
-    lea rax, [rip+.L7228]
+    lea rax, [rip+.L7256]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-80]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, [rbp-88]
     mov rsi, rax
     lea rdi, [rip+.Lfmtd]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov [rsp], rax
-    jmp .L7218
-.L7219:
+    jmp .L7246
+.L7247:
     mov qword ptr [rsp], 0
-.L7218:
+.L7246:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159454,23 +160124,23 @@ _ZYL_sb_hint:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7231
-    lea rax, [rip+.L7232]
+    jne .L7259
+    lea rax, [rip+.L7260]
     mov [rsp], rax
-    jmp .L7229
-.L7231:
+    jmp .L7257
+.L7259:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7233
-    lea rax, [rip+.L7234]
+    jne .L7261
+    lea rax, [rip+.L7262]
     mov [rsp], rax
-    jmp .L7229
-.L7233:
+    jmp .L7257
+.L7261:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L7235
+    jne .L7263
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -159480,7 +160150,7 @@ _ZYL_sb_hint:
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-32], rax
-    lea rax, [rip+.L7236]
+    lea rax, [rip+.L7264]
     mov [rbp-40], rax
     mov rax, [rbp-40]
     sub rsp, 8
@@ -159496,7 +160166,7 @@ call zyl_cstr_concat
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7237]
+    lea rax, [rip+.L7265]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -159504,12 +160174,12 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     add rsp, 16
     mov [rsp], rax
-    jmp .L7229
-.L7235:
+    jmp .L7257
+.L7263:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L7238
+    jne .L7266
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -159519,7 +160189,7 @@ call zyl_cstr_concat
     mov rax, [rsp]
     mov rax, [rax+24]
     mov [rbp-72], rax
-    lea rax, [rip+.L7239]
+    lea rax, [rip+.L7267]
     mov [rbp-80], rax
     mov rax, [rbp-80]
     sub rsp, 8
@@ -159535,7 +160205,7 @@ call zyl_cstr_concat
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7240]
+    lea rax, [rip+.L7268]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -159543,12 +160213,12 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     add rsp, 16
     mov [rsp], rax
-    jmp .L7229
-.L7238:
+    jmp .L7257
+.L7266:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L7230
+    jne .L7258
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-96], rax
@@ -159561,7 +160231,7 @@ call zyl_cstr_concat
     mov rax, [rsp]
     mov rax, [rax+32]
     mov [rbp-120], rax
-    lea rax, [rip+.L7241]
+    lea rax, [rip+.L7269]
     mov [rbp-128], rax
     mov rax, [rbp-128]
     sub rsp, 8
@@ -159577,7 +160247,7 @@ call zyl_cstr_concat
     mov rax, [rbp-136]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7242]
+    lea rax, [rip+.L7270]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -159599,7 +160269,7 @@ call zyl_cstr_concat
     mov rax, [rbp-152]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7243]
+    lea rax, [rip+.L7271]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -159607,10 +160277,10 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     add rsp, 16
     mov [rsp], rax
-    jmp .L7229
-.L7230:
+    jmp .L7257
+.L7258:
     mov qword ptr [rsp], 0
-.L7229:
+.L7257:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -159623,7 +160293,7 @@ _ZYL_sb_validate_file:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7244]
+    lea rax, [rip+.L7272]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -159640,7 +160310,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L7245
+    je .L7273
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -159667,9 +160337,9 @@ call zyl_file_close_c
     mov rdi, [rsp+0]
 call _ZYL_sb_check_string
     add rsp, 16
-    jmp .L7246
-.L7245:
-    lea rax, [rip+.L7247]
+    jmp .L7274
+.L7273:
+    lea rax, [rip+.L7275]
     push rax
     mov rax, 0
     push rax
@@ -159689,7 +160359,7 @@ call _ZYL_sb_check_string
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L7246:
+.L7274:
     mov rsp, rbp
     pop rbp
     ret
@@ -159709,16 +160379,19 @@ call zyl_argc
     setl al
     movzx rax, al
     test rax, rax
-    je .L7248
-    lea rax, [rip+.L7250]
+    je .L7276
+    lea rax, [rip+.L7278]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, 2
-    jmp .L7249
-.L7248:
+    jmp .L7277
+.L7276:
     sub rsp, 8
     mov rax, 1
     sub rsp, 8
@@ -159749,7 +160422,7 @@ call _ZYL_sb_report
     mov rdi, [rsp+0]
 call _ZYL_sb_cli_status
     add rsp, 16
-.L7249:
+.L7277:
     mov rsp, rbp
     pop rbp
     ret
@@ -159757,359 +160430,9 @@ _ZYL_error_codes:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L7251]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7252]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7253]
-    push rax
-    mov rax, 4
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7254]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7255]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7256]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7257]
-    push rax
-    mov rax, 2
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7258]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7259]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7260]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7261]
-    push rax
-    mov rax, 4
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7262]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7263]
-    push rax
-    mov rax, 1
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7264]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7265]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7266]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7267]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7268]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7269]
-    push rax
-    mov rax, 4
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7270]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7271]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7272]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7273]
-    push rax
-    mov rax, 10
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7274]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7275]
-    push rax
-    mov rax, 4
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7276]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
-    lea rax, [rip+.L7277]
-    push rax
-    mov rax, 4
-    push rax
-    mov rax, 1
-    push rax
-    lea rax, [rip+.L7278]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 40
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+32], rax
-    pop rax
-    mov [rbx+24], rax
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
-    push rax
     lea rax, [rip+.L7279]
     push rax
-    mov rax, 5
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160134,7 +160457,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7281]
     push rax
-    mov rax, 5
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160159,7 +160482,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7283]
     push rax
-    mov rax, 13
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160184,7 +160507,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7285]
     push rax
-    mov rax, 13
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -160209,7 +160532,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7287]
     push rax
-    mov rax, 13
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160234,9 +160557,9 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7289]
     push rax
-    mov rax, 13
+    mov rax, 4
     push rax
-    mov rax, 2
+    mov rax, 1
     push rax
     lea rax, [rip+.L7290]
     push rax
@@ -160259,7 +160582,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7291]
     push rax
-    mov rax, 16
+    mov rax, 1
     push rax
     mov rax, 1
     push rax
@@ -160284,7 +160607,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7293]
     push rax
-    mov rax, 16
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160309,7 +160632,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7295]
     push rax
-    mov rax, 13
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160334,7 +160657,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7297]
     push rax
-    mov rax, 9
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160359,7 +160682,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7299]
     push rax
-    mov rax, 8
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160384,7 +160707,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7301]
     push rax
-    mov rax, 8
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -160409,7 +160732,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7303]
     push rax
-    mov rax, 8
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160434,7 +160757,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7305]
     push rax
-    mov rax, 14
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160459,7 +160782,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7307]
     push rax
-    mov rax, 15
+    mov rax, 5
     push rax
     mov rax, 1
     push rax
@@ -160484,7 +160807,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7309]
     push rax
-    mov rax, 4
+    mov rax, 5
     push rax
     mov rax, 1
     push rax
@@ -160509,7 +160832,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7311]
     push rax
-    mov rax, 12
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -160534,7 +160857,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7313]
     push rax
-    mov rax, 4
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -160559,7 +160882,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7315]
     push rax
-    mov rax, 2
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -160584,9 +160907,9 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7317]
     push rax
-    mov rax, 2
+    mov rax, 13
     push rax
-    mov rax, 1
+    mov rax, 2
     push rax
     lea rax, [rip+.L7318]
     push rax
@@ -160609,7 +160932,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7319]
     push rax
-    mov rax, 2
+    mov rax, 16
     push rax
     mov rax, 1
     push rax
@@ -160634,7 +160957,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7321]
     push rax
-    mov rax, 2
+    mov rax, 16
     push rax
     mov rax, 1
     push rax
@@ -160659,7 +160982,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7323]
     push rax
-    mov rax, 2
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -160684,7 +161007,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7325]
     push rax
-    mov rax, 16
+    mov rax, 9
     push rax
     mov rax, 1
     push rax
@@ -160709,7 +161032,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7327]
     push rax
-    mov rax, 1
+    mov rax, 8
     push rax
     mov rax, 1
     push rax
@@ -160734,7 +161057,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7329]
     push rax
-    mov rax, 1
+    mov rax, 8
     push rax
     mov rax, 1
     push rax
@@ -160759,7 +161082,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7331]
     push rax
-    mov rax, 13
+    mov rax, 8
     push rax
     mov rax, 1
     push rax
@@ -160784,7 +161107,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7333]
     push rax
-    mov rax, 1
+    mov rax, 14
     push rax
     mov rax, 1
     push rax
@@ -160809,7 +161132,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7335]
     push rax
-    mov rax, 10
+    mov rax, 15
     push rax
     mov rax, 1
     push rax
@@ -160834,7 +161157,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7337]
     push rax
-    mov rax, 3
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160859,7 +161182,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7339]
     push rax
-    mov rax, 3
+    mov rax, 12
     push rax
     mov rax, 1
     push rax
@@ -160884,7 +161207,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7341]
     push rax
-    mov rax, 7
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -160909,7 +161232,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7343]
     push rax
-    mov rax, 17
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -160934,7 +161257,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7345]
     push rax
-    mov rax, 9
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -160959,7 +161282,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7347]
     push rax
-    mov rax, 13
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -160984,7 +161307,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7349]
     push rax
-    mov rax, 10
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -161009,7 +161332,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7351]
     push rax
-    mov rax, 10
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -161034,7 +161357,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7353]
     push rax
-    mov rax, 15
+    mov rax, 16
     push rax
     mov rax, 1
     push rax
@@ -161059,7 +161382,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7355]
     push rax
-    mov rax, 6
+    mov rax, 1
     push rax
     mov rax, 1
     push rax
@@ -161084,7 +161407,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7357]
     push rax
-    mov rax, 2
+    mov rax, 1
     push rax
     mov rax, 1
     push rax
@@ -161109,7 +161432,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7359]
     push rax
-    mov rax, 4
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -161134,7 +161457,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7361]
     push rax
-    mov rax, 9
+    mov rax, 1
     push rax
     mov rax, 1
     push rax
@@ -161159,7 +161482,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7363]
     push rax
-    mov rax, 11
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -161184,7 +161507,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7365]
     push rax
-    mov rax, 11
+    mov rax, 3
     push rax
     mov rax, 1
     push rax
@@ -161209,7 +161532,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7367]
     push rax
-    mov rax, 7
+    mov rax, 3
     push rax
     mov rax, 1
     push rax
@@ -161234,7 +161557,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7369]
     push rax
-    mov rax, 12
+    mov rax, 7
     push rax
     mov rax, 1
     push rax
@@ -161259,7 +161582,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7371]
     push rax
-    mov rax, 12
+    mov rax, 17
     push rax
     mov rax, 1
     push rax
@@ -161284,7 +161607,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7373]
     push rax
-    mov rax, 12
+    mov rax, 9
     push rax
     mov rax, 1
     push rax
@@ -161309,7 +161632,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7375]
     push rax
-    mov rax, 4
+    mov rax, 13
     push rax
     mov rax, 1
     push rax
@@ -161334,7 +161657,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7377]
     push rax
-    mov rax, 2
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -161359,7 +161682,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7379]
     push rax
-    mov rax, 2
+    mov rax, 10
     push rax
     mov rax, 1
     push rax
@@ -161384,7 +161707,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7381]
     push rax
-    mov rax, 2
+    mov rax, 15
     push rax
     mov rax, 1
     push rax
@@ -161409,7 +161732,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7383]
     push rax
-    mov rax, 2
+    mov rax, 6
     push rax
     mov rax, 1
     push rax
@@ -161434,7 +161757,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7385]
     push rax
-    mov rax, 4
+    mov rax, 2
     push rax
     mov rax, 1
     push rax
@@ -161459,7 +161782,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7387]
     push rax
-    mov rax, 1
+    mov rax, 4
     push rax
     mov rax, 1
     push rax
@@ -161484,7 +161807,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7389]
     push rax
-    mov rax, 2
+    mov rax, 9
     push rax
     mov rax, 1
     push rax
@@ -161509,7 +161832,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7391]
     push rax
-    mov rax, 6
+    mov rax, 11
     push rax
     mov rax, 1
     push rax
@@ -161534,7 +161857,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7393]
     push rax
-    mov rax, 4
+    mov rax, 11
     push rax
     mov rax, 1
     push rax
@@ -161559,7 +161882,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7395]
     push rax
-    mov rax, 4
+    mov rax, 7
     push rax
     mov rax, 1
     push rax
@@ -161584,7 +161907,7 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7397]
     push rax
-    mov rax, 1
+    mov rax, 12
     push rax
     mov rax, 1
     push rax
@@ -161609,11 +161932,361 @@ _ZYL_error_codes:
     push rax
     lea rax, [rip+.L7399]
     push rax
-    mov rax, 10
+    mov rax, 12
     push rax
     mov rax, 1
     push rax
     lea rax, [rip+.L7400]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7401]
+    push rax
+    mov rax, 12
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7402]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7403]
+    push rax
+    mov rax, 4
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7404]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7405]
+    push rax
+    mov rax, 2
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7406]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7407]
+    push rax
+    mov rax, 2
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7408]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7409]
+    push rax
+    mov rax, 2
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7410]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7411]
+    push rax
+    mov rax, 2
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7412]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7413]
+    push rax
+    mov rax, 4
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7414]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7415]
+    push rax
+    mov rax, 1
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7416]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7417]
+    push rax
+    mov rax, 2
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7418]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7419]
+    push rax
+    mov rax, 6
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7420]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7421]
+    push rax
+    mov rax, 4
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7422]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7423]
+    push rax
+    mov rax, 4
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7424]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7425]
+    push rax
+    mov rax, 1
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7426]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 40
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+32], rax
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    lea rax, [rip+.L7427]
+    push rax
+    mov rax, 10
+    push rax
+    mov rax, 1
+    push rax
+    lea rax, [rip+.L7428]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -162628,7 +163301,7 @@ _ZYL_ec_name:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7402
+    jne .L7430
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -162643,10 +163316,10 @@ _ZYL_ec_name:
     mov [rbp-40], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L7401
-.L7402:
+    jmp .L7429
+.L7430:
     mov qword ptr [rsp], 0
-.L7401:
+.L7429:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162661,7 +163334,7 @@ _ZYL_ec_phase:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7404
+    jne .L7432
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -162676,10 +163349,10 @@ _ZYL_ec_phase:
     mov [rbp-40], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L7403
-.L7404:
+    jmp .L7431
+.L7432:
     mov qword ptr [rsp], 0
-.L7403:
+.L7431:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162694,7 +163367,7 @@ _ZYL_ec_severity:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7406
+    jne .L7434
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -162709,10 +163382,10 @@ _ZYL_ec_severity:
     mov [rbp-40], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L7405
-.L7406:
+    jmp .L7433
+.L7434:
     mov qword ptr [rsp], 0
-.L7405:
+.L7433:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162727,7 +163400,7 @@ _ZYL_ec_message:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7408
+    jne .L7436
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -162742,10 +163415,10 @@ _ZYL_ec_message:
     mov [rbp-40], rax
     mov rax, [rbp-40]
     mov [rsp], rax
-    jmp .L7407
-.L7408:
+    jmp .L7435
+.L7436:
     mov qword ptr [rsp], 0
-.L7407:
+.L7435:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162761,15 +163434,15 @@ _ZYL_ec_contains:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7411
+    jne .L7439
     mov rax, 0
     mov [rsp], rax
-    jmp .L7409
-.L7411:
+    jmp .L7437
+.L7439:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7410
+    jne .L7438
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -162800,10 +163473,10 @@ call _ZYL_str_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L7412
+    je .L7440
     mov rax, 1
-    jmp .L7413
-.L7412:
+    jmp .L7441
+.L7440:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -162814,12 +163487,12 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_ec_contains
     add rsp, 16
-.L7413:
+.L7441:
     mov [rsp], rax
-    jmp .L7409
-.L7410:
+    jmp .L7437
+.L7438:
     mov qword ptr [rsp], 0
-.L7409:
+.L7437:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162835,16 +163508,16 @@ _ZYL_ec_lookup:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7416
+    jne .L7444
     mov rax, 0
     push rax
-    lea rax, [rip+.L7417]
+    lea rax, [rip+.L7445]
     push rax
     mov rax, 0
     push rax
     mov rax, 0
     push rax
-    lea rax, [rip+.L7418]
+    lea rax, [rip+.L7446]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -162876,12 +163549,12 @@ _ZYL_ec_lookup:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L7414
-.L7416:
+    jmp .L7442
+.L7444:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7415
+    jne .L7443
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -162912,7 +163585,7 @@ call _ZYL_str_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L7419
+    je .L7447
     mov rax, 1
     push rax
     mov rax, [rbp-24]
@@ -162929,8 +163602,8 @@ call _ZYL_str_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L7420
-.L7419:
+    jmp .L7448
+.L7447:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -162941,12 +163614,12 @@ call _ZYL_str_eq
     mov rdi, [rsp+8]
 call _ZYL_ec_lookup
     add rsp, 16
-.L7420:
+.L7448:
     mov [rsp], rax
-    jmp .L7414
-.L7415:
+    jmp .L7442
+.L7443:
     mov qword ptr [rsp], 0
-.L7414:
+.L7442:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -162961,15 +163634,15 @@ _ZYL_ec_count:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L7423
+    jne .L7451
     mov rax, 0
     mov [rsp], rax
-    jmp .L7421
-.L7423:
+    jmp .L7449
+.L7451:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7422
+    jne .L7450
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -162989,10 +163662,10 @@ call _ZYL_ec_count
     pop rax
     add rax, rcx
     mov [rsp], rax
-    jmp .L7421
-.L7422:
+    jmp .L7449
+.L7450:
     mov qword ptr [rsp], 0
-.L7421:
+.L7449:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163011,9 +163684,9 @@ _ZYL_int_to_str:
     setl al
     movzx rax, al
     test rax, rax
-    je .L7424
+    je .L7452
     sub rsp, 8
-    lea rax, [rip+.L7426]
+    lea rax, [rip+.L7454]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -163027,8 +163700,8 @@ _ZYL_int_to_str:
     mov rdi, [rsp+16]
 call zyl_cstr_substr
     add rsp, 32
-    jmp .L7425
-.L7424:
+    jmp .L7453
+.L7452:
     sub rsp, 8
     mov rax, [rbp-8]
     push rax
@@ -163044,7 +163717,7 @@ call _ZYL_int_to_str
     add rsp, 16
     mov [rbp-16], rax
     sub rsp, 8
-    lea rax, [rip+.L7427]
+    lea rax, [rip+.L7455]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -163076,7 +163749,7 @@ call zyl_cstr_substr
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L7425:
+.L7453:
     mov rsp, rbp
     pop rbp
     ret
@@ -163094,10 +163767,10 @@ _ZYL_space_run:
     setle al
     movzx rax, al
     test rax, rax
-    je .L7428
-    lea rax, [rip+.L7430]
-    jmp .L7429
-.L7428:
+    je .L7456
+    lea rax, [rip+.L7458]
+    jmp .L7457
+.L7456:
     sub rsp, 8
     mov rax, [rbp-8]
     push rax
@@ -163114,14 +163787,14 @@ call _ZYL_space_run
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7431]
+    lea rax, [rip+.L7459]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L7429:
+.L7457:
     mov rsp, rbp
     pop rbp
     ret
@@ -163146,7 +163819,7 @@ call _ZYL_space_run
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7432]
+    lea rax, [rip+.L7460]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -163196,7 +163869,7 @@ _ZYL_el_path:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7434
+    jne .L7462
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163208,10 +163881,10 @@ _ZYL_el_path:
     mov [rbp-32], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L7433
-.L7434:
+    jmp .L7461
+.L7462:
     mov qword ptr [rsp], 0
-.L7433:
+.L7461:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163226,7 +163899,7 @@ _ZYL_el_line:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7436
+    jne .L7464
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163238,10 +163911,10 @@ _ZYL_el_line:
     mov [rbp-32], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L7435
-.L7436:
+    jmp .L7463
+.L7464:
     mov qword ptr [rsp], 0
-.L7435:
+.L7463:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163256,7 +163929,7 @@ _ZYL_el_col:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7438
+    jne .L7466
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163268,10 +163941,10 @@ _ZYL_el_col:
     mov [rbp-32], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L7437
-.L7438:
+    jmp .L7465
+.L7466:
     mov qword ptr [rsp], 0
-.L7437:
+.L7465:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163286,7 +163959,7 @@ _ZYL_loc_string:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7440
+    jne .L7468
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163312,7 +163985,7 @@ call _ZYL_int_to_str
 call _ZYL_int_to_str
     add rsp, 16
     mov [rbp-48], rax
-    lea rax, [rip+.L7441]
+    lea rax, [rip+.L7469]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-48]
@@ -163334,7 +164007,7 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     add rsp, 16
     mov [rbp-64], rax
-    lea rax, [rip+.L7442]
+    lea rax, [rip+.L7470]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-64]
@@ -163356,10 +164029,10 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     add rsp, 16
     mov [rsp], rax
-    jmp .L7439
-.L7440:
+    jmp .L7467
+.L7468:
     mov qword ptr [rsp], 0
-.L7439:
+.L7467:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163370,7 +164043,7 @@ _ZYL_err_header:
     sub rsp, 120
     mov [rbp-8], rdi
     mov [rbp-16], rsi
-    lea rax, [rip+.L7443]
+    lea rax, [rip+.L7471]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -163384,7 +164057,7 @@ call zyl_cstr_concat
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7444]
+    lea rax, [rip+.L7472]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -163440,7 +164113,7 @@ _ZYL_es_col:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7446
+    jne .L7474
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163449,10 +164122,10 @@ _ZYL_es_col:
     mov [rbp-24], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L7445
-.L7446:
+    jmp .L7473
+.L7474:
     mov qword ptr [rsp], 0
-.L7445:
+.L7473:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163467,7 +164140,7 @@ _ZYL_es_line:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7448
+    jne .L7476
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -163476,10 +164149,10 @@ _ZYL_es_line:
     mov [rbp-24], rax
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L7447
-.L7448:
+    jmp .L7475
+.L7476:
     mov qword ptr [rsp], 0
-.L7447:
+.L7475:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -163497,7 +164170,7 @@ _ZYL_arrow_line:
 call _ZYL_loc_string
     add rsp, 16
     mov [rbp-16], rax
-    lea rax, [rip+.L7449]
+    lea rax, [rip+.L7477]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -163515,10 +164188,10 @@ _ZYL_dbg_log:
     mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
-    lea rax, [rip+.L7450]
+    lea rax, [rip+.L7478]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7451]
+    lea rax, [rip+.L7479]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -163554,7 +164227,7 @@ _ZYL_compile_to_asm:
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     sub rsp, 8
-    lea rax, [rip+.L7452]
+    lea rax, [rip+.L7480]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163583,9 +164256,9 @@ call _ZYL_sb_result_balanced
     sete al
     movzx rax, al
     test rax, rax
-    je .L7453
+    je .L7481
     sub rsp, 8
-    lea rax, [rip+.L7455]
+    lea rax, [rip+.L7483]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163598,10 +164271,10 @@ call _ZYL_dbg_log
     mov rdi, [rsp+0]
 call _ZYL_report_unbalanced
     add rsp, 16
-    jmp .L7454
-.L7453:
+    jmp .L7482
+.L7481:
     sub rsp, 8
-    lea rax, [rip+.L7456]
+    lea rax, [rip+.L7484]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163619,7 +164292,7 @@ call _ZYL_zyl_parse
     add rsp, 16
     mov [rbp-32], rax
     sub rsp, 8
-    lea rax, [rip+.L7457]
+    lea rax, [rip+.L7485]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163634,7 +164307,7 @@ call _ZYL_convert_ast_list
     add rsp, 16
     mov [rbp-40], rax
     sub rsp, 8
-    lea rax, [rip+.L7458]
+    lea rax, [rip+.L7486]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163652,7 +164325,7 @@ call _ZYL_mr_resolve_program
     add rsp, 16
     mov [rbp-48], rax
     sub rsp, 8
-    lea rax, [rip+.L7459]
+    lea rax, [rip+.L7487]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163667,7 +164340,7 @@ call _ZYL_me_expand_program
     add rsp, 16
     mov [rbp-56], rax
     sub rsp, 8
-    lea rax, [rip+.L7460]
+    lea rax, [rip+.L7488]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163682,7 +164355,7 @@ call _ZYL_dc_check_program
     add rsp, 16
     mov [rbp-64], rax
     sub rsp, 8
-    lea rax, [rip+.L7461]
+    lea rax, [rip+.L7489]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163697,7 +164370,7 @@ call _ZYL_ac_check_program
     add rsp, 16
     mov [rbp-72], rax
     sub rsp, 8
-    lea rax, [rip+.L7462]
+    lea rax, [rip+.L7490]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163712,7 +164385,7 @@ call _ZYL_mc_check_program
     add rsp, 16
     mov [rbp-80], rax
     sub rsp, 8
-    lea rax, [rip+.L7463]
+    lea rax, [rip+.L7491]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163727,7 +164400,7 @@ call _ZYL_ec_check_program
     add rsp, 16
     mov [rbp-88], rax
     sub rsp, 8
-    lea rax, [rip+.L7464]
+    lea rax, [rip+.L7492]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163742,7 +164415,7 @@ call _ZYL_uc_check_program
     add rsp, 16
     mov [rbp-96], rax
     sub rsp, 8
-    lea rax, [rip+.L7465]
+    lea rax, [rip+.L7493]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163757,7 +164430,7 @@ call _ZYL_sc_check_program
     add rsp, 16
     mov [rbp-104], rax
     sub rsp, 8
-    lea rax, [rip+.L7466]
+    lea rax, [rip+.L7494]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163776,7 +164449,7 @@ call _ZYL_collect_definitions
     add rsp, 16
     mov [rbp-112], rax
     sub rsp, 8
-    lea rax, [rip+.L7467]
+    lea rax, [rip+.L7495]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163785,7 +164458,7 @@ call _ZYL_dbg_log
     mov rax, [rbp-56]
     mov [rbp-120], rax
     sub rsp, 8
-    lea rax, [rip+.L7468]
+    lea rax, [rip+.L7496]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163820,7 +164493,7 @@ call _ZYL_monomorphize
     add rsp, 16
     mov [rbp-136], rax
     sub rsp, 8
-    lea rax, [rip+.L7469]
+    lea rax, [rip+.L7497]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163835,7 +164508,7 @@ call _ZYL_td_expand_program
     add rsp, 16
     mov [rbp-144], rax
     sub rsp, 8
-    lea rax, [rip+.L7470]
+    lea rax, [rip+.L7498]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163853,7 +164526,7 @@ call _ZYL_ci_expand_program
     add rsp, 16
     mov [rbp-152], rax
     sub rsp, 8
-    lea rax, [rip+.L7471]
+    lea rax, [rip+.L7499]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163868,7 +164541,7 @@ call _ZYL_al_expand_program
     add rsp, 16
     mov [rbp-160], rax
     sub rsp, 8
-    lea rax, [rip+.L7472]
+    lea rax, [rip+.L7500]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163886,7 +164559,7 @@ call _ZYL_ic_program
     add rsp, 16
     mov [rbp-168], rax
     sub rsp, 8
-    lea rax, [rip+.L7473]
+    lea rax, [rip+.L7501]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163901,7 +164574,7 @@ call _ZYL_opt_optimize_fns
     add rsp, 16
     mov [rbp-176], rax
     sub rsp, 8
-    lea rax, [rip+.L7474]
+    lea rax, [rip+.L7502]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163916,7 +164589,7 @@ call _ZYL_ri_transform_fns
     add rsp, 16
     mov [rbp-184], rax
     sub rsp, 8
-    lea rax, [rip+.L7475]
+    lea rax, [rip+.L7503]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -163964,19 +164637,19 @@ call _ZYL_alloc_strlen
     setg al
     movzx rax, al
     test rax, rax
-    je .L7476
+    je .L7504
     sub rsp, 8
-    lea rax, [rip+.L7478]
+    lea rax, [rip+.L7506]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zyl_panic
     add rsp, 16
-    jmp .L7477
-.L7476:
+    jmp .L7505
+.L7504:
     mov rax, [rbp-200]
-.L7477:
-.L7454:
+.L7505:
+.L7482:
     mov rsp, rbp
     pop rbp
     ret
@@ -164016,10 +164689,10 @@ call zyl_file_close_c
 call _ZYL_compile_to_asm
     add rsp, 16
     mov [rbp-40], rax
-    lea rax, [rip+.L7479]
+    lea rax, [rip+.L7507]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7480]
+    lea rax, [rip+.L7508]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164055,10 +164728,10 @@ _ZYL_boot_run_legacy:
     mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
-    lea rax, [rip+.L7481]
+    lea rax, [rip+.L7509]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7482]
+    lea rax, [rip+.L7510]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164075,7 +164748,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L7483
+    je .L7511
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -164086,17 +164759,17 @@ call zyl_file_open_c
     mov rdi, [rsp+8]
 call _ZYL_boot_run
     add rsp, 16
-    jmp .L7484
-.L7483:
+    jmp .L7512
+.L7511:
     sub rsp, 8
-    lea rax, [rip+.L7485]
+    lea rax, [rip+.L7513]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call _ZYL_dbg_log
     add rsp, 16
     mov rax, 1
-.L7484:
+.L7512:
     mov rsp, rbp
     pop rbp
     ret
@@ -164109,7 +164782,7 @@ _ZYL_cli_write_file:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7486]
+    lea rax, [rip+.L7514]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164184,14 +164857,14 @@ call _ZYL_cli_is_absolute
     setg al
     movzx rax, al
     test rax, rax
-    je .L7487
+    je .L7515
     mov rax, [rbp-16]
-    jmp .L7488
-.L7487:
+    jmp .L7516
+.L7515:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7489]
+    lea rax, [rip+.L7517]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -164207,7 +164880,7 @@ call zyl_cstr_concat
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L7488:
+.L7516:
     mov rsp, rbp
     pop rbp
     ret
@@ -164233,10 +164906,10 @@ call _ZYL_str_len
     setl al
     movzx rax, al
     test rax, rax
-    je .L7490
+    je .L7518
     mov rax, 0
-    jmp .L7491
-.L7490:
+    jmp .L7519
+.L7518:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -164259,14 +164932,14 @@ call zyl_cstr_substr
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7492]
+    lea rax, [rip+.L7520]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call _ZYL_str_eq
     add rsp, 16
-.L7491:
+.L7519:
     mov rsp, rbp
     pop rbp
     ret
@@ -164290,7 +164963,7 @@ call _ZYL_cli_ends_with_zyl
     setg al
     movzx rax, al
     test rax, rax
-    je .L7493
+    je .L7521
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -164317,19 +164990,19 @@ call _ZYL_str_len
     mov rdi, [rsp+16]
 call zyl_cstr_substr
     add rsp, 32
-    jmp .L7494
-.L7493:
+    jmp .L7522
+.L7521:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7495]
+    lea rax, [rip+.L7523]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-.L7494:
+.L7522:
     mov rsp, rbp
     pop rbp
     ret
@@ -164349,10 +165022,10 @@ _ZYL_cli_parse_opts:
     setge al
     movzx rax, al
     test rax, rax
-    je .L7496
+    je .L7524
     mov rax, [rbp-24]
-    jmp .L7497
-.L7496:
+    jmp .L7525
+.L7524:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -164364,7 +165037,7 @@ call zyl_arg_str
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7500]
+    lea rax, [rip+.L7528]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164379,13 +165052,13 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L7498
+    je .L7526
     mov rax, [rbp-24]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7502
+    jne .L7530
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -164428,17 +165101,17 @@ call _ZYL_str_eq
 call _ZYL_cli_parse_opts
     add rsp, 32
     mov [rsp], rax
-    jmp .L7501
-.L7502:
+    jmp .L7529
+.L7530:
     mov qword ptr [rsp], 0
-.L7501:
+.L7529:
     pop rax
-    jmp .L7499
-.L7498:
+    jmp .L7527
+.L7526:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7505]
+    lea rax, [rip+.L7533]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164453,7 +165126,7 @@ call _ZYL_str_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L7503
+    je .L7531
     sub rsp, 8
     mov rax, [rbp-8]
     push rax
@@ -164472,7 +165145,7 @@ call zyl_arg_str
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7507
+    jne .L7535
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -164515,19 +165188,19 @@ call zyl_arg_str
 call _ZYL_cli_parse_opts
     add rsp, 32
     mov [rsp], rax
-    jmp .L7506
-.L7507:
+    jmp .L7534
+.L7535:
     mov qword ptr [rsp], 0
-.L7506:
+.L7534:
     pop rax
-    jmp .L7504
-.L7503:
+    jmp .L7532
+.L7531:
     mov rax, [rbp-24]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7509
+    jne .L7537
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-80], rax
@@ -164570,14 +165243,14 @@ call _ZYL_cli_parse_opts
 call _ZYL_cli_parse_opts
     add rsp, 32
     mov [rsp], rax
-    jmp .L7508
-.L7509:
+    jmp .L7536
+.L7537:
     mov qword ptr [rsp], 0
-.L7508:
+.L7536:
     pop rax
-.L7504:
-.L7499:
-.L7497:
+.L7532:
+.L7527:
+.L7525:
     mov rsp, rbp
     pop rbp
     ret
@@ -164587,22 +165260,22 @@ _ZYL_cli_link:
     sub rsp, 104
     mov [rbp-8], rdi
     mov [rbp-16], rsi
-    lea rax, [rip+.L7510]
+    lea rax, [rip+.L7538]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7511]
+    lea rax, [rip+.L7539]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7512]
+    lea rax, [rip+.L7540]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7513]
+    lea rax, [rip+.L7541]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164649,7 +165322,7 @@ _ZYL_cli_zyl_home_candidate:
     mov rbp, rsp
     sub rsp, 104
     sub rsp, 8
-    lea rax, [rip+.L7514]
+    lea rax, [rip+.L7542]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -164665,12 +165338,12 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L7515
+    je .L7543
     mov rax, [rbp-8]
-    jmp .L7516
-.L7515:
+    jmp .L7544
+.L7543:
     sub rsp, 8
-    lea rax, [rip+.L7517]
+    lea rax, [rip+.L7545]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -164686,22 +165359,22 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L7518
+    je .L7546
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7520]
+    lea rax, [rip+.L7548]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zyl_cstr_concat
     add rsp, 16
-    jmp .L7519
-.L7518:
-    lea rax, [rip+.L7521]
-.L7519:
-.L7516:
+    jmp .L7547
+.L7546:
+    lea rax, [rip+.L7549]
+.L7547:
+.L7544:
     mov rsp, rbp
     pop rbp
     ret
@@ -164728,12 +165401,12 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L7522
+    je .L7550
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7526]
+    lea rax, [rip+.L7554]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164753,16 +165426,16 @@ call zyl_path_exists
     setg al
     movzx rax, al
     test rax, rax
-    je .L7524
+    je .L7552
     mov rax, [rbp-16]
-    jmp .L7525
-.L7524:
+    jmp .L7553
+.L7552:
     mov rax, [rbp-8]
-.L7525:
-    jmp .L7523
-.L7522:
+.L7553:
+    jmp .L7551
+.L7550:
     mov rax, [rbp-8]
-.L7523:
+.L7551:
     mov rsp, rbp
     pop rbp
     ret
@@ -164825,7 +165498,7 @@ call zyl_argc
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7527]
+    lea rax, [rip+.L7555]
     push rax
     mov rax, 0
     push rax
@@ -164854,7 +165527,7 @@ call _ZYL_cli_parse_opts
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L7529
+    jne .L7557
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -164876,7 +165549,7 @@ call _ZYL_str_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L7530
+    je .L7558
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -164887,8 +165560,8 @@ call _ZYL_str_len
     mov rdi, [rsp+8]
 call _ZYL_cli_resolve_path
     add rsp, 16
-    jmp .L7531
-.L7530:
+    jmp .L7559
+.L7558:
     sub rsp, 8
     mov rax, [rbp-48]
     sub rsp, 8
@@ -164896,7 +165569,7 @@ call _ZYL_cli_resolve_path
     mov rdi, [rsp+0]
 call _ZYL_cli_default_out
     add rsp, 16
-.L7531:
+.L7559:
     mov [rbp-88], rax
     sub rsp, 8
     mov rax, [rbp-32]
@@ -164909,7 +165582,7 @@ call zyl_chdir
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7532]
+    lea rax, [rip+.L7560]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -164926,7 +165599,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L7533
+    je .L7561
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
@@ -164966,7 +165639,7 @@ call _ZYL_compile_to_asm
     setg al
     movzx rax, al
     test rax, rax
-    je .L7535
+    je .L7563
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -164977,12 +165650,12 @@ call _ZYL_compile_to_asm
     mov rdi, [rsp+8]
 call _ZYL_cli_write_file
     add rsp, 16
-    jmp .L7536
-.L7535:
+    jmp .L7564
+.L7563:
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L7537]
+    lea rax, [rip+.L7565]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -165011,22 +165684,25 @@ call _ZYL_cli_write_file
     mov rdi, [rsp+8]
 call _ZYL_cli_link
     add rsp, 16
-.L7536:
-    jmp .L7534
-.L7533:
-    lea rax, [rip+.L7538]
+.L7564:
+    jmp .L7562
+.L7561:
+    lea rax, [rip+.L7566]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
+    mov r12, rsp
+    and rsp, -16
     call printf
+    mov rsp, r12
     xor eax, eax
     mov rax, 1
-.L7534:
+.L7562:
     mov [rsp], rax
-    jmp .L7528
-.L7529:
+    jmp .L7556
+.L7557:
     mov qword ptr [rsp], 0
-.L7528:
+.L7556:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -165055,7 +165731,7 @@ call zyl_argc
     setl al
     movzx rax, al
     test rax, rax
-    je .L7539
+    je .L7567
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -165063,8 +165739,8 @@ call zyl_argc
     mov rdi, [rsp+0]
 call _ZYL_boot_run_legacy
     add rsp, 16
-    jmp .L7540
-.L7539:
+    jmp .L7568
+.L7567:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -165072,7 +165748,7 @@ call _ZYL_boot_run_legacy
     mov rdi, [rsp+0]
 call _ZYL_cli_run
     add rsp, 16
-.L7540:
+.L7568:
     mov rsp, rbp
     pop rbp
     ret
@@ -166294,1167 +166970,1173 @@ main:
     .string "main"
 .L5376:
     .string "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype"
-.L5393:
-    .string "zyl_file_open_c"
-.L5395:
-    .string "zyl_file_read_c"
-.L5397:
-    .string "zyl_file_write_c"
-.L5399:
-    .string "zyl_file_close_c"
-.L5408:
-    .string "zyl_panic"
-.L5409:
-    .string "assert-equal failed"
+.L5391:
+    .string "String"
+.L5394:
+    .string "Float"
 .L5411:
-    .string "zyl_panic"
-.L5412:
-    .string "assert-true failed"
-.L5414:
-    .string "zyl_panic"
-.L5415:
-    .string "assert-false failed"
-.L5420:
-    .string "ffi_pin"
-.L5422:
-    .string "ffi_unpin"
-.L5424:
-    .string "zyl_actor_spawn"
-.L5426:
-    .string "zyl_actor_send"
-.L5431:
-    .string "zyl_load_byte"
-.L5433:
-    .string "zyl_load_byte_signed"
-.L5435:
-    .string "zyl_store_byte"
-.L5437:
-    .string "zyl_store_byte_signed"
-.L5439:
-    .string "zyl_byte_slice"
-.L5441:
-    .string "zyl_byte_slice_sub"
-.L5443:
-    .string "zyl_bytebuf_new"
-.L5445:
-    .string "zyl_bytebuf_append"
-.L5447:
-    .string "zyl_bytebuf_len"
-.L5449:
-    .string "zyl_bytebuf_cap"
-.L5451:
-    .string "zyl_bytebuf_ptr"
-.L5453:
-    .string "zyl_align_check"
-.L5455:
-    .string "zyl_bytebuf_atomic_load"
-.L5457:
-    .string "zyl_bytebuf_atomic_store"
-.L5459:
-    .string "zyl_bytebuf_atomic_add"
-.L5461:
-    .string "zyl_bytebuf_atomic_sub"
-.L5463:
-    .string "zyl_bytebuf_atomic_cas"
-.L5465:
-    .string "zyl_bytebuf_atomic_fetch_add"
-.L5467:
-    .string "zyl_bytebuf_atomic_max"
-.L5469:
-    .string "zyl_bytebuf_atomic_min"
-.L5472:
-    .string "0"
-.L5475:
-    .string "1"
-.L5478:
-    .string "2"
-.L5481:
-    .string "3"
-.L5484:
-    .string "4"
-.L5487:
-    .string "5"
-.L5490:
-    .string "6"
-.L5493:
-    .string "7"
-.L5496:
-    .string "8"
-.L5497:
-    .string "9"
-.L5519:
-    .string "w"
-.L5520:
-    .string "w"
-.L5521:
-    .string "_af_d"
-.L5522:
-    .string "_af_d"
-.L5523:
-    .string "0.00001"
-.L5524:
-    .string "zyl_panic"
-.L5525:
-    .string "assert-equal failed"
-.L5526:
-    .string "0.0"
-.L5527:
-    .string "0.0"
-.L5530:
-    .string "_lambda_"
-.L5535:
-    .string "_clos_env"
-.L5539:
-    .string "zyl_variant_field"
-.L5727:
-    .string ""
-.L5732:
-    .string "_sg"
-.L5735:
-    .string ""
-.L5736:
-    .string "_"
-.L5750:
-    .string ""
-.L5753:
-    .string "ffi-call"
-.L5762:
-    .string "make-"
-.L5767:
-    .string "str-concat"
-.L5768:
-    .string "zyl_cstr_concat"
-.L5771:
-    .string "str-length"
-.L5772:
-    .string "zyl_cstr_len"
-.L5775:
-    .string "str-substring"
-.L5776:
-    .string "zyl_cstr_substr"
-.L5779:
-    .string "str-equal"
-.L5780:
-    .string "zyl_cstr_eq"
-.L5781:
-    .string ""
-.L5798:
-    .string "E_ARITY_MISMATCH: bit-not takes exactly one argument"
-.L5810:
-    .string "?"
-.L5817:
-    .string ""
-.L5818:
-    .string ""
-.L5829:
-    .string "E_MATCH_NONEXHAUSTIVE: unknown variant `"
-.L5830:
-    .string "` in match arm"
-.L5855:
-    .string "E_MATCH_NONEXHAUSTIVE: match does not cover every variant"
-.L5866:
-    .string "_np"
-.L5867:
-    .string ""
-.L5875:
-    .string ""
-.L5877:
-    .string ""
-.L5906:
-    .string "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions"
-.L5919:
-    .string ""
-.L5925:
-    .string "."
-.L5926:
-    .string "."
-.L5927:
-    .string "_"
-.L5983:
-    .string ""
-.L5984:
-    .string ""
-.L5988:
-    .string "_td_recv"
-.L5989:
-    .string "_td_recv"
-.L5995:
-    .string "_td_recv"
-.L6020:
-    .string ""
-.L6023:
-    .string ""
-.L6026:
-    .string ""
-.L6170:
-    .string "zyl_variant_eq"
-.L6171:
-    .string "assert-equal failed"
-.L6197:
-    .string ""
-.L6257:
-    .string "\n"
-.L6260:
-    .string ".L"
-.L6263:
-    .string ""
-.L6266:
-    .string "    lea rax, [rip+"
-.L6267:
-    .string "]"
-.L6270:
-    .string "    movsd xmm0, [rip+"
-.L6271:
-    .string "]"
-.L6272:
-    .string "    movq rax, xmm0"
-.L6277:
-    .string "zyl_cstr_concat"
-.L6280:
-    .string "zyl_cstr_substr"
-.L6283:
-    .string "zyl_cstr_sub"
-.L6286:
-    .string "zyl_cstr_from_int"
-.L6289:
-    .string "zyl_cstr_sanitize"
-.L6292:
-    .string "zyl_cstr_decode"
-.L6295:
+    .string "zyl_file_open_c"
+.L5413:
     .string "zyl_file_read_c"
-.L6325:
-    .string "    mov rax, "
-.L6363:
-    .string "    mov [rbp"
-.L6364:
-    .string "], rax"
-.L6373:
-    .string "    mov rax, [rbp"
-.L6374:
-    .string "]"
-.L6379:
-    .string "nil"
-.L6380:
-    .string "E_UNBOUND_VARIABLE: unbound identifier '"
-.L6381:
-    .string "'"
-.L6382:
-    .string "    lea rax, [rip+_ZYL_"
-.L6383:
-    .string "]"
-.L6384:
-    .string "    mov rax, 0"
-.L6389:
-    .string "    mov [rbp"
-.L6390:
-    .string "], rax"
-.L6393:
-    .string "    test rax, rax"
-.L6394:
-    .string "    je "
-.L6395:
-    .string "    jmp "
-.L6398:
-    .string "    mov rax, 0"
-.L6399:
-    .string "    test rax, rax"
-.L6400:
-    .string "    je "
-.L6401:
-    .string "    jmp "
-.L6402:
-    .string "    mov [rbp"
-.L6403:
-    .string "], rax"
-.L6404:
-    .string "    mov rax, [rbp"
-.L6405:
-    .string "]"
-.L6408:
-    .string "    xor eax, eax"
-.L6411:
-    .string "    push rax"
-.L6412:
-    .string "    mov rcx, rax"
-.L6413:
-    .string "    pop rax"
-.L6418:
+.L5415:
+    .string "zyl_file_write_c"
+.L5417:
+    .string "zyl_file_close_c"
+.L5426:
+    .string "zyl_panic"
+.L5427:
+    .string "assert-equal failed"
+.L5429:
+    .string "zyl_panic"
+.L5430:
+    .string "assert-true failed"
+.L5432:
+    .string "zyl_panic"
+.L5433:
+    .string "assert-false failed"
+.L5438:
+    .string "ffi_pin"
+.L5440:
+    .string "ffi_unpin"
+.L5442:
+    .string "zyl_actor_spawn"
+.L5444:
+    .string "zyl_actor_send"
+.L5449:
+    .string "zyl_load_byte"
+.L5451:
+    .string "zyl_load_byte_signed"
+.L5453:
+    .string "zyl_store_byte"
+.L5455:
+    .string "zyl_store_byte_signed"
+.L5457:
+    .string "zyl_byte_slice"
+.L5459:
+    .string "zyl_byte_slice_sub"
+.L5461:
+    .string "zyl_bytebuf_new"
+.L5463:
+    .string "zyl_bytebuf_append"
+.L5465:
+    .string "zyl_bytebuf_len"
+.L5467:
+    .string "zyl_bytebuf_cap"
+.L5469:
+    .string "zyl_bytebuf_ptr"
+.L5471:
+    .string "zyl_align_check"
+.L5473:
+    .string "zyl_bytebuf_atomic_load"
+.L5475:
+    .string "zyl_bytebuf_atomic_store"
+.L5477:
+    .string "zyl_bytebuf_atomic_add"
+.L5479:
+    .string "zyl_bytebuf_atomic_sub"
+.L5481:
+    .string "zyl_bytebuf_atomic_cas"
+.L5483:
+    .string "zyl_bytebuf_atomic_fetch_add"
+.L5485:
+    .string "zyl_bytebuf_atomic_max"
+.L5487:
+    .string "zyl_bytebuf_atomic_min"
+.L5490:
+    .string "0"
+.L5493:
+    .string "1"
+.L5496:
+    .string "2"
+.L5499:
+    .string "3"
+.L5502:
+    .string "4"
+.L5505:
+    .string "5"
+.L5508:
+    .string "6"
+.L5511:
+    .string "7"
+.L5514:
+    .string "8"
+.L5515:
+    .string "9"
+.L5537:
+    .string "w"
+.L5538:
+    .string "w"
+.L5539:
+    .string "_af_d"
+.L5540:
+    .string "_af_d"
+.L5541:
+    .string "0.00001"
+.L5542:
+    .string "zyl_panic"
+.L5543:
+    .string "assert-equal failed"
+.L5544:
+    .string "0.0"
+.L5545:
+    .string "0.0"
+.L5548:
+    .string "_lambda_"
+.L5553:
+    .string "_clos_env"
+.L5557:
+    .string "zyl_variant_field"
+.L5745:
+    .string ""
+.L5750:
+    .string "_sg"
+.L5753:
+    .string ""
+.L5754:
+    .string "_"
+.L5768:
+    .string ""
+.L5771:
+    .string "ffi-call"
+.L5780:
+    .string "make-"
+.L5785:
+    .string "str-concat"
+.L5786:
+    .string "zyl_cstr_concat"
+.L5789:
+    .string "str-length"
+.L5790:
+    .string "zyl_cstr_len"
+.L5793:
+    .string "str-substring"
+.L5794:
+    .string "zyl_cstr_substr"
+.L5797:
+    .string "str-equal"
+.L5798:
     .string "zyl_cstr_eq"
-.L6421:
-    .string "    xor rax, 1"
-.L6424:
+.L5799:
+    .string ""
+.L5816:
+    .string "E_ARITY_MISMATCH: bit-not takes exactly one argument"
+.L5828:
+    .string "?"
+.L5835:
+    .string ""
+.L5836:
+    .string ""
+.L5847:
+    .string "E_MATCH_NONEXHAUSTIVE: unknown variant `"
+.L5848:
+    .string "` in match arm"
+.L5873:
+    .string "E_MATCH_NONEXHAUSTIVE: match does not cover every variant"
+.L5884:
+    .string "_np"
+.L5885:
+    .string ""
+.L5893:
+    .string ""
+.L5895:
+    .string ""
+.L5924:
+    .string "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions"
+.L5937:
+    .string ""
+.L5943:
+    .string "."
+.L5944:
+    .string "."
+.L5945:
+    .string "_"
+.L6001:
+    .string ""
+.L6002:
+    .string ""
+.L6006:
+    .string "_td_recv"
+.L6007:
+    .string "_td_recv"
+.L6013:
+    .string "_td_recv"
+.L6038:
+    .string ""
+.L6041:
+    .string ""
+.L6044:
+    .string ""
+.L6188:
     .string "zyl_variant_eq"
-.L6427:
-    .string "    xor rax, 1"
-.L6428:
-    .string "zyl_variant_cmp"
-.L6429:
-    .string "    cmp rax, 0"
-.L6430:
-    .string "    set"
-.L6433:
-    .string "l al"
-.L6436:
-    .string "g al"
-.L6439:
-    .string "le al"
-.L6440:
-    .string "ge al"
-.L6443:
-    .string "    cqo"
-.L6446:
-    .string "    add rax, rcx"
-.L6449:
-    .string "    sub rax, rcx"
-.L6452:
-    .string "    imul rax, rcx"
-.L6453:
-    .string "    idiv rcx"
-.L6456:
-    .string "    mov rax, rdx"
-.L6459:
-    .string "    and rax, rcx"
-.L6462:
-    .string "    or rax, rcx"
-.L6465:
-    .string "    xor rax, rcx"
-.L6468:
-    .string "    mov rdx, rcx"
-.L6471:
-    .string "    shl rax, cl"
-.L6472:
-    .string "    shr rax, cl"
-.L6473:
-    .string "    cmp rdx, 64"
-.L6474:
-    .string "    sbb rdx, rdx"
-.L6475:
-    .string "    and rax, rdx"
-.L6476:
-    .string "    mov rdx, 63"
-.L6477:
-    .string "    cmp rcx, 64"
-.L6478:
-    .string "    cmovae rcx, rdx"
-.L6479:
-    .string "    sar rax, cl"
-.L6480:
-    .string "    cmp rax, rcx"
-.L6481:
-    .string "    set"
-.L6484:
-    .string "l al"
-.L6487:
-    .string "g al"
-.L6490:
-    .string "le al"
-.L6493:
-    .string "ge al"
-.L6496:
-    .string "e al"
-.L6497:
-    .string "    movzx rax, al"
-.L6498:
-    .string "ne al"
-.L6499:
-    .string "    movzx rax, al"
-.L6500:
-    .string "    push rax"
-.L6501:
-    .string "    movq xmm1, rax"
-.L6502:
-    .string "    pop rax"
-.L6503:
-    .string "    movq xmm0, rax"
-.L6506:
-    .string "    "
-.L6509:
-    .string "addsd"
-.L6512:
-    .string "subsd"
-.L6515:
-    .string "mulsd"
-.L6516:
-    .string "divsd"
-.L6517:
-    .string " xmm0, xmm1"
-.L6518:
+.L6189:
+    .string "assert-equal failed"
+.L6215:
+    .string ""
+.L6275:
+    .string "\n"
+.L6278:
+    .string ".L"
+.L6281:
+    .string ""
+.L6284:
+    .string "    lea rax, [rip+"
+.L6285:
+    .string "]"
+.L6288:
+    .string "    movsd xmm0, [rip+"
+.L6289:
+    .string "]"
+.L6290:
     .string "    movq rax, xmm0"
-.L6519:
-    .string "    comisd xmm0, xmm1"
-.L6520:
+.L6295:
+    .string "zyl_cstr_concat"
+.L6298:
+    .string "zyl_cstr_substr"
+.L6301:
+    .string "zyl_cstr_sub"
+.L6304:
+    .string "zyl_cstr_from_int"
+.L6307:
+    .string "zyl_cstr_sanitize"
+.L6310:
+    .string "zyl_cstr_decode"
+.L6313:
+    .string "zyl_file_read_c"
+.L6343:
+    .string "    mov rax, "
+.L6381:
+    .string "    mov [rbp"
+.L6382:
+    .string "], rax"
+.L6391:
+    .string "    mov rax, [rbp"
+.L6392:
+    .string "]"
+.L6397:
+    .string "nil"
+.L6398:
+    .string "E_UNBOUND_VARIABLE: unbound identifier '"
+.L6399:
+    .string "'"
+.L6400:
+    .string "    lea rax, [rip+_ZYL_"
+.L6401:
+    .string "]"
+.L6402:
+    .string "    mov rax, 0"
+.L6407:
+    .string "    mov [rbp"
+.L6408:
+    .string "], rax"
+.L6411:
+    .string "    test rax, rax"
+.L6412:
+    .string "    je "
+.L6413:
+    .string "    jmp "
+.L6416:
+    .string "    mov rax, 0"
+.L6417:
+    .string "    test rax, rax"
+.L6418:
+    .string "    je "
+.L6419:
+    .string "    jmp "
+.L6420:
+    .string "    mov [rbp"
+.L6421:
+    .string "], rax"
+.L6422:
+    .string "    mov rax, [rbp"
+.L6423:
+    .string "]"
+.L6426:
+    .string "    xor eax, eax"
+.L6429:
+    .string "    push rax"
+.L6430:
+    .string "    mov rcx, rax"
+.L6431:
+    .string "    pop rax"
+.L6436:
+    .string "zyl_cstr_eq"
+.L6439:
+    .string "    xor rax, 1"
+.L6442:
+    .string "zyl_variant_eq"
+.L6445:
+    .string "    xor rax, 1"
+.L6446:
+    .string "zyl_variant_cmp"
+.L6447:
+    .string "    cmp rax, 0"
+.L6448:
     .string "    set"
-.L6523:
-    .string "b al"
-.L6526:
-    .string "a al"
-.L6529:
-    .string "be al"
-.L6532:
-    .string "ae al"
-.L6535:
+.L6451:
+    .string "l al"
+.L6454:
+    .string "g al"
+.L6457:
+    .string "le al"
+.L6458:
+    .string "ge al"
+.L6461:
+    .string "    cqo"
+.L6464:
+    .string "    add rax, rcx"
+.L6467:
+    .string "    sub rax, rcx"
+.L6470:
+    .string "    imul rax, rcx"
+.L6471:
+    .string "    idiv rcx"
+.L6474:
+    .string "    mov rax, rdx"
+.L6477:
+    .string "    and rax, rcx"
+.L6480:
+    .string "    or rax, rcx"
+.L6483:
+    .string "    xor rax, rcx"
+.L6486:
+    .string "    mov rdx, rcx"
+.L6489:
+    .string "    shl rax, cl"
+.L6490:
+    .string "    shr rax, cl"
+.L6491:
+    .string "    cmp rdx, 64"
+.L6492:
+    .string "    sbb rdx, rdx"
+.L6493:
+    .string "    and rax, rdx"
+.L6494:
+    .string "    mov rdx, 63"
+.L6495:
+    .string "    cmp rcx, 64"
+.L6496:
+    .string "    cmovae rcx, rdx"
+.L6497:
+    .string "    sar rax, cl"
+.L6498:
+    .string "    cmp rax, rcx"
+.L6499:
+    .string "    set"
+.L6502:
+    .string "l al"
+.L6505:
+    .string "g al"
+.L6508:
+    .string "le al"
+.L6511:
+    .string "ge al"
+.L6514:
     .string "e al"
-.L6536:
+.L6515:
     .string "    movzx rax, al"
-.L6537:
+.L6516:
     .string "ne al"
-.L6538:
+.L6517:
     .string "    movzx rax, al"
+.L6518:
+    .string "    push rax"
+.L6519:
+    .string "    movq xmm1, rax"
+.L6520:
+    .string "    pop rax"
+.L6521:
+    .string "    movq xmm0, rax"
+.L6524:
+    .string "    "
+.L6527:
+    .string "addsd"
+.L6530:
+    .string "subsd"
+.L6533:
+    .string "mulsd"
+.L6534:
+    .string "divsd"
+.L6535:
+    .string " xmm0, xmm1"
+.L6536:
+    .string "    movq rax, xmm0"
+.L6537:
+    .string "    comisd xmm0, xmm1"
+.L6538:
+    .string "    set"
 .L6541:
-    .string "rdi"
+    .string "b al"
 .L6544:
-    .string "rsi"
+    .string "a al"
 .L6547:
-    .string "rdx"
+    .string "be al"
 .L6550:
-    .string "rcx"
+    .string "ae al"
 .L6553:
-    .string "r8"
+    .string "e al"
 .L6554:
-    .string "r9"
-.L6557:
-    .string "    sub rsp, 8"
-.L6566:
-    .string "    sub rsp, 8"
-.L6567:
-    .string "    mov [rsp], rax"
-.L6570:
-    .string "    mov r10, [rsp+"
+    .string "    movzx rax, al"
+.L6555:
+    .string "ne al"
+.L6556:
+    .string "    movzx rax, al"
+.L6559:
+    .string "rdi"
+.L6562:
+    .string "rsi"
+.L6565:
+    .string "rdx"
+.L6568:
+    .string "rcx"
 .L6571:
-    .string "]"
+    .string "r8"
 .L6572:
-    .string "    push r10"
+    .string "r9"
 .L6575:
-    .string "    mov "
-.L6576:
-    .string ", [rsp+"
-.L6577:
-    .string "]"
-.L6580:
-    .string "_ZYL_"
-.L6581:
-    .string "call "
-.L6584:
-    .string "    add rsp, "
-.L6585:
-    .string "    mov r10, [rbp"
-.L6586:
-    .string "]"
-.L6587:
-    .string "    call r10"
-.L6590:
     .string "    sub rsp, 8"
-.L6591:
-    .string "    mov r11, [rbp"
-.L6592:
+.L6584:
+    .string "    sub rsp, 8"
+.L6585:
+    .string "    mov [rsp], rax"
+.L6588:
+    .string "    mov r10, [rsp+"
+.L6589:
     .string "]"
+.L6590:
+    .string "    push r10"
 .L6593:
     .string "    mov "
 .L6594:
-    .string ", [r11+16]"
+    .string ", [rsp+"
 .L6595:
-    .string "    mov r11, [r11+8]"
-.L6596:
-    .string "    call r11"
-.L6597:
-    .string "call "
-.L6600:
-    .string "    movq xmm0, rax"
-.L6601:
-    .string "    lea rdi, [rip+.Lfmtf]"
-.L6602:
-    .string "    mov eax, 1"
-.L6603:
-    .string "    call printf"
-.L6604:
-    .string "    xor eax, eax"
-.L6607:
-    .string "    mov rsi, rax"
-.L6608:
-    .string "    lea rdi, [rip+.Lfmts]"
-.L6609:
-    .string "    xor eax, eax"
-.L6610:
-    .string "    call printf"
-.L6611:
-    .string "    xor eax, eax"
-.L6612:
-    .string "    mov rsi, rax"
-.L6613:
-    .string "    lea rdi, [rip+.Lfmtd]"
-.L6614:
-    .string "    xor eax, eax"
-.L6615:
-    .string "    call printf"
-.L6616:
-    .string "    xor eax, eax"
-.L6617:
-    .string "    mov r12, rsp"
-.L6618:
-    .string "    and rsp, -16"
-.L6619:
-    .string "    mov rdi, "
-.L6620:
-    .string "    call zyl_heap_alloc"
-.L6621:
-    .string "    mov rsp, r12"
-.L6622:
-    .string "    mov rbx, rax"
-.L6623:
-    .string "    mov qword ptr [rbx], "
-.L6624:
-    .string "    mov rax, rbx"
-.L6627:
-    .string "    push rax"
-.L6630:
-    .string "    pop rax"
-.L6631:
-    .string "    mov [rbx+"
-.L6632:
-    .string "], rax"
-.L6637:
-    .string ""
-.L6640:
-    .string "    mov qword ptr [rbp"
-.L6641:
-    .string "], "
-.L6642:
-    .string "    lea rax, [rbp"
-.L6643:
     .string "]"
-.L6647:
-    .string "    mov [rbp"
-.L6648:
-    .string "], rax"
-.L6651:
-    .string "    push rax"
-.L6652:
-    .string "    mov qword ptr [rsp], 0"
-.L6653:
-    .string "    pop rax"
-.L6668:
-    .string "    mov [rsp], rax"
-.L6669:
-    .string "    jmp "
-.L6670:
-    .string "    jne "
-.L6673:
-    .string "    mov [rsp], rax"
-.L6674:
-    .string "    jmp "
-.L6679:
-    .string "    mov rax, [rsp]"
-.L6680:
-    .string "    mov rax, [rax]"
-.L6681:
-    .string "    cmp rax, "
-.L6686:
-    .string "_"
-.L6689:
-    .string "    mov rax, [rsp]"
-.L6690:
-    .string "    mov rax, [rax+"
-.L6691:
-    .string "]"
-.L6692:
-    .string "    mov [rbp"
-.L6693:
-    .string "], rax"
-.L6694:
-    .string ":"
-.L6695:
-    .string "    mov r12, rsp"
-.L6696:
-    .string "    and rsp, -16"
-.L6697:
-    .string "    call "
-.L6698:
-    .string "    mov rsp, r12"
-.L6703:
-    .string "zyl_try_push"
-.L6704:
-    .string "    push rax"
-.L6705:
-    .string "    mov rdi, rax"
-.L6706:
-    .string "setjmp"
-.L6707:
-    .string "    cmp rax, 0"
-.L6708:
-    .string "    jne "
-.L6709:
-    .string "    pop rax"
-.L6710:
-    .string "    push rax"
-.L6711:
-    .string "zyl_try_pop"
-.L6712:
-    .string "    pop rax"
-.L6713:
-    .string "    jmp "
-.L6714:
-    .string "    pop rax"
-.L6715:
-    .string "    mov rdi, rax"
-.L6716:
-    .string "zyl_try_frame_msg"
-.L6778:
+.L6598:
     .string "_ZYL_"
-.L6779:
-    .string ":"
-.L6780:
-    .string "    push rbp"
-.L6781:
-    .string "    mov rbp, rsp"
-.L6782:
-    .string "    sub rsp, "
-.L6783:
-    .string "    mov rsp, rbp"
-.L6784:
-    .string "    pop rbp"
-.L6785:
-    .string "    ret"
-.L6792:
-    .string "a-name"
-.L6807:
-    .string "    mov [rbp"
-.L6808:
+.L6599:
+    .string "call "
+.L6602:
+    .string "    add rsp, "
+.L6603:
+    .string "    mov r10, [rbp"
+.L6604:
+    .string "]"
+.L6605:
+    .string "    call r10"
+.L6608:
+    .string "    sub rsp, 8"
+.L6609:
+    .string "    mov r11, [rbp"
+.L6610:
+    .string "]"
+.L6611:
+    .string "    mov "
+.L6612:
+    .string ", [r11+16]"
+.L6613:
+    .string "    mov r11, [r11+8]"
+.L6614:
+    .string "    call r11"
+.L6615:
+    .string "call "
+.L6618:
+    .string "    movq xmm0, rax"
+.L6619:
+    .string "    lea rdi, [rip+.Lfmtf]"
+.L6620:
+    .string "    mov eax, 1"
+.L6621:
+    .string "    xor eax, eax"
+.L6624:
+    .string "    mov rsi, rax"
+.L6625:
+    .string "    lea rdi, [rip+.Lfmts]"
+.L6626:
+    .string "    xor eax, eax"
+.L6627:
+    .string "    xor eax, eax"
+.L6628:
+    .string "    mov rsi, rax"
+.L6629:
+    .string "    lea rdi, [rip+.Lfmtd]"
+.L6630:
+    .string "    xor eax, eax"
+.L6631:
+    .string "    xor eax, eax"
+.L6632:
+    .string "    mov r12, rsp"
+.L6633:
+    .string "    and rsp, -16"
+.L6634:
+    .string "    call printf"
+.L6635:
+    .string "    mov rsp, r12"
+.L6636:
+    .string "    mov r12, rsp"
+.L6637:
+    .string "    and rsp, -16"
+.L6638:
+    .string "    mov rdi, "
+.L6639:
+    .string "    call zyl_heap_alloc"
+.L6640:
+    .string "    mov rsp, r12"
+.L6641:
+    .string "    mov rbx, rax"
+.L6642:
+    .string "    mov qword ptr [rbx], "
+.L6643:
+    .string "    mov rax, rbx"
+.L6646:
+    .string "    push rax"
+.L6649:
+    .string "    pop rax"
+.L6650:
+    .string "    mov [rbx+"
+.L6651:
+    .string "], rax"
+.L6656:
+    .string ""
+.L6659:
+    .string "    mov qword ptr [rbp"
+.L6660:
     .string "], "
-.L6809:
-    .string "    mov r10, [rbp+"
-.L6810:
+.L6661:
+    .string "    lea rax, [rbp"
+.L6662:
     .string "]"
-.L6811:
+.L6666:
     .string "    mov [rbp"
-.L6812:
-    .string "], r10"
-.L6815:
-    .string ""
-.L6822:
-    .string ".intel_syntax noprefix"
-.L6823:
-    .string ".text"
-.L6824:
-    .string ".globl main"
-.L6825:
-    .string "main:"
-.L6826:
+.L6667:
+    .string "], rax"
+.L6670:
+    .string "    push rax"
+.L6671:
+    .string "    mov qword ptr [rsp], 0"
+.L6672:
+    .string "    pop rax"
+.L6687:
+    .string "    mov [rsp], rax"
+.L6688:
+    .string "    jmp "
+.L6689:
+    .string "    jne "
+.L6692:
+    .string "    mov [rsp], rax"
+.L6693:
+    .string "    jmp "
+.L6698:
+    .string "    mov rax, [rsp]"
+.L6699:
+    .string "    mov rax, [rax]"
+.L6700:
+    .string "    cmp rax, "
+.L6705:
+    .string "_"
+.L6708:
+    .string "    mov rax, [rsp]"
+.L6709:
+    .string "    mov rax, [rax+"
+.L6710:
+    .string "]"
+.L6711:
+    .string "    mov [rbp"
+.L6712:
+    .string "], rax"
+.L6713:
+    .string ":"
+.L6714:
+    .string "    mov r12, rsp"
+.L6715:
+    .string "    and rsp, -16"
+.L6716:
+    .string "    call "
+.L6717:
+    .string "    mov rsp, r12"
+.L6722:
+    .string "zyl_try_push"
+.L6723:
+    .string "    push rax"
+.L6724:
+    .string "    mov rdi, rax"
+.L6725:
+    .string "setjmp"
+.L6726:
+    .string "    cmp rax, 0"
+.L6727:
+    .string "    jne "
+.L6728:
+    .string "    pop rax"
+.L6729:
+    .string "    push rax"
+.L6730:
+    .string "zyl_try_pop"
+.L6731:
+    .string "    pop rax"
+.L6732:
+    .string "    jmp "
+.L6733:
+    .string "    pop rax"
+.L6734:
+    .string "    mov rdi, rax"
+.L6735:
+    .string "zyl_try_frame_msg"
+.L6797:
+    .string "_ZYL_"
+.L6798:
+    .string ":"
+.L6799:
     .string "    push rbp"
-.L6827:
+.L6800:
     .string "    mov rbp, rsp"
-.L6828:
-    .string "    call zyl_save_args"
-.L6829:
-    .string "    call zyl_ensure_arenas"
-.L6830:
-    .string "    lea rdi, [rip+_ZYL_main]"
-.L6831:
-    .string "    call zyl_call_on_big_stack"
-.L6832:
+.L6801:
+    .string "    sub rsp, "
+.L6802:
+    .string "    mov rsp, rbp"
+.L6803:
     .string "    pop rbp"
-.L6833:
+.L6804:
     .string "    ret"
-.L6834:
-    .string ".section .rodata"
+.L6811:
+    .string "a-name"
 .L6835:
-    .string ".Lfmtd:"
+    .string "    mov [rbp"
 .L6836:
-    .string "    .string \"%lld\\n\""
+    .string "], "
 .L6837:
-    .string ".Lfmtf:"
+    .string "    mov r10, [rbp+"
 .L6838:
-    .string "    .string \"%f\\n\""
+    .string "]"
 .L6839:
-    .string ".Lfmts:"
+    .string "    mov [rbp"
 .L6840:
-    .string "    .string \"%s\\n\""
-.L6841:
-    .string "/tmp/dbg2"
-.L6842:
-    .string "a"
+    .string "], r10"
+.L6843:
+    .string ""
+.L6850:
+    .string ".intel_syntax noprefix"
+.L6851:
+    .string ".text"
+.L6852:
+    .string ".globl main"
+.L6853:
+    .string "main:"
+.L6854:
+    .string "    push rbp"
+.L6855:
+    .string "    mov rbp, rsp"
+.L6856:
+    .string "    call zyl_save_args"
+.L6857:
+    .string "    call zyl_ensure_arenas"
+.L6858:
+    .string "    lea rdi, [rip+_ZYL_main]"
+.L6859:
+    .string "    call zyl_call_on_big_stack"
 .L6860:
-    .string "\\"
+    .string "    pop rbp"
 .L6861:
-    .string "\\"
+    .string "    ret"
 .L6862:
-    .string "n"
+    .string ".section .rodata"
 .L6863:
-    .string "    .string \""
+    .string ".Lfmtd:"
 .L6864:
-    .string "\""
+    .string "    .string \"%lld\\n\""
 .L6865:
-    .string ":"
+    .string ".Lfmtf:"
 .L6866:
-    .string "    .double "
-.L6873:
-    .string ""
-.L6874:
-    .string ""
-.L7159:
-    .string ")"
-.L7162:
-    .string "]"
-.L7165:
-    .string "}"
-.L7168:
-    .string ")"
-.L7171:
-    .string "]"
-.L7174:
-    .string "}"
-.L7221:
-    .string "balanced"
-.L7223:
-    .string "unbalanced: reached end of input inside an open string"
-.L7225:
-    .string "unbalanced: opener never closed"
-.L7227:
-    .string "unbalanced: unexpected closer"
-.L7228:
-    .string "mismatched pair"
-.L7232:
-    .string ""
-.L7234:
-    .string "close the open string literal with a matching '\"'"
-.L7236:
-    .string "insert '"
-.L7237:
-    .string "' to close the opener"
-.L7239:
-    .string "remove this '"
-.L7240:
-    .string "' -- no opener is open here"
-.L7241:
-    .string "replace '"
-.L7242:
-    .string "' with '"
-.L7243:
-    .string "', or fix the opener it was meant to close"
-.L7244:
-    .string "r"
-.L7247:
-    .string "file-open"
-.L7250:
-    .string "usage: sexp_balance <file.zyl>"
-.L7251:
-    .string "E_ALIGNMENT_FAILED"
-.L7252:
-    .string "runtime: alignment check failed"
-.L7253:
-    .string "E_ARITY_MISMATCH"
-.L7254:
-    .string "type: function arity mismatch for F at S: expected E arguments, found G"
-.L7255:
-    .string "E_ASSERT_FAIL"
-.L7256:
-    .string "assertion: condition failed - M at S"
-.L7257:
-    .string "E_ATOM_AS_OPERATOR"
-.L7258:
-    .string "parser: atom cannot be used as operator in prefix position at S"
-.L7259:
-    .string "E_ALIGN_CHECK_FAILED"
-.L7260:
-    .string "runtime: alignment check failed"
-.L7261:
-    .string "E_ATOMIC_ABA"
-.L7262:
-    .string "region: atomic CAS on non-Pin memory is forbidden"
-.L7263:
-    .string "E_BYTE_VALUE_OOB"
-.L7264:
-    .string "lexer: byte literal out of range 0-255"
-.L7265:
-    .string "E_BYTE_OOB"
-.L7266:
-    .string "runtime: byte offset out of bounds"
-.L7267:
-    .string "E_BYTEBUF_CAP_EXCEEDED"
-.L7268:
-    .string "runtime: bytebuf append exceeds capacity"
-.L7269:
-    .string "E_BYTEBUF_NOT_PIN"
-.L7270:
-    .string "type: bytebuf-ptr requires Pin region"
-.L7271:
-    .string "E_BYTEBUF_INVALID"
-.L7272:
-    .string "runtime: bytebuf magic tag mismatch"
-.L7273:
-    .string "E_BYTEBUF_OVERLAP"
-.L7274:
-    .string "runtime: bytebuf append overlapping slice"
-.L7275:
-    .string "E_STACK_BYTEBUF_RETURN"
-.L7276:
-    .string "type: Stack ByteBuf cannot be returned"
-.L7277:
-    .string "E_GLOBAL_BYTEBUF_MUT"
-.L7278:
-    .string "type: Global ByteBuf must be immutable"
-.L7279:
-    .string "E_CANNOT_INFER"
-.L7280:
-    .string "type: cannot infer concrete type for generic parameter G at S - no call-site evidence"
-.L7281:
-    .string "E_CANNOT_INFER"
-.L7282:
-    .string "type: cannot infer concrete type for generic parameter G at S - no call-site evidence"
-.L7283:
-    .string "E_CT_VIOLATION"
-.L7284:
-    .string "constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value"
-.L7285:
-    .string "E_SECRET_ESCAPE"
-.L7286:
-    .string "secret: Secret value escapes through M at S"
-.L7287:
-    .string "E_SECRET_DEBUG"
-.L7288:
-    .string "secret: Secret value reaches a debug/print sink at S"
-.L7289:
-    .string "E_ZEROIZE_MISSING"
-.L7290:
-    .string "secret: function F takes a Secret parameter but never zeroizes it"
-.L7291:
-    .string "E_FFI_PIN_REQUIRED"
-.L7292:
-    .string "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S"
-.L7293:
-    .string "E_FFI_TYPE_NOT_PINNABLE"
-.L7294:
-    .string "ffi: value has type T which is not FFI_Pinnable"
-.L7295:
-    .string "E_CAPABILITY_LEAK"
-.L7296:
-    .string "capability: TMut leaked across boundary at S"
-.L7297:
-    .string "E_CIRCULAR_MODULE"
-.L7298:
-    .string "module: circular dependency: M"
-.L7299:
-    .string "E_CODEGEN"
-.L7300:
-    .string "codegen: M"
-.L7301:
-    .string "E_CODEGEN_BUFFER_FULL"
-.L7302:
-    .string "codegen: output buffer full at S"
-.L7303:
-    .string "E_CODEGEN_BUFFER_LIMIT"
-.L7304:
-    .string "codegen: buffer limit reached: M"
-.L7305:
-    .string "E_CONTRACT_VIOLATION"
-.L7306:
-    .string "contract: contract violation - M at S"
-.L7307:
-    .string "E_DIVISION_BY_ZERO"
-.L7308:
-    .string "numeric: division by zero at S"
-.L7309:
-    .string "E_DUPLICATE_DEFINITION"
-.L7310:
-    .string "type: duplicate definition of N at S. previously defined at P"
-.L7311:
-    .string "E_DUPLICATE_IMPL"
-.L7312:
-    .string "trait: duplicate impl of T for U at S"
-.L7313:
-    .string "E_DUPLICATE_VARIANT"
-.L7314:
-    .string "type: duplicate variant V in deftype at S"
-.L7315:
-    .string "E_EMPTY_LIST"
-.L7316:
-    .string "parser: empty list is not a valid expression at S"
-.L7317:
-    .string "E_EXPECTED_EXPRESSION"
-.L7318:
-    .string "parser: expected an expression but found T at S"
-.L7319:
-    .string "E_EXPECTED_RBRACKET"
-.L7320:
-    .string "parser: expected ] but found T at S"
-.L7321:
-    .string "E_EXPECTED_RCURLY"
-.L7322:
-    .string "parser: expected } but found T at S"
-.L7323:
-    .string "E_EXPECTED_RPAREN"
-.L7324:
-    .string "parser: expected ) at S but found T"
-.L7325:
-    .string "E_FFI_TIMEOUT"
-.L7326:
-    .string "ffi: call exceeded timeout of M ms at S"
-.L7327:
-    .string "E_FLOAT_OVERFLOW"
-.L7328:
-    .string "lexer: float overflow in literal L at S"
-.L7329:
-    .string "E_INTEGER_OVERFLOW"
-.L7330:
-    .string "lexer: integer overflow in literal L at S"
-.L7331:
-    .string "E_INVALID_CAPABILITY"
-.L7332:
-    .string "type: invalid capability usage for F - M at S"
-.L7333:
-    .string "E_INVALID_CHAR"
-.L7334:
-    .string "lexer: invalid character C at S"
-.L7335:
-    .string "E_LIST_NTH_OOB"
-.L7336:
-    .string "runtime: list-nth index out of bounds at S"
-.L7337:
-    .string "E_MACRO_ILLEGAL_ACCESS"
-.L7338:
-    .string "macro: illegal runtime access in macro expansion"
-.L7339:
-    .string "E_MACRO_NON_TERMINATION"
-.L7340:
-    .string "macro: expansion loop detected (max depth exceeded)"
-.L7341:
-    .string "E_MATCH_ARM_COMPLEX"
-.L7342:
-    .string "match: arm combines a constant with multiple calls - bind to lets first"
-.L7343:
-    .string "E_MATCH_NONEXHAUSTIVE"
-.L7344:
-    .string "match: non-exhaustive pattern match at S - missing cases: M"
-.L7345:
-    .string "E_MODULE_NOT_FOUND"
-.L7346:
-    .string "module: module M not found at P"
-.L7347:
-    .string "E_MUT_CONFLICT"
-.L7348:
-    .string "aliasing: mutable reference conflict at S"
-.L7349:
-    .string "E_NULL_POINTER"
-.L7350:
-    .string "runtime: null pointer dereference"
-.L7351:
-    .string "E_OUT_OF_MEMORY"
-.L7352:
-    .string "runtime: out of memory"
-.L7353:
-    .string "E_OVERFLOW"
-.L7354:
-    .string "numeric: integer overflow at S"
-.L7355:
-    .string "E_REGION_ESCAPE"
-.L7356:
-    .string "region: value escapes region constraint at S"
-.L7357:
-    .string "E_RESERVED_KEYWORD"
-.L7358:
-    .string "parser: reserved keyword K cannot be used as identifier at S"
-.L7359:
-    .string "E_RETURN_TYPE_MISMATCH"
-.L7360:
-    .string "type: return type mismatch in F - expected T, got U at S"
-.L7361:
-    .string "E_SYMBOL_NOT_EXPORTED"
-.L7362:
-    .string "module: symbol N not exported by M"
-.L7363:
-    .string "E_TEST_FAILURE"
-.L7364:
-    .string "test: assertion failed - M"
-.L7365:
-    .string "E_TEST_RUNNER_ERROR"
-.L7366:
-    .string "test: runner error - M"
-.L7367:
-    .string "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN"
-.L7368:
-    .string "icnf: top-level statements combined with explicit main"
-.L7369:
-    .string "E_TRAIT_BOUND_NOT_SATISFIED"
-.L7370:
-    .string "type: unsatisfied trait bound T : U at S"
-.L7371:
-    .string "E_TRAIT_NOT_DERIVABLE"
-.L7372:
-    .string "trait: cannot derive T for type U at S"
-.L7373:
-    .string "E_TRAIT_NOT_FOUND"
-.L7374:
-    .string "trait: no implementation found for T at S"
-.L7375:
-    .string "E_TYPE_MISMATCH"
-.L7376:
-    .string "type: type mismatch at S - expected E, found F"
-.L7377:
-    .string "E_UNBALANCED_PARENS"
-.L7378:
-    .string "parser: unbalanced parens - open and close counts differ"
-.L7379:
-    .string "E_UNBALANCED_UNCLOSED"
-.L7380:
-    .string "parser: unclosed opener - opened at S, never reached its matching closer"
-.L7381:
-    .string "E_UNBALANCED_UNEXPECTED_CLOSE"
-.L7382:
-    .string "parser: unexpected closing delimiter at S - no opener is open here"
-.L7383:
-    .string "E_UNBALANCED_MISMATCHED_BRACKET"
-.L7384:
-    .string "parser: closing delimiter at S does not match its opener"
-.L7385:
-    .string "E_UNBOUND_VARIABLE"
-.L7386:
-    .string "type: unbound variable V at S"
-.L7387:
-    .string "E_UNEXPECTED_EOF"
-.L7388:
-    .string "lexer: unexpected EOF while expecting C at S"
-.L7389:
-    .string "E_UNEXPECTED_TOKEN_IN_EXPR"
-.L7390:
-    .string "parser: unexpected token T in expression context at S"
-.L7391:
-    .string "E_UNINITIALIZED_USE"
-.L7392:
-    .string "variable: use of uninitialized variable V at S"
-.L7393:
-    .string "E_UNKNOWN_GENERIC_PARAM"
-.L7394:
-    .string "type: unknown generic parameter G at S"
-.L7395:
-    .string "E_UNKNOWN_TYPE"
-.L7396:
-    .string "type: unknown type T at S"
-.L7397:
-    .string "E_UNTERMINATED_STRING"
-.L7398:
-    .string "lexer: unterminated string at S"
-.L7399:
-    .string "E_USER_ERROR"
-.L7400:
-    .string "runtime: user error - M at S"
-.L7417:
-    .string ""
-.L7418:
-    .string ""
-.L7426:
-    .string "0123456789"
-.L7427:
-    .string "0123456789"
-.L7430:
-    .string ""
-.L7431:
-    .string " "
-.L7432:
-    .string "^"
-.L7441:
-    .string ":"
-.L7442:
-    .string ":"
-.L7443:
-    .string "error["
-.L7444:
-    .string "]: "
-.L7449:
-    .string "  "
-.L7450:
-    .string "/tmp/dbg"
-.L7451:
+    .string "    .string \"%f\\n\""
+.L6867:
+    .string ".Lfmts:"
+.L6868:
+    .string "    .string \"%s\\n\""
+.L6869:
+    .string "/tmp/dbg2"
+.L6870:
     .string "a"
-.L7452:
-    .string "balance-check\n"
+.L6888:
+    .string "\\"
+.L6889:
+    .string "\\"
+.L6890:
+    .string "n"
+.L6891:
+    .string "    .string \""
+.L6892:
+    .string "\""
+.L6893:
+    .string ":"
+.L6894:
+    .string "    .double "
+.L6901:
+    .string ""
+.L6902:
+    .string ""
+.L7187:
+    .string ")"
+.L7190:
+    .string "]"
+.L7193:
+    .string "}"
+.L7196:
+    .string ")"
+.L7199:
+    .string "]"
+.L7202:
+    .string "}"
+.L7249:
+    .string "balanced"
+.L7251:
+    .string "unbalanced: reached end of input inside an open string"
+.L7253:
+    .string "unbalanced: opener never closed"
+.L7255:
+    .string "unbalanced: unexpected closer"
+.L7256:
+    .string "mismatched pair"
+.L7260:
+    .string ""
+.L7262:
+    .string "close the open string literal with a matching '\"'"
+.L7264:
+    .string "insert '"
+.L7265:
+    .string "' to close the opener"
+.L7267:
+    .string "remove this '"
+.L7268:
+    .string "' -- no opener is open here"
+.L7269:
+    .string "replace '"
+.L7270:
+    .string "' with '"
+.L7271:
+    .string "', or fix the opener it was meant to close"
+.L7272:
+    .string "r"
+.L7275:
+    .string "file-open"
+.L7278:
+    .string "usage: sexp_balance <file.zyl>"
+.L7279:
+    .string "E_ALIGNMENT_FAILED"
+.L7280:
+    .string "runtime: alignment check failed"
+.L7281:
+    .string "E_ARITY_MISMATCH"
+.L7282:
+    .string "type: function arity mismatch for F at S: expected E arguments, found G"
+.L7283:
+    .string "E_ASSERT_FAIL"
+.L7284:
+    .string "assertion: condition failed - M at S"
+.L7285:
+    .string "E_ATOM_AS_OPERATOR"
+.L7286:
+    .string "parser: atom cannot be used as operator in prefix position at S"
+.L7287:
+    .string "E_ALIGN_CHECK_FAILED"
+.L7288:
+    .string "runtime: alignment check failed"
+.L7289:
+    .string "E_ATOMIC_ABA"
+.L7290:
+    .string "region: atomic CAS on non-Pin memory is forbidden"
+.L7291:
+    .string "E_BYTE_VALUE_OOB"
+.L7292:
+    .string "lexer: byte literal out of range 0-255"
+.L7293:
+    .string "E_BYTE_OOB"
+.L7294:
+    .string "runtime: byte offset out of bounds"
+.L7295:
+    .string "E_BYTEBUF_CAP_EXCEEDED"
+.L7296:
+    .string "runtime: bytebuf append exceeds capacity"
+.L7297:
+    .string "E_BYTEBUF_NOT_PIN"
+.L7298:
+    .string "type: bytebuf-ptr requires Pin region"
+.L7299:
+    .string "E_BYTEBUF_INVALID"
+.L7300:
+    .string "runtime: bytebuf magic tag mismatch"
+.L7301:
+    .string "E_BYTEBUF_OVERLAP"
+.L7302:
+    .string "runtime: bytebuf append overlapping slice"
+.L7303:
+    .string "E_STACK_BYTEBUF_RETURN"
+.L7304:
+    .string "type: Stack ByteBuf cannot be returned"
+.L7305:
+    .string "E_GLOBAL_BYTEBUF_MUT"
+.L7306:
+    .string "type: Global ByteBuf must be immutable"
+.L7307:
+    .string "E_CANNOT_INFER"
+.L7308:
+    .string "type: cannot infer concrete type for generic parameter G at S - no call-site evidence"
+.L7309:
+    .string "E_CANNOT_INFER"
+.L7310:
+    .string "type: cannot infer concrete type for generic parameter G at S - no call-site evidence"
+.L7311:
+    .string "E_CT_VIOLATION"
+.L7312:
+    .string "constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value"
+.L7313:
+    .string "E_SECRET_ESCAPE"
+.L7314:
+    .string "secret: Secret value escapes through M at S"
+.L7315:
+    .string "E_SECRET_DEBUG"
+.L7316:
+    .string "secret: Secret value reaches a debug/print sink at S"
+.L7317:
+    .string "E_ZEROIZE_MISSING"
+.L7318:
+    .string "secret: function F takes a Secret parameter but never zeroizes it"
+.L7319:
+    .string "E_FFI_PIN_REQUIRED"
+.L7320:
+    .string "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S"
+.L7321:
+    .string "E_FFI_TYPE_NOT_PINNABLE"
+.L7322:
+    .string "ffi: value has type T which is not FFI_Pinnable"
+.L7323:
+    .string "E_CAPABILITY_LEAK"
+.L7324:
+    .string "capability: TMut leaked across boundary at S"
+.L7325:
+    .string "E_CIRCULAR_MODULE"
+.L7326:
+    .string "module: circular dependency: M"
+.L7327:
+    .string "E_CODEGEN"
+.L7328:
+    .string "codegen: M"
+.L7329:
+    .string "E_CODEGEN_BUFFER_FULL"
+.L7330:
+    .string "codegen: output buffer full at S"
+.L7331:
+    .string "E_CODEGEN_BUFFER_LIMIT"
+.L7332:
+    .string "codegen: buffer limit reached: M"
+.L7333:
+    .string "E_CONTRACT_VIOLATION"
+.L7334:
+    .string "contract: contract violation - M at S"
+.L7335:
+    .string "E_DIVISION_BY_ZERO"
+.L7336:
+    .string "numeric: division by zero at S"
+.L7337:
+    .string "E_DUPLICATE_DEFINITION"
+.L7338:
+    .string "type: duplicate definition of N at S. previously defined at P"
+.L7339:
+    .string "E_DUPLICATE_IMPL"
+.L7340:
+    .string "trait: duplicate impl of T for U at S"
+.L7341:
+    .string "E_DUPLICATE_VARIANT"
+.L7342:
+    .string "type: duplicate variant V in deftype at S"
+.L7343:
+    .string "E_EMPTY_LIST"
+.L7344:
+    .string "parser: empty list is not a valid expression at S"
+.L7345:
+    .string "E_EXPECTED_EXPRESSION"
+.L7346:
+    .string "parser: expected an expression but found T at S"
+.L7347:
+    .string "E_EXPECTED_RBRACKET"
+.L7348:
+    .string "parser: expected ] but found T at S"
+.L7349:
+    .string "E_EXPECTED_RCURLY"
+.L7350:
+    .string "parser: expected } but found T at S"
+.L7351:
+    .string "E_EXPECTED_RPAREN"
+.L7352:
+    .string "parser: expected ) at S but found T"
+.L7353:
+    .string "E_FFI_TIMEOUT"
+.L7354:
+    .string "ffi: call exceeded timeout of M ms at S"
+.L7355:
+    .string "E_FLOAT_OVERFLOW"
+.L7356:
+    .string "lexer: float overflow in literal L at S"
+.L7357:
+    .string "E_INTEGER_OVERFLOW"
+.L7358:
+    .string "lexer: integer overflow in literal L at S"
+.L7359:
+    .string "E_INVALID_CAPABILITY"
+.L7360:
+    .string "type: invalid capability usage for F - M at S"
+.L7361:
+    .string "E_INVALID_CHAR"
+.L7362:
+    .string "lexer: invalid character C at S"
+.L7363:
+    .string "E_LIST_NTH_OOB"
+.L7364:
+    .string "runtime: list-nth index out of bounds at S"
+.L7365:
+    .string "E_MACRO_ILLEGAL_ACCESS"
+.L7366:
+    .string "macro: illegal runtime access in macro expansion"
+.L7367:
+    .string "E_MACRO_NON_TERMINATION"
+.L7368:
+    .string "macro: expansion loop detected (max depth exceeded)"
+.L7369:
+    .string "E_MATCH_ARM_COMPLEX"
+.L7370:
+    .string "match: arm combines a constant with multiple calls - bind to lets first"
+.L7371:
+    .string "E_MATCH_NONEXHAUSTIVE"
+.L7372:
+    .string "match: non-exhaustive pattern match at S - missing cases: M"
+.L7373:
+    .string "E_MODULE_NOT_FOUND"
+.L7374:
+    .string "module: module M not found at P"
+.L7375:
+    .string "E_MUT_CONFLICT"
+.L7376:
+    .string "aliasing: mutable reference conflict at S"
+.L7377:
+    .string "E_NULL_POINTER"
+.L7378:
+    .string "runtime: null pointer dereference"
+.L7379:
+    .string "E_OUT_OF_MEMORY"
+.L7380:
+    .string "runtime: out of memory"
+.L7381:
+    .string "E_OVERFLOW"
+.L7382:
+    .string "numeric: integer overflow at S"
+.L7383:
+    .string "E_REGION_ESCAPE"
+.L7384:
+    .string "region: value escapes region constraint at S"
+.L7385:
+    .string "E_RESERVED_KEYWORD"
+.L7386:
+    .string "parser: reserved keyword K cannot be used as identifier at S"
+.L7387:
+    .string "E_RETURN_TYPE_MISMATCH"
+.L7388:
+    .string "type: return type mismatch in F - expected T, got U at S"
+.L7389:
+    .string "E_SYMBOL_NOT_EXPORTED"
+.L7390:
+    .string "module: symbol N not exported by M"
+.L7391:
+    .string "E_TEST_FAILURE"
+.L7392:
+    .string "test: assertion failed - M"
+.L7393:
+    .string "E_TEST_RUNNER_ERROR"
+.L7394:
+    .string "test: runner error - M"
+.L7395:
+    .string "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN"
+.L7396:
+    .string "icnf: top-level statements combined with explicit main"
+.L7397:
+    .string "E_TRAIT_BOUND_NOT_SATISFIED"
+.L7398:
+    .string "type: unsatisfied trait bound T : U at S"
+.L7399:
+    .string "E_TRAIT_NOT_DERIVABLE"
+.L7400:
+    .string "trait: cannot derive T for type U at S"
+.L7401:
+    .string "E_TRAIT_NOT_FOUND"
+.L7402:
+    .string "trait: no implementation found for T at S"
+.L7403:
+    .string "E_TYPE_MISMATCH"
+.L7404:
+    .string "type: type mismatch at S - expected E, found F"
+.L7405:
+    .string "E_UNBALANCED_PARENS"
+.L7406:
+    .string "parser: unbalanced parens - open and close counts differ"
+.L7407:
+    .string "E_UNBALANCED_UNCLOSED"
+.L7408:
+    .string "parser: unclosed opener - opened at S, never reached its matching closer"
+.L7409:
+    .string "E_UNBALANCED_UNEXPECTED_CLOSE"
+.L7410:
+    .string "parser: unexpected closing delimiter at S - no opener is open here"
+.L7411:
+    .string "E_UNBALANCED_MISMATCHED_BRACKET"
+.L7412:
+    .string "parser: closing delimiter at S does not match its opener"
+.L7413:
+    .string "E_UNBOUND_VARIABLE"
+.L7414:
+    .string "type: unbound variable V at S"
+.L7415:
+    .string "E_UNEXPECTED_EOF"
+.L7416:
+    .string "lexer: unexpected EOF while expecting C at S"
+.L7417:
+    .string "E_UNEXPECTED_TOKEN_IN_EXPR"
+.L7418:
+    .string "parser: unexpected token T in expression context at S"
+.L7419:
+    .string "E_UNINITIALIZED_USE"
+.L7420:
+    .string "variable: use of uninitialized variable V at S"
+.L7421:
+    .string "E_UNKNOWN_GENERIC_PARAM"
+.L7422:
+    .string "type: unknown generic parameter G at S"
+.L7423:
+    .string "E_UNKNOWN_TYPE"
+.L7424:
+    .string "type: unknown type T at S"
+.L7425:
+    .string "E_UNTERMINATED_STRING"
+.L7426:
+    .string "lexer: unterminated string at S"
+.L7427:
+    .string "E_USER_ERROR"
+.L7428:
+    .string "runtime: user error - M at S"
+.L7445:
+    .string ""
+.L7446:
+    .string ""
+.L7454:
+    .string "0123456789"
 .L7455:
-    .string "unbalanced\n"
-.L7456:
-    .string "parse\n"
-.L7457:
-    .string "bridge\n"
+    .string "0123456789"
 .L7458:
-    .string "modules\n"
+    .string ""
 .L7459:
-    .string "macros\n"
+    .string " "
 .L7460:
-    .string "duplicate-check\n"
-.L7461:
-    .string "arity-check\n"
-.L7462:
-    .string "mutability-check\n"
-.L7463:
-    .string "exhaustiveness-check\n"
-.L7464:
-    .string "unused-check\n"
-.L7465:
-    .string "secret-check\n"
-.L7466:
-    .string "type-infer\n"
-.L7467:
-    .string "contract-injection\n"
-.L7468:
-    .string "mono\n"
+    .string "^"
 .L7469:
-    .string "trait-dispatch\n"
+    .string ":"
 .L7470:
-    .string "closure-inline\n"
+    .string ":"
 .L7471:
-    .string "assert-lowering\n"
+    .string "error["
 .L7472:
-    .string "lower\n"
-.L7473:
-    .string "optimize\n"
-.L7474:
-    .string "region-infer\n"
-.L7475:
-    .string "codegen\n"
+    .string "]: "
+.L7477:
+    .string "  "
 .L7478:
-    .string "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer"
+    .string "/tmp/dbg"
 .L7479:
-    .string "/tmp/zyl_boot_out.s"
+    .string "a"
 .L7480:
-    .string "w"
-.L7481:
-    .string "/tmp/zyl_boot_in.zyl"
-.L7482:
-    .string "r"
+    .string "balance-check\n"
+.L7483:
+    .string "unbalanced\n"
+.L7484:
+    .string "parse\n"
 .L7485:
-    .string "no input\n"
+    .string "bridge\n"
 .L7486:
-    .string "w"
+    .string "modules\n"
+.L7487:
+    .string "macros\n"
+.L7488:
+    .string "duplicate-check\n"
 .L7489:
-    .string "/"
+    .string "arity-check\n"
+.L7490:
+    .string "mutability-check\n"
+.L7491:
+    .string "exhaustiveness-check\n"
 .L7492:
-    .string ".zyl"
+    .string "unused-check\n"
+.L7493:
+    .string "secret-check\n"
+.L7494:
+    .string "type-infer\n"
 .L7495:
-    .string ".out"
+    .string "contract-injection\n"
+.L7496:
+    .string "mono\n"
+.L7497:
+    .string "trait-dispatch\n"
+.L7498:
+    .string "closure-inline\n"
+.L7499:
+    .string "assert-lowering\n"
 .L7500:
-    .string "--emit-asm"
-.L7505:
-    .string "-o"
+    .string "lower\n"
+.L7501:
+    .string "optimize\n"
+.L7502:
+    .string "region-infer\n"
+.L7503:
+    .string "codegen\n"
+.L7506:
+    .string "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer"
+.L7507:
+    .string "/tmp/zyl_boot_out.s"
+.L7508:
+    .string "w"
+.L7509:
+    .string "/tmp/zyl_boot_in.zyl"
 .L7510:
-    .string "cc "
-.L7511:
-    .string "-no-pie "
-.L7512:
-    .string " actor_runtime.c -o "
-.L7513:
-    .string " -lpthread"
-.L7514:
-    .string "ZYL_HOME"
-.L7517:
-    .string "HOME"
-.L7520:
-    .string "/.zyl"
-.L7521:
-    .string ""
-.L7526:
-    .string "/stdlib"
-.L7527:
-    .string ""
-.L7532:
     .string "r"
-.L7537:
-    .string ".s"
+.L7513:
+    .string "no input\n"
+.L7514:
+    .string "w"
+.L7517:
+    .string "/"
+.L7520:
+    .string ".zyl"
+.L7523:
+    .string ".out"
+.L7528:
+    .string "--emit-asm"
+.L7533:
+    .string "-o"
 .L7538:
+    .string "cc "
+.L7539:
+    .string "-no-pie "
+.L7540:
+    .string " actor_runtime.c -o "
+.L7541:
+    .string " -lpthread"
+.L7542:
+    .string "ZYL_HOME"
+.L7545:
+    .string "HOME"
+.L7548:
+    .string "/.zyl"
+.L7549:
+    .string ""
+.L7554:
+    .string "/stdlib"
+.L7555:
+    .string ""
+.L7560:
+    .string "r"
+.L7565:
+    .string ".s"
+.L7566:
     .string "zyl: error: cannot open source file"

@@ -70,7 +70,7 @@
 
 (defn opt-optimize-fn (f)
   (match f
-    (IFn name params body (IFn name params (opt-expr body)))
+    (IFn name params body kinds (IFn name params (opt-expr body) kinds))
     (d1 (opt-expr f))))
 
 (defn opt-list (xs)
@@ -128,7 +128,7 @@
     (IVariant nm tag fields (IVariant nm tag (opt-list fields)))
     (IStackVariant nm tag fields (IStackVariant nm tag (opt-list fields)))
     (IMatch scr arms (IMatch (opt-expr scr) (opt-arms arms)))
-    (IFn name params body (IFn name params (opt-expr body)))
+    (IFn name params body kinds (IFn name params (opt-expr body) kinds))
     (ITryCatch tbody cvar cbody (ITryCatch (opt-expr tbody) cvar (opt-expr cbody)))))
 
 (defn opt-binop (op l2 r2)

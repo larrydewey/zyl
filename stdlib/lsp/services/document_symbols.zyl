@@ -1,10 +1,11 @@
 ; === Zyl LSP — Document Symbols / Folding / Selection Range Service ===
 ; Module: lsp/services/document_symbols
-; All three are pure functions of lsp/source_index's top-level-form scan
-; (name + line/col only -- no end-position tracking exists for a form,
-; so symbol/folding ranges span from the declaration line to itself;
-; still real and useful for outline/breadcrumb navigation and rough
-; folding, just not byte-exact end boundaries).
+;
+; All three are pure functions of lsp/source_index's top-level-form
+; scan, which now records each form's FULL extent (opening paren through
+; matching close), so a symbol's range covers the whole definition and
+; its selectionRange covers just the name -- what the outline, the
+; breadcrumb bar and "fold this function" all expect.
 
 (use core/core)
 (use core/list)
@@ -19,16 +20,31 @@
   (match forms
     (Nil Nil)
     (Cons f rest
-      (let rng (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length (TopForm.name f)))))
-        (Cons (DSym (TopForm.name f) None (ds-symbol-kind (TopForm.kind f)) None rng rng None None)
-              (ds-from-forms rest))))))
+      (Cons (DSym (TopForm.name f) (Some (TopForm.kind f)) (ds-symbol-kind (TopForm.kind f)) None
+                  (ds-full-range f) (ds-name-range f) None None)
+            (ds-from-forms rest)))))
+
+(defn ds-full-range (f)
+  (Rng (Pos (TopForm.line f) (TopForm.col f))
+       (Pos (TopForm.end-line f) (TopForm.end-col f))))
+
+; The name token itself: the header is `(kind name`, so the name starts
+; one paren plus the keyword plus one space past the form's column.
+(defn ds-name-range (f)
+  (let start (+ (TopForm.col f) (+ 2 (str-length (TopForm.kind f))))
+    (Rng (Pos (TopForm.line f) start)
+         (Pos (TopForm.line f) (+ start (str-length (TopForm.name f)))))))
 
 (defn ds-symbol-kind (kind)
   (if (> (str-eq kind "defn") 0) SKFunction
     (if (> (str-eq kind "deftype") 0) SKEnum
-      (if (or (> (str-eq kind "defstruct") 0) (> (str-eq kind "defstruct+") 0)) SKStruct
-        (if (> (str-eq kind "trait") 0) SKInterface
-          SKFunction)))))
+      (if (> (str-eq kind "defstruct") 0) SKStruct
+        (if (> (str-eq kind "defstruct+") 0) SKStruct
+          (if (> (str-eq kind "trait") 0) SKInterface
+            (if (> (str-eq kind "impl") 0) SKClass
+              (if (> (str-eq kind "def") 0) SKConstant
+                (if (> (str-eq kind "alias") 0) SKClass
+                  SKFunction)))))))))
 
 ; workspace/symbol: same data, flattened to SymbolInformation with a
 ; URI attached (workspace.zyl calls this per open document and
@@ -41,9 +57,9 @@
     (Nil Nil)
     (Cons f rest
       (if (> (ws-matches (TopForm.name f) query) 0)
-        (let rng (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (+ (TopForm.col f) (str-length (TopForm.name f)))))
-          (Cons (SymInfo (TopForm.name f) (ds-symbol-kind (TopForm.kind f)) None (Some (Loc uri rng)) None None)
-                (ws-from-forms rest uri query)))
+        (Cons (SymInfo (TopForm.name f) (ds-symbol-kind (TopForm.kind f)) None
+                       (Some (Loc uri (ds-name-range f))) None None)
+              (ws-from-forms rest uri query))
         (ws-from-forms rest uri query)))))
 
 ; Empty query matches everything (LSP convention); otherwise a plain
@@ -64,8 +80,9 @@
       (str-contains-loop s sub (+ i 1) limit))))
 
 ; ===========================================================================
-; FOLDING RANGES — one per top-level form, start line to itself (see
-; header comment on end-position precision).
+; FOLDING RANGES — one per top-level form that actually spans more than
+; one line. A single-line form is not foldable and is left out rather
+; than reported as a zero-height range.
 ; ===========================================================================
 
 (defn folding-ranges-for (text)
@@ -74,22 +91,30 @@
 (defn fr-from-forms (forms)
   (match forms
     (Nil Nil)
-    (Cons f rest (Cons (FR (TopForm.line f) (TopForm.line f) None None None None) (fr-from-forms rest)))))
+    (Cons f rest
+      (if (> (TopForm.end-line f) (TopForm.line f))
+        (Cons (FR (TopForm.line f) (TopForm.end-line f) None None None None) (fr-from-forms rest))
+        (fr-from-forms rest)))))
 
 ; ===========================================================================
-; SELECTION RANGES — one per requested position: the enclosing top-
-; level form's range, if any (a single expanding step; a real
-; token-level innermost range would need the position tracking this
-; compiler doesn't have -- see compiler_bridge.zyl's header).
+; SELECTION RANGES — expand from the identifier under the cursor to the
+; enclosing top-level form. Two real steps, both exact.
 ; ===========================================================================
 
 (defn selection-range-at (text line col)
-  (sr-find (si-top-level-forms text) line))
+  (let word (si-word-at text line col)
+    (let outer (sr-enclosing text line)
+      (if (= (str-length word) 0)
+        (SelR outer None)
+        (SelR (sr-word-range text line col word) (Some (SelR outer None)))))))
 
-(defn sr-find (forms line)
-  (match forms
-    (Nil (SelR (Rng (Pos line 0) (Pos line 0)) None))
-    (Cons f rest
-      (if (= (TopForm.line f) line)
-        (SelR (Rng (Pos (TopForm.line f) (TopForm.col f)) (Pos (TopForm.line f) (TopForm.col f))) None)
-        (sr-find rest line)))))
+(defn sr-enclosing (text line)
+  (match (si-form-at-line text line)
+    (Some f (ds-full-range f))
+    (None (Rng (Pos line 0) (Pos line 0)))))
+
+(defn sr-word-range (text line col word)
+  (let offset (si-offset-of-pos text line col)
+    (let start (si-word-scan-back text offset)
+      (let startcol (- col (- offset start))
+        (Rng (Pos line startcol) (Pos line (+ startcol (str-length word))))))))

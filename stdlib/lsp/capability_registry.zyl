@@ -1,6 +1,13 @@
 ; === Zyl LSP — Capability Registry ===
 ; Module: lsp/capability_registry
-; ServerCapabilities advertisement for `initialize`.
+;
+; The typed ServerCapabilities value. It is the readable statement of
+; what this server supports; the bytes actually sent in the `initialize`
+; response are built by lsp_server.zyl's `lsp-capabilities-any`, which
+; goes straight from map to LSPAny because ServerCapabilities has no
+; LSPAny encoding of its own (it is a Zyl-side ADT, never round-tripped
+; from the wire). Keep the two in step -- when a provider is turned on
+; in one, turn it on in the other.
 
 (use lsp/lsp_types)
 (use core/core)
@@ -20,13 +27,16 @@
       (Some (CIKO (Some (Cons CIKFunction (Cons CIKMethod (Cons CIKVariable (Cons CIKStruct (Cons CIKInterface (Cons CIKEnum (Cons CIKKeyword (Cons CIKTypeParameter (Cons CIKCapability (Cons CIKRegion (Cons CIKVariant (Cons CIKTraitMethod (Cons CIKFFICall (Cons CIKActorSpawn Nil)))))))))))))))))
       (Some 1)))
     (Some (HOpt (Some 1)))
-    None
+    (Some (SHOpt
+      (Some (Cons "(" (Cons " " Nil)))
+      (Some (Cons " " Nil))
+      (Some 1)))
     None
     (Some (DefOpt (Some 1)))
-    None
-    None
-    None
-    None
+    (Some (TDefOpt (Some 1)))
+    (Some (ImplOpt (Some 1)))
+    (Some (RefOpt (Some 1)))
+    (Some (DHOpt (Some 1)))
     (Some (DSOpt (Some 1) (Some 1)))
     (Some (CAOpt
       (Some (Cons (CAK "quickfix") (Cons (CAK "refactor") (Cons (CAK "refactor.extract") (Cons (CAK "source") (Cons (CAK "source.organizeImports") Nil))))))
@@ -45,9 +55,11 @@
     None
     (Some (ROpt (Some 1) (Some 1) (Some 1)))
     (Some (WSOpt (Some 1) (Some 1)))
-    (Some (ECOpt
-      (Cons "zyl.organizeImports" (Cons "zyl.sortImports" (Cons "zyl.addMissingMatchArms" (Cons "zyl.fixCapabilityConflict" Nil))))
-      (Some 1)))
+    ; One command, the one lsp_server.zyl's execute-command handler
+    ; actually implements. The four aspirational names that used to sit
+    ; here advertised work the server would then answer with
+    ; "unknown command".
+    (Some (ECOpt (Cons "zyl.evalDocument" Nil) (Some 1)))
     (Some (WOpt (Some (WFSC (Some 1) (Some 1)))))
     (Some (DFOpt (Some 1)))
     None

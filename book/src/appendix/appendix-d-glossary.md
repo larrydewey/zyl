@@ -22,13 +22,29 @@ Definitions of key Zyl terms and concepts.
 
 **Block**: Sequence of expressions (`begin`) or basic block in ICNF.
 
-**Bootstrap**: Building compiler with itself. Zyl: Rust → Stage1 → Stage2 → Stage3.
+**Bootstrap**: Building the compiler with itself. Today: committed seed
+→ Stage1 → Stage2 → Stage3, with `stage2.s == stage3.s` as the fixed
+point. The original Rust bootstrap is archived and not in the path.
+
+**Bitwise operators**: `bit-and`, `bit-or`, `bit-xor`, `bit-not`,
+`shl`, `shr`, `ashr` — one machine instruction each, with defined
+behaviour for out-of-range shift counts (Chapter 32).
+
+**ByteBuf**: A fixed-capacity, zero-initialised block of bytes in a
+named region, allocated with `(bytebuf Region capacity)`.
+
+**ByteSlice**: A bounds-checked, zero-copy view of part of a ByteBuf.
 
 **Builtin**: Compiler-recognized operation (e.g., `+`, `if`, `print`).
 
 ## C
 
-**Capability Type**: Type annotation describing access permissions: `TCap`, `TMut`, `TAtomic`, `TBox`, `TPin`.
+**Capability Type**: Type annotation describing access permissions:
+`TCap`, `TMut`, `TAtomic`, `TBox`, `TPin`, `Secret`.
+
+**Constant-time**: Code whose execution time and memory access pattern
+do not depend on secret data. Enforced for `Secret` values by
+`secret_check` (Chapter 33).
 
 **Capture**: Closure referencing variable from enclosing scope.
 
@@ -41,6 +57,9 @@ Definitions of key Zyl terms and concepts.
 **Contract**: Optional overlay: preconditions, postconditions, invariants, recovery.
 
 **Constant Folding**: Optimization evaluating constant expressions at compile time.
+
+**Declassify**: The explicit, greppable way to drop the `Secret`
+capability — `declassify`, `ct-eq-bool`, `ct-eq-words-bool`.
 
 ## D
 
@@ -121,6 +140,11 @@ Definitions of key Zyl terms and concepts.
 **Keyword**: Self-evaluating `:identifier` — used for options.
 
 ## L
+
+**Language Server (`zyl-lsp`)**: The LSP implementation in
+`stdlib/lsp/`, built from the self-hosted compiler so that editor
+diagnostics and command-line diagnostics are the same diagnostics
+(Chapter 35).
 
 **Lambda**: Anonymous function — synonym for `fn`.
 
@@ -208,6 +232,11 @@ Definitions of key Zyl terms and concepts.
 
 **Scope**: Lexical region where binding visible.
 
+**Secret**: A capability marking a value as key material. A secret may
+not steer control flow, index memory, be divided, be printed, be sent
+to an actor or written to a file, and reaches FFI only through
+`ffi-pin` (Chapter 33).
+
 **Send**: Capability for actor message passing — `TCap`/`TAtomic`.
 
 **Special Form**: Built-in syntax with custom evaluation (e.g., `if`, `let`).
@@ -223,6 +252,10 @@ Definitions of key Zyl terms and concepts.
 **Supertrait**: Trait bound on another trait (`: Trait [T]`).
 
 **Symbol**: Quoted identifier `'name` — used as data.
+
+**Semantic tokens**: The LSP request that colours a document by
+resolved meaning — keyword, function, type, variant — rather than by
+regular expression.
 
 ## T
 
@@ -263,3 +296,9 @@ Definitions of key Zyl terms and concepts.
 **Wildcard Pattern**: Named dummy only (`d1`, `d2`...) — bare `_` forbidden.
 
 **Workspace**: Multi-package project (planned v5.0).
+
+## Z
+
+**Zeroize**: Explicit erasure of key material, `(zeroize base n)`. It
+writes through a volatile pointer so the stores cannot be optimised
+away; Zyl does not yet erase secrets automatically at scope exit.

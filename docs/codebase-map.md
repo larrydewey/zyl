@@ -1,12 +1,102 @@
 # Codebase Map
 
-> **Note (2026-09-17):** this document predates the Rust eviction (see `docs/rust-eviction-plan.md`) and may still reference `src/*.rs` or Cargo. The active compiler implementation is `stdlib/compiler/*.zyl` + `selfhost/`; the Rust bootstrap it describes is archived at `archive/rust-bootstrap-2026/`. See `AGENTS.md` for current build commands.
-
 ## Overview
 
-This file documents major source files, module responsibilities, and relationships between components.
+Where things live in the active tree. Everything below `## Archived
+Rust bootstrap` describes `archive/rust-bootstrap-2026/`, which is kept
+only as a last-resort reseed path and is not part of the build, the
+tests, or the use path.
 
-**Related:** `docs/compiler-pipeline.md` (phase-to-file mapping)
+**Related:** `docs/compiler-pipeline.md` (phase-to-file mapping),
+`AGENTS.md` (build commands).
+
+---
+
+## The active tree
+
+```
+boot.sh                  Build + verify the self-hosting fixed point; also
+                         builds zyl-lsp
+install.sh               Install compiler, REPL and server into ~/.zyl
+run_regression_tests.sh  The test runner
+
+selfhost/
+  driver.zyl             CLI entry point: compile-to-asm, link, bundledir
+                         resolution
+  lsp_main.zyl           Language server entry point
+  assemble.py            Bundles stdlib/compiler/*.zyl into one source file
+  zyl_selfhost_compiler.zyl   The assembled bundle boot.sh compiles
+
+stdlib/compiler/         The compiler itself (27 files, ~15,500 lines)
+stdlib/core/             core, list, option, result, map
+stdlib/collections/      vec, map, set, assoc lists
+stdlib/allocator/        Arenas and raw allocation
+stdlib/actor/            Actor lifecycle over spawn/send
+stdlib/ffi/              FFI convenience wrappers
+stdlib/io/               File and buffered I/O
+stdlib/atomic/           Atomic operations
+stdlib/testing/          The test harness
+stdlib/math/             Cryptography and number libraries (~7,500 lines)
+stdlib/lsp/              The language server (~3,000 lines)
+stdlib/mlib/             Miscellaneous helpers
+
+runtime/actor_runtime.c  The C runtime every compiled binary links against
+editors/vscode/          VS Code extension
+book/                    The book (mdbook)
+tests/                   smoke, regression, stress, integration,
+                         compile-fail, lsp
+verify/                  Python cross-checks for stdlib/math
+```
+
+### Compiler pipeline, file by file
+
+| Stage | File |
+|---|---|
+| Lexing | `stdlib/compiler/lexer.zyl` |
+| Balance check | `stdlib/compiler/sexp_balance.zyl` |
+| Parsing | `stdlib/compiler/parser.zyl`, `ast.zyl` |
+| Expression bridge | `stdlib/compiler/expr_inner.zyl` |
+| Module resolution | `stdlib/compiler/module_resolver.zyl`, `resolver.zyl` |
+| Macro expansion | `stdlib/compiler/macro_expand.zyl` |
+| Checks | `duplicate_check.zyl`, `arity_check.zyl`, `mutability_check.zyl`, `exhaustiveness_check.zyl`, `secret_check.zyl`, `unused_check.zyl` |
+| Type inference | `stdlib/compiler/type_system.zyl`, `type_inference.zyl` |
+| Region inference | `stdlib/compiler/region_inference.zyl` |
+| Monomorphization | `stdlib/compiler/monomorphization.zyl` |
+| Trait dispatch | `stdlib/compiler/trait_dispatch.zyl` |
+| Closure inlining | `stdlib/compiler/closure_inline.zyl` |
+| Assert lowering | `stdlib/compiler/assert_lowering.zyl` |
+| ICNF lowering | `stdlib/compiler/icnf.zyl` |
+| Optimization | `stdlib/compiler/optimization.zyl` |
+| Code generation | `stdlib/compiler/codegen.zyl` |
+| Errors | `stdlib/compiler/error_codes.zyl`, `error_report.zyl` |
+
+`contract_injection.zyl` exists but is not wired into the driver; see
+the comment in `selfhost/driver.zyl` for why.
+
+### Language server, file by file
+
+| Concern | File |
+|---|---|
+| Protocol types | `stdlib/lsp/lsp_types.zyl` |
+| Transport | `stdlib/lsp/json_rpc.zyl` |
+| Document text and edits | `stdlib/lsp/vfs.zyl` |
+| Analysis cache and diagnostics | `stdlib/lsp/document_manager.zyl` |
+| Symbol table, hover text, diagnostic mapping | `stdlib/lsp/compiler_bridge.zyl` |
+| Positions, occurrences, call context | `stdlib/lsp/source_index.zyl` |
+| Built-in and special-form table | `stdlib/lsp/builtins.zyl` |
+| Advertised capabilities | `stdlib/lsp/capability_registry.zyl` |
+| Workspace folders and symbols | `stdlib/lsp/workspace.zyl` |
+| Request loop | `stdlib/lsp/lsp_server.zyl` |
+| Features | `stdlib/lsp/services/*.zyl` |
+
+---
+
+## Archived Rust bootstrap
+
+Everything below describes `archive/rust-bootstrap-2026/`, which is
+frozen. It is never edited for a language change; `boot.sh
+--bootstrap-from-self` is the normal reseed path and needs no Rust at
+all. See `docs/rust-eviction-plan.md`.
 
 ---
 

@@ -55,13 +55,44 @@ build/boot/zyl-self hello.zyl -o hello
 # Output: Hello, Zyl!
 ```
 
+### Installing It
+
+`boot.sh` builds everything in place. To use `zyl` from any directory,
+install it:
+
+```bash
+./install.sh                 # compiler, REPL and language server into ~/.zyl
+source ~/.zyl/env            # or add this line to your shell rc
+```
+
+That gives you three commands: `zyl` (the compiler — with no arguments
+it starts the REPL), `zyl-repl`, and `zyl-lsp` (the language server,
+which editors start for you). `./install.sh --with-vscode` also builds
+and installs the VS Code extension. `./uninstall.sh` removes the lot;
+it touches nothing outside `~/.zyl`.
+
+### Setting Up an Editor
+
+This is worth doing before you write much code. The language server is
+built from the same compiler that builds your programs, so its
+diagnostics are the compiler's diagnostics — unbalanced parentheses,
+arity mismatches, non-exhaustive matches and capability violations
+appear as you type, with the same error codes `zyl` would print.
+
+In VS Code, install the extension from `editors/vscode` and it will
+find the server by itself. For Neovim, Emacs, Helix or anything else
+with an LSP client, point it at `~/.zyl/bin/zyl-lsp` and associate it
+with `.zyl`. **Chapter 35** has the configuration for each.
+
 ### The REPL
 
 `tools/repl.zyl` exists but is an unfinished skeleton as of this
 writing — it links and runs, but has known bugs (dropping `main` for
 trivial programs, an arena-corruption crash on some inputs). Treat it
 as a work in progress, not a reliable interactive tool; every example
-in this book uses the batch compiler instead.
+in this book uses the batch compiler instead. To run a buffer without
+leaving your editor, use **Zyl: Run Current File** (Chapter 35), which
+compiles and runs the real thing.
 
 ## 1.3 Your First Zyl Program
 
