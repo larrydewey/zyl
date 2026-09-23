@@ -54,9 +54,9 @@
 (deftype CallHierarchyIncomingCall (CHIncoming CallHierarchyItem))
 (deftype CallHierarchyOutgoingCall (CHOutgoing CallHierarchyItem))
 
-(defn CHI.name (i) (match i (CHI n d1 d2 n)))
-(defn CHI.uri (i) (match i (CHI d1 u d2 u)))
-(defn CHI.range (i) (match i (CHI d1 d2 r r)))
+(defn CHI.name (i) (match i (CHI n _ _ n)))
+(defn CHI.uri (i) (match i (CHI _ u _ u)))
+(defn CHI.range (i) (match i (CHI _ _ r r)))
 (defn CHIncoming.item (c) (match c (CHIncoming i i)))
 (defn CHOutgoing.item (c) (match c (CHOutgoing i i)))
 
@@ -72,7 +72,7 @@
 (defn ch-parse-exprs-at (arena path text)
   (match (try (Ok (ch-run-pipeline arena path text)) (catch e (Err e)))
     (Ok exprs (Some exprs))
-    (Err d1 None)))
+    (Err _ None)))
 
 (defn ch-run-pipeline (arena path text)
   (let prog (zyl-parse arena text)
@@ -93,9 +93,9 @@
         ; Both halves of an edge are SOURCE names: the resolver qualifies
         ; definitions and references alike to canonical keys (§31.2), and
         ; the editor asks about the names in the file.
-        (EDefn name d1 body
+        (EDefn name _ body
           (list-append (ch-edges-for (lsp-source-name name) body tbl) (ch-edges-top rest tbl)))
-        (d2 (ch-edges-top rest tbl))))))
+        (_ (ch-edges-top rest tbl))))))
 
 (defn ch-edges-for (caller body tbl)
   (ch-dedup (ch-refs-to-edges caller (uc-refs body) tbl)))

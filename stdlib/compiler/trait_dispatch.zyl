@@ -60,7 +60,7 @@
     (Cons e rest
       (match (Expr.inner e)
         (EImplBlock trait type bodies (list-append (td-collect-bodies trait type bodies) (td-collect rest)))
-        (d1 (td-collect rest))))))
+        (_ (td-collect rest))))))
 
 (defn td-collect-bodies (trait type bodies)
   (match bodies
@@ -69,7 +69,7 @@
       (match ib
         (IB dn
           (match dn
-            (DN mname d2 d3
+            (DN mname ename _
               (Cons (TDEntry (td-dotted trait mname) type (td-mangle trait mname type))
                     (td-collect-bodies trait type rest)))))))))
 
@@ -80,8 +80,8 @@
     (Nil Nil)
     (Cons ent rest
       (match ent
-        (TDEntry d2 d3 d4
-          (if (> (str-eq d2 name) 0)
+        (TDEntry ename _ _
+          (if (> (str-eq ename name) 0)
             (Cons ent (td-lookup name rest))
             (td-lookup name rest)))))))
 
@@ -92,7 +92,15 @@
     (Nil Nil)
     (Cons e rest (Cons (td-rewrite entries e) (td-rewrite-list entries rest)))))
 
+; This pass rebuilds each node, so the replacement inherits the original's
+; position -- see qf-form (qualify.zyl) for why every rewriting pass needs
+; this one line to keep diagnostics locatable.
 (defn td-rewrite (entries e)
+  (let out (td-rewrite-node entries e)
+    (let _ (ffi-call "zyl_span_copy" out e 1000)
+      out)))
+
+(defn td-rewrite-node (entries e)
   (match (Expr.inner e)
     (EDefn name params body (Expr (EDefn name params (td-rewrite entries body))))
     (ETestDecl name body k (Expr (ETestDecl name (td-rewrite entries body) k)))
@@ -109,7 +117,7 @@
     (EPrint exprs (Expr (EPrint (td-rewrite-list entries exprs))))
     (ECall op args (td-rewrite-call entries op args))
     (EApply fname args (td-rewrite-apply entries fname args))
-    (d1 e)))
+    (_ e)))
 
 (defn td-rewrite-arms (entries arms)
   (match arms
@@ -141,8 +149,8 @@
 ; otherwise, no need to introduce one just for this one helper).
 (defn expr-ident-name-td (e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n n) (d1 "")))
-    (d2 "")))
+    (EAtom atom (match atom (AIdent n n) (_ "")))
+    (ename "")))
 
 ; (Trait.method receiver rest-args...) -> (let _td_recv receiver
 ;   (match _td_recv (Type1 (Trait_method_Type1 _td_recv rest-args...))
@@ -165,6 +173,6 @@
     (Nil Nil)
     (Cons ent mrest
       (match ent
-        (TDEntry d2 type mangled
+        (TDEntry ename type mangled
           (Cons (MA type Nil (Expr (EApply mangled (Cons (Expr (EAtom (AIdent "_td_recv"))) rest))))
                 (td-dispatch-arms mrest rest)))))))

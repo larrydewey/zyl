@@ -43,7 +43,15 @@
 ; --- generic tree walk (same coverage as macro_expand.zyl/assert_lowering.zyl,
 ; the shapes this corpus actually nests let-bound lambdas inside) -----------
 
+; This pass rebuilds each node, so the replacement inherits the original's
+; position -- see qf-form (qualify.zyl) for why every rewriting pass needs
+; this one line to keep diagnostics locatable.
 (defn ci-expr (arena vt e)
+  (let out (ci-expr-node arena vt e)
+    (let _ (ffi-call "zyl_span_copy" out e 1000)
+      out)))
+
+(defn ci-expr-node (arena vt e)
   (match (Expr.inner e)
     (EDefn name params body (Expr (EDefn name params (ci-expr arena vt body))))
     (ETestDecl name body k (Expr (ETestDecl name (ci-expr arena vt body) k)))
@@ -54,7 +62,7 @@
     (EBegin exprs (Expr (EBegin (ci-map arena vt exprs))))
     (ETryCatch tbody nm handler (Expr (ETryCatch (ci-expr arena vt tbody) nm (ci-expr arena vt handler))))
     (EMatch subj arms (Expr (EMatch (ci-expr arena vt subj) (ci-arms arena vt arms))))
-    (d1 e)))
+    (_ e)))
 
 (defn ci-arms (arena vt arms)
   (match arms
@@ -68,8 +76,8 @@
 
 (defn ci-let (arena vt name val body)
   (match (Expr.inner val)
-    (EFn d1 params fbody (ci-let-fn arena vt name params fbody body))
-    (d2 (Expr (ELet name (ci-expr arena vt val) (ci-expr arena vt body))))))
+    (EFn _ params fbody (ci-let-fn arena vt name params fbody body))
+    (_ (Expr (ELet name (ci-expr arena vt val) (ci-expr arena vt body))))))
 
 (defn ci-let-fn (arena vt name params fbody body)
     (let fbody2 (ci-expr arena vt fbody)
@@ -90,17 +98,17 @@
 ; rule out self-recursion in the lambda's own body.
 (defn ci-references (name e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (d1 0)))
+    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (_ 0)))
     (ECall op args (if (> (ci-references name op) 0) 1 (ci-references-list name args)))
     (EApply fname args (if (> (str-eq fname name) 0) 1 (ci-references-list name args)))
-    (ELet d2 val body (if (> (ci-references name val) 0) 1 (ci-references name body)))
-    (ELetMut d3 val body (if (> (ci-references name val) 0) 1 (ci-references name body)))
+    (ELet _ val body (if (> (ci-references name val) 0) 1 (ci-references name body)))
+    (ELetMut _ val body (if (> (ci-references name val) 0) 1 (ci-references name body)))
     (EIf c t eb (if (> (ci-references name c) 0) 1 (if (> (ci-references name t) 0) 1 (ci-references name eb))))
     (EWhile c body (if (> (ci-references name c) 0) 1 (ci-references name body)))
     (EBegin exprs (ci-references-list name exprs))
-    (ETryCatch tbody d4 handler (if (> (ci-references name tbody) 0) 1 (ci-references name handler)))
+    (ETryCatch tbody _ handler (if (> (ci-references name tbody) 0) 1 (ci-references name handler)))
     (EMatch subj arms (if (> (ci-references name subj) 0) 1 (ci-references-arms name arms)))
-    (d5 0)))
+    (_ 0)))
 
 (defn ci-references-list (name xs)
   (match xs
@@ -115,8 +123,8 @@
 ; True when `e` is a bare identifier equal to `name`.
 (defn ci-is-bare-name (e name)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (d1 0)))
-    (d2 0)))
+    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (_ 0)))
+    (_ 0)))
 
 ; True when `name` appears anywhere in `e` OUTSIDE a direct-call callee
 ; position -- i.e. it's used as a first-class value (stored, passed,
@@ -125,17 +133,17 @@
 ; to skip inlining than to risk splicing away a genuinely-escaping use.
 (defn ci-escapes (name e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (d1 0)))
+    (EAtom atom (match atom (AIdent n (> (str-eq n name) 0)) (_ 0)))
     (ECall op args (ci-escapes-call name op args))
     (EApply fname args (ci-escapes-list name args))
-    (ELet d2 val body (if (> (ci-escapes name val) 0) 1 (ci-escapes name body)))
-    (ELetMut d3 val body (if (> (ci-escapes name val) 0) 1 (ci-escapes name body)))
+    (ELet _ val body (if (> (ci-escapes name val) 0) 1 (ci-escapes name body)))
+    (ELetMut _ val body (if (> (ci-escapes name val) 0) 1 (ci-escapes name body)))
     (EIf c t eb (if (> (ci-escapes name c) 0) 1 (if (> (ci-escapes name t) 0) 1 (ci-escapes name eb))))
     (EWhile c body (if (> (ci-escapes name c) 0) 1 (ci-escapes name body)))
     (EBegin exprs (ci-escapes-list name exprs))
-    (ETryCatch tbody d4 handler (if (> (ci-escapes name tbody) 0) 1 (ci-escapes name handler)))
+    (ETryCatch tbody _ handler (if (> (ci-escapes name tbody) 0) 1 (ci-escapes name handler)))
     (EMatch subj arms (if (> (ci-escapes name subj) 0) 1 (ci-escapes-arms name arms)))
-    (d5 1)))
+    (_ 1)))
 
 (defn ci-escapes-call (name op args)
   (if (> (ci-is-bare-name op name) 0)
@@ -172,7 +180,7 @@
     (EBegin exprs (Expr (EBegin (ci-inline-calls-list name params fbody exprs))))
     (ETryCatch tbod cname handler (Expr (ETryCatch (ci-inline-calls name params fbody tbod) cname (ci-inline-calls name params fbody handler))))
     (EMatch subj arms (Expr (EMatch (ci-inline-calls name params fbody subj) (ci-inline-calls-arms name params fbody arms))))
-    (d1 body)))
+    (_ body)))
 
 (defn ci-inline-calls-list (name params fbody xs)
   (match xs

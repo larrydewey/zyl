@@ -42,6 +42,7 @@
 ; f_shd at link time since the module resolver had no way to know to
 ; pull resolver.zyl in too.
 (use compiler/resolver)
+(use compiler/error_report)
 
 ; --- Emitter state ----------------------------------------------------------
 
@@ -73,11 +74,11 @@
 
 (defn cg-label-pair-2 (r1)
   (match r1
-    (CGR st1 d1 la (cg-label-second st1 la))))
+    (CGR st1 _ la (cg-label-second st1 la))))
 
 (defn cg-label-second (st1 la)
   (match (cg-label-new st1)
-    (CGR st2 d2 lb (CGP st2 la lb))))
+    (CGR st2 _ lb (CGP st2 la lb))))
 
 (defn no-fnnames () None)
 
@@ -97,7 +98,7 @@
 
 (defn cgg-fns (st)
   (match st
-    (CGS d70 d71 d72 d73 d74 fns fns)))
+    (CGS _ _ _ _ _ fns fns)))
 
 ; True when `nm` is a known top-level function name.
 (defn cg-fn-known (st nm)
@@ -122,7 +123,7 @@
 
 (defn cg-fn-check-head (h t nm)
   (match h
-    (FN s d1 (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
+    (FN s _ (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
     (FNNil (cg-fn-search t nm))))
 
 ; Look up `nm`'s recorded return kind; 0 (int) if it's not a known
@@ -143,7 +144,7 @@
 
 (defn cg-buffer (st)
   (match st
-    (CGS d1 buf d2 d3 d4 d5 buf)))
+    (CGS _ buf _ _ _ _ buf)))
 
 (defn cg-with-rodata (st entry)
   (match st
@@ -159,12 +160,12 @@
 ; every write, is the only point that can actually stop it.
 (defn cg-emit (st s)
   (match st
-    (CGS d6 buf d7 d8 d9 d10
+    (CGS _ buf _ _ _ _
       (begin (ffi-call "zyl_str_append_capped" buf s 67108864 1000) st))))
 
 (defn cg-emit-int (st n)
   (match st
-    (CGS arena buf d10 d11 d12 d13
+    (CGS arena buf _ _ _ _
       (begin
         (ffi-call "zyl_str_append_capped" buf (ffi-call "zyl_cstr_from_int" arena n 1000) 67108864 1000)
         st))))
@@ -198,7 +199,7 @@
 ; Intern a string constant; emit `lea rax, [rip+label]`.
 (defn cg-string-const (st content)
   (match (cg-label-new st)
-    (CGR st2 d13 lbl
+    (CGR st2 _ lbl
       (let st3 (cg-with-rodata st2 (REntry lbl content 0))
         (let st4 (cg-emit st3 "    lea rax, [rip+")
           (let st5 (cg-emit st4 lbl)
@@ -207,7 +208,7 @@
 ; Intern a float constant; load its bits into rax via xmm0.
 (defn cg-float-const (st text)
   (match (cg-label-new st)
-    (CGR st2 d14 lbl
+    (CGR st2 _ lbl
       (let st3 (cg-with-rodata st2 (REntry lbl text 1))
         (let st4 (cg-emit st3 "    movsd xmm0, [rip+")
           (let st5 (cg-emit st4 lbl)
@@ -216,7 +217,7 @@
 
 (defn cg-rodata-of (st)
   (match st
-    (CGS d15 d16 d17 d18 rd d19 rd)))
+    (CGS _ _ _ _ rd _ rd)))
 
 ; ===========================================================================
 ; KINDS (for print format + float/string/struct dispatch):
@@ -264,8 +265,8 @@
 (defn kind-of (st env e)
   (match e
     (IConst 0)
-    (IStr d19 1)
-    (IFlt d20 2)
+    (IStr _ 1)
+    (IFlt _ 2)
     (ILoad n (env-kind-of env n))
     (IBinop op l r
      (if (> op 4)
@@ -273,12 +274,12 @@
        (if (= (kind-of st env l) 2)
          2
          (if (= (kind-of st env r) 2) 2 0))))
-    (IIf d21 t d22 (kind-of st env t))
-    (ICall name d24 (cg-fn-kind-search (cgg-fns st) name))
-    (IFfi name d26 (ffi-str-kind name))
-    (IPrint d27 0)
-    (IWhile d28 d29 0)
-    (ISet d30 d31 0)
+    (IIf _ t _ (kind-of st env t))
+    (ICall name _ (cg-fn-kind-search (cgg-fns st) name))
+    (IFfi name _ (ffi-str-kind name))
+    (IPrint _ 0)
+    (IWhile _ _ 0)
+    (ISet _ _ 0)
     ; ILet's own kind is whatever its BODY evaluates to, not a fixed 0 --
     ; matters now that literal-pattern match's if-chain desugaring
     ; (expr_inner.zyl) always wraps its result in a let (binding the
@@ -288,8 +289,8 @@
     ; unchanged (not extended with the let's own binding): every leaf
     ; this needs to see through bottoms out at a literal (IStr/IFlt),
     ; whose kind doesn't depend on env at all.
-    (ILet d32 d33 body (kind-of st env body))
-    (ISeq d35 0)
+    (ILet _ _ body (kind-of st env body))
+    (ISeq _ 0)
     ; `==`/`!=` between two struct/ADT-kind operands used to fall straight
     ; into cg-ibinop's raw `cmp rax, rcx` (same bare pointer comparison bug
     ; already fixed for strings above) -- since IVariant construction
@@ -302,12 +303,12 @@
     ; comment describing the encoding it depends on -- just never actually
     ; called from anywhere. Kind 3 marks a value as struct/variant-typed
     ; so cg-expr's IBinop case can route `==`/`!=` through it instead.
-    (IVariant d36 d37 d38 3)
-    (IStackVariant d105 d106 d107 3)
-    (IMatch d39 d40 0)
-    (IFn d41 0)
-    (ICallClosure d42 d43 0)
-    (ITryCatch d96 d97 d98 0)))
+    (IVariant _ _ _ 3)
+    (IStackVariant _ _ _ 3)
+    (IMatch _ _ 0)
+    (IFn _ 0)
+    (ICallClosure _ _ 0)
+    (ITryCatch _ _ _ 0)))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -321,7 +322,7 @@
          (cg-nl st3))))
     (IStr s (cg-string-const st s))
     (IFlt t (cg-float-const st t))
-    (ILoad n (cg-load-value st env n))
+    (ILoad n (cg-load-value st env n e))
     ; `=`/`!=` between two STRING-kind operands used to fall straight into
     ; cg-ibinop's raw `cmp rax, rcx` — a bare POINTER comparison. Since
     ; str-substring/str-concat/etc. always heap-allocate a FRESH buffer,
@@ -354,17 +355,19 @@
            (cg-nl (cg-emit st4 "], rax"))))))
     (ILet n v body (cg-let-dispatch st env n v body))
     (ISeq es (cg-seq st env es))
-    (IVariant d46 tag fields (cg-variant st env tag fields))
-    (IStackVariant d108 tag fields (cg-stack-variant st env tag fields))
+    (IVariant _ tag fields (cg-variant st env tag fields))
+    (IStackVariant _ tag fields (cg-stack-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms))
     ; A bare function node is never emitted as a value expression; keep st.
-    (IFn d47 d48 d49 st)
+    (IFn _ _ _ st)
     (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))))
 
 ; Load a variable / function value into rax.
-(defn cg-load-value (st env n)
+; `site` is the ILoad node itself, carried only so an unbound identifier
+; can be reported at the place it was written.
+(defn cg-load-value (st env n site)
   (if (= (env-lookup env n) 0)
-    (cg-load-nonslot st env n)
+    (cg-load-nonslot st env n site)
     (cg-load-slot st n (env-lookup env n))))
 
 (defn cg-load-slot (st n off)
@@ -372,14 +375,14 @@
     (let st3 (cg-emit-int st2 off)
       (cg-nl (cg-emit st3 "]")))))
 
-(defn cg-load-nonslot (st env n)
+(defn cg-load-nonslot (st env n site)
   ; Function value reference: load the function's address so it can be
   ; passed as an argument and called indirectly (HOF support).
   (if (= (cg-fn-known st n) 1)
     (cg-load-fnref st n)
     (if (> (str-eq n "nil") 0)
       (cg-load-unresolved st)
-      (cg-fail-unbound n))))
+      (cg-fail-unbound n site))))
 
 ; A name that resolves to neither a bound local slot nor a known
 ; top-level function is a genuine unbound identifier (`nil` is the one
@@ -395,11 +398,15 @@
 ; first dereferenced the resulting garbage/near-null pointer. Hard
 ; failure at compile time, at the actual unbound reference, replaces
 ; that entire class of bug with a real error at the real location.
-(defn cg-fail-unbound (n)
-  (let m1 "E_UNBOUND_VARIABLE: unbound identifier '"
-    (let m2 (str-concat m1 n)
-      (let msg (str-concat m2 "'")
-        (ffi-call "zyl_panic" msg 1000)))))
+(defn cg-fail-unbound (n site)
+  (let m1 "unbound identifier `"
+    (let m2 (str-concat m1 (err-name n))
+      (let msg (str-concat m2 "`")
+        (let off (ffi-call "zyl_span_off" site 1000)
+          (let fid (ffi-call "zyl_span_file" site 1000)
+            (let hint "check the spelling, or bind it with `let` before this point"
+              (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
+                (ffi-call "zyl_panic" text 1000)))))))))
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+")
@@ -433,7 +440,7 @@
 
 (defn cg-let-dispatch (st env n v body)
   (match (cg-new-slot st)
-    (CGR st2 off d45
+    (CGR st2 off _
       (cg-let-store st2 env n v body off))))
 
 (defn cg-let-store (st env n v body off)
@@ -471,7 +478,7 @@
 ; that instead threads the last body value through a dedicated slot.
 (defn cg-while-parts (st env c body lstart lend)
   (match (cg-new-slot st)
-    (CGR st0 off d1 (cg-while-body st0 env c body lstart lend off))))
+    (CGR st0 off _ (cg-while-body st0 env c body lstart lend off))))
 
 (defn cg-while-body (st env c body lstart lend off)
   (let st1 (cg-while-store (cg-emit-line st "    mov rax, 0") off)
@@ -1011,7 +1018,7 @@
 ; ri-name-safe-in.
 (defn cg-reserve-block (st count)
   (match (cg-new-slot st)
-    (CGR st2 off d1
+    (CGR st2 off _
       (if (<= count 1)
         (CGR st2 off "")
         (cg-reserve-block st2 (- count 1))))))
@@ -1019,7 +1026,7 @@
 (defn cg-stack-variant (st env tag fields)
   (let n (list-length fields)
     (match (cg-reserve-block st (+ n 1))
-      (CGR st2 base d1
+      (CGR st2 base _
         (let st3 (cg-emit st2 "    mov qword ptr [rbp")
           (let st4 (cg-emit-int st3 base)
             (let st5 (cg-emit st4 "], ")
@@ -1124,11 +1131,11 @@
 
 (defn cgr-st (r)
   (match r
-    (CGR s d49 d50 s)))
+    (CGR s _ _ s)))
 
 (defn cgr-str (r)
   (match r
-    (CGR d51 d52 s s)))
+    (CGR _ _ s s)))
 
 ; Arm prologue: load scrutinee pointer from [rsp] and its tag.
 (defn cg-tag-check (st tag)
@@ -1153,7 +1160,7 @@
 
 (defn cg-bind-slot (st env binds j b)
   (match (cg-new-slot st)
-    (CGR st3 off d53
+    (CGR st3 off _
       (cg-bind-store st3 env binds j b off))))
 
 (defn cg-bind-store (st env binds j b off)
@@ -1209,7 +1216,7 @@
   (match (cg-label-pair st)
     (CGP st1 lcatch ldone
       (match (cg-new-slot st1)
-        (CGR st2 cvar-off d1
+        (CGR st2 cvar-off _
           (cg-trycatch-emit st2 env tbody cvar cbody lcatch ldone cvar-off))))))
 
 (defn cg-trycatch-emit (st env tbody cvar cbody lcatch ldone cvar-off)
@@ -1272,25 +1279,25 @@
 
 (defn icnf-size (e)
   (match e
-    (IConst d54 1)
-    (IStr d55 1)
-    (IFlt d56 1)
-    (ILoad d57 1)
-    (IBinop d58 l r (icnf-add3 3 (icnf-size l) (icnf-size r)))
-    (ICall d59 args (icnf-add2 2 (icnf-count-list args)))
-    (IFfi d60 args (icnf-add2 2 (icnf-count-list args)))
+    (IConst _ 1)
+    (IStr _ 1)
+    (IFlt _ 1)
+    (ILoad _ 1)
+    (IBinop _ l r (icnf-add3 3 (icnf-size l) (icnf-size r)))
+    (ICall _ args (icnf-add2 2 (icnf-count-list args)))
+    (IFfi _ args (icnf-add2 2 (icnf-count-list args)))
     (IPrint a (+ 1 (icnf-size a)))
     (IIf c t eb (icnf-add3 4 (icnf-size c) (icnf-add2 (icnf-size t) (icnf-size eb))))
     (IWhile c b (icnf-add3 3 (icnf-size c) (icnf-size b)))
-    (ISet d61 v (+ 2 (icnf-size v)))
-    (ILet d62 v b (icnf-add3 3 (icnf-size v) (icnf-size b)))
+    (ISet _ v (+ 2 (icnf-size v)))
+    (ILet _ v b (icnf-add3 3 (icnf-size v) (icnf-size b)))
     (ISeq es (+ 1 (icnf-count-list es)))
-    (IVariant d63 d64 fields (+ 1 (icnf-count-list fields)))
-    (IStackVariant d109 d110 fields (+ 1 (icnf-count-list fields)))
+    (IVariant _ _ fields (+ 1 (icnf-count-list fields)))
+    (IStackVariant _ _ fields (+ 1 (icnf-count-list fields)))
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
-    (IFn d65 d66 d67 1)
-    (ICallClosure d94 args (icnf-add2 2 (icnf-count-list args)))
-    (ITryCatch tbody d102 cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))))
+    (IFn _ _ _ 1)
+    (ICallClosure _ args (icnf-add2 2 (icnf-count-list args)))
+    (ITryCatch tbody _ cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))))
 
 (defn icnf-count-list (xs)
   (match xs
@@ -1303,31 +1310,31 @@
 ; from this instead of the uniform 16*(64+icnf-size) waste.
 (defn icnf-slot-count (e)
   (match e
-    (IConst d80 0)
-    (IStr d81 0)
-    (IFlt d82 0)
-    (ILoad d83 0)
-    (IBinop d84 l r (icnf-add2 (icnf-slot-count l) (icnf-slot-count r)))
-    (ICall d85 args (icnf-count-slots-list args))
-    (IFfi d86 args (icnf-count-slots-list args))
+    (IConst _ 0)
+    (IStr _ 0)
+    (IFlt _ 0)
+    (ILoad _ 0)
+    (IBinop _ l r (icnf-add2 (icnf-slot-count l) (icnf-slot-count r)))
+    (ICall _ args (icnf-count-slots-list args))
+    (IFfi _ args (icnf-count-slots-list args))
     (IPrint a (icnf-slot-count a))
     (IIf c t eb (icnf-add3 (icnf-slot-count c) (icnf-slot-count t) (icnf-slot-count eb)))
     (IWhile c b (+ 1 (icnf-add2 (icnf-slot-count c) (icnf-slot-count b))))
-    (ISet d87 v (icnf-slot-count v))
-    (ILet d88 v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
+    (ISet _ v (icnf-slot-count v))
+    (ILet _ v b (+ 1 (icnf-add2 (icnf-slot-count v) (icnf-slot-count b))))
     (ISeq es (icnf-count-slots-list es))
-    (IVariant d89 d90 fields (icnf-count-slots-list fields))
+    (IVariant _ _ fields (icnf-count-slots-list fields))
     ; +1 slot for the block base plus one per field, on top of each
     ; field's own subexpression slots -- this block is reserved as
     ; (n+1) CONSECUTIVE cg-new-slot calls (cg-reserve-block), unlike
     ; IVariant's fields (which only ever need scratch slots transiently
     ; during heap-alloc staging, already counted by icnf-count-slots-list
     ; alone).
-    (IStackVariant d111 d112 fields (icnf-add2 (+ 1 (list-length fields)) (icnf-count-slots-list fields)))
+    (IStackVariant _ _ fields (icnf-add2 (+ 1 (list-length fields)) (icnf-count-slots-list fields)))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
-    (IFn d91 d92 d93 0)
-    (ICallClosure d95 args (icnf-count-slots-list args))
-    (ITryCatch tbody d103 cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))))
+    (IFn _ _ _ 0)
+    (ICallClosure _ args (icnf-count-slots-list args))
+    (ITryCatch tbody _ cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)
@@ -1342,7 +1349,7 @@
 (defn icnf-arm-slots (arm rest)
   ; binops never combine two direct calls here (constraint 8).
   (match arm
-    (IArm d91 d92 binds body
+    (IArm _ _ binds body
       (icnf-add2 (icnf-binds-slots binds 0)
                  (icnf-add2 (icnf-slot-count body) (icnf-count-arm-slots rest))))))
 
@@ -1368,7 +1375,7 @@
   ; Match-arm bodies must contain at most ONE call (see icnf-add2 note);
   ; nest the sum through helpers.
   (match arm
-    (IArm d65 d66 d67 body
+    (IArm _ _ _ body
       (icnf-add2 1 (icnf-add2 (icnf-size body) (icnf-count-arms rest))))))
 
 (defn cg-function (st f)
@@ -1408,32 +1415,32 @@
 (defn ifn-tag-p (f)
   (match f
     (IFn a b c 1)
-    (d1 0)))
+    (_ 0)))
 
 (defn ifn-tag-name (f)
   (match f
     (IFn a b c a)
-    (d1 "a-name")))
+    (_ "a-name")))
 
 (defn ifn-tag-params (f)
   (match f
     (IFn a b c b)
-    (d1 (no-strs))))
+    (_ (no-strs))))
 
 (defn ifn-tag-body (f)
   (match f
     (IFn a b c c)
-    (d1 (no-icnfs))))
+    (_ (no-icnfs))))
 
 ; Declared representation kind per parameter (see icnf.zyl's IFn).
 (defn ifn-tag-kinds (f)
   (match f
     (IFn a b c k k)
-    (d1 Nil)))
+    (_ Nil)))
 
 (defn cg-reset-slots (st next-off)
   (match st
-    (CGS a b n d69 rd fns (CGS a b n next-off rd fns))))
+    (CGS a b n _ rd fns (CGS a b n next-off rd fns))))
 
 ; Immutable param environment: param i -> offset -(8*(i+1)), carrying
 ; the declared kind so a String or Float parameter is emitted as one.
@@ -1448,12 +1455,12 @@
 
 (defn cg-kinds-head (kinds)
   (match kinds
-    (Cons h d1 h)
+    (Cons h _ h)
     (Nil 0)))
 
 (defn cg-kinds-tail (kinds)
   (match kinds
-    (Cons d1 t t)
+    (Cons _ t t)
     (Nil Nil)))
 
 ; Spill incoming args to param slots: indices 0..5 from SysV registers,
@@ -1507,7 +1514,7 @@
       (cg-collect-fnnames
         (cg-with-fnname st nm (kind-of st (cg-param-env ps ks 0 (EnvNil)) body))
         rest))
-    (d80 (cg-collect-fnnames st rest))))
+    (_ (cg-collect-fnnames st rest))))
 
 (defn cg-program (st fns)
   (let st0 (cg-collect-fnnames st fns)
@@ -1594,7 +1601,7 @@
 
 (defn cg-dbg (msg)
   (let f (file-open "/tmp/dbg2" "a")
-    (let d1 (file-write f msg)
+    (let _ (file-write f msg)
       (file-close f))))
 
 (defn cg-functions (st fns)
@@ -1606,7 +1613,7 @@
   (match f
     (IFn nm params body
       (cg-functions-go st nm f rest))
-    (d96 (cg-functions st rest))))
+    (_ (cg-functions st rest))))
 
 (defn cg-functions-go (st nm f rest)
   (cg-functions (cg-function st f) rest))
@@ -1691,7 +1698,7 @@
 ; inference makes one shared helper safe across element types).
 (defn list-head-or (xs default)
   (match xs
-    (Cons a d70 a)
+    (Cons a _ a)
     (Nil default)))
 
 (defn ih-ic (xs)
@@ -1711,7 +1718,7 @@
 
 (defn cg-arena-of (st)
   (match st
-    (CGS a d74 d75 d76 d77 d78 a)))
+    (CGS a _ _ _ _ _ a)))
 
 (defn tl2 (xs)
   (match xs

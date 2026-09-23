@@ -50,9 +50,20 @@
 ; Pipeline: lexer → parser → Ast → ExprInner → type inference
 ;           → monomorphization → ICNF → codegen
 
+; Stage tracing, off unless ZYL_DEBUG_STAGES is set. This used to append to
+; /tmp/dbg unconditionally: a fixed path in a shared directory (on a
+; multi-user machine the file belongs to whoever compiled first and every
+; open after that fails), about twenty open/write/close cycles per compile,
+; and a write nobody asked for. zyl_getenv returns 0 when the variable is
+; unset.
 (defn dbg-log (msg)
+  (if (= (ffi-call "zyl_getenv" "ZYL_DEBUG_STAGES" 1000) 0)
+    0
+    (dbg-write msg)))
+
+(defn dbg-write (msg)
   (let f (file-open "/tmp/dbg" "a")
-    (let d1 (file-write f msg)
+    (let _ (file-write f msg)
       (file-close f))))
 
 ; ===========================================================================
@@ -66,10 +77,13 @@
     (if (= (sb-result-balanced balance) 0)
       (begin
         (dbg-log "unbalanced\n")
-        (report-unbalanced balance))
+        ; Register the path first so report-unbalanced can name the file and
+        ; print the offending line. zyl_source_register dedupes by path, so
+        ; this is the same id zyl-parse-file goes on to use.
+        (report-unbalanced balance (ffi-call "zyl_source_register" srcpath srcbuf 1000)))
       (begin
         (dbg-log "parse\n")
-        (let prog (zyl-parse arena srcbuf)
+        (let prog (zyl-parse-file arena srcbuf srcpath)
           (dbg-log "bridge\n")
           (begin
             (dbg-log "modules\n")
@@ -85,19 +99,19 @@
       ; §31.9: enforcement runs after module resolution and before type
       ; inference. It sits after macro expansion so that a construct a
       ; macro introduces is checked like one written by hand.
-      (let d206 (cc-check-program exprs (mrr-grants resolved) (mrr-denied resolved))
+      (let _ (cc-check-program exprs (mrr-grants resolved) (mrr-denied resolved))
       (dbg-log "duplicate-check\n")
-      (let d203 (dc-check-program exprs)
+      (let _ (dc-check-program exprs)
       (dbg-log "arity-check\n")
-      (let d201 (ac-check-program exprs)
+      (let _ (ac-check-program exprs)
       (dbg-log "mutability-check\n")
-      (let d200 (mc-check-program exprs)
+      (let _ (mc-check-program exprs)
       (dbg-log "exhaustiveness-check\n")
-      (let d202 (ec-check-program exprs)
+      (let _ (ec-check-program exprs)
       (dbg-log "unused-check\n")
-      (let d204 (uc-check-program exprs)
+      (let _ (uc-check-program exprs)
       (dbg-log "secret-check\n")
-      (let d205 (sc-check-program exprs)
+      (let _ (sc-check-program exprs)
       (dbg-log "type-infer\n")
       (let inferer (collect-definitions (inferer-new) exprs)
         (dbg-log "contract-injection\n")
@@ -160,11 +174,11 @@
 
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)
-    (let d1 (file-close fd)
+    (let _ (file-close fd)
       (let buf (compile-to-asm arena srcbuf "/tmp/zyl_boot_in.zyl")
         (let out (file-open "/tmp/zyl_boot_out.s" "w")
           (let n (file-write out buf)
-            (let d2 (file-close out)
+            (let _ (file-close out)
               n)))))))
 
 (defn boot-run-legacy (arena)
@@ -216,11 +230,11 @@
     acc
     (let a (ffi-call "zyl_arg_str" i 1000)
       (if (> (str-eq a "--emit-asm") 0)
-        (match acc (CliOpts out d1 (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
+        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
         (if (> (str-eq a "-o") 0)
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
-            (match acc (CliOpts d2 flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
-          (match acc (CliOpts d3 flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))
+            (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
+          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))
 
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
 ; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
@@ -291,16 +305,16 @@
                       (if (> (str-len outraw) 0)
                         (cli-resolve-path cwd outraw)
                         (cli-default-out src))
-                      (let d1 (ffi-call "zyl_chdir" bundledir 1000)
+                      (let _ (ffi-call "zyl_chdir" bundledir 1000)
                         (let fd (file-open src "r")
                           (if (> fd 0)
                             (let srcbuf (file-read fd 4194304)
-                              (let d2 (file-close fd)
+                              (let _ (file-close fd)
                                 (let buf (compile-to-asm arena srcbuf src)
                                   (if (> emitflag 0)
                                     (cli-write-file outbase buf)
                                     (let asmpath (str-concat outbase ".s")
-                                      (let d3 (cli-write-file asmpath buf)
+                                      (let _ (cli-write-file asmpath buf)
                                         (cli-link asmpath outbase)))))))
                             (begin
                               (print "zyl: error: cannot open source file")
@@ -360,7 +374,7 @@
 (defn drv-check-locked (arena dir m nodes)
   (match (cli-read-lock arena dir)
     (Some l
-      (let d1 (drv-check-lock-entries arena l nodes)
+      (let _ (drv-check-lock-entries arena l nodes)
         (cc-check-growth (lk-closure l)
                          (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil)))))
     (None (ffi-call "zyl_panic"
@@ -388,7 +402,7 @@
 ; the graph against the lock when asked, compile the entry module and
 ; record what went into the binary (SS31.12).
 (defn drv-build (arena dir locked)
-  (let d0 (drv-check-workspace arena dir)
+  (let _ (drv-check-workspace arena dir)
     (drv-build-package arena dir locked)))
 
 ; §31.11: a member may depend on another member by path, but must still
@@ -403,7 +417,7 @@
 (defn drv-build-package (arena dir locked)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
-      (let d1 (if (> locked 0) (drv-check-locked arena dir m nodes) 1)
+      (let _ (if (> locked 0) (drv-check-locked arena dir m nodes) 1)
         (let src (drv-entry-module arena dir)
           (let out (drv-output-path arena dir)
             (drv-compile-file arena src out dir)))))))
@@ -415,14 +429,14 @@
         (print (str-concat "zyl: error: cannot open " src))
         1)
       (let srcbuf (file-read fd 4194304)
-        (let d1 (file-close fd)
+        (let _ (file-close fd)
           (let native (cli-native-link-args arena dir
                         (pk-read-manifest arena (str-concat dir "/zyl.pkg")))
             (let buf (compile-to-asm arena srcbuf src)
               (let asmpath (str-concat out ".s")
-                (let d2 (cli-write-file asmpath buf)
+                (let _ (cli-write-file asmpath buf)
                   (let rc (cli-link-child asmpath out native)
-                    (let d3 (drv-write-buildinfo arena dir out asmpath)
+                    (let _ (drv-write-buildinfo arena dir out asmpath)
                       rc)))))))))))
 
 ; zyl.buildinfo (SS31.12): the compiler's own hash, the graph hash from the
@@ -437,7 +451,7 @@
 (defn drv-write-buildinfo (arena dir out asmpath)
   (let path (str-concat out ".buildinfo")
     (let f (file-open path "w")
-      (let d1 (file-write f (drv-buildinfo-text arena dir asmpath))
+      (let _ (file-write f (drv-buildinfo-text arena dir asmpath))
         (file-close f)))))
 
 (defn drv-buildinfo-text (arena dir asmpath)
@@ -456,11 +470,11 @@
 ; A test build resolves dev-deps as well; a plain build must not, since
 ; dev-deps never enter a dependent's graph (§31.3).
 (defn drv-test (arena dir)
-  (let d1 (drv-check-workspace arena dir)
+  (let _ (drv-check-workspace arena dir)
     (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
       ; Resolved for the check, not for a value: a dev-dependency that
       ; cannot be resolved is an error before anything is compiled.
-      (let d2 (mvs-resolve-with-dev arena (cli-ctx-offline arena dir m) m dir)
+      (let _ (mvs-resolve-with-dev arena (cli-ctx-offline arena dir m) m dir)
         (let rc (drv-compile-file arena (drv-entry-module arena dir)
                                   (drv-output-path arena dir) dir)
           (if (= rc 0)
@@ -526,5 +540,5 @@
   (let cwd (ffi-call "zyl_getcwd" 0)
     (let argv0 (ffi-call "zyl_arg_str" 0 1000)
       (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
-        (let d1 (ffi-call "zyl_chdir" bundledir 1000)
+        (let _ (ffi-call "zyl_chdir" bundledir 1000)
           (drv-subcommand arena a cwd))))))

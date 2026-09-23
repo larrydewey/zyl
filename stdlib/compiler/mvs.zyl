@@ -41,19 +41,19 @@
 ; features it is compiled with.
 (deftype MvsNode (MN String PkgVersion PkgSource String (List String)))
 
-(defn mn-name (n) (match n (MN x d1 d2 d3 d4 x)))
-(defn mn-version (n) (match n (MN d1 v d2 d3 d4 v)))
-(defn mn-source (n) (match n (MN d1 d2 s d3 d4 s)))
-(defn mn-root (n) (match n (MN d1 d2 d3 r d4 r)))
-(defn mn-features (n) (match n (MN d1 d2 d3 d4 f f)))
+(defn mn-name (n) (match n (MN x _ _ _ _ x)))
+(defn mn-version (n) (match n (MN _ v _ _ _ v)))
+(defn mn-source (n) (match n (MN _ _ s _ _ s)))
+(defn mn-root (n) (match n (MN _ _ _ r _ r)))
+(defn mn-features (n) (match n (MN _ _ _ _ f f)))
 
 ; One pending requirement: the dependency as written, plus the root
 ; directory of the package that wrote it, since a path dependency is
 ; relative to its requirer.
 (deftype MvsReq (MR PkgDep String))
 
-(defn mr2-dep (r) (match r (MR d d1 d)))
-(defn mr2-from (r) (match r (MR d1 f f)))
+(defn mr2-dep (r) (match r (MR d _ d)))
+(defn mr2-from (r) (match r (MR _ f f)))
 
 ; How to reach package sources: the index directory, whether fetching is
 ; allowed (only `zyl fetch`/`zyl update` pass 1 — a build is offline by
@@ -61,10 +61,10 @@
 ; overrides.
 (deftype MvsCtx (MC String Int (List LockPkg) (List PkgOverride)))
 
-(defn mc-index (c) (match c (MC i d1 d2 d3 i)))
-(defn mc-online (c) (match c (MC d1 o d2 d3 o)))
-(defn mc-locked (c) (match c (MC d1 d2 l d3 l)))
-(defn mc-overrides (c) (match c (MC d1 d2 d3 o o)))
+(defn mc-index (c) (match c (MC i _ _ _ i)))
+(defn mc-online (c) (match c (MC _ o _ _ o)))
+(defn mc-locked (c) (match c (MC _ _ l _ l)))
+(defn mc-overrides (c) (match c (MC _ _ _ o o)))
 
 ; ===========================================================================
 ; SELECTION TABLE
@@ -159,8 +159,8 @@
 
 (defn mvs-git-fetch (arena dep url rev)
   (let work (str-concat (store-home) (str-concat "/tmp/git-" (store-flat-name (pd-name dep))))
-    (let d1 (store-run (str-concat "rm -rf '" (str-concat work "'")))
-      (let d2 (store-fetch-git url rev work)
+    (let _ (store-run (str-concat "rm -rf '" (str-concat work "'")))
+      (let _ (store-fetch-git url rev work)
         (let tar (store-tmp-path (pd-name dep) ".tar")
           (let hash (store-write-tar arena work tar)
             (store-install arena tar hash)))))))
@@ -182,15 +182,15 @@
 (defn mvs-fetch-dep (arena ctx dep)
   (let entry (idx-read arena (mc-index ctx) (pd-name dep))
     (let iv (idx-require-version arena entry (pd-version dep))
-      (let d1 (idx-check-yanked arena entry iv)
-        (let d2 (idx-verify arena (pd-name dep) iv)
+      (let _ (idx-check-yanked arena entry iv)
+        (let _ (idx-verify arena (pd-name dep) iv)
           (mvs-ensure-store arena dep iv))))))
 
 (defn mvs-ensure-store (arena dep iv)
   (if (> (store-has (iv-hash iv)) 0)
     (store-dir (iv-hash iv))
     (let tmp (store-tmp-path (pd-name dep) ".tar.zst")
-      (let d1 (store-fetch-url (iv-url iv) tmp)
+      (let _ (store-fetch-url (iv-url iv) tmp)
         (let tar (store-decompress tmp (store-tmp-path (pd-name dep) ".tar"))
           (store-install arena tar (iv-hash iv)))))))
 
@@ -205,7 +205,7 @@
 (defn mvs-manifest-of (arena ctx dep from)
   (let root (mvs-root-of arena ctx dep from)
     (let m (pk-read-manifest arena (str-concat root "/zyl.pkg"))
-      (let d1 (mvs-check-identity arena m dep root)
+      (let _ (mvs-check-identity arena m dep root)
         m))))
 
 (defn mvs-check-identity (arena m dep root)
@@ -214,8 +214,8 @@
       (str-concat "E_MANIFEST_INVALID: package: " (str-concat root
         (str-concat " declares package " (str-concat (mf-name m)
           (str-concat ", required as " (pd-name dep)))))) 1000)
-    (let d1 (pk-check-edition (mf-edition m) (mf-name m))
-      (let d2 (pk-check-compiler (mf-zyl m) (mf-name m))
+    (let _ (pk-check-edition (mf-edition m) (mf-name m))
+      (let _ (pk-check-compiler (mf-zyl m) (mf-name m))
         (pk-check-capabilities (mf-capabilities m) (mf-name m))))))
 
 ; The features a dependency edge asks for, plus whatever the selection
@@ -279,7 +279,7 @@
       (None (mvs-step-new arena ctx nodes dep req)))))
 
 (defn mvs-step-existing (arena ctx nodes dep cur req)
-  (let d1 (mvs-check-unit arena (pd-name dep) (mn-version cur) (pd-version dep))
+  (let _ (mvs-check-unit arena (pd-name dep) (mn-version cur) (pd-version dep))
     (let feats (mvs-merge-features (mn-features cur) (pd-features dep))
       (let higher (if (> (pv-cmp (pd-version dep) (mn-version cur)) 0) 1 0)
         (if (= (+ higher (mvs-features-grew (mn-features cur) feats)) 0)
@@ -293,12 +293,12 @@
 ; adds to the worklist.
 (deftype MvsSel (MSel (List MvsNode) (List MvsReq)))
 
-(defn msel-nodes (s) (match s (MSel n d1 n)))
-(defn msel-reqs (s) (match s (MSel d1 r r)))
+(defn msel-nodes (s) (match s (MSel n _ n)))
+(defn msel-reqs (s) (match s (MSel _ r r)))
 
 (defn mvs-select (arena ctx nodes dep req feats)
   (let m (mvs-manifest-of arena ctx dep (mr2-from req))
-    (let d1 (mvs-check-features m feats)
+    (let _ (mvs-check-features m feats)
       (let root (mvs-root-of arena ctx dep (mr2-from req))
         (let version (mvs-selected-version dep m)
           (let node (MN (pd-name dep) version (pd-source dep) root feats)

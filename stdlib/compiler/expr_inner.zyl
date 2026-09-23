@@ -14,6 +14,7 @@
 ; dependency actually declared for the module resolver to pull it in -
 ; this was an undefined `f_Pair` reference at link time otherwise.
 (use compiler/type_system)
+(use compiler/error_report)
 ;
 ; Structure:
 ;   1. ExprInner ADT mirrors Rust ExprInner (lines 53-115 ast.rs)
@@ -130,21 +131,21 @@
 
 (deftype Param (P String (Option String)))
 
-(defn P.name (p) (match p (P n d1 n)))
-(defn P.type (p) (match p (P d1 t t)))
+(defn P.name (p) (match p (P n _ n)))
+(defn P.type (p) (match p (P _ t t)))
 
 (deftype MatchArm (MA String (List Expr) Expr))
 
-(defn MA.variant (arm) (match arm (MA v d1 d2 v)))
-(defn MA.patterns (arm) (match arm (MA d1 p d2 p)))
-(defn MA.body (arm) (match arm (MA d1 d2 b b)))
+(defn MA.variant (arm) (match arm (MA v _ _ v)))
+(defn MA.patterns (arm) (match arm (MA _ p _ p)))
+(defn MA.body (arm) (match arm (MA _ _ b b)))
 
 (deftype CaptureInfo (CI String Int))
 
 (deftype ADTVariant (AV String (List String)))
 
-(defn AV.name (v) (match v (AV n d1 n)))
-(defn AV.fields (v) (match v (AV d1 f f)))
+(defn AV.name (v) (match v (AV n _ n)))
+(defn AV.fields (v) (match v (AV _ f f)))
 
 (deftype TraitMethod (TM String (List Param) String))
 
@@ -152,9 +153,9 @@
 
 (deftype DefnNode (DN String (List Param) Expr))
 
-(defn DN.name (d) (match d (DN n d1 d2 n)))
-(defn DN.params (d) (match d (DN d1 p d2 p)))
-(defn DN.body (d) (match d (DN d1 d2 b b)))
+(defn DN.name (d) (match d (DN n _ _ n)))
+(defn DN.params (d) (match d (DN _ p _ p)))
+(defn DN.body (d) (match d (DN _ _ b b)))
 
 (deftype StructDef (SD String (List (Pair String (Option String)))))
 
@@ -209,7 +210,7 @@
     true
     (match xs
       (Nil false)
-      (Cons d1 t (ast-has-at-least t (- n 1))))))
+      (Cons _ t (ast-has-at-least t (- n 1))))))
 
 ; Unwrap an Option, or lower to `fb` when it's None — replaces the
 ; `(if (Some x y) x fb)` idiom used throughout this module, which does NOT
@@ -230,7 +231,16 @@
 ; Head-symbol recognition happens here (no-dispatch architecture).
 ; ===========================================================================
 
+; Every Expr built straight from source keeps the span of the Ast it came
+; from, so a check that runs after parsing (arity, exhaustiveness, ...) can
+; still point at the user's own text. A node a later phase synthesises has
+; no entry, and renders without a location rather than a wrong one.
 (defn convert-ast (ast)
+  (let e (convert-ast-node ast)
+    (let _ (ffi-call "zyl_span_copy" e ast 1000)
+      e)))
+
+(defn convert-ast-node (ast)
   (match ast
     (AstIdent s
       (let (atom (AIdent s))
@@ -269,7 +279,7 @@
     (Cons head rest
       (match head
         (AstIdent n (dispatch-special n rest))
-        (d1 (Expr (ECall (convert-ast head) (convert-ast-list rest))))))))
+        (_ (Expr (ECall (convert-ast head) (convert-ast-list rest))))))))
 
 ; Special-form recognition by head-symbol NAME (no-dispatch architecture:
 ; recognition happens here, never in the reader). Every branch that used to
@@ -306,7 +316,7 @@
       (if (> (str-eq mode "off") 0)
         (convert-ast (ast-nth args 1 (AstInt 0)))
         (Expr (EUnknown "contracts" (convert-ast-list args)))))
-    (d1 (Expr (EUnknown "contracts" (convert-ast-list args))))))
+    (_ (Expr (EUnknown "contracts" (convert-ast-list args))))))
 
 ; requires/ensures/recover/checkpoint: same gap and same fix as
 ; "contracts" above (this parser never had nodes for them, and their
@@ -608,7 +618,7 @@
       (let s (strip-leading-colon s0)
         (if (> (str-eq s "le") 0) (Some ELe)
         (if (> (str-eq s "be") 0) (Some EBe) None))))
-    (d1 None)))
+    (_ None)))
 
 ; The reader keeps a keyword's ':' (parser.zyl's read-form-atom) so the
 ; module system can tell `pkg:mod` from `pkg mod`; every other consumer
@@ -628,7 +638,7 @@
       (if (> (str-eq s "Global") 0) (Some RGlobal)
       (if (> (str-eq s "Circular") 0) (Some RCircular)
       (if (> (str-eq s "Pin") 0) (Some RPin) None))))))
-    (d1 None)))
+    (_ None)))
 
 (defn parse-byte (args)
   (if (ast-has-at-least args 1)
@@ -637,7 +647,7 @@
         (if (byte-value-ok n)
           (Some (Expr (EByteLit n)))
           (ffi-call "zyl_panic" "E_BYTE_VALUE_OOB: byte literal out of range 0-255" 1000)))
-      (d1 (ffi-call "zyl_panic" "E_BYTE_VALUE_OOB: byte literal must be an integer" 1000)))
+      (_ (ffi-call "zyl_panic" "E_BYTE_VALUE_OOB: byte literal must be an integer" 1000)))
     (ffi-call "zyl_panic" "E_ARITY_MISMATCH: byte requires a literal argument" 1000)))
 
 (defn byte-value-ok (n)
@@ -695,7 +705,7 @@
       (Some r
         (match (ast-nth args 1 (AstInt 0))
           (AstInt cap (Some (Expr (EByteBuf r cap))))
-          (d1 (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000))))
+          (_ (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf capacity must be an integer literal" 1000))))
       (None (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: bytebuf region must be Stack Heap Global Circular or Pin" 1000)))
     (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf requires region and capacity" 1000)))
 
@@ -720,7 +730,7 @@
   (if (ast-has-at-least args 2)
     (match (ast-nth args 1 (AstInt 0))
       (AstInt align (Some (Expr (EAlignCheck (convert-ast (ast-nth args 0 (AstInt 0))) align))))
-      (d1 (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: align-check alignment must be a power-of-two literal" 1000)))
+      (_ (ffi-call "zyl_panic" "E_UNEXPECTED_TOKEN_IN_EXPR: align-check alignment must be a power-of-two literal" 1000)))
     (ffi-call "zyl_panic" "E_ARITY_MISMATCH: align-check requires ptr align" 1000)))
 
 (defn parse-atomic-load (args)
@@ -878,7 +888,7 @@
 (defn to-list (ast)
   (match ast
     (AList lst lst)
-    (d1 Nil)))
+    (_ Nil)))
 
 (defn parse-defn (args)
   (match (ast-nth args 0 (AstInt 0))
@@ -891,7 +901,7 @@
               (parse-params (ast-nth args 1 (AstInt 0)))
               (parse-body-from args 2))))
         None))
-    (d1 None)))
+    (_ None)))
 
 (defn parse-params (params)
   (match params
@@ -902,27 +912,81 @@
           (let hd (parse-single-param p)
             (let tl (parse-params (AList rest))
               (Cons hd tl))))))
-    (d1 Nil))
+    (_ Nil))
 
 )
+; A parameter is a bare name or `(name Type)` — nothing else.
+;
+; This used to accept any list at all, taking its head as the parameter's
+; NAME and its second element as the parameter's TYPE, and to fall back to
+; a parameter literally called "___" for every other shape. That is the
+; shape one dropped `)` produces: `(defn f (p (+ p 1))` parses as a two-
+; parameter list `p` and `(+ p 1)`, so `f` silently acquired a parameter
+; named `+` of type `p`, and every following top-level form became part of
+; f's body. The result was a well-formed program that means nothing anyone
+; wrote, and on a real file it drove type inference into an allocation
+; runaway. Reject the shape here, at the only point where it is still
+; obviously a typo.
+;
+; was `(AList (Cons name (Cons typ rest)) body)` — a pattern nested TWO
+; levels deep. The self-hosted parser's parse-match-arm only expands one
+; level of wrapped-form nesting (see its own comment); a second nested
+; Cons position isn't a plain identifier binding, so it got fed to
+; convert-ast as if it were CODE to evaluate, not a pattern to
+; destructure — corrupting field binding entirely ("rbp0"/undefined
+; symbol at link time). Sequential matches sidestep the nesting.
 (defn parse-single-param (p)
-  ; was `(AList (Cons name (Cons typ rest)) body)` — a pattern nested TWO
-  ; levels deep. The self-hosted parser's parse-match-arm only expands one
-  ; level of wrapped-form nesting (see its own comment); a second nested
-  ; Cons position isn't a plain identifier binding, so it got fed to
-  ; convert-ast as if it were CODE to evaluate, not a pattern to
-  ; destructure — corrupting field binding entirely ("rbp0"/undefined
-  ; symbol at link time). Sequential matches sidestep the nesting.
   (match p
     (AstIdent name (P name None))
-    (AList lst
-      (match lst
-        (Cons name tail
-          (match tail
-            (Cons typ rest (P (a-ident-to-str name) (Some (convert-ast typ))))
-            (d2 (P "___" None))))
-        (d3 (P "___" None))))
-    (d1 (P "___" None))))
+    (AList lst (parse-param-list p lst))
+    (_ (fail-malformed-param p))))
+
+(defn parse-param-list (p lst)
+  (match lst
+    (Cons name tail
+      (match tail
+        (Cons typ rest
+          (match rest
+            (Nil (parse-param-typed p name typ))
+            (_ (fail-malformed-param p))))
+        (_ (fail-malformed-param p))))
+    (_ (fail-malformed-param p))))
+
+(defn parse-param-typed (p name typ)
+  (match name
+    (AstIdent n (P n (Some (convert-ast typ))))
+    (_ (fail-malformed-param p))))
+
+; Renders only the offending entry's own head, not the whole form: the
+; point is to name what was written where a parameter belongs.
+(defn param-form-text (p)
+  (match p
+    (AstIdent s s)
+    (AstInt _ "an integer literal")
+    (AstFloat _ "a float literal")
+    (AString _ "a string literal")
+    (AstBool _ "a boolean literal")
+    (AList lst (param-list-text lst))))
+
+(defn param-list-text (lst)
+  (match lst
+    (Nil "()")
+    (Cons h _
+      (let head (param-form-text h)
+        (let open (str-concat "(" head)
+          (str-concat open " ...)"))))))
+
+(defn fail-malformed-param (p)
+  (let what (param-form-text p)
+    (let off (ffi-call "zyl_span_off" p 1000)
+      (let fid (ffi-call "zyl_span_file" p 1000)
+        (let m1 (str-concat "`" what)
+          (let msg (str-concat m1 "` is not a parameter - write a name, or (name Type)")
+            (let hint "a missing `)` earlier on the line puts the body inside the parameter list"
+              (let text (err-at "E_MALFORMED_PARAMETER" msg fid off hint)
+                (begin
+                  (ffi-call "zyl_panic" text 1000)
+                  (P "___" None))))))))))
 
 (defn parse-deftype (args)
   (if (ast-has-at-least args 1)
@@ -935,7 +999,7 @@
               (parse-adt-variants (ast-list-nth-rest args 1))
               Nil
               None))))
-      (d1 None))
+      (_ None))
     None))
 
 ; (defstruct Name (field [Type])*): a struct is lowered as sugar for a
@@ -960,7 +1024,7 @@
               ; per-deftype-from-0 numbering, unchanged, since renumbering
               ; those broke self-hosting outright).
               (Some "struct")))))
-      (d1 None))
+      (_ None))
     None))
 
 ; (impl Trait Type (defn method (params...) body)*): parsed but never
@@ -977,8 +1041,8 @@
     (Some
       (Expr
         (EImplBlock
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
-          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d2 "___"))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
+          (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (_ "___"))
           (parse-impl-bodies (ast-list-nth-rest args 2)))))
     None))
 
@@ -988,7 +1052,7 @@
     (Cons f rest
       (match (Expr.inner (convert-ast f))
         (EDefn name params body (Cons (IB (DN name params body)) (parse-impl-bodies rest)))
-        (d1 (parse-impl-bodies rest))))))
+        (_ (parse-impl-bodies rest))))))
 
 (defn parse-struct-fields (specs)
   (match specs
@@ -999,8 +1063,8 @@
 (defn parse-struct-field-name (s)
   (match s
     (AstIdent n n)
-    (AList lst (match lst (Cons h d1 (a-ident-to-str h)) (d2 "")))
-    (d3 "")))
+    (AList lst (match lst (Cons h _ (a-ident-to-str h)) (_ "")))
+    (_ "")))
 
 ; All elements after the type name are variant specs (no trailing "body").
 (defn ast-list-nth-rest (xs n)
@@ -1008,7 +1072,7 @@
     xs
     (match xs
       (Nil Nil)
-      (Cons d1 t (ast-list-nth-rest t (- n 1))))))
+      (Cons _ t (ast-list-nth-rest t (- n 1))))))
 
 (defn parse-adt-variants (variants)
   (match variants
@@ -1041,8 +1105,8 @@
           (AV
             (a-ident-to-str name)
             (parse-field-names rest)))
-        (d2 (AV "___" Nil))))
-    (d1 (AV "___" Nil))))
+        (_ (AV "___" Nil))))
+    (_ (AV "___" Nil))))
 
 (defn parse-field-names (fields)
   (match fields
@@ -1062,7 +1126,7 @@
               n
               (convert-ast (ast-nth args 1 (AstInt 0))))))
         None))
-    (d1 None)))
+    (_ None)))
 
 ; Rust bootstrap's p_let (src/parser.rs) supports THREE surface forms:
 ;   1. (let name val body...)  -- flat, name a bare ident, >=3 args
@@ -1115,19 +1179,19 @@
     (Cons only rest
       (match rest
         (Nil only)
-        (Cons d2 d3
+        (Cons _ _
           (let restbody (build-sequenced-body rest)
             (match (Expr.inner only)
               (ELet name val body (Expr (ELet name val (sequence-two body restbody))))
               (ELetMut name val body (Expr (ELetMut name val (sequence-two body restbody))))
-              (d1 (sequence-two only restbody)))))))))
+              (_ (sequence-two only restbody)))))))))
 
 (defn parse-body-from (args start)
   (let rest (ast-list-nth-rest args start)
     (if (<= (list-length rest) 1)
       (match rest
         (Nil (Expr (EAtom ANil)))
-        (Cons only d1 (convert-ast only)))
+        (Cons only _ (convert-ast only)))
       (build-sequenced-body (convert-ast-list rest)))))
 
 (defn parse-let (args)
@@ -1150,7 +1214,7 @@
           None)))
     (AList blist
       (match blist
-        (Cons bname d9
+        (Cons bname _
           (match bname
             (AstIdent bn
               (if (ast-has-at-least args 2)
@@ -1161,9 +1225,9 @@
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
                       (convert-ast (ast-nth args 1 (AstInt 0))))))
                 None))
-            (d3 None)))
-        (d2 None)))
-    (d1 None)))
+            (_ None)))
+        (_ None)))
+    (_ None)))
 
 (defn parse-let-mut (args)
   (match (ast-nth args 0 (AstInt 0))
@@ -1185,7 +1249,7 @@
           None)))
     (AList blist
       (match blist
-        (Cons bname d9
+        (Cons bname _
           (match bname
             (AstIdent bn
               (if (ast-has-at-least args 2)
@@ -1196,9 +1260,9 @@
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
                       (convert-ast (ast-nth args 1 (AstInt 0))))))
                 None))
-            (d3 None)))
-        (d2 None)))
-    (d1 None)))
+            (_ None)))
+        (_ None)))
+    (_ None)))
 
 ; A 2-arg `(if cond then)` (no else) is common inside macro-expanded
 ; unless/when-style bodies (e.g. `(if (not cond) body)`) — it used to
@@ -1267,15 +1331,15 @@
             (let hd (parse-for-binding binding)
               (let tl (parse-for-bindings (AList rest))
                 (Cons hd tl)))))))
-    (d1 Nil))
+    (_ Nil))
 
 )
 
 ; 1 when the Ast node is a bare identifier.
 (defn parse-for-is-ident (node)
   (match node
-    (AstIdent d1 1)
-    (d2 0)))
+    (AstIdent _ 1)
+    (_ 0)))
 (defn parse-for-binding (binding)
   ; same nested-field-position bug as parse-adt-variant above.
   (match binding
@@ -1289,8 +1353,8 @@
             (if (nil? rest)
               None
               (Some (convert-ast (ast-list-last rest (AstInt 0)))))))
-        (d2 (Pair "___" None))))
-    (d1 (Pair "___" None))))
+        (_ (Pair "___" None))))
+    (_ (Pair "___" None))))
 
 ; `ECond` (the node parse-cond used to build directly) has no icnf.zyl/
 ; codegen.zyl lowering anywhere — monomorphization.zyl/type_inference.zyl
@@ -1330,7 +1394,7 @@
     (Cons e rest
       (match rest
         (Nil e)
-        (d1 (Expr (EIf e (Expr (EAtom (ABool true))) (or-fold rest))))))))
+        (_ (Expr (EIf e (Expr (EAtom (ABool true))) (or-fold rest))))))))
 
 (defn parse-and (args)
   (if (nil? args)
@@ -1343,14 +1407,14 @@
     (Cons e rest
       (match rest
         (Nil e)
-        (d1 (Expr (EIf e (and-fold rest) (Expr (EAtom (ABool false))))))))))
+        (_ (Expr (EIf e (and-fold rest) (Expr (EAtom (ABool false))))))))))
 
 ; `not` isn't a codegen builtin either — desugar to `(if x false true)`.
 (defn parse-not (args)
   (match args
-    (Cons a d1
+    (Cons a _
       (Some (Expr (EIf (convert-ast a) (Expr (EAtom (ABool false))) (Expr (EAtom (ABool true)))))))
-    (d2 None)))
+    (_ None)))
 
 (defn parse-cond-clauses (ast)
   (match ast
@@ -1361,7 +1425,7 @@
           (let hd (parse-cond-clause clause)
             (let tl (parse-cond-clauses (AList rest))
               (Cons hd tl))))))
-    (d1 Nil))
+    (_ Nil))
 
 )
 (defn parse-cond-clause (clause)
@@ -1377,12 +1441,12 @@
       (Pair
         (convert-ast (cond-test-ast (ast-nth kids 0 (AstInt 0))))
         (convert-ast (ast-list-last kids (AstInt 0)))))
-    (d1 (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
+    (_ (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
 
 (defn cond-test-ast (test)
   (match test
     (AstIdent name (if (= name "else") (AstBool true) test))
-    (d1 test)))
+    (_ test)))
 
 ; --- Literal-pattern match: desugars to a nested if/else chain ------------
 ;
@@ -1429,22 +1493,22 @@
   (match h
     (AList kids
       (match kids
-        (Cons head d1
+        (Cons head _
           (match head
             (AstIdent n (str-eq n "range"))
-            (d2 0)))
+            (_ 0)))
         (Nil 0)))
-    (d3 0)))
+    (_ 0)))
 
 (defn ast-range-lo (h)
   (match h
     (AList kids (ast-nth kids 1 (AstInt 0)))
-    (d1 (AstInt 0))))
+    (_ (AstInt 0))))
 
 (defn ast-range-hi (h)
   (match h
     (AList kids (ast-nth kids 2 (AstInt 0)))
-    (d1 (AstInt 0))))
+    (_ (AstInt 0))))
 
 ; A guard is written `(when cond)` as the LAST element before an arm's
 ; body, e.g. `(0 (when debug-mode) body)` -- Rust's `pattern if cond =>
@@ -1462,17 +1526,17 @@
   (match h
     (AList kids
       (match kids
-        (Cons head d1
+        (Cons head _
           (match head
             (AstIdent n (str-eq n "when"))
-            (d2 0)))
+            (_ 0)))
         (Nil 0)))
-    (d3 0)))
+    (_ 0)))
 
 (defn ast-guard-cond (h)
   (match h
     (AList kids (ast-nth kids 1 (AstBool true)))
-    (d1 (AstBool true))))
+    (_ (AstBool true))))
 
 ; An arm's "middles": everything in the arm's list before the body,
 ; e.g. `(1 2 3 body)` -> [1, 2, 3], possibly ending in a `(when ...)`
@@ -1480,7 +1544,7 @@
 (defn ast-arm-middles (arm)
   (match arm
     (AList kids (ast-list-butlast kids))
-    (d1 (Cons (AstIdent "_") Nil))))
+    (_ (Cons (AstIdent "_") Nil))))
 
 ; Pattern alternatives only (guard marker, if any, stripped): more than
 ; one is an OR-pattern (matches the scrutinee against ANY of them),
@@ -1508,16 +1572,16 @@
   (if (> (ast-is-range-pattern h) 0)
     1
     (match h
-      (AstInt d1 1)
-      (AstFloat d2 1)
-      (AString d3 1)
-      (AstBool d4 1)
-      (d5 0))))
+      (AstInt _ 1)
+      (AstFloat _ 1)
+      (AString _ 1)
+      (AstBool _ 1)
+      (_ 0))))
 
 (defn ast-first-alt (alts)
   (match alts
     (Nil (AstIdent "_"))
-    (Cons h d1 h)))
+    (Cons h _ h)))
 
 (defn match-has-literal-head (raw-arms)
   (match raw-arms
@@ -1538,7 +1602,7 @@
 (defn ast-pattern-is-wildcard (h)
   (match h
     (AstIdent n 1)
-    (d1 0)))
+    (_ 0)))
 
 ; A wildcard arm is exactly one alternative, `_` -- `(_ x body)` (a
 ; wildcard alongside something else) isn't treated as one, since that
@@ -1559,7 +1623,7 @@
 (defn literal-arm-body (arm)
   (match arm
     (AList kids (convert-ast (ast-list-last kids (AstInt 0))))
-    (d1 (Expr (EAtom ANil)))))
+    (_ (Expr (EAtom ANil)))))
 
 (defn literal-cmp-test (scrutinee-name op-name bound)
   (Expr
@@ -1596,7 +1660,7 @@
     (Cons a rest
       (match rest
         (Nil (literal-one-test scrutinee-name a))
-        (d1 (Expr
+        (_ (Expr
               (EIf
                 (literal-one-test scrutinee-name a)
                 (Expr (EAtom (ABool true)))
@@ -1688,12 +1752,12 @@
               (match pkids
                 (Cons vname vfields
                   (MA
-                    (match vname (AstIdent n2 n2) (d2 "___"))
+                    (match vname (AstIdent n2 n2) (_ "___"))
                     (convert-ast-list vfields)
                     (convert-ast (ast-list-last rest (AstInt 0)))))
-                (d3 (MA "___" Nil (Expr (EAtom ANil))))))
-            (d1 (MA "___" Nil (Expr (EAtom ANil))))))))
-    (d4 (MA "___" Nil (Expr (EAtom ANil))))))
+                (_ (MA "___" Nil (Expr (EAtom ANil))))))
+            (_ (MA "___" Nil (Expr (EAtom ANil))))))))
+    (_ (MA "___" Nil (Expr (EAtom ANil))))))
 
 ; (try body (catch name handler)) — exactly 2 top-level args, the
 ; second being a NESTED `(catch name handler)` list, matching the Rust
@@ -1714,17 +1778,17 @@
                   (Expr
                     (ETryCatch
                       (convert-ast (ast-nth args 0 (AstInt 0)))
-                      (match name-ast (AstIdent n n) (d1 "___"))
+                      (match name-ast (AstIdent n n) (_ "___"))
                       (convert-ast (ast-list-last handler-rest (AstInt 0)))))))
-              (d2 None)))
-          (d3 None)))
-      (d4 None))
+              (_ None)))
+          (_ None)))
+      (_ None))
     None))
 
 (defn parse-begin (args)
   (match args
     (Nil (Some (Expr (EBegin Nil))))
-    (d1 (Some (Expr (EBegin (convert-ast-list args))))))
+    (_ (Some (Expr (EBegin (convert-ast-list args))))))
 
 )
 ; `lambda` and `fn` are fully equivalent anonymous-function syntax --
@@ -1893,7 +1957,7 @@
     (match (ast-nth args 0 (AstInt 0))
       (AstIdent n
         (Some (Expr (ESetBang n (convert-ast (ast-nth args 1 (AstInt 0)))))))
-      (d1 (ffi-call "zyl_panic" "E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead" 1000)))
+      (_ (ffi-call "zyl_panic" "E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead" 1000)))
     None))
 
 (defn parse-module (args)
@@ -1904,7 +1968,7 @@
         (EModuleDecl
           (match (ast-nth args 0 (AstInt 0))
             (AstIdent n n)
-            (d1 "___")))))))
+            (_ "___")))))))
 
 (defn parse-use (args)
   (Some (Expr (EUseModule (parse-idents args) None false))))
@@ -1922,14 +1986,14 @@
         (EExport
           (match (ast-nth args 0 (AstInt 0))
             (AstIdent n n)
-            (d1 "___")))))))
+            (_ "___")))))))
 
 (defn parse-derive (args)
   (if (ast-has-at-least args 1)
     (Some
       (Expr
         (EDerive
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
           (parse-derive-traits (ast-list-nth-rest args 1)))))
     None))
 
@@ -1937,7 +2001,7 @@
   (match xs
     (Nil Nil)
     (Cons t rest
-      (let hd (match t (AstIdent n n) (d1 "___"))
+      (let hd (match t (AstIdent n n) (_ "___"))
         (Cons hd (parse-derive-traits rest))))))
 
 (defn parse-macro (args)
@@ -1951,7 +2015,7 @@
               (convert-ast-list (to-list (ast-nth args 1 (AstInt 0))))
               (convert-ast (ast-list-last args (AstInt 0))))))
         None))
-    (d1 None)))
+    (_ None)))
 
 (defn parse-test (args)
   (if (ast-has-at-least args 2)
@@ -1961,7 +2025,7 @@
           (match (ast-nth args 0 (AstInt 0))
             (AstIdent n n)
             (AString n n)
-            (d1 "___"))
+            (_ "___"))
           (convert-ast (ast-list-last args (AstInt 0)))
           None)))
     None))
@@ -1990,7 +2054,7 @@
   (match (ast-nth args 0 (AstInt 0))
     (AList blist
       (match blist
-        (Cons bname d9
+        (Cons bname _
           (match bname
             (AstIdent bn
               (if (ast-has-at-least args 2)
@@ -2001,16 +2065,16 @@
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
                       (convert-ast (ast-nth args 1 (AstInt 0))))))
                 None))
-            (d3 None)))
-        (d2 None)))
-    (d1 None)))
+            (_ None)))
+        (_ None)))
+    (_ None)))
 
 (defn parse-make-struct (args)
   (if (ast-has-at-least args 1)
     (Some
       (Expr
         (EMakeStruct
-          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
+          (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
           (convert-ast-list (ast-list-nth-rest args 1)))))
     None))
 
@@ -2023,7 +2087,7 @@
           (match (ast-nth args 1 (AstInt 0))
             (AstIdent n n)
             (AString n n)
-            (d1 "")))))
+            (_ "")))))
     None))
 
 (defn parse-make-variant (args)
@@ -2033,10 +2097,10 @@
         (Some
           (Expr
             (EMakeVariant
-              (match (ast-nth adt-kids 0 (AstInt 0)) (AstIdent n n) (d1 "___"))
-              (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (d1 "___"))
+              (match (ast-nth adt-kids 0 (AstInt 0)) (AstIdent n n) (_ "___"))
+              (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (_ "___"))
               (convert-ast-list (ast-list-nth-rest args 2))))))
-      (d1 None))
+      (_ None))
     None))
 
 (defn parse-unwrap (args)
@@ -2057,14 +2121,14 @@
 (defn a-ident-to-str (ast)
   (match ast
     (AstIdent s s)
-    (d1 "")))
+    (_ "")))
 
 (defn nil? (xs)
   (match xs
     (Nil true)
-    (d1 false)))
+    (_ false)))
 
 (defn to-expr-list (ast)
   (match ast
     (AList lst (convert-ast-list lst))
-    (d1 Nil)))
+    (_ Nil)))

@@ -36,7 +36,7 @@
 
 (defn jr-encode-response (resp)
   (match resp
-    (RespMsg d0 id result error
+    (RespMsg _ id result error
       (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
         (let obj1 (map-insert obj0 "id" (JInt id))
           (let obj2 (if (option-is-some result) (map-insert obj1 "result" (jr-encode-any (option-unwrap result JNull))) obj1)
@@ -45,7 +45,7 @@
 
 (defn jr-encode-notification (notif)
   (match notif
-    (NotifMsg d0 method params
+    (NotifMsg _ method params
       (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
         (let obj1 (map-insert obj0 "method" (JStr method))
           (let obj2 (if (option-is-some params) (map-insert obj1 "params" (jr-encode-any (option-unwrap params LSPNull))) obj1)
@@ -53,7 +53,7 @@
 
 (defn jr-encode-request (req)
   (match req
-    (ReqMsg d0 id method params
+    (ReqMsg _ id method params
       (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
         (let obj1 (map-insert obj0 "id" (JInt id))
           (let obj2 (map-insert obj1 "method" (JStr method))
@@ -128,7 +128,7 @@
     (10 (str-concat buf "\\n"))
     (12 (str-concat buf "\\f"))
     (13 (str-concat buf "\\r"))
-    (d1 (if (and (>= c 32) (< c 127))
+    (_ (if (and (>= c 32) (< c 127))
         (str-concat buf (char-from-int c))
         (str-concat buf (jr-encode-unicode c))))))
 
@@ -200,7 +200,7 @@
               (Some id-val (Left (ReqMsg "2.0" (jr-decode-int id-val) method (jr-decode-params-opt obj))))
               (None (Right (NotifMsg "2.0" method (jr-decode-params-opt obj))))))
           (None (Left (ReqMsg "2.0" 0 "" None))))))
-    (d1 (Left (ReqMsg "2.0" 0 "" None)))))
+    (_ (Left (ReqMsg "2.0" 0 "" None)))))
 
 (defn jr-decode-params-opt (obj)
   (match (map-get obj "params")
@@ -211,7 +211,7 @@
   (match j
     (JInt i i)
     (JStr s (ffi-call "zyl_cstr_to_int" s 1000))
-    (d1 0)))
+    (_ 0)))
 
 (defn jr-decode-response-json (j)
   (match j
@@ -220,7 +220,7 @@
         (RespMsg "2.0" id
           (option-map (map-get obj "result") jr-decode-any)
           (option-map (map-get obj "error") jr-decode-error))))
-    (d1 (RespMsg "2.0" 0 None (Some (RErr -32700 "Parse error" None))))))
+    (_ (RespMsg "2.0" 0 None (Some (RErr -32700 "Parse error" None))))))
 
 (defn jr-decode-error (j)
   (match j
@@ -228,7 +228,7 @@
       (RErr (jr-decode-int (option-unwrap (map-get obj "code") (JInt 0)))
             (jr-decode-string (option-unwrap (map-get obj "message") (JStr "")))
             (option-map (map-get obj "data") jr-decode-any)))
-    (d1 (RErr 0 "" None))))
+    (_ (RErr 0 "" None))))
 
 (defn jr-decode-any (j)
   (match j
@@ -249,12 +249,12 @@
   (match j
     (JInt i i)
     (JStr s (ffi-call "zyl_cstr_to_int" s 1000))
-    (d1 0)))
+    (_ 0)))
 
 (defn jr-decode-string (j)
   (match j
     (JStr s s)
-    (d1 "")))
+    (_ "")))
 
 ; ===========================================================================
 ; JSON PARSER (recursive descent over a byte-indexed String)
@@ -262,7 +262,7 @@
 
 (defn jr-parse-json (s)
   (match (jr-parse-value s 0)
-    (JV val d1 val)))
+    (JV val _ val)))
 
 (defn jr-parse-value (s pos)
   (let c (jr-skip-whitespace s pos)
@@ -274,7 +274,7 @@
         (116 (if (jr-starts-with s c "true") (JV (JBool 1) (+ c 4)) (JV JNull (+ c 1))))
         (102 (if (jr-starts-with s c "false") (JV (JBool 0) (+ c 5)) (JV JNull (+ c 1))))
         (110 (if (jr-starts-with s c "null") (JV JNull (+ c 4)) (JV JNull (+ c 1))))
-        (d1 (if (or (= ch 45) (and (>= ch 48) (<= ch 57))) (jr-parse-number s c) (JV JNull (+ c 1))))))))
+        (_ (if (or (= ch 45) (and (>= ch 48) (<= ch 57))) (jr-parse-number s c) (JV JNull (+ c 1))))))))
 
 (defn jr-skip-whitespace (s pos)
   (let len (str-length s)
@@ -328,7 +328,7 @@
         (let hex (str-substring s (+ i 1) 4)
           (let cp (jr-hex-to-int hex)
             (jr-parse-string-loop s (+ i 5) (str-concat acc (jr-safe-char cp))))))
-      (d1 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char esc)))))))
+      (_ (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char esc)))))))
 
 (defn jr-hex-to-int (s)
   (jr-hex-to-int-loop s 0 0 (str-length s)))
@@ -401,7 +401,7 @@
                           (if (= ch2 44)
                             (jr-parse-object-loop s (jr-skip-whitespace s (+ after-val 1)) (map-insert acc key val))
                             (JV (JObj (map-insert acc key val)) (+ after-val 1))))))))))
-            (d1 (JV (JObj acc) (+ keyend 1)))))))))
+            (_ (JV (JObj acc) (+ keyend 1)))))))))
 
 ; ===========================================================================
 ; STDIO TRANSPORT — Content-Length-framed messages (LSP base protocol)
@@ -475,7 +475,7 @@
 (defn jr-write-message (msg)
   (let content-len (str-length msg)
     (let header (str-concat "Content-Length: " (str-concat (int-to-str content-len) "\r\n\r\n"))
-      (let d1 (file-write 1 header)
+      (let _ (file-write 1 header)
         (file-write 1 msg)))))
 
 ; ===========================================================================

@@ -152,7 +152,7 @@
 ; (exclude ...) patterns.
 
 (defn store-normalise-modes (root)
-  (let d1 (store-run (str-concat "find '" (str-concat root "' -type d -exec chmod 0755 {} +")))
+  (let _ (store-run (str-concat "find '" (str-concat root "' -type d -exec chmod 0755 {} +")))
     (store-run (str-concat "find '" (str-concat root "' -type f -exec chmod 0644 {} +")))))
 
 (defn store-tar-flags ()
@@ -167,9 +167,9 @@
 ; top of the three the spec always drops. Each is validated before it
 ; reaches the command line, like every other argument here.
 (defn store-write-tar-excluding (arena root outtar exclude)
-  (let d1 (store-safe root 1 "package root")
-    (let d2 (store-safe outtar 1 "archive path")
-      (let d3 (store-normalise-modes root)
+  (let _ (store-safe root 1 "package root")
+    (let _ (store-safe outtar 1 "archive path")
+      (let _ (store-normalise-modes root)
         (let rc (store-run
                   (str-concat "tar " (str-concat (store-tar-flags)
                     (str-concat (store-exclude-flags exclude)
@@ -184,14 +184,14 @@
   (match exclude
     (Nil "")
     (Cons h t
-      (let d1 (store-safe h 1 "exclude pattern")
+      (let _ (store-safe h 1 "exclude pattern")
         (str-concat " --exclude='./" (str-concat h (str-concat "'" (store-exclude-flags t))))))))
 
 ; zstd level 19 with long-distance matching off (§31.7). Compression is
 ; transport only: the hash above is already fixed.
 (defn store-compress (tarpath outpath)
-  (let d1 (store-safe tarpath 1 "archive path")
-    (let d2 (store-safe outpath 1 "archive path")
+  (let _ (store-safe tarpath 1 "archive path")
+    (let _ (store-safe outpath 1 "archive path")
       (let rc (store-run
                 (str-concat "zstd -19 --long=0 -q -f -o '"
                   (str-concat outpath (str-concat "' '" (str-concat tarpath "'")))))
@@ -201,8 +201,8 @@
             (str-concat "E_PKG_ARCHIVE_INVALID: package: zstd failed for " tarpath) 1000))))))
 
 (defn store-decompress (inpath outtar)
-  (let d1 (store-safe inpath 1 "archive path")
-    (let d2 (store-safe outtar 1 "archive path")
+  (let _ (store-safe inpath 1 "archive path")
+    (let _ (store-safe outtar 1 "archive path")
       (let rc (store-run
                 (str-concat "zstd -d -q -f -o '"
                   (str-concat outtar (str-concat "' '" (str-concat inpath "'")))))
@@ -226,10 +226,10 @@
         (str-concat "E_PKG_ARCHIVE_INVALID: package: archive contains a non-regular entry: " tarpath) 1000))))
 
 (defn store-extract-tar (tarpath dest)
-  (let d1 (store-safe tarpath 1 "archive path")
-    (let d2 (store-safe dest 1 "destination")
-      (let d3 (store-check-entries tarpath)
-        (let d4 (store-mkdir dest)
+  (let _ (store-safe tarpath 1 "archive path")
+    (let _ (store-safe dest 1 "destination")
+      (let _ (store-check-entries tarpath)
+        (let _ (store-mkdir dest)
           (let rc (store-run
                     (str-concat "tar --no-same-owner --no-same-permissions -xf '"
                       (str-concat tarpath (str-concat "' -C '" (str-concat dest "'")))))
@@ -249,9 +249,9 @@
   (str-concat (store-home) (str-concat "/tmp/" (str-concat (store-flat-name name) suffix))))
 
 (defn store-fetch-url (url out)
-  (let d1 (store-safe url 2 "url")
-    (let d2 (store-safe out 1 "download path")
-      (let d3 (store-mkdir (str-concat (store-home) "/tmp"))
+  (let _ (store-safe url 2 "url")
+    (let _ (store-safe out 1 "download path")
+      (let _ (store-mkdir (str-concat (store-home) "/tmp"))
         (let rc (store-run
                   (str-concat "curl -fsSL --proto '=https' -o '"
                     (str-concat out (str-concat "' '" (str-concat url "'")))))
@@ -263,10 +263,10 @@
 ; A git dependency is pinned by revision, never by branch: a branch moves,
 ; and §31.8 makes published versions immutable.
 (defn store-fetch-git (url rev dest)
-  (let d1 (store-safe url 2 "git url")
-    (let d2 (store-safe rev 1 "git revision")
-      (let d3 (store-safe dest 1 "destination")
-        (let d4 (store-mkdir dest)
+  (let _ (store-safe url 2 "git url")
+    (let _ (store-safe rev 1 "git revision")
+      (let _ (store-safe dest 1 "destination")
+        (let _ (store-mkdir dest)
           (let rc (store-run
                     (str-concat "git -C '" (str-concat dest
                       (str-concat "' init -q && git -C '" (str-concat dest

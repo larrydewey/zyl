@@ -46,10 +46,10 @@
 (deftype IHSt (IHS Int Int Int (List PHint)))
 (deftype PHint (PH String Int Int)) ; param label, line, col -- converted to a real InlayHint at the wire boundary
 
-(defn IHSt.i (s) (match s (IHS i d1 d2 d3 i)))
-(defn IHSt.line (s) (match s (IHS d1 l d2 d3 l)))
-(defn IHSt.col (s) (match s (IHS d1 d2 c d3 c)))
-(defn IHSt.hints (s) (match s (IHS d1 d2 d3 h h)))
+(defn IHSt.i (s) (match s (IHS i _ _ _ i)))
+(defn IHSt.line (s) (match s (IHS _ l _ _ l)))
+(defn IHSt.col (s) (match s (IHS _ _ c _ c)))
+(defn IHSt.hints (s) (match s (IHS _ _ _ h h)))
 
 (defn ih-add-hint (st label)
   (match st (IHS i l c hs (IHS i l c (Cons (PH label l c) hs)))))
@@ -163,7 +163,7 @@
 (defn ih-fn-param-names (tbl name)
   (if (> (st-is-known-fn tbl name) 0)
     (match (st-lookup-fn tbl name)
-      (Some info (match info (FI d1 params (ih-param-name-list params))))
+      (Some info (match info (FI _ params (ih-param-name-list params))))
       (None Nil))
     Nil))
 
@@ -188,12 +188,12 @@
               (ih-read-children text stNext len tbl closeCh (ih-cdr-or-nil paramNames)))))))))
 
 (defn ih-cdr-or-nil (xs)
-  (match xs (Nil Nil) (Cons d1 t t)))
+  (match xs (Nil Nil) (Cons _ t t)))
 
 (defn ih-maybe-hint (st paramNames)
   (match paramNames
     (Nil st)
-    (Cons pname d1 (ih-add-hint st pname))))
+    (Cons pname _ (ih-add-hint st pname))))
 
 ; ===========================================================================
 ; DOCUMENT-LEVEL DRIVER

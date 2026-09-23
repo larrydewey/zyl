@@ -71,7 +71,7 @@
 (defn opt-optimize-fn (f)
   (match f
     (IFn name params body kinds (IFn name params (opt-expr body) kinds))
-    (d1 (opt-expr f))))
+    (_ (opt-expr f))))
 
 (defn opt-list (xs)
   (match xs
@@ -111,10 +111,10 @@
 
 (defn opt-expr (e)
   (match e
-    (IConst d1 e)
-    (IStr d2 e)
-    (IFlt d3 e)
-    (ILoad d4 e)
+    (IConst _ e)
+    (IStr _ e)
+    (IFlt _ e)
+    (ILoad _ e)
     (IBinop op l r (opt-binop op (opt-expr l) (opt-expr r)))
     (ICall name args (ICall name (opt-list args)))
     (ICallClosure name args (ICallClosure name (opt-list args)))
@@ -136,15 +136,15 @@
     (IConst a
       (match r2
         (IConst b (opt-fold-binop op a b))
-        (d1 (IBinop op l2 r2))))
-    (d2 (IBinop op l2 r2))))
+        (_ (IBinop op l2 r2))))
+    (_ (IBinop op l2 r2))))
 
 (defn opt-if (c2 t eb)
   (match c2
     (IConst v (if (> v 0) (opt-expr t) (opt-expr eb)))
-    (d1 (IIf c2 (opt-expr t) (opt-expr eb)))))
+    (_ (IIf c2 (opt-expr t) (opt-expr eb)))))
 
 (defn opt-while (c2 b)
   (match c2
     (IConst v (if (= v 0) (IConst 0) (IWhile c2 (opt-expr b))))
-    (d1 (IWhile c2 (opt-expr b)))))
+    (_ (IWhile c2 (opt-expr b)))))

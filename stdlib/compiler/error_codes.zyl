@@ -59,7 +59,9 @@
                         (Cons (EC "E_DUPLICATE_DEFINITION" 4 1 "type: duplicate definition of N at S. previously defined at P")
                           (Cons (EC "E_DUPLICATE_IMPL" 12 1 "trait: duplicate impl of T for U at S")
                             (Cons (EC "E_DUPLICATE_VARIANT" 4 1 "type: duplicate variant V in deftype at S")
-                              (Cons (EC "E_EMPTY_LIST" 2 1 "parser: empty list is not a valid expression at S")
+                              (Cons (EC "E_OUT_OF_MEMORY" 10 1 "runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY")
+                              (Cons (EC "E_MALFORMED_PARAMETER" 2 1 "parser: P is not a parameter at S - write a name, or (name Type)")
+                                (Cons (EC "E_EMPTY_LIST" 2 1 "parser: empty list is not a valid expression at S")
                                 (Cons (EC "E_EXPECTED_EXPRESSION" 2 1 "parser: expected an expression but found T at S")
                                   (Cons (EC "E_EXPECTED_RBRACKET" 2 1 "parser: expected ] but found T at S")
                                     (Cons (EC "E_EXPECTED_RCURLY" 2 1 "parser: expected } but found T at S")
@@ -138,7 +140,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

@@ -50,8 +50,8 @@
     (Nil acc)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name params d1 (ac-collect-acc rest (Cons (AE name (list-length params)) acc)))
-        (d2 (ac-collect-acc rest acc))))))
+        (EDefn name params _ (ac-collect-acc rest (Cons (AE name (list-length params)) acc)))
+        (_ (ac-collect-acc rest acc))))))
 
 (defn ac-lookup (arities name)
   (match arities
@@ -93,22 +93,24 @@
     (EAtom atom
       (match atom
         (AIdent name name)
-        (d1 "")))
-    (d2 "")))
+        (_ "")))
+    (_ "")))
 
-(defn ac-check-call-by-name (name args arities shadowed)
+; `site` is the call's own Expr node, carried only so the diagnostic can
+; name the line it is on.
+(defn ac-check-call-by-name (name args arities shadowed site)
   (if (> (str-length name) 0)
     (let local (ac-lookup-local name shadowed)
       (if (= local -2)
         (let expected (ac-lookup arities name)
           (if (>= expected 0)
             (let got (list-length args)
-              (if (= got expected) 0 (ac-fail name expected got)))
+              (if (= got expected) 0 (ac-fail name expected got site)))
             0))
         (if (= local -1)
           0
           (let got (list-length args)
-            (if (= got local) 0 (ac-fail name local got))))))
+            (if (= got local) 0 (ac-fail name local got site))))))
     0))
 
 ; A `let`-bound value that's DIRECTLY a `fn`/`lambda` literal has a
@@ -116,18 +118,25 @@
 ; result, a conditional, another variable, ...) doesn't, and stays -1.
 (defn ac-let-arity-of (val)
   (match (Expr.inner val)
-    (EFn d1 params d2 (list-length params))
-    (ELambda d3 params d4 (list-length params))
-    (d5 -1)))
+    (EFn _ params _ (list-length params))
+    (ELambda _ params _ (list-length params))
+    (_ -1)))
 
-(defn ac-fail (name expected got)
-  (let m1 "E_ARITY_MISMATCH: `"
-    (let m2 (str-concat m1 name)
+(defn ac-fail (name expected got site)
+  (let m1 "`"
+    (let m2 (str-concat m1 (err-name name))
       (let m3 (str-concat m2 "` called with ")
         (let m4 (str-concat m3 (int-to-str got))
           (let m5 (str-concat m4 " argument(s), but it takes ")
             (let m6 (str-concat m5 (int-to-str expected))
-              (ffi-call "zyl_panic" m6 1000))))))))
+              (ac-panic-at m6 got expected site))))))))
+
+(defn ac-panic-at (msg got expected site)
+  (let hint (if (> got expected) "remove the extra argument(s)" "supply the missing argument(s)")
+    (let off (ffi-call "zyl_span_off" site 1000)
+      (let fid (ffi-call "zyl_span_file" site 1000)
+        (let text (err-at "E_ARITY_MISMATCH" msg fid off hint)
+          (ffi-call "zyl_panic" text 1000))))))
 
 (defn ac-check-program (exprs)
   (let arities (ac-collect exprs)
@@ -139,9 +148,9 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn d1 params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
-          (ETestDecl d3 body d4 (ac-expr body arities Nil))
-          (d5 0))
+          (EDefn _ params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
+          (ETestDecl _ body _ (ac-expr body arities Nil))
+          (_ 0))
         (ac-check-top rest arities)))))
 
 (defn ac-param-names (params)
@@ -156,12 +165,12 @@
 ; happens.
 (defn ac-expr (e arities shadowed)
   (match (Expr.inner e)
-    (ESetBang d1 val (ac-expr val arities shadowed))
+    (ESetBang _ val (ac-expr val arities shadowed))
     (ELet name val body
       (begin (ac-expr val arities shadowed) (ac-expr body arities (Cons (Pair name (ac-let-arity-of val)) shadowed))))
     (ELetMut name val body
       (begin (ac-expr val arities shadowed) (ac-expr body arities (Cons (Pair name -1) shadowed))))
-    (EDef d4 val (ac-expr val arities shadowed))
+    (EDef _ val (ac-expr val arities shadowed))
     (EIf c t eb (begin (ac-expr c arities shadowed) (ac-expr t arities shadowed) (ac-expr eb arities shadowed)))
     (EWhile c body (begin (ac-expr c arities shadowed) (ac-expr body arities shadowed)))
     (EFor bindings cond body
@@ -172,9 +181,9 @@
           (ac-expr body arities (list-append names shadowed)))))
     (ECond clauses (ac-cond-clauses clauses arities shadowed))
     (EBegin exprs (ac-list exprs arities shadowed))
-    (ELambda d5 params body (ac-expr body arities (list-append (ac-wrap-unknown (ac-param-names params)) shadowed)))
-    (EFn d7 params body (ac-expr body arities (list-append (ac-wrap-unknown (ac-param-names params)) shadowed)))
-    (ETryCatch tbody d9 handler (begin (ac-expr tbody arities shadowed) (ac-expr handler arities shadowed)))
+    (ELambda _ params body (ac-expr body arities (list-append (ac-wrap-unknown (ac-param-names params)) shadowed)))
+    (EFn _ params body (ac-expr body arities (list-append (ac-wrap-unknown (ac-param-names params)) shadowed)))
+    (ETryCatch tbody _ handler (begin (ac-expr tbody arities shadowed) (ac-expr handler arities shadowed)))
     (EMatch subj arms (begin (ac-expr subj arities shadowed) (ac-arms arms arities shadowed)))
     ; Ordinary named calls, e.g. `(add 1 2 3)`, parse as EApply with the
     ; callee already a plain String (see expr_inner.zyl's
@@ -184,21 +193,21 @@
     ; identifier). EApply is the case that matters for arity checking.
     (ECall op args
       (begin
-        (ac-check-call-by-name (ac-callee-name op) args arities shadowed)
+        (ac-check-call-by-name (ac-callee-name op) args arities shadowed e)
         (ac-expr op arities shadowed)
         (ac-list args arities shadowed)))
     (EApply fname args
       (begin
-        (ac-check-call-by-name fname args arities shadowed)
+        (ac-check-call-by-name fname args arities shadowed e)
         (ac-list args arities shadowed)))
-    (EFfiCall d11 args d12 (ac-list args arities shadowed))
+    (EFfiCall _ args _ (ac-list args arities shadowed))
     (EFfiPin e2 (ac-expr e2 arities shadowed))
     (EFfiUnpin e2 (ac-expr e2 arities shadowed))
-    (EAssert c d13 (ac-expr c arities shadowed))
+    (EAssert c _ (ac-expr c arities shadowed))
     (EUnwrap e2 (ac-expr e2 arities shadowed))
-    (EStructGet se d14 (ac-expr se arities shadowed))
-    (EMakeStruct d15 fields (ac-list fields arities shadowed))
-    (EMakeVariant d16 d17 args (ac-list args arities shadowed))
+    (EStructGet se _ (ac-expr se arities shadowed))
+    (EMakeStruct _ fields (ac-list fields arities shadowed))
+    (EMakeVariant _ _ args (ac-list args arities shadowed))
     (EPrint exprs (ac-list exprs arities shadowed))
     (EExit c (ac-expr c arities shadowed))
     (EClose e2 (ac-expr e2 arities shadowed))
@@ -207,26 +216,26 @@
     (EFileWrite a b (begin (ac-expr a arities shadowed) (ac-expr b arities shadowed)))
     (EFileClose e2 (ac-expr e2 arities shadowed))
     (EBufAppend a b (begin (ac-expr a arities shadowed) (ac-expr b arities shadowed)))
-    (EWithResource d18 init body (begin (ac-expr init arities shadowed) (ac-expr body arities shadowed)))
+    (EWithResource _ init body (begin (ac-expr init arities shadowed) (ac-expr body arities shadowed)))
     (ESpawn closure (ac-expr closure arities shadowed))
     (ESend actor msg (begin (ac-expr actor arities shadowed) (ac-expr msg arities shadowed)))
-    (ESendClosure actor closure d19 (begin (ac-expr actor arities shadowed) (ac-expr closure arities shadowed)))
-    (ETestDecl d20 body d21 (ac-expr body arities shadowed))
+    (ESendClosure actor closure _ (begin (ac-expr actor arities shadowed) (ac-expr closure arities shadowed)))
+    (ETestDecl _ body _ (ac-expr body arities shadowed))
     (EAssertEqual l r (begin (ac-expr l arities shadowed) (ac-expr r arities shadowed)))
-    (EAssertFail e2 d22 (ac-expr e2 arities shadowed))
-    (EAssertTrue e2 d23 (ac-expr e2 arities shadowed))
-    (EAssertFalse e2 d24 (ac-expr e2 arities shadowed))
-    (ETestProperty d25 d26 body (ac-expr body arities shadowed))
+    (EAssertFail e2 _ (ac-expr e2 arities shadowed))
+    (EAssertTrue e2 _ (ac-expr e2 arities shadowed))
+    (EAssertFalse e2 _ (ac-expr e2 arities shadowed))
+    (ETestProperty _ _ body (ac-expr body arities shadowed))
     (ESetup exprs (ac-list exprs arities shadowed))
     (ETeardown exprs (ac-list exprs arities shadowed))
-    (ETestCompile e2 d27 (ac-expr e2 arities shadowed))
+    (ETestCompile e2 _ (ac-expr e2 arities shadowed))
     ; A nested top-level-style `defn` is its own function scope (no
     ; closure capture for plain `defn`, only `fn`/`lambda` are
     ; closures -- see codegen.zyl), so it does NOT inherit the
     ; enclosing `shadowed` set, only its own params: same reset-to-Nil
     ; posture as mutability_check.zyl's mc-expr for this exact case.
-    (EDefn d28 params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
-    (d30 0)))
+    (EDefn _ params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
+    (_ 0)))
 
 (defn ac-list (xs arities shadowed)
   (match xs
@@ -238,14 +247,14 @@
     (Nil Nil)
     (Cons pr rest
       (match pr
-        (Pair name d1 (Cons name (ac-for-names rest)))))))
+        (Pair name _ (Cons name (ac-for-names rest)))))))
 
 (defn ac-for-inits (bindings arities shadowed)
   (match bindings
     (Nil 0)
     (Cons pr rest
       (match pr
-        (Pair d1 valOpt
+        (Pair _ valOpt
           (begin
             (match valOpt (Some v (ac-expr v arities shadowed)) (None 0))
             (ac-for-inits rest arities shadowed)))))))
@@ -266,7 +275,7 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (MA d1 patterns body
+        (MA _ patterns body
           (begin
             (ac-expr body arities (list-append (ac-wrap-unknown (ac-pattern-names patterns)) shadowed))
             (ac-arms rest arities shadowed)))))))
@@ -279,5 +288,5 @@
         (EAtom atom
           (match atom
             (AIdent n (Cons n (ac-pattern-names rest)))
-            (d1 (ac-pattern-names rest))))
-        (d2 (ac-pattern-names rest))))))
+            (_ (ac-pattern-names rest))))
+        (_ (ac-pattern-names rest))))))

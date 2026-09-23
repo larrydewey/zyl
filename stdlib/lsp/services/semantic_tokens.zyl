@@ -74,7 +74,7 @@
 
 (deftype RawTok (RT Int Int Int Int Int)) ; line, col, length, token-type, modifiers
 
-(defn RawTok.line (t) (match t (RT l d1 d2 d3 d4 l)))
+(defn RawTok.line (t) (match t (RT l _ _ _ _ l)))
 
 ; Kept for callers that want the bare keyword list (completion's static
 ; source); the table itself lives in lsp/builtins.
@@ -220,7 +220,7 @@
 ; and is left alone.
 (defn st-classify-shape (word tbl line col length)
   (match (st-field-owner tbl word)
-    (Some d1 (Some (RT line col length (st-tt-property) 0)))
+    (Some _ (Some (RT line col length (st-tt-property) 0)))
     (None
       (if (> (st-is-upper (sb-char-code (str-substring word 0 1))) 0)
         (Some (RT line col length (st-tt-type) 0))

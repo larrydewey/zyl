@@ -123,12 +123,12 @@
 
 (defn first-expr (xs)
   (match xs
-    (Cons a d1 a)
+    (Cons a _ a)
     (Nil (Expr (EAtom ANil)))))
 
 (defn rest-expr (xs)
   (match xs
-    (Cons d2 r r)
+    (Cons _ r r)
     (Nil Nil)))
 
 (defn last-expr (xs)
@@ -154,8 +154,8 @@
 ; otherwise (e.g. the callee of an ECall that isn't a plain name).
 (defn expr-ident-name (e fb)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n n) (d1 fb)))
-    (d2 fb)))
+    (EAtom atom (match atom (AIdent n n) (_ fb)))
+    (_ fb)))
 
 ; ===========================================================================
 ; PROGRAM-LEVEL LOWERING
@@ -201,11 +201,11 @@
       (match (Expr.inner e)
         (EDefn name params body
           (ic-toplevel arena rest vt (tlacc-push-fns (ic-defn arena name params body vt) acc)))
-        (ETestDecl name body d1
+        (ETestDecl name body _
           (ic-toplevel arena rest vt (ic-toplevel-test arena name body vt acc)))
-        (ERunTests d2
+        (ERunTests _
           (ic-toplevel arena rest vt (tlacc-push-stmt (IFfi "zyl_run_tests" Nil) acc)))
-        (d3 (ic-toplevel arena rest vt acc))))))
+        (_ (ic-toplevel arena rest vt acc))))))
 
 ; One (test "name" body) form: synthesize a "_test_<name>" 0-arg function
 ; (always returns 0 — assertion failures panic via zyl_panic, matching the
@@ -229,7 +229,7 @@
 (defn ic-finish-program (fns stmts)
   (match stmts
     (Nil fns)
-    (Cons d1 d2
+    (Cons _ _
       (if (> (ic-has-main fns) 0)
         (ffi-call "zyl_panic" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
         (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil))) (no-ints)) fns)))))
@@ -239,8 +239,8 @@
     (Nil 0)
     (Cons f rest
       (match f
-        (IFn name d1 d2 (if (> (str-eq name "main") 0) 1 (ic-has-main rest)))
-        (d3 (ic-has-main rest))))))
+        (IFn name _ _ (if (> (str-eq name "main") 0) 1 (ic-has-main rest)))
+        (_ (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
 ;
@@ -265,7 +265,7 @@
 ; numbering, completely unaffected — and stays small enough for imm32.
 (defn ic-collect-vt (forms vt)
   (match (ic-collect-vt-run forms vt 100000)
-    (VTAcc v d1 v)))
+    (VTAcc v _ v)))
 
 (deftype VTAcc (VTAcc VTable Int))
 
@@ -281,7 +281,7 @@
 ; dodges that codegen bug.
 (defn ic-collect-vt-inner (rest inner vt stag)
   (match inner
-    (EDeftype name variants d1 structmark
+    (EDeftype name variants _ structmark
       (ic-collect-vt-deftype rest name variants structmark vt stag))
     ; Registered so ic-safe-callee (a lambda's call-head safety
     ; check) can tell "this name is a genuine existing top-level
@@ -307,16 +307,16 @@
     ; convention for `(add5 3)` and crashed jumping to whatever
     ; genuinely non-closure address ended up in the closure-call
     ; register slot.
-    (EDefn name d4 body
+    (EDefn name _ body
       (let vtfn (VTFn name vt)
         (ic-collect-vt-run rest
           (if (> (ic-tail-is-fn body) 0) (VTClosureReturn name vtfn) vtfn)
           stag)))
-    (d3 (ic-collect-vt-run rest vt stag))))
+    (_ (ic-collect-vt-run rest vt stag))))
 
 (defn ic-collect-vt-deftype (rest name variants structmark vt stag)
   (match structmark
-    (Some d2
+    (Some _
       (ic-collect-vt-run rest
                           (vt-from-adtvariants variants vt stag stag)
                           (+ stag (list-length variants))))
@@ -408,8 +408,8 @@
           (if (> (str-eq n "String") 0)
             1
             (if (> (str-eq n "Float") 0) 2 0)))
-        (d1 0)))
-    (d2 0)))
+        (_ 0)))
+    (_ 0)))
 
 (defn param-kinds (params acc)
   (match params
@@ -425,7 +425,15 @@
 ; unused ExprInner variants like EFor/ELambda/EDeftype-in-expression-
 ; position/EUnknown/...) lower to a harmless (IConst 0), matching this
 ; lowering's long-standing behavior for any malformed/unsupported shape.
+; Lowering rebuilds the tree, so the Icnf node inherits the Expr's position
+; -- that is what lets codegen's unbound-identifier error point at the
+; identifier instead of at nothing. See qf-form for the same note.
 (defn ic-expr (arena expr vt)
+  (let out (ic-expr-node arena expr vt)
+    (let _ (ffi-call "zyl_span_copy" out expr 1000)
+      out)))
+
+(defn ic-expr-node (arena expr vt)
   (match (Expr.inner expr)
     (EAtom atom (ic-atom arena atom vt))
     (ECall op args (ic-call-expr arena op args vt))
@@ -469,7 +477,7 @@
       (IFfi "zyl_file_close_c" (Cons (ic-expr arena h vt) Nil)))
     (EPrint exprs (ic-print arena exprs vt))
     (EMatch subj arms (ic-match arena subj arms vt))
-    (EFfiCall sym args d1 (IFfi sym (ic-expr-list arena args vt)))
+    (EFfiCall sym args _ (IFfi sym (ic-expr-list arena args vt)))
     ; assert-equal/-true/-false: same `=`-opcode/panic shape as the Rust
     ; bootstrap's icnf.rs — a bare identifier match here (no dedicated
     ; Icnf node) means these previously fell through to the (IConst 0)
@@ -493,11 +501,11 @@
      (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
           (IConst 0)
           (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil))))))
-    (EAssertTrue e d3
+    (EAssertTrue e _
      (IIf (ic-expr arena e vt)
           (IConst 0)
           (IFfi "zyl_panic" (Cons (IStr "assert-true failed") Nil))))
-    (EAssertFalse e d4
+    (EAssertFalse e _
      (IIf (ic-expr arena e vt)
           (IFfi "zyl_panic" (Cons (IStr "assert-false failed") Nil))
           (IConst 0)))
@@ -508,7 +516,7 @@
     ; now — testing/testing.zyl's assert-fail-expr called a plain
     ; "assert-fail" function that was never defined anywhere, an
     ; undefined-reference link error rather than a silent no-op.
-    (EAssertFail e d8 (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
+    (EAssertFail e _ (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
     (EStructGet se field (ic-struct-get arena se field vt))
     ; (for (name init)... cond body): no separate step clause — the
     ; corpus's own `for` bodies always `set!` the loop var themselves.
@@ -566,7 +574,7 @@
     ; `fn` referencing a name bound in an ENCLOSING scope (not its own
     ; params) reads as unbound in the lifted function, same as any other
     ; out-of-scope reference.
-    (EFn d5 params body (ic-lambda arena params body vt))
+    (EFn _ params body (ic-lambda arena params body vt))
     (EByteLit n (IConst n))
     ; endian is a bare `Endian` ADT value (ELe/EBe), not an Expr -- same
     ; type-confusion hazard as EByteBuf's region above: goes through
@@ -610,7 +618,7 @@
     (EAtomicFetchAdd buf offset val (IFfi "zyl_bytebuf_atomic_fetch_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
     (EAtomicMax buf offset val (IFfi "zyl_bytebuf_atomic_max" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
     (EAtomicMin buf offset val (IFfi "zyl_bytebuf_atomic_min" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (d2 (IConst 0))))
+    (_ (IConst 0))))
 
 ; Fresh, guaranteed-unique numeric id for naming a lifted lambda: the
 ; arena's own bump-allocation pointer (any tiny allocation) is already a
@@ -624,7 +632,7 @@
   ; arena base address between runs); arena-used (the bump allocator's
   ; byte offset from the arena's own base) is — every call still returns
   ; a fresh, distinct value since it strictly increases with each alloc.
-  (let d1 (arena-alloc-zeroed arena 1)
+  (let _ (arena-alloc-zeroed arena 1)
     (arena-used arena)))
 
 (defn ic-digit-str (d)
@@ -652,10 +660,10 @@
 ; with no literal in the expression at all won't be recognized.
 (defn ic-looks-float (e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AFloat d1 1) (d2 0)))
+    (EAtom atom (match atom (AFloat _ 1) (_ 0)))
     (EApply fname args (ic-looks-float-any args))
     (ECall op args (ic-looks-float-any args))
-    (d3 0)))
+    (_ 0)))
 
 (defn ic-looks-float-any (args)
   (match args
@@ -666,8 +674,8 @@
 ; else becomes a hardcoded "w".
 (defn ic-file-mode (arena mode vt)
   (match (Expr.inner mode)
-    (EAtom atom (match atom (AStr d1 (ic-expr arena mode vt)) (d2 (IStr "w"))))
-    (d3 (IStr "w"))))
+    (EAtom atom (match atom (AStr _ (ic-expr arena mode vt)) (_ (IStr "w"))))
+    (_ (IStr "w"))))
 
 ; |a - b| <= 1e-5, matching the Rust bootstrap's epsilon exactly. Binds
 ; the difference to a slot rather than embedding the (ic-expr l)/(ic-expr
@@ -782,7 +790,7 @@
     (AIdent name
       (if (> (ic-name-in-list name pnames) 0) Nil
         (if (> (vt-tag-of vt name) -1) Nil (Cons name Nil))))
-    (d1 Nil)))
+    (_ Nil)))
 
 ; A call-head name is a capture exactly when ic-safe-callee's own three
 ; "not a capture" cases (own param, operator, known top-level fn) all
@@ -815,12 +823,12 @@
     (EBegin exprs (ic-fv-list arena exprs pnames vt))
     (EPrint exprs (ic-fv-list arena exprs pnames vt))
     (EAssertEqual l r (ic-fv-union (ic-free-vars arena l pnames vt) (ic-free-vars arena r pnames vt)))
-    (EAssertTrue e2 d2 (ic-free-vars arena e2 pnames vt))
-    (EAssertFalse e2 d3 (ic-free-vars arena e2 pnames vt))
-    (EStructGet se d4 (ic-free-vars arena se pnames vt))
-    (EFn d5 fparams fbody
+    (EAssertTrue e2 _ (ic-free-vars arena e2 pnames vt))
+    (EAssertFalse e2 _ (ic-free-vars arena e2 pnames vt))
+    (EStructGet se _ (ic-free-vars arena se pnames vt))
+    (EFn _ fparams fbody
       (ic-free-vars arena fbody (list-append (param-names fparams (no-strs)) pnames) vt))
-    (d6 Nil)))
+    (_ Nil)))
 
 ; Structural check used ONLY to decide whether a let-bound name should
 ; be marked VTClosureFn for later calls (see ic-expr's ELet/ELetMut and
@@ -846,11 +854,11 @@
 
 (defn ic-is-closure-shaped (arena e pnames vt)
   (match (Expr.inner e)
-    (EFn d1 fparams fbody (ic-is-closure-shaped-fn arena fparams fbody vt))
-    (EApply fname d2 (vt-call-returns-closure vt fname))
-    (ELet d3 d4 body (ic-is-closure-shaped arena body pnames vt))
-    (ELetMut d5 d6 body (ic-is-closure-shaped arena body pnames vt))
-    (d7 0)))
+    (EFn _ fparams fbody (ic-is-closure-shaped-fn arena fparams fbody vt))
+    (EApply fname _ (vt-call-returns-closure vt fname))
+    (ELet _ _ body (ic-is-closure-shaped arena body pnames vt))
+    (ELetMut _ _ body (ic-is-closure-shaped arena body pnames vt))
+    (_ 0)))
 
 ; Structural check distinct from ic-is-closure-shaped: does `e`'s TAIL
 ; expression (after unwrapping let/let-mut wrappers) end in an `fn`
@@ -860,15 +868,15 @@
 ; question from "is THIS fn itself closure-shaped".
 (defn ic-tail-is-fn (e)
   (match (Expr.inner e)
-    (EFn d1 d2 d3 1)
-    (ELet d4 d5 body (ic-tail-is-fn body))
-    (ELetMut d6 d7 body (ic-tail-is-fn body))
-    (d8 0)))
+    (EFn _ _ _ 1)
+    (ELet _ _ body (ic-tail-is-fn body))
+    (ELetMut _ _ body (ic-tail-is-fn body))
+    (_ 0)))
 
 (defn ic-val-calls-return-closure (val)
   (match (Expr.inner val)
-    (EFn d1 d2 body (ic-tail-is-fn body))
-    (d3 0)))
+    (EFn _ _ body (ic-tail-is-fn body))
+    (_ 0)))
 
 ; ic-expr's ELet/ELetMut both funnel through here: lower `val` under the
 ; ORIGINAL vt (its own closure-ness, if any, isn't relevant to itself),
@@ -904,7 +912,7 @@
 (defn ic-safe-atom (atom pnames vt)
   (match atom
     (AIdent name 1)
-    (d1 1)))
+    (_ 1)))
 
 (defn ic-safe-list (arena xs pnames vt)
   (match xs
@@ -964,12 +972,12 @@
     (EPrint exprs (ic-safe-list arena exprs pnames vt))
     (EAssertEqual l r
       (if (> (ic-safe-expr arena l pnames vt) 0) (ic-safe-expr arena r pnames vt) 0))
-    (EAssertTrue e2 d2 (ic-safe-expr arena e2 pnames vt))
-    (EAssertFalse e2 d3 (ic-safe-expr arena e2 pnames vt))
-    (EStructGet se d4 (ic-safe-expr arena se pnames vt))
-    (EFn d5 fparams fbody
+    (EAssertTrue e2 _ (ic-safe-expr arena e2 pnames vt))
+    (EAssertFalse e2 _ (ic-safe-expr arena e2 pnames vt))
+    (EStructGet se _ (ic-safe-expr arena se pnames vt))
+    (EFn _ fparams fbody
       (ic-safe-expr arena fbody (list-append (param-names fparams (no-strs)) pnames) vt))
-    (d6 0)))
+    (_ 0)))
 
 ; --- hoist embedded IFn nodes (from `fn`) out to the top level -------------
 ;
@@ -982,12 +990,12 @@
 (deftype HoistListAcc (HoistListAcc (List Icnf) (List Icnf)))
 (deftype HoistArmAcc (HoistArmAcc (List IArm) (List Icnf)))
 
-(defn hoist-node (r) (match r (HoistAcc n d1 n)))
-(defn hoist-fns (r) (match r (HoistAcc d1 f f)))
-(defn hoistl-nodes (r) (match r (HoistListAcc n d1 n)))
-(defn hoistl-fns (r) (match r (HoistListAcc d1 f f)))
-(defn hoista-arms (r) (match r (HoistArmAcc a d1 a)))
-(defn hoista-fns (r) (match r (HoistArmAcc d1 f f)))
+(defn hoist-node (r) (match r (HoistAcc n _ n)))
+(defn hoist-fns (r) (match r (HoistAcc _ f f)))
+(defn hoistl-nodes (r) (match r (HoistListAcc n _ n)))
+(defn hoistl-fns (r) (match r (HoistListAcc _ f f)))
+(defn hoista-arms (r) (match r (HoistArmAcc a _ a)))
+(defn hoista-fns (r) (match r (HoistArmAcc _ f f)))
 
 (defn ic-hoist-list (xs)
   (match xs
@@ -1011,10 +1019,10 @@
 
 (defn ic-hoist (node)
   (match node
-    (IConst d1 (HoistAcc node Nil))
-    (IStr d2 (HoistAcc node Nil))
-    (IFlt d3 (HoistAcc node Nil))
-    (ILoad d4 (HoistAcc node Nil))
+    (IConst _ (HoistAcc node Nil))
+    (IStr _ (HoistAcc node Nil))
+    (IFlt _ (HoistAcc node Nil))
+    (ILoad _ (HoistAcc node Nil))
     (IBinop op l r
       (let hl (ic-hoist l)
         (let hr (ic-hoist r)
@@ -1104,10 +1112,10 @@
 (defn ic-struct-arms (arena vt field)
   (match vt
     (VTNil Nil)
-    (VTFn d1 rest (ic-struct-arms arena rest field))
-    (VTClosureFn d20 rest (ic-struct-arms arena rest field))
-    (VTClosureReturn d21 rest (ic-struct-arms arena rest field))
-    (VTEntry name tag fields d19 rest
+    (VTFn _ rest (ic-struct-arms arena rest field))
+    (VTClosureFn _ rest (ic-struct-arms arena rest field))
+    (VTClosureReturn _ rest (ic-struct-arms arena rest field))
+    (VTEntry name tag fields _ rest
       (let arms-rest (ic-struct-arms arena rest field)
         (let idx (ic-field-index fields field 0)
           (if (>= idx 0)
@@ -1306,8 +1314,8 @@
 ; expr-ident-name (which only extracts identifiers).
 (defn ic-ffi-sym (sym)
   (match (Expr.inner sym)
-    (EAtom atom (match atom (AStr s s) (d1 "")))
-    (d2 "")))
+    (EAtom atom (match atom (AStr s s) (_ "")))
+    (_ "")))
 
 ; Collect all variant names from VT that are actual ADT constructors
 ; (not function names). VTEntry tags >= 0 are variants; VTFn have
@@ -1389,7 +1397,7 @@
 (defn ic-check-exhaustive-gid (arms vt)
   (match arms
     (Nil 0)
-    (Cons arm d1
+    (Cons arm _
       (let gid (vt-gid-of vt (MA.variant arm))
         (if (< gid 0)
           0
@@ -1405,7 +1413,7 @@
 (defn ic-check-exhaustive (arms vt)
   (if (> (ic-has-catchall arms vt) 0)
     0
-    (let d1 (ic-check-variants-exist arms vt)
+    (let _ (ic-check-variants-exist arms vt)
       (ic-check-exhaustive-gid arms vt))))
 
 ; (match scrutinee arm...)
@@ -1468,21 +1476,21 @@
 ; destructuring) rather than a bare identifier/wildcard binder.
 (defn ic-pat-is-nested (p)
   (match (Expr.inner p)
-    (ECall d1 d2 1)
-    (EApply d3 d4 1)
-    (d5 0)))
+    (ECall _ _ 1)
+    (EApply _ _ 1)
+    (_ 0)))
 
 (defn ic-pat-ctor-name (p)
   (match (Expr.inner p)
-    (ECall op d1 (expr-ident-name op ""))
-    (EApply fname d2 fname)
-    (d3 "")))
+    (ECall op _ (expr-ident-name op ""))
+    (EApply fname _ fname)
+    (_ "")))
 
 (defn ic-pat-args (p)
   (match (Expr.inner p)
-    (ECall d1 args args)
-    (EApply d2 args args)
-    (d3 Nil)))
+    (ECall _ args args)
+    (EApply _ args args)
+    (_ Nil)))
 
 ; Pairs each nested pattern (see ic-pat-is-nested) with the synthetic
 ; field name ic-arm-binds already assigned it, in the same order —
@@ -1562,7 +1570,7 @@
         (if (> op -1)
           (ic-arm-guard-count arena args vt 0 0)
           0)))
-    (d1 0)))
+    (_ 0)))
 
 ; Count constant and call-like operands; error on const>=1 && calls>=2.
 (defn ic-arm-guard-count (arena args vt consts calls)
@@ -1580,20 +1588,20 @@
   (match (Expr.inner a)
     (EAtom atom
       (match atom
-        (AInt d1 1)
-        (AFloat d2 1)
-        (ABool d3 1)
-        (d4 0)))
-    (d5 0)))
+        (AInt _ 1)
+        (AFloat _ 1)
+        (ABool _ 1)
+        (_ 0)))
+    (_ 0)))
 
 ; A call-like operand: an Apply/Call whose head is NOT a known variant
 ; constructor (special forms inside binop args are rejected too — they
 ; violate the one-call rule regardless).
 (defn ic-arm-guard-is-call (arena a vt)
   (match (Expr.inner a)
-    (EApply fname d1 (ic-arm-guard-call-head arena fname vt))
-    (ECall op d2 (ic-arm-guard-call-head arena (expr-ident-name op "") vt))
-    (d3 0)))
+    (EApply fname _ (ic-arm-guard-call-head arena fname vt))
+    (ECall op _ (ic-arm-guard-call-head arena (expr-ident-name op "") vt))
+    (_ 0)))
 
 (defn ic-arm-guard-call-head (arena fname vt)
   (let tag (vt-tag-of vt (str-intern arena fname))

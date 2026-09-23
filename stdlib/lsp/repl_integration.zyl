@@ -45,9 +45,9 @@
   (let src-path "/tmp/zyl_lsp_eval.zyl"
     (let bin-path "/tmp/zyl_lsp_eval.bin"
       (let out-path "/tmp/zyl_lsp_eval.out"
-        (let d1 (file-open src-path "w")
-          (let d2 (file-write d1 text)
-            (let d3 (file-close d1)
+        (let fh (file-open src-path "w")
+          (let _ (file-write fh text)
+            (let _ (file-close fh)
               (let compile-cmd (str-concat "zyl " (str-concat src-path (str-concat " -o " (str-concat bin-path (str-concat " > " (str-concat out-path " 2>&1"))))))
                 (let compile-status (ffi-call "zyl_system_cmd" compile-cmd 1000)
                   (if (!= compile-status 0)
@@ -65,5 +65,5 @@
     (if (<= fd 0)
       ""
       (let output (file-read fd 1048576)
-        (let d1 (file-close fd)
+        (let fh (file-close fd)
           output)))))

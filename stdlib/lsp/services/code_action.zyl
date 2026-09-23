@@ -39,16 +39,16 @@
 
 (defn ca-fixit-of (d)
   (match d
-    (Diag d1 d2 d3 d4 d5 d6 d7 d8 dataOpt
+    (Diag _ _ _ _ _ _ _ _ dataOpt
       (match dataOpt
         (Some (LSPObject obj)
           (match (map-get obj "fixIt")
             (Some (LSPString s) (Some s))
-            (d9 None)))
-        (d10 None)))))
+            (_ None)))
+        (_ None)))))
 
 (defn ca-range-of (d)
-  (match d (Diag r d1 d2 d3 d4 d5 d6 d7 d8 r)))
+  (match d (Diag r _ _ _ _ _ _ _ _ r)))
 
 (defn ca-quickfix-action (d fixit)
   (CA (str-concat "Fix: " fixit) (Some (CAK "quickfix")) (Some d) None None
@@ -111,7 +111,7 @@
           (let indented (fmt-indent-line d l)
             (match lrest
               (Nil indented)
-              (Cons d2 d3 (str-concat indented (str-concat "\n" (fmt-emit drest lrest)))))))))))
+              (Cons _ _ (str-concat indented (str-concat "\n" (fmt-emit drest lrest)))))))))))
 
 ; A closing-only line (e.g. a lone ")))") is indented one level
 ; shallower than its own start depth would suggest, matching how a

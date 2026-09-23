@@ -84,13 +84,13 @@
 
 (deftype QPair (QP String String))
 
-(defn qp-name (p) (match p (QP n d1 n)))
-(defn qp-key (p) (match p (QP d1 k k)))
+(defn qp-name (p) (match p (QP n _ n)))
+(defn qp-key (p) (match p (QP _ k k)))
 
 (deftype SymTab (ST Int Int))
 
-(defn st-base (t) (match t (ST b d1 b)))
-(defn st-count (t) (match t (ST d1 n n)))
+(defn st-base (t) (match t (ST b _ b)))
+(defn st-count (t) (match t (ST _ n n)))
 
 (defn st-empty () (ST 0 0))
 
@@ -186,8 +186,8 @@
 ; every module of the compiler's own package was minutes of the build.
 (deftype QTab (QT SymTab SymTab))
 
-(defn qt-imports (t) (match t (QT i d1 i)))
-(defn qt-package (t) (match t (QT d1 p p)))
+(defn qt-imports (t) (match t (QT i _ i)))
+(defn qt-package (t) (match t (QT _ p p)))
 
 (defn qt-lookup (t name)
   (let k (st-lookup (qt-imports t) name)
@@ -306,7 +306,7 @@
   (match ty
     (AstIdent n (AstIdent (qf-ident tab locals n)))
     (AList xs (AList (qf-ref-forms tab locals xs)))
-    (d1 ty)))
+    (_ ty)))
 
 (defn qf-ref-forms (tab locals xs)
   (match xs
@@ -322,7 +322,17 @@
     (Nil Nil)
     (Cons h t (Cons (qf-form tab locals h) (qf-forms tab locals t)))))
 
+; Qualification REBUILDS a node rather than editing it, so the replacement
+; starts with no recorded position. Carry the original's over, or every
+; diagnostic after module resolution -- which is all of them -- loses its
+; location. Same reason, same one-line shape, as convert-ast and
+; me-rewrite. See the span table in runtime/actor_runtime.c.
 (defn qf-form (tab locals form)
+  (let out (qf-form-node tab locals form)
+    (let _ (ffi-call "zyl_span_copy" out form 1000)
+      out)))
+
+(defn qf-form-node (tab locals form)
   (match form
     (AstIdent n (AstIdent (qf-head-name tab locals n)))
     (AList xs
@@ -331,8 +341,8 @@
         (Cons h rest
           (match h
             (AstIdent hn (qf-special tab locals hn rest))
-            (d1 (AList (Cons (qf-form tab locals h) (qf-forms tab locals rest))))))))
-    (d2 form)))
+            (_ (AList (Cons (qf-form tab locals h) (qf-forms tab locals rest))))))))
+    (_ form)))
 
 ; Default shape: the head is a call target or constructor, the rest are
 ; ordinary expressions.
@@ -390,7 +400,7 @@
 (defn qf-pub (tab locals rest)
   (match (qf-form tab locals (AList rest))
     (AList xs (AList (Cons (AstIdent "pub") xs)))
-    (d1 (AList (Cons (AstIdent "pub") rest)))))
+    (_ (AList (Cons (AstIdent "pub") rest)))))
 
 ; Forms whose payload is module-system metadata, not code: their
 ; identifiers name modules and packages, which the resolver reads BEFORE
@@ -428,13 +438,13 @@
 (defn qf-def-name (tab locals a)
   (match a
     (AstIdent n (AstIdent (qf-ident tab locals n)))
-    (d1 (qf-form tab locals a))))
+    (_ (qf-form tab locals a))))
 
 ; A parameter is `x` or `(x Type)`; only the type half is rewritten.
 (defn qf-params (tab locals params)
   (match params
     (AList xs (AList (qf-param-list tab locals xs)))
-    (d1 params)))
+    (_ params)))
 
 (defn qf-param-list (tab locals xs)
   (match xs
@@ -448,15 +458,27 @@
       (match xs
         (Cons nm tail
           (match tail
-            (Cons ty d1 (AList (Cons nm (Cons (qf-ref-form tab locals ty) Nil))))
-            (Nil (AList xs))))
-        (Nil (AList Nil))))
-    (d2 p)))
+            (Cons ty rest (qf-param-typed tab locals p nm ty rest))
+            (Nil p)))
+        (Nil p)))
+    (_ p)))
+
+; Anything after the type means this is not a parameter at all: one dropped
+; `)` makes `(defn f (p (+ p 1))` parse `(+ p 1)` as a second parameter.
+; This used to rebuild every list-shaped parameter as exactly two elements
+; and drop the rest, which quietly turned that into the perfectly ordinary
+; parameter `(+ p)` -- so the shape never reached parse-single-param
+; (expr_inner.zyl), the only place that judges it. Hand the original node
+; back untouched instead, span and all.
+(defn qf-param-typed (tab locals p nm ty rest)
+  (match rest
+    (Nil (AList (Cons nm (Cons (qf-ref-form tab locals ty) Nil))))
+    (_ p)))
 
 (defn qf-param-names (params)
   (match params
     (AList xs (qf-param-name-list xs))
-    (d1 Nil)))
+    (_ Nil)))
 
 (defn qf-param-name-list (xs)
   (match xs
@@ -466,15 +488,15 @@
 (defn qf-one-param-name (p)
   (match p
     (AstIdent n n)
-    (AList xs (match xs (Cons nm d1 (match nm (AstIdent n2 n2) (d2 ""))) (Nil "")))
-    (d3 "")))
+    (AList xs (match xs (Cons nm _ (match nm (AstIdent n2 n2) (_ ""))) (Nil "")))
+    (_ "")))
 
 ; A type expression: `Int`, `(List Expr)`, `(Option String)`.
 (defn qf-type-form (tab locals ty)
   (match ty
     (AstIdent n (AstIdent (qf-type-ident tab locals n)))
     (AList xs (AList (qf-type-forms tab locals xs)))
-    (d1 ty)))
+    (_ ty)))
 
 (defn qf-type-forms (tab locals xs)
   (match xs
@@ -504,7 +526,7 @@
                            (qf-forms tab (Cons n locals) body))))))
             (Nil (qf-call tab locals hn rest))))
         (AList binding (qf-let-paren tab locals hn binding rest2))
-        (d1 (qf-call tab locals hn rest))))
+        (_ (qf-call tab locals hn rest))))
     (Nil (AList (Cons (AstIdent hn) Nil)))))
 
 (defn qf-let-paren (tab locals hn binding rest2)
@@ -515,7 +537,7 @@
           (AList (Cons (AstIdent hn)
                    (Cons (AList (Cons (AstIdent n) (qf-forms tab locals tail)))
                      (qf-forms tab (Cons n locals) rest2)))))
-        (d1 (AList (Cons (AstIdent hn) (Cons (AList binding) (qf-forms tab locals rest2)))))))
+        (_ (AList (Cons (AstIdent hn) (Cons (AList binding) (qf-forms tab locals rest2)))))))
     (Nil (AList (Cons (AstIdent hn) (qf-forms tab locals rest2))))))
 
 ; (match subject (Pattern binder... body) ...). An arm head that names a
@@ -542,9 +564,9 @@
           (match pattern
             (AstIdent n (qf-arm-flat tab locals n rest))
             (AList pkids (qf-arm-nested tab locals pkids rest))
-            (d1 (qf-arm-literal tab locals pattern rest))))
+            (_ (qf-arm-literal tab locals pattern rest))))
         (Nil (AList Nil))))
-    (d2 arm)))
+    (_ arm)))
 
 ; A literal pattern — `(match i (0 BAdd) (1 BSub) ...)` — binds nothing,
 ; but its BODY is still code. Leaving the whole arm untouched (which an
@@ -575,9 +597,9 @@
         (Cons head rest
           (match head
             (AstIdent n (AList (Cons (AstIdent (qf-ident tab locals n)) rest)))
-            (d1 (AList kids))))
+            (_ (AList kids))))
         (Nil (AList Nil))))
-    (d2 p)))
+    (_ p)))
 
 ; Every name a pattern binds: the plain identifiers, plus the identifiers
 ; inside a nested constructor pattern (but not that pattern's own head,
@@ -591,7 +613,7 @@
   (match p
     (AstIdent n (Cons n Nil))
     (AList kids (qf-ident-names (qf-cdr kids)))
-    (d1 Nil)))
+    (_ Nil)))
 
 ; `(Variant a b body)` in flat spelling, or `(x body)` where x binds.
 ;
@@ -621,16 +643,16 @@
 
 (defn qf-pattern-head (tab locals pkids)
   (match pkids
-    (Cons h d1
+    (Cons h _
       (match h
         (AstIdent n (AstIdent (qf-ident tab locals n)))
-        (d2 h)))
+        (_ h)))
     (Nil (AstIdent ""))))
 
 (defn qf-cdr (xs)
   (match xs
     (Nil Nil)
-    (Cons d1 t t)))
+    (Cons _ t t)))
 
 (defn qf-ident-names (xs)
   (match xs
@@ -638,17 +660,17 @@
     (Cons h t
       (match h
         (AstIdent n (Cons n (qf-ident-names t)))
-        (d1 (qf-ident-names t))))))
+        (_ (qf-ident-names t))))))
 
 (defn qf-butlast (xs)
   (match xs
     (Nil Nil)
-    (Cons h t (match t (Nil Nil) (d1 (Cons h (qf-butlast t)))))))
+    (Cons h t (match t (Nil Nil) (_ (Cons h (qf-butlast t)))))))
 
 (defn qf-last (xs)
   (match xs
     (Nil (AstInt 0))
-    (Cons h t (match t (Nil h) (d1 (qf-last t))))))
+    (Cons h t (match t (Nil h) (_ (qf-last t))))))
 
 ; (for ((i 0) (n 10)) cond body)
 (defn qf-for (tab locals hn rest)
@@ -663,21 +685,21 @@
 (defn qf-for-names (bindings)
   (match bindings
     (AList xs (qf-ident-heads xs))
-    (d1 Nil)))
+    (_ Nil)))
 
 (defn qf-ident-heads (xs)
   (match xs
     (Nil Nil)
     (Cons h t
       (match h
-        (AList kids (match kids (Cons nm d1 (match nm (AstIdent n (Cons n (qf-ident-heads t))) (d2 (qf-ident-heads t)))) (Nil (qf-ident-heads t))))
+        (AList kids (match kids (Cons nm _ (match nm (AstIdent n (Cons n (qf-ident-heads t))) (_ (qf-ident-heads t)))) (Nil (qf-ident-heads t))))
         (AstIdent n2 (Cons n2 (qf-ident-heads t)))
-        (d3 (qf-ident-heads t))))))
+        (_ (qf-ident-heads t))))))
 
 (defn qf-for-bindings (tab locals bindings)
   (match bindings
     (AList xs (AList (qf-for-binding-list tab locals xs)))
-    (d1 bindings)))
+    (_ bindings)))
 
 (defn qf-for-binding-list (tab locals xs)
   (match xs
@@ -690,7 +712,7 @@
       (match kids
         (Cons nm tail (AList (Cons nm (qf-forms tab locals tail))))
         (Nil (AList Nil))))
-    (d1 b)))
+    (_ b)))
 
 ; (try body (catch name handler))
 (defn qf-try (tab locals hn rest)
@@ -717,10 +739,10 @@
                 (AstIdent n
                   (AList (Cons kw (Cons (AstIdent n)
                            (qf-forms tab (Cons n locals) handler)))))
-                (d1 (AList (Cons kw (qf-forms tab locals rest))))))
+                (_ (AList (Cons kw (qf-forms tab locals rest))))))
             (Nil (AList kids))))
         (Nil (AList Nil))))
-    (d2 (qf-form tab locals c))))
+    (_ (qf-form tab locals c))))
 
 ; (with-resource name expr body)
 (defn qf-with-resource (tab locals hn rest)
@@ -735,7 +757,7 @@
                          (Cons (qf-form tab locals acquire)
                            (qf-forms tab (Cons n locals) body))))))
             (Nil (qf-call tab locals hn rest))))
-        (d1 (qf-call tab locals hn rest))))
+        (_ (qf-call tab locals hn rest))))
     (Nil (AList (Cons (AstIdent hn) Nil)))))
 
 ; (deftype Name (Variant Type ...) ...) — the type name and every variant
@@ -763,10 +785,10 @@
             (AstIdent n
               (AList (Cons (AstIdent (qf-ident tab locals n))
                        (qf-type-forms tab locals fields))))
-            (d1 (AList kids))))
+            (_ (AList kids))))
         (Nil (AList Nil))))
     (AstIdent n2 (AstIdent (qf-ident tab locals n2)))
-    (d2 v)))
+    (_ v)))
 
 ; (defstruct Name (field Type) ...) — same rule, one implicit variant.
 (defn qf-defstruct (tab locals hn rest)
@@ -788,7 +810,7 @@
       (match kids
         (Cons nm tail (AList (Cons nm (qf-type-forms tab locals tail))))
         (Nil (AList Nil))))
-    (d1 f)))
+    (_ f)))
 
 ; (impl Trait Type (defn method ...) ...): trait and type are references,
 ; the method bodies are ordinary code.
@@ -830,5 +852,5 @@
           (AList (Cons (AstIdent hn)
                    (Cons (AstIdent (qf-ident tab locals n))
                      (qf-forms tab locals tail)))))
-        (d1 (qf-call tab locals hn rest))))
+        (_ (qf-call tab locals hn rest))))
     (Nil (AList (Cons (AstIdent hn) Nil)))))

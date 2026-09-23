@@ -123,13 +123,13 @@
   (match (goto-find-form text "" word)
     (Some loc
       (match loc
-        (Loc d1 rng
+        (Loc _ rng
           (match rng
-            (Rng start d2 (refs-drop-at occs (Pos.line-of-pos start) (Pos.col-of-pos start)))))))
+            (Rng start _ (refs-drop-at occs (Pos.line-of-pos start) (Pos.col-of-pos start)))))))
     (None occs)))
 
-(defn Pos.line-of-pos (p) (match p (Pos l d1 l)))
-(defn Pos.col-of-pos (p) (match p (Pos d1 c c)))
+(defn Pos.line-of-pos (p) (match p (Pos l _ l)))
+(defn Pos.col-of-pos (p) (match p (Pos _ c c)))
 
 (defn refs-drop-at (occs line col)
   (match occs
@@ -186,7 +186,7 @@
       (let edits (rename-edits (si-word-occurrences text word) (str-length word) new-name)
         (match edits
           (Nil None)
-          (Cons d1 d2 (Some (WE (Some (map-insert (map-new) uri edits)) None None))))))))
+          (Cons _ _ (Some (WE (Some (map-insert (map-new) uri edits)) None None))))))))
 
 (defn rename-edits (occs width new-name)
   (match occs

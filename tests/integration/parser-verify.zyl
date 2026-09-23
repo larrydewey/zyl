@@ -26,51 +26,51 @@
 (defn ast-list-len (a)
   (match a
     (AList kids (list-length kids))
-    (AstIdent d1 0)
-    (AstInt d2 0)
-    (AstFloat d3 0)
-    (AString d4 0)
-    (AstBool d5 0)))
+    (AstIdent _ 0)
+    (AstInt _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AstBool _ 0)))
 
 ; Payload of an AstInt node; 0 otherwise.
 (defn atom-int (a)
   (match a
     (AstInt v v)
-    (AstIdent d6 0)
-    (AstFloat d7 0)
-    (AString d8 0)
-    (AstBool d9 0)
-    (AList d10 0)))
+    (AstIdent _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AstBool _ 0)
+    (AList _ 0)))
 
 ; True when `a` is an AstIdent whose name equals `s`.
 (defn ident-eq (arena a s)
   (match a
     (AstIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
-    (AstInt d11 0)
-    (AstFloat d12 0)
-    (AString d13 0)
-    (AstBool d14 0)
-    (AList d15 0)))
+    (AstInt _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AstBool _ 0)
+    (AList _ 0)))
 
 ; String payload of an AString node; "" otherwise.
 (defn atom-str (arena a)
   (match a
     (AString s s)
-    (AstIdent d16 (str-intern arena ""))
-    (AstInt d17 (str-intern arena ""))
-    (AstFloat d18 (str-intern arena ""))
-    (AstBool d19 (str-intern arena ""))
-    (AList d20 (str-intern arena ""))))
+    (AstIdent _ (str-intern arena ""))
+    (AstInt _ (str-intern arena ""))
+    (AstFloat _ (str-intern arena ""))
+    (AstBool _ (str-intern arena ""))
+    (AList _ (str-intern arena ""))))
 
 ; Float literal text of an AstFloat node; "" otherwise.
 (defn atom-float (arena a)
   (match a
     (AstFloat t t)
-    (AstIdent d21 (str-intern arena ""))
-    (AstInt d22 (str-intern arena ""))
-    (AString d23 (str-intern arena ""))
-    (AstBool d24 (str-intern arena ""))
-    (AList d25 (str-intern arena ""))))
+    (AstIdent _ (str-intern arena ""))
+    (AstInt _ (str-intern arena ""))
+    (AString _ (str-intern arena ""))
+    (AstBool _ (str-intern arena ""))
+    (AList _ (str-intern arena ""))))
 
 (test "pv-defn-shape"
   (let arena (arena-create 0)
@@ -95,11 +95,11 @@
 (defn kids-of (a)
   (match a
     (AList kids kids)
-    (AstIdent d26 Nil)
-    (AstInt d27 Nil)
-    (AstFloat d28 Nil)
-    (AString d29 Nil)
-    (AstBool d30 Nil)))
+    (AstIdent _ Nil)
+    (AstInt _ Nil)
+    (AstFloat _ Nil)
+    (AString _ Nil)
+    (AstBool _ Nil)))
 
 (test "pv-atoms"
   (let arena (arena-create 0)
@@ -122,11 +122,11 @@
 (defn atom-int-as-bool (a)
   (match a
     (AstBool b (if b 1 0))
-    (AstIdent d31 0)
-    (AstInt d32 0)
-    (AstFloat d33 0)
-    (AString d34 0)
-    (AList d35 0)))
+    (AstIdent _ 0)
+    (AstInt _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AList _ 0)))
 
 (test "pv-nesting"
   (let arena (arena-create 0)

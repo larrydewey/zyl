@@ -24,9 +24,9 @@
 
 (deftype PkgWorkspace (WS String (List String) (List PkgOverride)))
 
-(defn ws-root (w) (match w (WS r d1 d2 r)))
-(defn ws-members (w) (match w (WS d1 m d2 m)))
-(defn ws-overrides (w) (match w (WS d1 d2 o o)))
+(defn ws-root (w) (match w (WS r _ _ r)))
+(defn ws-members (w) (match w (WS _ m _ m)))
+(defn ws-overrides (w) (match w (WS _ _ o o)))
 
 (defn ws-file-name () "zyl-workspace.zyl")
 
@@ -52,7 +52,7 @@
       (ffi-call "zyl_panic"
         (str-concat "E_MANIFEST_INVALID: package: cannot read " (ws-path dir)) 1000)
       (let src (file-read fd 1048576)
-        (let d1 (file-close fd)
+        (let _ (file-close fd)
           (ws-of-source arena src dir))))))
 
 (defn ws-of-source (arena src dir)
@@ -65,19 +65,19 @@
 
 (defn ws-head (a)
   (match a
-    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
-    (d3 "")))
+    (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil "")))
+    (_ "")))
 
 (defn ws-args (a)
   (match a
-    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
-    (d2 Nil)))
+    (AList xs (match xs (Cons _ t t) (Nil Nil)))
+    (_ Nil)))
 
 (defn ws-str (a)
   (match a
     (AString s s)
     (AstIdent s s)
-    (d1 "")))
+    (_ "")))
 
 (defn ws-strs (xs)
   (match xs
@@ -123,7 +123,7 @@
 
 (defn ws-override-version (rest)
   (match rest
-    (Cons b d1
+    (Cons b _
       (let s (ws-str b)
         (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of s))))
     (Nil (PV 0 0 0 ""))))
@@ -135,7 +135,7 @@
 
 (defn ws-first-str (form)
   (match (ws-args form)
-    (Cons a d1 (ws-str a))
+    (Cons a _ (ws-str a))
     (Nil "")))
 
 ; Member directories, absolute, in declaration order. Order is the
@@ -162,7 +162,7 @@
   (match members
     (Nil 1)
     (Cons m t
-      (let d1 (ws-check-member arena w m)
+      (let _ (ws-check-member arena w m)
         (ws-check-members arena w t)))))
 
 (defn ws-check-member (arena w m)
@@ -173,7 +173,7 @@
   (match deps
     (Nil 1)
     (Cons d t
-      (let d1 (ws-check-dep arena w d from)
+      (let _ (ws-check-dep arena w d from)
         (ws-check-deps arena w t from)))))
 
 (defn ws-check-dep (arena w d from)

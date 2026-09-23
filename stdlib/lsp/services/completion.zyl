@@ -106,10 +106,10 @@
     (Nil "")
     (Cons p rest
       (match p
-        (P pname d1
+        (P pname _
           (match rest
             (Nil pname)
-            (Cons d2 d3 (str-concat pname (str-concat " " (cmp-params rest))))))))))
+            (Cons _ _ (str-concat pname (str-concat " " (cmp-params rest))))))))))
 
 (defn completion-adts (tbl)
   (cmp-adt-items (map-entries (st-adts tbl))))

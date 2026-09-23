@@ -30,17 +30,17 @@
 (defn mt-has (mt name)
   (match mt
     (MNil 0)
-    (MEntry n d1 d2 rest (if (> (str-eq n name) 0) 1 (mt-has rest name)))))
+    (MEntry n _ _ rest (if (> (str-eq n name) 0) 1 (mt-has rest name)))))
 
 (defn mt-params (mt name)
   (match mt
     (MNil Nil)
-    (MEntry n params d1 rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
+    (MEntry n params _ rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
 
 (defn mt-body (mt name)
   (match mt
     (MNil (Expr (EAtom ANil)))
-    (MEntry n d1 body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
+    (MEntry n _ body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
 
 ; --- collect top-level macro defs --------------------------------------------
 
@@ -51,7 +51,7 @@
       (match (Expr.inner e)
         (EMacroDef name params body
           (me-collect rest (MEntry name (me-param-names params) body mt)))
-        (d1 (me-collect rest mt))))))
+        (_ (me-collect rest mt))))))
 
 (defn me-param-names (params)
   (match params
@@ -60,8 +60,8 @@
 
 (defn me-expr-ident (e fb)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n n) (d1 fb)))
-    (d2 fb)))
+    (EAtom atom (match atom (AIdent n n) (_ fb)))
+    (_ fb)))
 
 ; --- substitution environment: formal param name -> actual arg Expr --------
 
@@ -90,7 +90,14 @@
     (Nil (list-reverse acc))
     (Cons e rest (me-rewrite-list-acc rest senv mt (Cons (me-rewrite e senv mt) acc)))))
 
+; Macro expansion rebuilds every node it walks, so the rewritten node keeps
+; the original's position -- see qf-form for the same note.
 (defn me-rewrite (e senv mt)
+  (let out (me-rewrite-node e senv mt)
+    (let _ (ffi-call "zyl_span_copy" out e 1000)
+      out)))
+
+(defn me-rewrite-node (e senv mt)
   (match (Expr.inner e)
     (EAtom atom (me-rewrite-atom e atom senv))
     (ECall op args (Expr (ECall (me-rewrite op senv mt) (me-rewrite-list args senv mt))))
@@ -103,17 +110,17 @@
     (EBegin exprs (Expr (EBegin (me-rewrite-list exprs senv mt))))
     (EPrint exprs (Expr (EPrint (me-rewrite-list exprs senv mt))))
     (EAssertEqual l r (Expr (EAssertEqual (me-rewrite l senv mt) (me-rewrite r senv mt))))
-    (EAssertTrue ex d3 (Expr (EAssertTrue (me-rewrite ex senv mt) d3)))
-    (EAssertFalse ex d4 (Expr (EAssertFalse (me-rewrite ex senv mt) d4)))
+    (EAssertTrue ex msg (Expr (EAssertTrue (me-rewrite ex senv mt) msg)))
+    (EAssertFalse ex msg (Expr (EAssertFalse (me-rewrite ex senv mt) msg)))
     (EStructGet se field (Expr (EStructGet (me-rewrite se senv mt) field)))
     (EDefn name params body (Expr (EDefn name params (me-rewrite body senv mt))))
-    (ETestDecl name body d5 (Expr (ETestDecl name (me-rewrite body senv mt) d5)))
-    (d6 e)))
+    (ETestDecl name body meta (Expr (ETestDecl name (me-rewrite body senv mt) meta)))
+    (_ e)))
 
 (defn me-rewrite-atom (e atom senv)
   (match atom
     (AIdent name (me-subst-ident e name senv))
-    (d1 e)))
+    (_ e)))
 
 (defn me-subst-ident (e name senv)
   (match (senv-lookup senv name)
@@ -143,8 +150,8 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EMacroDef d1 d2 d3 (me-strip rest))
-        (d4 (Cons e (me-strip rest)))))))
+        (EMacroDef _ _ msg (me-strip rest))
+        (msg (Cons e (me-strip rest)))))))
 
 (defn me-expand-program (forms)
   (me-rewrite-list (me-strip forms) SNil (me-collect forms MNil)))

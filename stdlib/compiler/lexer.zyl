@@ -268,7 +268,7 @@
 
 (defn lex-loop (arena src len i acc)
   (if (>= i len)
-    (Cons (TkEof) acc)
+    (Cons (TkEof i) acc)
     (lex-c1 arena src len i acc (byte-at src i))))
 
 (defn lex-c1 (arena src len i acc c)
@@ -277,17 +277,17 @@
     (if (= (chr-semicolon-p c) 1)
       (lex-loop arena src len (comment-end src len (+ i 1)) acc)
       (if (= c 40)
-        (lex-loop arena src len (+ i 1) (Cons (TkLParen) acc))
+        (lex-loop arena src len (+ i 1) (Cons (TkLParen i) acc))
         (if (= c 41)
-          (lex-loop arena src len (+ i 1) (Cons (TkRParen) acc))
+          (lex-loop arena src len (+ i 1) (Cons (TkRParen i) acc))
           (if (= c 123)
-            (lex-loop arena src len (+ i 1) (Cons (TkLBrace) acc))
+            (lex-loop arena src len (+ i 1) (Cons (TkLBrace i) acc))
             (if (= c 125)
-              (lex-loop arena src len (+ i 1) (Cons (TkRBrace) acc))
+              (lex-loop arena src len (+ i 1) (Cons (TkRBrace i) acc))
               (if (= c 91)
-                (lex-loop arena src len (+ i 1) (Cons (TkLBracket) acc))
+                (lex-loop arena src len (+ i 1) (Cons (TkLBracket i) acc))
                 (if (= c 93)
-                  (lex-loop arena src len (+ i 1) (Cons (TkRBracket) acc))
+                  (lex-loop arena src len (+ i 1) (Cons (TkRBracket i) acc))
                   (lex-c2 arena src len i acc c))))))))))
 
 (defn lex-c2 (arena src len i acc c)
@@ -304,7 +304,7 @@
             (if (= (chr-ident-start-p c) 1)
               (lex-ident-e arena src len i acc (scan-ident-end src len i))
               ; unrecognized character: terminate the stream
-              (Cons (TkEof) acc))))))))
+              (Cons (TkEof i) acc))))))))
 
 (defn lex-minus-e (arena src len i acc)
   (if (= (chr-digit-p (byte-at src (+ i 1))) 1)
@@ -314,9 +314,9 @@
 ; String literal: e = index of closing quote (-1 unterminated).
 (defn lex-str-e (arena src len i acc e)
   (if (< e 0)
-    (Cons (TkEof) acc)
+    (Cons (TkEof i) acc)
     (lex-loop arena src len (+ e 1)
-              (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)) acc))))
+              (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000) i) acc))))
 
 ; Numeric literal: i..e; float when the text carries '.' or exponent,
 ; integer otherwise. Radix-prefixed literals (0x/0o/0b) are always
@@ -325,17 +325,17 @@
 (defn lex-num-e (arena src len i acc e)
   (let text (sub-str arena src i (- e i))
     (if (= (text-float-marker-p text) 1)
-      (lex-loop arena src len e (Cons (TkFloat text) acc))
-      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000)) acc)))))
+      (lex-loop arena src len e (Cons (TkFloat text i) acc))
+      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc)))))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)
   (let text (sub-str arena src i (- e i))
     (if (> (str-eq text (str-intern arena "true")) 0)
-      (lex-loop arena src len e (Cons (TkBool true) acc))
+      (lex-loop arena src len e (Cons (TkBool true i) acc))
       (if (> (str-eq text (str-intern arena "false")) 0)
-        (lex-loop arena src len e (Cons (TkBool false) acc))
-        (lex-loop arena src len e (Cons (TkIdent text) acc))))))
+        (lex-loop arena src len e (Cons (TkBool false i) acc))
+        (lex-loop arena src len e (Cons (TkIdent text i) acc))))))
 
 ; ':' / '~' prefixed keyword or symbol: probe the next non-ws char.
 (defn lex-sym-probe (arena src len i acc)
@@ -358,13 +358,13 @@
   (let c (byte-at src i)
     (let text (sub-str arena src (+ i 1) (- end (+ i 1)))
       (if (= c 58)
-        (lex-loop arena src len end (Cons (TkKeyword text) acc))
-        (lex-loop arena src len end (Cons (TkSymbol text) acc))))))
+        (lex-loop arena src len end (Cons (TkKeyword text i) acc))
+        (lex-loop arena src len end (Cons (TkSymbol text i) acc))))))
 
 (defn lex-sym-bare (arena src len i acc c)
   (if (= c 58)
-    (lex-loop arena src len (+ i 1) (Cons (TkColon) acc))
-    (lex-loop arena src len (+ i 1) (Cons (TkSymbol (sub-str arena src i 1)) acc))))
+    (lex-loop arena src len (+ i 1) (Cons (TkColon i) acc))
+    (lex-loop arena src len (+ i 1) (Cons (TkSymbol (sub-str arena src i 1) i) acc))))
 
 ; ===========================================================================
 ; SCAN UTILITIES

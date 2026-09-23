@@ -51,16 +51,16 @@
 ; surface in.
 (deftype MRPkg (MRP String Int String Int (List String) (List String)))
 
-(defn mrp-name (p) (match p (MRP n d1 d2 d3 d4 d5 n)))
-(defn mrp-major (p) (match p (MRP d1 m d2 d3 d4 d5 m)))
-(defn mrp-root (p) (match p (MRP d1 d2 r d3 d4 d5 r)))
-(defn mrp-manifested (p) (match p (MRP d1 d2 d3 f d4 d5 f)))
-(defn mrp-caps (p) (match p (MRP d1 d2 d3 d4 c d5 c)))
+(defn mrp-name (p) (match p (MRP n _ _ _ _ _ n)))
+(defn mrp-major (p) (match p (MRP _ m _ _ _ _ m)))
+(defn mrp-root (p) (match p (MRP _ _ r _ _ _ r)))
+(defn mrp-manifested (p) (match p (MRP _ _ _ f _ _ f)))
+(defn mrp-caps (p) (match p (MRP _ _ _ _ c _ c)))
 
 ; The unified feature set (§31.10): the union of what every dependent
 ; asked of this package. Features are additive, so the package is compiled
 ; ONCE with this set rather than once per requester.
-(defn mrp-features (p) (match p (MRP d1 d2 d3 d4 d5 f f)))
+(defn mrp-features (p) (match p (MRP _ _ _ _ _ f f)))
 
 (defn mr-stdlib-name () "zyl/std")
 
@@ -87,19 +87,19 @@
 ; the importing module calls it by (§24.2's renaming import).
 (deftype MRSym (MRS String String))
 
-(defn mrs-remote (s) (match s (MRS r d1 r)))
-(defn mrs-local (s) (match s (MRS d1 l l)))
+(defn mrs-remote (s) (match s (MRS r _ r)))
+(defn mrs-local (s) (match s (MRS _ l l)))
 
 ; package ("" = a module of the importing package), module path, a flag
 ; for "import the whole surface", the explicit symbol list, and the
 ; `:unsafe` marker.
 (deftype MRUse (MRU String String Int (List MRSym) Int))
 
-(defn mru-pkg (u) (match u (MRU p d1 d2 d3 d4 p)))
-(defn mru-module (u) (match u (MRU d1 m d2 d3 d4 m)))
-(defn mru-whole (u) (match u (MRU d1 d2 w d3 d4 w)))
-(defn mru-syms (u) (match u (MRU d1 d2 d3 s d4 s)))
-(defn mru-unsafe (u) (match u (MRU d1 d2 d3 d4 x x)))
+(defn mru-pkg (u) (match u (MRU p _ _ _ _ p)))
+(defn mru-module (u) (match u (MRU _ m _ _ _ m)))
+(defn mru-whole (u) (match u (MRU _ _ w _ _ w)))
+(defn mru-syms (u) (match u (MRU _ _ _ s _ s)))
+(defn mru-unsafe (u) (match u (MRU _ _ _ _ x x)))
 
 ; ===========================================================================
 ; DEFINITIONS
@@ -111,32 +111,32 @@
 ; (§24.4).
 (deftype MRDef (MRDF String String Int String))
 
-(defn mrd-name (d) (match d (MRDF n d1 d2 d3 n)))
-(defn mrd-key (d) (match d (MRDF d1 k d2 d3 k)))
-(defn mrd-pub (d) (match d (MRDF d1 d2 p d3 p)))
+(defn mrd-name (d) (match d (MRDF n _ _ _ n)))
+(defn mrd-key (d) (match d (MRDF _ k _ _ k)))
+(defn mrd-pub (d) (match d (MRDF _ _ p _ p)))
 
 ; The feature that gates this definition, or "" when it is unconditional
 ; (§31.10). A gated definition exists only when its feature is in the
 ; package's unified set.
-(defn mrd-feature (d) (match d (MRDF d1 d2 d3 f f)))
+(defn mrd-feature (d) (match d (MRDF _ _ _ f f)))
 
 ; One parsed module: which package it belongs to, its module path, its raw
 ; forms, its imports and its definitions.
 (deftype MRUnit (MRUN String String (List Ast) (List MRUse) (List MRDef)))
 
-(defn mru2-pkg (u) (match u (MRUN p d1 d2 d3 d4 p)))
-(defn mru2-module (u) (match u (MRUN d1 m d2 d3 d4 m)))
-(defn mru2-forms (u) (match u (MRUN d1 d2 f d3 d4 f)))
-(defn mru2-uses (u) (match u (MRUN d1 d2 d3 u2 d4 u2)))
-(defn mru2-defs (u) (match u (MRUN d1 d2 d3 d4 d d)))
+(defn mru2-pkg (u) (match u (MRUN p _ _ _ _ p)))
+(defn mru2-module (u) (match u (MRUN _ m _ _ _ m)))
+(defn mru2-forms (u) (match u (MRUN _ _ f _ _ f)))
+(defn mru2-uses (u) (match u (MRUN _ _ _ u2 _ u2)))
+(defn mru2-defs (u) (match u (MRUN _ _ _ _ d d)))
 
 ; Discovery state: units in reverse dependency order, the ids already
 ; visited, and the packages seen so far.
 (deftype MRDisc (MRD (List MRUnit) (List String) (List MRPkg)))
 
-(defn mrd-units (d) (match d (MRD u d1 d2 u)))
-(defn mrd-seen (d) (match d (MRD d1 s d2 s)))
-(defn mrd-pkgs (d) (match d (MRD d1 d2 p p)))
+(defn mrd-units (d) (match d (MRD u _ _ u)))
+(defn mrd-seen (d) (match d (MRD _ s _ s)))
+(defn mrd-pkgs (d) (match d (MRD _ _ p p)))
 
 ; ===========================================================================
 ; SMALL HELPERS
@@ -162,19 +162,19 @@
   (match a
     (AList xs
       (match xs
-        (Cons h d1 (match h (AstIdent n n) (d2 "")))
+        (Cons h _ (match h (AstIdent n n) (_ "")))
         (Nil "")))
-    (d3 "")))
+    (_ "")))
 
 (defn mr-ast-args (a)
   (match a
-    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
-    (d2 Nil)))
+    (AList xs (match xs (Cons _ t t) (Nil Nil)))
+    (_ Nil)))
 
 (defn mr-ident-of (a)
   (match a
     (AstIdent n n)
-    (d1 "")))
+    (_ "")))
 
 (defn mr-starts-colon (s)
   (if (= (pk-len s) 0) 0 (if (= (pk-byte-at s 0) 58) 1 0)))
@@ -205,25 +205,25 @@
   (match a
     (AstIdent s (mr-use-ident s acc))
     (AList syms (mr-use-syms syms acc))
-    (d1 acc)))
+    (_ acc)))
 
 (defn mr-use-ident (s acc)
   (if (> (str-eq s "*") 0)
-    (match acc (MRU p m d1 sy u (MRU p m 1 sy u)))
+    (match acc (MRU p m _ sy u (MRU p m 1 sy u)))
     (if (> (mr-starts-colon s) 0)
       (mr-use-colon (mr-drop-colon s) acc)
       (mr-use-colon s acc))))
 
 (defn mr-use-colon (s acc)
   (if (> (str-eq s "unsafe") 0)
-    (match acc (MRU p m w sy d1 (MRU p m w sy 1)))
+    (match acc (MRU p m w sy _ (MRU p m w sy 1)))
     (match acc (MRU p m w sy u (MRU p s w sy u)))))
 
 ; `{ a b }` / `{ a => b }`: a brace list reads as an AList, so aliases are
 ; just the three-token shape `name => alias` inside it.
 (defn mr-use-syms (syms acc)
   (match acc
-    (MRU p m w d1 u (MRU p m w (mr-sym-list syms) u))))
+    (MRU p m w _ u (MRU p m w (mr-sym-list syms) u))))
 
 (defn mr-sym-list (xs)
   (match xs
@@ -312,7 +312,7 @@
 (defn mr-gated-inner (arena pkg module rest)
   (match rest
     (Nil Nil)
-    (Cons f d1 (mr-form-defs arena pkg module f 0))))
+    (Cons f _ (mr-form-defs arena pkg module f 0))))
 
 (defn mr-tag-feature (defs feature)
   (match defs
@@ -327,7 +327,7 @@
 (defn mr-pub-defs (arena pkg module args)
   (match args
     (Nil Nil)
-    (Cons d1 d2 (mr-form-defs arena pkg module (AList args) 1))))
+    (Cons _ _ (mr-form-defs arena pkg module (AList args) 1))))
 
 (defn mr-def-head-p (h)
   (if (> (str-eq h "defn") 0) 1
@@ -374,8 +374,8 @@
 (defn mr-variant-name (v)
   (match v
     (AstIdent n n)
-    (AList xs (match xs (Cons h d1 (mr-ident-of h)) (Nil "")))
-    (d2 "")))
+    (AList xs (match xs (Cons h _ (mr-ident-of h)) (Nil "")))
+    (_ "")))
 
 ; The definitions a package actually has, given its unified feature set:
 ; everything ungated, plus the gated forms whose feature is in the set.
@@ -402,7 +402,7 @@
     (Cons d t
       (if (= (str-length (mrd-feature d)) 0)
         (mr-check-feature-collisions t)
-        (let d1 (mr-check-collision d t)
+        (let _ (mr-check-collision d t)
           (mr-check-feature-collisions t))))))
 
 (defn mr-check-collision (gated rest)
@@ -451,8 +451,8 @@
     (if (< fd 1)
       (ffi-call "zyl_panic" (str-concat "E_MODULE_NOT_FOUND: module: cannot open " path) 1000)
       (let srcbuf (file-read fd 1048576)
-        (let d1 (file-close fd)
-          (zyl-parse arena srcbuf))))))
+        (let _ (file-close fd)
+          (zyl-parse-file arena srcbuf path))))))
 
 ; ===========================================================================
 ; DISCOVERY
@@ -536,7 +536,7 @@
     (Cons h t (if (> (str-eq (mr-id-pkg h) p) 0) (mr-all-same-pkg p t) 0))))
 
 (defn mr-discover-new (arena disc stack pkg module)
-  (let d1 (mr-check-module-name module (mrp-name pkg))
+  (let _ (mr-check-module-name module (mrp-name pkg))
     (let path (mr-module-file pkg module)
       (if (= (mr-file-exists path) 0)
         (mr-missing-module pkg module path)
@@ -628,7 +628,7 @@
 
 (defn mr-new-dep-pkg (disc arena pkg d)
   (let root (mr-dep-root arena pkg d)
-    (let d1 (mr-check-dep-features arena root d)
+    (let _ (mr-check-dep-features arena root d)
       (let entry (MRP (pd-name d) (mr-dep-major d) root 1 (mr-dep-caps arena root)
                       (pd-features d))
         (match disc
@@ -719,7 +719,7 @@
     (Nil Nil)
     (Cons h t
       (if (> (mr-unit-in-pkg h pkgname skip) 0)
-        (let d1 (mr-check-feature-collisions (mru2-defs h))
+        (let _ (mr-check-feature-collisions (mru2-defs h))
           (list-append (mr-defs-pairs (mr-active-defs feats (mru2-defs h)))
                        (mr-pkg-pairs-except t pkgname feats skip)))
         (mr-pkg-pairs-except t pkgname feats skip)))))
@@ -805,7 +805,7 @@
 (defn mr-alias-pairs (disc units pkg target u)
   (match (mru-syms u)
     (Nil Nil)
-    (Cons d1 d2 (mr-import-from disc units pkg target u))))
+    (Cons _ _ (mr-import-from disc units pkg target u))))
 
 (defn mr-import-from (disc units pkg target u)
   (let module (mr-target-module disc pkg u)
@@ -818,7 +818,7 @@
 (defn mr-filter-import (target unit u)
   (match (mru-syms u)
     (Nil (mr-visible-pairs target (mr-active-defs (mrp-features target) (mru2-defs unit))))
-    (Cons d1 d2 (mr-named-imports target unit (mru-syms u)))))
+    (Cons _ _ (mr-named-imports target unit (mru-syms u)))))
 
 (defn mr-visible-pairs (target defs)
   (match defs
@@ -891,12 +891,12 @@
 (defn mr-gate-inner (rest)
   (match rest
     (Nil Nil)
-    (Cons f d1 (Cons f Nil))))
+    (Cons f _ (Cons f Nil))))
 
 (defn mr-unwrap-pub (f)
   (match (mr-ast-args f)
     (Nil Nil)
-    (Cons d1 d2 (Cons (AList (mr-ast-args f)) Nil))))
+    (Cons _ _ (Cons (AList (mr-ast-args f)) Nil))))
 
 (defn mr-qualify-units (arena disc all pkgs todo acc)
   (match todo
@@ -911,7 +911,7 @@
       (let itab (st-make arena (mr-import-pairs disc units pkg (mru2-uses u)))
         (let qualified (qf-forms (QT itab ptab) Nil
                          (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))
-          (let d1 (mr-check-coherence qualified (mrp-name pkg))
+          (let _ (mr-check-coherence qualified (mrp-name pkg))
             (convert-ast-list qualified)))))))
 
 ; ===========================================================================
@@ -930,7 +930,7 @@
     (Nil 1)
     (Cons f rest
       (if (> (str-eq (mr-ast-head f) "impl") 0)
-        (let d1 (mr-check-impl f pkgname)
+        (let _ (mr-check-impl f pkgname)
           (mr-check-coherence rest pkgname))
         (mr-check-coherence rest pkgname)))))
 
@@ -938,7 +938,7 @@
   (match (mr-ast-args f)
     (Cons traitast rest
       (match rest
-        (Cons typeast d1
+        (Cons typeast _
           (mr-orphan-verdict (mr-ident-of traitast) (mr-ident-of typeast) pkgname))
         (Nil 1)))
     (Nil 1)))
@@ -983,9 +983,9 @@
 
 (defn mr-manifest-pkg (arena srcdir)
   (let m (pk-read-manifest arena (str-concat srcdir "/zyl.pkg"))
-    (let d1 (pk-check-edition (mf-edition m) (mf-name m))
-      (let d2 (pk-check-compiler (mf-zyl m) (mf-name m))
-        (let d3 (pk-check-capabilities (mf-capabilities m) (mf-name m))
+    (let _ (pk-check-edition (mf-edition m) (mf-name m))
+      (let _ (pk-check-compiler (mf-zyl m) (mf-name m))
+        (let _ (pk-check-capabilities (mf-capabilities m) (mf-name m))
           (MRP (mf-name m) (mf-major m) srcdir 1 (mf-capabilities m) Nil))))))
 
 (defn mr-dirname (path)
@@ -1029,7 +1029,7 @@
 
 (defn mr-bundle-def (f rest)
   (match (mr-ast-args f)
-    (Cons nameast d1
+    (Cons nameast _
       (if (> (str-eq (mr-ident-of nameast) "__zyl_boot_bundle") 0) 1 (mr-bundle-source rest)))
     (Nil (mr-bundle-source rest))))
 
@@ -1056,9 +1056,9 @@
 ; denials (§31.9).
 (deftype MRResult (MRR (List Expr) (List CapGrant) (List String)))
 
-(defn mrr-exprs (r) (match r (MRR e d1 d2 e)))
-(defn mrr-grants (r) (match r (MRR d1 g d2 g)))
-(defn mrr-denied (r) (match r (MRR d1 d2 d d)))
+(defn mrr-exprs (r) (match r (MRR e _ _ e)))
+(defn mrr-grants (r) (match r (MRR _ g _ g)))
+(defn mrr-denied (r) (match r (MRR _ _ d d)))
 
 (defn mr-grants-of (pkgs)
   (match pkgs

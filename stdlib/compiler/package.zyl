@@ -36,10 +36,10 @@
 
 (deftype PkgVersion (PV Int Int Int String))
 
-(defn pv-major (v) (match v (PV a d1 d2 d3 a)))
-(defn pv-minor (v) (match v (PV d1 b d2 d3 b)))
-(defn pv-patch (v) (match v (PV d1 d2 c d3 c)))
-(defn pv-pre (v) (match v (PV d1 d2 d3 p p)))
+(defn pv-major (v) (match v (PV a dot1 dot2 _ a)))
+(defn pv-minor (v) (match v (PV dot1 b dot2 _ b)))
+(defn pv-patch (v) (match v (PV dot1 dot2 c _ c)))
+(defn pv-pre (v) (match v (PV dot1 dot2 _ p p)))
 
 (defn pk-byte-at (s i)
   (ffi-call "zyl_cstr_byte_at" s i 1000))
@@ -87,20 +87,20 @@
         (pk-parse-core s core-end pre)))))
 
 (defn pk-parse-core (s core-end pre)
-  (let d1 (pk-index-of s 46 0)
-    (if (< d1 0)
+  (let dot1 (pk-index-of s 46 0)
+    (if (< dot1 0)
       None
-      (let d2 (pk-index-of s 46 (+ d1 1))
-        (if (< d2 0)
+      (let dot2 (pk-index-of s 46 (+ dot1 1))
+        (if (< dot2 0)
           None
-          (if (>= d2 core-end)
+          (if (>= dot2 core-end)
             None
-            (pk-parse-triple s d1 d2 core-end pre)))))))
+            (pk-parse-triple s dot1 dot2 core-end pre)))))))
 
-(defn pk-parse-triple (s d1 d2 core-end pre)
-  (let maj (pk-num s 0 d1)
-    (let min (pk-num s (+ d1 1) d2)
-      (let pat (pk-num s (+ d2 1) core-end)
+(defn pk-parse-triple (s dot1 dot2 core-end pre)
+  (let maj (pk-num s 0 dot1)
+    (let min (pk-num s (+ dot1 1) dot2)
+      (let pat (pk-num s (+ dot2 1) core-end)
         (if (< maj 0)
           None
           (if (< min 0)
@@ -272,22 +272,22 @@
 
 (deftype PkgDep (PD String PkgVersion (List String) PkgSource))
 
-(defn pd-name (d) (match d (PD n d1 d2 d3 n)))
-(defn pd-version (d) (match d (PD d1 v d2 d3 v)))
-(defn pd-features (d) (match d (PD d1 d2 f d3 f)))
-(defn pd-source (d) (match d (PD d1 d2 d3 s s)))
+(defn pd-name (d) (match d (PD n dot1 dot2 _ n)))
+(defn pd-version (d) (match d (PD dot1 v dot2 _ v)))
+(defn pd-features (d) (match d (PD dot1 dot2 f _ f)))
+(defn pd-source (d) (match d (PD dot1 dot2 _ s s)))
 
 (deftype PkgFeature (PF String (List PkgDep)))
 
-(defn pf-name (f) (match f (PF n d1 n)))
-(defn pf-deps (f) (match f (PF d1 d d)))
+(defn pf-name (f) (match f (PF n dot1 n)))
+(defn pf-deps (f) (match f (PF dot1 d d)))
 
 (deftype PkgNative (PN (List String) (List String) (List String) (List String)))
 
-(defn pn-sources (n) (match n (PN s d1 d2 d3 s)))
-(defn pn-cflags (n) (match n (PN d1 c d2 d3 c)))
-(defn pn-link-libs (n) (match n (PN d1 d2 l d3 l)))
-(defn pn-include-dirs (n) (match n (PN d1 d2 d3 i i)))
+(defn pn-sources (n) (match n (PN s dot1 dot2 _ s)))
+(defn pn-cflags (n) (match n (PN dot1 c dot2 _ c)))
+(defn pn-link-libs (n) (match n (PN dot1 dot2 l _ l)))
+(defn pn-include-dirs (n) (match n (PN dot1 dot2 _ i i)))
 
 (defn pn-empty () (PN Nil Nil Nil Nil))
 
@@ -298,34 +298,34 @@
 ; source; the unused half is the neutral value.
 (deftype PkgOverride (POv String PkgVersion PkgSource))
 
-(defn pov-name (o) (match o (POv n d1 d2 n)))
-(defn pov-version (o) (match o (POv d1 v d2 v)))
-(defn pov-source (o) (match o (POv d1 d2 s s)))
+(defn pov-name (o) (match o (POv n dot1 dot2 n)))
+(defn pov-version (o) (match o (POv dot1 v dot2 v)))
+(defn pov-source (o) (match o (POv dot1 dot2 s s)))
 
 (deftype PkgMeta (PM String PkgVersion String String))
 
-(defn pm-name (m) (match m (PM n d1 d2 d3 n)))
-(defn pm-version (m) (match m (PM d1 v d2 d3 v)))
-(defn pm-zyl (m) (match m (PM d1 d2 z d3 z)))
-(defn pm-edition (m) (match m (PM d1 d2 d3 e e)))
+(defn pm-name (m) (match m (PM n dot1 dot2 _ n)))
+(defn pm-version (m) (match m (PM dot1 v dot2 _ v)))
+(defn pm-zyl (m) (match m (PM dot1 dot2 z _ z)))
+(defn pm-edition (m) (match m (PM dot1 dot2 _ e e)))
 
 (deftype PkgDocs (PDoc String String String))
 
-(defn pdoc-description (d) (match d (PDoc x d1 d2 x)))
-(defn pdoc-license (d) (match d (PDoc d1 x d2 x)))
-(defn pdoc-repository (d) (match d (PDoc d1 d2 x x)))
+(defn pdoc-description (d) (match d (PDoc x dot1 dot2 x)))
+(defn pdoc-license (d) (match d (PDoc dot1 x dot2 x)))
+(defn pdoc-repository (d) (match d (PDoc dot1 dot2 x x)))
 
 (deftype PkgCaps (PCaps (List String) (List String)))
 
-(defn pcaps-granted (c) (match c (PCaps g d1 g)))
-(defn pcaps-denied (c) (match c (PCaps d1 d d)))
+(defn pcaps-granted (c) (match c (PCaps g dot1 g)))
+(defn pcaps-denied (c) (match c (PCaps dot1 d d)))
 
 (deftype PkgDeps (PDeps (List PkgDep) (List PkgDep) (List PkgFeature) (List PkgOverride)))
 
-(defn pdeps-deps (d) (match d (PDeps x d1 d2 d3 x)))
-(defn pdeps-dev (d) (match d (PDeps d1 x d2 d3 x)))
-(defn pdeps-features (d) (match d (PDeps d1 d2 x d3 x)))
-(defn pdeps-overrides (d) (match d (PDeps d1 d2 d3 x x)))
+(defn pdeps-deps (d) (match d (PDeps x dot1 dot2 _ x)))
+(defn pdeps-dev (d) (match d (PDeps dot1 x dot2 _ x)))
+(defn pdeps-features (d) (match d (PDeps dot1 dot2 x _ x)))
+(defn pdeps-overrides (d) (match d (PDeps dot1 dot2 _ x x)))
 
 ; Paths a package keeps out of its canonical archive, on top of the three
 ; the spec always excludes (§31.7: build/, .git/, zyl.lock).
@@ -333,14 +333,14 @@
 
 (deftype PkgBuild (PBuild PkgNative (List String)))
 
-(defn pbuild-native (b) (match b (PBuild n d1 n)))
-(defn pbuild-exclude (b) (match b (PBuild d1 e e)))
+(defn pbuild-native (b) (match b (PBuild n dot1 n)))
+(defn pbuild-exclude (b) (match b (PBuild dot1 e e)))
 
-(defn mf-meta (m) (match m (MF x d1 d2 d3 d4 x)))
-(defn mf-docs (m) (match m (MF d1 x d2 d3 d4 x)))
-(defn mf-caps (m) (match m (MF d1 d2 x d3 d4 x)))
-(defn mf-deps-rec (m) (match m (MF d1 d2 d3 x d4 x)))
-(defn mf-build (m) (match m (MF d1 d2 d3 d4 x x)))
+(defn mf-meta (m) (match m (MF x dot1 dot2 _ _ x)))
+(defn mf-docs (m) (match m (MF dot1 x dot2 _ _ x)))
+(defn mf-caps (m) (match m (MF dot1 dot2 x _ _ x)))
+(defn mf-deps-rec (m) (match m (MF dot1 dot2 _ x _ x)))
+(defn mf-build (m) (match m (MF dot1 dot2 _ _ x x)))
 (defn mf-native (m) (pbuild-native (mf-build m)))
 (defn mf-exclude (m) (pbuild-exclude (mf-build m)))
 
@@ -371,20 +371,20 @@
   (match a
     (AList xs
       (match xs
-        (Cons h d1 (match h (AstIdent n n) (d2 "")))
+        (Cons h dot1 (match h (AstIdent n n) (dot2 "")))
         (Nil "")))
-    (d3 "")))
+    (_ "")))
 
 (defn pk-ast-args (a)
   (match a
-    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
-    (d2 Nil)))
+    (AList xs (match xs (Cons dot1 t t) (Nil Nil)))
+    (dot2 Nil)))
 
 (defn pk-ast-str (a)
   (match a
     (AString s s)
     (AstIdent s s)
-    (d1 "")))
+    (dot1 "")))
 
 (defn pk-ast-strs (xs)
   (match xs
@@ -412,7 +412,7 @@
 ; The single string argument of `(field "value")`, or "" when absent.
 (defn pk-field-str (forms field)
   (match (pk-find-form forms field)
-    (Some f (match (pk-ast-args f) (Cons a d1 (pk-ast-str a)) (Nil "")))
+    (Some f (match (pk-ast-args f) (Cons a dot1 (pk-ast-str a)) (Nil "")))
     (None "")))
 
 ; A required field: absence is E_MANIFEST_INVALID, which names the field
@@ -486,7 +486,7 @@
 
 (defn pk-first-str (form)
   (match (pk-ast-args form)
-    (Cons a d1 (pk-ast-str a))
+    (Cons a dot1 (pk-ast-str a))
     (Nil "")))
 
 (defn pk-git-rev (args)
@@ -581,7 +581,7 @@
 
 (defn pk-override-version (rest name)
   (match rest
-    (Cons b d1
+    (Cons b dot1
       (let s (pk-ast-str b)
         (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of (pk-check-requirement s name)))))
     (Nil (PV 0 0 0 ""))))
@@ -593,7 +593,7 @@
     (if (< fd 1)
       (ffi-call "zyl_panic" (str-concat "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at " path) 1000)
       (let src (file-read fd 1048576)
-        (let d1 (file-close fd)
+        (let dot1 (file-close fd)
           (pk-manifest-of-source arena src path))))))
 
 (defn pk-manifest-of-source (arena src path)
@@ -607,7 +607,7 @@
   (let name (pk-check-name (pk-required-str forms "name" path))
     (let version (pk-version-of (pk-required-str forms "version" path))
       (let deps (pk-parse-deps forms "deps")
-        (let d1 (pk-check-dup-deps deps)
+        (let dot1 (pk-check-dup-deps deps)
           (MF (PM name version (pk-required-str forms "zyl" path)
                   (pk-required-str forms "edition" path))
               (PDoc (pk-field-str forms "description")
@@ -683,9 +683,9 @@
 ; has made a statement to enforce (§31.9).
 (deftype CapGrant (CG String (List String) Int))
 
-(defn cg-name (g) (match g (CG n d1 d2 n)))
-(defn cg-caps (g) (match g (CG d1 c d2 c)))
-(defn cg-enforced (g) (match g (CG d1 d2 e e)))
+(defn cg-name (g) (match g (CG n dot1 dot2 n)))
+(defn cg-caps (g) (match g (CG dot1 c dot2 c)))
+(defn cg-enforced (g) (match g (CG dot1 dot2 e e)))
 
 (defn pk-has-capability (caps c)
   (match caps

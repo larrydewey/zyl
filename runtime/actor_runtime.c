@@ -1,4 +1,5 @@
 #include "actor_runtime.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -1103,14 +1104,103 @@ static size_t zyl_arena_align_up(size_t n) {
     return (n + (ZYL_ARENA_ALIGN - 1)) & ~(size_t)(ZYL_ARENA_ALIGN - 1);
 }
 
+/* --------------------------------------------------------------------------
+   Arena memory budget.
+
+   A failed malloc here used to return 0, and every caller dereferenced it:
+   a segfault with no diagnosis. Worse, Linux overcommits, so malloc rarely
+   fails at all -- the process simply grows until the kernel OOM killer takes
+   it, which is not a diagnosis either. A compiler bug that allocates without
+   bound (type inference used to be exponential in a function body's
+   statement count) therefore took the machine's memory with it instead of
+   reporting anything.
+
+   The budget is deliberately not a fixed constant, which would be wrong for
+   both small machines and large programs. It is:
+     ZYL_MAX_MEMORY (bytes) when set -- 0 disables the budget entirely;
+     otherwise 80% of this machine's MemAvailable at first allocation;
+     otherwise 80% of total RAM; otherwise unlimited.
+   It binds only where the kernel would have killed the process anyway, and
+   it cannot change the output of a compile that succeeds -- only how one
+   that was already doomed reports itself.
+   -------------------------------------------------------------------------- */
+
+static size_t g_arena_budget = 0;      /* 0 = unlimited */
+static size_t g_arena_bytes = 0;       /* live bytes across every arena */
+static pthread_once_t g_arena_budget_once = PTHREAD_ONCE_INIT;
+
+static size_t zyl_meminfo_available(void) {
+    FILE* f = fopen("/proc/meminfo", "r");
+    if (!f) return 0;
+    char line[256];
+    size_t avail = 0, total = 0;
+    while (fgets(line, sizeof line, f)) {
+        unsigned long long kb;
+        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { avail = (size_t)kb * 1024; break; }
+        if (sscanf(line, "MemTotal: %llu kB", &kb) == 1) total = (size_t)kb * 1024;
+    }
+    fclose(f);
+    return avail ? avail : total;
+}
+
+static void zyl_arena_budget_init(void) {
+    const char* env = getenv("ZYL_MAX_MEMORY");
+    if (env && *env) {
+        char* end = NULL;
+        unsigned long long v = strtoull(env, &end, 10);
+        g_arena_budget = (size_t)v;   /* 0 means "no budget" */
+        return;
+    }
+    size_t avail = zyl_meminfo_available();
+    if (!avail) {
+        long pages = sysconf(_SC_PHYS_PAGES), psz = sysconf(_SC_PAGESIZE);
+        if (pages > 0 && psz > 0) avail = (size_t)pages * (size_t)psz;
+    }
+    g_arena_budget = avail ? avail / 5 * 4 : 0;
+}
+
+/* Out of memory is not recoverable here: unwinding through zyl_panic runs
+ * handlers that allocate. Report and stop. */
+static void zyl_arena_oom(size_t requested, const char* why) {
+    fprintf(stderr,
+            "PANIC: error[E_OUT_OF_MEMORY]: %s\n"
+            "  = requested %zu bytes; %zu bytes already allocated; budget %zu bytes\n"
+            "  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, "
+            "or ZYL_MAX_MEMORY=0 to remove it\n",
+            why, requested, g_arena_bytes, g_arena_budget);
+    fflush(stderr);
+    _exit(1);
+}
+
+/* Charge `n` bytes against the budget before they are handed to malloc. */
+static int zyl_arena_charge(size_t n) {
+    pthread_once(&g_arena_budget_once, zyl_arena_budget_init);
+    size_t now = __atomic_add_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
+    if (g_arena_budget && now > g_arena_budget) {
+        __atomic_sub_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
+        return 0;
+    }
+    return 1;
+}
+
+static void zyl_arena_refund(size_t n) {
+    __atomic_sub_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
+}
+
 static ZylArenaBlock* zyl_arena_new_block_of(ZylArena* a, size_t cap) {
     if (cap < a->block_size) cap = a->block_size;
+    if (!zyl_arena_charge(cap))
+        zyl_arena_oom(cap, "memory budget exhausted");
     ZylArenaBlock* b = (ZylArenaBlock*)malloc(sizeof(ZylArenaBlock));
-    if (!b) return NULL;
+    if (!b) {
+        zyl_arena_refund(cap);
+        zyl_arena_oom(sizeof(ZylArenaBlock), "out of memory allocating an arena block header");
+    }
     b->mem = (char*)malloc(cap);
     if (!b->mem) {
         free(b);
-        return NULL;
+        zyl_arena_refund(cap);
+        zyl_arena_oom(cap, "out of memory allocating an arena block");
     }
     b->cap = cap;
     b->used = 0;
@@ -1190,6 +1280,7 @@ void zyl_arena_reset(long long arena) {
          * obvious garbage and is far more likely to crash fast than to
          * silently read/corrupt whatever libc reuses this memory for. */
         memset(b->mem, 0xDE, b->used);
+        zyl_arena_refund(b->cap);
         free(b->mem);
         free(b);
         b = next;
@@ -1208,6 +1299,7 @@ void zyl_arena_destroy(long long arena) {
     while (b) {
         ZylArenaBlock* next = b->next;
         memset(b->mem, 0xDE, b->used);
+        zyl_arena_refund(b->cap);
         free(b->mem);
         free(b);
         b = next;
@@ -1233,6 +1325,198 @@ long long zyl_arena_capacity(long long arena) {
     long long v = (long long)a->total_capacity;
     pthread_mutex_unlock(&a->lock);
     return v;
+}
+
+/* ==========================================================================
+   Source spans.
+
+   Ast nodes (compiler/ast.zyl) carry no position field. Giving them one
+   would mean editing every one of the ~470 sites that name an Ast
+   constructor -- as a pattern in one place and as a construction in the
+   next -- inside a compiler that then has to go on compiling itself, and
+   a single miscounted pattern arity there is a silent miscompile rather
+   than a build error. So the position lives beside the node instead of
+   inside it: the reader records, for each node it builds, the byte offset
+   it was read from, keyed by the node's own address.
+
+   That is sound here because a variant value in this implementation IS
+   its heap pointer, and arena memory is never freed, moved or reset
+   during a compile -- a node's address stays valid for as long as any
+   diagnostic can ask about it.
+
+   The table is only ever probed by key, never iterated, so its layout
+   cannot reach the output of a compile: determinism is unaffected. A
+   miss returns -1 and the diagnostic simply prints without a location.
+   ========================================================================== */
+
+typedef struct { uintptr_t key; int off; int fid; } ZylSpanSlot;
+
+static ZylSpanSlot* g_spans = NULL;
+static size_t g_span_cap = 0;      /* power of two */
+static size_t g_span_len = 0;
+
+typedef struct { char* path; char* text; size_t len; } ZylSrcFile;
+
+#define ZYL_MAX_SRC_FILES 256
+static ZylSrcFile g_src_files[ZYL_MAX_SRC_FILES];
+static int g_src_file_count = 0;
+
+static size_t zyl_span_hash(uintptr_t k) {
+    /* splitmix64 finalizer: addresses are 16-byte aligned, so the low bits
+     * are always zero and the identity hash would cluster every key into
+     * one sixteenth of the table. */
+    uint64_t x = (uint64_t)k;
+    x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27; x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return (size_t)x;
+}
+
+static void zyl_span_grow(void) {
+    /* Grow by eight, not two. A real compile records a span for every node
+     * of every rewriting pass -- millions of them -- and doubling from 4096
+     * spends its first seconds rehashing; measured, that alone was most of
+     * the cost of carrying spans at all. Eight keeps a small compile's table
+     * small and reaches millions in four steps. */
+    size_t ncap = g_span_cap ? g_span_cap * 8 : 4096;
+    ZylSpanSlot* ns = (ZylSpanSlot*)calloc(ncap, sizeof(ZylSpanSlot));
+    if (!ns) return;                       /* spans are optional: drop them */
+    for (size_t i = 0; i < g_span_cap; i++) {
+        if (!g_spans[i].key) continue;
+        size_t j = zyl_span_hash(g_spans[i].key) & (ncap - 1);
+        while (ns[j].key) j = (j + 1) & (ncap - 1);
+        ns[j] = g_spans[i];
+    }
+    free(g_spans);
+    g_spans = ns;
+    g_span_cap = ncap;
+}
+
+/* Record that `node` was read at byte `off` of source file `fid`. */
+long long zyl_span_set(long long node, long long off, long long fid) {
+    if (!node) return 0;
+    if (g_span_len * 10 >= g_span_cap * 7) zyl_span_grow();
+    if (!g_span_cap) return 0;
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t i = zyl_span_hash(k) & (g_span_cap - 1);
+    while (g_spans[i].key && g_spans[i].key != k) i = (i + 1) & (g_span_cap - 1);
+    if (!g_spans[i].key) { g_spans[i].key = k; g_span_len++; }
+    g_spans[i].off = (int)off;
+    g_spans[i].fid = (int)fid;
+    return 0;
+}
+
+static ZylSpanSlot* zyl_span_find(long long node) {
+    if (!node || !g_span_cap) return NULL;
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t i = zyl_span_hash(k) & (g_span_cap - 1);
+    while (g_spans[i].key) {
+        if (g_spans[i].key == k) return &g_spans[i];
+        i = (i + 1) & (g_span_cap - 1);
+    }
+    return NULL;
+}
+
+/* Byte offset a node was read from, or -1 when it was never recorded
+ * (every node a later phase synthesises rather than reads). */
+long long zyl_span_off(long long node) {
+    ZylSpanSlot* s = zyl_span_find(node);
+    return s ? (long long)s->off : -1;
+}
+
+long long zyl_span_file(long long node) {
+    ZylSpanSlot* s = zyl_span_find(node);
+    return s ? (long long)s->fid : -1;
+}
+
+/* Give `dst` the same position as `src`. Used where one representation is
+ * built straight from another (convert-ast turning an Ast into an Expr) so
+ * a later phase's diagnostic can still point at the user's own text. The
+ * fields are read out first: zyl_span_set may grow and rehash the table,
+ * which would invalidate the slot pointer. */
+long long zyl_span_copy(long long dst, long long src) {
+    ZylSpanSlot* s = zyl_span_find(src);
+    if (!s) return 0;
+    int off = s->off, fid = s->fid;
+    return zyl_span_set(dst, off, fid);
+}
+
+/* Registers a source file and returns its id; re-registering the same path
+ * returns the existing id so a module parsed twice keeps one entry. */
+long long zyl_source_register(long long path, long long text) {
+    const char* p = (const char*)(size_t)path;
+    const char* t = (const char*)(size_t)text;
+    if (!p) p = "<input>";
+    if (!t) t = "";
+    for (int i = 0; i < g_src_file_count; i++)
+        if (strcmp(g_src_files[i].path, p) == 0) return i;
+    if (g_src_file_count >= ZYL_MAX_SRC_FILES) return -1;
+    int id = g_src_file_count++;
+    g_src_files[id].path = strdup(p);
+    g_src_files[id].text = strdup(t);
+    g_src_files[id].len = g_src_files[id].text ? strlen(g_src_files[id].text) : 0;
+    return id;
+}
+
+long long zyl_source_path(long long fid) {
+    if (fid < 0 || fid >= g_src_file_count) return (long long)(size_t)"<input>";
+    return (long long)(size_t)g_src_files[fid].path;
+}
+
+/* 1-based line containing `off`; 0 when the offset or file is unknown. */
+long long zyl_span_line(long long fid, long long off) {
+    if (fid < 0 || fid >= g_src_file_count || off < 0) return 0;
+    ZylSrcFile* f = &g_src_files[fid];
+    if (!f->text || (size_t)off > f->len) return 0;
+    long long line = 1;
+    for (long long i = 0; i < off; i++) if (f->text[i] == '\n') line++;
+    return line;
+}
+
+/* 1-based column of `off` within its line; 0 when unknown. */
+long long zyl_span_col(long long fid, long long off) {
+    if (fid < 0 || fid >= g_src_file_count || off < 0) return 0;
+    ZylSrcFile* f = &g_src_files[fid];
+    if (!f->text || (size_t)off > f->len) return 0;
+    long long start = off;
+    while (start > 0 && f->text[start - 1] != '\n') start--;
+    return off - start + 1;
+}
+
+/* The whole source line containing `off`, newline stripped. malloc'd and
+ * never freed on purpose: the only caller is a diagnostic, and the process
+ * exits moments later. Empty string when the location is unknown. */
+long long zyl_span_line_text(long long fid, long long off) {
+    static const char empty[] = "";
+    if (fid < 0 || fid >= g_src_file_count || off < 0) return (long long)(size_t)empty;
+    ZylSrcFile* f = &g_src_files[fid];
+    if (!f->text || (size_t)off > f->len) return (long long)(size_t)empty;
+    long long start = off;
+    while (start > 0 && f->text[start - 1] != '\n') start--;
+    long long end = off;
+    while ((size_t)end < f->len && f->text[end] != '\n') end++;
+    size_t n = (size_t)(end - start);
+    char* buf = (char*)malloc(n + 1);
+    if (!buf) return (long long)(size_t)empty;
+    memcpy(buf, f->text + start, n);
+    buf[n] = 0;
+    return (long long)(size_t)buf;
+}
+
+/* Inverse of zyl_span_line/zyl_span_col: sexp_balance tracks 1-based
+ * line/col directly, so its results come back here to be rendered. */
+long long zyl_span_offset_at(long long fid, long long line, long long col) {
+    if (fid < 0 || fid >= g_src_file_count || line < 1 || col < 1) return -1;
+    ZylSrcFile* f = &g_src_files[fid];
+    if (!f->text) return -1;
+    size_t i = 0;
+    for (long long l = 1; l < line; l++) {
+        const char* nl = strchr(f->text + i, '\n');
+        if (!nl) return -1;
+        i = (size_t)(nl - f->text) + 1;
+    }
+    size_t off = i + (size_t)(col - 1);
+    return off <= f->len ? (long long)off : (long long)f->len;
 }
 
 /* True if `ptr` falls within an in-use byte range of some block of

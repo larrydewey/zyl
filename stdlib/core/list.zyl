@@ -17,17 +17,17 @@
 
 (defn is-nil (xs)
   (match xs
-    (Cons w1x w2x false)
+    (Cons _ _ false)
     (Nil true)))
 
 (defn list-car (xs)
   (match xs
-    (Cons v w3x (Some v))
+    (Cons v _ (Some v))
     (Nil None)))
 
 (defn list-cdr (xs)
   (match xs
-    (Cons w4x rest rest)
+    (Cons _ rest rest)
     (Nil None)))
 
 ; Total tail: Nil for the empty list rather than list-cdr's None, so a
@@ -36,7 +36,7 @@
 ; fine for a single "is there a tail" question, not composable).
 (defn list-rest (xs)
   (match xs
-    (Cons w6x rest rest)
+    (Cons _ rest rest)
     (Nil Nil)))
 
 ; ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@
 (defn list-length (xs)
   (match xs
     (Nil 0)
-    (Cons w5x rest (+ 1 (list-length rest)))))
+    (Cons _ rest (+ 1 (list-length rest)))))
 
 ; Append
 (defn list-append (xs ys)

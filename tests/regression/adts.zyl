@@ -44,15 +44,15 @@
 ; (arm results must be type-homogeneous: 0 / (* n 2) / 0)
 (test "adt-mixed-variants"
   (assert-equal (match (A-Int 99)
-    (A-Ident d9 0)
+    (A-Ident _ 0)
     (A-Int n (* n 2))
-    (A-Bool d10 0)) 198))
+    (A-Bool _ 0)) 198))
 
 ; Nested ADT construction
 (test "adt-nested"
   (assert-equal (match (A-Ident (A-Int 7))
     (A-Ident (A-Int n) n)
-    (A-Int d11 0)
-    (A-Bool d12 0)) 7))
+    (A-Int _ 0)
+    (A-Bool _ 0)) 7))
 
 (run-tests)

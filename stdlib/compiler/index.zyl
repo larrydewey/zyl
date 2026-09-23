@@ -42,19 +42,19 @@
 
 (deftype IdxTrust (ITrust String String))
 
-(defn itrust-key (t) (match t (ITrust k d1 k)))
-(defn itrust-sig (t) (match t (ITrust d1 s s)))
+(defn itrust-key (t) (match t (ITrust k _ k)))
+(defn itrust-sig (t) (match t (ITrust _ s s)))
 
 (deftype IdxMeta (IMeta String Int))
 
-(defn imeta-zyl (m) (match m (IMeta z d1 z)))
-(defn imeta-yanked (m) (match m (IMeta d1 y y)))
+(defn imeta-zyl (m) (match m (IMeta z _ z)))
+(defn imeta-yanked (m) (match m (IMeta _ y y)))
 
-(defn iv-version (v) (match v (IV x d1 d2 d3 d4 x)))
-(defn iv-url (v) (match v (IV d1 u d2 d3 d4 u)))
-(defn iv-hash (v) (match v (IV d1 d2 h d3 d4 h)))
-(defn iv-trust (v) (match v (IV d1 d2 d3 t d4 t)))
-(defn iv-meta (v) (match v (IV d1 d2 d3 d4 m m)))
+(defn iv-version (v) (match v (IV x _ _ _ _ x)))
+(defn iv-url (v) (match v (IV _ u _ _ _ u)))
+(defn iv-hash (v) (match v (IV _ _ h _ _ h)))
+(defn iv-trust (v) (match v (IV _ _ _ t _ t)))
+(defn iv-meta (v) (match v (IV _ _ _ _ m m)))
 
 (defn iv-key (v) (itrust-key (iv-trust v)))
 (defn iv-sig (v) (itrust-sig (iv-trust v)))
@@ -62,8 +62,8 @@
 
 (deftype IdxEntry (IE String (List IdxVersion)))
 
-(defn ie-name (e) (match e (IE n d1 n)))
-(defn ie-versions (e) (match e (IE d1 v v)))
+(defn ie-name (e) (match e (IE n _ n)))
+(defn ie-versions (e) (match e (IE _ v v)))
 
 ; ===========================================================================
 ; PATHS
@@ -94,19 +94,19 @@
 
 (defn idx-ast-head (a)
   (match a
-    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
-    (d3 "")))
+    (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil "")))
+    (_ "")))
 
 (defn idx-ast-args (a)
   (match a
-    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
-    (d2 Nil)))
+    (AList xs (match xs (Cons _ t t) (Nil Nil)))
+    (_ Nil)))
 
 (defn idx-str (a)
   (match a
     (AString s s)
     (AstIdent s s)
-    (d1 "")))
+    (_ "")))
 
 (defn idx-find-form (forms head)
   (match forms
@@ -123,7 +123,7 @@
 
 (defn idx-field (forms field)
   (match (idx-find-form forms field)
-    (Some f (match (idx-ast-args f) (Cons a d1 (idx-str a)) (Nil "")))
+    (Some f (match (idx-ast-args f) (Cons a _ (idx-str a)) (Nil "")))
     (None "")))
 
 (defn idx-bool-field (forms field)
@@ -138,7 +138,7 @@
           (str-concat "E_PKG_NOT_FOUND: package: " (str-concat name
             " is not present in the index")) 1000)
         (let src (file-read fd 1048576)
-          (let d1 (file-close fd)
+          (let _ (file-close fd)
             (idx-of-source arena src name)))))))
 
 (defn idx-of-source (arena src name)
@@ -230,7 +230,7 @@
         (if (< fd 1)
           ""
           (let s (file-read fd 4096)
-            (let d1 (file-close fd)
+            (let _ (file-close fd)
               (idx-trim s))))))))
 
 (defn idx-trim (s)
@@ -242,9 +242,9 @@
         s))))
 
 (defn idx-pin-key (name key)
-  (let d1 (store-mkdir (store-keys-dir))
+  (let _ (store-mkdir (store-keys-dir))
     (let out (file-open (store-key-path name) "w")
-      (let d2 (file-write out key)
+      (let _ (file-write out key)
         (file-close out)))))
 
 ; First use pins; every later fetch must match. A key change is a hard
@@ -254,7 +254,7 @@
 (defn idx-check-key (name key)
   (let pinned (idx-pinned-key name)
     (if (= (str-length pinned) 0)
-      (let d1 (idx-pin-key name key) 1)
+      (let _ (idx-pin-key name key) 1)
       (if (> (str-eq pinned key) 0)
         1
         (ffi-call "zyl_panic"
@@ -270,7 +270,7 @@
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_UNSIGNED: package: index entry for " (str-concat name
         " carries no signature")) 1000)
-    (let d1 (idx-check-key name (iv-key iv))
+    (let _ (idx-check-key name (iv-key iv))
       (idx-verify-sig arena name iv))))
 
 (defn idx-verify-sig (arena name iv)
@@ -308,8 +308,8 @@
       (idx-clone url root))))
 
 (defn idx-clone (url root)
-  (let d1 (store-safe url 2 "index url")
-    (let d2 (store-mkdir (store-home))
+  (let _ (store-safe url 2 "index url")
+    (let _ (store-mkdir (store-home))
       (let rc (store-run (str-concat "git clone -q --depth 1 '"
                 (str-concat url (str-concat "' '" (str-concat root "'")))))
         (if (= rc 0)

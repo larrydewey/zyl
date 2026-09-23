@@ -17,8 +17,8 @@
 
 (deftype MapEntry (ME K V))
 
-(defn ME.key (e) (match e (ME k d1 k)))
-(defn ME.value (e) (match e (ME d1 v v)))
+(defn ME.key (e) (match e (ME k _ k)))
+(defn ME.value (e) (match e (ME _ v v)))
 
 (deftype Map (MapC (List (MapEntry K V))))
 
@@ -58,7 +58,7 @@
 
 (defn map-has (m k)
   (match (map-get m k)
-    (Some d1 1)
+    (Some _ 1)
     (None 0)))
 
 (defn map-get-or (m k default)

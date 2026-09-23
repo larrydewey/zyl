@@ -29,11 +29,11 @@
 
 (defn art-ast (r)
   (match r
-    (AstOf a d1 a)))
+    (AstOf a _ a)))
 
 (defn art-rest (r)
   (match r
-    (AstOf d2 rest rest)))
+    (AstOf _ rest rest)))
 
 ; ===========================================================================
 ; STREAM HELPERS
@@ -42,181 +42,211 @@
 ; True only for the stream terminator token.
 (defn tok-is-eof (t)
   (match t
-    (TkEof true)
-    (TkIdent d3 false)
-    (TkInt d4 false)
-    (TkFloat d5 false)
-    (TkString d6 false)
-    (TkBool d7 false)
-    (TkSymbol d8 false)
-    (TkKeyword d9 false)
-    (TkLParen false)
-    (TkRParen false)
-    (TkLBrace false)
-    (TkRBrace false)
-    (TkLBracket false)
-    (TkRBracket false)
-    (TkColon false)))
+    (TkEof _ true)
+    (TkIdent _ _ false)
+    (TkInt _ _ false)
+    (TkFloat _ _ false)
+    (TkString _ _ false)
+    (TkBool _ _ false)
+    (TkSymbol _ _ false)
+    (TkKeyword _ _ false)
+    (TkLParen _ false)
+    (TkRParen _ false)
+    (TkLBrace _ false)
+    (TkRBrace _ false)
+    (TkLBracket _ false)
+    (TkRBracket _ false)
+    (TkColon _ false)))
 
 ; True when the stream is exhausted (empty or at TkEof).
 ; Returns: Bool
 (defn toks-empty (toks)
   (match toks
-    (Cons t d10 (tok-is-eof t))
+    (Cons t _ (tok-is-eof t))
     (Nil true)))
 
 ; ===========================================================================
 ; READER
 ; ===========================================================================
 
+; Byte offset in the source that a token was lexed from.
+(defn tok-offset (t)
+  (match t
+    (TkEof o o)
+    (TkIdent _ o o)
+    (TkInt _ o o)
+    (TkFloat _ o o)
+    (TkString _ o o)
+    (TkBool _ o o)
+    (TkSymbol _ o o)
+    (TkKeyword _ o o)
+    (TkLParen o o)
+    (TkRParen o o)
+    (TkLBrace o o)
+    (TkRBrace o o)
+    (TkLBracket o o)
+    (TkRBracket o o)
+    (TkColon o o)))
+
+; Record where `node` was read from, then hand it straight back, so a
+; construction reads `(ast-at fid off (AstInt v))`. The position is kept beside
+; the node instead of inside it -- Ast has no span field, and giving it one
+; would mean editing every one of the ~470 sites that name an Ast
+; constructor, in a compiler that then has to go on compiling itself. See
+; the span table in runtime/actor_runtime.c for why keying on the node's
+; own address is sound here.
+(defn ast-at (fid off node)
+  (let _ (ffi-call "zyl_span_set" node off fid 1000)
+    node))
+
 ; Read one form at the head of `toks`.
 ; Returns: AstTok
-(defn read-form (arena toks)
+(defn read-form (arena toks fid)
   (let t (toks-head toks)
     (let rest (toks-tail toks)
-      (read-dispatch arena t rest))))
+      (read-dispatch arena t rest fid))))
 
-(defn read-dispatch (arena t rest)
+(defn read-dispatch (arena t rest fid)
   (match t
-        (TkLParen (read-forms arena rest (no-forms)))
-        (TkLBracket (read-forms-bracket arena rest (no-forms)))
-        (TkLBrace (read-forms-brace arena rest (no-forms)))
-        (TkRParen (read-form-atom arena t rest))
-        (TkRBrace (read-form-atom arena t rest))
-        (TkRBracket (read-form-atom arena t rest))
-        (TkColon (read-form-atom arena t rest))
-        (TkEof (read-form-atom arena t rest))
-        (TkInt d11 (read-form-atom arena t rest))
-        (TkFloat d12 (read-form-atom arena t rest))
-        (TkString d13 (read-form-atom arena t rest))
-        (TkBool d14 (read-form-atom arena t rest))
-        (TkIdent d15 (read-form-atom arena t rest))
-        (TkSymbol d16 (read-form-atom arena t rest))
-        (TkKeyword d17 (read-form-atom arena t rest))))
+        (TkLParen o (read-forms arena rest (no-forms) fid o))
+        (TkLBracket o (read-forms-bracket arena rest (no-forms) fid o))
+        (TkLBrace o (read-forms-brace arena rest (no-forms) fid o))
+        (TkRParen _ (read-form-atom arena t rest fid))
+        (TkRBrace _ (read-form-atom arena t rest fid))
+        (TkRBracket _ (read-form-atom arena t rest fid))
+        (TkColon _ (read-form-atom arena t rest fid))
+        (TkEof _ (read-form-atom arena t rest fid))
+        (TkInt _ _ (read-form-atom arena t rest fid))
+        (TkFloat _ _ (read-form-atom arena t rest fid))
+        (TkString _ _ (read-form-atom arena t rest fid))
+        (TkBool _ _ (read-form-atom arena t rest fid))
+        (TkIdent _ _ (read-form-atom arena t rest fid))
+        (TkSymbol _ _ (read-form-atom arena t rest fid))
+        (TkKeyword _ _ (read-form-atom arena t rest fid))))
 
 ; Atoms and terminators: everything except openers.
 ; Returns: AstTok
-(defn read-form-atom (arena t rest)
+(defn read-form-atom (arena t rest fid)
   (match t
-    (TkInt v (AstOf (AstInt v) rest))
-    (TkBool b (AstOf (AstBool b) rest))
-    (TkFloat s (AstOf (AstFloat s) rest))
-    (TkString s (AstOf (AString s) rest))
-    (TkIdent s (AstOf (AstIdent s) rest))
-    (TkSymbol s (AstOf (AstIdent s) rest))
+    (TkInt v o (AstOf (ast-at fid o (AstInt v)) rest))
+    (TkBool b o (AstOf (ast-at fid o (AstBool b)) rest))
+    (TkFloat s o (AstOf (ast-at fid o (AstFloat s)) rest))
+    (TkString s o (AstOf (ast-at fid o (AString s)) rest))
+    (TkIdent s o (AstOf (ast-at fid o (AstIdent s)) rest))
+    (TkSymbol s o (AstOf (ast-at fid o (AstIdent s)) rest))
     ; A keyword keeps its ':' so a consumer can tell `(use pkg:mod)` from
     ; `(use pkg mod)`: the lexer discards whitespace, so the two differ
     ; only in this token's kind, and §24.2 gives the colon form its own
     ; meaning (package:module). Consumers of `:le`/`:be` strip it.
-    (TkKeyword s (AstOf (AstIdent (str-concat ":" s)) rest))
+    (TkKeyword s o (AstOf (ast-at fid o (AstIdent (str-concat ":" s))) rest))
     ; closers / colon / eof in atom position: empty form
-    (TkEof (AstOf (AList Nil) rest))
-    (TkLParen (AstOf (AList (no-forms)) rest))
-    (TkRParen (AstOf (AList (no-forms)) rest))
-    (TkLBrace (AstOf (AList (no-forms)) rest))
-    (TkRBrace (AstOf (AList (no-forms)) rest))
-    (TkLBracket (AstOf (AList (no-forms)) rest))
-    (TkRBracket (AstOf (AList (no-forms)) rest))
-    (TkColon (AstOf (AList (no-forms)) rest))))
+    (TkEof o (AstOf (ast-at fid o (AList Nil)) rest))
+    (TkLParen o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkRParen o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkLBrace o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkRBrace o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkLBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkRBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkColon o (AstOf (ast-at fid o (AList (no-forms))) rest))))
 
 ; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
-(defn read-forms (arena toks acc)
+(defn read-forms (arena toks acc fid off)
   (if (toks-empty toks)
-    (AstOf (AList (list-reverse acc)) toks)
+    (AstOf (ast-at fid off (AList (list-reverse acc))) toks)
     (let t (toks-head toks)
       (if (= (tok-is-rparen t) 1)
-        (AstOf (AList (list-reverse acc)) (toks-tail toks))
-        (let r (read-form arena toks)
-          (read-forms arena (art-rest r) (Cons (art-ast r) acc)))))))
+        (AstOf (ast-at fid off (AList (list-reverse acc))) (toks-tail toks))
+        (let r (read-form arena toks fid)
+          (read-forms arena (art-rest r) (Cons (art-ast r) acc) fid off))))))
 
 (defn tok-is-rparen (t)
   (match t
-    (TkRParen true)
-    (TkEof false)
-    (TkIdent d18 false)
-    (TkInt d19 false)
-    (TkFloat d20 false)
-    (TkString d21 false)
-    (TkBool d22 false)
-    (TkSymbol d23 false)
-    (TkKeyword d24 false)
-    (TkLParen false)
-    (TkLBrace false)
-    (TkRBrace false)
-    (TkLBracket false)
-    (TkRBracket false)
-    (TkColon false)))
+    (TkRParen _ true)
+    (TkEof _ false)
+    (TkIdent _ _ false)
+    (TkInt _ _ false)
+    (TkFloat _ _ false)
+    (TkString _ _ false)
+    (TkBool _ _ false)
+    (TkSymbol _ _ false)
+    (TkKeyword _ _ false)
+    (TkLParen _ false)
+    (TkLBrace _ false)
+    (TkRBrace _ false)
+    (TkLBracket _ false)
+    (TkRBracket _ false)
+    (TkColon _ false)))
 
 ; Read forms until '}' (or EOF).
 ; Returns: AstTok wrapping (AList forms...)
-(defn read-forms-brace (arena toks acc)
+(defn read-forms-brace (arena toks acc fid off)
   (if (toks-empty toks)
-    (AstOf (AList (list-reverse acc)) toks)
+    (AstOf (ast-at fid off (AList (list-reverse acc))) toks)
     (let t (toks-head toks)
       (if (= (tok-is-rbrace t) 1)
-        (AstOf (AList (list-reverse acc)) (toks-tail toks))
-        (let r (read-form arena toks)
-          (read-forms-brace arena (art-rest r) (Cons (art-ast r) acc)))))))
+        (AstOf (ast-at fid off (AList (list-reverse acc))) (toks-tail toks))
+        (let r (read-form arena toks fid)
+          (read-forms-brace arena (art-rest r) (Cons (art-ast r) acc) fid off))))))
 
 (defn tok-is-rbrace (t)
   (match t
-    (TkRBrace true)
-    (TkEof false)
-    (TkIdent d25 false)
-    (TkInt d26 false)
-    (TkFloat d27 false)
-    (TkString d28 false)
-    (TkBool d29 false)
-    (TkSymbol d30 false)
-    (TkKeyword d31 false)
-    (TkLParen false)
-    (TkRParen false)
-    (TkLBrace false)
-    (TkLBracket false)
-    (TkRBracket false)
-    (TkColon false)))
+    (TkRBrace _ true)
+    (TkEof _ false)
+    (TkIdent _ _ false)
+    (TkInt _ _ false)
+    (TkFloat _ _ false)
+    (TkString _ _ false)
+    (TkBool _ _ false)
+    (TkSymbol _ _ false)
+    (TkKeyword _ _ false)
+    (TkLParen _ false)
+    (TkRParen _ false)
+    (TkLBrace _ false)
+    (TkLBracket _ false)
+    (TkRBracket _ false)
+    (TkColon _ false)))
 
 ; Read forms until ']' (or EOF).
 ; Returns: AstTok wrapping (AList forms...)
-(defn read-forms-bracket (arena toks acc)
+(defn read-forms-bracket (arena toks acc fid off)
   (if (toks-empty toks)
-    (AstOf (AList (list-reverse acc)) toks)
+    (AstOf (ast-at fid off (AList (list-reverse acc))) toks)
     (let t (toks-head toks)
       (if (= (tok-is-rbracket t) 1)
-        (AstOf (AList (list-reverse acc)) (toks-tail toks))
-        (let r (read-form arena toks)
-          (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc)))))))
+        (AstOf (ast-at fid off (AList (list-reverse acc))) (toks-tail toks))
+        (let r (read-form arena toks fid)
+          (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc) fid off))))))
 
 (defn tok-is-rbracket (t)
   (match t
-    (TkRBracket true)
-    (TkEof false)
-    (TkIdent d32 false)
-    (TkInt d33 false)
-    (TkFloat d34 false)
-    (TkString d35 false)
-    (TkBool d36 false)
-    (TkSymbol d37 false)
-    (TkKeyword d38 false)
-    (TkLParen false)
-    (TkRParen false)
-    (TkLBrace false)
-    (TkRBrace false)
-    (TkLBracket false)
-    (TkColon false)))
+    (TkRBracket _ true)
+    (TkEof _ false)
+    (TkIdent _ _ false)
+    (TkInt _ _ false)
+    (TkFloat _ _ false)
+    (TkString _ _ false)
+    (TkBool _ _ false)
+    (TkSymbol _ _ false)
+    (TkKeyword _ _ false)
+    (TkLParen _ false)
+    (TkRParen _ false)
+    (TkLBrace _ false)
+    (TkRBrace _ false)
+    (TkLBracket _ false)
+    (TkColon _ false)))
 
 ; Parse a whole source token stream into a program: a List of top-level
 ; Ast forms in source order.
 ; Returns: List(Ast)
-(defn parse-program (arena toks)
-  (list-reverse (parse-program-loop arena toks (no-forms))))
+(defn parse-program (arena toks fid)
+  (list-reverse (parse-program-loop arena toks (no-forms) fid)))
 
-(defn parse-program-loop (arena toks acc)
+(defn parse-program-loop (arena toks acc fid)
   (if (toks-empty toks)
     acc
-    (let r (read-form arena toks)
-      (parse-program-loop arena (art-rest r) (Cons (art-ast r) acc)))))
+    (let r (read-form arena toks fid)
+      (parse-program-loop arena (art-rest r) (Cons (art-ast r) acc) fid))))
 
 ; Whole-source structural balance check, delegated to the native
 ; sexp_balance scanner (string/comment-aware, stack-based over bracket
@@ -225,11 +255,11 @@
 ; replaces the old bal-walk depth counter, which only ever compared total
 ; '(' vs ')' counts -- ")(" and "(]" both netted to a valid count and
 ; passed straight through to the reader.
-(defn check-balanced (src)
+(defn check-balanced (src fid)
   (let result (sb-check-string src)
     (if (= (sb-result-balanced result) 1)
       0
-      (report-unbalanced result))))
+      (report-unbalanced result fid))))
 
 ; Every str-concat argument below is a literal or a pre-bound `let` --
 ; see error_report.zyl's header comment: an inline call operand in a
@@ -254,26 +284,36 @@
 ; All 5 BalanceResult variants enumerated; Balanced is unreachable here
 ; (check-balanced already short-circuits on it) but match must stay
 ; exhaustive.
-(defn report-unbalanced (result)
+(defn report-unbalanced (result fid)
   (match result
     (Balanced 0)
     (UnbalancedOpenString
-      (let msg (bal-msg "E_UNTERMINATED_STRING" "unterminated string literal reached end of input" (sb-hint result))
+      (let msg (err-at "E_UNTERMINATED_STRING" "unterminated string literal reached end of input" fid -1 (sb-hint result))
         (ffi-call "zyl_panic" msg 1000)))
     (UnclosedOpen closer line col
-      (let msg (bal-msg-loc "E_UNBALANCED_UNCLOSED" "unclosed opener never reached its matching closer" line col (sb-hint result))
-        (ffi-call "zyl_panic" msg 1000)))
+      (report-bal "E_UNBALANCED_UNCLOSED" "unclosed opener never reached its matching closer" result fid line col))
     (UnbalancedClose closer line col
-      (let msg (bal-msg-loc "E_UNBALANCED_UNEXPECTED_CLOSE" "unexpected closing delimiter" line col (sb-hint result))
-        (ffi-call "zyl_panic" msg 1000)))
+      (report-bal "E_UNBALANCED_UNEXPECTED_CLOSE" "unexpected closing delimiter" result fid line col))
     (MismatchedPair opener closer line col
-      (let msg (bal-msg-loc "E_UNBALANCED_MISMATCHED_BRACKET" "closing delimiter does not match its opener" line col (sb-hint result))
-        (ffi-call "zyl_panic" msg 1000)))))
+      (report-bal "E_UNBALANCED_MISMATCHED_BRACKET" "closing delimiter does not match its opener" result fid line col))))
+
+; sexp_balance tracks line/col directly (it scans the raw bytes itself), so
+; convert back to the byte offset err-at renders from.
+(defn report-bal (code text result fid line col)
+  (let off (ffi-call "zyl_span_offset_at" fid line col 1000)
+    (let msg (err-at code text fid off (sb-hint result))
+      (ffi-call "zyl_panic" msg 1000))))
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)
 (defn zyl-parse (arena src)
-  (begin
-    (check-balanced src)
-    (let toks (zyl-lex arena src)
-      (parse-program arena toks))))
+  (zyl-parse-file arena src "<input>"))
+
+; `path` is what a diagnostic prints and what the span table keys this
+; file's text by, so a multi-module build points at the right file.
+(defn zyl-parse-file (arena src path)
+  (let fid (ffi-call "zyl_source_register" path src 1000)
+    (begin
+      (check-balanced src fid)
+      (let toks (zyl-lex arena src)
+        (parse-program arena toks fid)))))

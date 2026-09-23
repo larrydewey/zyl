@@ -31,7 +31,9 @@
 ; interact is not a bug at all, just a short name reused twice.
 
 (use compiler/ast)
+(use compiler/type_system)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 (defn dc-check-program (exprs)
   (begin
@@ -43,37 +45,47 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name d1 d2 (Cons name (dc-collect-defn-names rest)))
-        (d3 (dc-collect-defn-names rest))))))
+        (EDefn name _ _ (Cons (Pair name e) (dc-collect-defn-names rest)))
+        (_ (dc-collect-defn-names rest))))))
 
 (defn dc-collect-deftype-names (exprs)
   (match exprs
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDeftype name d1 d2 d3 (Cons name (dc-collect-deftype-names rest)))
-        (d4 (dc-collect-deftype-names rest))))))
+        (EDeftype name _ _ _ (Cons (Pair name e) (dc-collect-deftype-names rest)))
+        (_ (dc-collect-deftype-names rest))))))
 
 ; `seen` accumulates names already passed; a name already in `seen` is a
 ; duplicate. Linear scan, same complexity class as ac-lookup/mc-in-scope
 ; elsewhere in this pipeline -- fine for a few thousand top-level names.
+; `names` is (List (Pair name node)): the node is carried only so the
+; second definition can be reported at the line it is on.
 (defn dc-check-names (kind names seen)
   (match names
     (Nil 0)
-    (Cons n rest
-      (if (> (dc-in-list n seen) 0)
-        (dc-fail kind n)
-        (dc-check-names kind rest (Cons n seen))))))
+    (Cons p rest
+      (match p
+        (Pair n site
+          (if (> (dc-in-list n seen) 0)
+            (dc-fail kind n site)
+            (dc-check-names kind rest (Cons n seen))))))))
 
 (defn dc-in-list (name xs)
   (match xs
     (Nil 0)
     (Cons h t (if (> (str-eq h name) 0) 1 (dc-in-list name t)))))
 
-(defn dc-fail (kind name)
-  (let m1 "E_DUPLICATE_DEFINITION: "
+(defn dc-fail (kind name site)
+  (let m1 ""
     (let m2 (str-concat m1 kind)
       (let m3 (str-concat m2 " `")
-        (let m4 (str-concat m3 name)
-          (let m5 (str-concat m4 "` is defined more than once in this program")
-            (ffi-call "zyl_panic" m5 1000)))))))
+        (let m4 (str-concat m3 (err-name name))
+          (let msg (str-concat m4 "` is defined more than once in this program")
+            (dc-panic-at msg site)))))))
+
+(defn dc-panic-at (msg site)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (let text (err-at "E_DUPLICATE_DEFINITION" msg fid off "rename one of them, or delete the repeated definition")
+        (ffi-call "zyl_panic" text 1000)))))

@@ -131,11 +131,11 @@
 ; these assert on the round trip rather than on the text.
 (defn lock-first (l)
   (match (lk-pkgs l)
-    (Cons p d1 p)
+    (Cons p _ p)
     (Nil (LP "" (PV 0 0 0 "") (PSRegistry) (LSig "" "" "") (LSets Nil Nil Nil)))))
 
 (defn lock-roundtrip (a)
-  (let d1 (lk-write a "/tmp/zyl_test_lock.zyl" (demo-lock))
+  (let _ (lk-write a "/tmp/zyl_test_lock.zyl" (demo-lock))
     (lk-read a "/tmp/zyl_test_lock.zyl")))
 
 (test "a lock round-trips through its canonical text"
@@ -173,7 +173,7 @@
 
 (defn node-first (nodes)
   (match nodes
-    (Cons n d1 n)
+    (Cons n _ n)
     (Nil (MN "" (PV 0 0 0 "") (PSRegistry) "" Nil))))
 
 (test "a selected node carries the version its manifest declares"

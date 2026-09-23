@@ -23,22 +23,26 @@
 
 ; --- Lexer tokens ----------------------------------------------------------
 
+; Every token carries the byte offset in the source it was lexed from --
+; the last field of every variant. The reader copies it onto the Ast node
+; it builds (parser.zyl's `at`), which is how any later diagnostic gets a
+; real file:line:col to point at.
 (deftype Token
-  (TkEof)
-  (TkIdent String)
-  (TkInt Int)
-  (TkFloat String)
-  (TkString String)
-  (TkBool Bool)
-  (TkSymbol String)
-  (TkKeyword String)
-  (TkLParen)
-  (TkRParen)
-  (TkLBrace)
-  (TkRBrace)
-  (TkLBracket)
-  (TkRBracket)
-  (TkColon))
+  (TkEof Int)
+  (TkIdent String Int)
+  (TkInt Int Int)
+  (TkFloat String Int)
+  (TkString String Int)
+  (TkBool Bool Int)
+  (TkSymbol String Int)
+  (TkKeyword String Int)
+  (TkLParen Int)
+  (TkRParen Int)
+  (TkLBrace Int)
+  (TkRBrace Int)
+  (TkLBracket Int)
+  (TkRBracket Int)
+  (TkColon Int))
 
 ; --- Parsed source ---------------------------------------------------------
 
@@ -62,14 +66,14 @@
 ; Returns: Int (offset, or 0 if unbound)
 (defn env-lookup (env name)
   (match env
-    (EnvBind n off d1 rest (if (str-eq n name) off (env-lookup rest name)))
+    (EnvBind n off _ rest (if (str-eq n name) off (env-lookup rest name)))
     (EnvNil 0)))
 
 ; Look up the kind of a name in an Env chain.
 ; Returns: Int (0 int, 1 str, 2 float, 0 if unbound)
 (defn env-kind-of (env name)
   (match env
-    (EnvBind n d2 k rest (if (str-eq n name) k (env-kind-of rest name)))
+    (EnvBind n _ k rest (if (str-eq n name) k (env-kind-of rest name)))
     (EnvNil 0)))
 
 ; --- Variant tables ---------------------------------------------------------
@@ -128,49 +132,49 @@
 ; Returns: Int
 (defn vt-tag-of (vt name)
   (match vt
-    (VTEntry n tag d3 d10 rest (if (str-eq n name) tag (vt-tag-of rest name)))
-    (VTFn d5 rest (vt-tag-of rest name))
-    (VTClosureFn d19 rest (vt-tag-of rest name))
-    (VTClosureReturn d29 rest (vt-tag-of rest name))
+    (VTEntry n tag _ _ rest (if (str-eq n name) tag (vt-tag-of rest name)))
+    (VTFn _ rest (vt-tag-of rest name))
+    (VTClosureFn _ rest (vt-tag-of rest name))
+    (VTClosureReturn _ rest (vt-tag-of rest name))
     (VTNil -1)))
 
 ; Field count for an interned variant name; -1 when absent.
 ; Returns: Int
 (defn vt-arity-of (vt name)
   (match vt
-    (VTEntry n d4 fields d11 rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
-    (VTFn d6 rest (vt-arity-of rest name))
-    (VTClosureFn d20 rest (vt-arity-of rest name))
-    (VTClosureReturn d30 rest (vt-arity-of rest name))
+    (VTEntry n _ fields _ rest (if (str-eq n name) (list-length fields) (vt-arity-of rest name)))
+    (VTFn _ rest (vt-arity-of rest name))
+    (VTClosureFn _ rest (vt-arity-of rest name))
+    (VTClosureReturn _ rest (vt-arity-of rest name))
     (VTNil -1)))
 
 ; True when `name` is a registered plain top-level function name.
 (defn vt-is-fn (vt name)
   (match vt
-    (VTEntry d7 d8 d9 d12 rest (vt-is-fn rest name))
+    (VTEntry _ _ _ _ rest (vt-is-fn rest name))
     (VTFn n rest (if (str-eq n name) 1 (vt-is-fn rest name)))
-    (VTClosureFn d21 rest (vt-is-fn rest name))
-    (VTClosureReturn d31 rest (vt-is-fn rest name))
+    (VTClosureFn _ rest (vt-is-fn rest name))
+    (VTClosureReturn _ rest (vt-is-fn rest name))
     (VTNil 0)))
 
 ; gid for an interned variant name; -1 when absent.
 (defn vt-gid-of (vt name)
   (match vt
-    (VTEntry n d13 d14 gid rest (if (str-eq n name) gid (vt-gid-of rest name)))
-    (VTFn d15 rest (vt-gid-of rest name))
-    (VTClosureFn d22 rest (vt-gid-of rest name))
-    (VTClosureReturn d32 rest (vt-gid-of rest name))
+    (VTEntry n _ _ gid rest (if (str-eq n name) gid (vt-gid-of rest name)))
+    (VTFn _ rest (vt-gid-of rest name))
+    (VTClosureFn _ rest (vt-gid-of rest name))
+    (VTClosureReturn _ rest (vt-gid-of rest name))
     (VTNil -1)))
 
 ; All variant names sharing one gid (i.e. one deftype declaration's full
 ; sibling set), in table order.
 (defn vt-names-with-gid (vt gid)
   (match vt
-    (VTEntry n d16 d17 g rest
+    (VTEntry n _ _ g rest
       (if (= g gid) (Cons n (vt-names-with-gid rest gid)) (vt-names-with-gid rest gid)))
-    (VTFn d18 rest (vt-names-with-gid rest gid))
-    (VTClosureFn d23 rest (vt-names-with-gid rest gid))
-    (VTClosureReturn d33 rest (vt-names-with-gid rest gid))
+    (VTFn _ rest (vt-names-with-gid rest gid))
+    (VTClosureFn _ rest (vt-names-with-gid rest gid))
+    (VTClosureReturn _ rest (vt-names-with-gid rest gid))
     (VTNil Nil)))
 
 ; True when `name` is known (via VTClosureFn) to hold a capturing closure
@@ -178,10 +182,10 @@
 ; ic-call-or-variant (what consults it to pick ICall vs ICallClosure).
 (defn vt-returns-closure (vt name)
   (match vt
-    (VTEntry d24 d25 d26 d27 rest (vt-returns-closure rest name))
-    (VTFn d28 rest (vt-returns-closure rest name))
+    (VTEntry _ _ _ _ rest (vt-returns-closure rest name))
+    (VTFn _ rest (vt-returns-closure rest name))
     (VTClosureFn n rest (if (str-eq n name) 1 (vt-returns-closure rest name)))
-    (VTClosureReturn d34 rest (vt-returns-closure rest name))
+    (VTClosureReturn _ rest (vt-returns-closure rest name))
     (VTNil 0)))
 
 ; True when `name` is known (via VTClosureReturn) to hand back a closure
@@ -189,9 +193,9 @@
 ; ic-is-closure-shaped's EApply arm (the only reader).
 (defn vt-call-returns-closure (vt name)
   (match vt
-    (VTEntry d35 d36 d37 d38 rest (vt-call-returns-closure rest name))
-    (VTFn d39 rest (vt-call-returns-closure rest name))
-    (VTClosureFn d40 rest (vt-call-returns-closure rest name))
+    (VTEntry _ _ _ _ rest (vt-call-returns-closure rest name))
+    (VTFn _ rest (vt-call-returns-closure rest name))
+    (VTClosureFn _ rest (vt-call-returns-closure rest name))
     (VTClosureReturn n rest (if (str-eq n name) 1 (vt-call-returns-closure rest name)))
     (VTNil 0)))
 
@@ -201,12 +205,12 @@
 ; Returns: Token
 (defn toks-head (toks)
   (match toks
-    (Cons t d5 t)
+    (Cons t _ t)
     (Nil (TkEof))))
 
 ; Tail of a token stream (empty when empty).
 ; Returns: List(Token)
 (defn toks-tail (toks)
   (match toks
-    (Cons d6 rest rest)
+    (Cons _ rest rest)
     (Nil Nil)))

@@ -44,35 +44,35 @@
 (defn ri-is-load-of (e name)
   (match e
     (ILoad n (str-eq n name))
-    (d1 0)))
+    (_ 0)))
 
 (defn ri-name-safe-in (e name)
   (match e
-    (IConst d1 1)
-    (IStr d2 1)
-    (IFlt d3 1)
+    (IConst _ 1)
+    (IStr _ 1)
+    (IFlt _ 1)
     (ILoad n (if (> (str-eq n name) 0) 0 1))
-    (IBinop d4 l r (if (> (ri-name-safe-in l name) 0) (ri-name-safe-in r name) 0))
-    (ICall d5 args (ri-name-safe-in-list args name))
-    (ICallClosure d6 args (ri-name-safe-in-list args name))
-    (IFfi d7 args (ri-name-safe-in-list args name))
+    (IBinop _ l r (if (> (ri-name-safe-in l name) 0) (ri-name-safe-in r name) 0))
+    (ICall _ args (ri-name-safe-in-list args name))
+    (ICallClosure _ args (ri-name-safe-in-list args name))
+    (IFfi _ args (ri-name-safe-in-list args name))
     (IPrint a (if (> (ri-is-load-of a name) 0) 1 (ri-name-safe-in a name)))
     (IIf c t eb
       (if (> (ri-name-safe-in c name) 0)
         (if (> (ri-name-safe-in t name) 0) (ri-name-safe-in eb name) 0)
         0))
     (IWhile c b (if (> (ri-name-safe-in c name) 0) (ri-name-safe-in b name) 0))
-    (ISet d8 v (ri-name-safe-in v name))
-    (ILet d9 v b (if (> (ri-name-safe-in v name) 0) (ri-name-safe-in b name) 0))
+    (ISet _ v (ri-name-safe-in v name))
+    (ILet _ v b (if (> (ri-name-safe-in v name) 0) (ri-name-safe-in b name) 0))
     (ISeq es (ri-name-safe-in-list es name))
-    (IVariant d10 d11 fields (ri-name-safe-in-list fields name))
-    (IStackVariant d12 d13 fields (ri-name-safe-in-list fields name))
+    (IVariant _ _ fields (ri-name-safe-in-list fields name))
+    (IStackVariant _ _ fields (ri-name-safe-in-list fields name))
     (IMatch scr arms
       (if (> (ri-is-load-of scr name) 0)
         (ri-name-safe-in-arms arms name)
         (if (> (ri-name-safe-in scr name) 0) (ri-name-safe-in-arms arms name) 0)))
-    (IFn d14 d15 body (= (ri-name-referenced body name) 0))
-    (ITryCatch tbody d16 cbody
+    (IFn _ _ body (= (ri-name-referenced body name) 0))
+    (ITryCatch tbody _ cbody
       (if (> (ri-name-safe-in tbody name) 0) (ri-name-safe-in cbody name) 0))))
 
 (defn ri-name-safe-in-list (xs name)
@@ -85,7 +85,7 @@
     (Nil 1)
     (Cons a rest
       (match a
-        (IArm d1 d2 d3 body
+        (IArm _ _ _ body
           (if (> (ri-name-safe-in body name) 0) (ri-name-safe-in-arms rest name) 0))))))
 
 ; Unconditional "does `name` appear anywhere at all" — used only for the
@@ -96,28 +96,28 @@
 ; unrecognized-position ones ri-name-safe-in itself checks for.
 (defn ri-name-referenced (e name)
   (match e
-    (IConst d1 0)
-    (IStr d2 0)
-    (IFlt d3 0)
+    (IConst _ 0)
+    (IStr _ 0)
+    (IFlt _ 0)
     (ILoad n (str-eq n name))
-    (IBinop d4 l r (if (> (ri-name-referenced l name) 0) 1 (ri-name-referenced r name)))
-    (ICall d5 args (ri-name-referenced-list args name))
-    (ICallClosure d6 args (ri-name-referenced-list args name))
-    (IFfi d7 args (ri-name-referenced-list args name))
+    (IBinop _ l r (if (> (ri-name-referenced l name) 0) 1 (ri-name-referenced r name)))
+    (ICall _ args (ri-name-referenced-list args name))
+    (ICallClosure _ args (ri-name-referenced-list args name))
+    (IFfi _ args (ri-name-referenced-list args name))
     (IPrint a (ri-name-referenced a name))
     (IIf c t eb
       (if (> (ri-name-referenced c name) 0) 1
         (if (> (ri-name-referenced t name) 0) 1 (ri-name-referenced eb name))))
     (IWhile c b (if (> (ri-name-referenced c name) 0) 1 (ri-name-referenced b name)))
-    (ISet d8 v (ri-name-referenced v name))
-    (ILet d9 v b (if (> (ri-name-referenced v name) 0) 1 (ri-name-referenced b name)))
+    (ISet _ v (ri-name-referenced v name))
+    (ILet _ v b (if (> (ri-name-referenced v name) 0) 1 (ri-name-referenced b name)))
     (ISeq es (ri-name-referenced-list es name))
-    (IVariant d10 d11 fields (ri-name-referenced-list fields name))
-    (IStackVariant d12 d13 fields (ri-name-referenced-list fields name))
+    (IVariant _ _ fields (ri-name-referenced-list fields name))
+    (IStackVariant _ _ fields (ri-name-referenced-list fields name))
     (IMatch scr arms
       (if (> (ri-name-referenced scr name) 0) 1 (ri-name-referenced-arms arms name)))
-    (IFn d14 d15 body (ri-name-referenced body name))
-    (ITryCatch tbody d16 cbody
+    (IFn _ _ body (ri-name-referenced body name))
+    (ITryCatch tbody _ cbody
       (if (> (ri-name-referenced tbody name) 0) 1 (ri-name-referenced cbody name)))))
 
 (defn ri-name-referenced-list (xs name)
@@ -130,7 +130,7 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (IArm d1 d2 d3 body
+        (IArm _ _ _ body
           (if (> (ri-name-referenced body name) 0) 1 (ri-name-referenced-arms rest name)))))))
 
 ; The actual Icnf -> Icnf rewrite, structurally recursing everywhere
@@ -144,22 +144,22 @@
 (defn ri-transform-fn (f)
   (match f
     (IFn name params body kinds (IFn name params (ri-transform-expr body) kinds))
-    (d1 (ri-transform-expr f))))
+    (_ (ri-transform-expr f))))
 
 (defn ri-to-stack-variant (val)
   (match val
     (IVariant nm tag fields (IStackVariant nm tag fields))
-    (d1 val)))
+    (_ val)))
 
 (defn ri-transform-let (name val body)
   (let val2 (ri-transform-expr val)
     (let body2 (ri-transform-expr body)
       (match val2
-        (IVariant d1 d2 d3
+        (IVariant _ _ _
           (if (> (ri-name-safe-in body2 name) 0)
             (ILet name (ri-to-stack-variant val2) body2)
             (ILet name val2 body2)))
-        (d4 (ILet name val2 body2))))))
+        (_ (ILet name val2 body2))))))
 
 (defn ri-transform-list (xs)
   (match xs
@@ -175,10 +175,10 @@
 
 (defn ri-transform-expr (e)
   (match e
-    (IConst d1 e)
-    (IStr d2 e)
-    (IFlt d3 e)
-    (ILoad d4 e)
+    (IConst _ e)
+    (IStr _ e)
+    (IFlt _ e)
+    (ILoad _ e)
     (IBinop op l r (IBinop op (ri-transform-expr l) (ri-transform-expr r)))
     (ICall name args (ICall name (ri-transform-list args)))
     (ICallClosure name args (ICallClosure name (ri-transform-list args)))

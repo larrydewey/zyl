@@ -32,10 +32,10 @@
 ; hover header, nothing else.
 (deftype ZylBuiltin (ZB String String String String))
 
-(defn ZB.name (b) (match b (ZB n d1 d2 d3 n)))
-(defn ZB.kind (b) (match b (ZB d1 k d2 d3 k)))
-(defn ZB.sig (b) (match b (ZB d1 d2 s d3 s)))
-(defn ZB.doc (b) (match b (ZB d1 d2 d3 d d)))
+(defn ZB.name (b) (match b (ZB n _ _ _ n)))
+(defn ZB.kind (b) (match b (ZB _ k _ _ k)))
+(defn ZB.sig (b) (match b (ZB _ _ s _ s)))
+(defn ZB.doc (b) (match b (ZB _ _ _ d d)))
 
 ; ===========================================================================
 ; THE TABLE
@@ -321,7 +321,7 @@
       (if (> (str-eq (ZB.name b) name) 0) (Some b) (builtin-find rest name)))))
 
 (defn builtin-is-known (name)
-  (match (builtin-lookup name) (Some d1 1) (None 0)))
+  (match (builtin-lookup name) (Some _ 1) (None 0)))
 
 ; A "keyword" for colouring purposes: a special form or an operator,
 ; not a type/region/capability name (those colour as types).
@@ -360,7 +360,7 @@
             (str-concat doc (str-concat "\n\n*" (str-concat kind "*")))))))))
 
 (defn builtin-detail (b)
-  (match b (ZB d1 kind sig d2 (str-concat sig (str-concat "  -- " kind)))))
+  (match b (ZB _ kind sig _ (str-concat sig (str-concat "  -- " kind)))))
 
 ; Every table name, for completion and for the semantic-token scan.
 (defn builtin-names ()

@@ -61,8 +61,8 @@
       (si-pos-of-offset-loop text (+ i 1) line (+ col 1) target))))
 
 (deftype Pair2 (Pair2 Int Int))
-(defn Pair2.line (p) (match p (Pair2 l d1 l)))
-(defn Pair2.col (p) (match p (Pair2 d1 c c)))
+(defn Pair2.line (p) (match p (Pair2 l _ l)))
+(defn Pair2.col (p) (match p (Pair2 _ c c)))
 
 ; ===========================================================================
 ; IDENTIFIER-AT-POSITION
@@ -119,12 +119,12 @@
 ; is mid-edit; consumers treat the start line as the end.
 (deftype TopForm (TF String String Int Int Int Int))
 
-(defn TopForm.kind (f) (match f (TF k d1 d2 d3 d4 d5 k)))
-(defn TopForm.name (f) (match f (TF d1 n d2 d3 d4 d5 n)))
-(defn TopForm.line (f) (match f (TF d1 d2 l d3 d4 d5 l)))
-(defn TopForm.col (f) (match f (TF d1 d2 d3 c d4 d5 c)))
-(defn TopForm.end-line (f) (match f (TF d1 d2 l d3 e d4 (if (< e 0) l e))))
-(defn TopForm.end-col (f) (match f (TF d1 d2 d3 c d4 e (if (< e 0) c e))))
+(defn TopForm.kind (f) (match f (TF k _ _ _ _ _ k)))
+(defn TopForm.name (f) (match f (TF _ n _ _ _ _ n)))
+(defn TopForm.line (f) (match f (TF _ _ l _ _ _ l)))
+(defn TopForm.col (f) (match f (TF _ _ _ c _ _ c)))
+(defn TopForm.end-line (f) (match f (TF _ _ l _ e _ (if (< e 0) l e))))
+(defn TopForm.end-col (f) (match f (TF _ _ _ c _ e (if (< e 0) c e))))
 
 (defn si-top-level-forms (text)
   (list-reverse (si-scan text 0 (str-length text) 0 0 0 0 Nil)))
@@ -291,7 +291,7 @@
 
 (defn si-find-word (text word)
   (match (si-word-occurrences text word)
-    (Cons p d1 (Some p))
+    (Cons p _ (Some p))
     (Nil None)))
 
 ; ===========================================================================
@@ -306,8 +306,8 @@
 
 (deftype CallCtx (CC String Int)) ; head symbol, index of the argument at the cursor
 
-(defn CallCtx.head (c) (match c (CC h d1 h)))
-(defn CallCtx.arg (c) (match c (CC d1 a a)))
+(defn CallCtx.head (c) (match c (CC h _ h)))
+(defn CallCtx.arg (c) (match c (CC _ a a)))
 
 (defn si-call-context (text line col)
   (let target (si-offset-of-pos text line col)
@@ -370,7 +370,7 @@
 (defn si-ctx-pop (stack)
   (match stack
     (Nil Nil)
-    (Cons d1 rest (si-ctx-count rest))))
+    (Cons _ rest (si-ctx-count rest))))
 
 (defn si-ctx-skip-comment (text i target len stack)
   (if (>= i target)
@@ -382,4 +382,4 @@
 (defn si-ctx-top (stack)
   (match stack
     (Nil None)
-    (Cons c d1 (if (= (str-length (CallCtx.head c)) 0) None (Some c)))))
+    (Cons c _ (if (= (str-length (CallCtx.head c)) 0) None (Some c)))))

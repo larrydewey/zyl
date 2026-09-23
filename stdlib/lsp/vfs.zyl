@@ -14,10 +14,10 @@
 (deftype Document
   (Doc String Int String String)) ; text, version, uri, languageId
 
-(defn Document.text (d) (match d (Doc t d1 d2 d3 t)))
-(defn Document.version (d) (match d (Doc d1 v d2 d3 v)))
-(defn Document.uri (d) (match d (Doc d1 d2 u d3 u)))
-(defn Document.languageId (d) (match d (Doc d1 d2 d3 l l)))
+(defn Document.text (d) (match d (Doc t _ _ _ t)))
+(defn Document.version (d) (match d (Doc _ v _ _ v)))
+(defn Document.uri (d) (match d (Doc _ _ u _ u)))
+(defn Document.languageId (d) (match d (Doc _ _ _ l l)))
 
 (deftype VFS
   (VFSC (Map String Document)))
@@ -103,7 +103,7 @@
     (Cons only rst
       (match rst
         (Nil (list-append before (Cons (str-concat prefix (str-concat only suffix)) after)))
-        (Cons d1 d2
+        (Cons _ _
           (list-append before
             (Cons (str-concat prefix only)
               (list-append (vfs-middle-lines rst) (Cons (str-concat (vfs-last-str rst) suffix) after)))))))))
@@ -111,12 +111,12 @@
 (defn vfs-middle-lines (lines)
   (match lines
     (Nil Nil)
-    (Cons h t (match t (Nil Nil) (Cons d1 d2 (Cons h (vfs-middle-lines t)))))))
+    (Cons h t (match t (Nil Nil) (Cons _ _ (Cons h (vfs-middle-lines t)))))))
 
 (defn vfs-last-str (lines)
   (match lines
     (Nil "")
-    (Cons h t (match t (Nil h) (Cons d1 d2 (vfs-last-str t))))))
+    (Cons h t (match t (Nil h) (Cons _ _ (vfs-last-str t))))))
 
 (defn str-split-lines (s)
   (str-split-lines-loop s 0 0 (str-length s) Nil))
@@ -134,7 +134,7 @@
     (Cons h t
       (match t
         (Nil h)
-        (Cons d1 d2
+        (Cons _ _
           (let rest (str-join-lines t)
             (let m1 (str-concat h "\n")
               (str-concat m1 rest))))))))

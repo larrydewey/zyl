@@ -50,9 +50,9 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn d1 d2 body (mc-expr body Nil))
-          (ETestDecl d3 body d4 (mc-expr body Nil))
-          (d5 0))
+          (EDefn _ _ body (mc-expr body Nil))
+          (ETestDecl _ body _ (mc-expr body Nil))
+          (_ 0))
         (mc-check-top rest)))))
 
 ; --- scope helpers -----------------------------------------------------------
@@ -72,7 +72,7 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (MA d1 d2 body (begin (mc-expr body mutscope) (mc-arms rest mutscope)))))))
+        (MA _ _ body (begin (mc-expr body mutscope) (mc-arms rest mutscope)))))))
 
 (defn mc-cond-clauses (clauses mutscope)
   (match clauses
@@ -90,14 +90,14 @@
     (Nil Nil)
     (Cons pr rest
       (match pr
-        (Pair name d1 (Cons name (mc-for-names rest)))))))
+        (Pair name _ (Cons name (mc-for-names rest)))))))
 
 (defn mc-for-inits (bindings mutscope)
   (match bindings
     (Nil 0)
     (Cons pr rest
       (match pr
-        (Pair d1 opt
+        (Pair _ opt
           (begin
             (match opt
               (Some e2 (mc-expr e2 mutscope))
@@ -120,11 +120,11 @@
     (Cons a rest
       (begin
         (match (Expr.inner a)
-          (ELambda d1 d2 d3
+          (ELambda _ _ _
             (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
-          (EFn d4 d5 d6
+          (EFn _ _ _
             (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
-          (d7 0))
+          (_ 0))
         (mc-check-ffi-args rest)))))
 
 ; --- the actual check ---------------------------------------------------
@@ -145,7 +145,7 @@
       (begin
         (mc-expr val mutscope)
         (mc-expr body (Cons name mutscope))))
-    (EDef d1 val (mc-expr val mutscope))
+    (EDef _ val (mc-expr val mutscope))
     (EIf c t eb
       (begin
         (mc-expr c mutscope)
@@ -160,9 +160,9 @@
           (mc-expr body (mc-append names mutscope)))))
     (ECond clauses (mc-cond-clauses clauses mutscope))
     (EBegin exprs (mc-list exprs mutscope))
-    (ELambda d2 d3 body (mc-expr body mutscope))
-    (EFn d4 d5 body (mc-expr body mutscope))
-    (ETryCatch tbody d6 handler
+    (ELambda _ _ body (mc-expr body mutscope))
+    (EFn _ _ body (mc-expr body mutscope))
+    (ETryCatch tbody _ handler
       (begin (mc-expr tbody mutscope) (mc-expr handler mutscope)))
     (EMatch subj arms (begin (mc-expr subj mutscope) (mc-arms arms mutscope)))
     (ECall op args (begin (mc-expr op mutscope) (mc-list args mutscope)))
@@ -190,17 +190,17 @@
     ; via an intermediate variable isn't traced (that needs real type
     ; info this pass doesn't have), same conservative-undershoot
     ; posture as everywhere else in this file.
-    (EFfiCall d8 args d9
+    (EFfiCall _ args _
       (begin
         (mc-check-ffi-args args)
         (mc-list args mutscope)))
     (EFfiPin e2 (mc-expr e2 mutscope))
     (EFfiUnpin e2 (mc-expr e2 mutscope))
-    (EAssert c d10 (mc-expr c mutscope))
+    (EAssert c _ (mc-expr c mutscope))
     (EUnwrap e2 (mc-expr e2 mutscope))
-    (EStructGet se d11 (mc-expr se mutscope))
-    (EMakeStruct d12 fields (mc-list fields mutscope))
-    (EMakeVariant d13 d14 args (mc-list args mutscope))
+    (EStructGet se _ (mc-expr se mutscope))
+    (EMakeStruct _ fields (mc-list fields mutscope))
+    (EMakeVariant _ _ args (mc-list args mutscope))
     (EPrint exprs (mc-list exprs mutscope))
     (EExit c (mc-expr c mutscope))
     (EClose e2 (mc-expr e2 mutscope))
@@ -209,7 +209,7 @@
     (EFileWrite a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
     (EFileClose e2 (mc-expr e2 mutscope))
     (EBufAppend a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
-    (EWithResource d15 init body
+    (EWithResource _ init body
       (begin (mc-expr init mutscope) (mc-expr body mutscope)))
     ; spec/07 R3 / spec/06 rule 5: a spawned closure must only capture
     ; Send-capable (TCap/TAtomic) variables, and a sent message must
@@ -234,19 +234,19 @@
           (ffi-call "zyl_panic" "E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable" 1000)
           0)
         (mc-expr msg mutscope)))
-    (ESendClosure actor closure d16
+    (ESendClosure actor closure _
       (begin (mc-expr actor mutscope) (mc-expr closure mutscope)))
-    (ETestDecl d17 body d18 (mc-expr body mutscope))
+    (ETestDecl _ body _ (mc-expr body mutscope))
     (EAssertEqual l r (begin (mc-expr l mutscope) (mc-expr r mutscope)))
-    (EAssertFail e2 d19 (mc-expr e2 mutscope))
-    (EAssertTrue e2 d20 (mc-expr e2 mutscope))
-    (EAssertFalse e2 d21 (mc-expr e2 mutscope))
-    (ETestProperty d22 d23 body (mc-expr body mutscope))
+    (EAssertFail e2 _ (mc-expr e2 mutscope))
+    (EAssertTrue e2 _ (mc-expr e2 mutscope))
+    (EAssertFalse e2 _ (mc-expr e2 mutscope))
+    (ETestProperty _ _ body (mc-expr body mutscope))
     (ESetup exprs (mc-list exprs mutscope))
     (ETeardown exprs (mc-list exprs mutscope))
-    (ETestCompile e2 d24 (mc-expr e2 mutscope))
-    (EDefn d25 d26 body (mc-expr body Nil))
-    (d27 0)))
+    (ETestCompile e2 _ (mc-expr e2 mutscope))
+    (EDefn _ _ body (mc-expr body Nil))
+    (_ 0)))
 
 ; --- free-variable-reference scan (for ESpawn/ESend above) --------------
 ; True if `e` references ANY name in `names` anywhere in its tree.
@@ -264,42 +264,42 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (MA d1 d2 body (if (> (mc-refs-any body names) 0) 1 (mc-or-arms rest names)))))))
+        (MA _ _ body (if (> (mc-refs-any body names) 0) 1 (mc-or-arms rest names)))))))
 
 (defn mc-refs-any (e names)
   (match (Expr.inner e)
     (EAtom a
       (match a
         (AIdent n (mc-in-scope n names))
-        (d1 0)))
+        (_ 0)))
     (ECall op args (if (> (mc-refs-any op names) 0) 1 (mc-or-list args names)))
-    (EApply d2 args (mc-or-list args names))
-    (EDef d3 val (mc-refs-any val names))
-    (ELet d4 val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
-    (ELetMut d5 val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
+    (EApply _ args (mc-or-list args names))
+    (EDef _ val (mc-refs-any val names))
+    (ELet _ val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
+    (ELetMut _ val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
     (EIf c t eb
       (if (> (mc-refs-any c names) 0) 1
         (if (> (mc-refs-any t names) 0) 1 (mc-refs-any eb names))))
     (EWhile c body (if (> (mc-refs-any c names) 0) 1 (mc-refs-any body names)))
     (EBegin exprs (mc-or-list exprs names))
-    (ELambda d6 d7 body (mc-refs-any body names))
-    (EFn d8 d9 body (mc-refs-any body names))
-    (ETryCatch tbody d10 handler
+    (ELambda _ _ body (mc-refs-any body names))
+    (EFn _ _ body (mc-refs-any body names))
+    (ETryCatch tbody _ handler
       (if (> (mc-refs-any tbody names) 0) 1 (mc-refs-any handler names)))
     (EMatch subj arms (if (> (mc-refs-any subj names) 0) 1 (mc-or-arms arms names)))
-    (EFfiCall d11 args d12 (mc-or-list args names))
+    (EFfiCall _ args _ (mc-or-list args names))
     (EFfiPin e2 (mc-refs-any e2 names))
     (EFfiUnpin e2 (mc-refs-any e2 names))
-    (EAssert c d13 (mc-refs-any c names))
+    (EAssert c _ (mc-refs-any c names))
     (EUnwrap e2 (mc-refs-any e2 names))
     (ESetBang name val
       (if (> (mc-in-scope name names) 0) 1 (mc-refs-any val names)))
-    (EStructGet se d15 (mc-refs-any se names))
-    (EMakeStruct d16 fields (mc-or-list fields names))
-    (EMakeVariant d17 d18 args (mc-or-list args names))
+    (EStructGet se _ (mc-refs-any se names))
+    (EMakeStruct _ fields (mc-or-list fields names))
+    (EMakeVariant _ _ args (mc-or-list args names))
     (EPrint exprs (mc-or-list exprs names))
     (ESpawn closure (mc-refs-any closure names))
     (ESend actor msg (if (> (mc-refs-any actor names) 0) 1 (mc-refs-any msg names)))
-    (EWithResource d19 init body
+    (EWithResource _ init body
       (if (> (mc-refs-any init names) 0) 1 (mc-refs-any body names)))
-    (d20 0)))
+    (_ 0)))

@@ -106,3 +106,93 @@
 (defn arrow-line (loc)
   (let ls (loc-string loc)
     (str-concat "  " ls)))
+
+; ---------------------------------------------------------------------------
+; RICH DIAGNOSTIC
+; ---------------------------------------------------------------------------
+;
+; One shape for every compile error:
+;
+;   error[E_MALFORMED_PARAMETER]: `(struct-get ...)` is not a parameter
+;     --> tests/regression/structs.zyl:16:20
+;      |
+;   16 | (defn _s-get-x (p (struct-get p "x"))
+;      |                   ^
+;      = help: a missing `)` earlier on the line puts the body in the list
+;
+; `fid` is a source id from zyl_source_register and `off` a byte offset into
+; that file. A negative offset means no phase recorded a span for this node
+; -- every node a later phase synthesises rather than reads -- and that
+; degrades to the header and the help line instead of pointing at the wrong
+; place. Every str-concat operand is a pre-bound `let`, per this file's own
+; header note.
+; A canonical symbol key (spec v5.0 SS31.2) is what the compiler works in --
+; `local/main@0::exh::Color` -- and what these messages used to print in
+; full. The part after the last `::` is the name the user actually wrote;
+; the package prefix is noise in an error, and the location line already
+; says which file this is.
+(defn err-name (n)
+  (let cut (err-last-sep n 0 (- 0 1))
+    (if (< cut 0)
+      n
+      (str-substring n (+ cut 2) (- (str-length n) (+ cut 2))))))
+
+; Index of the last "::" in `n`, or -1.
+(defn err-last-sep (n i best)
+  (if (>= (+ i 1) (str-length n))
+    best
+    (if (= (err-colon2-p n i) 1)
+      (err-last-sep n (+ i 2) i)
+      (err-last-sep n (+ i 1) best))))
+
+(defn err-colon2-p (n i)
+  (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58)
+    (if (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58) 1 0)
+    0))
+
+(defn err-at (code msg fid off help)
+  (let head (err-header code msg)
+    (if (< off 0)
+      (err-nowhere head help)
+      (err-somewhere head fid off help))))
+
+(defn err-nowhere (head help)
+  (let tag "\n  = help: "
+    (let h1 (str-concat head tag)
+      (str-concat h1 help))))
+
+(defn err-somewhere (head fid off help)
+  (let line (ffi-call "zyl_span_line" fid off 1000)
+    (if (<= line 0)
+      (err-nowhere head help)
+      (err-full head fid off help))))
+
+(defn err-full (head fid off help)
+  (let line (ffi-call "zyl_span_line" fid off 1000)
+    (let col (ffi-call "zyl_span_col" fid off 1000)
+      (let path (ffi-call "zyl_source_path" fid 1000)
+        (let text (ffi-call "zyl_span_line_text" fid off 1000)
+          (let ls (int-to-str line)
+            (let cs (int-to-str col)
+              (let gut (space-run (str-length ls))
+                (let pad (space-run (- col 1))
+                  (let s1 (str-concat head "\n  --> ")
+                    (let s2 (str-concat s1 path)
+                      (let s3 (str-concat s2 ":")
+                        (let s4 (str-concat s3 ls)
+                          (let s5 (str-concat s4 ":")
+                            (let s6 (str-concat s5 cs)
+                              (let s7 (str-concat s6 "\n ")
+                                (let s8 (str-concat s7 gut)
+                                  (let s9 (str-concat s8 " |\n ")
+                                    (let sa (str-concat s9 ls)
+                                      (let sb (str-concat sa " | ")
+                                        (let sc (str-concat sb text)
+                                          (let sd (str-concat sc "\n ")
+                                            (let se (str-concat sd gut)
+                                              (let sf (str-concat se " | ")
+                                                (let sg (str-concat sf pad)
+                                                  (let sh (str-concat sg "^\n ")
+                                                    (let si (str-concat sh gut)
+                                                      (let sj (str-concat si " = help: ")
+                                                        (str-concat sj help)))))))))))))))))))))))))))))

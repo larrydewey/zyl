@@ -59,25 +59,25 @@
 
 (defn cc-expr-capability (e)
   (match (Expr.inner e)
-    (EFfiCall d1 d2 d3 "ffi")
-    (EFfiPin d4 "ffi")
-    (EFfiUnpin d5 "ffi")
-    (ESpawn d6 "actor")
-    (ESend d7 d8 "actor")
-    (ESendClosure d9 d10 d11 "actor")
-    (EFileOpen d12 d13 "io")
-    (EFileRead d14 d15 "io")
-    (EFileWrite d16 d17 "io")
-    (EFileClose d18 "io")
+    (EFfiCall _ _ _ "ffi")
+    (EFfiPin _ "ffi")
+    (EFfiUnpin _ "ffi")
+    (ESpawn _ "actor")
+    (ESend _ _ "actor")
+    (ESendClosure _ _ _ "actor")
+    (EFileOpen _ _ "io")
+    (EFileRead _ _ "io")
+    (EFileWrite _ _ "io")
+    (EFileClose _ "io")
     (EReadLine "io")
-    (EApply n d19 (cc-name-capability n))
+    (EApply n _ (cc-name-capability n))
     (EAtom a (cc-atom-capability a))
-    (d20 "")))
+    (_ "")))
 
 (defn cc-atom-capability (a)
   (match a
     (AIdent n (cc-name-capability n))
-    (d1 "")))
+    (_ "")))
 
 ; A call into a capability-bearing part of the standard library needs the
 ; same grant as the construct it wraps: `(file-open ...)` and a call to
@@ -151,14 +151,14 @@
   (match forms
     (Nil 1)
     (Cons e rest
-      (let d1 (cc-check-form e grants denied)
+      (let _ (cc-check-form e grants denied)
         (cc-check-forms rest grants denied)))))
 
 (defn cc-check-form (e grants denied)
   (match (Expr.inner e)
-    (EDefn name d1 body (cc-check-owned name body grants denied))
+    (EDefn name _ body (cc-check-owned name body grants denied))
     (EDef name value (cc-check-owned name value grants denied))
-    (d2 1)))
+    (_ 1)))
 
 (defn cc-check-owned (name body grants denied)
   (let pkg (ck-package-of name)
@@ -172,7 +172,7 @@
 ; one side of it is useless.
 (defn cc-walk (e caps denied pkg fname)
   (let need (cc-expr-capability e)
-    (let d1 (cc-require need caps denied pkg fname)
+    (let _ (cc-require need caps denied pkg fname)
       (cc-walk-children e caps denied pkg fname))))
 
 (defn cc-require (need caps denied pkg fname)
@@ -195,7 +195,7 @@
   (match xs
     (Nil 1)
     (Cons h t
-      (let d1 (cc-walk h caps denied pkg fname)
+      (let _ (cc-walk h caps denied pkg fname)
         (cc-walk-list t caps denied pkg fname)))))
 
 ; Structural recursion over the expression forms that carry sub-terms.
@@ -203,58 +203,58 @@
 (defn cc-walk-children (e caps denied pkg fname)
   (match (Expr.inner e)
     (ECall f args
-      (let d1 (cc-walk f caps denied pkg fname) (cc-walk-list args caps denied pkg fname)))
-    (EApply d2 args (cc-walk-list args caps denied pkg fname))
-    (EDefn d3 d4 body (cc-walk body caps denied pkg fname))
-    (EDef d5 v (cc-walk v caps denied pkg fname))
-    (ELet d6 v b
-      (let d7 (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (ELetMut d8 v b
-      (let d9 (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk f caps denied pkg fname) (cc-walk-list args caps denied pkg fname)))
+    (EApply _ args (cc-walk-list args caps denied pkg fname))
+    (EDefn _ _ body (cc-walk body caps denied pkg fname))
+    (EDef _ v (cc-walk v caps denied pkg fname))
+    (ELet _ v b
+      (let _ (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (ELetMut _ v b
+      (let _ (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
     (EIf c t f
-      (let d10 (cc-walk c caps denied pkg fname)
-        (let d11 (cc-walk t caps denied pkg fname) (cc-walk f caps denied pkg fname))))
-    (ETryCatch b d12 h
-      (let d13 (cc-walk b caps denied pkg fname) (cc-walk h caps denied pkg fname)))
+      (let _ (cc-walk c caps denied pkg fname)
+        (let _ (cc-walk t caps denied pkg fname) (cc-walk f caps denied pkg fname))))
+    (ETryCatch b _ h
+      (let _ (cc-walk b caps denied pkg fname) (cc-walk h caps denied pkg fname)))
     (EMatch s arms
-      (let d14 (cc-walk s caps denied pkg fname) (cc-walk-arms arms caps denied pkg fname)))
+      (let _ (cc-walk s caps denied pkg fname) (cc-walk-arms arms caps denied pkg fname)))
     (EBegin xs (cc-walk-list xs caps denied pkg fname))
     (EPrint xs (cc-walk-list xs caps denied pkg fname))
     (EWhile c b
-      (let d15 (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (EFor d16 c b
-      (let d17 (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (ELambda d18 d19 b (cc-walk b caps denied pkg fname))
-    (EFn d20 d21 b (cc-walk b caps denied pkg fname))
+      (let _ (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFor _ c b
+      (let _ (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (ELambda _ _ b (cc-walk b caps denied pkg fname))
+    (EFn _ _ b (cc-walk b caps denied pkg fname))
     (ESpawn b (cc-walk b caps denied pkg fname))
     (ESend a b
-      (let d22 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (EFfiCall d23 args d24 (cc-walk-list args caps denied pkg fname))
+      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFfiCall _ args _ (cc-walk-list args caps denied pkg fname))
     (EFfiPin b (cc-walk b caps denied pkg fname))
     (EFfiUnpin b (cc-walk b caps denied pkg fname))
     (EFileOpen a b
-      (let d25 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
     (EFileRead a b
-      (let d26 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
     (EFileWrite a b
-      (let d27 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
     (EFileClose b (cc-walk b caps denied pkg fname))
     (EClose b (cc-walk b caps denied pkg fname))
-    (EWithResource d28 a b
-      (let d29 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EWithResource _ a b
+      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
     (EUnwrap b (cc-walk b caps denied pkg fname))
-    (EMakeStruct d30 args (cc-walk-list args caps denied pkg fname))
-    (EMakeVariant d31 d32 args (cc-walk-list args caps denied pkg fname))
-    (ESetBang d33 v (cc-walk v caps denied pkg fname))
-    (EStructGet b d34 (cc-walk b caps denied pkg fname))
-    (EAssert b d35 (cc-walk b caps denied pkg fname))
-    (d36 1)))
+    (EMakeStruct _ args (cc-walk-list args caps denied pkg fname))
+    (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname))
+    (ESetBang _ v (cc-walk v caps denied pkg fname))
+    (EStructGet b _ (cc-walk b caps denied pkg fname))
+    (EAssert b _ (cc-walk b caps denied pkg fname))
+    (_ 1)))
 
 (defn cc-walk-arms (arms caps denied pkg fname)
   (match arms
     (Nil 1)
     (Cons a rest
-      (let d1 (cc-walk (MA.body a) caps denied pkg fname)
+      (let _ (cc-walk (MA.body a) caps denied pkg fname)
         (cc-walk-arms rest caps denied pkg fname)))))
 
 ; ===========================================================================
@@ -284,4 +284,4 @@
     (Cons h t
       (match t
         (Nil h)
-        (d1 (str-concat h (str-concat " " (cc-caps-text t))))))))
+        (_ (str-concat h (str-concat " " (cc-caps-text t))))))))

@@ -101,17 +101,41 @@
 (defn bridge-code-field (code)
   (if (> (str-length code) 0) (Some (Left code)) None))
 
-; The "E_..."/"W_..." token and everything up to its ':'. Usually the
-; message starts with it, but not always -- secret_check prefixes the
-; enclosing function (``in `leak`: E_SECRET_DEBUG: ...``), so the search
-; is for the marker anywhere rather than only at position 0.
+; The "E_..."/"W_..." token. Usually the message starts with it, but not
+; always -- secret_check prefixes the enclosing function (``in `leak`:
+; E_SECRET_DEBUG: ...``) -- so the search is for the marker anywhere rather
+; than only at position 0.
+;
+; The end used to be the next ':', which was right while every message was
+; a bare ``E_CODE: ...``. Located diagnostics write ``error[E_CODE]: ...``,
+; where the ']' comes first and the code came out as "E_ARITY_MISMATCH]".
+; Stop at the first character that cannot be part of a code instead, which
+; handles both spellings.
 (defn bridge-error-code (msg)
   (let n (str-length msg)
     (let start (bridge-code-start msg 0 n)
       (if (< start 0)
         ""
-        (let end (bridge-upto-colon msg start n)
-          (if (< end 0) "" (str-substring msg start (- end start))))))))
+        (let end (bridge-code-end msg start n)
+          (if (<= end start) "" (str-substring msg start (- end start))))))))
+
+(defn bridge-code-end (s i n)
+  (if (>= i n)
+    i
+    (if (= (bridge-code-char-p s i) 1)
+      (bridge-code-end s (+ i 1) n)
+      i)))
+
+; [A-Z0-9_] -- the alphabet every code in error_codes.zyl is spelled with.
+(defn bridge-code-char-p (s i)
+  (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+    (if (= c 95)
+      1
+      (if (< c 48)
+        0
+        (if (<= c 57)
+          1
+          (if (< c 65) 0 (if (<= c 90) 1 0)))))))
 
 (defn bridge-code-start (msg i n)
   (if (> (+ i 2) n)
@@ -122,13 +146,6 @@
         (if (> (str-eq lead "W_") 0)
           i
           (bridge-code-start msg (+ i 1) n))))))
-
-(defn bridge-upto-colon (s i n)
-  (if (>= i n)
-    (- 0 1)
-    (if (> (str-eq (str-substring s i 1) ":") 0)
-      i
-      (bridge-upto-colon s (+ i 1) n))))
 
 ; Text between the first two backticks, or "".
 (defn bridge-backticked (msg)
@@ -173,11 +190,11 @@
 
 (defn st-new () (SymT (map-new) (map-new) (map-new) (map-new) (map-new)))
 
-(defn st-fns (t) (match t (SymT f d1 d2 d3 d4 f)))
-(defn st-adts (t) (match t (SymT d1 a d2 d3 d4 a)))
-(defn st-variant-owners (t) (match t (SymT d1 d2 v d3 d4 v)))
-(defn st-structs (t) (match t (SymT d1 d2 d3 s d4 s)))
-(defn st-field-owners (t) (match t (SymT d1 d2 d3 d4 f f)))
+(defn st-fns (t) (match t (SymT f _ _ _ _ f)))
+(defn st-adts (t) (match t (SymT _ a _ _ _ a)))
+(defn st-variant-owners (t) (match t (SymT _ _ v _ _ v)))
+(defn st-structs (t) (match t (SymT _ _ _ s _ s)))
+(defn st-field-owners (t) (match t (SymT _ _ _ _ f f)))
 
 ; Module resolution qualifies every definition to a canonical key
 ; (spec v5.0 §31.2), and the editor asks about names as they are written
@@ -208,10 +225,10 @@
     (Nil acc)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name params d1 (st-build-acc rest (st-add-fn acc (lsp-source-name name) params)))
+        (EDefn name params _ (st-build-acc rest (st-add-fn acc (lsp-source-name name) params)))
         (EDeftype name variants gparams marker
           (st-build-acc rest (st-add-type acc (lsp-source-name name) variants gparams marker)))
-        (d3 (st-build-acc rest acc))))))
+        (_ (st-build-acc rest acc))))))
 
 ; `defstruct` is not a node of its own: expr_inner.zyl lowers it to an
 ; EDeftype with one variant named after the type and the marker
@@ -281,7 +298,7 @@
 (defn st-first-variant-fields (variants)
   (match variants
     (Nil Nil)
-    (Cons v d1 (match v (AV d2 fields fields)))))
+    (Cons v _ (match v (AV _ fields fields)))))
 
 ; A field name maps to the struct that declared it. Two structs sharing
 ; a field name is ordinary and harmless here -- the later declaration
@@ -297,7 +314,7 @@
     (Nil vo)
     (Cons v rest
       (match v
-        (AV vname d1 (st-register-variants (map-insert vo vname owner) rest owner))))))
+        (AV vname _ (st-register-variants (map-insert vo vname owner) rest owner))))))
 
 (defn st-lookup-fn (t name) (map-get (st-fns t) name))
 (defn st-lookup-adt (t name) (map-get (st-adts t) name))
@@ -318,7 +335,7 @@
   (match (st-lookup-fn t name)
     (Some info
       (match info
-        (FI d1 params
+        (FI _ params
           (Some (str-concat "```zyl\n(defn " (str-concat name (str-concat " (" (str-concat (bridge-params-to-string params) ") ...)\n```"))))))))
     (None None)))
 
@@ -331,7 +348,7 @@
           (let this-str (bridge-param-to-string pname ptyOpt)
             (match rest
               (Nil this-str)
-              (Cons d1 d2 (str-concat this-str (str-concat " " (bridge-params-to-string rest)))))))))))
+              (Cons _ _ (str-concat this-str (str-concat " " (bridge-params-to-string rest)))))))))))
 
 (defn bridge-param-to-string (pname ptyOpt)
   (match ptyOpt
@@ -348,14 +365,14 @@
     (EAtom atom
       (match atom
         (AIdent s s)
-        (d1 "<expr>")))
-    (d2 "<expr>")))
+        (_ "<expr>")))
+    (_ "<expr>")))
 
 (defn bridge-adt-hover (t name)
   (match (st-lookup-adt t name)
     (Some info
       (match info
-        (AI2 d1 variants d2
+        (AI2 _ variants _
           (Some (str-concat "```zyl\n(deftype " (str-concat name (str-concat "\n  " (str-concat (bridge-variants-to-string variants) ")\n```"))))))))
     (None None)))
 
@@ -367,7 +384,7 @@
         (AV vname fields
           (match rest
             (Nil (bridge-variant-line vname fields))
-            (Cons d1 d2 (str-concat (bridge-variant-line vname fields) (str-concat "\n  " (bridge-variants-to-string rest))))))))))
+            (Cons _ _ (str-concat (bridge-variant-line vname fields) (str-concat "\n  " (bridge-variants-to-string rest))))))))))
 
 (defn bridge-variant-line (vname fields)
   (if (is-nil fields)
@@ -377,13 +394,13 @@
 (defn str-join-spaces (xs)
   (match xs
     (Nil "")
-    (Cons h rest (match rest (Nil h) (Cons d1 d2 (str-concat h (str-concat " " (str-join-spaces rest))))))))
+    (Cons h rest (match rest (Nil h) (Cons _ _ (str-concat h (str-concat " " (str-join-spaces rest))))))))
 
 (defn bridge-struct-hover (t name)
   (match (st-lookup-struct t name)
     (Some info
       (match info
-        (SI2 d1 fields
+        (SI2 _ fields
           (Some (str-concat "```zyl\n(defstruct " (str-concat name
                   (str-concat " " (str-concat (str-join-spaces fields)
                     ")\n```\n\nFields are immutable: read one with `struct-get`, and build a changed copy rather than assigning to it."))))))))
@@ -398,7 +415,7 @@
       (match (st-lookup-adt t owner)
         (Some info
           (match info
-            (AI2 d1 variants d2
+            (AI2 _ variants _
               (Some (str-concat "```zyl\n"
                       (str-concat (bridge-find-variant-line variants name)
                         (str-concat "\n```\n\nVariant of `" (str-concat owner "`."))))))))

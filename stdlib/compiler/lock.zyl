@@ -46,21 +46,21 @@
 
 (deftype LockSig (LSig String String String))
 
-(defn lsig-hash (s) (match s (LSig h d1 d2 h)))
-(defn lsig-key (s) (match s (LSig d1 k d2 k)))
-(defn lsig-sig (s) (match s (LSig d1 d2 g g)))
+(defn lsig-hash (s) (match s (LSig h _ _ h)))
+(defn lsig-key (s) (match s (LSig _ k _ k)))
+(defn lsig-sig (s) (match s (LSig _ _ g g)))
 
 (deftype LockSets (LSets (List String) (List String) (List String)))
 
-(defn lsets-features (s) (match s (LSets f d1 d2 f)))
-(defn lsets-capabilities (s) (match s (LSets d1 c d2 c)))
-(defn lsets-deps (s) (match s (LSets d1 d2 d d)))
+(defn lsets-features (s) (match s (LSets f _ _ f)))
+(defn lsets-capabilities (s) (match s (LSets _ c _ c)))
+(defn lsets-deps (s) (match s (LSets _ _ d d)))
 
-(defn lp-name (p) (match p (LP n d1 d2 d3 d4 n)))
-(defn lp-version (p) (match p (LP d1 v d2 d3 d4 v)))
-(defn lp-source (p) (match p (LP d1 d2 s d3 d4 s)))
-(defn lp-sig (p) (match p (LP d1 d2 d3 s d4 s)))
-(defn lp-sets (p) (match p (LP d1 d2 d3 d4 s s)))
+(defn lp-name (p) (match p (LP n _ _ _ _ n)))
+(defn lp-version (p) (match p (LP _ v _ _ _ v)))
+(defn lp-source (p) (match p (LP _ _ s _ _ s)))
+(defn lp-sig (p) (match p (LP _ _ _ s _ s)))
+(defn lp-sets (p) (match p (LP _ _ _ _ s s)))
 
 (defn lp-hash (p) (lsig-hash (lp-sig p)))
 (defn lp-key (p) (lsig-key (lp-sig p)))
@@ -71,12 +71,12 @@
 ; packages, the capability closure and the graph hash.
 (deftype Lock (LK Int String String (List LockPkg) (List String) String))
 
-(defn lk-version (l) (match l (LK v d1 d2 d3 d4 d5 v)))
-(defn lk-compiler (l) (match l (LK d1 c d2 d3 d4 d5 c)))
-(defn lk-compiler-hash (l) (match l (LK d1 d2 h d3 d4 d5 h)))
-(defn lk-pkgs (l) (match l (LK d1 d2 d3 p d4 d5 p)))
-(defn lk-closure (l) (match l (LK d1 d2 d3 d4 c d5 c)))
-(defn lk-graph-hash (l) (match l (LK d1 d2 d3 d4 d5 g g)))
+(defn lk-version (l) (match l (LK v _ _ _ _ _ v)))
+(defn lk-compiler (l) (match l (LK _ c _ _ _ _ c)))
+(defn lk-compiler-hash (l) (match l (LK _ _ h _ _ _ h)))
+(defn lk-pkgs (l) (match l (LK _ _ _ p _ _ p)))
+(defn lk-closure (l) (match l (LK _ _ _ _ c _ c)))
+(defn lk-graph-hash (l) (match l (LK _ _ _ _ _ g g)))
 
 (defn lk-format-version () 1)
 
@@ -94,19 +94,19 @@
 
 (defn lk-ast-head (a)
   (match a
-    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
-    (d3 "")))
+    (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil "")))
+    (_ "")))
 
 (defn lk-ast-args (a)
   (match a
-    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
-    (d2 Nil)))
+    (AList xs (match xs (Cons _ t t) (Nil Nil)))
+    (_ Nil)))
 
 (defn lk-str (a)
   (match a
     (AString s s)
     (AstIdent s s)
-    (d1 "")))
+    (_ "")))
 
 (defn lk-strs (xs)
   (match xs
@@ -128,7 +128,7 @@
 
 (defn lk-field (forms field)
   (match (lk-find-form forms field)
-    (Some f (match (lk-ast-args f) (Cons a d1 (lk-str a)) (Nil "")))
+    (Some f (match (lk-ast-args f) (Cons a _ (lk-str a)) (Nil "")))
     (None "")))
 
 (defn lk-list-field (forms field)
@@ -141,7 +141,7 @@
     (if (< fd 1)
       (ffi-call "zyl_panic" (str-concat "E_PKG_LOCK_INVALID: package: cannot read " path) 1000)
       (let src (file-read fd 4194304)
-        (let d1 (file-close fd)
+        (let _ (file-close fd)
           (lk-of-source arena src path))))))
 
 (defn lk-of-source (arena src path)
@@ -163,18 +163,18 @@
 
 (defn lk-int-field (forms field)
   (match (lk-find-form forms field)
-    (Some f (match (lk-ast-args f) (Cons a d1 (lk-int-of a)) (Nil 0)))
+    (Some f (match (lk-ast-args f) (Cons a _ (lk-int-of a)) (Nil 0)))
     (None 0)))
 
 (defn lk-int-of (a)
   (match a
     (AstInt n n)
-    (d1 0)))
+    (_ 0)))
 
 ; `(compiler "5.0.0" (hash "blake3:..."))`
 (defn lk-compiler-version-of (forms)
   (match (lk-find-form forms "compiler")
-    (Some f (match (lk-ast-args f) (Cons a d1 (lk-str a)) (Nil "")))
+    (Some f (match (lk-ast-args f) (Cons a _ (lk-str a)) (Nil "")))
     (None "")))
 
 (defn lk-compiler-hash-of (forms)
@@ -211,7 +211,7 @@
 (defn lk-source-inner (args)
   (match args
     (Nil (PSRegistry))
-    (Cons h d1
+    (Cons h _
       (let head (lk-ast-head h)
         (if (> (str-eq head "path") 0)
           (PSPath (lk-first-str h))
@@ -221,7 +221,7 @@
 
 (defn lk-first-str (form)
   (match (lk-ast-args form)
-    (Cons a d1 (lk-str a))
+    (Cons a _ (lk-str a))
     (Nil "")))
 
 ; ===========================================================================
@@ -240,7 +240,7 @@
     (Cons h t
       (match t
         (Nil h)
-        (d1 (str-concat h (str-concat " " (lk-words t))))))))
+        (_ (str-concat h (str-concat " " (lk-words t))))))))
 
 (defn lk-quoted-words (xs)
   (match xs
@@ -248,7 +248,7 @@
     (Cons h t
       (match t
         (Nil (lk-quote h))
-        (d1 (str-concat (lk-quote h) (str-concat " " (lk-quoted-words t))))))))
+        (_ (str-concat (lk-quote h) (str-concat " " (lk-quoted-words t))))))))
 
 (defn lk-source-str (s)
   (match s
@@ -313,12 +313,12 @@
 
 (defn lk-with-graph-hash (arena l)
   (match l
-    (LK v c ch pkgs closure d1 (LK v c ch pkgs closure (lk-graph-hash-of arena (LK v c ch pkgs closure ""))))))
+    (LK v c ch pkgs closure _ (LK v c ch pkgs closure (lk-graph-hash-of arena (LK v c ch pkgs closure ""))))))
 
 (defn lk-write (arena path l)
   (let out (file-open path "w")
     (let n (file-write out (lk-to-string arena (lk-with-graph-hash arena l)))
-      (let d1 (file-close out)
+      (let _ (file-close out)
         n))))
 
 (defn lk-sort-pkgs (pkgs)

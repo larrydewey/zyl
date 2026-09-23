@@ -18,7 +18,7 @@
 ;      node in the first place. Every EMatch this file ever sees is a
 ;      real ADT-constructor match.
 ;   2. A `match` arm's tag is a bare `String` regardless of whether it's
-;      a real constructor name or a catch-all bind (`d1`, `_`, `other`,
+;      a real constructor name or a catch-all bind (`_`, `other`,
 ;      ...) -- MatchArm has no separate "is this a bind or a tag" flag.
 ;      This file tells them apart the only reliable way available
 ;      without full type inference: is the tag a KNOWN constructor name
@@ -41,6 +41,7 @@
 (use core/option)
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 (defn ec-check-program (exprs)
   (let dtypes (ec-collect-deftypes exprs)
@@ -56,14 +57,14 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDeftype name variants d1 d2 (Cons (Pair name (ec-variant-names variants)) (ec-collect-deftypes rest)))
-        (d3 (ec-collect-deftypes rest))))))
+        (EDeftype name variants _ _ (Cons (Pair name (ec-variant-names variants)) (ec-collect-deftypes rest)))
+        (_ (ec-collect-deftypes rest))))))
 
 (defn ec-variant-names (variants)
   (match variants
     (Nil Nil)
     (Cons v rest
-      (match v (AV vname d1 (Cons vname (ec-variant-names rest)))))))
+      (match v (AV vname _ (Cons vname (ec-variant-names rest)))))))
 
 (defn ec-variants-of (tyname dtypes)
   (match dtypes
@@ -122,44 +123,46 @@
 ; MATCH CHECK
 ; ===========================================================================
 
-(defn ec-check-match (arms dtypes vowners)
+; `site` is the EMatch node itself, carried down only so a diagnostic can
+; name the line the match is on.
+(defn ec-check-match (arms dtypes vowners site)
   (begin
-    (ec-scan-arms arms dtypes vowners Nil)
+    (ec-scan-arms arms dtypes vowners Nil site)
     (ec-arm-bodies arms dtypes vowners)))
 
-(defn ec-scan-arms (arms dtypes vowners covered)
+(defn ec-scan-arms (arms dtypes vowners covered site)
   (match arms
-    (Nil (ec-finish-exhaustive dtypes covered))
+    (Nil (ec-finish-exhaustive dtypes covered site))
     (Cons a rest
       (match a
-        (MA tag d1 d2
+        (MA tag _ _
           (match (ec-owner-lookup tag vowners)
             (None
               (if (> (list-length rest) 0)
-                (ec-fail-unreachable-bind tag)
+                (ec-fail-unreachable-bind tag site)
                 0))
             (Some owner
               (if (> (str-eq owner "") 0)
                 0
                 (if (> (ec-in-list tag covered) 0)
-                  (ec-fail-duplicate-arm tag)
-                  (ec-scan-arms rest dtypes vowners (Cons (Pair tag owner) covered)))))))))))
+                  (ec-fail-duplicate-arm tag site)
+                  (ec-scan-arms rest dtypes vowners (Cons (Pair tag owner) covered) site))))))))))
 
 ; `covered` is (List (Pair tag owner)); reuses the exact same owner already
 ; resolved during the scan instead of re-looking it up, so a same-named
 ; ambiguous tag elsewhere in the registry can't retroactively confuse
 ; which deftype THIS match's arms actually belong to.
-(defn ec-finish-exhaustive (dtypes covered)
+(defn ec-finish-exhaustive (dtypes covered site)
   (match covered
     (Nil 0)
-    (Cons first d1
+    (Cons first _
       (match first
-        (Pair d2 tyname (ec-check-consistent-and-full dtypes tyname covered))))))
+        (Pair _ tyname (ec-check-consistent-and-full dtypes tyname covered site))))))
 
-(defn ec-check-consistent-and-full (dtypes tyname covered)
+(defn ec-check-consistent-and-full (dtypes tyname covered site)
   (if (> (ec-all-same-owner tyname covered) 0)
     (match (ec-variants-of tyname dtypes)
-      (Some all-variants (ec-check-full-coverage tyname all-variants (ec-tags-only covered)))
+      (Some all-variants (ec-check-full-coverage tyname all-variants (ec-tags-only covered) site))
       (None 0))
     0))
 
@@ -168,47 +171,53 @@
     (Nil 1)
     (Cons pr rest
       (match pr
-        (Pair d1 owner (if (> (str-eq owner tyname) 0) (ec-all-same-owner tyname rest) 0))))))
+        (Pair _ owner (if (> (str-eq owner tyname) 0) (ec-all-same-owner tyname rest) 0))))))
 
 (defn ec-tags-only (covered)
   (match covered
     (Nil Nil)
-    (Cons pr rest (match pr (Pair tag d1 (Cons tag (ec-tags-only rest)))))))
+    (Cons pr rest (match pr (Pair tag _ (Cons tag (ec-tags-only rest)))))))
 
-(defn ec-check-full-coverage (tyname all-variants covered)
+(defn ec-check-full-coverage (tyname all-variants covered site)
   (match all-variants
     (Nil 0)
     (Cons v rest
       (if (> (ec-in-list v covered) 0)
-        (ec-check-full-coverage tyname rest covered)
-        (ec-fail-nonexhaustive tyname v)))))
+        (ec-check-full-coverage tyname rest covered site)
+        (ec-fail-nonexhaustive tyname v site)))))
 
-(defn ec-fail-unreachable-bind (tag)
-  (let m1 "E_UNREACHABLE_MATCH_ARM: catch-all arm `"
-    (let m2 (str-concat m1 tag)
-      (let m3 (str-concat m2 "` is followed by more arms that can never run -- move it to the end")
-        (ffi-call "zyl_panic" m3 1000)))))
+(defn ec-fail-unreachable-bind (tag site)
+  (let m1 "catch-all arm `"
+    (let m2 (str-concat m1 (err-name tag))
+      (let msg (str-concat m2 "` is followed by more arms that can never run")
+        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "move the catch-all arm to the end of the match" site)))))
 
-(defn ec-fail-duplicate-arm (tag)
-  (let m1 "E_UNREACHABLE_MATCH_ARM: arm `"
-    (let m2 (str-concat m1 tag)
-      (let m3 (str-concat m2 "` is already matched by an earlier arm in the same match and can never run")
-        (ffi-call "zyl_panic" m3 1000)))))
+(defn ec-fail-duplicate-arm (tag site)
+  (let m1 "arm `"
+    (let m2 (str-concat m1 (err-name tag))
+      (let msg (str-concat m2 "` is already matched by an earlier arm and can never run")
+        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "delete the repeated arm, or give it a different constructor" site)))))
 
-(defn ec-fail-nonexhaustive (tyname vname)
-  (let m1 "E_NON_EXHAUSTIVE_MATCH: match over `"
-    (let m2 (str-concat m1 tyname)
+(defn ec-fail-nonexhaustive (tyname vname site)
+  (let m1 "match over `"
+    (let m2 (str-concat m1 (err-name tyname))
       (let m3 (str-concat m2 "` does not cover variant `")
-        (let m4 (str-concat m3 vname)
-          (let m5 (str-concat m4 "` -- add an arm for it or a catch-all")
-            (ffi-call "zyl_panic" m5 1000)))))))
+        (let m4 (str-concat m3 (err-name vname))
+          (let msg (str-concat m4 "`")
+            (ec-panic-at "E_NON_EXHAUSTIVE_MATCH" msg "add an arm for that variant, or a `_` catch-all" site)))))))
+
+(defn ec-panic-at (code msg hint site)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (let text (err-at code msg fid off hint)
+        (ffi-call "zyl_panic" text 1000)))))
 
 (defn ec-arm-bodies (arms dtypes vowners)
   (match arms
     (Nil 0)
     (Cons a rest
       (match a
-        (MA d1 d2 body (begin (ec-expr body dtypes vowners) (ec-arm-bodies rest dtypes vowners)))))))
+        (MA _ _ body (begin (ec-expr body dtypes vowners) (ec-arm-bodies rest dtypes vowners)))))))
 
 ; ===========================================================================
 ; WHOLE-PROGRAM EXPR WALK — same shape coverage as arity_check.zyl's
@@ -223,9 +232,9 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn d1 d2 body (ec-expr body dtypes vowners))
-          (ETestDecl d3 body d4 (ec-expr body dtypes vowners))
-          (d5 0))
+          (EDefn _ _ body (ec-expr body dtypes vowners))
+          (ETestDecl _ body _ (ec-expr body dtypes vowners))
+          (_ 0))
         (ec-walk-top rest dtypes vowners)))))
 
 (defn ec-list (xs dtypes vowners)
@@ -235,10 +244,10 @@
 
 (defn ec-expr (e dtypes vowners)
   (match (Expr.inner e)
-    (ESetBang d1 val (ec-expr val dtypes vowners))
-    (ELet d2 val body (begin (ec-expr val dtypes vowners) (ec-expr body dtypes vowners)))
-    (ELetMut d3 val body (begin (ec-expr val dtypes vowners) (ec-expr body dtypes vowners)))
-    (EDef d4 val (ec-expr val dtypes vowners))
+    (ESetBang _ val (ec-expr val dtypes vowners))
+    (ELet _ val body (begin (ec-expr val dtypes vowners) (ec-expr body dtypes vowners)))
+    (ELetMut _ val body (begin (ec-expr val dtypes vowners) (ec-expr body dtypes vowners)))
+    (EDef _ val (ec-expr val dtypes vowners))
     (EIf c t eb (begin (ec-expr c dtypes vowners) (ec-expr t dtypes vowners) (ec-expr eb dtypes vowners)))
     (EWhile c body (begin (ec-expr c dtypes vowners) (ec-expr body dtypes vowners)))
     (EFor bindings cond body
@@ -248,20 +257,20 @@
         (ec-expr body dtypes vowners)))
     (ECond clauses (ec-cond-clauses clauses dtypes vowners))
     (EBegin exprs (ec-list exprs dtypes vowners))
-    (ELambda d5 d6 body (ec-expr body dtypes vowners))
-    (EFn d7 d8 body (ec-expr body dtypes vowners))
-    (ETryCatch tbody d9 handler (begin (ec-expr tbody dtypes vowners) (ec-expr handler dtypes vowners)))
-    (EMatch subj arms (begin (ec-expr subj dtypes vowners) (ec-check-match arms dtypes vowners)))
+    (ELambda _ _ body (ec-expr body dtypes vowners))
+    (EFn _ _ body (ec-expr body dtypes vowners))
+    (ETryCatch tbody _ handler (begin (ec-expr tbody dtypes vowners) (ec-expr handler dtypes vowners)))
+    (EMatch subj arms (begin (ec-expr subj dtypes vowners) (ec-check-match arms dtypes vowners e)))
     (ECall op args (begin (ec-expr op dtypes vowners) (ec-list args dtypes vowners)))
-    (EApply d10 args (ec-list args dtypes vowners))
-    (EFfiCall d11 args d12 (ec-list args dtypes vowners))
+    (EApply _ args (ec-list args dtypes vowners))
+    (EFfiCall _ args _ (ec-list args dtypes vowners))
     (EFfiPin e2 (ec-expr e2 dtypes vowners))
     (EFfiUnpin e2 (ec-expr e2 dtypes vowners))
-    (EAssert c d13 (ec-expr c dtypes vowners))
+    (EAssert c _ (ec-expr c dtypes vowners))
     (EUnwrap e2 (ec-expr e2 dtypes vowners))
-    (EStructGet se d14 (ec-expr se dtypes vowners))
-    (EMakeStruct d15 fields (ec-list fields dtypes vowners))
-    (EMakeVariant d16 d17 args (ec-list args dtypes vowners))
+    (EStructGet se _ (ec-expr se dtypes vowners))
+    (EMakeStruct _ fields (ec-list fields dtypes vowners))
+    (EMakeVariant _ _ args (ec-list args dtypes vowners))
     (EPrint exprs (ec-list exprs dtypes vowners))
     (EExit c (ec-expr c dtypes vowners))
     (EClose e2 (ec-expr e2 dtypes vowners))
@@ -270,30 +279,30 @@
     (EFileWrite a b (begin (ec-expr a dtypes vowners) (ec-expr b dtypes vowners)))
     (EFileClose e2 (ec-expr e2 dtypes vowners))
     (EBufAppend a b (begin (ec-expr a dtypes vowners) (ec-expr b dtypes vowners)))
-    (EWithResource d18 init body (begin (ec-expr init dtypes vowners) (ec-expr body dtypes vowners)))
+    (EWithResource _ init body (begin (ec-expr init dtypes vowners) (ec-expr body dtypes vowners)))
     (ESpawn closure (ec-expr closure dtypes vowners))
     (ESend actor msg (begin (ec-expr actor dtypes vowners) (ec-expr msg dtypes vowners)))
-    (ESendClosure actor closure d19 (begin (ec-expr actor dtypes vowners) (ec-expr closure dtypes vowners)))
-    (ETestDecl d20 body d21 (ec-expr body dtypes vowners))
+    (ESendClosure actor closure _ (begin (ec-expr actor dtypes vowners) (ec-expr closure dtypes vowners)))
+    (ETestDecl _ body _ (ec-expr body dtypes vowners))
     (EAssertEqual l r (begin (ec-expr l dtypes vowners) (ec-expr r dtypes vowners)))
-    (EAssertFail e2 d22 (ec-expr e2 dtypes vowners))
-    (EAssertTrue e2 d23 (ec-expr e2 dtypes vowners))
-    (EAssertFalse e2 d24 (ec-expr e2 dtypes vowners))
-    (ETestProperty d25 d26 body (ec-expr body dtypes vowners))
+    (EAssertFail e2 _ (ec-expr e2 dtypes vowners))
+    (EAssertTrue e2 _ (ec-expr e2 dtypes vowners))
+    (EAssertFalse e2 _ (ec-expr e2 dtypes vowners))
+    (ETestProperty _ _ body (ec-expr body dtypes vowners))
     (ESetup exprs (ec-list exprs dtypes vowners))
     (ETeardown exprs (ec-list exprs dtypes vowners))
-    (ETestCompile e2 d27 (ec-expr e2 dtypes vowners))
-    (ELoadByte d28 off buf (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners)))
-    (ELoadByteSigned d29 off buf (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners)))
-    (EStoreByte d30 off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
-    (EStoreByteSigned d31 off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
+    (ETestCompile e2 _ (ec-expr e2 dtypes vowners))
+    (ELoadByte _ off buf (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners)))
+    (ELoadByteSigned _ off buf (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners)))
+    (EStoreByte _ off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
+    (EStoreByteSigned _ off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
     (EByteSlice buf start len (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr len dtypes vowners)))
     (EByteSliceSub buf start len (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr len dtypes vowners)))
     (EByteBufAppend buf val (begin (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
     (EByteBufLen buf (ec-expr buf dtypes vowners))
     (EByteBufCap buf (ec-expr buf dtypes vowners))
     (EByteBufPtr buf (ec-expr buf dtypes vowners))
-    (EAlignCheck e2 d32 (ec-expr e2 dtypes vowners))
+    (EAlignCheck e2 _ (ec-expr e2 dtypes vowners))
     (EAtomicLoad buf off (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners)))
     (EAtomicStore buf off val (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners) (ec-expr val dtypes vowners)))
     (EAtomicAdd buf off val (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners) (ec-expr val dtypes vowners)))
@@ -302,8 +311,8 @@
     (EAtomicFetchAdd buf off val (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners) (ec-expr val dtypes vowners)))
     (EAtomicMax buf off val (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners) (ec-expr val dtypes vowners)))
     (EAtomicMin buf off val (begin (ec-expr buf dtypes vowners) (ec-expr off dtypes vowners) (ec-expr val dtypes vowners)))
-    (EDefn d33 d34 body (ec-expr body dtypes vowners))
-    (d35 0)))
+    (EDefn _ _ body (ec-expr body dtypes vowners))
+    (_ 0)))
 
 (defn ec-cond-clauses (clauses dtypes vowners)
   (match clauses
@@ -317,7 +326,7 @@
     (Nil 0)
     (Cons pr rest
       (match pr
-        (Pair d1 valOpt
+        (Pair _ valOpt
           (begin
             (match valOpt (Some v (ec-expr v dtypes vowners)) (None 0))
             (ec-for-inits rest dtypes vowners)))))))

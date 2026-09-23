@@ -1,5 +1,128 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — `_` as the only discard, located diagnostics, and the end of an exponential
+
+**`_` is now the catch-all everywhere, a dropped `)` can no longer drive
+the compiler into an allocation runaway, and every diagnostic that has a
+node to point at prints `error[CODE]`, `--> file:line:col`, the source
+line, a caret and a `= help:` line.**
+
+### `_`, not `d1`
+
+`d1`, `d2`, ... existed because `_` could not repeat inside one binding
+list: `unused_check.zyl` exempted only the exact name `_`, and
+`E_DUPLICATE_PARAMETER` rejected a second `_` in a parameter list. The
+exemption is now `_` and any `_`-prefixed name, across the unused,
+shadowing and duplicate-parameter checks alike, so `(defn f (_ _) ...)`
+is legal and `_b` no longer warns. 2172 `dN` and 27 `wNx` occurrences
+across 55 stdlib/selfhost/tools files and 8 test files became `_`.
+
+Six names spelled `dN` were never discards — `pk-parse-core` and
+`pk-parse-triple` (package.zyl) held two dot indices in them,
+`poly1305-mul`/`poly1305-carry` held the five limbs, and
+`macro_expand`/`monomorphization`/`trait_dispatch`/`repl_integration`
+each read one back. A blind rewrite turned those into `_` that silently
+shadowed each other rather than failing; they are now spelled for what
+they are. Anything renamed to `_` was first checked to occur in no read
+position anywhere in the tree.
+
+### Type inference was exponential in a function body
+
+`infer-expr-stmt-chain` (type_inference.zyl) documented itself as
+"infer all but last" and inferred all of them; `infer-expr-begin` then
+inferred the last one again. `build-sequenced-body` nests bodies to the
+right, so every added statement doubled the work — 2^n. Measured on a
+growing body: 0.88s, 1.35, 2.09, 3.40, 6.24, 12.58, a factor of ~1.8 per
+statement.
+
+This was not only a malformed-input bug. A stage of `./boot.sh` took
+about ten minutes (the timeout in boot.sh was sized for it); the whole
+two-stage fixed-point verification now takes **23 seconds**.
+
+### A dropped `)` no longer OOMs the machine
+
+`(defn _s-get-x (p (struct-get p "x"))` — one missing paren, file still
+net-balanced, so `sexp_balance` passed it — parsed as a parameter named
+`struct-get`, swallowed the rest of the file as that function's body and
+sent type inference into the exponential above: ~450 MB/s until the
+kernel OOM-killed the compiler. Three independent changes:
+
+  - `parse-single-param` (expr_inner.zyl) accepts a name or `(name Type)`
+    and nothing else, with `E_MALFORMED_PARAMETER`.
+  - `qf-param` (qualify.zyl) used to rebuild every list-shaped parameter
+    as exactly two elements and drop the rest, quietly turning
+    `(+ p 1)` into the ordinary parameter `(+ p)` — so the malformed
+    shape never reached the only code that judges it. It hands the
+    original node back untouched now.
+  - `zyl_arena_alloc`/`_zeroed` returned 0 on malloc failure and every
+    caller dereferenced it. Allocation failure now reports
+    `E_OUT_OF_MEMORY`, and there is a memory budget: `ZYL_MAX_MEMORY`
+    when set (0 disables it), else 80% of this machine's MemAvailable,
+    else 80% of RAM. It is derived from the machine rather than fixed,
+    so it binds only where the kernel would have killed the process
+    anyway, and it cannot change the output of a compile that succeeds.
+
+### Diagnostics carry a location
+
+`Token` gained a byte offset. Ast did **not** gain a span field: that
+would have meant editing ~470 constructor sites, as a pattern in one
+place and a construction in the next, in a compiler that then has to go
+on compiling itself, where a miscounted pattern arity is a silent
+miscompile rather than a build error. The reader records each node's
+offset in a span table in `runtime/actor_runtime.c`, keyed by the node's
+own address — sound because a variant value is its heap pointer and
+arena memory is never freed or moved during a compile. The table is only
+ever probed by key, never iterated, so determinism is untouched.
+
+Every rewriting pass copies the original's span onto its replacement, one
+line each: `qf-form` (qualify), `convert-ast` (expr_inner), `me-rewrite`
+(macro_expand), `subst-expr` (monomorphization), `td-rewrite`,
+`ci-expr`, `al-expr`, `ic-expr`. That is what carries a position from
+the source text all the way to a codegen-stage error.
+
+`error_report.zyl` renders the shape:
+
+```
+error[E_UNBOUND_VARIABLE]: unbound identifier `nosuchvar`
+  --> hello.zyl:3:16
+   |
+ 3 |     (print-int nosuchvar)
+   |                ^
+   = help: check the spelling, or bind it with `let` before this point
+```
+
+Located so far: `E_MALFORMED_PARAMETER`, the four balance errors,
+`E_ARITY_MISMATCH`, `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM`,
+`E_DUPLICATE_DEFINITION`, `E_UNBOUND_VARIABLE`. Messages print the name
+the user wrote rather than its canonical symbol key (`err-name`).
+
+Still printing bare `PANIC:` text with no location, in rough order of how
+often they fire: `mutability_check` (5), `capability_check` (3),
+`unused_check`'s two warnings, `secret_check`, and the remaining 24 in
+`expr_inner`. Each needs the same treatment: thread the offending node to
+the failure function and call `err-at`.
+
+### Two other things
+
+`driver.zyl`'s `dbg-log` appended to `/tmp/dbg` on every stage of every
+compile — a fixed path in a shared directory, about twenty
+open/write/close cycles per compile. It is off unless `ZYL_DEBUG_STAGES`
+is set.
+
+`compiler_bridge.zyl` read a diagnostic's code as everything up to the
+next `:`, which returned `E_ARITY_MISMATCH]` once messages were spelled
+`error[CODE]:`. It now stops at the first character that cannot be part
+of a code, which handles both spellings.
+
+### Cost
+
+The span table roughly doubled compile time until its growth factor was
+raised from 2 to 8 — a table that doubles from 4096 spends its first
+seconds rehashing. Full suite: 30s before spans, 38s now. `./boot.sh`:
+23s. 87/87 regression tests pass and the fixed point is clean.
+
+---
+
 ## Current Session (2026-09-23) — spec v5.0 §31: the package system, implemented
 
 **The package system is implemented, from canonical symbol keys through

@@ -58,10 +58,10 @@
   (DS Document Int SymTable (List Diagnostic)))
   ; document, version analyzed at, symbol table, diagnostics
 
-(defn DocState.doc (s) (match s (DS d d1 d2 d3 d)))
-(defn DocState.version (s) (match s (DS d1 v d2 d3 v)))
-(defn DocState.symtable (s) (match s (DS d1 d2 t d3 t)))
-(defn DocState.diagnostics (s) (match s (DS d1 d2 d3 g g)))
+(defn DocState.doc (s) (match s (DS d _ _ _ d)))
+(defn DocState.version (s) (match s (DS _ v _ _ v)))
+(defn DocState.symtable (s) (match s (DS _ _ t _ t)))
+(defn DocState.diagnostics (s) (match s (DS _ _ _ g g)))
 
 (deftype DocManager
   (DM (Map String DocState)))
@@ -159,14 +159,14 @@
   (let tbl (st-build exprs)
     (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
       (match outcome
-        (Ok d1 (DS doc (Document.version doc) tbl Nil))
+        (Ok _ (DS doc (Document.version doc) tbl Nil))
         (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) Nil)))))))
 
 ; The same checks selfhost/driver.zyl runs, in the same order. See this
 ; file's header for the two it leaves out and why.
 (defn dm-run-checks (exprs)
-  (let d203 (dc-check-program exprs)
-    (let d201 (ac-check-program exprs)
-      (let d200 (mc-check-program exprs)
-        (let d202 (ec-check-program exprs)
+  (let _ (dc-check-program exprs)
+    (let _ (ac-check-program exprs)
+      (let _ (mc-check-program exprs)
+        (let _ (ec-check-program exprs)
           (sc-check-program exprs))))))

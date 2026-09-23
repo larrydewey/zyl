@@ -221,7 +221,7 @@
       (let buf (cg-buffer st)
         (let out (file-open "/tmp/repl_out.s" "w")
           (let n (file-write out buf)
-            (let d1 (file-close out)
+            (let _ (file-close out)
               (let cc (ffi-call "zyl_cc_compile" "/tmp/repl_out.s" 1000)
                 (if (= cc 0)
                   (ffi-call "zyl_run_bin" "/tmp/repl_out" 1000)

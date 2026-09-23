@@ -52,25 +52,25 @@
 (defn lsp-obj-get (paramsOpt key)
   (match paramsOpt
     (Some (LSPObject obj) (map-get obj key))
-    (d1 None)))
+    (_ None)))
 
 (defn lsp-get-str (paramsOpt key default)
   (match (lsp-obj-get paramsOpt key)
     (Some (LSPString s) s)
-    (d1 default)))
+    (_ default)))
 
 (defn lsp-get-int (paramsOpt key default)
   (match (lsp-obj-get paramsOpt key)
     (Some (LSPInt i) i)
-    (d1 default)))
+    (_ default)))
 
 (defn lsp-text-document-uri (paramsOpt)
   (match (lsp-obj-get paramsOpt "textDocument")
     (Some (LSPObject obj)
       (match (map-get obj "uri")
         (Some (LSPString s) s)
-        (d1 "")))
-    (d2 "")))
+        (_ "")))
+    (_ "")))
 
 (defn lsp-position-of (paramsOpt)
   (match (lsp-obj-get paramsOpt "position")
@@ -78,10 +78,10 @@
       (let line (lsp-any-int (map-get obj "line"))
         (let ch (lsp-any-int (map-get obj "character"))
           (Pos line ch))))
-    (d1 (Pos 0 0))))
+    (_ (Pos 0 0))))
 
 (defn lsp-any-int (o)
-  (match o (Some (LSPInt i) i) (d1 0)))
+  (match o (Some (LSPInt i) i) (_ 0)))
 
 ; ===========================================================================
 ; NOTIFICATIONS
@@ -89,7 +89,7 @@
 
 (defn lsp-handle-notification (arena dm ws notif)
   (match notif
-    (NotifMsg d0 method paramsOpt
+    (NotifMsg _ method paramsOpt
       (if (> (str-eq method "textDocument/didOpen") 0)
         (lsp-on-did-open arena dm ws paramsOpt)
         (if (> (str-eq method "textDocument/didChange") 0)
@@ -115,10 +115,10 @@
                 (begin
                   (lsp-publish-diagnostics dm2 uri)
                   (lsp-loop arena dm2 ws 1))))))))
-    (d1 (lsp-loop arena dm ws 1))))
+    (_ (lsp-loop arena dm ws 1))))
 
 (defn lsp-any-str (o)
-  (match o (Some (LSPString s) s) (d1 "")))
+  (match o (Some (LSPString s) s) (_ "")))
 
 ; Full-document sync only (TextDocumentSyncKind Incremental is
 ; advertised, but every change event here is applied as a full-text
@@ -131,7 +131,7 @@
       (match (lsp-obj-get paramsOpt "contentChanges")
         (Some (LSPArray changes)
           (match changes
-            (Cons (LSPObject ch) d1
+            (Cons (LSPObject ch) _
               (match (map-get ch "range")
                 (Some (LSPObject rangeObj)
                   (let dm2 (dm-on-change arena dm uri (Cons (lsp-text-edit-of ch rangeObj) Nil) version)
@@ -139,13 +139,13 @@
                 (None
                   (let dm2 (dm-on-full-change arena dm uri (lsp-any-str (map-get ch "text")) version)
                     (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))))
-            (d2 (lsp-loop arena dm ws 1))))
-        (d3 (lsp-loop arena dm ws 1))))))
+            (_ (lsp-loop arena dm ws 1))))
+        (_ (lsp-loop arena dm ws 1))))))
 
 (defn lsp-doc-version (paramsOpt)
   (match (lsp-obj-get paramsOpt "textDocument")
     (Some (LSPObject obj) (lsp-any-int (map-get obj "version")))
-    (d1 0)))
+    (_ 0)))
 
 (defn lsp-text-edit-of (ch rangeObj)
   (TE (lsp-range-of rangeObj) (lsp-any-str (map-get ch "text"))))
@@ -156,7 +156,7 @@
 (defn lsp-pos-field (rangeObj key)
   (match (map-get rangeObj key)
     (Some (LSPObject p) (Pos (lsp-any-int (map-get p "line")) (lsp-any-int (map-get p "character"))))
-    (d1 (Pos 0 0))))
+    (_ (Pos 0 0))))
 
 ; didSave is advertised with includeText, so the notification carries
 ; the saved text and the document is re-analysed from it. A client that
@@ -169,7 +169,7 @@
       (Some (LSPString text)
         (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
           (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
-      (d1
+      (_
         (match (dm-get-text dm uri)
           (Some text
             (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
@@ -228,7 +228,7 @@
 
 (defn lsp-handle-request (arena dm ws req running)
   (match req
-    (ReqMsg d0 id method paramsOpt
+    (ReqMsg _ id method paramsOpt
       (if (> (str-eq method "initialize") 0)
         (lsp-req-initialize arena dm ws id paramsOpt)
         (if (> (str-eq method "shutdown") 0)
@@ -317,8 +317,8 @@
     (Some (LSPObject ctx)
       (match (map-get ctx "includeDeclaration")
         (Some (LSPBool b) b)
-        (d1 1)))
-    (d2 1)))
+        (_ 1)))
+    (_ 1)))
 
 (defn lsp-loc-list-any (locs)
   (match locs
@@ -392,7 +392,7 @@
     (Nil Nil)
     (Cons p rest
       (match p
-        (ParamInfo label d1
+        (ParamInfo label _
           (Cons (LSPObject (map-insert (map-new) "label" (LSPString label)))
                 (lsp-paraminfo-list-any rest)))))))
 
@@ -440,23 +440,23 @@
 (defn lsp-range-start-line (paramsOpt)
   (match (lsp-obj-get paramsOpt "range")
     (Some (LSPObject r) (lsp-pos-line-of r "start"))
-    (d1 0)))
+    (_ 0)))
 
 (defn lsp-range-end-line (paramsOpt)
   (match (lsp-obj-get paramsOpt "range")
     (Some (LSPObject r) (lsp-pos-line-of r "end"))
-    (d1 1000000)))
+    (_ 1000000)))
 
 (defn lsp-pos-line-of (r key)
   (match (map-get r key)
     (Some (LSPObject p) (lsp-any-int (map-get p "line")))
-    (d1 0)))
+    (_ 0)))
 
 (defn lsp-req-initialize (arena dm ws id paramsOpt)
   (let ws2
     (match (lsp-obj-get paramsOpt "workspaceFolders")
       (Some (LSPArray folders) (WS (lsp-folder-uris folders)))
-      (d1 ws))
+      (_ ws))
     (begin
       (lsp-respond id (Some (lsp-initialize-result-any)) None)
       (lsp-loop arena dm ws2 1))))
@@ -465,7 +465,7 @@
   (match folders
     (Nil Nil)
     (Cons (LSPObject obj) rest (Cons (lsp-any-str (map-get obj "uri")) (lsp-folder-uris rest)))
-    (Cons d1 rest (lsp-folder-uris rest))))
+    (Cons _ rest (lsp-folder-uris rest))))
 
 ; The capability registry builds real typed ServerCapabilities values;
 ; json_rpc's encoder only knows LSPAny -> JSON. capability-any bridges
@@ -568,8 +568,8 @@
           (None (lsp-respond id (Some LSPNull) None)))
         (lsp-loop arena dm ws 1)))))
 
-(defn Pos.line-of (p) (match p (Pos l d1 l)))
-(defn Pos.col-of (p) (match p (Pos d1 c c)))
+(defn Pos.line-of (p) (match p (Pos l _ l)))
+(defn Pos.col-of (p) (match p (Pos _ c c)))
 
 ; `contents` as a MarkupContent object rather than a bare string: the
 ; hover text is markdown (fenced code plus prose) and a bare string is
@@ -633,7 +633,7 @@
 
 (defn lsp-completion-item-any (ci)
   (match ci
-    (CI label kind d1 d2 d3 d4 detail documentation d5 d6 d7 d8 d9 d10 d11
+    (CI label kind _ _ _ _ detail documentation _ _ _ _ _ _ _
       (let obj0 (map-insert (map-new) "label" (LSPString label))
         (let obj1 (match kind (Some k (map-insert obj0 "kind" (LSPInt (lsp-cik-int k)))) (None obj0))
           (let obj2 (match detail (Some d (map-insert obj1 "detail" (LSPString d))) (None obj1))
@@ -659,7 +659,7 @@
     (CIKStruct 22) (CIKEvent 23) (CIKOperator 24) (CIKTypeParameter 25)
     (CIKCapability 21) (CIKRegion 21) (CIKVariant 20) (CIKTraitMethod 2)
     (CIKFFICall 3) (CIKActorSpawn 3)
-    (d1 22)))
+    (_ 22)))
 
 (defn lsp-req-document-symbol (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -688,7 +688,7 @@
   (match k
     (SKFile 1) (SKModule 2) (SKNamespace 3) (SKPackage 4) (SKClass 5) (SKMethod 6) (SKProperty 7) (SKField 8) (SKConstructor 9) (SKEnum 10)
     (SKInterface 11) (SKFunction 12) (SKVariable 13) (SKConstant 14) (SKString 15) (SKNumber 16) (SKBoolean 17) (SKArray 18) (SKObject 19)
-    (d1 12)))
+    (_ 12)))
 
 (defn lsp-req-semantic-tokens (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -717,7 +717,7 @@
 
 (defn lsp-action-any (a)
   (match a
-    (CA title kind diag d1 d2 edit d3 d4 d5
+    (CA title kind diag _ _ edit _ _ _
       (LSPObject (map-insert (map-new) "title" (LSPString title))))))
 
 (defn lsp-req-folding-range (arena dm ws id paramsOpt)
@@ -735,7 +735,7 @@
 
 (defn lsp-fold-any (f)
   (match f
-    (FR startLine endLine d1 d2 d3 d4
+    (FR startLine endLine _ _ _ _
       (LSPObject (map-insert (map-insert (map-new) "startLine" (LSPInt startLine)) "endLine" (LSPInt endLine))))))
 
 (defn lsp-req-selection-range (arena dm ws id paramsOpt)
@@ -745,7 +745,7 @@
         (Some text
           (match (lsp-obj-get paramsOpt "positions")
             (Some (LSPArray positions) (lsp-respond id (Some (LSPArray (lsp-selrange-list-any text positions))) None))
-            (d1 (lsp-respond id (Some (LSPArray Nil)) None))))
+            (_ (lsp-respond id (Some (LSPArray Nil)) None))))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
       (lsp-loop arena dm ws 1))))
 
@@ -755,10 +755,10 @@
     (Cons (LSPObject p) rest
       (Cons (lsp-selrange-any (selection-range-at text (lsp-any-int (map-get p "line")) (lsp-any-int (map-get p "character"))))
             (lsp-selrange-list-any text rest)))
-    (Cons d1 rest (lsp-selrange-list-any text rest))))
+    (Cons _ rest (lsp-selrange-list-any text rest))))
 
 (defn lsp-selrange-any (sr)
-  (match sr (SelR rng d1 (LSPObject (map-insert (map-new) "range" (lsp-range-to-any rng))))))
+  (match sr (SelR rng _ (LSPObject (map-insert (map-new) "range" (lsp-range-to-any rng))))))
 
 (defn lsp-req-formatting (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -810,7 +810,7 @@
 
 (defn lsp-workspace-edit-any (we)
   (match we
-    (WE changesOpt d1 d2
+    (WE changesOpt _ _
       (LSPObject (map-insert (map-new) "changes" (match changesOpt (Some m (lsp-changes-any m)) (None (LSPObject (map-new)))))))))
 
 (defn lsp-changes-any (m)
@@ -864,9 +864,9 @@
   (match (lsp-obj-get paramsOpt "arguments")
     (Some (LSPArray args)
       (match args
-        (Cons (LSPString s) d1 s)
-        (d2 "")))
-    (d3 "")))
+        (Cons (LSPString s) _ s)
+        (_ "")))
+    (_ "")))
 
 (defn lsp-eval-result-any (ok output)
   (LSPObject
@@ -919,7 +919,7 @@
   (let base (lsp-chitem-any item)
     (match base
       (LSPObject obj (LSPObject (map-insert obj "selectionRange" (lsp-range-to-any (CHI.range item)))))
-      (d1 base))))
+      (_ base))))
 
 (deftype NameUri (NU String String))
 
@@ -930,7 +930,7 @@
         (let uri (lsp-any-str (map-get obj "uri"))
           (if (> (str-length name) 0) (Some (NU name uri)) None)))
       )
-    (d1 None)))
+    (_ None)))
 
 (defn lsp-req-incoming-calls (arena dm ws id paramsOpt)
   (match (lsp-call-hierarchy-item-of paramsOpt)
@@ -1008,7 +1008,7 @@
 
 (defn lsp-ihint-any (h)
   (match h
-    (IH pos label d1 d2 d3 d4 d5
+    (IH pos label _ _ _ _ _
       (LSPObject
         (map-insert
           (map-insert (map-new) "position" (lsp-pos-to-any pos))
@@ -1021,7 +1021,7 @@
 
 (defn lsp-syminfo-any (s)
   (match s
-    (SymInfo name kind d1 locOpt d2 d3
+    (SymInfo name kind _ locOpt _ _
       (LSPObject
         (map-insert (map-insert (map-insert (map-new)
           "name" (LSPString name))

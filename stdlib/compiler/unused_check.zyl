@@ -22,14 +22,12 @@
 ;     kept as a hard error rather than a warning.
 ;
 ; Exemption: `_` (the codegen-recognized wildcard -- see cg-bind-one,
-; which skips slot allocation for it entirely) and any `d` followed by
-; one or more digits (`d1`, `d2`, ... -- confirmed by a repo-wide scan to
-; be this codebase's own established "intentionally discarded" naming
-; convention, 744+ uses across 24 files, used wherever `_` can't be
-; repeated within the same binding list) are exempt from BOTH the
-; unused and the shadowing checks. Without this exemption, checking this
-; codebase's OWN source (which self-hosts through this exact check)
-; would produce thousands of warnings on already-deliberate code.
+; which skips slot allocation for it entirely) and any `_`-prefixed name
+; (`_b`, for a discard that still wants a readable name) are exempt from
+; the unused, shadowing and duplicate-parameter checks alike, so `_` may
+; repeat freely within one binding list. This codebase used to spell
+; discards `d1`, `d2`, ... for exactly that reason; that convention is
+; gone.
 ;
 ; Undershoot posture, same rationale as arity_check.zyl throughout:
 ;   - uc-refs is deliberately OVER-inclusive (walks every shape it can,
@@ -79,22 +77,9 @@
 ; ===========================================================================
 
 (defn uc-is-exempt (name)
-  (if (> (str-eq name "_") 0) 1 (uc-is-d-numeral name)))
-
-(defn uc-is-d-numeral (name)
-  (if (< (str-length name) 2)
+  (if (< (str-length name) 1)
     0
-    (if (> (str-eq (str-substring name 0 1) "d") 0)
-      (uc-all-digits name 1 (str-length name))
-      0)))
-
-(defn uc-all-digits (s i n)
-  (if (>= i n)
-    1
-    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
-      (if (< c 48)
-        0
-        (if (> c 57) 0 (uc-all-digits s (+ i 1) n))))))
+    (str-eq (str-substring name 0 1) "_")))
 
 (defn uc-nonexempt (names)
   (match names
@@ -130,17 +115,17 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name d1 d2 (Cons name (uc-collect-defn-names rest)))
-        (d3 (uc-collect-defn-names rest))))))
+        (EDefn name _ _ (Cons name (uc-collect-defn-names rest)))
+        (_ (uc-collect-defn-names rest))))))
 
 (defn uc-collect-all-refs (exprs)
   (match exprs
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name d1 body (list-append (uc-filter-out name (uc-refs body)) (uc-collect-all-refs rest)))
-        (ETestDecl d2 body d3 (list-append (uc-refs body) (uc-collect-all-refs rest)))
-        (d4 (uc-collect-all-refs rest))))))
+        (EDefn name _ body (list-append (uc-filter-out name (uc-refs body)) (uc-collect-all-refs rest)))
+        (ETestDecl _ body _ (list-append (uc-refs body) (uc-collect-all-refs rest)))
+        (_ (uc-collect-all-refs rest))))))
 
 (defn uc-filter-out (name xs)
   (match xs
@@ -179,7 +164,7 @@
     (Nil Nil)
     (Cons a rest
       (match a
-        (MA d1 patterns body (list-append (uc-refs-list patterns) (list-append (uc-refs body) (uc-refs-arms rest))))))))
+        (MA _ patterns body (list-append (uc-refs-list patterns) (list-append (uc-refs body) (uc-refs-arms rest))))))))
 
 (defn uc-refs-cond (clauses)
   (match clauses
@@ -192,39 +177,39 @@
     (Nil Nil)
     (Cons pr rest
       (match pr
-        (Pair d1 valOpt
+        (Pair _ valOpt
           (list-append
             (match valOpt (Some v (uc-refs v)) (None Nil))
             (uc-refs-for-inits rest)))))))
 
 (defn uc-refs (e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n (Cons n Nil)) (d1 Nil)))
+    (EAtom atom (match atom (AIdent n (Cons n Nil)) (_ Nil)))
     (ECall op args (list-append (uc-refs op) (uc-refs-list args)))
-    (EDef d2 val (uc-refs val))
-    (EDefn d3 d4 body (uc-refs body))
-    (ELet d5 val body (list-append (uc-refs val) (uc-refs body)))
-    (ELetMut d6 val body (list-append (uc-refs val) (uc-refs body)))
+    (EDef _ val (uc-refs val))
+    (EDefn _ _ body (uc-refs body))
+    (ELet _ val body (list-append (uc-refs val) (uc-refs body)))
+    (ELetMut _ val body (list-append (uc-refs val) (uc-refs body)))
     (EIf c t eb (list-append (uc-refs c) (list-append (uc-refs t) (uc-refs eb))))
-    (ETryCatch tbody d7 handler (list-append (uc-refs tbody) (uc-refs handler)))
+    (ETryCatch tbody _ handler (list-append (uc-refs tbody) (uc-refs handler)))
     (EMatch subj arms (list-append (uc-refs subj) (uc-refs-arms arms)))
     (ESpawn body (uc-refs body))
     (ESend a m (list-append (uc-refs a) (uc-refs m)))
-    (ESendClosure a c d8 (list-append (uc-refs a) (uc-refs c)))
-    (EFfiCall d9 args d10 (uc-refs-list args))
+    (ESendClosure a c _ (list-append (uc-refs a) (uc-refs c)))
+    (EFfiCall _ args _ (uc-refs-list args))
     (EFfiPin e2 (uc-refs e2))
     (EFfiUnpin e2 (uc-refs e2))
-    (EAssert c d11 (uc-refs c))
+    (EAssert c _ (uc-refs c))
     (EUnwrap e2 (uc-refs e2))
     (EWhile c body (list-append (uc-refs c) (uc-refs body)))
     (EFor bindings cond body (list-append (uc-refs-for-inits bindings) (list-append (uc-refs cond) (uc-refs body))))
     (ECond clauses (uc-refs-cond clauses))
     (EBegin exprs (uc-refs-list exprs))
-    (ELambda d12 d13 body (uc-refs body))
-    (EFn d14 d15 body (uc-refs body))
-    (EStructGet se d16 (uc-refs se))
-    (EMakeStruct d17 fields (uc-refs-list fields))
-    (EMakeVariant d18 d19 args (uc-refs-list args))
+    (ELambda _ _ body (uc-refs body))
+    (EFn _ _ body (uc-refs body))
+    (EStructGet se _ (uc-refs se))
+    (EMakeStruct _ fields (uc-refs-list fields))
+    (EMakeVariant _ _ args (uc-refs-list args))
     (ESetBang name val (Cons name (uc-refs val)))
     (EPrint exprs (uc-refs-list exprs))
     (EExit c (uc-refs c))
@@ -234,30 +219,30 @@
     (EFileWrite a b (list-append (uc-refs a) (uc-refs b)))
     (EFileClose e2 (uc-refs e2))
     (EBufAppend a b (list-append (uc-refs a) (uc-refs b)))
-    (EWithResource d20 init body (list-append (uc-refs init) (uc-refs body)))
-    (ETestDecl d21 body d22 (uc-refs body))
+    (EWithResource _ init body (list-append (uc-refs init) (uc-refs body)))
+    (ETestDecl _ body _ (uc-refs body))
     (EAssertEqual l r (list-append (uc-refs l) (uc-refs r)))
-    (EAssertFail e2 d23 (uc-refs e2))
-    (EAssertTrue e2 d24 (uc-refs e2))
-    (EAssertFalse e2 d25 (uc-refs e2))
-    (ETestProperty d26 d27 body (uc-refs body))
+    (EAssertFail e2 _ (uc-refs e2))
+    (EAssertTrue e2 _ (uc-refs e2))
+    (EAssertFalse e2 _ (uc-refs e2))
+    (ETestProperty _ _ body (uc-refs body))
     (ESetup exprs (uc-refs-list exprs))
     (ETeardown exprs (uc-refs-list exprs))
-    (ETestCompile e2 d28 (uc-refs e2))
+    (ETestCompile e2 _ (uc-refs e2))
     (EApply fname args (Cons fname (uc-refs-list args)))
-    (EMacroDef d29 args body (list-append (uc-refs-list args) (uc-refs body)))
-    (EUnknown d30 args (uc-refs-list args))
-    (ELoadByte d31 off buf (list-append (uc-refs off) (uc-refs buf)))
-    (ELoadByteSigned d32 off buf (list-append (uc-refs off) (uc-refs buf)))
-    (EStoreByte d33 off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
-    (EStoreByteSigned d34 off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
+    (EMacroDef _ args body (list-append (uc-refs-list args) (uc-refs body)))
+    (EUnknown _ args (uc-refs-list args))
+    (ELoadByte _ off buf (list-append (uc-refs off) (uc-refs buf)))
+    (ELoadByteSigned _ off buf (list-append (uc-refs off) (uc-refs buf)))
+    (EStoreByte _ off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
+    (EStoreByteSigned _ off buf val (list-append (uc-refs off) (list-append (uc-refs buf) (uc-refs val))))
     (EByteSlice buf start len (list-append (uc-refs buf) (list-append (uc-refs start) (uc-refs len))))
     (EByteSliceSub buf start len (list-append (uc-refs buf) (list-append (uc-refs start) (uc-refs len))))
     (EByteBufAppend buf val (list-append (uc-refs buf) (uc-refs val)))
     (EByteBufLen buf (uc-refs buf))
     (EByteBufCap buf (uc-refs buf))
     (EByteBufPtr buf (uc-refs buf))
-    (EAlignCheck e2 d35 (uc-refs e2))
+    (EAlignCheck e2 _ (uc-refs e2))
     (EAtomicLoad buf off (list-append (uc-refs buf) (uc-refs off)))
     (EAtomicStore buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
     (EAtomicAdd buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
@@ -266,7 +251,7 @@
     (EAtomicFetchAdd buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
     (EAtomicMax buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
     (EAtomicMin buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
-    (d36 Nil)))
+    (_ Nil)))
 
 ; ===========================================================================
 ; PARAMETERS: duplicate + unused
@@ -281,9 +266,11 @@
   (match names
     (Nil 0)
     (Cons n rest
-      (if (> (uc-in-list n seen) 0)
-        (uc-fail-dup-param fname n)
-        (uc-check-dup-params fname rest (Cons n seen))))))
+      (if (> (uc-is-exempt n) 0)
+        (uc-check-dup-params fname rest seen)
+        (if (> (uc-in-list n seen) 0)
+          (uc-fail-dup-param fname n)
+          (uc-check-dup-params fname rest (Cons n seen)))))))
 
 (defn uc-fail-dup-param (fname pname)
   (let m1 "E_DUPLICATE_PARAMETER: `"
@@ -337,8 +324,8 @@
       (begin
         (match (Expr.inner e)
           (EDefn name params body (uc-check-fn name params body))
-          (ETestDecl d1 body d2 (uc-check-fn-body body))
-          (d3 0))
+          (ETestDecl _ body _ (uc-check-fn-body body))
+          (_ 0))
         (uc-check-top rest)))))
 
 (defn uc-check-fn (name params body)
@@ -388,7 +375,7 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (MA d1 patterns body
+        (MA _ patterns body
           (let pnames (uc-pattern-names patterns)
             (begin
               (uc-check-shadow-list pnames scope)
@@ -400,8 +387,8 @@
     (Nil Nil)
     (Cons f rest
       (match (Expr.inner f)
-        (EAtom atom (match atom (AIdent n (Cons n (uc-pattern-names rest))) (d1 (uc-pattern-names rest))))
-        (d2 (uc-pattern-names rest))))))
+        (EAtom atom (match atom (AIdent n (Cons n (uc-pattern-names rest))) (_ (uc-pattern-names rest))))
+        (_ (uc-pattern-names rest))))))
 
 (defn uc-walk-lambda-like (label params body refs scope)
   (let pnames (uc-param-names params)
@@ -413,7 +400,7 @@
 
 (defn uc-walk-scope (e refs scope)
   (match (Expr.inner e)
-    (ESetBang d1 val (uc-walk-scope val refs scope))
+    (ESetBang _ val (uc-walk-scope val refs scope))
     (ELet name val body
       (begin
         (uc-check-shadow name scope)
@@ -426,7 +413,7 @@
         (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
-    (EDef d2 val (uc-walk-scope val refs scope))
+    (EDef _ val (uc-walk-scope val refs scope))
     (EIf c t eb (begin (uc-walk-scope c refs scope) (uc-walk-scope t refs scope) (uc-walk-scope eb refs scope)))
     (EWhile c body (begin (uc-walk-scope c refs scope) (uc-walk-scope body refs scope)))
     (EFor bindings cond body
@@ -434,8 +421,8 @@
         (begin (uc-walk-scope cond refs newscope) (uc-walk-scope body refs newscope))))
     (ECond clauses (uc-walk-cond-clauses clauses refs scope))
     (EBegin exprs (uc-walk-list exprs refs scope))
-    (ELambda d3 params body (uc-walk-lambda-like "<lambda>" params body refs scope))
-    (EFn d4 params body (uc-walk-lambda-like "<fn>" params body refs scope))
+    (ELambda _ params body (uc-walk-lambda-like "<lambda>" params body refs scope))
+    (EFn _ params body (uc-walk-lambda-like "<fn>" params body refs scope))
     (ETryCatch tbody cvar handler
       (begin
         (uc-walk-scope tbody refs scope)
@@ -443,15 +430,15 @@
         (uc-walk-scope handler refs (Cons cvar scope))))
     (EMatch subj arms (begin (uc-walk-scope subj refs scope) (uc-walk-arms arms refs scope)))
     (ECall op args (begin (uc-walk-scope op refs scope) (uc-walk-list args refs scope)))
-    (EApply d5 args (uc-walk-list args refs scope))
-    (EFfiCall d6 args d7 (uc-walk-list args refs scope))
+    (EApply _ args (uc-walk-list args refs scope))
+    (EFfiCall _ args _ (uc-walk-list args refs scope))
     (EFfiPin e2 (uc-walk-scope e2 refs scope))
     (EFfiUnpin e2 (uc-walk-scope e2 refs scope))
-    (EAssert c d8 (uc-walk-scope c refs scope))
+    (EAssert c _ (uc-walk-scope c refs scope))
     (EUnwrap e2 (uc-walk-scope e2 refs scope))
-    (EStructGet se d9 (uc-walk-scope se refs scope))
-    (EMakeStruct d10 fields (uc-walk-list fields refs scope))
-    (EMakeVariant d11 d12 args (uc-walk-list args refs scope))
+    (EStructGet se _ (uc-walk-scope se refs scope))
+    (EMakeStruct _ fields (uc-walk-list fields refs scope))
+    (EMakeVariant _ _ args (uc-walk-list args refs scope))
     (EPrint exprs (uc-walk-list exprs refs scope))
     (EExit c (uc-walk-scope c refs scope))
     (EClose e2 (uc-walk-scope e2 refs scope))
@@ -460,30 +447,30 @@
     (EFileWrite a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
     (EFileClose e2 (uc-walk-scope e2 refs scope))
     (EBufAppend a b (begin (uc-walk-scope a refs scope) (uc-walk-scope b refs scope)))
-    (EWithResource d13 init body (begin (uc-walk-scope init refs scope) (uc-walk-scope body refs scope)))
+    (EWithResource _ init body (begin (uc-walk-scope init refs scope) (uc-walk-scope body refs scope)))
     (ESpawn closure (uc-walk-scope closure refs scope))
     (ESend actor msg (begin (uc-walk-scope actor refs scope) (uc-walk-scope msg refs scope)))
-    (ESendClosure actor closure d14 (begin (uc-walk-scope actor refs scope) (uc-walk-scope closure refs scope)))
-    (ETestDecl d15 body d16 (uc-walk-scope body refs scope))
+    (ESendClosure actor closure _ (begin (uc-walk-scope actor refs scope) (uc-walk-scope closure refs scope)))
+    (ETestDecl _ body _ (uc-walk-scope body refs scope))
     (EAssertEqual l r (begin (uc-walk-scope l refs scope) (uc-walk-scope r refs scope)))
-    (EAssertFail e2 d17 (uc-walk-scope e2 refs scope))
-    (EAssertTrue e2 d18 (uc-walk-scope e2 refs scope))
-    (EAssertFalse e2 d19 (uc-walk-scope e2 refs scope))
-    (ETestProperty d20 d21 body (uc-walk-scope body refs scope))
+    (EAssertFail e2 _ (uc-walk-scope e2 refs scope))
+    (EAssertTrue e2 _ (uc-walk-scope e2 refs scope))
+    (EAssertFalse e2 _ (uc-walk-scope e2 refs scope))
+    (ETestProperty _ _ body (uc-walk-scope body refs scope))
     (ESetup exprs (uc-walk-list exprs refs scope))
     (ETeardown exprs (uc-walk-list exprs refs scope))
-    (ETestCompile e2 d22 (uc-walk-scope e2 refs scope))
-    (ELoadByte d23 off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
-    (ELoadByteSigned d24 off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
-    (EStoreByte d25 off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
-    (EStoreByteSigned d26 off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
+    (ETestCompile e2 _ (uc-walk-scope e2 refs scope))
+    (ELoadByte _ off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
+    (ELoadByteSigned _ off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
+    (EStoreByte _ off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
+    (EStoreByteSigned _ off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
     (EByteSlice buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
     (EByteSliceSub buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
     (EByteBufAppend buf val (begin (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
     (EByteBufLen buf (uc-walk-scope buf refs scope))
     (EByteBufCap buf (uc-walk-scope buf refs scope))
     (EByteBufPtr buf (uc-walk-scope buf refs scope))
-    (EAlignCheck e2 d27 (uc-walk-scope e2 refs scope))
+    (EAlignCheck e2 _ (uc-walk-scope e2 refs scope))
     (EAtomicLoad buf off (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope)))
     (EAtomicStore buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
     (EAtomicAdd buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
@@ -493,4 +480,4 @@
     (EAtomicMax buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
     (EAtomicMin buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
     (EDefn name params body (uc-check-fn name params body))
-    (d28 0)))
+    (_ 0)))

@@ -112,14 +112,14 @@
     (TByte "Byte")
     (TByteSlice r (str-concat "ByteSlice" (region-to-string r)))
     (TByteBuf r (str-concat "ByteBuf" (region-to-string r)))
-    (TFun d1 "Fn")
-    (TList d1 "List")
-    (TArray d1 d2 "Array")
-    (TCap d1 d2 "Cap")
-    (TStruct n d1 n)
-    (TVar d1 d2 "Var")
-    (TMap d1 d2 "Map")
-    (TResult d1 d2 "Result")))
+    (TFun _ "Fn")
+    (TList _ "List")
+    (TArray _ _ "Array")
+    (TCap _ _ "Cap")
+    (TStruct n _ n)
+    (TVar _ _ "Var")
+    (TMap _ _ "Map")
+    (TResult _ _ "Result")))
 
 ; ===========================================================================
 ; SUBST MAP — List of (Int Type) bindings
@@ -263,9 +263,9 @@
     ; handoff (see infer-expr-bytebuf-ptr), never by passing the buffer
     ; object itself to an extern.
     (TByte true)
-    (TByteSlice d1 false)
-    (TByteBuf d1 false)
-    (TVar d1 d2 true)
+    (TByteSlice _ false)
+    (TByteBuf _ false)
+    (TVar _ _ true)
     (TList elem (is-ffi-pinnable elem))
     (TArray elem _ (is-ffi-pinnable elem))
     (TStruct _ fields (is-ffi-pinnable-list fields))
@@ -285,7 +285,7 @@
         (_ (is-ffi-pinnable inner))))
     (TMap k v (and (is-ffi-pinnable k) (is-ffi-pinnable v)))
     (TResult e h (and (is-ffi-pinnable e) (is-ffi-pinnable h)))
-    (d1 false)))
+    (_ false)))
 
 (defn is-ffi-pinnable-list (types)
   (match types
@@ -349,8 +349,8 @@
 (deftype TraitContext
   (TC (List TraitInfo) (List ImplInfo))) ; traits, impls
 
-(defn TC.traits (tc) (match tc (TC t d1 t)))
-(defn TC.impls (tc) (match tc (TC d1 i i)))
+(defn TC.traits (tc) (match tc (TC t _ t)))
+(defn TC.impls (tc) (match tc (TC _ i i)))
 
 (defn tc-new ()
   (TC Nil Nil))
@@ -370,9 +370,9 @@
   ; primitives today.
   (match ty
     (TByte true)
-    (TByteBuf d1 false)
-    (TByteSlice d1 false)
-    (d1 (tc-check-derivable-base trait-name))))
+    (TByteBuf _ false)
+    (TByteSlice _ false)
+    (_ (tc-check-derivable-base trait-name))))
 
 (defn tc-check-derivable-base (trait-name)
   ; Simplified: auto-derive Eq, Ord, Debug, Clone, Hash for primitives
@@ -395,8 +395,8 @@
     (TString true)
     (TUnit true)
     (TByte true)
-    (TByteSlice d1 true)
-    (TByteBuf d1 true)
+    (TByteSlice _ true)
+    (TByteBuf _ true)
     (TCap kind inner
       (if (= kind TCSecret)
         false
@@ -404,7 +404,7 @@
           (or (= kind TCAtomic)
             (or (= kind TCByte)
               (or (= kind TCAtomicByte) (tc-is-send tc inner)))))))
-    (d1 false)))
+    (_ false)))
 
 ; ===========================================================================
 ; STRUCT DEFINITIONS
@@ -446,8 +446,8 @@
 ; return its name; else None.
 (defn resolve-nominal (subst t)
   (match (subst-apply subst t)
-    (TStruct n d1 (Some n))
-    (d1 None)))
+    (TStruct n _ (Some n))
+    (_ None)))
 
 ; ===========================================================================
 ; UNIFICATION RESULT
@@ -538,14 +538,14 @@
 
 (defn fst (p)
   (match p
-    (Pair a d2 a)
-    (d1 (fst-pair p))))
+    (Pair a _ a)
+    (_ (fst-pair p))))
 
 (defn fst-pair (p)
   ; was `(Pair (Some a) d3 a)` / `(Pair (None) d4 0)` — nested field
   ; positions (self-hosted parser has no nested-pattern desugaring).
   (match p
-    (Pair first d3
+    (Pair first _
       (match first
         (Some a a)
         (None 0)))))
@@ -553,12 +553,12 @@
 (defn snd (p)
   (match p
     (Pair a b b)
-    (d1 (snd-pair p))))
+    (_ (snd-pair p))))
 
 (defn snd-pair (p)
   (match p
     (Pair a b b)
-    (d1 0)))
+    (_ 0)))
 
 ; Main entry — wraps the inner function
 (defn subst-apply (s t)
@@ -577,14 +577,14 @@
     (TString Nil)
     (TUnit Nil)
     (TByte Nil)
-    (TByteSlice d1 Nil)
-    (TByteBuf d1 Nil)
+    (TByteSlice _ Nil)
+    (TByteBuf _ Nil)
     (TFun args (type-free-vars-list args))
     (TList elem (type-free-vars elem))
-    (TArray elem d1 (type-free-vars elem))
-    (TCap d2 inner (type-free-vars inner))
-    (TStruct d3 fields (type-free-vars-list fields))
-    (TVar n d4 (Cons n Nil))
+    (TArray elem _ (type-free-vars elem))
+    (TCap _ inner (type-free-vars inner))
+    (TStruct _ fields (type-free-vars-list fields))
+    (TVar n _ (Cons n Nil))
     (TMap k v (tfv-union (type-free-vars k) (type-free-vars v)))
     (TResult e h (tfv-union (type-free-vars e) (type-free-vars h))) ))
 
@@ -641,51 +641,51 @@
 ; same-shape arm since TVar never matches TInt/TFloat/.../TResult).
 (defn unify-terms (s t1 t2)
   (match t1
-    (TVar n d5 (unify-var s n t2))
-    (d10 (unify-terms-not-tvar1 s t1 t2))))
+    (TVar n _ (unify-var s n t2))
+    (_ (unify-terms-not-tvar1 s t1 t2))))
 
 (defn unify-terms-not-tvar1 (s t1 t2)
   (match t2
-    (TVar n d8 (unify-var s n t1))
-    (d11 (unify-terms-concrete s t1 t2))))
+    (TVar n _ (unify-var s n t1))
+    (_ (unify-terms-concrete s t1 t2))))
 
 (defn unify-terms-concrete (s t1 t2)
   (match t1
-    (TInt (match t2 (TInt (UOk s)) (TByte (UOk s)) (d1 (UErr "Type mismatch"))))
-    (TByte (match t2 (TByte (UOk s)) (TInt (UOk s)) (d1 (UErr "Type mismatch"))))
+    (TInt (match t2 (TInt (UOk s)) (TByte (UOk s)) (_ (UErr "Type mismatch"))))
+    (TByte (match t2 (TByte (UOk s)) (TInt (UOk s)) (_ (UErr "Type mismatch"))))
     (TByteSlice r1
       (match t2
         (TByteSlice r2 (if (= r1 r2) (UOk s) (UErr "ByteSlice region mismatch")))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TByteBuf r1
       (match t2
         (TByteBuf r2 (if (= r1 r2) (UOk s) (UErr "ByteBuf region mismatch")))
-        (d1 (UErr "Type mismatch"))))
-    (TFloat (match t2 (TFloat (UOk s)) (d1 (UErr "Type mismatch"))))
-    (TBool (match t2 (TBool (UOk s)) (d1 (UErr "Type mismatch"))))
-    (TString (match t2 (TString (UOk s)) (d1 (UErr "Type mismatch"))))
-    (TUnit (match t2 (TUnit (UOk s)) (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
+    (TFloat (match t2 (TFloat (UOk s)) (_ (UErr "Type mismatch"))))
+    (TBool (match t2 (TBool (UOk s)) (_ (UErr "Type mismatch"))))
+    (TString (match t2 (TString (UOk s)) (_ (UErr "Type mismatch"))))
+    (TUnit (match t2 (TUnit (UOk s)) (_ (UErr "Type mismatch"))))
     (TFun args1
       (match t2
         (TFun args2
           (if (= (list-length args1) (list-length args2))
             (unify-args s args1 args2)
             (UErr "Function arity mismatch")))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TList e1
       (match t2
         (TList e2 (unify s e1 e2))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TArray e1 l1
       (match t2
         (TArray e2 l2
           (if (= l1 l2) (unify s e1 e2) (UErr "Array length mismatch")))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TCap k1 a
       (match t2
         (TCap k2 b
           (if (cap-kind-compatible k1 k2) (unify s a b) (UErr "Capability kind mismatch")))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TStruct n1 fs1
       (match t2
         (TStruct n2 fs2
@@ -694,22 +694,22 @@
               (unify-args s fs1 fs2)
               (UErr "Struct field count mismatch"))
             (UErr "Struct name mismatch")))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TMap k1 v1
       (match t2
         (TMap k2 v2
           (match (unify s k1 k2)
             (UOk sx (unify sx v1 v2))
             (UErr e (UErr e))))
-        (d1 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
     (TResult e1 h1
       (match t2
         (TResult e2 h2
           (match (unify s e1 e2)
             (UOk sx (unify sx h1 h2))
             (UErr e (UErr e))))
-        (d1 (UErr "Type mismatch"))))
-    (d2 (UErr "Type mismatch"))))
+        (_ (UErr "Type mismatch"))))
+    (_ (UErr "Type mismatch"))))
 
 ; Occurs check: does type `t` contain type variable `n` anywhere?
 ; `Type` values here are plain immutable trees built by subst-apply/unify
@@ -722,8 +722,8 @@
   (match t
     (TVar m _ (= m n))
     (TByte false)
-    (TByteSlice d1 false)
-    (TByteBuf d1 false)
+    (TByteSlice _ false)
+    (TByteBuf _ false)
     (TFun args (type-contains-var-list args n))
     (TList elem (type-contains-var elem n))
     (TArray elem _ (type-contains-var elem n))
@@ -731,7 +731,7 @@
     (TStruct _ fields (type-contains-var-list fields n))
     (TMap k v (or (type-contains-var k n) (type-contains-var v n)))
     (TResult e h (or (type-contains-var e n) (type-contains-var h n)))
-    (d1 false)))
+    (_ false)))
 
 (defn type-contains-var-list (types n)
   (match types
@@ -757,14 +757,14 @@
     (Nil
       (match args2
         (Nil (UOk s))
-        (d1 (UErr "argument count mismatch"))))
+        (_ (UErr "argument count mismatch"))))
     (Cons h1 t1
       (match args2
         (Cons h2 t2
           (match (unify s h1 h2)
             (UOk sx (unify-args sx t1 t2))
             (UErr e (UErr e))))
-        (d2 (UErr "argument count mismatch"))))))
+        (_ (UErr "argument count mismatch"))))))
 
 ; ===========================================================================
 ; ICNF — SSA IR with Region Annotations (spec §18)
@@ -811,7 +811,7 @@
     (10 BGe)
     (11 BAnd)
     (12 BOr)
-    (d1 BAdd)))
+    (_ BAdd)))
 
 (defn binop-kind-to-int (k)
   (match k
@@ -828,7 +828,7 @@
     (BGe 10)
     (BAnd 11)
     (BOr 12)
-    (d1 0)))
+    (_ 0)))
 
 ; UnOpKind (spec §18.2)
 (deftype UnOpKind
@@ -838,18 +838,18 @@
 ; CaptureField (spec §18.3)
 (deftype CaptureField (CF String Int))  ; name, ssa_id
 
-(defn CF.name (cf) (match cf (CF n d1 n)))
-(defn CF.ssa-id (cf) (match cf (CF d1 s s)))
+(defn CF.name (cf) (match cf (CF n _ n)))
+(defn CF.ssa-id (cf) (match cf (CF _ s s)))
 
 ; MatchArmICNF (spec §18.4)
 (deftype MatchArmICNF
   (MAI String Int (List String) (List String) (List ICNFNode))) ; variant_name, discriminant, field_names, field_types, body
 
-(defn MAI.variant-name (a) (match a (MAI n d1 d2 d3 d4 n)))
-(defn MAI.discriminant (a) (match a (MAI d1 d d2 d3 d4 d)))
-(defn MAI.field-names (a) (match a (MAI d1 d2 n d3 d4 n)))
-(defn MAI.field-types (a) (match a (MAI d1 d2 d3 n d4 n)))
-(defn MAI.body (a) (match a (MAI d1 d2 d3 d4 b b)))
+(defn MAI.variant-name (a) (match a (MAI n _ _ _ _ n)))
+(defn MAI.discriminant (a) (match a (MAI _ d _ _ _ d)))
+(defn MAI.field-names (a) (match a (MAI _ _ n _ _ n)))
+(defn MAI.field-types (a) (match a (MAI _ _ _ n _ n)))
+(defn MAI.body (a) (match a (MAI _ _ _ _ b b)))
 
 ; ICNFInner — the actual IR operations (spec §18)
 (deftype ICNFInner
@@ -900,26 +900,26 @@
 (deftype ICNFNode
   (ICN Int Region (Option Type) Bool ICNFInner)) ; id, region, typ, is_branch_body, node
 
-(defn ICN.id (n) (match n (ICN i d1 d2 d3 d4 i)))
-(defn ICN.region (n) (match n (ICN d1 r d2 d3 d4 r)))
-(defn ICN.typ (n) (match n (ICN d1 d2 t d3 d4 t)))
-(defn ICN.is-branch (n) (match n (ICN d1 d2 d3 b d4 b)))
-(defn ICN.node (n) (match n (ICN d1 d2 d2 d4 n n)))
+(defn ICN.id (n) (match n (ICN i _ _ _ _ i)))
+(defn ICN.region (n) (match n (ICN _ r _ _ _ r)))
+(defn ICN.typ (n) (match n (ICN _ _ t _ _ t)))
+(defn ICN.is-branch (n) (match n (ICN _ _ _ b _ b)))
+(defn ICN.node (n) (match n (ICN _ _ _ _ n n)))
 
 ; ICNFFuncSig — function signature with SSA body
 (deftype ICNFFuncSig
   (IFS String (List (Pair String Type)) (Option Type) (List ICNFNode) Int)) ; name, params, return_type, body, result_id
 
-(defn IFS.name (f) (match f (IFS n d1 d2 d3 d4 n)))
-(defn IFS.params (f) (match f (IFS d1 p d2 d3 d4 p)))
-(defn IFS.return-type (f) (match f (IFS d1 d2 r d3 d4 r)))
-(defn IFS.body (f) (match f (IFS d1 d2 d3 b d4 b)))
-(defn IFS.result-id (f) (match f (IFS d1 d2 d3 d4 r r)))
+(defn IFS.name (f) (match f (IFS n _ _ _ _ n)))
+(defn IFS.params (f) (match f (IFS _ p _ _ _ p)))
+(defn IFS.return-type (f) (match f (IFS _ _ r _ _ r)))
+(defn IFS.body (f) (match f (IFS _ _ _ b _ b)))
+(defn IFS.result-id (f) (match f (IFS _ _ _ _ r r)))
 
 ; ICNFProgram — complete output
 (deftype ICNFProgram
   (IP (List ICNFFuncSig) (List ICNFNode))) ; functions, top-level stmts
 
-(defn IP.functions (p) (match p (IP f d1 f)))
-(defn IP.stmts (p) (match p (IP d1 s s)))
+(defn IP.functions (p) (match p (IP f _ f)))
+(defn IP.stmts (p) (match p (IP _ s s)))
 

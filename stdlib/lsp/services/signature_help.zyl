@@ -35,7 +35,7 @@
 
 (defn sh-from-fn (head info argidx)
   (match info
-    (FI d1 params
+    (FI _ params
       (let label (str-concat "(" (str-concat head (str-concat " " (str-concat (sh-params-label params) ")"))))
         (SigHelp (Cons (SigInfo label None (sh-param-infos params) (Some argidx)) Nil)
                  (Some 0) (Some argidx))))))
@@ -45,17 +45,17 @@
     (Nil "")
     (Cons p t
       (match p
-        (P pname d1
+        (P pname _
           (match t
             (Nil pname)
-            (Cons d2 d3 (str-concat pname (str-concat " " (sh-params-label t))))))))))
+            (Cons _ _ (str-concat pname (str-concat " " (sh-params-label t))))))))))
 
 (defn sh-param-infos (params)
   (match params
     (Nil Nil)
     (Cons p t
       (match p
-        (P pname d1 (Cons (ParamInfo pname None) (sh-param-infos t)))))))
+        (P pname _ (Cons (ParamInfo pname None) (sh-param-infos t)))))))
 
 ; A built-in's parameter list is not structured data -- the table holds
 ; the signature as written text. The whole signature is offered as a

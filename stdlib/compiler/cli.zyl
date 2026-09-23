@@ -42,7 +42,7 @@
     (Cons h t
       (match t
         (Nil h)
-        (d1 (str-concat h (str-concat " " (cli-words t))))))))
+        (_ (str-concat h (str-concat " " (cli-words t))))))))
 
 (defn cli-dep-str (arena d)
   (str-concat "    (dep " (str-concat (cli-quote (pd-name d))
@@ -115,7 +115,7 @@
 (defn cli-write-manifest (arena dir m)
   (let out (file-open (str-concat dir "/zyl.pkg") "w")
     (let n (file-write out (cli-manifest-str arena m))
-      (let d1 (file-close out)
+      (let _ (file-close out)
         n))))
 
 ; ===========================================================================
@@ -129,16 +129,16 @@
 ; module resolution and linking find stdlib/ and actor_runtime.c — so a
 ; relative path here would create the package next to the compiler.
 (defn cli-new (arena cwd name)
-  (let d1 (pk-check-name name)
+  (let _ (pk-check-name name)
     (let dir (str-concat cwd (str-concat "/" (pk-last-segment name)))
-      (let d2 (store-mkdir dir)
+      (let _ (store-mkdir dir)
         (let m (MF (PM name (PV 0 1 0 "") "5.0" "2026")
                    (PDoc "" "" "")
                    (PCaps Nil Nil)
                    (PDeps Nil Nil Nil Nil)
                    (PBuild (pn-empty) Nil))
-          (let d3 (cli-write-manifest arena dir m)
-            (let d4 (cli-write-root-module dir name)
+          (let _ (cli-write-manifest arena dir m)
+            (let _ (cli-write-root-module dir name)
               (begin
                 (print (str-concat "created " (str-concat dir "/zyl.pkg")))
                 0))))))))
@@ -149,7 +149,7 @@
       (let n (file-write out
                (str-concat "; Root module of " (str-concat name
                  "\n\n(pub defn greet (n) n)\n\n(defn main () 0)\n")))
-        (let d1 (file-close out)
+        (let _ (file-close out)
           n)))))
 
 ; ===========================================================================
@@ -160,13 +160,13 @@
 ; names one, and it is written as a bare minimum, never a range (§31.5).
 
 (defn cli-add (arena dir name version)
-  (let d1 (pk-check-name name)
+  (let _ (pk-check-name name)
     (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
       (let v (cli-add-version arena name version)
         (let dep (PD name v Nil (PSRegistry))
-          (let d2 (cli-check-not-present m name)
+          (let _ (cli-check-not-present m name)
             (let m2 (cli-with-dep m dep)
-              (let d3 (cli-write-manifest arena dir m2)
+              (let _ (cli-write-manifest arena dir m2)
                 (begin
                   (print (str-concat "added " (str-concat name (str-concat " " (pv-str arena v)))))
                   0)))))))))
@@ -280,10 +280,10 @@
 
 (defn cli-fetch (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
-    (let d1 (idx-sync (idx-default-url))
+    (let _ (idx-sync (idx-default-url))
       (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
         (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
-          (let d2 (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
+          (let _ (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
             (begin
               (print (str-concat "fetched " (str-concat (cli-int arena (list-length nodes)) " packages")))
               0)))))))
@@ -301,10 +301,10 @@
 (defn cli-update (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let before (cli-lock-closure arena dir)
-      (let d1 (idx-sync (idx-default-url))
+      (let _ (idx-sync (idx-default-url))
         (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
           (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
-            (let d2 (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
+            (let _ (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
               (begin
                 (cli-report-growth before closure)
                 0))))))))
@@ -353,7 +353,7 @@
 (defn cli-vendor (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
-      (let d1 (store-mkdir (str-concat dir "/vendor"))
+      (let _ (store-mkdir (str-concat dir "/vendor"))
         (begin
           (cli-vendor-nodes dir nodes)
           (print (str-concat "vendored " (str-concat (cli-int arena (list-length nodes)) " packages")))
@@ -364,8 +364,8 @@
     (Nil 0)
     (Cons n t
       (let dest (str-concat dir (str-concat "/vendor/" (store-flat-name (mn-name n))))
-        (let d1 (store-mkdir dest)
-          (let d2 (store-run (str-concat "cp -R '" (str-concat (mn-root n)
+        (let _ (store-mkdir dest)
+          (let _ (store-run (str-concat "cp -R '" (str-concat (mn-root n)
                     (str-concat "/.' '" (str-concat dest "'")))))
             (cli-vendor-nodes dir t)))))))
 
@@ -432,10 +432,10 @@
 ; directories, source, output — and the flags are sorted, so two machines
 ; with the same manifest invoke cc identically (§31.10).
 (defn cli-native-object (arena dir n src)
-  (let d1 (cli-check-native-path src)
-    (let d2 (cli-check-flags (pn-cflags n))
+  (let _ (cli-check-native-path src)
+    (let _ (cli-check-flags (pn-cflags n))
       (let obj (str-concat dir (str-concat "/build/native/" (str-concat (store-flat-name src) ".o")))
-        (let d3 (store-mkdir (str-concat dir "/build/native"))
+        (let _ (store-mkdir (str-concat dir "/build/native"))
           (let cmd (cli-cc-command dir n src obj)
             (let rc (store-run cmd)
               (if (= rc 0)
@@ -454,7 +454,7 @@
   (match dirs
     (Nil "")
     (Cons h t
-      (let d1 (cli-check-native-path h)
+      (let _ (cli-check-native-path h)
         (str-concat "-I'" (str-concat dir (str-concat "/" (str-concat h
           (str-concat "' " (cli-include-args dir t))))))))))
 
@@ -469,7 +469,7 @@
   (let n (mf-native m)
     (if (> (pn-is-empty n) 0)
       ""
-      (let d0 (cli-check-native-capability m)
+      (let _ (cli-check-native-capability m)
       (str-concat (cli-quoted-paths (cli-native-objects arena dir n (pn-sources n)))
         (cli-lib-args (pn-link-libs n)))))))
 
@@ -510,17 +510,17 @@
       (begin
         (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
         0)
-      (let d1 (cli-generate-seed arena)
+      (let _ (cli-generate-seed arena)
         (begin
           (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
           0)))))
 
 (defn cli-generate-seed (arena)
-  (let d1 (store-mkdir (store-keys-dir))
+  (let _ (store-mkdir (store-keys-dir))
     (let seed (w-alloc arena 32)
-      (let d2 (ffi-call "zyl_random_fill" seed 32 1000)
+      (let _ (ffi-call "zyl_random_fill" seed 32 1000)
         (let out (file-open (cli-key-path) "w")
-          (let d3 (file-write out (w-hex-bytes seed 32))
+          (let _ (file-write out (w-hex-bytes seed 32))
             (file-close out)))))))
 
 (defn cli-read-seed (arena)
@@ -528,15 +528,15 @@
     (if (< fd 1)
       (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no publisher key - run zyl key" 1000)
       (let s (file-read fd 4096)
-        (let d1 (file-close fd)
+        (let _ (file-close fd)
           (idx-trim s))))))
 
 (defn cli-publish (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let tar (store-tmp-path (mf-name m) ".tar")
-      (let d1 (store-mkdir (str-concat (store-home) "/tmp"))
+      (let _ (store-mkdir (str-concat (store-home) "/tmp"))
         (let hash (store-write-tar-excluding arena dir tar (mf-exclude m))
-          (let d2 (store-compress tar (str-concat tar ".zst"))
+          (let _ (store-compress tar (str-concat tar ".zst"))
             (let sig (idx-sign-hash arena (cli-read-seed arena) hash)
               (begin
                 (cli-print-entry arena m hash sig)

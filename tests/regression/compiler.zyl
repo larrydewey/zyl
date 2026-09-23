@@ -27,11 +27,11 @@
 (defn ident-eq (arena a s)
   (match a
     (AstIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
-    (AstInt d1 0)
-    (AstFloat d2 0)
-    (AString d3 0)
-    (AstBool d4 0)
-    (AList d5 0)))
+    (AstInt _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AstBool _ 0)
+    (AList _ 0)))
 
 ; Token classifier: 1 when the token matches the expected constructor,
 ; 0 otherwise (all constructors enumerated).
@@ -45,23 +45,23 @@
     (TkLBracket (= 12 want))
     (TkRBracket (= 13 want))
     (TkColon (= 14 want))
-    (TkInt d6 (= 2 want))
-    (TkFloat d7 (= 3 want))
-    (TkString d8 (= 4 want))
-    (TkBool d9 (= 5 want))
-    (TkIdent d10 (= 1 want))
-    (TkSymbol d11 (= 6 want))
-    (TkKeyword d12 (= 7 want))))
+    (TkInt _ (= 2 want))
+    (TkFloat _ (= 3 want))
+    (TkString _ (= 4 want))
+    (TkBool _ (= 5 want))
+    (TkIdent _ (= 1 want))
+    (TkSymbol _ (= 6 want))
+    (TkKeyword _ (= 7 want))))
 
 ; Payload of an AstInt node; -1 otherwise.
 (defn atom-int (a)
   (match a
     (AstInt v v)
-    (AstIdent d13 -1)
-    (AstFloat d14 -1)
-    (AString d15 -1)
-    (AstBool d16 -1)
-    (AList d17 -1)))
+    (AstIdent _ -1)
+    (AstFloat _ -1)
+    (AString _ -1)
+    (AstBool _ -1)
+    (AList _ -1)))
 
 ; Lexer produces a (List Token) ending in TkEof
 (test "lex-stream"
@@ -96,21 +96,21 @@
 (defn kids-of-form (a)
   (match a
     (AList kids kids)
-    (AstIdent d18 Nil)
-    (AstInt d19 Nil)
-    (AstFloat d20 Nil)
-    (AString d21 Nil)
-    (AstBool d22 Nil)))
+    (AstIdent _ Nil)
+    (AstInt _ Nil)
+    (AstFloat _ Nil)
+    (AString _ Nil)
+    (AstBool _ Nil)))
 
 ; Number of children when `a` is an AList; 0 otherwise.
 (defn list-len-or-0 (a)
   (match a
     (AList kids (list-length kids))
-    (AstIdent d23 0)
-    (AstInt d24 0)
-    (AstFloat d25 0)
-    (AString d26 0)
-    (AstBool d27 0)))
+    (AstIdent _ 0)
+    (AstInt _ 0)
+    (AstFloat _ 0)
+    (AString _ 0)
+    (AstBool _ 0)))
 
 ; Line component of a location-carrying BalanceResult; -1 otherwise.
 (defn br-line (r)

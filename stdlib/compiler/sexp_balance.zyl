@@ -386,7 +386,7 @@
   (let fd (file-open path "r")
     (if (> fd 0)
       (let srcbuf (file-read fd 1048576)
-        (let d1 (file-close fd)
+        (let _ (file-close fd)
           (sb-check-string srcbuf)))
       (UnbalancedClose "file-open" 0 0))))
 

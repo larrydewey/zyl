@@ -19,7 +19,7 @@
 (defn write-asm (st path)
   (let out (file-open path "w")
     (let nbytes (file-write out (cg-buffer st))
-      (let d1 (file-close out)
+      (let _ (file-close out)
         nbytes))))
 
 ; Lower + emit in a top-level defn (keeps inference out of the test

@@ -25,11 +25,11 @@
     (MCAdtParamOrder (List (MonoKV (List String))))))
 
 (deftype MonoParam (MP String (List String)))
-(defn MP.name (p) (match p (MP n d1 n)))
-(defn MP.bounds (p) (match p (MP d1 b b)))
+(defn MP.name (p) (match p (MP n _ n)))
+(defn MP.bounds (p) (match p (MP _ b b)))
 (deftype MonoInstance (MI String Expr (List MonoParam)))
 
-(defn MI.body (mono) (match mono (MI d1 b d2 b)))
+(defn MI.body (mono) (match mono (MI _ b _ b)))
 
 (deftype MAdtInstantiation (MADI (List String) (List Type)))
 
@@ -37,15 +37,15 @@
 ; Field accessors
 ; ===========================================================================
 
-(defn mc-gen-fns (ctx) (match ctx (MC g d1 d2 d3 d4 d5 d6 d7 d8 g)))
-(defn mc-known-fns (ctx) (match ctx (MC d1 f d2 d3 d4 d5 d6 d7 d8 f)))
-(defn mc-returns (ctx) (match ctx (MC d1 d2 r d3 d4 d5 d6 d7 d8 r)))
-(defn mc-ktypes (ctx) (match ctx (MC d1 d2 d3 kt d4 d5 d6 d7 d8 kt)))
-(defn mc-structs (ctx) (match ctx (MC d1 d2 d3 d4 sd d5 d6 d7 d8 sd)))
-(defn mc-adt-defs (ctx) (match ctx (MC d1 d2 d3 d4 d5 adt d6 d7 d8 adt)))
-(defn mc-adt-insts (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 ai d7 d8 ai)))
-(defn mc-timpls (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 ti d8 ti)))
-(defn mc-adt-param-order (ctx) (match ctx (MC d1 d2 d3 d4 d5 d6 d7 d8 d9 d9)))
+(defn mc-gen-fns (ctx) (match ctx (MC g _ _ _ _ _ _ _ _ g)))
+(defn mc-known-fns (ctx) (match ctx (MC _ f _ _ _ _ _ _ _ f)))
+(defn mc-returns (ctx) (match ctx (MC _ _ r _ _ _ _ _ _ r)))
+(defn mc-ktypes (ctx) (match ctx (MC _ _ _ kt _ _ _ _ _ kt)))
+(defn mc-structs (ctx) (match ctx (MC _ _ _ _ sd _ _ _ _ sd)))
+(defn mc-adt-defs (ctx) (match ctx (MC _ _ _ _ _ adt _ _ _ adt)))
+(defn mc-adt-insts (ctx) (match ctx (MC _ _ _ _ _ _ ai _ _ ai)))
+(defn mc-timpls (ctx) (match ctx (MC _ _ _ _ _ _ _ ti _ ti)))
+(defn mc-adt-param-order (ctx) (match ctx (MC _ _ _ _ _ _ _ _ order order)))
 
 ; ===========================================================================
 ; Helpers — list ops (no stdlib)
@@ -58,8 +58,8 @@
 
 (defn list-first (lst)
   (match lst
-    (Cons h d1 h)
-    (d1 nil)))
+    (Cons h _ h)
+    (_ nil)))
 
 (defn list-last (lst)
   ; match on `t` instead of `(if (= t Nil) h (list-last t))` — `=` on a
@@ -73,8 +73,8 @@
     (Cons h t
       (match t
         (Nil h)
-        (d2 (list-last t))))
-    (d1 nil)))
+        (_ (list-last t))))
+    (_ nil)))
 
 (defn list-nth (lst i)
   (match lst
@@ -113,7 +113,7 @@
 (defn list-each (f lst)
   (match lst
     (Nil nil)
-    ((Cons h t) (let d1 (f h) (list-each f t)))))
+    ((Cons h t) (let _ (f h) (list-each f t)))))
 
 ; ===========================================================================
 ; KV helpers — List (MonoKV K V)
@@ -147,7 +147,7 @@
     (Nil false)
     (Cons hd rest
       (match hd
-        (MK k d1
+        (MK k _
           (if (= k key) true (kv-contains rest key)))))))
 
 ; ===========================================================================
@@ -287,8 +287,8 @@
   (match params
     (Nil Nil)
     (Cons p rest
-      (let pname (match p (P n d1 n))
-        (let pbounds (match (P.type p) (Some v (Cons v Nil)) (d1 Nil))
+      (let pname (match p (P n _ n))
+        (let pbounds (match (P.type p) (Some v (Cons v Nil)) (_ Nil))
           (if (is-uppercase-ident pname)
             (Cons (MP pname pbounds) (extract-mono-params rest))
             (extract-mono-params rest)))))))
@@ -303,14 +303,14 @@
     (EAtom atom
       (match atom
         (AIdent n2 (Some n2))
-        (d2 Nil)))
-    (d1 Nil)))
+        (_ Nil)))
+    (_ Nil)))
 
 (defn ast-apply-args (a)
   (match a
-    (EApply d2 ps ps)
-    (ECall d3 ps ps)
-    (d1 Nil)))
+    (EApply _ ps ps)
+    (ECall _ ps ps)
+    (_ Nil)))
 
 (defn discover-mono-param (i p)
   ; `(string i)` isn't a real builtin (codegen.rs recognizes str-concat/
@@ -319,7 +319,7 @@
   ; self-hosted compiler's own reachability analysis emits it, producing
   ; an undefined `f_string` symbol at link time. A small letter-index
   ; table sidesteps needing int-to-string at all for this fallback name.
-  (let pn (match (ast-ident-name p) (Some v v) (d1 (str-concat "T" (mono-index-letter i))))
+  (let pn (match (ast-ident-name p) (Some v v) (_ (str-concat "T" (mono-index-letter i))))
     (MP pn Nil)))
 
 (defn mono-index-letter (i)
@@ -343,14 +343,14 @@
           gen-fns)))
     (EApply "defn" args
       (if (> (list-length args) 2)
-        (let n (match (ast-ident-name (list-nth args 0)) (Some v v) (d1 nil))
+        (let n (match (ast-ident-name (list-nth args 0)) (Some v v) (_ nil))
           (let pexprs (ast-apply-args (list-nth args 1))
             (let mp (list-map-indexed discover-mono-param pexprs)
               (if (and n (> (list-length mp) 0))
                 (kv-set gen-fns n (list-push (kv-get gen-fns n Nil) (list-first mp)))
                 gen-fns))))
         gen-fns))
-    (d1 gen-fns)))
+    (_ gen-fns)))
 
 (defn discover-from-ast-loop (gen-fns exprs)
   (match exprs
@@ -369,7 +369,7 @@
 (defn infer-arg-type (ctx expr)
   (match (Expr.inner expr)
     (EAtom atom (infer-arg-type-atom ctx atom))
-    (d100 (infer-arg-type-rest ctx expr))))
+    (_ (infer-arg-type-rest ctx expr))))
 
 ; Split out of infer-arg-type: a single EAtom arm with a real nested match,
 ; not five separate top-level `(EAtom (Variant ...) ...)` arms — those all
@@ -379,17 +379,17 @@
 ; hosted compiler's own monomorphization pass on any non-AInt atom).
 (defn infer-arg-type-atom (ctx atom)
   (match atom
-    (AInt d4 TInt)
-    (AFloat d6 TFloat)
-    (ABool d8 TBool)
-    (AStr d10 TString)
+    (AInt _ TInt)
+    (AFloat _ TFloat)
+    (ABool _ TBool)
+    (AStr _ TString)
     (AIdent name
       (cond
         ((kv-contains (mc-ktypes ctx) name) (kv-get (mc-ktypes ctx) name (TVar 0 TUnit)))
         ((is-uppercase-ident name) (TVar 0 TUnit))
         ((is-generic-param name) (TVar 0 TUnit))
         (else (TNominal name))))
-    (d101 (TVar 0 TUnit))))
+    (_ (TVar 0 TUnit))))
 
 (defn infer-arg-type-rest (ctx expr)
   (match (Expr.inner expr)
@@ -409,7 +409,7 @@
               (TVar 0 TUnit))))
         (else (TNominal fname))))
     (ECall op args
-      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (d1 nil))
+      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (_ nil))
         (cond
           ((or (= op-name "+") (= op-name "-") (= op-name "*") (= op-name "/"))
             (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) TInt))
@@ -422,18 +422,18 @@
                 ret)))
           ((str-starts-with op-name "make-") (TNominal (str-drop op-name 5)))
           (else (if (> (list-length args) 0) (infer-arg-type ctx (list-nth args 0)) (TVar 0 TUnit))))))
-    (EIf d12 then_ else_
+    (EIf _ then_ else_
       (let tt (infer-arg-type ctx then_)
         (if (is-skip-placeholder else_)
           tt
           (let et (infer-arg-type ctx else_)
             (if (= (type-to-string tt) (type-to-string et)) tt (TVar 0 TUnit))))))
-    (ELet d13 val d14 (infer-arg-type ctx val))
+    (ELet _ val _ (infer-arg-type ctx val))
     (EBegin exprs
       (if (> (list-length exprs) 0) (infer-arg-type ctx (list-last exprs)) TUnit))
-    (EMakeStruct name d15 (TNominal name))
-    (EMakeVariant adt_name d16 d17 (TNominal adt_name))
-    (d1 (TVar 0 TUnit))))
+    (EMakeStruct name _ (TNominal name))
+    (EMakeVariant adt_name _ _ (TNominal adt_name))
+    (_ (TVar 0 TUnit))))
 
 ; ===========================================================================
 ; unify-types — simplified compatibility check
@@ -521,10 +521,10 @@
       (let tail (collect-instantiations-bounds ctx rest)
         (match (MP.bounds g)
           (Nil tail)
-          (Cons bound d18
+          (Cons bound _
             (match (find-satisfying-types ctx bound)
               (Nil tail)
-              (Cons t d19 (Cons (Pair (MP.name g) t) tail)))))))))
+              (Cons t _ (Cons (Pair (MP.name g) t) tail)))))))))
 
 (defn pairs-to-kv (pairs)
   (match pairs
@@ -543,8 +543,8 @@
   (if (is-uppercase-ident (P.name p))
     (if (kv-contains type-map (P.name p))
       (MP (P.name p) (Cons (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit))) Nil))
-      (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (d1 Nil))))
-    (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (d1 Nil)))))
+      (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (_ Nil))))
+    (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (_ Nil)))))
 
 (defn build-instance-params (params type-map)
   (match params
@@ -642,7 +642,15 @@
       (Cons (AV (AV.name v) (subst-adt-fields (AV.fields v) type-map))
         (subst-adt-variants rest type-map)))))
 
+; This pass rebuilds each node, so the replacement inherits the original's
+; position -- see qf-form (qualify.zyl) for why every rewriting pass needs
+; this one line to keep diagnostics locatable.
 (defn subst-expr (expr type-map var-renames var-types)
+  (let out (subst-expr-node expr type-map var-renames var-types)
+    (let _ (ffi-call "zyl_span_copy" out expr 1000)
+      out)))
+
+(defn subst-expr-node (expr type-map var-renames var-types)
   (match (Expr.inner expr)
     (EDefn name params body
       (let new-params (subst-defn-params params type-map)
@@ -688,13 +696,13 @@
           (Expr (EAtom (AIdent (if (kv-contains var-renames name)
                             (kv-get var-renames name name)
                             name)))))
-        (d1 (Expr (EAtom atom)))))
+        (_ (Expr (EAtom atom)))))
     (EMakeVariant adt_name variant_name args
       (Expr (EMakeVariant adt_name variant_name
         (subst-expr-list args type-map var-renames var-types))))
-    (EDeftype name variants d20 bound
+    (EDeftype name variants _ bound
       (Expr (EDeftype name (subst-adt-variants variants type-map) Nil bound)))
-    (d1 expr)))
+    (_ expr)))
 
 (defn substitute-in-expr (expr)
   (subst-expr expr Nil Nil Nil))
@@ -716,9 +724,9 @@
 
 (defn substitute-in-adt (expr)
   (match (Expr.inner expr)
-    (EDeftype name variants d21 bound
+    (EDeftype name variants _ bound
       (Expr (EDeftype name (substitute-in-adt-variants variants) Nil bound)))
-    (d1 (substitute-in-expr expr))))
+    (_ (substitute-in-expr expr))))
 
 ; ===========================================================================
 ; monomorphize — main entry point
@@ -770,22 +778,22 @@
                 (list-push r2 (substitute-in-expr expr))))))
         (list-push result (substitute-in-expr expr))))
     (ECall op args
-      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (d1 nil))
+      (let op-name (match (ast-ident-name (Expr.inner op)) (Some n n) (_ nil))
         (if (and op-name (kv-contains (mc-gen-fns ctx) op-name))
           (let generics (kv-get (mc-gen-fns ctx) op-name Nil)
             (match (resolve-call-site ctx op-name generics args)
               (Some canonical-name
                 (list-push result (Expr (ECall (Expr (EAtom (AIdent canonical-name))) args))))
-              (d1 (list-push result (substitute-in-expr expr)))))
+              (_ (list-push result (substitute-in-expr expr)))))
           (list-push result (substitute-in-expr expr)))))
     (EApply fname args
       (if (kv-contains (mc-gen-fns ctx) fname)
         (match (resolve-call-site ctx fname (kv-get (mc-gen-fns ctx) fname Nil) args)
           (Some canonical-name
             (list-push result (Expr (EApply canonical-name args))))
-          (d1 (list-push result (substitute-in-expr expr))))
+          (_ (list-push result (substitute-in-expr expr))))
         (list-push result (substitute-in-expr expr))))
-    (EDeftype name variants d22 bound
+    (EDeftype name variants _ bound
       (let acc0 result
         (let subresult (substitute-in-adt expr)
           (list-push acc0 subresult))))
@@ -793,7 +801,7 @@
       (let acc0 result
         (let r1 (monomorphize-push-impl-bodies acc0 trait_name type_name bodies)
           (list-push r1 expr))))
-    (d23
+    (_
       (let acc0 result
         (let subresult (substitute-in-expr expr)
           (list-push acc0 subresult))))))
@@ -847,7 +855,7 @@
               (mc-adt-param-order ctx)
               (Cons (MK variant adt) Nil)))
             (mc-populate-variant-to-adt new-ctx rest)))
-        (d1 (mc-populate-variant-to-adt ctx rest))))))
+        (_ (mc-populate-variant-to-adt ctx rest))))))
 
 (defn populate-known-fns (ctx known-fns)
   ; known-fns is (List FnSig) where FnSig = (FNS Name (List ParamType))
@@ -868,7 +876,7 @@
               (mc-timpls ctx)
               (mc-adt-param-order ctx)))
             (populate-known-fns new-ctx rest)))
-        (d1 (populate-known-fns ctx rest))))))
+        (_ (populate-known-fns ctx rest))))))
 
 (defn fn-sig-params-to-mono (params)
   ; Convert (List ParamType) to (List (MonoKV Type))
@@ -879,7 +887,7 @@
       (match hd
         (PT pname ptype
           (Cons (MK pname (Cons ptype Nil)) (fn-sig-params-to-mono rest)))
-        (d1 (fn-sig-params-to-mono rest))))))
+        (_ (fn-sig-params-to-mono rest))))))
 
 (defn populate-func-returns (ctx func-returns)
   ; func-returns is (List FnReturn) where FnReturn = (FR Name Type)
@@ -899,7 +907,7 @@
               (mc-timpls ctx)
               (mc-adt-param-order ctx)))
             (populate-func-returns new-ctx rest)))
-        (d1 (populate-func-returns ctx rest))))))
+        (_ (populate-func-returns ctx rest))))))
 
 (defn populate-known-types (ctx known-types)
   ; known-types is (List TypeBind) where TypeBind = (TB Name Type)
@@ -919,7 +927,7 @@
               (mc-timpls ctx)
               (mc-adt-param-order ctx)))
             (populate-known-types new-ctx rest)))
-        (d1 (populate-known-types ctx rest))))))
+        (_ (populate-known-types ctx rest))))))
 
 (defn populate-adt-defs (ctx adt-defs)
   ; adt-defs is (List AdtDef) where AdtDef = (AD Name (List Variant))
@@ -943,7 +951,7 @@
                 (mc-timpls ctx)
                 (mc-adt-param-order ctx)))
               (populate-adt-defs new-ctx rest))))
-        (d1 (populate-adt-defs ctx rest))))))
+        (_ (populate-adt-defs ctx rest))))))
 
 ; `variants` comes straight from a TypeInferer's `(AD name variants)` ADT
 ; def entry, which stores the raw (List ADTVariant) EDeftype gave it --
@@ -964,7 +972,7 @@
       (match hd
         (AV vname field-types
           (Cons (MK vname field-types) (adt-variants-to-fields rest)))
-        (d1 (adt-variants-to-fields rest))))))
+        (_ (adt-variants-to-fields rest))))))
 
 (defn populate-adt-insts (ctx adt-insts)
   ; adt-insts is (List AdtInstantiation) where AdtInstantiation = (AI (List (Pair String String)))
@@ -979,7 +987,7 @@
           ; we don't have ADT name in AdtInstantiation.
           ; This is a limitation - Rust has AdtInstantiation with adt name.
           (populate-adt-insts ctx rest))
-        (d1 (populate-adt-insts ctx rest))))))
+        (_ (populate-adt-insts ctx rest))))))
 
 (defn populate-struct-defs (ctx struct-defs)
   ; struct-defs is (List StructDef) where StructDef = (SD Name (List (Pair String (Option Type))))
@@ -1001,7 +1009,7 @@
                 (mc-timpls ctx)
                 (mc-adt-param-order ctx)))
               (populate-struct-defs new-ctx rest))))
-        (d1 (populate-struct-defs ctx rest))))))
+        (_ (populate-struct-defs ctx rest))))))
 
 (defn struct-fields-to-mono (fields)
   ; Convert (List (Pair String (Option Type))) to (List (MonoKV Type))
@@ -1015,7 +1023,7 @@
               (Cons (MK fname (Cons typ Nil)) (struct-fields-to-mono rest)))
             (None
               (Cons (MK fname (Cons (TVar 0 TUnit) Nil)) (struct-fields-to-mono rest)))))
-        (d1 (struct-fields-to-mono rest))))))
+        (_ (struct-fields-to-mono rest))))))
 
 ; trait-ctx is (TC (List TraitInfo) (List ImplInfo)); extracted once here
 ; and handed to populate-trait-impls-list, which walks the plain (List
@@ -1052,7 +1060,7 @@
               (Cons (MK trait-name (Cons impl-type Nil)) (mc-timpls ctx))
               (mc-adt-param-order ctx)))
             (populate-trait-impls-list new-ctx rest)))
-        (d1 (populate-trait-impls-list ctx rest))))))
+        (_ (populate-trait-impls-list ctx rest))))))
 
 ; Populate mono context with adt_param_order from type inferer
 (defn mono-context-populate-adt-order (ctx inferer)
@@ -1079,7 +1087,7 @@
               (mc-timpls ctx)
               (Cons (MK name params) (mc-adt-param-order ctx))))
             (mono-context-populate-adt-order-loop new-ctx rest)))
-        (d1 (mono-context-populate-adt-order-loop ctx rest))))))
+        (_ (mono-context-populate-adt-order-loop ctx rest))))))
 
 ; ===========================================================================
 ; kv-keys — extract keys from List (MonoKV K V)
@@ -1109,7 +1117,7 @@
         (
           MK
           k
-          d24
+          _
           (
             Cons
             k
