@@ -65,6 +65,52 @@ Abort execution or revert state if checkpoint is active.
 
 ---
 
+## Package System Errors (§31)
+
+Specified in v5.0, unimplemented. Phase 19 (`package`) is new and must be
+added to the phase legend in `stdlib/compiler/error_codes.zyl`.
+
+| Error Code | Phase | Condition |
+|------------|-------|-----------|
+| `E_MANIFEST_INVALID` | 19 | `zyl.pkg` malformed or missing a required field |
+| `E_MANIFEST_NOT_FOUND` | 19 | No `zyl.pkg` in the package root |
+| `E_PKG_BAD_NAME` | 19 | Name is not a valid scoped path |
+| `E_PKG_BAD_VERSION` | 19 | Version is not strict SemVer |
+| `E_PKG_BAD_REQUIREMENT` | 19 | Range operator in a requirement; MVS takes minimums |
+| `E_PKG_DUPLICATE_DEP` | 19 | Two `dep` entries for one name |
+| `E_PKG_NOT_FOUND` | 19 | Name not present in the index |
+| `E_PKG_VERSION_NOT_FOUND` | 19 | Version not present in the index |
+| `E_PKG_NOT_IN_STORE` | 19 | Build needs a package the store lacks |
+| `E_PKG_HASH_MISMATCH` | 19 | Archive hash differs from the lock |
+| `E_PKG_SIGNATURE_INVALID` | 19 | Ed25519 signature does not verify |
+| `E_PKG_KEY_CHANGED` | 19 | Publisher key differs from the pinned key |
+| `E_PKG_UNSIGNED` | 19 | Index entry carries no signature |
+| `E_PKG_YANKED` | 19 | New resolution selected a yanked version |
+| `E_PKG_LOCK_STALE` | 19 | `--locked`, but manifests imply a different graph |
+| `E_PKG_LOCK_INVALID` | 19 | Lock malformed or of an unknown version |
+| `E_PKG_COMPILER_TOO_OLD` | 19 | Package requires a newer compiler |
+| `E_PKG_UNKNOWN_EDITION` | 19 | Edition not known to this compiler |
+| `E_PKG_FETCH_FAILED` | 19 | `git`/`curl` exited non-zero |
+| `E_PKG_ARCHIVE_INVALID` | 19 | Archive violates the canonical format |
+| `E_PKG_NATIVE_PATH_ESCAPE` | 19 | Native source path escapes the package root |
+| `E_PKG_NATIVE_FLAG_DENIED` | 19 | cflag outside the allowlist |
+| `E_PKG_NATIVE_BUILD_FAILED` | 19 | `cc` failed on a native source |
+| `E_PKG_FEATURE_UNKNOWN` | 19 | Requested feature not declared |
+| `E_PKG_FEATURE_COLLISION` | 19 | Gated definition collides with a base definition |
+| `E_PKG_CYCLE` | 9 | Dependency graph is not a DAG |
+| `E_MODULE_CYCLE` | 9 | Module graph within a package is not a DAG |
+| `E_PKG_VERSION_CONFLICT` | 9 | Requirement unsatisfiable within a major |
+| `E_PKG_PRIVATE_SYMBOL` | 9 | Imported symbol is not `pub` |
+| `E_PKG_UNKNOWN_SYMBOL` | 9 | Imported symbol does not exist |
+| `E_PKG_UNKNOWN_MODULE` | 9 | Module path does not exist in that package |
+| `E_PKG_UNDECLARED_DEP` | 9 | `use` names a package absent from the manifest |
+| `E_PKG_RESERVED_MODULE` | 9 | Module named `unsafe` |
+| `E_PKG_ORPHAN_IMPL` | 12 | Impl where neither trait nor type is local |
+| `E_PKG_CAPABILITY_VIOLATION` | 13 | Construct used without the declared capability |
+| `E_PKG_CAPABILITY_GROWTH` | 13 | Capability closure grew under `--locked` |
+
+---
+
 ## Error Model Implementation
 
 The error model is defined in `src/error.rs` with the following structure:

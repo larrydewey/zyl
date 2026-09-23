@@ -240,10 +240,39 @@ files = [
     'stdlib/core/list.zyl',
     'stdlib/collections/collections.zyl',
     'stdlib/allocator/allocator.zyl',
+    # Flat word arrays: the package resolver's symbol tables are sorted
+    # arrays searched by bisection, because a linear scan per identifier
+    # made qualification quadratic in the program's size.
+    'stdlib/math/words.zyl',
+    # Ed25519 and its field arithmetic: §31.8 makes signature
+    # verification mandatory for every fetched package, and `zyl publish`
+    # signs with the same code. One implementation, already covered by
+    # the RFC 8032 known-answer tests in tests/regression/math-ed25519.
+    'stdlib/math/bits.zyl',
+    'stdlib/math/secret/secret.zyl',
+    'stdlib/math/bignum/bignum.zyl',
+    'stdlib/math/bignum/montgomery.zyl',
+    'stdlib/math/bignum/modular.zyl',
+    'stdlib/math/bignum/barrett.zyl',
+    'stdlib/math/hash/sha512.zyl',
+    'stdlib/math/crypto/asymmetric/ed25519.zyl',
     'stdlib/compiler/ast.zyl',
     'stdlib/compiler/expr_inner.zyl',
     'stdlib/compiler/lexer.zyl',
     'stdlib/compiler/parser.zyl',
+    # Package system (spec v5.0 SS31): manifests and versions, the
+    # canonical-key qualifier, the content store, the lock, the index,
+    # Minimal Version Selection, the subcommands, and the resolver that
+    # drives the language-level half of it.
+    'stdlib/compiler/package.zyl',
+    'stdlib/compiler/qualify.zyl',
+    'stdlib/compiler/store.zyl',
+    'stdlib/compiler/workspace.zyl',
+    'stdlib/compiler/lock.zyl',
+    'stdlib/compiler/index.zyl',
+    'stdlib/compiler/mvs.zyl',
+    'stdlib/compiler/cli.zyl',
+    'stdlib/compiler/capability_check.zyl',
     'stdlib/compiler/module_resolver.zyl',
     'stdlib/compiler/macro_expand.zyl',
     'stdlib/compiler/mutability_check.zyl',

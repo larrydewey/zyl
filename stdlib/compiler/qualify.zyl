@@ -1,0 +1,834 @@
+; === Zyl Standard Library — Canonical Symbol Qualification ===
+; Module: compiler/qualify
+;
+; Rewrites a parsed module's identifiers to the canonical keys of spec
+; v5.0 §31.2:
+;
+;     <package>@<major>::<module-path>::<symbol>
+;
+; Every top-level definition in every package gets a globally unique
+; name here, which is what lets two packages define `parse` and link, and
+; what gives monomorphization a total sort order over a graph whose
+; membership it does not control (§17, §31.2).
+;
+; The pass runs on the RAW `Ast`, before `convert-ast` builds ExprInner.
+; That is deliberate. `Ast` has six shapes, so the traversal is small
+; enough to be obviously total, whereas ExprInner has over a hundred
+; variants and a renamer over it would silently miss whichever ones it
+; forgot. Binding forms are recognised here by head symbol exactly as
+; `dispatch-special` recognises them one phase later, so the two agree on
+; what is a binder by construction.
+;
+; Scoping rule: an identifier is rewritten only when it is NOT shadowed
+; by an enclosing binder and IS present in the module's symbol table. An
+; unknown name is left untouched — it is a local, a builtin, or a genuine
+; unbound reference that later phases report with the position they have.
+
+(use compiler/ast)
+(use compiler/package)
+(use core/list)
+(use math/words)
+
+; ===========================================================================
+; CANONICAL KEYS
+; ===========================================================================
+
+; `<package>@<major>::<module>::<symbol>`. Built as text because every
+; consumer downstream — duplicate checking, monomorphization, codegen's
+; mangler — already works in strings, and because the key IS the sort key
+; (§31.2): comparing keys bytewise gives the specified total order.
+(defn ck-key (arena pkg major module symbol)
+  (str-concat pkg
+    (str-concat "@"
+      (str-concat (pk-int-str arena major)
+        (str-concat "::" (str-concat module (str-concat "::" symbol)))))))
+
+; §31.2's mangler, in the runtime so that exactly one implementation sits
+; on the label path. NOT zyl_cstr_sanitize: that maps every byte outside
+; [A-Za-z0-9_] to '_', so `acme/json`, `acme.json` and `acme-json` all
+; collapse to one label and distinct functions silently merge.
+(defn ck-mangle (arena key)
+  (ffi-call "zyl_mangle_key" arena key 1000))
+
+; A canonical key always carries '@'; a bare local or builtin name never
+; does, which is how codegen tells the two apart without a side table.
+(defn ck-is-key (s)
+  (if (> (pk-index-of s 64 0) -1) 1 0))
+
+; Text after the last "::" — the source-level symbol, for diagnostics.
+(defn ck-symbol-of (s)
+  (let i (ck-last-colons s (- (pk-len s) 2))
+    (if (< i 0) s (pk-sub s (+ i 2) (- (pk-len s) (+ i 2))))))
+
+(defn ck-last-colons (s i)
+  (if (< i 0)
+    -1
+    (if (= (pk-byte-at s i) 58)
+      (if (= (pk-byte-at s (+ i 1)) 58) i (ck-last-colons s (- i 1)))
+      (ck-last-colons s (- i 1)))))
+
+; Package part: text before '@'. "" when `s` is not a canonical key.
+(defn ck-package-of (s)
+  (let i (pk-index-of s 64 0)
+    (if (< i 0) "" (pk-sub s 0 i))))
+
+; ===========================================================================
+; SYMBOL TABLE
+; ===========================================================================
+; A module's table maps every name visible in it to a canonical key: its
+; own definitions plus whatever its `use` forms bring in. It is a sorted
+; array of (name, key) word pairs so that lookup is a binary search — a
+; module of the compiler's own size sees thousands of stdlib names, and a
+; linear scan per identifier occurrence made resolution quadratic in the
+; program's size.
+
+(deftype QPair (QP String String))
+
+(defn qp-name (p) (match p (QP n d1 n)))
+(defn qp-key (p) (match p (QP d1 k k)))
+
+(deftype SymTab (ST Int Int))
+
+(defn st-base (t) (match t (ST b d1 b)))
+(defn st-count (t) (match t (ST d1 n n)))
+
+(defn st-empty () (ST 0 0))
+
+(defn st-name-at (t i) (w-get (st-base t) (* i 2)))
+(defn st-key-at (t i) (w-get (st-base t) (+ (* i 2) 1)))
+
+; Sorted (by name) array built from `pairs`. Later pairs win over earlier
+; ones for the same name, which is what makes an explicit import shadow a
+; name the module would otherwise see: the caller appends in precedence
+; order, weakest first.
+(defn st-make (arena pairs)
+  (let sorted (qf-sort-pairs pairs)
+    (let n (list-length sorted)
+      (let base (w-alloc arena (* n 2))
+        (begin
+          (st-fill base sorted 0)
+          (ST base n))))))
+
+(defn st-fill (base pairs i)
+  (match pairs
+    (Nil 0)
+    (Cons h t
+      (begin
+        (w-set base (* i 2) (qp-name h))
+        (w-set base (+ (* i 2) 1) (qp-key h))
+        (st-fill base t (+ i 1))))))
+
+; Merge sort: the table is rebuilt for every module, and an insertion
+; sort over a few thousand names per module is minutes of the build.
+; Stable, so equal names keep the caller's precedence order.
+(defn qf-sort-pairs (xs)
+  (if (< (list-length xs) 2)
+    xs
+    (qf-merge (qf-sort-pairs (qf-take xs (/ (list-length xs) 2)))
+              (qf-sort-pairs (qf-drop xs (/ (list-length xs) 2))))))
+
+(defn qf-take (xs n)
+  (if (<= n 0)
+    Nil
+    (match xs
+      (Nil Nil)
+      (Cons h t (Cons h (qf-take t (- n 1)))))))
+
+(defn qf-drop (xs n)
+  (if (<= n 0)
+    xs
+    (match xs
+      (Nil Nil)
+      (Cons h t (qf-drop t (- n 1))))))
+
+(defn qf-merge (a b)
+  (match a
+    (Nil b)
+    (Cons ah at
+      (match b
+        (Nil a)
+        (Cons bh bt
+          (if (<= (pk-cmp-str (qp-name ah) (qp-name bh) 0) 0)
+            (Cons ah (qf-merge at b))
+            (Cons bh (qf-merge a bt))))))))
+
+; Binary search. Returns the key for `name`, or "" when absent. When a
+; name appears more than once the LAST entry wins, matching st-make's
+; precedence rule.
+(defn st-lookup (t name)
+  (if (= (st-count t) 0)
+    ""
+    (st-search t name 0 (- (st-count t) 1))))
+
+(defn st-search (t name lo hi)
+  (if (> lo hi)
+    ""
+    (let mid (/ (+ lo hi) 2)
+      (let c (pk-cmp-str name (st-name-at t mid) 0)
+        (if (< c 0)
+          (st-search t name lo (- mid 1))
+          (if (> c 0)
+            (st-search t name (+ mid 1) hi)
+            (st-key-at t (st-last-equal t name mid))))))))
+
+(defn st-last-equal (t name i)
+  (if (>= (+ i 1) (st-count t))
+    i
+    (if (= (pk-cmp-str name (st-name-at t (+ i 1)) 0) 0)
+      (st-last-equal t name (+ i 1))
+      i)))
+
+; A module sees two tables: the names its `use` forms bring in, which
+; shadow, and the package-wide surface of its own package (§24.4:
+; a definition is visible throughout the package that defines it). They
+; are kept apart so the package table is built once per package rather
+; than once per module — rebuilding a few thousand sorted entries for
+; every module of the compiler's own package was minutes of the build.
+(deftype QTab (QT SymTab SymTab))
+
+(defn qt-imports (t) (match t (QT i d1 i)))
+(defn qt-package (t) (match t (QT d1 p p)))
+
+(defn qt-lookup (t name)
+  (let k (st-lookup (qt-imports t) name)
+    (if (> (str-length k) 0) k (st-lookup (qt-package t) name))))
+
+; ===========================================================================
+; LOCAL SCOPES
+; ===========================================================================
+; Binders are few per scope, so a list is the right shape here; it also
+; makes shadowing free — a binder is consed on and disappears with the
+; recursive call that introduced it.
+
+(defn qf-bound (locals n)
+  (match locals
+    (Nil 0)
+    (Cons h t (if (> (str-eq h n) 0) 1 (qf-bound t n)))))
+
+(defn qf-bind-all (locals names)
+  (match names
+    (Nil locals)
+    (Cons h t (qf-bind-all (Cons h locals) t))))
+
+; ===========================================================================
+; IDENTIFIER REWRITING
+; ===========================================================================
+
+; Every occurrence gets its OWN copy of the key rather than the table's
+; string. That looks wasteful and is deliberate: type_inference compares
+; names with `=`, which lowers to a pointer comparison whenever the
+; operand kinds are not known to be String (the same defect
+; ic-starts-with-make documents for str-starts-with). Source tokens are
+; always distinct objects, so those comparisons have always been false
+; and the per-call-site body-inference path behind them has never run;
+; handing out one shared pointer per name makes them true for the first
+; time and the dormant path dereferences a null parameter list
+; (bind-call-site-params). Copying keeps name comparison exactly as
+; sound — or unsound — as it was before packages existed. Fixing those
+; comparisons is a separate change to type inference, not to the module
+; system.
+(defn qf-ident (tab locals n)
+  (if (> (qf-bound locals n) 0)
+    n
+    (let k (qt-lookup tab n)
+      (if (> (str-length k) 0) (str-concat k "") n))))
+
+; `(make-Foo ...)` is struct-constructor sugar: icnf strips the "make-"
+; prefix and looks the rest up in the variant table (ic-make-struct), so
+; the SUFFIX has to carry the canonical key, not the whole head. An
+; ordinary function that merely happens to be called `make-something` is
+; resolved as itself, which is why the whole name is tried first.
+(defn qf-make-head (tab locals n)
+  (let base (pk-sub n 5 (- (pk-len n) 5))
+    (let k (qf-ident tab locals base)
+      (if (> (str-eq k base) 0) n (str-concat "make-" k)))))
+
+(defn qf-is-make (n)
+  (if (>= (pk-len n) 6)
+    (if (> (str-eq (pk-sub n 0 5) "make-") 0) 1 0)
+    0))
+
+; `Trait.method` is a single identifier ('.' is an identifier character),
+; and monomorphization builds the impl body's name from the trait and type
+; names it finds in the impl block — which this pass qualifies. So the
+; call site has to qualify the trait half and leave the method half alone,
+; or the two halves of trait dispatch name different symbols.
+(defn qf-dot-index (n i)
+  (if (>= i (pk-len n))
+    -1
+    (if (= (pk-byte-at n i) 46) i (qf-dot-index n (+ i 1)))))
+
+(defn qf-dotted-head (tab locals n i)
+  (let head (pk-sub n 0 i)
+    (let k (qf-ident tab locals head)
+      (if (> (str-eq k head) 0)
+        n
+        (str-concat k (pk-sub n i (- (pk-len n) i)))))))
+
+(defn qf-head-name (tab locals n)
+  (let direct (qf-ident tab locals n)
+    (if (> (str-eq direct n) 0)
+      (qf-head-fallbacks tab locals n)
+      direct)))
+
+(defn qf-head-fallbacks (tab locals n)
+  (if (> (qf-is-make n) 0)
+    (qf-make-head tab locals n)
+    (let dot (qf-dot-index n 0)
+      (if (> dot 0) (qf-dotted-head tab locals n dot) n))))
+
+; A `deftype` variant's field list interleaves field NAMES with type
+; names — `(EC name String phase Int)` — and only the types are
+; references. Type names are capitalised throughout this corpus and field
+; names are not, so capitalisation is what tells them apart; without that
+; rule a field called `list` in a package that also defines a function
+; `list` would be rewritten into a symbol key. Leading underscores are
+; skipped first, since `_tr_Printable` is a type by every convention that
+; matters here.
+(defn qf-upper-p (n)
+  (qf-upper-from n 0))
+
+(defn qf-upper-from (n i)
+  (if (>= i (pk-len n))
+    0
+    (let c (pk-byte-at n i)
+      (if (= c 95)
+        (qf-upper-from n (+ i 1))
+        (if (>= c 65) (if (<= c 90) 1 0) 0)))))
+
+(defn qf-type-ident (tab locals n)
+  (if (> (qf-upper-p n) 0) (qf-ident tab locals n) n))
+
+; A position that holds ONLY a type or trait reference — an impl's two
+; names, a parameter's annotation — needs no such heuristic: whatever the
+; table knows, it means.
+(defn qf-ref-form (tab locals ty)
+  (match ty
+    (AstIdent n (AstIdent (qf-ident tab locals n)))
+    (AList xs (AList (qf-ref-forms tab locals xs)))
+    (d1 ty)))
+
+(defn qf-ref-forms (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-ref-form tab locals h) (qf-ref-forms tab locals t)))))
+
+; ===========================================================================
+; TRAVERSAL
+; ===========================================================================
+
+(defn qf-forms (tab locals forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (qf-form tab locals h) (qf-forms tab locals t)))))
+
+(defn qf-form (tab locals form)
+  (match form
+    (AstIdent n (AstIdent (qf-head-name tab locals n)))
+    (AList xs
+      (match xs
+        (Nil (AList Nil))
+        (Cons h rest
+          (match h
+            (AstIdent hn (qf-special tab locals hn rest))
+            (d1 (AList (Cons (qf-form tab locals h) (qf-forms tab locals rest))))))))
+    (d2 form)))
+
+; Default shape: the head is a call target or constructor, the rest are
+; ordinary expressions.
+(defn qf-call (tab locals hn rest)
+  (AList (Cons (AstIdent (qf-head-name tab locals hn)) (qf-forms tab locals rest))))
+
+(defn qf-special (tab locals hn rest)
+  (if (> (str-eq hn "defn") 0)
+    (qf-defn tab locals hn rest)
+  (if (> (str-eq hn "fn") 0)
+    (qf-lambda tab locals hn rest)
+  (if (> (str-eq hn "lambda") 0)
+    (qf-lambda tab locals hn rest)
+  (if (> (str-eq hn "macro") 0)
+    (qf-defn tab locals hn rest)
+  (if (> (str-eq hn "defmacro") 0)
+    (qf-defn tab locals hn rest)
+  (if (> (str-eq hn "def") 0)
+    (qf-def tab locals hn rest)
+  (if (> (str-eq hn "let") 0)
+    (qf-let tab locals hn rest)
+  (if (> (str-eq hn "let-mut") 0)
+    (qf-let tab locals hn rest)
+  (if (> (str-eq hn "match") 0)
+    (qf-match tab locals hn rest)
+  (if (> (str-eq hn "for") 0)
+    (qf-for tab locals hn rest)
+  (if (> (str-eq hn "try") 0)
+    (qf-try tab locals hn rest)
+  (if (> (str-eq hn "with-resource") 0)
+    (qf-with-resource tab locals hn rest)
+  (if (> (str-eq hn "deftype") 0)
+    (qf-deftype tab locals hn rest)
+  (if (> (str-eq hn "defstruct") 0)
+    (qf-defstruct tab locals hn rest)
+  (if (> (str-eq hn "defstruct+") 0)
+    (qf-defstruct tab locals hn rest)
+  (if (> (str-eq hn "impl") 0)
+    (qf-impl tab locals hn rest)
+  (if (> (str-eq hn "trait") 0)
+    (qf-trait tab locals hn rest)
+  (if (> (str-eq hn "struct-get") 0)
+    (qf-struct-get tab locals hn rest)
+  (if (> (str-eq hn "set!") 0)
+    (qf-set tab locals hn rest)
+  (if (> (str-eq hn "pub") 0)
+    (qf-pub tab locals rest)
+  (if (> (qf-opaque-head hn) 0)
+    (AList (Cons (AstIdent hn) rest))
+    (qf-call tab locals hn rest)))))))))))))))))))))))
+
+; `(pub defn f ...)`: the visibility marker sits in front of the
+; definition rather than around it, so the form to qualify is everything
+; after it, treated as the definition it is.
+(defn qf-pub (tab locals rest)
+  (match (qf-form tab locals (AList rest))
+    (AList xs (AList (Cons (AstIdent "pub") xs)))
+    (d1 (AList (Cons (AstIdent "pub") rest)))))
+
+; Forms whose payload is module-system metadata, not code: their
+; identifiers name modules and packages, which the resolver reads BEFORE
+; this pass runs and which must survive it verbatim.
+(defn qf-opaque-head (hn)
+  (if (> (str-eq hn "use") 0) 1
+  (if (> (str-eq hn "module") 0) 1
+  (if (> (str-eq hn "export") 0) 1 0))))
+
+; (defn name (params) body...) — `name` is a definition, so it is renamed
+; through the table exactly like a reference to it elsewhere; the params
+; become locals for the body.
+(defn qf-defn (tab locals hn rest)
+  (match rest
+    (Cons nameast rest2
+      (match rest2
+        (Cons params body
+          (AList (Cons (AstIdent hn)
+                   (Cons (qf-def-name tab locals nameast)
+                     (Cons (qf-params tab locals params)
+                       (qf-forms tab (qf-bind-all locals (qf-param-names params)) body))))))
+        (Nil (qf-call tab locals hn rest))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (fn (params) body) / (lambda (params) body): the parameter list is the
+; first argument and the body is the last, with no name of its own.
+(defn qf-lambda (tab locals hn rest)
+  (match rest
+    (Cons params body
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-params tab locals params)
+                 (qf-forms tab (qf-bind-all locals (qf-param-names params)) body)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-def-name (tab locals a)
+  (match a
+    (AstIdent n (AstIdent (qf-ident tab locals n)))
+    (d1 (qf-form tab locals a))))
+
+; A parameter is `x` or `(x Type)`; only the type half is rewritten.
+(defn qf-params (tab locals params)
+  (match params
+    (AList xs (AList (qf-param-list tab locals xs)))
+    (d1 params)))
+
+(defn qf-param-list (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-param tab locals h) (qf-param-list tab locals t)))))
+
+(defn qf-param (tab locals p)
+  (match p
+    (AstIdent n (AstIdent n))
+    (AList xs
+      (match xs
+        (Cons nm tail
+          (match tail
+            (Cons ty d1 (AList (Cons nm (Cons (qf-ref-form tab locals ty) Nil))))
+            (Nil (AList xs))))
+        (Nil (AList Nil))))
+    (d2 p)))
+
+(defn qf-param-names (params)
+  (match params
+    (AList xs (qf-param-name-list xs))
+    (d1 Nil)))
+
+(defn qf-param-name-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-one-param-name h) (qf-param-name-list t)))))
+
+(defn qf-one-param-name (p)
+  (match p
+    (AstIdent n n)
+    (AList xs (match xs (Cons nm d1 (match nm (AstIdent n2 n2) (d2 ""))) (Nil "")))
+    (d3 "")))
+
+; A type expression: `Int`, `(List Expr)`, `(Option String)`.
+(defn qf-type-form (tab locals ty)
+  (match ty
+    (AstIdent n (AstIdent (qf-type-ident tab locals n)))
+    (AList xs (AList (qf-type-forms tab locals xs)))
+    (d1 ty)))
+
+(defn qf-type-forms (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-type-form tab locals h) (qf-type-forms tab locals t)))))
+
+; (def name value)
+(defn qf-def (tab locals hn rest)
+  (match rest
+    (Cons nameast body
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-def-name tab locals nameast)
+                 (qf-forms tab locals body)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (let name value body) and (let (name value) body) both occur.
+(defn qf-let (tab locals hn rest)
+  (match rest
+    (Cons first rest2
+      (match first
+        (AstIdent n
+          (match rest2
+            (Cons val body
+              (AList (Cons (AstIdent hn)
+                       (Cons (AstIdent n)
+                         (Cons (qf-form tab locals val)
+                           (qf-forms tab (Cons n locals) body))))))
+            (Nil (qf-call tab locals hn rest))))
+        (AList binding (qf-let-paren tab locals hn binding rest2))
+        (d1 (qf-call tab locals hn rest))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-let-paren (tab locals hn binding rest2)
+  (match binding
+    (Cons nm tail
+      (match nm
+        (AstIdent n
+          (AList (Cons (AstIdent hn)
+                   (Cons (AList (Cons (AstIdent n) (qf-forms tab locals tail)))
+                     (qf-forms tab (Cons n locals) rest2)))))
+        (d1 (AList (Cons (AstIdent hn) (Cons (AList binding) (qf-forms tab locals rest2)))))))
+    (Nil (AList (Cons (AstIdent hn) (qf-forms tab locals rest2))))))
+
+; (match subject (Pattern binder... body) ...). An arm head that names a
+; known constructor is rewritten; an arm head that names nothing known is
+; a catch-all binder, so it is bound for the arm's body instead.
+(defn qf-match (tab locals hn rest)
+  (match rest
+    (Cons subject arms
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-form tab locals subject)
+                 (qf-arms tab locals arms)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-arms (tab locals arms)
+  (match arms
+    (Nil Nil)
+    (Cons h t (Cons (qf-arm tab locals h) (qf-arms tab locals t)))))
+
+(defn qf-arm (tab locals arm)
+  (match arm
+    (AList kids
+      (match kids
+        (Cons pattern rest
+          (match pattern
+            (AstIdent n (qf-arm-flat tab locals n rest))
+            (AList pkids (qf-arm-nested tab locals pkids rest))
+            (d1 (qf-arm-literal tab locals pattern rest))))
+        (Nil (AList Nil))))
+    (d2 arm)))
+
+; A literal pattern — `(match i (0 BAdd) (1 BSub) ...)` — binds nothing,
+; but its BODY is still code. Leaving the whole arm untouched (which an
+; earlier version did) silently left every such body unqualified, so a
+; constructor named there resolved to nothing at all.
+(defn qf-arm-literal (tab locals pattern rest)
+  (AList (Cons pattern
+           (list-append (qf-butlast rest)
+             (Cons (qf-form tab locals (qf-last rest)) Nil)))))
+
+; A pattern element is either a binder (`h`, `t`) or a nested constructor
+; pattern (`(LSPString text)`). The nested form's HEAD is a constructor,
+; so it is qualified like any other reference; everything inside it binds.
+;
+; Leaving nested heads alone was a silent miscompile: the pattern kept the
+; source name while the constructor's definition moved to its canonical
+; key, so the arm could never match, and the function holding it dropped
+; out of codegen entirely — 27 of them, in the language server alone.
+(defn qf-pattern-forms (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-pattern-form tab locals h) (qf-pattern-forms tab locals t)))))
+
+(defn qf-pattern-form (tab locals p)
+  (match p
+    (AList kids
+      (match kids
+        (Cons head rest
+          (match head
+            (AstIdent n (AList (Cons (AstIdent (qf-ident tab locals n)) rest)))
+            (d1 (AList kids))))
+        (Nil (AList Nil))))
+    (d2 p)))
+
+; Every name a pattern binds: the plain identifiers, plus the identifiers
+; inside a nested constructor pattern (but not that pattern's own head,
+; which names the constructor).
+(defn qf-pattern-binders (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (list-append (qf-one-pattern-binders h) (qf-pattern-binders t)))))
+
+(defn qf-one-pattern-binders (p)
+  (match p
+    (AstIdent n (Cons n Nil))
+    (AList kids (qf-ident-names (qf-cdr kids)))
+    (d1 Nil)))
+
+; `(Variant a b body)` in flat spelling, or `(x body)` where x binds.
+;
+; The head is bound as a local for the arm's body ONLY when the table does
+; not know it — that is what makes it a catch-all binder rather than a
+; constructor. Binding a known constructor here would be wrong in the
+; commonest shape there is: `(Cons h t (Cons h (f t)))` rebuilds with the
+; very constructor it matched, and treating that name as a local would
+; leave the body's `Cons` unqualified while its definition moved.
+(defn qf-arm-flat (tab locals n rest)
+  (let key (qf-ident tab locals n)
+    (let bound (qf-bind-all locals (qf-pattern-binders (qf-butlast rest)))
+      (let inner (if (> (str-eq key n) 0) (Cons n bound) bound)
+        (AList (Cons (AstIdent key)
+                 (list-append (qf-pattern-forms tab locals (qf-butlast rest))
+                   (Cons (qf-form tab inner (qf-last rest)) Nil))))))))
+
+; `((Variant a b) body)`: the pattern is its own list.
+(defn qf-arm-nested (tab locals pkids rest)
+  (let binders (list-append (qf-pattern-binders (qf-cdr pkids))
+                            (qf-pattern-binders (qf-butlast rest)))
+    (let inner (qf-bind-all locals binders)
+      (AList (Cons (AList (Cons (qf-pattern-head tab locals pkids)
+                            (qf-pattern-forms tab locals (qf-cdr pkids))))
+               (list-append (qf-pattern-forms tab locals (qf-butlast rest))
+                 (Cons (qf-form tab inner (qf-last rest)) Nil)))))))
+
+(defn qf-pattern-head (tab locals pkids)
+  (match pkids
+    (Cons h d1
+      (match h
+        (AstIdent n (AstIdent (qf-ident tab locals n)))
+        (d2 h)))
+    (Nil (AstIdent ""))))
+
+(defn qf-cdr (xs)
+  (match xs
+    (Nil Nil)
+    (Cons d1 t t)))
+
+(defn qf-ident-names (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (match h
+        (AstIdent n (Cons n (qf-ident-names t)))
+        (d1 (qf-ident-names t))))))
+
+(defn qf-butlast (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (match t (Nil Nil) (d1 (Cons h (qf-butlast t)))))))
+
+(defn qf-last (xs)
+  (match xs
+    (Nil (AstInt 0))
+    (Cons h t (match t (Nil h) (d1 (qf-last t))))))
+
+; (for ((i 0) (n 10)) cond body)
+(defn qf-for (tab locals hn rest)
+  (match rest
+    (Cons bindings body
+      (let names (qf-for-names bindings)
+        (AList (Cons (AstIdent hn)
+                 (Cons (qf-for-bindings tab locals bindings)
+                   (qf-forms tab (qf-bind-all locals names) body))))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-for-names (bindings)
+  (match bindings
+    (AList xs (qf-ident-heads xs))
+    (d1 Nil)))
+
+(defn qf-ident-heads (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (match h
+        (AList kids (match kids (Cons nm d1 (match nm (AstIdent n (Cons n (qf-ident-heads t))) (d2 (qf-ident-heads t)))) (Nil (qf-ident-heads t))))
+        (AstIdent n2 (Cons n2 (qf-ident-heads t)))
+        (d3 (qf-ident-heads t))))))
+
+(defn qf-for-bindings (tab locals bindings)
+  (match bindings
+    (AList xs (AList (qf-for-binding-list tab locals xs)))
+    (d1 bindings)))
+
+(defn qf-for-binding-list (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-for-binding tab locals h) (qf-for-binding-list tab locals t)))))
+
+(defn qf-for-binding (tab locals b)
+  (match b
+    (AList kids
+      (match kids
+        (Cons nm tail (AList (Cons nm (qf-forms tab locals tail))))
+        (Nil (AList Nil))))
+    (d1 b)))
+
+; (try body (catch name handler))
+(defn qf-try (tab locals hn rest)
+  (match rest
+    (Cons body rest2
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-form tab locals body)
+                 (qf-catch-forms tab locals rest2)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-catch-forms (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-catch tab locals h) (qf-catch-forms tab locals t)))))
+
+(defn qf-catch (tab locals c)
+  (match c
+    (AList kids
+      (match kids
+        (Cons kw rest
+          (match rest
+            (Cons nm handler
+              (match nm
+                (AstIdent n
+                  (AList (Cons kw (Cons (AstIdent n)
+                           (qf-forms tab (Cons n locals) handler)))))
+                (d1 (AList (Cons kw (qf-forms tab locals rest))))))
+            (Nil (AList kids))))
+        (Nil (AList Nil))))
+    (d2 (qf-form tab locals c))))
+
+; (with-resource name expr body)
+(defn qf-with-resource (tab locals hn rest)
+  (match rest
+    (Cons nm rest2
+      (match nm
+        (AstIdent n
+          (match rest2
+            (Cons acquire body
+              (AList (Cons (AstIdent hn)
+                       (Cons (AstIdent n)
+                         (Cons (qf-form tab locals acquire)
+                           (qf-forms tab (Cons n locals) body))))))
+            (Nil (qf-call tab locals hn rest))))
+        (d1 (qf-call tab locals hn rest))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (deftype Name (Variant Type ...) ...) — the type name and every variant
+; name are definitions; inside a variant only capitalised identifiers are
+; types (the lowercase ones are field names, see qf-type-ident).
+(defn qf-deftype (tab locals hn rest)
+  (match rest
+    (Cons nameast variants
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-def-name tab locals nameast)
+                 (qf-variants tab locals variants)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-variants (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-variant tab locals h) (qf-variants tab locals t)))))
+
+(defn qf-variant (tab locals v)
+  (match v
+    (AList kids
+      (match kids
+        (Cons nm fields
+          (match nm
+            (AstIdent n
+              (AList (Cons (AstIdent (qf-ident tab locals n))
+                       (qf-type-forms tab locals fields))))
+            (d1 (AList kids))))
+        (Nil (AList Nil))))
+    (AstIdent n2 (AstIdent (qf-ident tab locals n2)))
+    (d2 v)))
+
+; (defstruct Name (field Type) ...) — same rule, one implicit variant.
+(defn qf-defstruct (tab locals hn rest)
+  (match rest
+    (Cons nameast fields
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-def-name tab locals nameast)
+                 (qf-struct-fields tab locals fields)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+(defn qf-struct-fields (tab locals xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (qf-struct-field tab locals h) (qf-struct-fields tab locals t)))))
+
+(defn qf-struct-field (tab locals f)
+  (match f
+    (AList kids
+      (match kids
+        (Cons nm tail (AList (Cons nm (qf-type-forms tab locals tail))))
+        (Nil (AList Nil))))
+    (d1 f)))
+
+; (impl Trait Type (defn method ...) ...): trait and type are references,
+; the method bodies are ordinary code.
+(defn qf-impl (tab locals hn rest)
+  (match rest
+    (Cons traitast rest2
+      (match rest2
+        (Cons typeast bodies
+          (AList (Cons (AstIdent hn)
+                   (Cons (qf-ref-form tab locals traitast)
+                     (Cons (qf-ref-form tab locals typeast)
+                       (qf-forms tab locals bodies))))))
+        (Nil (qf-call tab locals hn rest))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (trait Name (method params) ...)
+(defn qf-trait (tab locals hn rest)
+  (match rest
+    (Cons nameast bodies
+      (AList (Cons (AstIdent hn)
+               (Cons (qf-def-name tab locals nameast)
+                 (qf-forms tab locals bodies)))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (struct-get expr field): the field is a label, never a symbol.
+(defn qf-struct-get (tab locals hn rest)
+  (match rest
+    (Cons obj tail
+      (AList (Cons (AstIdent hn) (Cons (qf-form tab locals obj) tail))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))
+
+; (set! name value): the target is a let-mut binding, so it is renamed
+; only when it resolves to a top-level definition rather than a local.
+(defn qf-set (tab locals hn rest)
+  (match rest
+    (Cons nm tail
+      (match nm
+        (AstIdent n
+          (AList (Cons (AstIdent hn)
+                   (Cons (AstIdent (qf-ident tab locals n))
+                     (qf-forms tab locals tail)))))
+        (d1 (qf-call tab locals hn rest))))
+    (Nil (AList (Cons (AstIdent hn) Nil)))))

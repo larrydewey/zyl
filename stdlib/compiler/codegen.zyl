@@ -402,8 +402,8 @@
         (ffi-call "zyl_panic" msg 1000)))))
 
 (defn cg-load-fnref (st n)
-  (let st2 (cg-emit st "    lea rax, [rip+_ZYL_")
-    (let st3 (cg-emit st2 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) n 1000))
+  (let st2 (cg-emit st "    lea rax, [rip+")
+    (let st3 (cg-emit st2 (cg-sym-mangled (cg-arena-of st) n))
       (let st4 (cg-emit st3 "]")
         (cg-nl st4)))))
 
@@ -777,12 +777,34 @@
     (cg-sym-mangled arena name)
     (ffi-call "zyl_cstr_sanitize" arena name 1000)))
 
+; Assembly label for a definition. A canonical key (spec v5.0 SS31.2 —
+; `pkg@major::module::symbol`, always carrying '@') is mangled by the
+; runtime's zyl_mangle_key, whose output IS the spec's label: injective,
+; so `acme/json`, `acme.json` and `acme-json` stay three symbols. Names
+; without a key are the handful the compiler recognises by spelling
+; (`main`, the inlined string builtins) plus anything a nested compile
+; hands over unqualified; they keep the historical `_ZYL_` + sanitize
+; spelling, which is safe for that fixed vocabulary.
 (defn cg-sym-mangled (arena name)
-  (let buf (arena-alloc-zeroed arena 512)
-    (begin
-      (buf-append buf (str-intern arena "_ZYL_"))
-      (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
-      buf)))
+  (if (> (cg-canonical-key-p name) 0)
+    (ffi-call "zyl_mangle_key" arena name 1000)
+    (let buf (arena-alloc-zeroed arena 512)
+      (begin
+        (buf-append buf (str-intern arena "_ZYL_"))
+        (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
+        buf))))
+
+; '@' (64) never appears in a source identifier -- the lexer does not
+; accept it -- so it marks a name the resolver qualified.
+(defn cg-canonical-key-p (name)
+  (cg-has-at name 0))
+
+(defn cg-has-at (name i)
+  (if (>= i (ffi-call "zyl_cstr_len" name 1000))
+    0
+    (if (= (ffi-call "zyl_cstr_byte_at" name i 1000) 64)
+      1
+      (cg-has-at name (+ i 1)))))
 
 (defn cg-cat2 (arena a b)
   (let buf (arena-alloc-zeroed arena (+ (alloc-strlen a) (alloc-strlen b) 1))
@@ -1367,8 +1389,8 @@
           ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
           ; Entry rsp is 8 mod 16 (after push rbp), so fsz must be 16n+8
           (let fsz (+ 8 (* 16 (+ 1 (/ nslots 2))))
-          (let st1 (cg-emit st "_ZYL_")
-           (let st2 (cg-emit st1 (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000))
+          (let st1 st
+           (let st2 (cg-emit st1 (cg-sym-mangled (cg-arena-of st) name))
              (let st3 (cg-emit-line st2 ":")
                (let st4 (cg-emit-line st3 "    push rbp")
                  (let st5 (cg-emit-line st4 "    mov rbp, rsp")

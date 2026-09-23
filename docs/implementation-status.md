@@ -40,8 +40,28 @@ are reserved names that the compiler rejects rather than implements.
 - A top-level `def` does not become a readable global; references to one
   compile to 0.
 - The REPL (`tools/repl.zyl`) is an unfinished skeleton.
-- Spec v5.0 features — package management, workspaces, feature flags —
-  are not implemented and are not planned here.
+- The v5.0 package system (§31) is implemented — manifests, canonical
+  symbol keys and injective mangling, two-level visibility, Minimal
+  Version Selection, the lock, the content store, the index with
+  mandatory Ed25519 verification, capabilities, features, native
+  dependencies, workspaces and the `zyl` subcommands. What remains open
+  there is narrower: `zyl fetch` does not yet clone-and-install a `git`
+  dependency (it is resolvable from the store and the lock, and the
+  clone path exists), no index repository exists to fetch from, and
+  hash finalization records §31.12's inputs in `zyl.buildinfo` without
+  mixing the graph hash into the binary's own hash. `PROGRESS.md` has
+  the full list, including the deliberate deviations.
+- `type_inference.zyl` compares names with `=`, which lowers to a
+  pointer comparison when the operand kinds are not known to be String.
+  Those comparisons are therefore always false, and the per-call-site
+  body-inference path behind them has never run. The module system works
+  around it by copying each qualified name per occurrence (see
+  `qualify.zyl`'s `qf-ident`); fixing the comparisons themselves is
+  future work, and the dormant path dereferences a null parameter list
+  the moment they start returning true.
+
+Design, rationale and the original phased plan:
+`docs/package-management-design.md`.
 
 ### Where to look
 

@@ -1,5 +1,5 @@
 ================================================================================
-ZYL FORMAL SPECIFICATION (v4.2)
+ZYL FORMAL SPECIFICATION (v5.0)
 "A Deterministic Lisp Systems Language with Region Inference, SSA IR, Actor
 Concurrency, Capability-Based Safety, Traits, Generics, Explicit Closures,
 ADTs, Testing Framework, Package Management, Structs, Aliases, RAII,
@@ -625,17 +625,20 @@ Definition:
     Verifies that Expr compiles or fails as expected.
 
 ================================================================================
-20.6 PACKAGE MANAGEMENT ROADMAP (v5.0)
+20.6 PACKAGE MANAGEMENT
 ================================================================================
 
-Planned for v5.0:
-    - Package declaration: (package name version)
-    - Dependency resolution: Highest compatible version
-    - Registry: Official + Git + Self-hosted
-    - Security: Ed25519 package signing
-    - Lock files: SHA-256 hashes
-    - Workspace: Multi-package projects
-    - Feature flags: Conditional compilation
+Specified normatively in §31. Summary:
+    - Package declaration: zyl.pkg, S-expression (§31.3)
+    - Dependency resolution: Minimal Version Selection (§31.5)
+    - Registry: git-hosted index, scoped org/name (§31.8)
+    - Security: mandatory Ed25519 signing, TOFU key pinning (§31.8)
+    - Lock files: BLAKE3 content hashes (§31.6)
+    - Workspace: multi-package projects, one root lock (§31.11)
+    - Feature flags: additive-only, unified (§31.10)
+    - Capabilities: declared per package, deny by default (§31.9)
+
+Design rationale and the implementation plan: docs/package-management-design.md
 
 ================================================================================
 21. BUILT-IN OPERATIONS (SEMANTICS)
@@ -742,15 +745,44 @@ Contracts NEVER affect:
 ================================================================================
 
 24.1 Module Declaration: (module module-name)
+
 24.2 Importing:
-    (use module-name { symbol })
-    (use module-name { symbol => alias })
-    (use module-name :unsafe { symbol })
-    (use module-name *)
-24.3 Exporting: (export symbol)
-24.4 Visibility: Private (default), Public (pub), Unsafe.
-24.5 Resolution: DAG-based. Dependencies declared in zyl.toml.
-24.6 Crate Boundaries: Coherence rules apply at crate level.
+    (use module-path { symbol })
+    (use module-path { symbol => alias })
+    (use module-path :unsafe { symbol })
+    (use module-path *)
+
+    module-path is one of:
+        package:module   — a module inside a declared dependency
+        package          — that dependency's root module
+        module           — a module inside the current package
+
+    A package name always contains '/', so the three forms never collide.
+    `unsafe` is a reserved module name (E_PKG_RESERVED_MODULE): the lexer
+    discards whitespace, so `pkg :unsafe` and `pkg:unsafe` are one token
+    stream and the marker must win.
+
+    Naming a package absent from the manifest is E_PKG_UNDECLARED_DEP.
+
+24.3 Exporting: `pub` at the definition site. (export symbol) is
+    deprecated; the keyword remains reserved.
+
+24.4 Visibility: two levels.
+    Default — visible throughout the defining package, invisible outside.
+    pub     — visible to any package that declares this one as a dependency.
+
+    Importing a non-pub symbol is E_PKG_PRIVATE_SYMBOL. Visibility governs
+    reachability only: every definition, public or not, receives a unique
+    mangled symbol (§31.2), so renaming a private definition can never
+    break a consumer.
+
+24.5 Resolution: DAG-based at both levels. Modules within a package must
+    form a DAG (E_MODULE_CYCLE); packages must form a DAG (E_PKG_CYCLE).
+    Dependencies are declared in zyl.pkg (§31.3).
+
+24.6 Crate Boundaries: coherence is checked over the whole resolved graph.
+    Orphan rule: a package may implement a trait for a type only if it
+    defines the trait or defines the type (E_PKG_ORPHAN_IMPL).
 
 ================================================================================
 25. STANDARD LIBRARY (ABSTRACT)
@@ -768,6 +800,11 @@ Core modules:
     testing: test-suite, test, assert-*, test-property, run-tests
 
 All obey region + capability rules.
+
+The standard library is implicit: it needs no manifest entry, and its
+version is the compiler's version, recorded in the lock (§31.6). Each
+stdlib module declares the capability it provides, which is how §31.9
+enforces capability grants at import time.
 
 ================================================================================
 26. IMPLEMENTATION CONTRACT
@@ -819,6 +856,12 @@ NOT observable:
 
 Guarantee: same program + same inputs → identical observable outputs and binaries.
 
+For a package build, "same program" means the same resolved graph. Version
+selection (§31.5) is a pure function of the manifests in the graph, and hash
+finalization takes the graph hash as an input (§31.12), so two machines with
+the same zyl.pkg, the same zyl.lock and the same compiler produce identical
+binaries. Network access is confined to `zyl fetch`; builds are offline.
+
 ================================================================================
 28. ERROR MODEL
 ================================================================================
@@ -847,6 +890,52 @@ Errors:
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
     E_CANNOT_INFER              — generic param has no call-site evidence (Compile Error)
 
+Package system errors (§31). All are Compile Errors.
+
+  Manifest, lock and registry (phase 19):
+    E_MANIFEST_INVALID          — zyl.pkg malformed or missing a required field
+    E_MANIFEST_NOT_FOUND        — no zyl.pkg in the package root
+    E_PKG_BAD_NAME              — name is not a valid scoped path
+    E_PKG_BAD_VERSION           — version is not strict SemVer
+    E_PKG_BAD_REQUIREMENT       — range operator in a requirement (MVS takes minimums)
+    E_PKG_DUPLICATE_DEP         — two dep entries for one name
+    E_PKG_NOT_FOUND             — name not present in the index
+    E_PKG_VERSION_NOT_FOUND     — version not present in the index
+    E_PKG_NOT_IN_STORE          — build needs a package the store lacks
+    E_PKG_HASH_MISMATCH         — archive hash differs from the lock
+    E_PKG_SIGNATURE_INVALID     — Ed25519 signature does not verify
+    E_PKG_KEY_CHANGED           — publisher key differs from the pinned key
+    E_PKG_UNSIGNED              — index entry carries no signature
+    E_PKG_YANKED                — new resolution selected a yanked version
+    E_PKG_LOCK_STALE            — --locked, but manifests imply a different graph
+    E_PKG_LOCK_INVALID          — lock malformed or of an unknown version
+    E_PKG_COMPILER_TOO_OLD      — package requires a newer compiler
+    E_PKG_UNKNOWN_EDITION       — edition not known to this compiler
+    E_PKG_FETCH_FAILED          — git/curl exited non-zero
+    E_PKG_ARCHIVE_INVALID       — archive violates the canonical format
+    E_PKG_NATIVE_PATH_ESCAPE    — native source path escapes the package root
+    E_PKG_NATIVE_FLAG_DENIED    — cflag outside the allowlist
+    E_PKG_NATIVE_BUILD_FAILED   — cc failed on a native source
+    E_PKG_FEATURE_UNKNOWN       — requested feature not declared
+    E_PKG_FEATURE_COLLISION     — gated definition collides with a base definition
+
+  Module and package resolution (phase 9):
+    E_PKG_CYCLE                 — dependency graph is not a DAG
+    E_MODULE_CYCLE              — module graph within a package is not a DAG
+    E_PKG_VERSION_CONFLICT      — requirement unsatisfiable within a major
+    E_PKG_PRIVATE_SYMBOL        — imported symbol is not pub
+    E_PKG_UNKNOWN_SYMBOL        — imported symbol does not exist
+    E_PKG_UNKNOWN_MODULE        — module path does not exist in that package
+    E_PKG_UNDECLARED_DEP        — use names a package absent from the manifest
+    E_PKG_RESERVED_MODULE       — module named `unsafe`
+
+  Traits (phase 12):
+    E_PKG_ORPHAN_IMPL           — impl where neither trait nor type is local
+
+  Capabilities (phase 13):
+    E_PKG_CAPABILITY_VIOLATION  — construct used without the declared capability
+    E_PKG_CAPABILITY_GROWTH     — capability closure grew under --locked
+
 Behavior:
     Compile-time errors abort compilation.
     Runtime errors abort execution or revert state (if checkpoint active).
@@ -866,6 +955,11 @@ G8. Contract Non-Interference: Contracts never alter core semantics.
 G9. Struct Safety: Fields immutable; mutation requires rebinding.
 G10. Alias Transparency: Zero-cost coercion.
 G11. Resource Safety: with-resource guarantees cleanup before error.
+G12. Capability Containment: a package cannot exercise a capability it
+     does not declare (§31.9).
+G13. Supply-Chain Integrity: a locked build is reproducible from pinned
+     content hashes and publisher keys; an index compromise cannot
+     alter it (§31.8, §31.12).
 
 ================================================================================
 30. VERSION ROADMAP
@@ -883,23 +977,309 @@ v4.1 (CURRENT):
     - Deterministic iteration for Map.
     - Compile-time exhaustive match.
 
-v4.2 (CURRENT, WORKING):
+v4.2 (PREVIOUS):
     - Multi-parameter generics formalized (§6).
     - Type param scope, same-type constraint, generic ADT derivation.
     - E_CANNOT_INFER for generic params with no call-site evidence.
 
-v5.0 (PLANNED):
-    - Package management (zyl.toml, registries, signing).
-    - Workspace support.
-    - Feature flags.
+v5.0 (CURRENT):
+    - Package system (§31): zyl.pkg manifests, Minimal Version Selection,
+      git-hosted index, mandatory Ed25519 signing with TOFU key pinning,
+      BLAKE3 content addressing, offline builds.
+    - Package- and module-qualified symbol identity with injective mangling
+      (§31.2). Two packages may define the same name; two majors coexist.
+    - Two-level visibility: package-private by default, pub to export (§24.4).
+    - Trait orphan rule at the package boundary (§24.6).
+    - Per-package capability declarations, deny by default, compiler-enforced
+      (§31.9).
+    - Workspaces with one root lock (§31.11).
+    - Additive-only unified feature flags (§31.10).
+    - Declarative native C dependencies; no build scripts (§31.10).
+    - Editions (§31.11). v5.0 defines exactly one: `2026`.
 
-v4.2 (FUTURE):
+    Implementation status: designed, not yet implemented. See
+    docs/package-management-design.md §14 for the phased plan and
+    docs/implementation-status.md for current state.
+
+FUTURE:
     - Reserved keyword enforcement in definition forms (§1.3.1).
     - Custom generators for property testing.
     - Coverage reporting.
     - Snapshot testing.
     - Advanced derive macros.
 
+
 ================================================================================
-END OF ZYL FORMAL SPECIFICATION (v4.2)
+31. PACKAGE SYSTEM
+================================================================================
+
+Normative. Rationale, alternatives considered and the phased implementation
+plan live in docs/package-management-design.md.
+
+31.1 PACKAGE IDENTITY
+--------------------------------------------------------------------------------
+Name: a scoped path, two segments, for majors 0 and 1:  acme/json
+For major N >= 2 the major is a third segment:          acme/json/v2
+
+    Two majors are therefore distinct packages and may coexist in one graph.
+
+Version: strict SemVer MAJOR.MINOR.PATCH, optional `-` pre-release suffix.
+    SemVer ordering. A pre-release is selected only when some manifest in
+    the graph names that exact pre-release.
+    Major 0 is unstable: each minor is its own compatibility unit.
+
+31.2 SYMBOL IDENTITY AND MANGLING
+--------------------------------------------------------------------------------
+Every top-level definition has a canonical key:
+
+    <package>@<major>::<module-path>::<symbol>
+
+    acme/json@1::json/parser::parse
+    beta/xml@2::xml/parser::parse        (different package)
+    acme/json@1::json/lexer::parse       (same package, different module)
+
+Two packages may define the same name; so may two modules in one package.
+The canonical key is also the sort key for monomorphization's alphabetical
+canonical naming (§17), so ordering remains total over any graph.
+
+Mangling MUST be injective. Lossy sanitizing (mapping every non-alphanumeric
+byte to '_') is forbidden: it merges distinct keys.
+
+    escape(b) = b             for [A-Za-z0-9]
+              = "_5F"         for '_'
+              = "_x" + HEX(b) otherwise, two uppercase hex digits
+
+    mangle(key) = "zy_" + escape(package) + "_" + major
+                        + "__" + escape(module) + "__" + escape(symbol)
+
+    acme/json@1::json/parser::parse
+      ->  zy_acme_x2Fjson_1__json_x2Fparser__parse
+
+Over 200 bytes: truncate the prefix to 184 bytes and append 16 hex digits of
+BLAKE3 over the full canonical key.
+
+Monomorphized instances carry fully-qualified type arguments:
+
+    acme/json@1::json::encode<acme/json@1::json::Node>
+    acme/json@1::json::encode<beta/xml@2::xml::Node>
+
+31.3 MANIFEST — zyl.pkg
+--------------------------------------------------------------------------------
+S-expression, read by the language's own lexer and parser.
+
+    (package
+      (name "acme/json") (version "1.4.0")
+      (zyl "5.0") (edition "2026")
+      (description "...") (license "...") (repository "...")
+      (capabilities io)
+      (deps
+        (dep "core/bytes" "2.1.0")
+        (dep "acme/utf8"  "1.0.0" (features utf16))
+        (dep "acme/dev"   "0.3.0" (path "../dev"))
+        (dep "acme/git"   "1.0.0" (git "https://..." (rev "a1b2c3d"))))
+      (dev-deps (dep "acme/quickcheck" "2.0.0"))
+      (features (feature utf16 (deps (dep "acme/utf16" "1.0.0")))
+                (feature simd))
+      (native (sources "c/fastpath.c") (cflags "-O2") (link-libs "m")))
+
+    name, version, zyl, edition are required; all else defaults to empty.
+    Requirements are bare versions; range operators are E_PKG_BAD_REQUIREMENT.
+    Canonical serialisation: the order above, deps sorted by name.
+    dev-deps never enter a dependent's graph.
+
+31.4 COMPILATION MODEL
+--------------------------------------------------------------------------------
+Whole-program. Packages ship source; the resolver splices the full graph into
+one compilation unit and monomorphizes globally. There is no ABI and no
+binary-only distribution in v5.0. Build caching is keyed by content hash and
+is sound by §27.
+
+31.5 VERSION RESOLUTION — MINIMAL VERSION SELECTION
+--------------------------------------------------------------------------------
+    for each package P reachable from the root:
+        selected(P) = max over all requirements R on P of version(R)
+
+Each requirement is a minimum; the selection is the greatest minimum, within
+a major. No search, no backtracking.
+
+Consequences (all normative):
+    - Resolution is a pure function of the manifests in the graph. It does
+      not depend on index contents and does not drift.
+    - Adding a dependency never silently upgrades an unrelated one.
+    - Removing a dependency never silently downgrades another.
+
+Upgrades are explicit: they rewrite a requirement in a manifest.
+
+A root package or workspace MAY override a selection graph-wide:
+
+    (overrides (override "acme/json" "1.9.2")
+               (override "acme/bad" (path "../fork")))
+
+Overrides never propagate from a dependency, and are recorded in the lock.
+
+31.6 LOCK FILE — zyl.lock
+--------------------------------------------------------------------------------
+An integrity and provenance record, not a resolution input; deleting it does
+not change which versions are selected.
+
+    (lock
+      (version 1)
+      (compiler "5.0.0" (hash "blake3:..."))
+      (pkg "acme/json" "1.4.0"
+        (source (registry "https://github.com/zyl-lang/index"))
+        (hash "blake3:...") (key "ed25519:...") (sig "ed25519:...")
+        (features utf16) (capabilities io)
+        (deps "core/bytes" "acme/utf8"))
+      (capability-closure io ffi)
+      (graph-hash "blake3:..."))
+
+    hash               BLAKE3 over the canonical uncompressed archive (§31.7).
+    key                publisher key, pinned on first use.
+    capability-closure union of every capability granted in the graph.
+    graph-hash         BLAKE3 over the canonical serialisation of the above.
+
+Committed for applications and libraries alike. A library's lock constrains
+its own CI, never its consumers.
+
+31.7 CONTENT STORE AND CANONICAL ARCHIVE
+--------------------------------------------------------------------------------
+    zyl fetch   populates ~/.zyl/store/blake3/<hash>/ using git or curl.
+    zyl build   reads the store only. Never networks. E_PKG_NOT_IN_STORE.
+
+`zyl fetch` is the only command permitted to access the network.
+
+Canonical archive (.tar.zst), so content hashes agree across producers:
+    - paths relative to the package root, sorted bytewise
+    - regular files and directories only; no symlinks, no devices
+    - mode normalised to 0644 (files) / 0755 (directories)
+    - all timestamps, uid and gid zero; user and group names empty
+    - excluded: build/, .git/, zyl.lock, and any (exclude ...) patterns
+    - zstd level 19, long-distance matching off
+
+The recorded hash is over the UNCOMPRESSED canonical tar, so it does not
+depend on the compressor.
+
+31.8 INDEX AND TRUST
+--------------------------------------------------------------------------------
+The index is a git repository of S-expression metadata, sharded by name
+(ac/me/acme/json.zyl). There is no server component.
+
+    (index-entry (name "acme/json")
+      (versions (v "1.4.0" (url "https://...tar.zst") (hash "blake3:...")
+                   (key "ed25519:...") (sig "ed25519:...")
+                   (zyl "5.0") (yanked false))))
+
+Signing: the publisher signs the BLAKE3 hash of the canonical archive with
+an Ed25519 key. Verification is MANDATORY and has no opt-out flag.
+
+Trust on first use, per package:
+    1. First resolution pins the publisher key into zyl.lock.
+    2. Every later fetch MUST verify the signature against the pinned key
+       and match the content hash.
+    3. Key change is E_PKG_KEY_CHANGED; hash change is E_PKG_HASH_MISMATCH.
+       Both halt the build until accepted explicitly, producing a lock diff.
+
+Published versions are immutable. A yank is advisory: it affects new
+resolutions only (E_PKG_YANKED), never an existing lock.
+
+31.9 CAPABILITIES
+--------------------------------------------------------------------------------
+A package declares the capabilities it may use. Absent means none.
+
+    (capabilities io)     ; may do IO; may not use FFI or spawn actors
+    (capabilities)        ; pure computation only
+
+    io      core/io and everything under stdlib/io
+    ffi     ffi-call, ffi-pin, Pin-region allocation
+    actor   spawn, send, receive
+    secret  the Secret capability type and stdlib/math/secret
+    native  shipping and compiling C sources (§31.10)
+    unsafe  :unsafe imports
+
+Enforcement runs after module resolution and before type inference. The
+resolver tags every top-level form with its owning package; the pass rejects
+a capability-bearing construct, or a `use` of a capability-bearing stdlib
+module, from a package lacking the grant. Violations are
+E_PKG_CAPABILITY_VIOLATION.
+
+A declared set is a ceiling on the declaring package. It is not re-granted
+per edge. The effective transitive closure is computed and written to the
+lock; growth in the closure is reported by `zyl update` and is
+E_PKG_CAPABILITY_GROWTH under --locked. A root package MAY forbid
+capabilities graph-wide:
+
+    (deny-capabilities ffi native unsafe)
+
+31.10 FEATURES AND NATIVE DEPENDENCIES
+--------------------------------------------------------------------------------
+Features are additive-only: a feature MAY add top-level definitions and
+trait impls, and MAY NOT remove or alter an existing one.
+
+    (feature-gate utf16 (pub defn parse-utf16 (b) ...))
+
+Valid at top level only. Because gated forms are separate definitions, the
+additive property holds by construction: no feature can change an existing
+signature. A gated definition colliding with a base definition is
+E_PKG_FEATURE_COLLISION.
+
+Features are unified: the union of all requests across the graph is
+computed, the package is compiled once with that union, and the union is
+recorded in the lock. Optional dependencies enter the graph only when their
+feature is in the union.
+
+Native dependencies are declarative. Build scripts are FORBIDDEN in any
+form; arbitrary build-time code would forfeit §27.
+
+    (native (sources "c/fastpath.c") (cflags "-O2" "-DJSON_STRICT")
+            (link-libs "m") (include-dirs "c/include"))
+
+    - requires the `native` capability; using the symbols requires `ffi`
+    - paths are package-relative (E_PKG_NATIVE_PATH_ESCAPE)
+    - cflags come from an allowlist: -O*, -D*, -std=*, a fixed -f subset.
+      Raw -I, -L, -l and any -Wl, are rejected (E_PKG_NATIVE_FLAG_DENIED);
+      includes go through include-dirs and linking through link-libs.
+    - the toolchain invokes cc with a canonical sorted argument vector and
+      records the object hash in the lock
+
+31.11 WORKSPACES, EDITIONS, TOOLING
+--------------------------------------------------------------------------------
+Workspace root carries zyl-workspace.zyl:
+
+    (workspace (members "stdlib" "selfhost" "tools/lsp") (overrides ...))
+
+    One zyl.lock at the root, covering every member. One shared build cache
+    and store. Members depend on one another by path and MUST still carry a
+    version matching the target's manifest, so a member stays publishable.
+    Under §31.5 a single root lock cannot skew between members.
+
+Editions: (zyl "5.0") is a minimum compiler version (E_PKG_COMPILER_TOO_OLD).
+(edition "2026") names the syntax era. Packages of different editions coexist
+in one graph: each is parsed and lowered under its own edition's rules and
+all converge on one ICNF. Unknown edition is E_PKG_UNKNOWN_EDITION. v5.0
+defines exactly one edition: 2026.
+
+Tooling — subcommands of the zyl binary:
+
+    zyl new | add | fetch | build | test | update | vendor | audit
+    zyl publish | key
+
+31.12 DETERMINISM
+--------------------------------------------------------------------------------
+Hash finalization (pipeline step 11) takes, in this canonical order:
+
+    1. the compiler's own hash
+    2. graph-hash from the lock
+    3. the canonical native-object hashes
+    4. the ICNF hash
+
+`zyl build` writes zyl.buildinfo beside the binary recording all four plus
+the resolved graph in canonical form, so a third party can verify that a
+binary was produced from a claimed set of inputs.
+
+    - Same zyl.pkg + same zyl.lock + same compiler => identical binaries.
+    - An index compromise cannot alter a build that has a lock.
+    - Content-hash-keyed build caching is sound by §27.
+
+================================================================================
+END OF ZYL FORMAL SPECIFICATION (v5.0)
 ================================================================================

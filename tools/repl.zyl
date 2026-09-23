@@ -163,8 +163,10 @@
 (defn repl-parse (arena src)
   (zyl-parse arena src))
 
+; The REPL has no file, so its input resolves as a lone module in the
+; working directory — which is what a directly compiled file gets too.
 (defn repl-resolve (arena exprs)
-  (mr-resolve-program arena exprs))
+  (mr-resolve-program arena exprs "repl.zyl"))
 
 (defn repl-expand (exprs)
   (me-expand-program exprs))

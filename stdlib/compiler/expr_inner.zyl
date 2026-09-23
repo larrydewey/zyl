@@ -503,6 +503,16 @@
     (match (parse-use rest)
       (Some expr expr)
       (None (Expr (EUnknown "use" (convert-ast-list rest)))))
+  ; (pub defn f ...) — visibility is recorded by the module resolver,
+  ; which strips the wrapper; anything converting a form directly (the
+  ; LSP, a nested compile) just sees the definition it wraps (§24.3).
+  (if (> (str-eq n "pub") 0)
+    (convert-ast (AList rest))
+  ; (feature-gate f <definition>): the module resolver decides whether a
+  ; gated definition is part of this build (SS31.10) and unwraps it. Anything
+  ; converting a form directly sees the definition it guards.
+  (if (> (str-eq n "feature-gate") 0)
+    (convert-ast (ast-nth rest 1 (AstInt 0)))
   (if (> (str-eq n "export") 0)
     (match (parse-export rest)
       (Some expr expr)
@@ -578,7 +588,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (byte-form-dispatch n rest)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -594,10 +604,21 @@
 
 (defn parse-endian-selector (ast)
   (match ast
-    (AstIdent s
-      (if (> (str-eq s "le") 0) (Some ELe)
-      (if (> (str-eq s "be") 0) (Some EBe) None)))
+    (AstIdent s0
+      (let s (strip-leading-colon s0)
+        (if (> (str-eq s "le") 0) (Some ELe)
+        (if (> (str-eq s "be") 0) (Some EBe) None))))
     (d1 None)))
+
+; The reader keeps a keyword's ':' (parser.zyl's read-form-atom) so the
+; module system can tell `pkg:mod` from `pkg mod`; every other consumer
+; of a keyword wants the bare name.
+(defn strip-leading-colon (s)
+  (if (= (str-length s) 0)
+    s
+    (if (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 58)
+      (str-substring s 1 (- (str-length s) 1))
+      s)))
 
 (defn parse-region-selector (ast)
   (match ast

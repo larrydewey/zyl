@@ -1,0 +1,722 @@
+; === Zyl Standard Library — Package Manifests and Versions ===
+; Module: compiler/package
+;
+; The `zyl.pkg` reader and the SemVer arithmetic behind it, per spec
+; v5.0 §31.1 and §31.3. A manifest is an S-expression read by the
+; language's own lexer and parser, so this module works on the raw `Ast`
+; the parser produces rather than on `ExprInner`: a manifest is data, not
+; code, and nothing in it should ever reach the expression pipeline.
+;
+; Everything here is a pure function of the file's bytes. No defaults are
+; read from the environment and no field is inferred from the filesystem,
+; because resolution (§31.5) must be a pure function of the manifests in
+; the graph — a manifest that means different things on two machines
+; would break that before the resolver ever ran.
+;
+; Validation is total and eager: an invalid name, version, requirement or
+; duplicate dependency is rejected at read time with the spec's own error
+; code, so no later phase has to re-check a Manifest value it is handed.
+
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/parser)
+(use core/list)
+(use core/option)
+
+; ===========================================================================
+; VERSIONS (§31.1)
+; ===========================================================================
+; Strict SemVer MAJOR.MINOR.PATCH with an optional `-` pre-release suffix.
+; The pre-release is kept as its raw text ("" when absent); ordering
+; follows SemVer, which puts any pre-release BELOW the release it
+; qualifies. Build metadata (`+...`) has no ordering meaning in SemVer and
+; is not accepted here at all — two archives differing only in build
+; metadata would hash differently while comparing equal, which §31.6
+; cannot express.
+
+(deftype PkgVersion (PV Int Int Int String))
+
+(defn pv-major (v) (match v (PV a d1 d2 d3 a)))
+(defn pv-minor (v) (match v (PV d1 b d2 d3 b)))
+(defn pv-patch (v) (match v (PV d1 d2 c d3 c)))
+(defn pv-pre (v) (match v (PV d1 d2 d3 p p)))
+
+(defn pk-byte-at (s i)
+  (ffi-call "zyl_cstr_byte_at" s i 1000))
+
+(defn pk-len (s)
+  (ffi-call "zyl_cstr_len" s 1000))
+
+(defn pk-sub (s start n)
+  (str-substring s start n))
+
+(defn pk-digit-p (c)
+  (if (>= c 48) (if (<= c 57) 1 0) 0))
+
+; Index of the first occurrence of byte `c` at or after `i`; -1 if absent.
+(defn pk-index-of (s c i)
+  (if (>= i (pk-len s))
+    -1
+    (if (= (pk-byte-at s i) c)
+      i
+      (pk-index-of s c (+ i 1)))))
+
+; Decimal digits of `s` in [start, end) as an Int. -1 when the range is
+; empty or holds a non-digit, which every caller treats as "not SemVer".
+(defn pk-digits (s start end acc)
+  (if (>= start end)
+    acc
+    (let c (pk-byte-at s start)
+      (if (= (pk-digit-p c) 0)
+        -1
+        (let next (+ (* acc 10) (- c 48))
+          (pk-digits s (+ start 1) end next))))))
+
+(defn pk-num (s start end)
+  (if (>= start end)
+    -1
+    (pk-digits s start end 0)))
+
+; Parse "1.4.0" or "1.4.0-rc1". Returns None when the text is not a
+; strict SemVer version; callers turn that into E_PKG_BAD_VERSION with
+; the offending text, which is why this does not panic itself.
+(defn pk-parse-version (s)
+  (let dash (pk-index-of s 45 0)
+    (let core-end (if (< dash 0) (pk-len s) dash)
+      (let pre (if (< dash 0) "" (pk-sub s (+ dash 1) (- (pk-len s) (+ dash 1))))
+        (pk-parse-core s core-end pre)))))
+
+(defn pk-parse-core (s core-end pre)
+  (let d1 (pk-index-of s 46 0)
+    (if (< d1 0)
+      None
+      (let d2 (pk-index-of s 46 (+ d1 1))
+        (if (< d2 0)
+          None
+          (if (>= d2 core-end)
+            None
+            (pk-parse-triple s d1 d2 core-end pre)))))))
+
+(defn pk-parse-triple (s d1 d2 core-end pre)
+  (let maj (pk-num s 0 d1)
+    (let min (pk-num s (+ d1 1) d2)
+      (let pat (pk-num s (+ d2 1) core-end)
+        (if (< maj 0)
+          None
+          (if (< min 0)
+            None
+            (if (< pat 0)
+              None
+              (if (> (pk-index-of s 43 0) -1)
+                None
+                (Some (PV maj min pat pre))))))))))
+
+(defn pk-version-of (s)
+  (match (pk-parse-version s)
+    (Some v v)
+    (None (ffi-call "zyl_panic" (str-concat "E_PKG_BAD_VERSION: package: not a strict SemVer version: " s) 1000))))
+
+(defn pk-int-str (arena n)
+  (ffi-call "zyl_cstr_from_int" arena n 1000))
+
+(defn pv-str (arena v)
+  (let core (str-concat (pk-int-str arena (pv-major v))
+              (str-concat "." (str-concat (pk-int-str arena (pv-minor v))
+                (str-concat "." (pk-int-str arena (pv-patch v))))))
+    (if (> (str-length (pv-pre v)) 0)
+      (str-concat core (str-concat "-" (pv-pre v)))
+      core)))
+
+; SemVer ordering. A version with a pre-release sorts below the same
+; triple without one; two pre-releases compare bytewise, which agrees
+; with SemVer for the identifier shapes a package may actually publish
+; (alphanumeric, dot-separated) and never reorders released versions.
+(defn pv-cmp (a b)
+  (let c1 (pk-cmp-int (pv-major a) (pv-major b))
+    (if (= c1 0)
+      (let c2 (pk-cmp-int (pv-minor a) (pv-minor b))
+        (if (= c2 0)
+          (let c3 (pk-cmp-int (pv-patch a) (pv-patch b))
+            (if (= c3 0) (pk-cmp-pre (pv-pre a) (pv-pre b)) c3))
+          c2))
+      c1)))
+
+(defn pk-cmp-int (a b)
+  (if (< a b) -1 (if (> a b) 1 0)))
+
+(defn pk-cmp-pre (a b)
+  (if (= (str-length a) 0)
+    (if (= (str-length b) 0) 0 1)
+    (if (= (str-length b) 0)
+      -1
+      (pk-cmp-str a b 0))))
+
+(defn pk-cmp-str (a b i)
+  (let la (pk-len a)
+    (let lb (pk-len b)
+      (if (>= i la)
+        (if (>= i lb) 0 -1)
+        (if (>= i lb)
+          1
+          (let ca (pk-byte-at a i)
+            (let cb (pk-byte-at b i)
+              (if (< ca cb) -1 (if (> ca cb) 1 (pk-cmp-str a b (+ i 1)))))))))))
+
+; Compatibility unit (§31.1): major 0 makes each minor its own unit, so
+; 0.3.x and 0.4.x never satisfy one another. Encoded as a single Int so
+; MVS can group by it: major*1000000 + (minor when major is 0).
+(defn pv-compat-unit (v)
+  (if (= (pv-major v) 0)
+    (+ 0 (pv-minor v))
+    (* (pv-major v) 1000000)))
+
+; ===========================================================================
+; PACKAGE NAMES (§31.1)
+; ===========================================================================
+; `acme/json` for majors 0 and 1; `acme/json/v2` and above carry the major
+; as a third segment so two majors are distinct packages in one graph.
+
+(defn pk-count-byte (s c i acc)
+  (if (>= i (pk-len s))
+    acc
+    (pk-count-byte s c (+ i 1) (if (= (pk-byte-at s i) c) (+ acc 1) acc))))
+
+(defn pk-name-segments (s)
+  (+ 1 (pk-count-byte s 47 0 0)))
+
+(defn pk-name-char-ok (c)
+  (if (>= c 97) (if (<= c 122) 1 (pk-name-char-ok2 c)) (pk-name-char-ok2 c)))
+
+(defn pk-name-char-ok2 (c)
+  (if (= (pk-digit-p c) 1)
+    1
+    (if (= c 45) 1 (if (= c 95) 1 (if (= c 47) 1 0)))))
+
+(defn pk-name-chars-ok (s i)
+  (if (>= i (pk-len s))
+    1
+    (if (= (pk-name-char-ok (pk-byte-at s i)) 0)
+      0
+      (pk-name-chars-ok s (+ i 1)))))
+
+; Last path segment of a package name, e.g. "v2" for "acme/json/v2".
+(defn pk-last-segment (s)
+  (pk-last-seg-from s (pk-last-slash s (- (pk-len s) 1))))
+
+(defn pk-last-slash (s i)
+  (if (< i 0)
+    -1
+    (if (= (pk-byte-at s i) 47) i (pk-last-slash s (- i 1)))))
+
+(defn pk-last-seg-from (s idx)
+  (if (< idx 0)
+    s
+    (pk-sub s (+ idx 1) (- (pk-len s) (+ idx 1)))))
+
+; The major a name pins, or -1 when the name carries no /vN segment.
+; "acme/json/v2" -> 2. A trailing segment that merely starts with `v` but
+; is not `v` followed by digits (e.g. "acme/vector") is not a major.
+(defn pk-name-pinned-major (s)
+  (if (< (pk-name-segments s) 3)
+    -1
+    (let seg (pk-last-segment s)
+      (if (= (pk-len seg) 0)
+        -1
+        (if (= (pk-byte-at seg 0) 118)
+          (pk-num seg 1 (pk-len seg))
+          -1)))))
+
+; A name is valid when it has two segments, or three whose last is `vN`
+; with N >= 2, and every byte is [a-z0-9-_/].
+(defn pk-name-valid (s)
+  (if (= (pk-len s) 0)
+    0
+    (if (= (pk-name-chars-ok s 0) 0)
+      0
+      (let segs (pk-name-segments s)
+        (if (= segs 2)
+          (pk-name-segments-nonempty s)
+          (if (= segs 3)
+            (if (>= (pk-name-pinned-major s) 2) (pk-name-segments-nonempty s) 0)
+            0))))))
+
+(defn pk-name-segments-nonempty (s)
+  (if (= (pk-byte-at s 0) 47)
+    0
+    (if (= (pk-byte-at s (- (pk-len s) 1)) 47)
+      0
+      (pk-no-empty-seg s 1))))
+
+(defn pk-no-empty-seg (s i)
+  (if (>= i (pk-len s))
+    1
+    (if (= (pk-byte-at s i) 47)
+      (if (= (pk-byte-at s (- i 1)) 47) 0 (pk-no-empty-seg s (+ i 1)))
+      (pk-no-empty-seg s (+ i 1)))))
+
+(defn pk-check-name (s)
+  (if (> (pk-name-valid s) 0)
+    s
+    (ffi-call "zyl_panic" (str-concat "E_PKG_BAD_NAME: package: not a valid scoped package path: " s) 1000)))
+
+; ===========================================================================
+; MANIFEST (§31.3)
+; ===========================================================================
+
+; Where a dependency's source lives. Registry is the default; path and git
+; are the two local forms a manifest may name directly.
+(deftype PkgSource
+  (PSRegistry)
+  (PSPath String)
+  (PSGit String String))
+
+(deftype PkgDep (PD String PkgVersion (List String) PkgSource))
+
+(defn pd-name (d) (match d (PD n d1 d2 d3 n)))
+(defn pd-version (d) (match d (PD d1 v d2 d3 v)))
+(defn pd-features (d) (match d (PD d1 d2 f d3 f)))
+(defn pd-source (d) (match d (PD d1 d2 d3 s s)))
+
+(deftype PkgFeature (PF String (List PkgDep)))
+
+(defn pf-name (f) (match f (PF n d1 n)))
+(defn pf-deps (f) (match f (PF d1 d d)))
+
+(deftype PkgNative (PN (List String) (List String) (List String) (List String)))
+
+(defn pn-sources (n) (match n (PN s d1 d2 d3 s)))
+(defn pn-cflags (n) (match n (PN d1 c d2 d3 c)))
+(defn pn-link-libs (n) (match n (PN d1 d2 l d3 l)))
+(defn pn-include-dirs (n) (match n (PN d1 d2 d3 i i)))
+
+(defn pn-empty () (PN Nil Nil Nil Nil))
+
+(defn pn-is-empty (n)
+  (if (is-nil (pn-sources n)) 1 0))
+
+; A graph-wide override (§31.5). Either pins a version or redirects the
+; source; the unused half is the neutral value.
+(deftype PkgOverride (POv String PkgVersion PkgSource))
+
+(defn pov-name (o) (match o (POv n d1 d2 n)))
+(defn pov-version (o) (match o (POv d1 v d2 v)))
+(defn pov-source (o) (match o (POv d1 d2 s s)))
+
+(deftype PkgMeta (PM String PkgVersion String String))
+
+(defn pm-name (m) (match m (PM n d1 d2 d3 n)))
+(defn pm-version (m) (match m (PM d1 v d2 d3 v)))
+(defn pm-zyl (m) (match m (PM d1 d2 z d3 z)))
+(defn pm-edition (m) (match m (PM d1 d2 d3 e e)))
+
+(deftype PkgDocs (PDoc String String String))
+
+(defn pdoc-description (d) (match d (PDoc x d1 d2 x)))
+(defn pdoc-license (d) (match d (PDoc d1 x d2 x)))
+(defn pdoc-repository (d) (match d (PDoc d1 d2 x x)))
+
+(deftype PkgCaps (PCaps (List String) (List String)))
+
+(defn pcaps-granted (c) (match c (PCaps g d1 g)))
+(defn pcaps-denied (c) (match c (PCaps d1 d d)))
+
+(deftype PkgDeps (PDeps (List PkgDep) (List PkgDep) (List PkgFeature) (List PkgOverride)))
+
+(defn pdeps-deps (d) (match d (PDeps x d1 d2 d3 x)))
+(defn pdeps-dev (d) (match d (PDeps d1 x d2 d3 x)))
+(defn pdeps-features (d) (match d (PDeps d1 d2 x d3 x)))
+(defn pdeps-overrides (d) (match d (PDeps d1 d2 d3 x x)))
+
+; Paths a package keeps out of its canonical archive, on top of the three
+; the spec always excludes (§31.7: build/, .git/, zyl.lock).
+(deftype Manifest (MF PkgMeta PkgDocs PkgCaps PkgDeps PkgBuild))
+
+(deftype PkgBuild (PBuild PkgNative (List String)))
+
+(defn pbuild-native (b) (match b (PBuild n d1 n)))
+(defn pbuild-exclude (b) (match b (PBuild d1 e e)))
+
+(defn mf-meta (m) (match m (MF x d1 d2 d3 d4 x)))
+(defn mf-docs (m) (match m (MF d1 x d2 d3 d4 x)))
+(defn mf-caps (m) (match m (MF d1 d2 x d3 d4 x)))
+(defn mf-deps-rec (m) (match m (MF d1 d2 d3 x d4 x)))
+(defn mf-build (m) (match m (MF d1 d2 d3 d4 x x)))
+(defn mf-native (m) (pbuild-native (mf-build m)))
+(defn mf-exclude (m) (pbuild-exclude (mf-build m)))
+
+(defn mf-name (m) (pm-name (mf-meta m)))
+(defn mf-version (m) (pm-version (mf-meta m)))
+(defn mf-edition (m) (pm-edition (mf-meta m)))
+(defn mf-zyl (m) (pm-zyl (mf-meta m)))
+(defn mf-deps (m) (pdeps-deps (mf-deps-rec m)))
+(defn mf-dev-deps (m) (pdeps-dev (mf-deps-rec m)))
+(defn mf-features (m) (pdeps-features (mf-deps-rec m)))
+(defn mf-overrides (m) (pdeps-overrides (mf-deps-rec m)))
+(defn mf-capabilities (m) (pcaps-granted (mf-caps m)))
+(defn mf-denied (m) (pcaps-denied (mf-caps m)))
+
+; The major under which this package's symbols are keyed (§31.2). A name
+; carrying /vN pins it; otherwise it is the version's own major.
+(defn mf-major (m)
+  (let pinned (pk-name-pinned-major (mf-name m))
+    (if (>= pinned 2) pinned (pv-major (mf-version m)))))
+
+; ===========================================================================
+; MANIFEST READING
+; ===========================================================================
+; Raw Ast walking. `(package (name "x") ...)` is a single top-level form;
+; every field is a sub-form whose head is an identifier.
+
+(defn pk-ast-head (a)
+  (match a
+    (AList xs
+      (match xs
+        (Cons h d1 (match h (AstIdent n n) (d2 "")))
+        (Nil "")))
+    (d3 "")))
+
+(defn pk-ast-args (a)
+  (match a
+    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
+    (d2 Nil)))
+
+(defn pk-ast-str (a)
+  (match a
+    (AString s s)
+    (AstIdent s s)
+    (d1 "")))
+
+(defn pk-ast-strs (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (pk-ast-str h) (pk-ast-strs t)))))
+
+; First sub-form of `forms` whose head is `head`, or None.
+(defn pk-find-form (forms head)
+  (match forms
+    (Nil None)
+    (Cons h t
+      (if (> (str-eq (pk-ast-head h) head) 0)
+        (Some h)
+        (pk-find-form t head)))))
+
+; Every sub-form of `forms` whose head is `head`, in source order.
+(defn pk-find-forms (forms head)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (> (str-eq (pk-ast-head h) head) 0)
+        (Cons h (pk-find-forms t head))
+        (pk-find-forms t head)))))
+
+; The single string argument of `(field "value")`, or "" when absent.
+(defn pk-field-str (forms field)
+  (match (pk-find-form forms field)
+    (Some f (match (pk-ast-args f) (Cons a d1 (pk-ast-str a)) (Nil "")))
+    (None "")))
+
+; A required field: absence is E_MANIFEST_INVALID, which names the field
+; so the diagnostic points at what is missing rather than at the file.
+(defn pk-required-str (forms field path)
+  (let v (pk-field-str forms field)
+    (if (= (str-length v) 0)
+      (ffi-call "zyl_panic"
+        (str-concat "E_MANIFEST_INVALID: package: zyl.pkg is missing required field "
+          (str-concat field (str-concat " at " path))) 1000)
+      v)))
+
+; `(capabilities io ffi)` — bare identifiers, never strings, so a typo
+; cannot silently become an unknown capability spelled as data.
+(defn pk-ident-list (forms head)
+  (match (pk-find-form forms head)
+    (Some f (pk-ast-strs (pk-ast-args f)))
+    (None Nil)))
+
+; A requirement is a bare version (§31.3). Range operators are rejected
+; here rather than parsed-and-ignored: MVS takes minimums, and silently
+; treating "^1.2" as "1.2" would give a caret a meaning it does not have.
+(defn pk-check-requirement (s name)
+  (if (= (pk-req-operator-p s) 0)
+    s
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_BAD_REQUIREMENT: package: requirement "
+        (str-concat s (str-concat " on " (str-concat name
+          " uses a range operator - MVS takes bare minimum versions")))) 1000)))
+
+(defn pk-req-operator-p (s)
+  (if (= (pk-len s) 0)
+    0
+    (let c (pk-byte-at s 0)
+      (if (= c 94) 1
+      (if (= c 126) 1
+      (if (= c 62) 1
+      (if (= c 60) 1
+      (if (= c 61) 1
+      (if (= c 42) 1 0)))))))))
+
+; (dep "name" "version" (features a b) (path "..") (git "url" (rev "..")))
+(defn pk-parse-dep (form)
+  (let args (pk-ast-args form)
+    (match args
+      (Cons a rest
+        (let name (pk-check-name (pk-ast-str a))
+          (match rest
+            (Cons b rest2
+              (let ver (pk-version-of (pk-check-requirement (pk-ast-str b) name))
+                (PD name ver (pk-dep-features rest2) (pk-dep-source rest2))))
+            (Nil (ffi-call "zyl_panic"
+                   (str-concat "E_MANIFEST_INVALID: package: dep entry for "
+                     (str-concat name " has no version")) 1000)))))
+      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: dep entry has no name" 1000)))))
+
+(defn pk-dep-features (forms)
+  (match (pk-find-form forms "features")
+    (Some f (pk-ast-strs (pk-ast-args f)))
+    (None Nil)))
+
+(defn pk-dep-source (forms)
+  (match (pk-find-form forms "path")
+    (Some f (PSPath (pk-first-str f)))
+    (None (pk-dep-git-source forms))))
+
+(defn pk-dep-git-source (forms)
+  (match (pk-find-form forms "git")
+    (Some f (PSGit (pk-first-str f) (pk-git-rev (pk-ast-args f))))
+    (None (PSRegistry))))
+
+(defn pk-first-str (form)
+  (match (pk-ast-args form)
+    (Cons a d1 (pk-ast-str a))
+    (Nil "")))
+
+(defn pk-git-rev (args)
+  (match (pk-find-form args "rev")
+    (Some f (pk-first-str f))
+    (None "")))
+
+(defn pk-parse-deps (forms head)
+  (match (pk-find-form forms head)
+    (Some f (pk-dep-list (pk-find-forms (pk-ast-args f) "dep")))
+    (None Nil)))
+
+(defn pk-dep-list (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (pk-parse-dep h) (pk-dep-list t)))))
+
+; Two entries for one name is E_PKG_DUPLICATE_DEP: under MVS a repeated
+; name has no defined meaning (the two requirements would silently merge
+; to their maximum, hiding the mistake).
+(defn pk-check-dup-deps (deps)
+  (match deps
+    (Nil 0)
+    (Cons h t
+      (if (> (pk-dep-named t (pd-name h)) 0)
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_DUPLICATE_DEP: package: duplicate dep entry for " (pd-name h)) 1000)
+        (pk-check-dup-deps t)))))
+
+(defn pk-dep-named (deps name)
+  (match deps
+    (Nil 0)
+    (Cons h t (if (> (str-eq (pd-name h) name) 0) 1 (pk-dep-named t name)))))
+
+(defn pk-find-dep (deps name)
+  (match deps
+    (Nil None)
+    (Cons h t (if (> (str-eq (pd-name h) name) 0) (Some h) (pk-find-dep t name)))))
+
+; (features (feature utf16 (deps (dep ...))) (feature simd))
+(defn pk-parse-features (forms)
+  (match (pk-find-form forms "features")
+    (Some f (pk-feature-list (pk-find-forms (pk-ast-args f) "feature")))
+    (None Nil)))
+
+(defn pk-feature-list (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (pk-parse-feature h) (pk-feature-list t)))))
+
+(defn pk-parse-feature (form)
+  (let args (pk-ast-args form)
+    (match args
+      (Cons a rest (PF (pk-ast-str a) (pk-parse-deps rest "deps")))
+      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: feature entry has no name" 1000)))))
+
+; (native (sources "c/x.c") (cflags "-O2") (link-libs "m") (include-dirs "c"))
+(defn pk-parse-native (forms)
+  (match (pk-find-form forms "native")
+    (Some f (pk-native-of (pk-ast-args f)))
+    (None (pn-empty))))
+
+(defn pk-native-of (args)
+  (PN (pk-str-list args "sources")
+      (pk-str-list args "cflags")
+      (pk-str-list args "link-libs")
+      (pk-str-list args "include-dirs")))
+
+(defn pk-str-list (forms head)
+  (match (pk-find-form forms head)
+    (Some f (pk-ast-strs (pk-ast-args f)))
+    (None Nil)))
+
+; (overrides (override "acme/json" "1.9.2") (override "acme/bad" (path "..")))
+(defn pk-parse-overrides (forms)
+  (match (pk-find-form forms "overrides")
+    (Some f (pk-override-list (pk-find-forms (pk-ast-args f) "override")))
+    (None Nil)))
+
+(defn pk-override-list (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (pk-parse-override h) (pk-override-list t)))))
+
+(defn pk-parse-override (form)
+  (let args (pk-ast-args form)
+    (match args
+      (Cons a rest
+        (let name (pk-check-name (pk-ast-str a))
+          (POv name (pk-override-version rest name) (pk-dep-source rest))))
+      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: override entry has no name" 1000)))))
+
+(defn pk-override-version (rest name)
+  (match rest
+    (Cons b d1
+      (let s (pk-ast-str b)
+        (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of (pk-check-requirement s name)))))
+    (Nil (PV 0 0 0 ""))))
+
+; Read and validate a manifest from `path`. Every error raised here is a
+; spec §28 code, and the returned Manifest needs no further checking.
+(defn pk-read-manifest (arena path)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      (ffi-call "zyl_panic" (str-concat "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at " path) 1000)
+      (let src (file-read fd 1048576)
+        (let d1 (file-close fd)
+          (pk-manifest-of-source arena src path))))))
+
+(defn pk-manifest-of-source (arena src path)
+  (let forms (zyl-parse arena src)
+    (match (pk-find-form forms "package")
+      (Some f (pk-manifest-of-form (pk-ast-args f) path))
+      (None (ffi-call "zyl_panic"
+              (str-concat "E_MANIFEST_INVALID: package: no (package ...) form in " path) 1000)))))
+
+(defn pk-manifest-of-form (forms path)
+  (let name (pk-check-name (pk-required-str forms "name" path))
+    (let version (pk-version-of (pk-required-str forms "version" path))
+      (let deps (pk-parse-deps forms "deps")
+        (let d1 (pk-check-dup-deps deps)
+          (MF (PM name version (pk-required-str forms "zyl" path)
+                  (pk-required-str forms "edition" path))
+              (PDoc (pk-field-str forms "description")
+                    (pk-field-str forms "license")
+                    (pk-field-str forms "repository"))
+              (PCaps (pk-ident-list forms "capabilities")
+                     (pk-ident-list forms "deny-capabilities"))
+              (PDeps deps (pk-parse-deps forms "dev-deps")
+                     (pk-parse-features forms) (pk-parse-overrides forms))
+              (PBuild (pk-parse-native forms) (pk-str-list forms "exclude"))))))))
+
+; ===========================================================================
+; EDITIONS AND COMPILER VERSION (§31.11)
+; ===========================================================================
+; v5.0 defines exactly one edition. Both checks live here so that every
+; entry point (compiler, `zyl build`, `zyl publish`) applies the same rule.
+
+(defn pk-compiler-version () "5.0.0")
+
+(defn pk-known-edition (e)
+  (if (> (str-eq e "2026") 0) 1 0))
+
+(defn pk-check-edition (e name)
+  (if (> (pk-known-edition e) 0)
+    1
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_UNKNOWN_EDITION: package: edition "
+        (str-concat e (str-concat " declared by " (str-concat name " is not known to this compiler")))) 1000)))
+
+; `(zyl "5.0")` is a MINIMUM compiler version. A two-component spelling is
+; accepted and read as "5.0.0", since that is how the spec writes it.
+(defn pk-check-compiler (req name)
+  (let want (pk-normalize-req req)
+    (if (<= (pv-cmp want (pk-version-of (pk-compiler-version))) 0)
+      1
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_COMPILER_TOO_OLD: package: " (str-concat name
+          (str-concat " requires compiler version " (str-concat req
+            (str-concat ", this is " (pk-compiler-version)))))) 1000))))
+
+(defn pk-normalize-req (req)
+  (match (pk-parse-version req)
+    (Some v v)
+    (None (pk-version-of (str-concat req ".0")))))
+
+; ===========================================================================
+; CAPABILITIES (§31.9)
+; ===========================================================================
+; The closed set. A capability outside it is a manifest error rather than
+; a silently-ignored grant, which would otherwise read as "trusted".
+
+(defn pk-known-capability (c)
+  (if (> (str-eq c "io") 0) 1
+  (if (> (str-eq c "ffi") 0) 1
+  (if (> (str-eq c "actor") 0) 1
+  (if (> (str-eq c "secret") 0) 1
+  (if (> (str-eq c "native") 0) 1
+  (if (> (str-eq c "unsafe") 0) 1 0)))))))
+
+(defn pk-check-capabilities (caps name)
+  (match caps
+    (Nil 1)
+    (Cons c t
+      (if (> (pk-known-capability c) 0)
+        (pk-check-capabilities t name)
+        (ffi-call "zyl_panic"
+          (str-concat "E_MANIFEST_INVALID: package: unknown capability "
+            (str-concat c (str-concat " declared by " name))) 1000)))))
+
+; One package's capability ceiling, as the resolver discovers it and the
+; enforcement pass reads it: the package name, what it granted itself,
+; and whether it is manifest-backed. Only a package that wrote a zyl.pkg
+; has made a statement to enforce (§31.9).
+(deftype CapGrant (CG String (List String) Int))
+
+(defn cg-name (g) (match g (CG n d1 d2 n)))
+(defn cg-caps (g) (match g (CG d1 c d2 c)))
+(defn cg-enforced (g) (match g (CG d1 d2 e e)))
+
+(defn pk-has-capability (caps c)
+  (match caps
+    (Nil 0)
+    (Cons h t (if (> (str-eq h c) 0) 1 (pk-has-capability t c)))))
+
+; Union of two capability sets, left order preserved then new names
+; appended — the closure written to the lock must be a deterministic
+; function of the graph, so the order may never depend on traversal luck.
+(defn pk-caps-union (a b)
+  (match b
+    (Nil a)
+    (Cons h t
+      (if (> (pk-has-capability a h) 0)
+        (pk-caps-union a t)
+        (pk-caps-union (list-append a (Cons h Nil)) t)))))
+
+(defn pk-caps-sorted (caps)
+  (pk-sort-strs caps))
+
+; Insertion sort over the six-element capability vocabulary; the same
+; helper serves the manifest's canonical dep ordering (§31.3).
+(defn pk-sort-strs (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (pk-insert-str h (pk-sort-strs t)))))
+
+(defn pk-insert-str (x xs)
+  (match xs
+    (Nil (Cons x Nil))
+    (Cons h t
+      (if (< (pk-cmp-str x h 0) 0)
+        (Cons x (Cons h t))
+        (Cons h (pk-insert-str x t))))))

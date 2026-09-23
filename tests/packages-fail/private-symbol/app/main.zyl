@@ -1,0 +1,3 @@
+; E_PKG_PRIVATE_SYMBOL: private-helper is not `pub` in acme/lib.
+(use acme/lib { private-helper })
+(defn main () (private-helper 1))

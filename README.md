@@ -44,6 +44,40 @@ Project-local modules are resolved relative to the source file being
 compiled, so applications can keep their own libraries alongside their
 source.
 
+### Packages
+
+A directory with a `zyl.pkg` is a package, and `zyl` builds it as one
+(spec v5.0 §31):
+
+```bash
+build/boot/zyl-self new acme/json   # a manifest and a root module
+cd json
+build/boot/zyl-self build           # compile this package
+build/boot/zyl-self test            # compile it and run its tests
+build/boot/zyl-self audit           # what the graph is allowed to do
+```
+
+```lisp
+(package
+  (name "acme/json") (version "1.4.0")
+  (zyl "5.0") (edition "2026")
+  (capabilities io)
+  (deps (dep "core/bytes" "2.1.0")
+        (dep "acme/dev" "0.3.0" (path "../dev"))))
+```
+
+Dependencies resolve by Minimal Version Selection: every requirement is
+a minimum, the selection is the greatest minimum, and there is no
+solver — so adding one dependency never silently moves another. A
+package declares the capabilities it may use (`io`, `ffi`, `actor`,
+`secret`, `native`, `unsafe`) and the compiler enforces that declaration.
+Definitions are package-private unless marked `pub`, and two packages may
+define the same name without colliding.
+
+`zyl fetch` is the only command that touches the network; builds read a
+content-addressed store under `~/.zyl/store` and verify every package's
+Ed25519 signature against a key pinned on first use.
+
 ## Installing (optional)
 
 `./boot.sh` only builds and verifies the compiler for this checkout —

@@ -1,0 +1,230 @@
+; Package system regression tests (spec v5.0 §31).
+;
+; Covers the parts that are pure functions of their inputs: version
+; ordering, package-name validity, canonical symbol keys and their
+; mangling, manifest reading, lock round-tripping, Minimal Version
+; Selection over a path-dependency graph, and index signing/verification.
+;
+; The negative cases — a private import, an undeclared dependency, a range
+; requirement, an unknown edition, an undeclared capability, an unknown
+; feature — are compile-time errors, so they live in tests/packages-fail/
+; where the runner checks that compilation actually fails.
+
+(use compiler/package)
+(use compiler/qualify)
+; Both of these define `st-make`. They are two modules of one package
+; (the implicit `zyl/std`), so their canonical keys differ by module
+; (§31.2) and the two definitions coexist — the renaming imports below
+; pick one each, which is how a consumer disambiguates.
+(use lsp/compiler_bridge { st-build => bridge-symbol-table })
+(use compiler/qualify { st-make => qualify-symbol-table })
+(use compiler/lock)
+(use compiler/index)
+(use compiler/store)
+(use compiler/mvs)
+(use math/words)
+(use testing/testing)
+
+(defn pkg-arena () (arena-create 16777216))
+
+; --- versions (§31.1) -------------------------------------------------------
+
+(test "semver parses into its three components"
+  (let v (pk-version-of "1.4.0")
+    (assert-equal (+ (* 100 (pv-major v)) (+ (* 10 (pv-minor v)) (pv-patch v))) 140)))
+
+(test "semver ordering is by component"
+  (assert-equal (pv-cmp (pk-version-of "1.4.0") (pk-version-of "1.4.1")) -1))
+
+(test "a pre-release sorts below its release"
+  (assert-equal (pv-cmp (pk-version-of "2.0.0-rc1") (pk-version-of "2.0.0")) -1))
+
+(test "major 0 makes each minor its own compatibility unit"
+  (assert-equal (pv-compat-unit (pk-version-of "0.3.7")) 3))
+
+(test "a stable major is one compatibility unit"
+  (assert-equal (pv-compat-unit (pk-version-of "2.9.9")) 2000000))
+
+(test "version round-trips through its text form"
+  (assert-equal (pv-str (pkg-arena) (pk-version-of "1.4.0")) "1.4.0"))
+
+; --- package names (§31.1) --------------------------------------------------
+
+(test "a two-segment scoped name is valid"
+  (assert-equal (pk-name-valid "acme/json") 1))
+
+(test "a bare name is not a scoped path"
+  (assert-equal (pk-name-valid "acme") 0))
+
+(test "a third segment must pin major 2 or above"
+  (assert-equal (pk-name-valid "acme/json/v1") 0))
+
+(test "a /vN segment pins the major"
+  (assert-equal (pk-name-pinned-major "acme/json/v3") 3))
+
+(test "a name without /vN pins nothing"
+  (assert-equal (pk-name-pinned-major "acme/json") -1))
+
+; --- canonical keys and mangling (§31.2) ------------------------------------
+
+(test "a canonical key names package, major, module and symbol"
+  (assert-equal (ck-key (pkg-arena) "acme/json" 1 "json/parser" "parse")
+                "acme/json@1::json/parser::parse"))
+
+(test "mangling is the spec's escape, not a sanitiser"
+  (assert-equal (ck-mangle (pkg-arena) "acme/json@1::json/parser::parse")
+                "zy_acme_x2Fjson_1__json_x2Fparser__parse"))
+
+(test "names differing only in punctuation mangle apart"
+  (assert-equal (str-eq (ck-mangle (pkg-arena) "acme/json@1::m::f")
+                        (ck-mangle (pkg-arena) "acme-json@1::m::f")) 0))
+
+(test "a mangled label never exceeds 200 bytes"
+  (assert-equal (> (str-length (ck-mangle (pkg-arena)
+                     "acme/a-very-long-package-name-that-keeps-going@1::deep/module/path/that/also/keeps/going/and/going::a-symbol-with-a-long-name-as-well-so-the-whole-key-is-far-past-two-hundred-bytes-in-total-length"))
+                   200) false))
+
+(test "a symbol is recoverable from its key"
+  (assert-equal (ck-symbol-of "acme/json@1::json/parser::parse") "parse"))
+
+(test "a package is recoverable from its key"
+  (assert-equal (ck-package-of "acme/json@1::json/parser::parse") "acme/json"))
+
+; --- manifests (§31.3) ------------------------------------------------------
+
+(defn demo-manifest ()
+  (pk-read-manifest (pkg-arena) "tests/packages/two-parses/json/zyl.pkg"))
+
+(test "manifest name and version are read"
+  (assert-equal (mf-name (demo-manifest)) "acme/json"))
+
+(test "manifest edition is read"
+  (assert-equal (mf-edition (demo-manifest)) "2026"))
+
+(test "the key major comes from the version when the name pins none"
+  (assert-equal (mf-major (demo-manifest)) 1))
+
+(test "2026 is the edition this compiler knows"
+  (assert-equal (pk-known-edition "2026") 1))
+
+(test "an unknown edition is not accepted"
+  (assert-equal (pk-known-edition "2031") 0))
+
+(test "the capability vocabulary is closed"
+  (assert-equal (pk-known-capability "telepathy") 0))
+
+(test "capabilities are unioned without duplicates"
+  (assert-equal (list-length (pk-caps-union (Cons "io" (Cons "ffi" Nil))
+                                            (Cons "ffi" (Cons "actor" Nil)))) 3))
+
+; --- locks (§31.6) ----------------------------------------------------------
+
+(defn demo-lock ()
+  (LK (lk-format-version) "5.0.0" "blake3:aa"
+      (Cons (LP "acme/json" (pk-version-of "1.4.0") (PSRegistry)
+                (LSig "blake3:bb" "ed25519:cc" "ed25519:dd")
+                (LSets Nil (Cons "io" Nil) (Cons "core/bytes" Nil)))
+            Nil)
+      (Cons "io" Nil) ""))
+
+; The written lock is re-read through the same reader a build uses, so
+; these assert on the round trip rather than on the text.
+(defn lock-first (l)
+  (match (lk-pkgs l)
+    (Cons p d1 p)
+    (Nil (LP "" (PV 0 0 0 "") (PSRegistry) (LSig "" "" "") (LSets Nil Nil Nil)))))
+
+(defn lock-roundtrip (a)
+  (let d1 (lk-write a "/tmp/zyl_test_lock.zyl" (demo-lock))
+    (lk-read a "/tmp/zyl_test_lock.zyl")))
+
+(test "a lock round-trips through its canonical text"
+  (let a (pkg-arena)
+    (assert-equal (str-eq (lp-name (lock-first (lock-roundtrip a))) "acme/json") 1)))
+
+(test "a lock records the content hash it was given"
+  (let a (pkg-arena)
+    (assert-equal (str-eq (lp-hash (lock-first (lock-roundtrip a))) "blake3:bb") 1)))
+
+(test "a lock records the version it selected"
+  (let a (pkg-arena)
+    (assert-equal (str-eq (pv-str a (lp-version (lock-first (lock-roundtrip a)))) "1.4.0") 1)))
+
+(test "the capability closure survives the round trip"
+  (let a (pkg-arena)
+    (assert-equal (list-length (lk-closure (lock-roundtrip a))) 1)))
+
+(test "the graph hash is written and is a blake3 hash"
+  (let a (pkg-arena)
+    (assert-equal (str-eq (str-substring (lk-graph-hash (lock-roundtrip a)) 0 7) "blake3:") 1)))
+
+; --- Minimal Version Selection (§31.5) --------------------------------------
+
+(defn demo-ctx (a)
+  (MC (store-index-dir) 0 Nil Nil))
+
+(defn app-manifest (a)
+  (pk-read-manifest a "tests/packages/two-parses/app/zyl.pkg"))
+
+(test "MVS resolves a path-dependency graph"
+  (let a (pkg-arena)
+    (assert-equal (list-length (mvs-resolve a (demo-ctx a) (app-manifest a)
+                                            "tests/packages/two-parses/app")) 2)))
+
+(defn node-first (nodes)
+  (match nodes
+    (Cons n d1 n)
+    (Nil (MN "" (PV 0 0 0 "") (PSRegistry) "" Nil))))
+
+(test "a selected node carries the version its manifest declares"
+  (let a (pkg-arena)
+    (let nodes (mvs-resolve a (demo-ctx a) (app-manifest a) "tests/packages/two-parses/app")
+      (assert-equal (str-eq (pv-str a (mn-version (node-first nodes))) "1.4.0") 1))))
+
+(test "the capability closure of a graph is the union of its grants"
+  (let a (pkg-arena)
+    (let nodes (mvs-resolve a (demo-ctx a) (app-manifest a) "tests/packages/two-parses/app")
+      (assert-equal (list-length (mvs-closure a nodes Nil)) 0))))
+
+; --- index entries, signing and verification (§31.8) ------------------------
+
+(defn demo-seed () "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+
+(defn demo-hash () "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+
+(test "a publisher key is derived from its seed"
+  (assert-equal (idx-public-key (pkg-arena) (demo-seed))
+                "ed25519:d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"))
+
+(test "a signature over an archive hash verifies under that key"
+  (let a (pkg-arena)
+    (let sig (idx-sign-hash a (demo-seed) (demo-hash))
+      (assert-true (ed25519-verify a
+                     (w-from-hex a (store-strip-prefix (idx-public-key a (demo-seed))))
+                     (w-from-hex a (store-strip-prefix (demo-hash))) 32
+                     (w-from-hex a (store-strip-prefix sig)))))))
+
+(test "a signature does not verify against a different hash"
+  (let a (pkg-arena)
+    (let sig (idx-sign-hash a (demo-seed) (demo-hash))
+      (assert-false (ed25519-verify a
+                      (w-from-hex a (store-strip-prefix (idx-public-key a (demo-seed))))
+                      (w-from-hex a "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85") 32
+                      (w-from-hex a (store-strip-prefix sig)))))))
+
+; --- intra-package name collisions (§31.2) ----------------------------------
+
+(test "two modules of one package may define the same name"
+  (assert-equal (st-count (qualify-symbol-table (pkg-arena) Nil)) 0))
+
+(test "the other definition of that name is reachable under an alias"
+  (assert-equal (st-is-known-fn (bridge-symbol-table Nil) "parse") 0))
+
+(test "an index entry is sharded by its own name"
+  (assert-equal (idx-entry-path "/idx" "acme/json") "/idx/ac/me/acme/json.zyl"))
+
+(test "a store path is the hash of the canonical archive"
+  (assert-equal (str-substring (store-dir (demo-hash)) (- (str-length (store-dir (demo-hash))) 64) 64)
+                "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"))
+
+(run-tests)

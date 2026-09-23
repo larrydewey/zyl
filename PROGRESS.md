@@ -1,6 +1,284 @@
 # Zyl Progress Tracker
 
-## Current Session (2026-09-23) — tooling: language server, editor support, documentation
+## Current Session (2026-09-23) — spec v5.0 §31: the package system, implemented
+
+**The package system is implemented, from canonical symbol keys through
+Minimal Version Selection, the lock, the content store, the index and its
+signatures, capabilities, features and native dependencies. Multi-package
+programs build and link; two packages may define the same symbol; the
+compiler enforces visibility and capabilities; `zyl` grew the subcommands
+of §31.11. The self-hosting fixed point holds on a re-cut seed.**
+
+### What the compiler does now
+
+| Spec | Implementation |
+|------|----------------|
+| §31.1 identity | `stdlib/compiler/package.zyl` — strict SemVer with pre-releases, scoped names, `/vN` majors, compatibility units |
+| §31.2 keys and mangling | `stdlib/compiler/qualify.zyl` + `zyl_mangle_key` in the runtime; labels are the spec's own escape, injective by construction |
+| §31.3 manifest | `zyl.pkg` read by the language's own parser; every field, canonical writer for `zyl new`/`zyl add` |
+| §31.4 compilation model | unchanged: whole-program splicing, now with per-package namespaces |
+| §31.5 MVS | `stdlib/compiler/mvs.zyl` — greatest minimum per compatibility unit, overrides, no backtracking |
+| §31.6 lock | `stdlib/compiler/lock.zyl` — canonical serialisation, BLAKE3 graph hash, `--locked` staleness and capability-growth checks |
+| §31.7 store and archive | `stdlib/compiler/store.zyl` — content-addressed store, canonical tar, hash over the uncompressed archive, offline builds |
+| §31.8 index and trust | `stdlib/compiler/index.zyl` — sharded git index, Ed25519 verification with no opt-out, trust-on-first-use key pinning, yank handling |
+| §31.9 capabilities | `stdlib/compiler/capability_check.zyl` — declared per package, deny by default, enforced after resolution and before type inference |
+| §31.10 features and native | unified additive features with `feature-gate`, optional deps, collision detection; declarative `native` blocks with a cflag allowlist and no build scripts |
+| §31.11 workspaces, editions, tooling | `stdlib/compiler/workspace.zyl`, one root lock; edition `2026`; `zyl new/add/fetch/build/test/update/vendor/audit/publish/key` |
+| §31.12 determinism | `zyl.buildinfo` beside every package binary |
+
+### Three defects the package system exposed
+
+`zyl_cstr_sanitize` maps every byte outside `[A-Za-z0-9_]` to `_`, so
+`is_generic_param` and `is-generic-param` were the same assembly label.
+`stdlib/compiler/type_inference.zyl` had seven call sites written with
+underscores against hyphenated definitions, and they linked only because
+the sanitiser merged them. The injective mangler separated them, turning
+a hidden alias into an undefined reference; the call sites are now
+spelled as their definitions are.
+
+`zyl_file_read_c` returned a single static thread-local buffer, so two
+live reads aliased. `zyl build` read the source, then read the manifest
+for its native block, and the manifest text replaced the source in place
+— the compiler then compiled the manifest, silently, since both are valid
+S-expressions. Each read now owns its buffer, which also lifts the old
+silent 1 MiB truncation.
+
+`zyl_exec_cmd` ends in `execl`, replacing the process. That is right for
+the link step at the end of a compile and wrong for everything the
+package tooling does — `cc -c`, `tar`, `git`, `curl` all have to return —
+so the toolchain uses `zyl_system_cmd` and the package link step runs cc
+as a child.
+
+### A name means what the module importing it says
+
+Within a package, a definition is visible everywhere (§24.4), and the
+standard library already had ten names defined in two modules each —
+`list-map` in both `collections/collections` and
+`compiler/monomorphization`, `map-get` in both `collections/map` and
+`core/map`, and so on. Under the flat namespace those were link-time
+hazards resolved by whichever file happened to be spliced last.
+
+They now have distinct canonical keys, and a module's table is built
+weakest-first: the rest of its package, then the modules it explicitly
+`use`s, then its own definitions. So a module that imports
+`collections/map` means `collections/map`'s `map-get`, a module that
+defines a name means its own, and only a name nobody disambiguated falls
+back to the old last-one-wins rule. The LSP build caught this before the
+regression suite did: it is the one program that loads two modules
+defining `st-build`, and the first version of the table gave both
+definitions the same key.
+
+### The language server had to learn the difference
+
+Qualification changed what the compiler front end hands back: a
+definition is now `zyl/std@5::compiler/parser::zyl-parse`, not
+`zyl-parse`. The editor asks about names as they are written in the file,
+so `lsp/compiler_bridge` keys its symbol table on the key's last segment
+(`lsp-source-name`), and call hierarchy does the same on both halves of
+every edge. The LSP also passes the document's own path into resolution
+now — that is how the resolver knows which package the file being edited
+belongs to, and therefore what its definitions are called.
+
+### The bug the language server found
+
+A match arm may nest a constructor inside a pattern:
+
+```lisp
+(match (lsp-obj-get params "text")
+  (Some (LSPString text) ...)
+  (d1 ...))
+```
+
+The qualifier rewrote the arm's own head and left the nested
+`(LSPString text)` alone, so the pattern kept the source name while
+`LSPString`'s definition moved to its canonical key. The arm could then
+never match, and — because of how ICNF lowers an arm whose constructor it
+cannot find — the whole function holding it fell out of code generation.
+Twenty-seven functions vanished from `lsp_server.zyl` that way, which is
+why the server advertised half its capabilities and answered nothing
+about variants.
+
+Nothing in the regression suite caught it: no test happens to nest a
+constructor in a pattern AND depend on the enclosing function. The LSP
+build did, because it is the largest program in the tree that is not the
+compiler. Nested pattern heads are now qualified and the names they bind
+are bound.
+
+### Deliberate deviations, recorded rather than hidden
+
+- **The standard library stays implicit.** §25 says it is implicit and
+  versioned with the compiler, so it is package `zyl/std` at the
+  compiler's major with no manifest: fully visible, never capability-
+  enforced, and not a workspace member. The design doc's Phase 2 sketch
+  of converting `stdlib/` into a manifest-bearing member is not what the
+  specification says, and the specification wins.
+- **A lone file is package `local/main`@0.** Compiling a file directly
+  still needs a name to key its symbols by (§31.2), but a file that never
+  wrote a `zyl.pkg` has declared nothing, so no capability ceiling is
+  enforced against it.
+- **Module layout.** §31 does not fix one. A module path `M` in package
+  `P` is `<root of P>/M.zyl`, and a package's root module — what
+  `(use acme/json)` names — is the module spelled by the name's last
+  segment, which is the layout the standard library already uses.
+- **`zyl.buildinfo`'s fourth input is the assembly hash, not the ICNF
+  hash.** The ICNF has no serialised form here; assembly is a
+  deterministic function of it, so the field verifies the same claim
+  through a downstream artefact. A true ICNF hash needs an ICNF printer.
+- **Qualified names are copied per occurrence.** `type_inference.zyl`
+  compares names with `=`, which lowers to a pointer comparison when the
+  operand kinds are unknown, so those comparisons have always been false
+  and the per-call-site body-inference path behind them has never run.
+  Handing every occurrence one shared key pointer made them true for the
+  first time and the dormant path dereferenced a null parameter list.
+  Copying keeps name comparison exactly as sound as it was; fixing those
+  comparisons is a change to type inference, not to the module system.
+
+### Known gaps
+
+- `zyl fetch` downloads registry archives over HTTPS; a `git` dependency
+  is recognised, pinned by revision and resolvable from the store, but
+  the clone-archive-install path is not wired into `fetch` yet.
+- The index URL in the examples (`github.com/zyl-lang/index`) is still a
+  placeholder; no index repository exists, so the fetch path is covered
+  by unit tests over its pure parts (entry parsing, signing, verification,
+  sharding) rather than end to end.
+- Hash finalization records §31.12's four inputs in `zyl.buildinfo` but
+  does not yet mix the graph hash into the binary's own hash.
+- `deny-capabilities` and the capability pass apply to manifest-bearing
+  packages only, for the reason above.
+- §31.4 describes build caching keyed by content hash; there is no cache
+  yet, so every build recompiles the whole graph.
+- Paths and URLs that reach `tar`, `zstd`, `git`, `curl` or `cc` are
+  validated against a strict character set before the command is built
+  (`store-safe`), so a package root containing a space or a quote is
+  refused rather than escaped. Refusing the byte is a stronger guarantee
+  than quoting it, but it does mean such a path cannot be published from
+  or fetched into today.
+- `feature-gate` is honoured at top level, where §31.10 says it is valid,
+  but a nested one is not rejected — it simply never reaches the
+  resolver's top-level scan and so is treated as an ordinary form.
+
+### Cost: the boot cycle got slower
+
+§31.8 makes signature verification mandatory, so the Ed25519 stack and
+its field arithmetic now ship inside the compiler — about 2,600 lines on
+top of an 18,000-line bundle. One stage of the self-hosting build went
+from roughly six minutes to roughly ten, which is exactly where
+`boot.sh`'s old 600-second per-stage timeout sat; the cap is now 2400
+seconds (`ZYL_STAGE_TIMEOUT` overrides it), and a full reseed plus
+verification is the better part of an hour.
+
+The obvious mitigation is to move Ed25519 into the runtime beside BLAKE3
+and `zyl_mangle_key`, which would take the bundle back to roughly its
+previous size. That is a few hundred lines of field arithmetic in C with
+RFC 8032 vectors to check it against, and it is not something to write
+in the same change as the package system itself.
+
+### Tests
+
+- `tests/regression/package-system.zyl` — 37 assertions over versions,
+  names, keys, mangling, manifests, locks, MVS and Ed25519 signing.
+- `tests/packages/` — multi-package builds: two packages defining `parse`
+  side by side with renaming imports, and feature-gated definitions.
+- `tests/packages-fail/` — private import, undeclared dependency, range
+  requirement, unknown edition, undeclared capability, unknown feature.
+- `tests/packages-build/native/` — `zyl build` with a C source, compiled
+  through the cflag allowlist and linked into the binary.
+
+---
+
+## Current Session (2026-09-23) — spec v5.0: package system design
+
+**The specification is now v5.0. Its centrepiece, §31 Package System, is
+fully specified and deliberately unimplemented; the design behind it,
+including the sixteen decisions and a five-phase plan, is in
+`docs/package-management-design.md`. No compiler source changed, so the
+fixed point is untouched.**
+
+### What was decided
+
+| Axis | Choice |
+|------|--------|
+| Manifest | S-expression `zyl.pkg`, read by the existing lexer/parser — not TOML |
+| Resolution | Minimal Version Selection: a pure function of the manifests, no solver |
+| Compilation | Whole-program source splicing; no ABI in 5.0 |
+| Symbol identity | `pkg@major::module::symbol`, injectively mangled |
+| Fetching | `git`/`curl` into a content-addressed store; builds are offline |
+| Trust | Author Ed25519 keys, TOFU pinning, verification mandatory |
+| Capabilities | Declared per package, deny by default, compiler-enforced |
+| Features | Additive-only, unified, recorded in the lock |
+| Native deps | Declarative only; build scripts forbidden outright |
+| Stdlib | Implicit, versioned with the compiler |
+| Index | Git repository of S-expression metadata, scoped `org/name` |
+| Compatibility | Minimum compiler version plus editions |
+| Imports | `package:module`, colon-separated |
+| Visibility | Package-private by default, `pub` to export |
+| Workspaces | One root lock, one shared store, path deps |
+| Rollout | Five phases, language before distribution |
+
+### Three findings from reading the current implementation
+
+`zyl_cstr_sanitize` (`runtime/actor_runtime.c:984`) maps every byte
+outside `[A-Za-z0-9_]` to `_`. It is not injective: `acme/json`,
+`acme.json` and `acme-json` all become `acme_json`. Any mangling scheme
+layered on it would silently merge distinct functions into one label, so
+§31.2 specifies its own escape and Phase 1 replaces the sanitiser on the
+label path. This is the single change that has to land before any of the
+rest can be trusted.
+
+The colon import syntax needs **no lexer change**. `:` is not an
+identifier-continue character (`lexer.zyl:63`), so `acme/json:parser`
+already lexes as `TkIdent "acme/json"` followed by `TkKeyword "parser"`.
+One consequence had to be specified: the lexer discards whitespace, so
+`(use pkg :unsafe)` and `(use pkg:unsafe)` are the same token stream, and
+`unsafe` is therefore a reserved module name.
+
+`EUseModule` (`expr_inner.zyl:58`) already carries `(Option (List
+String))` for the imported symbol list and a `Bool` for the unsafe flag.
+The parser arm at `expr_inner.zyl:1889` passes `None` and `false`
+unconditionally, so `(use m { sym })` parses and is ignored. Phase 1 is
+smaller than it first appeared: the AST shape is already right.
+
+### Files
+
+New:
+- `docs/package-management-design.md` — the design: decisions with
+  rejected alternatives, grammars for the manifest, lock and index, the
+  MVS algorithm, the mangling scheme, the capability model, the canonical
+  archive format, 36 new error codes, and the five-phase plan.
+- `spec/16-package-system.md` — structured reference copy of §31.
+
+Modified:
+- `zyl_specification.txt` — header and footer to v5.0; §20.6 rewritten
+  from a roadmap to a pointer at §31; §24 rewritten (import forms,
+  two-level visibility, `pub` over `export`, two-level DAG resolution,
+  orphan rule); §25 notes that stdlib is implicit; §27 extends
+  determinism to the resolved graph; §28 gains the 36 package codes;
+  §29 gains G12 Capability Containment and G13 Supply-Chain Integrity;
+  §30 restated; §31 added.
+- `spec/00-language-overview.md` — v5.0 version history, G12, G13.
+- `spec/15-error-model.md` — package error table, phase 19.
+- `docs/implementation-status.md` — replaced the one-line v5.0 note with
+  the real gap list, including the three findings above.
+- `AGENTS.md` — the v5.0 line now points at the spec section and design
+  doc while still saying not to build it unasked.
+
+### Known limitations
+
+- Nothing here is implemented. There is no manifest reader, no lock, no
+  resolver, no store, no index, no signing, no capability pass, and no
+  namespacing. `module_resolver.zyl` still splices into a flat global
+  namespace with no visibility enforcement.
+- §31.10 has no answer for packages needing autoconf-style probing; the
+  supported workaround is to vendor a pre-configured C source set.
+- The index URL in the examples (`github.com/zyl-lang/index`) is a
+  placeholder; no index repository exists.
+- Phase 1 will change the compiler's own source and therefore requires a
+  seed re-cut and fixed-point re-verification per `AGENTS.md`.
+
+---
+
+## Session (2026-09-23) — tooling: language server, editor support, documentation
 
 **The language server now covers the language as it stands, the VS Code
 extension is rebuilt around it, `install.sh` builds and verifies it, and

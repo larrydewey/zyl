@@ -1,0 +1,554 @@
+; === Zyl Standard Library — Package Tooling ===
+; Module: compiler/cli
+;
+; The subcommands of §31.11, minus the two that end in a compile
+; (`build` and `test`, which live in the driver because only it owns the
+; compilation pipeline):
+;
+;     zyl new | add | fetch | update | vendor | audit | publish | key
+;
+; The split between this module and the driver follows §31.7's rule: the
+; ONLY command permitted to touch the network is `zyl fetch` (and
+; `zyl update`, which is a fetch that also rewrites requirements). A
+; build reads the store and never networks, so nothing the driver calls
+; from here can reach out.
+;
+; Manifests written here are in canonical form (§31.3): the field order
+; the spec lists, dependencies sorted by name. `zyl add` rewrites a
+; manifest by re-serialising the parsed form, not by patching text, so an
+; added dependency lands in canonical position rather than wherever the
+; edit happened to fall.
+
+(use compiler/index)
+(use compiler/lock)
+(use compiler/mvs)
+(use compiler/package)
+(use compiler/store)
+(use compiler/workspace)
+(use core/list)
+(use core/option)
+(use math/words)
+
+; ===========================================================================
+; MANIFEST WRITING (§31.3)
+; ===========================================================================
+
+(defn cli-quote (s)
+  (str-concat "\"" (str-concat s "\"")))
+
+(defn cli-words (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil h)
+        (d1 (str-concat h (str-concat " " (cli-words t))))))))
+
+(defn cli-dep-str (arena d)
+  (str-concat "    (dep " (str-concat (cli-quote (pd-name d))
+    (str-concat " " (str-concat (cli-quote (pv-str arena (pd-version d)))
+      (str-concat (cli-dep-features d)
+        (str-concat (cli-dep-source d) ")\n")))))))
+
+(defn cli-dep-features (d)
+  (if (is-nil (pd-features d))
+    ""
+    (str-concat " (features " (str-concat (cli-words (pd-features d)) ")"))))
+
+(defn cli-dep-source (d)
+  (match (pd-source d)
+    (PSRegistry "")
+    (PSPath p (str-concat " (path " (str-concat (cli-quote p) ")")))
+    (PSGit u r (str-concat " (git " (str-concat (cli-quote u)
+                 (str-concat " (rev " (str-concat (cli-quote r) "))")))))))
+
+(defn cli-deps-str (arena deps)
+  (match deps
+    (Nil "")
+    (Cons h t (str-concat (cli-dep-str arena h) (cli-deps-str arena t)))))
+
+(defn cli-deps-block (arena head deps)
+  (if (is-nil deps)
+    ""
+    (str-concat "  (" (str-concat head (str-concat "\n"
+      (str-concat (cli-deps-str arena (cli-sort-deps deps)) "    )\n"))))))
+
+(defn cli-sort-deps (deps)
+  (match deps
+    (Nil Nil)
+    (Cons h t (cli-insert-dep h (cli-sort-deps t)))))
+
+(defn cli-insert-dep (d deps)
+  (match deps
+    (Nil (Cons d Nil))
+    (Cons h t
+      (if (< (pk-cmp-str (pd-name d) (pd-name h) 0) 0)
+        (Cons d (Cons h t))
+        (Cons h (cli-insert-dep d t))))))
+
+(defn cli-opt-field (name value)
+  (if (= (str-length value) 0)
+    ""
+    (str-concat "  (" (str-concat name (str-concat " " (str-concat (cli-quote value) ")\n"))))))
+
+(defn cli-caps-block (caps)
+  (if (is-nil caps)
+    ""
+    (str-concat "  (capabilities " (str-concat (cli-words (pk-caps-sorted caps)) ")\n"))))
+
+(defn cli-manifest-str (arena m)
+  (str-concat "(package\n"
+    (str-concat "  (name " (str-concat (cli-quote (mf-name m))
+      (str-concat ") (version " (str-concat (cli-quote (pv-str arena (mf-version m)))
+        (str-concat ")\n  (zyl " (str-concat (cli-quote (mf-zyl m))
+          (str-concat ") (edition " (str-concat (cli-quote (mf-edition m))
+            (str-concat ")\n" (cli-manifest-tail arena m))))))))))))
+
+(defn cli-manifest-tail (arena m)
+  (str-concat (cli-opt-field "description" (pdoc-description (mf-docs m)))
+    (str-concat (cli-opt-field "license" (pdoc-license (mf-docs m)))
+      (str-concat (cli-opt-field "repository" (pdoc-repository (mf-docs m)))
+        (str-concat (cli-caps-block (mf-capabilities m))
+          (str-concat (cli-deps-block arena "deps" (mf-deps m))
+            (str-concat (cli-deps-block arena "dev-deps" (mf-dev-deps m)) ")\n")))))))
+
+(defn cli-write-manifest (arena dir m)
+  (let out (file-open (str-concat dir "/zyl.pkg") "w")
+    (let n (file-write out (cli-manifest-str arena m))
+      (let d1 (file-close out)
+        n))))
+
+; ===========================================================================
+; zyl new
+; ===========================================================================
+; A new package is a directory, a manifest and a root module named after
+; the package's last segment — the layout `(use acme/json)` expects.
+
+; `cwd` is the directory the user ran the command in. The compiler chdirs
+; to its own bundle directory before any subcommand runs — that is how
+; module resolution and linking find stdlib/ and actor_runtime.c — so a
+; relative path here would create the package next to the compiler.
+(defn cli-new (arena cwd name)
+  (let d1 (pk-check-name name)
+    (let dir (str-concat cwd (str-concat "/" (pk-last-segment name)))
+      (let d2 (store-mkdir dir)
+        (let m (MF (PM name (PV 0 1 0 "") "5.0" "2026")
+                   (PDoc "" "" "")
+                   (PCaps Nil Nil)
+                   (PDeps Nil Nil Nil Nil)
+                   (PBuild (pn-empty) Nil))
+          (let d3 (cli-write-manifest arena dir m)
+            (let d4 (cli-write-root-module dir name)
+              (begin
+                (print (str-concat "created " (str-concat dir "/zyl.pkg")))
+                0))))))))
+
+(defn cli-write-root-module (dir name)
+  (let path (str-concat dir (str-concat "/" (str-concat (pk-last-segment name) ".zyl")))
+    (let out (file-open path "w")
+      (let n (file-write out
+               (str-concat "; Root module of " (str-concat name
+                 "\n\n(pub defn greet (n) n)\n\n(defn main () 0)\n")))
+        (let d1 (file-close out)
+          n)))))
+
+; ===========================================================================
+; zyl add
+; ===========================================================================
+; Adds a requirement and re-serialises the manifest canonically. The
+; version is the latest non-yanked release in the index unless the caller
+; names one, and it is written as a bare minimum, never a range (§31.5).
+
+(defn cli-add (arena dir name version)
+  (let d1 (pk-check-name name)
+    (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+      (let v (cli-add-version arena name version)
+        (let dep (PD name v Nil (PSRegistry))
+          (let d2 (cli-check-not-present m name)
+            (let m2 (cli-with-dep m dep)
+              (let d3 (cli-write-manifest arena dir m2)
+                (begin
+                  (print (str-concat "added " (str-concat name (str-concat " " (pv-str arena v)))))
+                  0)))))))))
+
+(defn cli-add-version (arena name version)
+  (if (> (str-length version) 0)
+    (pk-version-of version)
+    (cli-latest-version arena name)))
+
+(defn cli-latest-version (arena name)
+  (let root (idx-sync (idx-default-url))
+    (let entry (idx-read arena root name)
+      (match (idx-latest entry)
+        (Some iv (iv-version iv))
+        (None (ffi-call "zyl_panic"
+                (str-concat "E_PKG_VERSION_NOT_FOUND: package: no publishable version of " name) 1000))))))
+
+(defn cli-check-not-present (m name)
+  (match (pk-find-dep (mf-deps m) name)
+    (Some d (ffi-call "zyl_panic"
+              (str-concat "E_PKG_DUPLICATE_DEP: package: " (str-concat name
+                " is already a dependency")) 1000))
+    (None 1)))
+
+(defn cli-with-dep (m dep)
+  (MF (mf-meta m) (mf-docs m) (mf-caps m)
+      (PDeps (list-append (mf-deps m) (Cons dep Nil))
+             (mf-dev-deps m) (mf-features m) (mf-overrides m))
+      (mf-build m)))
+
+; ===========================================================================
+; RESOLUTION AND LOCK
+; ===========================================================================
+
+; One zyl.lock per workspace, at its root (§31.11): two members sharing a
+; lock is what stops their graphs from skewing. A standalone package is
+; its own root, so this is the package directory then.
+(defn cli-lock-path (dir)
+  (str-concat (ws-lock-dir dir) "/zyl.lock"))
+
+(defn cli-read-lock (arena dir)
+  (if (> (ffi-call "zyl_path_exists" (cli-lock-path dir) 1000) 0)
+    (Some (lk-read arena (cli-lock-path dir)))
+    None))
+
+(defn cli-locked-pkgs (arena dir)
+  (match (cli-read-lock arena dir)
+    (Some l (lk-pkgs l))
+    (None Nil)))
+
+; Offline context: the store and the lock only, which is what a build
+; gets (§31.7).
+(defn cli-ctx-offline (arena dir m)
+  (MC (store-index-dir) 0 (cli-locked-pkgs arena dir) (mf-overrides m)))
+
+; Online context: `zyl fetch` and `zyl update` may consult the index and
+; download archives.
+(defn cli-ctx-online (arena dir m)
+  (MC (store-index-dir) 1 (cli-locked-pkgs arena dir) (mf-overrides m)))
+
+(defn cli-node-lock-entry (arena n)
+  (LP (mn-name n) (mn-version n) (mn-source n)
+      (cli-node-sig arena n)
+      (LSets (mn-features n) (cli-node-caps arena n) (cli-node-deps arena n))))
+
+; A path dependency has no archive and no publisher, so it records no
+; hash, key or signature: a working tree changes under the developer's
+; hands and a pinned hash would be a lie by the next keystroke.
+(defn cli-node-sig (arena n)
+  (match (mn-source n)
+    (PSPath p (LSig "" "" ""))
+    (PSGit u r (LSig (cli-dir-hash arena (mn-root n)) "" ""))
+    (PSRegistry (LSig (cli-dir-hash arena (mn-root n)) "" ""))))
+
+; The hash of a store directory is the directory's own name (§31.7), so
+; nothing is re-hashed here — the store's invariant already carries it.
+(defn cli-dir-hash (arena root)
+  (let base (cli-basename root)
+    (if (= (pk-len base) 64) (str-concat "blake3:" base) "")))
+
+(defn cli-basename (path)
+  (let i (pk-last-slash path (- (pk-len path) 1))
+    (if (< i 0) path (pk-sub path (+ i 1) (- (pk-len path) (+ i 1))))))
+
+(defn cli-node-caps (arena n)
+  (mf-capabilities (pk-read-manifest arena (str-concat (mn-root n) "/zyl.pkg"))))
+
+(defn cli-node-deps (arena n)
+  (cli-dep-names (mf-deps (pk-read-manifest arena (str-concat (mn-root n) "/zyl.pkg")))))
+
+(defn cli-dep-names (deps)
+  (match deps
+    (Nil Nil)
+    (Cons d t (Cons (pd-name d) (cli-dep-names t)))))
+
+(defn cli-lock-of (arena m nodes closure)
+  (LK (lk-format-version) (pk-compiler-version) (lk-compiler-self-hash arena)
+      (cli-lock-entries arena nodes) closure ""))
+
+(defn cli-lock-entries (arena nodes)
+  (match nodes
+    (Nil Nil)
+    (Cons n t (Cons (cli-node-lock-entry arena n) (cli-lock-entries arena t)))))
+
+; ===========================================================================
+; zyl fetch
+; ===========================================================================
+; Resolves the graph with the index available, downloads and verifies
+; everything it selects, and writes the lock. This is the only command
+; that networks.
+
+(defn cli-fetch (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let d1 (idx-sync (idx-default-url))
+      (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
+        (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
+          (let d2 (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
+            (begin
+              (print (str-concat "fetched " (str-concat (cli-int arena (list-length nodes)) " packages")))
+              0)))))))
+
+(defn cli-int (arena n)
+  (ffi-call "zyl_cstr_from_int" arena n 1000))
+
+; ===========================================================================
+; zyl update
+; ===========================================================================
+; Re-resolves with a refreshed index and reports capability-closure
+; growth (§31.9). It rewrites the lock, never the manifests: an upgrade is
+; an explicit edit to a requirement, which is what makes MVS predictable.
+
+(defn cli-update (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let before (cli-lock-closure arena dir)
+      (let d1 (idx-sync (idx-default-url))
+        (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
+          (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
+            (let d2 (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
+              (begin
+                (cli-report-growth before closure)
+                0))))))))
+
+(defn cli-lock-closure (arena dir)
+  (match (cli-read-lock arena dir)
+    (Some l (lk-closure l))
+    (None Nil)))
+
+(defn cli-report-growth (before after)
+  (if (> (mvs-closure-grew before after) 0)
+    (print (str-concat "capability closure grew to: " (cli-words (pk-caps-sorted after))))
+    (print "capability closure unchanged")))
+
+; ===========================================================================
+; zyl audit
+; ===========================================================================
+; What the graph may do, package by package, and the closure the lock
+; records. `zyl audit` answers "what did I just agree to run".
+
+(defn cli-audit (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
+      (begin
+        (print (str-concat (mf-name m) (str-concat " (root): " (cli-words (pk-caps-sorted (mf-capabilities m))))))
+        (cli-audit-nodes arena nodes)
+        (print (str-concat "closure: " (cli-words (cli-lock-closure arena dir))))
+        0))))
+
+(defn cli-audit-nodes (arena nodes)
+  (match nodes
+    (Nil 0)
+    (Cons n t
+      (begin
+        (print (str-concat (mn-name n)
+          (str-concat ": " (cli-words (pk-caps-sorted (cli-node-caps arena n))))))
+        (cli-audit-nodes arena t)))))
+
+; ===========================================================================
+; zyl vendor
+; ===========================================================================
+; Copies every resolved package into ./vendor, so a build can run with no
+; store at all. The copies keep their store contents exactly; vendoring
+; is a relocation, not a re-packaging.
+
+(defn cli-vendor (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
+      (let d1 (store-mkdir (str-concat dir "/vendor"))
+        (begin
+          (cli-vendor-nodes dir nodes)
+          (print (str-concat "vendored " (str-concat (cli-int arena (list-length nodes)) " packages")))
+          0)))))
+
+(defn cli-vendor-nodes (dir nodes)
+  (match nodes
+    (Nil 0)
+    (Cons n t
+      (let dest (str-concat dir (str-concat "/vendor/" (store-flat-name (mn-name n))))
+        (let d1 (store-mkdir dest)
+          (let d2 (store-run (str-concat "cp -R '" (str-concat (mn-root n)
+                    (str-concat "/.' '" (str-concat dest "'")))))
+            (cli-vendor-nodes dir t)))))))
+
+; ===========================================================================
+; NATIVE DEPENDENCIES (§31.10)
+; ===========================================================================
+; Declarative only. Build scripts are FORBIDDEN in any form, because
+; arbitrary build-time code would forfeit §27's determinism outright, so
+; the manifest names sources, flags, libraries and include directories and
+; the toolchain invokes `cc` with a canonical, sorted argument vector.
+;
+; Three rules are enforced here:
+;   - a source path may not escape the package root (E_PKG_NATIVE_PATH_ESCAPE)
+;   - a cflag must be in the allowlist: -O*, -D*, -std=*, a fixed -f subset.
+;     Raw -I, -L, -l and any -Wl, are rejected (E_PKG_NATIVE_FLAG_DENIED);
+;     includes go through include-dirs and linking through link-libs
+;   - cc's failure is an error, not a warning (E_PKG_NATIVE_BUILD_FAILED)
+
+(defn cli-native-path-ok (p)
+  (if (= (pk-len p) 0)
+    0
+    (if (= (pk-byte-at p 0) 47)
+      0
+      (if (> (cli-has-dotdot p 0) 0) 0 1))))
+
+(defn cli-has-dotdot (p i)
+  (if (>= (+ i 1) (pk-len p))
+    0
+    (if (= (pk-byte-at p i) 46)
+      (if (= (pk-byte-at p (+ i 1)) 46) 1 (cli-has-dotdot p (+ i 1)))
+      (cli-has-dotdot p (+ i 1)))))
+
+(defn cli-check-native-path (p)
+  (if (> (cli-native-path-ok p) 0)
+    p
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_NATIVE_PATH_ESCAPE: package: native source path escapes the package root: " p) 1000)))
+
+(defn cli-flag-allowed (f)
+  (if (> (cli-prefix f "-O") 0) 1
+  (if (> (cli-prefix f "-D") 0) 1
+  (if (> (cli-prefix f "-std=") 0) 1
+  (if (> (str-eq f "-fPIC") 0) 1
+  (if (> (str-eq f "-fno-strict-aliasing") 0) 1
+  (if (> (str-eq f "-fwrapv") 0) 1
+  (if (> (str-eq f "-fstack-protector-strong") 0) 1
+  (if (> (str-eq f "-fno-omit-frame-pointer") 0) 1 0)))))))))
+
+(defn cli-prefix (s p)
+  (if (< (pk-len s) (pk-len p))
+    0
+    (str-eq (pk-sub s 0 (pk-len p)) p)))
+
+(defn cli-check-flags (flags)
+  (match flags
+    (Nil 1)
+    (Cons f t
+      (if (> (cli-flag-allowed f) 0)
+        (cli-check-flags t)
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_NATIVE_FLAG_DENIED: package: cflag outside the allowlist: " f) 1000)))))
+
+; The argument vector is built in one fixed order — flags, include
+; directories, source, output — and the flags are sorted, so two machines
+; with the same manifest invoke cc identically (§31.10).
+(defn cli-native-object (arena dir n src)
+  (let d1 (cli-check-native-path src)
+    (let d2 (cli-check-flags (pn-cflags n))
+      (let obj (str-concat dir (str-concat "/build/native/" (str-concat (store-flat-name src) ".o")))
+        (let d3 (store-mkdir (str-concat dir "/build/native"))
+          (let cmd (cli-cc-command dir n src obj)
+            (let rc (store-run cmd)
+              (if (= rc 0)
+                obj
+                (ffi-call "zyl_panic"
+                  (str-concat "E_PKG_NATIVE_BUILD_FAILED: package: cc failed on " src) 1000)))))))))
+
+(defn cli-cc-command (dir n src obj)
+  (str-concat "cc -c "
+    (str-concat (cli-words (pk-sort-strs (pn-cflags n)))
+      (str-concat " " (str-concat (cli-include-args dir (pn-include-dirs n))
+        (str-concat " -o '" (str-concat obj
+          (str-concat "' '" (str-concat dir (str-concat "/" (str-concat src "'")))))))))))
+
+(defn cli-include-args (dir dirs)
+  (match dirs
+    (Nil "")
+    (Cons h t
+      (let d1 (cli-check-native-path h)
+        (str-concat "-I'" (str-concat dir (str-concat "/" (str-concat h
+          (str-concat "' " (cli-include-args dir t))))))))))
+
+(defn cli-native-objects (arena dir n srcs)
+  (match srcs
+    (Nil Nil)
+    (Cons s t (Cons (cli-native-object arena dir n s) (cli-native-objects arena dir n t)))))
+
+; Everything a link needs from one package's native block: its objects
+; and its libraries, already shell-quoted, in manifest order.
+(defn cli-native-link-args (arena dir m)
+  (let n (mf-native m)
+    (if (> (pn-is-empty n) 0)
+      ""
+      (let d0 (cli-check-native-capability m)
+      (str-concat (cli-quoted-paths (cli-native-objects arena dir n (pn-sources n)))
+        (cli-lib-args (pn-link-libs n)))))))
+
+; Shipping and compiling C sources needs the `native` capability, and
+; USING the symbols needs `ffi` (§31.10) — the second half is enforced by
+; the capability pass, which sees the ffi-call itself.
+(defn cli-check-native-capability (m)
+  (if (> (pk-has-capability (mf-capabilities m) "native") 0)
+    1
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: package " (str-concat (mf-name m)
+        " ships native sources without declaring the native capability")) 1000)))
+
+(defn cli-quoted-paths (paths)
+  (match paths
+    (Nil "")
+    (Cons h t (str-concat " '" (str-concat h (str-concat "'" (cli-quoted-paths t)))))))
+
+(defn cli-lib-args (libs)
+  (match libs
+    (Nil "")
+    (Cons h t (str-concat " -l" (str-concat h (cli-lib-args t))))))
+
+; ===========================================================================
+; zyl key / zyl publish
+; ===========================================================================
+; A publisher key is an Ed25519 seed in hex, kept outside the package.
+; Publishing builds the canonical archive, hashes it, signs the hash and
+; prints the index entry to add — it does not push anything anywhere,
+; because an index is a git repository and pushing is git's job.
+
+(defn cli-key-path ()
+  (str-concat (store-keys-dir) "/publisher.seed"))
+
+(defn cli-key (arena)
+  (let path (cli-key-path)
+    (if (> (ffi-call "zyl_path_exists" path 1000) 0)
+      (begin
+        (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
+        0)
+      (let d1 (cli-generate-seed arena)
+        (begin
+          (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
+          0)))))
+
+(defn cli-generate-seed (arena)
+  (let d1 (store-mkdir (store-keys-dir))
+    (let seed (w-alloc arena 32)
+      (let d2 (ffi-call "zyl_random_fill" seed 32 1000)
+        (let out (file-open (cli-key-path) "w")
+          (let d3 (file-write out (w-hex-bytes seed 32))
+            (file-close out)))))))
+
+(defn cli-read-seed (arena)
+  (let fd (file-open (cli-key-path) "r")
+    (if (< fd 1)
+      (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no publisher key - run zyl key" 1000)
+      (let s (file-read fd 4096)
+        (let d1 (file-close fd)
+          (idx-trim s))))))
+
+(defn cli-publish (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let tar (store-tmp-path (mf-name m) ".tar")
+      (let d1 (store-mkdir (str-concat (store-home) "/tmp"))
+        (let hash (store-write-tar-excluding arena dir tar (mf-exclude m))
+          (let d2 (store-compress tar (str-concat tar ".zst"))
+            (let sig (idx-sign-hash arena (cli-read-seed arena) hash)
+              (begin
+                (cli-print-entry arena m hash sig)
+                0))))))))
+
+(defn cli-print-entry (arena m hash sig)
+  (begin
+    (print (str-concat "(index-entry (name " (str-concat (cli-quote (mf-name m)) ")")))
+    (print (str-concat "  (versions (v " (str-concat (cli-quote (pv-str arena (mf-version m)))
+      (str-concat "\n    (url " (str-concat (cli-quote "https://REPLACE-ME") ")")))))
+    (print (str-concat "    (hash " (str-concat (cli-quote hash) ")")))
+    (print (str-concat "    (key " (str-concat (cli-quote (idx-public-key arena (cli-read-seed arena))) ")")))
+    (print (str-concat "    (sig " (str-concat (cli-quote sig) ")")))
+    (print (str-concat "    (zyl " (str-concat (cli-quote (mf-zyl m)) ") (yanked false))))")))
+    0))

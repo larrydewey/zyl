@@ -1,0 +1,5 @@
+(package
+  (name "beta/xml") (version "2.1.0")
+  (zyl "5.0") (edition "2026")
+  (description "A second test package, exporting the same symbol name")
+  (license "MIT"))

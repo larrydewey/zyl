@@ -5,6 +5,7 @@
 ; Phase: 1 lexer | 2 parser | 3 macro | 4 type | 5 mono | 6 region | 7 icnf
 ;        8 codegen | 9 module | 10 runtime | 11 test | 12 trait | 13 cap
 ;        14 contract | 15 numeric | 16 ffi | 17 match | 18 misc/user
+;        19 package (spec v5.0 SS31: manifest, lock, index, fetch, signature)
 ; Severity: 1 error | 2 warning | 3 note
 ;
 ; Every code name, phase, and default message mirrors src/error.rs (Rust
@@ -101,7 +102,43 @@
                                                                                                     (Cons (EC "E_UNKNOWN_TYPE" 4 1 "type: unknown type T at S")
                                                                                                       (Cons (EC "E_UNTERMINATED_STRING" 1 1 "lexer: unterminated string at S")
                                                                                                         (Cons (EC "E_USER_ERROR" 10 1 "runtime: user error - M at S")
-                                                                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                                                                                    (Cons (EC "E_MANIFEST_INVALID" 19 1 "package: zyl.pkg is malformed or missing required field F at P")
+                                                          (Cons (EC "E_MANIFEST_NOT_FOUND" 19 1 "package: no zyl.pkg in package root P")
+                                                          (Cons (EC "E_PKG_BAD_NAME" 19 1 "package: N is not a valid scoped package path")
+                                                          (Cons (EC "E_PKG_BAD_VERSION" 19 1 "package: V is not a strict SemVer version")
+                                                          (Cons (EC "E_PKG_BAD_REQUIREMENT" 19 1 "package: requirement R uses a range operator - MVS takes bare minimum versions")
+                                                          (Cons (EC "E_PKG_DUPLICATE_DEP" 19 1 "package: duplicate dep entry for N")
+                                                          (Cons (EC "E_PKG_NOT_FOUND" 19 1 "package: N is not present in the index")
+                                                          (Cons (EC "E_PKG_VERSION_NOT_FOUND" 19 1 "package: version V of N is not present in the index")
+                                                          (Cons (EC "E_PKG_NOT_IN_STORE" 19 1 "package: N V is not in the store - run zyl fetch")
+                                                          (Cons (EC "E_PKG_HASH_MISMATCH" 19 1 "package: archive hash for N V differs from the lock")
+                                                          (Cons (EC "E_PKG_SIGNATURE_INVALID" 19 1 "package: Ed25519 signature for N V does not verify")
+                                                          (Cons (EC "E_PKG_KEY_CHANGED" 19 1 "package: publisher key for N differs from the pinned key")
+                                                          (Cons (EC "E_PKG_UNSIGNED" 19 1 "package: index entry for N V carries no signature")
+                                                          (Cons (EC "E_PKG_YANKED" 19 1 "package: resolution selected yanked version V of N")
+                                                          (Cons (EC "E_PKG_LOCK_STALE" 19 1 "package: --locked, but the manifests imply a different graph")
+                                                          (Cons (EC "E_PKG_LOCK_INVALID" 19 1 "package: zyl.lock is malformed or of an unknown version")
+                                                          (Cons (EC "E_PKG_COMPILER_TOO_OLD" 19 1 "package: N requires compiler version V, this is C")
+                                                          (Cons (EC "E_PKG_UNKNOWN_EDITION" 19 1 "package: edition E is not known to this compiler")
+                                                          (Cons (EC "E_PKG_FETCH_FAILED" 19 1 "package: fetch of N V failed - M")
+                                                          (Cons (EC "E_PKG_ARCHIVE_INVALID" 19 1 "package: archive for N V violates the canonical format - M")
+                                                          (Cons (EC "E_PKG_NATIVE_PATH_ESCAPE" 19 1 "package: native source path P escapes the package root")
+                                                          (Cons (EC "E_PKG_NATIVE_FLAG_DENIED" 19 1 "package: cflag F is outside the allowlist")
+                                                          (Cons (EC "E_PKG_NATIVE_BUILD_FAILED" 19 1 "package: cc failed on native source P")
+                                                          (Cons (EC "E_PKG_FEATURE_UNKNOWN" 19 1 "package: feature F is not declared by N")
+                                                          (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
+                                                          (Cons (EC "E_PKG_CYCLE" 9 1 "package: dependency graph is not a DAG: M")
+                                                          (Cons (EC "E_MODULE_CYCLE" 9 1 "module: module graph within package N is not a DAG: M")
+                                                          (Cons (EC "E_PKG_VERSION_CONFLICT" 9 1 "package: requirement on N cannot be satisfied within major V")
+                                                          (Cons (EC "E_PKG_PRIVATE_SYMBOL" 9 1 "module: symbol N imported from M is not pub")
+                                                          (Cons (EC "E_PKG_UNKNOWN_SYMBOL" 9 1 "module: symbol N does not exist in M")
+                                                          (Cons (EC "E_PKG_UNKNOWN_MODULE" 9 1 "module: module path M does not exist in package N")
+                                                          (Cons (EC "E_PKG_UNDECLARED_DEP" 9 1 "module: use names package N, absent from the manifest")
+                                                          (Cons (EC "E_PKG_RESERVED_MODULE" 9 1 "module: unsafe is a reserved module name")
+                                                          (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
+                                                          (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
+                                                          (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
+                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

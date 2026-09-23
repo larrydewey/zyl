@@ -1826,13 +1826,24 @@ long long zyl_file_open_c(long long path, long long mode) {
                                O_WRONLY | O_CREAT | O_APPEND, 0644);
     return (long long)open((const char*)(size_t)path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 }
+/* Each read gets its OWN buffer, allocated from the heap arena.
+   It used to return a single static thread-local buffer, so every read
+   clobbered the one before it: reading a manifest after reading the
+   source being compiled replaced the source text in place, and the
+   compiler then compiled the manifest instead — silently, since both are
+   valid S-expressions. Any two live reads alias under that scheme, so
+   the fix is ownership, not ordering. It also lifts the old silent 1 MiB
+   truncation: a read now returns what was asked for. */
 long long zyl_file_read_c(long long fd, long long count) {
-    static _Thread_local char buf[1 << 20];
-    long long n = read((int)fd, buf, (size_t)count);
+    if (count < 0) count = 0;
+    if (count > (1LL << 26)) count = 1LL << 26;   /* 64 MiB ceiling */
+    long long buf = zyl_heap_alloc(count + 1);
+    if (!buf) return 0;
+    char* p = (char*)(size_t)buf;
+    long long n = read((int)fd, p, (size_t)count);
     if (n < 0) n = 0;
-    if (n >= (long long)sizeof(buf) - 1) n = (long long)sizeof(buf) - 1;
-    buf[n] = 0;
-    return (long long)(size_t)buf;
+    p[n] = 0;
+    return buf;
 }
 long long zyl_file_write_c(long long fd, long long buf) {
     if (!buf) return -1;
@@ -2093,4 +2104,452 @@ long long zyl_run_bin(long long path) {
     int status;
     if (waitpid(pid, &status, 0) < 0) return -1;
     return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
+}
+
+/* ===========================================================================
+   PACKAGE SYSTEM SUPPORT (spec v5.0 §31)
+   ===========================================================================
+   Two primitives the compiler needs on the label path and the toolchain
+   needs on the content-hash path:
+
+     zyl_blake3_hex   BLAKE3 of a byte range, as lowercase hex
+     zyl_mangle_key   canonical symbol key -> assembler label (§31.2)
+
+   BLAKE3 lives here rather than being reached for in stdlib/math/hash so
+   that exactly one implementation sits on the build path: the mangler
+   needs it for the >200-byte truncation case, and `zyl` needs it for
+   archive, lock and graph hashes. stdlib/math/hash/blake3.zyl remains the
+   library implementation for user code; the two agree on test vectors.
+   =========================================================================== */
+
+#include <stdint.h>
+
+#define B3_BLOCK_LEN 64
+#define B3_CHUNK_LEN 1024
+#define B3_CHUNK_START 1
+#define B3_CHUNK_END 2
+#define B3_PARENT 4
+#define B3_ROOT 8
+
+static const uint32_t B3_IV[8] = {
+    0x6A09E667u, 0xBB67AE85u, 0x3C6EF372u, 0xA54FF53Au,
+    0x510E527Fu, 0x9B05688Cu, 0x1F83D9ABu, 0x5BE0CD19u
+};
+
+static const uint8_t B3_PERM[16] = {2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8};
+
+static uint32_t b3_rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+static void b3_g(uint32_t s[16], int a, int b, int c, int d, uint32_t mx, uint32_t my) {
+    s[a] = s[a] + s[b] + mx;
+    s[d] = b3_rotr(s[d] ^ s[a], 16);
+    s[c] = s[c] + s[d];
+    s[b] = b3_rotr(s[b] ^ s[c], 12);
+    s[a] = s[a] + s[b] + my;
+    s[d] = b3_rotr(s[d] ^ s[a], 8);
+    s[c] = s[c] + s[d];
+    s[b] = b3_rotr(s[b] ^ s[c], 7);
+}
+
+static void b3_round(uint32_t s[16], const uint32_t m[16]) {
+    b3_g(s, 0, 4, 8, 12, m[0], m[1]);
+    b3_g(s, 1, 5, 9, 13, m[2], m[3]);
+    b3_g(s, 2, 6, 10, 14, m[4], m[5]);
+    b3_g(s, 3, 7, 11, 15, m[6], m[7]);
+    b3_g(s, 0, 5, 10, 15, m[8], m[9]);
+    b3_g(s, 1, 6, 11, 12, m[10], m[11]);
+    b3_g(s, 2, 7, 8, 13, m[12], m[13]);
+    b3_g(s, 3, 4, 9, 14, m[14], m[15]);
+}
+
+/* Full 16-word compression output; the first 8 words are the chaining
+   value, all 16 are used for extended (root) output. */
+static void b3_compress(const uint32_t cv[8], const uint8_t block[B3_BLOCK_LEN],
+                        uint64_t counter, uint32_t block_len, uint32_t flags,
+                        uint32_t out[16]) {
+    uint32_t m[16];
+    for (int i = 0; i < 16; i++) {
+        m[i] = (uint32_t)block[i * 4] | ((uint32_t)block[i * 4 + 1] << 8) |
+               ((uint32_t)block[i * 4 + 2] << 16) | ((uint32_t)block[i * 4 + 3] << 24);
+    }
+    uint32_t s[16] = {
+        cv[0], cv[1], cv[2], cv[3], cv[4], cv[5], cv[6], cv[7],
+        B3_IV[0], B3_IV[1], B3_IV[2], B3_IV[3],
+        (uint32_t)counter, (uint32_t)(counter >> 32), block_len, flags
+    };
+    for (int r = 0; r < 7; r++) {
+        b3_round(s, m);
+        if (r < 6) {
+            uint32_t p[16];
+            for (int i = 0; i < 16; i++) p[i] = m[B3_PERM[i]];
+            for (int i = 0; i < 16; i++) m[i] = p[i];
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        out[i] = s[i] ^ s[i + 8];
+        out[i + 8] = s[i + 8] ^ cv[i];
+    }
+}
+
+typedef struct {
+    uint32_t cv[8];
+    uint8_t block[B3_BLOCK_LEN];
+    uint32_t block_len;
+    uint64_t counter;
+    uint32_t flags;
+} B3Output;
+
+typedef struct {
+    uint32_t cv_stack[54][8];
+    int cv_stack_len;
+    uint32_t chunk_cv[8];
+    uint64_t chunk_counter;
+    uint8_t buf[B3_BLOCK_LEN];
+    uint32_t buf_len;
+    uint32_t blocks_compressed;
+    uint32_t chunk_flags;
+} B3Hasher;
+
+static void b3_hasher_init(B3Hasher* h) {
+    memset(h, 0, sizeof(*h));
+    for (int i = 0; i < 8; i++) h->chunk_cv[i] = B3_IV[i];
+    h->chunk_flags = B3_CHUNK_START;
+}
+
+static uint32_t b3_chunk_start_flag(const B3Hasher* h) {
+    return h->blocks_compressed == 0 ? B3_CHUNK_START : 0;
+}
+
+static void b3_chunk_flush_block(B3Hasher* h) {
+    uint32_t out[16];
+    b3_compress(h->chunk_cv, h->buf, h->chunk_counter, B3_BLOCK_LEN,
+                b3_chunk_start_flag(h), out);
+    for (int i = 0; i < 8; i++) h->chunk_cv[i] = out[i];
+    h->blocks_compressed++;
+    h->buf_len = 0;
+    memset(h->buf, 0, B3_BLOCK_LEN);
+}
+
+/* Chaining value of the chunk that has just been completed. */
+static void b3_chunk_cv(B3Hasher* h, uint32_t out_cv[8]) {
+    uint32_t out[16];
+    b3_compress(h->chunk_cv, h->buf, h->chunk_counter, h->buf_len,
+                b3_chunk_start_flag(h) | B3_CHUNK_END, out);
+    for (int i = 0; i < 8; i++) out_cv[i] = out[i];
+}
+
+static void b3_push_cv(B3Hasher* h, const uint32_t cv[8], uint64_t total_chunks) {
+    uint32_t merged[8];
+    for (int i = 0; i < 8; i++) merged[i] = cv[i];
+    /* Merge while the number of completed chunks is even at this level. */
+    while ((total_chunks & 1) == 0 && h->cv_stack_len > 0) {
+        uint8_t block[B3_BLOCK_LEN];
+        uint32_t out[16];
+        h->cv_stack_len--;
+        for (int i = 0; i < 8; i++) {
+            uint32_t w = h->cv_stack[h->cv_stack_len][i];
+            block[i * 4] = (uint8_t)w;
+            block[i * 4 + 1] = (uint8_t)(w >> 8);
+            block[i * 4 + 2] = (uint8_t)(w >> 16);
+            block[i * 4 + 3] = (uint8_t)(w >> 24);
+        }
+        for (int i = 0; i < 8; i++) {
+            uint32_t w = merged[i];
+            block[32 + i * 4] = (uint8_t)w;
+            block[32 + i * 4 + 1] = (uint8_t)(w >> 8);
+            block[32 + i * 4 + 2] = (uint8_t)(w >> 16);
+            block[32 + i * 4 + 3] = (uint8_t)(w >> 24);
+        }
+        b3_compress(B3_IV, block, 0, B3_BLOCK_LEN, B3_PARENT, out);
+        for (int i = 0; i < 8; i++) merged[i] = out[i];
+        total_chunks >>= 1;
+    }
+    for (int i = 0; i < 8; i++) h->cv_stack[h->cv_stack_len][i] = merged[i];
+    h->cv_stack_len++;
+}
+
+static void b3_hasher_update(B3Hasher* h, const uint8_t* input, size_t len) {
+    while (len > 0) {
+        if (h->buf_len == B3_BLOCK_LEN) {
+            if (h->blocks_compressed == B3_CHUNK_LEN / B3_BLOCK_LEN - 1) {
+                /* Last block of this chunk: finish the chunk here. */
+                uint32_t cv[8];
+                b3_chunk_cv(h, cv);
+                b3_push_cv(h, cv, h->chunk_counter + 1);
+                h->chunk_counter++;
+                for (int i = 0; i < 8; i++) h->chunk_cv[i] = B3_IV[i];
+                h->blocks_compressed = 0;
+                h->buf_len = 0;
+                memset(h->buf, 0, B3_BLOCK_LEN);
+            } else {
+                b3_chunk_flush_block(h);
+            }
+        }
+        size_t take = B3_BLOCK_LEN - h->buf_len;
+        if (take > len) take = len;
+        memcpy(h->buf + h->buf_len, input, take);
+        h->buf_len += (uint32_t)take;
+        input += take;
+        len -= take;
+    }
+}
+
+static void b3_hasher_finalize(const B3Hasher* h_in, uint8_t* out, size_t out_len) {
+    B3Hasher h = *h_in;
+    uint32_t cv[8];
+    uint8_t block[B3_BLOCK_LEN];
+    uint32_t flags;
+    uint64_t counter;
+    uint32_t block_len;
+    int stack = h.cv_stack_len;
+
+    /* Output node of the final chunk. */
+    for (int i = 0; i < 8; i++) cv[i] = h.chunk_cv[i];
+    memcpy(block, h.buf, B3_BLOCK_LEN);
+    block_len = h.buf_len;
+    counter = h.chunk_counter;
+    flags = b3_chunk_start_flag(&h) | B3_CHUNK_END;
+
+    /* Fold the stack, innermost first; each fold becomes the new output node. */
+    while (stack > 0) {
+        uint32_t node[16];
+        uint8_t parent[B3_BLOCK_LEN];
+        b3_compress(cv, block, counter, block_len, flags, node);
+        stack--;
+        for (int i = 0; i < 8; i++) {
+            uint32_t w = h.cv_stack[stack][i];
+            parent[i * 4] = (uint8_t)w;
+            parent[i * 4 + 1] = (uint8_t)(w >> 8);
+            parent[i * 4 + 2] = (uint8_t)(w >> 16);
+            parent[i * 4 + 3] = (uint8_t)(w >> 24);
+        }
+        for (int i = 0; i < 8; i++) {
+            uint32_t w = node[i];
+            parent[32 + i * 4] = (uint8_t)w;
+            parent[32 + i * 4 + 1] = (uint8_t)(w >> 8);
+            parent[32 + i * 4 + 2] = (uint8_t)(w >> 16);
+            parent[32 + i * 4 + 3] = (uint8_t)(w >> 24);
+        }
+        for (int i = 0; i < 8; i++) cv[i] = B3_IV[i];
+        memcpy(block, parent, B3_BLOCK_LEN);
+        block_len = B3_BLOCK_LEN;
+        counter = 0;
+        flags = B3_PARENT;
+    }
+
+    /* Root output, extended by incrementing the output-block counter. */
+    uint64_t obc = 0;
+    size_t off = 0;
+    while (off < out_len) {
+        uint32_t words[16];
+        uint8_t bytes[64];
+        b3_compress(cv, block, obc, block_len, flags | B3_ROOT, words);
+        for (int i = 0; i < 16; i++) {
+            bytes[i * 4] = (uint8_t)words[i];
+            bytes[i * 4 + 1] = (uint8_t)(words[i] >> 8);
+            bytes[i * 4 + 2] = (uint8_t)(words[i] >> 16);
+            bytes[i * 4 + 3] = (uint8_t)(words[i] >> 24);
+        }
+        size_t take = out_len - off;
+        if (take > 64) take = 64;
+        memcpy(out + off, bytes, take);
+        off += take;
+        obc++;
+    }
+}
+
+static void zyl_blake3_raw(const uint8_t* input, size_t len, uint8_t* out, size_t out_len) {
+    B3Hasher h;
+    b3_hasher_init(&h);
+    b3_hasher_update(&h, input, len);
+    b3_hasher_finalize(&h, out, out_len);
+}
+
+static const char* B3_HEXDIGITS = "0123456789abcdef";
+
+/* BLAKE3 over src[0..len) as `outbytes` bytes of lowercase hex (so the
+   returned string is 2*outbytes characters). len < 0 means strlen(src). */
+long long zyl_blake3_hex(long long arena, long long src, long long len, long long outbytes) {
+    if (!src) return 0;
+    const uint8_t* s = (const uint8_t*)(size_t)src;
+    size_t n = len < 0 ? strlen((const char*)s) : (size_t)len;
+    if (outbytes <= 0) outbytes = 32;
+    if (outbytes > 64) outbytes = 64;
+    uint8_t digest[64];
+    zyl_blake3_raw(s, n, digest, (size_t)outbytes);
+    long long buf = zyl_arena_alloc_zeroed(arena, outbytes * 2 + 1);
+    char* d = (char*)(size_t)buf;
+    for (long long i = 0; i < outbytes; i++) {
+        d[i * 2] = B3_HEXDIGITS[digest[i] >> 4];
+        d[i * 2 + 1] = B3_HEXDIGITS[digest[i] & 15];
+    }
+    d[outbytes * 2] = 0;
+    return buf;
+}
+
+/* BLAKE3 of a file's contents, as lowercase hex. Returns 0 if the file
+   cannot be read. Streamed, so archive-sized inputs need no buffer. */
+long long zyl_blake3_file_hex(long long arena, long long path, long long outbytes) {
+    const char* p = (const char*)(size_t)path;
+    if (!p) return 0;
+    FILE* f = fopen(p, "rb");
+    if (!f) return 0;
+    B3Hasher h;
+    b3_hasher_init(&h);
+    unsigned char chunk[65536];
+    size_t got;
+    while ((got = fread(chunk, 1, sizeof(chunk), f)) > 0) {
+        b3_hasher_update(&h, chunk, got);
+    }
+    fclose(f);
+    if (outbytes <= 0) outbytes = 32;
+    if (outbytes > 64) outbytes = 64;
+    uint8_t digest[64];
+    b3_hasher_finalize(&h, digest, (size_t)outbytes);
+    long long buf = zyl_arena_alloc_zeroed(arena, outbytes * 2 + 1);
+    char* d = (char*)(size_t)buf;
+    for (long long i = 0; i < outbytes; i++) {
+        d[i * 2] = B3_HEXDIGITS[digest[i] >> 4];
+        d[i * 2 + 1] = B3_HEXDIGITS[digest[i] & 15];
+    }
+    d[outbytes * 2] = 0;
+    return buf;
+}
+
+/* §31.2 escape(): [A-Za-z0-9] verbatim, '_' -> "_5F", anything else ->
+   "_x" + two uppercase hex digits. Injective by construction, which is
+   the whole point: zyl_cstr_sanitize collapses '/', '.' and '-' onto '_'
+   and would merge distinct canonical keys into one label. */
+static size_t zyl_sym_escape_into(const char* s, size_t n, char* out) {
+    static const char* HEX = "0123456789ABCDEF";
+    size_t w = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        int plain = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9');
+        if (plain) {
+            if (out) out[w] = (char)c;
+            w += 1;
+        } else if (c == '_') {
+            if (out) { out[w] = '_'; out[w + 1] = '5'; out[w + 2] = 'F'; }
+            w += 3;
+        } else {
+            if (out) {
+                out[w] = '_';
+                out[w + 1] = 'x';
+                out[w + 2] = HEX[c >> 4];
+                out[w + 3] = HEX[c & 15];
+            }
+            w += 4;
+        }
+    }
+    return w;
+}
+
+long long zyl_sym_escape(long long arena, long long src) {
+    if (!src) return 0;
+    const char* s = (const char*)(size_t)src;
+    size_t n = strlen(s);
+    size_t need = zyl_sym_escape_into(s, n, NULL);
+    long long buf = zyl_arena_alloc_zeroed(arena, (long long)need + 1);
+    char* d = (char*)(size_t)buf;
+    zyl_sym_escape_into(s, n, d);
+    d[need] = 0;
+    return buf;
+}
+
+/* §31.2 mangle(): canonical key `<package>@<major>::<module>::<symbol>`
+   becomes `zy_<esc pkg>_<major>__<esc module>__<esc symbol>`. A label
+   over 200 bytes keeps its first 184 bytes and gains 16 hex digits of
+   BLAKE3 over the FULL canonical key, so truncation stays injective in
+   practice and deterministic everywhere.
+
+   A string with no '@' is not a canonical key (a bare local or builtin
+   name); it is escaped as a symbol with no package part so that the
+   label path is injective for those too. */
+long long zyl_mangle_key(long long arena, long long key) {
+    if (!key) return 0;
+    const char* k = (const char*)(size_t)key;
+    size_t klen = strlen(k);
+
+    const char* pkg = k;
+    size_t pkg_len = 0;
+    const char* major = "0";
+    size_t major_len = 1;
+    const char* mod = "";
+    size_t mod_len = 0;
+    const char* sym = k;
+    size_t sym_len = klen;
+
+    const char* at = memchr(k, '@', klen);
+    if (at) {
+        pkg_len = (size_t)(at - k);
+        const char* rest = at + 1;
+        size_t rest_len = klen - pkg_len - 1;
+        const char* sep = NULL;
+        for (size_t i = 0; i + 1 < rest_len; i++) {
+            if (rest[i] == ':' && rest[i + 1] == ':') { sep = rest + i; break; }
+        }
+        if (sep) {
+            major = rest;
+            major_len = (size_t)(sep - rest);
+            const char* after = sep + 2;
+            size_t after_len = rest_len - major_len - 2;
+            const char* sep2 = NULL;
+            for (size_t i = 0; i + 1 < after_len; i++) {
+                if (after[i] == ':' && after[i + 1] == ':') { sep2 = after + i; break; }
+            }
+            if (sep2) {
+                mod = after;
+                mod_len = (size_t)(sep2 - after);
+                sym = sep2 + 2;
+                sym_len = after_len - mod_len - 2;
+            } else {
+                sym = after;
+                sym_len = after_len;
+            }
+        } else {
+            sym = rest;
+            sym_len = rest_len;
+        }
+    }
+
+    size_t need = 3 /* "zy_" */
+                + zyl_sym_escape_into(pkg, pkg_len, NULL)
+                + 1 + major_len + 2
+                + zyl_sym_escape_into(mod, mod_len, NULL)
+                + 2
+                + zyl_sym_escape_into(sym, sym_len, NULL);
+
+    char* full = (char*)malloc(need + 1);
+    if (!full) return 0;
+    size_t w = 0;
+    memcpy(full + w, "zy_", 3); w += 3;
+    w += zyl_sym_escape_into(pkg, pkg_len, full + w);
+    full[w++] = '_';
+    memcpy(full + w, major, major_len); w += major_len;
+    full[w++] = '_'; full[w++] = '_';
+    w += zyl_sym_escape_into(mod, mod_len, full + w);
+    full[w++] = '_'; full[w++] = '_';
+    w += zyl_sym_escape_into(sym, sym_len, full + w);
+    full[w] = 0;
+
+    long long out;
+    if (w <= 200) {
+        out = zyl_arena_alloc_zeroed(arena, (long long)w + 1);
+        memcpy((void*)(size_t)out, full, w + 1);
+    } else {
+        uint8_t digest[8];
+        zyl_blake3_raw((const uint8_t*)k, klen, digest, sizeof(digest));
+        out = zyl_arena_alloc_zeroed(arena, 201);
+        char* d = (char*)(size_t)out;
+        memcpy(d, full, 184);
+        for (int i = 0; i < 8; i++) {
+            d[184 + i * 2] = B3_HEXDIGITS[digest[i] >> 4];
+            d[184 + i * 2 + 1] = B3_HEXDIGITS[digest[i] & 15];
+        }
+        d[200] = 0;
+    }
+    free(full);
+    return out;
 }

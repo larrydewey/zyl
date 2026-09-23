@@ -1,0 +1,19 @@
+; Two packages define `parse`. Both are imported into one program, which
+; is the point of §31.2's canonical keys: the two definitions carry
+; different keys, so they mangle to different labels and link side by
+; side. The renaming import (§24.2) gives each a local name here.
+
+(use acme/json { parse => json-parse parse-twice })
+(use beta/xml { parse => xml-parse })
+(use testing/testing)
+
+(test "json package parse"
+  (assert-equal (json-parse 1) 101))
+
+(test "xml package parse"
+  (assert-equal (xml-parse 1) 901))
+
+(test "a package-private helper is still callable from its own package"
+  (assert-equal (parse-twice 1) 202))
+
+(run-tests)

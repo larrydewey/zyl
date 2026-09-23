@@ -1,0 +1,10 @@
+; Root module of acme/json: `(use acme/json)` names this file, since a
+; package's root module is spelled by the last segment of its name.
+
+(pub defn parse (n) (+ n 100))
+
+; Not exported: a consumer that names it gets E_PKG_PRIVATE_SYMBOL, but
+; it still carries a unique canonical key of its own (spec v5.0 §24.4).
+(defn scale (n) (* n 2))
+
+(pub defn parse-twice (n) (scale (parse n)))

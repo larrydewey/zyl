@@ -55,6 +55,14 @@ BOOTSTRAP_SELF=0
 [ "${1:-}" = "--bootstrap-from-rust" ] && BOOTSTRAP=1
 [ "${1:-}" = "--bootstrap-from-self" ] && BOOTSTRAP_SELF=1
 
+# One stage compiles the whole self-hosted compiler, and the source grew
+# by half when the package system landed (spec v5.0 SS31 brought in the
+# Ed25519 stack that SS31.8's mandatory signature verification needs). A
+# stage takes about ten minutes on this machine, which is exactly where
+# the old 600-second cap sat -- the reseed failed on the timeout rather
+# than on anything about the code. Leave headroom.
+STAGE_TIMEOUT="${ZYL_STAGE_TIMEOUT:-2400}"
+
 mkdir -p "$OUT"
 cd "$SCRIPT_DIR"
 
@@ -77,7 +85,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     i=1
     while [ "$i" -le "$MAX_SELF_ROUNDS" ]; do
         NEXT_S="${OUT}/reseed_round${i}.s"
-        timeout 600 "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
+        timeout "$STAGE_TIMEOUT" "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
         [ -f "$NEXT_S" ] || die "round $i produced no output"
         if cmp -s "$PREV_S" "$NEXT_S"; then
             ok "converged after $i round$([ "$i" -eq 1 ] && echo "" || echo "s")"
@@ -118,7 +126,7 @@ if [ "$BOOTSTRAP" -eq 1 ]; then
     # fixed-path protocol. The generated stage2/s carries the real CLI stub.
     cp "$SRC" /tmp/zyl_boot_in.zyl
     rm -f /tmp/zyl_boot_out.s
-    timeout 600 "${OUT}/stage1.bin" >/dev/null
+    timeout "$STAGE_TIMEOUT" "${OUT}/stage1.bin" >/dev/null
     [ -f /tmp/zyl_boot_out.s ] || die "stage1 produced no output"
     mv /tmp/zyl_boot_out.s "${OUT}/stage2.s"
     link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
@@ -137,7 +145,7 @@ ok "stage1 linked"
 
 # ── 2. stage1 -> stage2 (must reproduce the committed seed) ──────────────
 step "stage2: stage1 compiles the selfhost source"
-timeout 600 "${OUT}/stage1.bin" "$SRC" -o "${OUT}/stage2_gen.s" --emit-asm
+timeout "$STAGE_TIMEOUT" "${OUT}/stage1.bin" "$SRC" -o "${OUT}/stage2_gen.s" --emit-asm
 [ -f "${OUT}/stage2_gen.s" ] || die "stage1 produced no output"
 if cmp -s "${OUT}/stage2_gen.s" "${OUT}/stage2.s"; then
     HASH=$(sha256sum "${OUT}/stage2.s" | cut -c1-16)
@@ -150,7 +158,7 @@ ok "stage2 linked"
 
 # ── 3+4. stage2 -> stage3, fixed-point check ─────────────────────────────
 step "stage3: stage2 compiles the selfhost source"
-timeout 600 "${OUT}/stage2.bin" "$SRC" -o "${OUT}/stage3.s" --emit-asm
+timeout "$STAGE_TIMEOUT" "${OUT}/stage2.bin" "$SRC" -o "${OUT}/stage3.s" --emit-asm
 [ -f "${OUT}/stage3.s" ] || die "stage2 produced no output"
 ok "stage3 emitted"
 

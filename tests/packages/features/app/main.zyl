@@ -1,0 +1,10 @@
+(use acme/feat { base fast })
+(use testing/testing)
+
+(test "ungated definition"
+  (assert-equal (base 1) 2))
+
+(test "definition behind a requested feature"
+  (assert-equal (fast 2) 16))
+
+(run-tests)

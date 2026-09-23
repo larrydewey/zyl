@@ -1,0 +1,287 @@
+; === Zyl Standard Library — Package Capability Enforcement ===
+; Module: compiler/capability_check
+;
+; Spec v5.0 §31.9. A package declares the capabilities it may use, and
+; absence means none:
+;
+;     (capabilities io)   ; may do IO; may not use FFI or spawn actors
+;     (capabilities)      ; pure computation only
+;
+;     io      core/io and everything under stdlib/io
+;     ffi     ffi-call, ffi-pin, Pin-region allocation
+;     actor   spawn, send, receive
+;     secret  the Secret capability type and stdlib/math/secret
+;     native  shipping and compiling C sources (§31.10)
+;     unsafe  :unsafe imports
+;
+; The pass runs after module resolution and before type inference, on the
+; qualified program: every top-level definition carries a canonical key
+; (§31.2) whose package half says who owns it, so no side table of
+; ownership is needed — the name IS the ownership record.
+;
+; A declared set is a CEILING on the declaring package. It is not
+; re-granted per edge: a package that grants itself `ffi` does not hand
+; `ffi` to the packages it depends on, and one that depends on an
+; ffi-using package does not need `ffi` itself to call into it.
+;
+; Enforcement applies to packages that HAVE a manifest. The implicit
+; standard library (§25) has none — it is what provides these
+; capabilities, and policing the provider would ban the allocator — and a
+; lone source file compiled directly has declared nothing to police. A
+; package that writes a `zyl.pkg` has made a statement about what it may
+; do, and that statement is enforced.
+
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/package)
+(use compiler/qualify)
+(use core/list)
+(use core/option)
+
+; ===========================================================================
+; GRANTS
+; ===========================================================================
+
+; CapGrant itself lives in compiler/package, since the resolver builds the
+; grants and this pass consumes them.
+(defn cc-find-grant (grants pkg)
+  (match grants
+    (Nil None)
+    (Cons h t (if (> (str-eq (cg-name h) pkg) 0) (Some h) (cc-find-grant t pkg)))))
+
+; ===========================================================================
+; CONSTRUCTS
+; ===========================================================================
+; Which capability a form needs, or "" for the overwhelming majority that
+; need none. Both halves of §31.9 are covered: the syntactic constructs
+; (an ffi-call, a spawn, a file operation) and the stdlib modules whose
+; canonical keys name a capability-bearing area.
+
+(defn cc-expr-capability (e)
+  (match (Expr.inner e)
+    (EFfiCall d1 d2 d3 "ffi")
+    (EFfiPin d4 "ffi")
+    (EFfiUnpin d5 "ffi")
+    (ESpawn d6 "actor")
+    (ESend d7 d8 "actor")
+    (ESendClosure d9 d10 d11 "actor")
+    (EFileOpen d12 d13 "io")
+    (EFileRead d14 d15 "io")
+    (EFileWrite d16 d17 "io")
+    (EFileClose d18 "io")
+    (EReadLine "io")
+    (EApply n d19 (cc-name-capability n))
+    (EAtom a (cc-atom-capability a))
+    (d20 "")))
+
+(defn cc-atom-capability (a)
+  (match a
+    (AIdent n (cc-name-capability n))
+    (d1 "")))
+
+; A call into a capability-bearing part of the standard library needs the
+; same grant as the construct it wraps: `(file-open ...)` and a call to
+; `io/file`'s helper are the same act (§31.9, "a `use` of a
+; capability-bearing stdlib module").
+(defn cc-name-capability (n)
+  (let direct (cc-builtin-capability n)
+    (if (> (str-length direct) 0)
+      direct
+      (let m (cc-module-of n)
+        (if (= (str-length m) 0)
+          ""
+          (cc-module-capability m))))))
+
+; `ffi-call`, `spawn` and their neighbours reach lowering as ordinary
+; applications of a reserved name rather than as dedicated ExprInner
+; forms (icnf's ic-ffi does the same recognition one phase later), so the
+; capability they need is recognised by that name here. These names are
+; never qualified — they are the language's, not a package's.
+(defn cc-builtin-capability (n)
+  (if (> (str-eq n "ffi-call") 0) "ffi"
+  (if (> (str-eq n "ffi-pin") 0) "ffi"
+  (if (> (str-eq n "ffi-unpin") 0) "ffi"
+  (if (> (str-eq n "spawn") 0) "actor"
+  (if (> (str-eq n "send") 0) "actor"
+  (if (> (str-eq n "receive") 0) "actor"
+  (if (> (str-eq n "file-open") 0) "io"
+  (if (> (str-eq n "file-read") 0) "io"
+  (if (> (str-eq n "file-write") 0) "io"
+  (if (> (str-eq n "file-close") 0) "io"
+  (if (> (str-eq n "read-line") 0) "io" ""))))))))))))
+
+; Module half of a canonical key `pkg@major::module::symbol`.
+(defn cc-module-of (n)
+  (let at (pk-index-of n 64 0)
+    (if (< at 0)
+      ""
+      (let start (cc-colons n at)
+        (if (< start 0)
+          ""
+          (let end (cc-colons n (+ start 2))
+            (if (< end 0) "" (pk-sub n (+ start 2) (- end (+ start 2))))))))))
+
+(defn cc-colons (s i)
+  (if (>= (+ i 1) (pk-len s))
+    -1
+    (if (= (pk-byte-at s i) 58)
+      (if (= (pk-byte-at s (+ i 1)) 58) i (cc-colons s (+ i 1)))
+      (cc-colons s (+ i 1)))))
+
+(defn cc-module-capability (m)
+  (if (> (cc-prefix-p m "io/") 0) "io"
+  (if (> (str-eq m "core/io") 0) "io"
+  (if (> (cc-prefix-p m "actor/") 0) "actor"
+  (if (> (cc-prefix-p m "ffi/") 0) "ffi"
+  (if (> (cc-prefix-p m "math/secret/") 0) "secret" ""))))))
+
+(defn cc-prefix-p (s p)
+  (if (< (pk-len s) (pk-len p))
+    0
+    (str-eq (pk-sub s 0 (pk-len p)) p)))
+
+; ===========================================================================
+; THE PASS
+; ===========================================================================
+
+(defn cc-check-program (prog grants denied)
+  (cc-check-forms prog grants denied))
+
+(defn cc-check-forms (forms grants denied)
+  (match forms
+    (Nil 1)
+    (Cons e rest
+      (let d1 (cc-check-form e grants denied)
+        (cc-check-forms rest grants denied)))))
+
+(defn cc-check-form (e grants denied)
+  (match (Expr.inner e)
+    (EDefn name d1 body (cc-check-owned name body grants denied))
+    (EDef name value (cc-check-owned name value grants denied))
+    (d2 1)))
+
+(defn cc-check-owned (name body grants denied)
+  (let pkg (ck-package-of name)
+    (match (cc-find-grant grants pkg)
+      (Some g (if (= (cg-enforced g) 0) 1 (cc-walk body (cg-caps g) denied pkg name)))
+      (None 1))))
+
+; Depth-first over the body. The first violation stops the build with the
+; offending package, the construct's capability and the definition that
+; used it, because a capability error is about a boundary and naming only
+; one side of it is useless.
+(defn cc-walk (e caps denied pkg fname)
+  (let need (cc-expr-capability e)
+    (let d1 (cc-require need caps denied pkg fname)
+      (cc-walk-children e caps denied pkg fname))))
+
+(defn cc-require (need caps denied pkg fname)
+  (if (= (str-length need) 0)
+    1
+    (if (> (pk-has-capability denied need) 0)
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: " (str-concat fname
+          (str-concat " uses " (str-concat need
+            " , which the root package forbids with deny-capabilities")))) 1000)
+      (if (> (pk-has-capability caps need) 0)
+        1
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: package " (str-concat pkg
+            (str-concat " uses " (str-concat need
+              (str-concat " in " (str-concat fname
+                " without declaring it in zyl.pkg")))))) 1000)))))
+
+(defn cc-walk-list (xs caps denied pkg fname)
+  (match xs
+    (Nil 1)
+    (Cons h t
+      (let d1 (cc-walk h caps denied pkg fname)
+        (cc-walk-list t caps denied pkg fname)))))
+
+; Structural recursion over the expression forms that carry sub-terms.
+; Anything not listed here holds no expression to walk into.
+(defn cc-walk-children (e caps denied pkg fname)
+  (match (Expr.inner e)
+    (ECall f args
+      (let d1 (cc-walk f caps denied pkg fname) (cc-walk-list args caps denied pkg fname)))
+    (EApply d2 args (cc-walk-list args caps denied pkg fname))
+    (EDefn d3 d4 body (cc-walk body caps denied pkg fname))
+    (EDef d5 v (cc-walk v caps denied pkg fname))
+    (ELet d6 v b
+      (let d7 (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (ELetMut d8 v b
+      (let d9 (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EIf c t f
+      (let d10 (cc-walk c caps denied pkg fname)
+        (let d11 (cc-walk t caps denied pkg fname) (cc-walk f caps denied pkg fname))))
+    (ETryCatch b d12 h
+      (let d13 (cc-walk b caps denied pkg fname) (cc-walk h caps denied pkg fname)))
+    (EMatch s arms
+      (let d14 (cc-walk s caps denied pkg fname) (cc-walk-arms arms caps denied pkg fname)))
+    (EBegin xs (cc-walk-list xs caps denied pkg fname))
+    (EPrint xs (cc-walk-list xs caps denied pkg fname))
+    (EWhile c b
+      (let d15 (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFor d16 c b
+      (let d17 (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (ELambda d18 d19 b (cc-walk b caps denied pkg fname))
+    (EFn d20 d21 b (cc-walk b caps denied pkg fname))
+    (ESpawn b (cc-walk b caps denied pkg fname))
+    (ESend a b
+      (let d22 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFfiCall d23 args d24 (cc-walk-list args caps denied pkg fname))
+    (EFfiPin b (cc-walk b caps denied pkg fname))
+    (EFfiUnpin b (cc-walk b caps denied pkg fname))
+    (EFileOpen a b
+      (let d25 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFileRead a b
+      (let d26 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFileWrite a b
+      (let d27 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EFileClose b (cc-walk b caps denied pkg fname))
+    (EClose b (cc-walk b caps denied pkg fname))
+    (EWithResource d28 a b
+      (let d29 (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+    (EUnwrap b (cc-walk b caps denied pkg fname))
+    (EMakeStruct d30 args (cc-walk-list args caps denied pkg fname))
+    (EMakeVariant d31 d32 args (cc-walk-list args caps denied pkg fname))
+    (ESetBang d33 v (cc-walk v caps denied pkg fname))
+    (EStructGet b d34 (cc-walk b caps denied pkg fname))
+    (EAssert b d35 (cc-walk b caps denied pkg fname))
+    (d36 1)))
+
+(defn cc-walk-arms (arms caps denied pkg fname)
+  (match arms
+    (Nil 1)
+    (Cons a rest
+      (let d1 (cc-walk (MA.body a) caps denied pkg fname)
+        (cc-walk-arms rest caps denied pkg fname)))))
+
+; ===========================================================================
+; CLOSURE REPORTING (§31.9)
+; ===========================================================================
+; The effective transitive closure is what the lock records. Growth in it
+; is what `zyl update` reports and what --locked refuses.
+
+(defn cc-closure (grants)
+  (pk-caps-sorted (cc-closure-in grants Nil)))
+
+(defn cc-closure-in (grants acc)
+  (match grants
+    (Nil acc)
+    (Cons g t (cc-closure-in t (pk-caps-union acc (cg-caps g))))))
+
+(defn cc-check-growth (before after)
+  (if (> (list-length after) (list-length before))
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_CAPABILITY_GROWTH: capability: capability closure grew under --locked: "
+        (cc-caps-text after)) 1000)
+    1))
+
+(defn cc-caps-text (caps)
+  (match caps
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil h)
+        (d1 (str-concat h (str-concat " " (cc-caps-text t))))))))

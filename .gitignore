@@ -28,3 +28,13 @@ t.s.s
 # Python (assemble.py / cve_scanner.py)
 __pycache__/
 *.pyc
+
+# Package builds leave their artefacts beside the package (spec v5.0
+# §31.12: the binary, its assembly, its buildinfo, and any native
+# objects). The test fixtures under tests/packages-build/ are built by
+# the suite, so only their sources belong in the repository.
+tests/packages-build/*/app/build/
+tests/packages-build/*/app/*.buildinfo
+tests/packages-build/native/app/native
+vendor/
+zyl.lock

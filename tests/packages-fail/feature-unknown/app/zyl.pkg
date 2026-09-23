@@ -1,0 +1,4 @@
+; E_PKG_FEATURE_UNKNOWN: acme/plain declares no features at all.
+(package
+  (name "app/feature-unknown") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (deps (dep "acme/plain" "1.0.0" (features simd) (path "../lib"))))

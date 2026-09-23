@@ -1,0 +1,2 @@
+; E_PKG_UNKNOWN_EDITION: v5.0 defines exactly one edition, 2026.
+(package (name "app/unknown-edition") (version "0.1.0") (zyl "5.0") (edition "2031"))

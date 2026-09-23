@@ -236,6 +236,58 @@ if [ "$MODE" = "full" ]; then
     done
 fi
 
+# Multi-package builds (spec v5.0 §31). Each case is a DIRECTORY holding
+# one `app/` package plus the packages it depends on by path, so the test
+# exercises manifest reading, dependency resolution, canonical keys and
+# visibility rather than a single file's syntax.
+if [ "$MODE" = "full" ]; then
+    for d in "${TESTS_DIR}"/packages/*/; do
+        [ -d "$d" ] || continue
+        local_name=$(basename "$d")
+        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+            run_test "packages/${local_name}" "${d}app/main.zyl"
+        fi
+    done
+fi
+
+# Package cases that MUST be rejected: a private import, an undeclared
+# dependency, a range requirement, an unknown edition.
+if [ "$MODE" = "full" ]; then
+    for d in "${TESTS_DIR}"/packages-fail/*/; do
+        [ -d "$d" ] || continue
+        local_name=$(basename "$d")
+        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+            run_fail_test "packages-fail/${local_name}" "${d}app/main.zyl"
+        fi
+    done
+fi
+
+# `zyl build` cases: a package directory built through the subcommand
+# rather than by naming a file, which is what exercises the manifest's
+# native block, the lock and zyl.buildinfo (§31.10, §31.12).
+if [ "$MODE" = "full" ]; then
+    for d in "${TESTS_DIR}"/packages-build/*/; do
+        [ -d "$d" ] || continue
+        local_name=$(basename "$d")
+        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+            TOTAL=$((TOTAL + 1))
+            if (cd "${d}app" && "${ZYL_BIN}" build) > /tmp/zyl_pkgbuild.log 2>&1 \
+               && (cd "${d}app" && ./"$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)") > /tmp/zyl_pkgrun.log 2>&1 \
+               && ! grep -q "FAIL" /tmp/zyl_pkgrun.log; then
+                PASS=$((PASS + 1))
+                echo -e "  ${GREEN}✓${NC} packages-build/${local_name}"
+            else
+                FAIL=$((FAIL + 1))
+                echo -e "  ${RED}✗${NC} packages-build/${local_name}"
+                if [ "$VERBOSE" -eq 1 ]; then
+                    sed 's/^/      /' /tmp/zyl_pkgbuild.log
+                    sed 's/^/      /' /tmp/zyl_pkgrun.log
+                fi
+            fi
+        fi
+    done
+fi
+
 # Run compile-fail tests (must-fail compilation)
 if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/compile-fail/*.zyl; do

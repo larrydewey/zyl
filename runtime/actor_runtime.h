@@ -135,4 +135,10 @@ long long zyl_getcwd(void);
 long long zyl_system_cmd(long long cmd);
 long long zyl_exec_cmd(long long cmd);
 
+/* Package system (spec v5.0 §31). */
+long long zyl_blake3_hex(long long arena, long long src, long long len, long long outbytes);
+long long zyl_blake3_file_hex(long long arena, long long path, long long outbytes);
+long long zyl_sym_escape(long long arena, long long src);
+long long zyl_mangle_key(long long arena, long long key);
+
 #endif

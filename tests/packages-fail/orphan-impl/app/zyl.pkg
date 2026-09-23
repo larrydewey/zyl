@@ -1,0 +1,5 @@
+; E_PKG_ORPHAN_IMPL: the app defines neither the trait nor the type, so
+; it may not implement one for the other (§24.6).
+(package
+  (name "app/orphan") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (deps (dep "acme/shapes" "1.0.0" (path "../lib"))))

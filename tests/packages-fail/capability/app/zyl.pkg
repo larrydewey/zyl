@@ -1,0 +1,5 @@
+; (capabilities) with no entries means pure computation only (§31.9), so
+; the ffi-call below is E_PKG_CAPABILITY_VIOLATION.
+(package
+  (name "app/nocap") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (capabilities))

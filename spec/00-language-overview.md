@@ -52,15 +52,26 @@ Testing is a core language built-in. Tests define behavior and drive implementat
 - Deterministic iteration for Map
 - Compile-time exhaustive match
 
-### v4.2 (Current)
+### v4.2 (Previous)
 - Multi-parameter generics formalized (§6)
 - Type param scope, same-type constraint, generic ADT derivation
 - `E_CANNOT_INFER` for generic params with no call-site evidence
 
-### v5.0 (Planned)
-- Package management (zyl.toml, registries, signing)
-- Workspace support
-- Feature flags
+### v5.0 (Current — specified, not implemented)
+- Package system (§31): `zyl.pkg` manifests, Minimal Version Selection,
+  git-hosted index, mandatory Ed25519 signing with TOFU key pinning,
+  BLAKE3 content addressing, offline builds
+- Package- and module-qualified symbol identity with injective mangling;
+  two packages may define the same name, two majors coexist
+- Two-level visibility: package-private by default, `pub` to export
+- Trait orphan rule at the package boundary
+- Per-package capability declarations, deny by default, compiler-enforced
+- Workspaces with one root lock
+- Additive-only unified feature flags
+- Declarative native C dependencies; no build scripts
+- Editions; v5.0 defines exactly one (`2026`)
+
+See `spec/16-package-system.md` and `docs/package-management-design.md`.
 
 ---
 
@@ -79,3 +90,5 @@ Testing is a core language built-in. Tests define behavior and drive implementat
 | G9 | Struct Safety: Fields immutable; mutation requires rebinding. |
 | G10 | Alias Transparency: Zero-cost coercion. |
 | G11 | Resource Safety: with-resource guarantees cleanup before error. |
+| G12 | Capability Containment: a package cannot exercise a capability it does not declare. |
+| G13 | Supply-Chain Integrity: a locked build is reproducible from pinned content hashes and publisher keys. |

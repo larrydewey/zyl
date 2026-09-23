@@ -1,0 +1,4 @@
+(package
+  (name "app/features") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (capabilities io)
+  (deps (dep "acme/feat" "1.0.0" (features simd) (path "../lib"))))

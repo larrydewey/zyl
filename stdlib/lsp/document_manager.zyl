@@ -136,7 +136,7 @@
     (None Nil)))
 
 (defn dm-analyze-parsed (arena doc text)
-  (let front (try (Ok (dm-frontend arena text)) (catch e (Err e)))
+  (let front (try (Ok (dm-frontend arena (lsp-uri-path (Document.uri doc)) text)) (catch e (Err e)))
     (match front
       (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg text) Nil)))
       (Ok exprs (dm-check-and-index doc text exprs)))))
@@ -144,11 +144,12 @@
 ; Parse, resolve modules, expand macros. Anything that fails here left
 ; no usable program behind, so there is nothing to index and the
 ; document reports one diagnostic and an empty symbol table.
-(defn dm-frontend (arena text)
+; The resolver works on the raw parse tree and needs the document's path,
+; which is how it finds the package this file belongs to (spec v5.0
+; §31.3) and therefore what its definitions are named.
+(defn dm-frontend (arena path text)
   (let prog (zyl-parse arena text)
-    (let exprs0 (convert-ast-list prog)
-      (let exprs1 (mr-resolve-program arena exprs0)
-        (me-expand-program exprs1)))))
+    (me-expand-program (mr-resolve-program arena prog path))))
 
 ; Past the front end there IS a program, so the symbol table is built
 ; first and kept whatever the checks then say. A document that fails

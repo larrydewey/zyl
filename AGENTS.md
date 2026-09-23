@@ -134,5 +134,13 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 
 - Entry point: `selfhost/driver.zyl` (assembled into `selfhost/zyl_selfhost_compiler.zyl` by `selfhost/assemble.py`, compiled to `build/boot/stage2.bin`/`zyl-self`). `tools/repl.zyl` is a REPL but is an unfinished skeleton — treat it as such, not a working tool.
 - Single binary — no workspace, no crates, no Cargo anywhere in the active path
-- Spec v5.0 features (package management, workspaces, feature flags) are NOT implemented; do not build them
+- The package system (spec v5.0 §31) IS implemented: manifests, canonical
+  symbol keys, visibility, MVS, the lock, the content store, the index with
+  mandatory Ed25519 verification, capabilities, features, native
+  dependencies, workspaces and the `zyl` subcommands. Its modules are
+  `stdlib/compiler/{package,qualify,store,workspace,lock,index,mvs,cli,
+  capability_check,module_resolver}.zyl`; `docs/package-management-design.md`
+  holds the rationale and `PROGRESS.md` records the deviations and gaps
+- The standard library is IMPLICIT (§25): package `zyl/std`, no manifest,
+  fully visible, never capability-enforced. Do not give it a `zyl.pkg`
 - All error codes from spec §28 must be defined and used consistently

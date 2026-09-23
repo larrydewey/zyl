@@ -42,6 +42,7 @@
 (use lsp/lsp_types)
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/qualify)
 (use compiler/sexp_balance)
 (use lsp/source_index)
 (use lsp/builtins)
@@ -178,6 +179,27 @@
 (defn st-structs (t) (match t (SymT d1 d2 d3 s d4 s)))
 (defn st-field-owners (t) (match t (SymT d1 d2 d3 d4 f f)))
 
+; Module resolution qualifies every definition to a canonical key
+; (spec v5.0 §31.2), and the editor asks about names as they are written
+; in the file. The symbol table therefore keys on the SOURCE name — the
+; key's last segment — so a completion for `parse` still finds
+; `acme/json@1::json/parser::parse`.
+(defn lsp-source-name (n)
+  (ck-symbol-of n))
+
+; A `file://` URI as a filesystem path, which is what the resolver needs
+; to find the package a document belongs to (§31.3). A URI in any other
+; scheme has no path, and an unsaved buffer resolves as a lone file.
+(defn lsp-uri-path (uri)
+  (if (> (lsp-has-file-scheme uri) 0)
+    (str-substring uri 7 (- (str-length uri) 7))
+    uri))
+
+(defn lsp-has-file-scheme (uri)
+  (if (< (str-length uri) 8)
+    0
+    (str-eq (str-substring uri 0 7) "file://")))
+
 (defn st-build (exprs)
   (st-build-acc exprs (st-new)))
 
@@ -186,9 +208,9 @@
     (Nil acc)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name params d1 (st-build-acc rest (st-add-fn acc name params)))
+        (EDefn name params d1 (st-build-acc rest (st-add-fn acc (lsp-source-name name) params)))
         (EDeftype name variants gparams marker
-          (st-build-acc rest (st-add-type acc name variants gparams marker)))
+          (st-build-acc rest (st-add-type acc (lsp-source-name name) variants gparams marker)))
         (d3 (st-build-acc rest acc))))))
 
 ; `defstruct` is not a node of its own: expr_inner.zyl lowers it to an
@@ -199,7 +221,29 @@
 ; which map a definition lands in here -- and it matters, because a
 ; struct should hover as a struct, complete as a struct, and offer its
 ; fields.
-(defn st-add-type (t name variants gparams marker)
+; Variant names are definitions too, so the resolver qualifies them
+; (§31.2); the editor asks for `Circle`, not for
+; `acme/shapes@1::shapes::Circle`. Stripping happens once, here, so every
+; consumer of the table — hover, completion, go-to-definition — sees the
+; names the file actually contains.
+(defn lsp-source-variants (variants)
+  (match variants
+    (Nil Nil)
+    (Cons v t
+      (Cons (AV (lsp-source-name (AV.name v)) (lsp-source-fields (AV.fields v)))
+            (lsp-source-variants t)))))
+
+; A variant's field list holds type names, which are qualified the same
+; way and read the same way.
+(defn lsp-source-fields (fields)
+  (match fields
+    (Nil Nil)
+    (Cons f t (Cons (lsp-source-name f) (lsp-source-fields t)))))
+
+(defn st-add-type (t name variants0 gparams marker)
+  (st-add-type-stripped t name (lsp-source-variants variants0) gparams marker))
+
+(defn st-add-type-stripped (t name variants gparams marker)
   (match marker
     (Some tag
       (if (> (str-eq tag "struct") 0)

@@ -1,0 +1,348 @@
+; === Zyl Standard Library — Lock Files ===
+; Module: compiler/lock
+;
+; `zyl.lock`, per spec v5.0 §31.6. The lock is an integrity and
+; provenance record, NOT a resolution input: deleting it does not change
+; which versions Minimal Version Selection picks (§31.5), it only removes
+; the record of what those versions hashed to and who signed them.
+;
+; That distinction drives the shape of this module. Reading a lock never
+; feeds the resolver; it feeds verification — content hash, publisher key,
+; signature, the capability closure, and the graph hash that hash
+; finalization consumes as input 2 of §31.12.
+;
+;     (lock
+;       (version 1)
+;       (compiler "5.0.0" (hash "blake3:..."))
+;       (pkg "acme/json" "1.4.0"
+;         (source (registry "https://github.com/zyl-lang/index"))
+;         (hash "blake3:...") (key "ed25519:...") (sig "ed25519:...")
+;         (features utf16) (capabilities io)
+;         (deps "core/bytes" "acme/utf8"))
+;       (capability-closure io ffi)
+;       (graph-hash "blake3:..."))
+;
+; Serialisation is canonical: fields in the order above, packages sorted
+; by name, capability sets sorted. Two machines that resolve the same
+; graph therefore write byte-identical locks, which is what makes the
+; graph hash a function of the graph rather than of the walk.
+
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/package)
+(use compiler/parser)
+(use core/list)
+(use core/option)
+
+; ===========================================================================
+; ENTRIES
+; ===========================================================================
+
+; One locked package. `hash`, `key` and `sig` are empty for a path
+; dependency, which has no archive and no publisher: a path dep is the
+; developer's own working tree, and pretending to pin it would record a
+; hash that changes on every edit.
+(deftype LockPkg (LP String PkgVersion PkgSource LockSig LockSets))
+
+(deftype LockSig (LSig String String String))
+
+(defn lsig-hash (s) (match s (LSig h d1 d2 h)))
+(defn lsig-key (s) (match s (LSig d1 k d2 k)))
+(defn lsig-sig (s) (match s (LSig d1 d2 g g)))
+
+(deftype LockSets (LSets (List String) (List String) (List String)))
+
+(defn lsets-features (s) (match s (LSets f d1 d2 f)))
+(defn lsets-capabilities (s) (match s (LSets d1 c d2 c)))
+(defn lsets-deps (s) (match s (LSets d1 d2 d d)))
+
+(defn lp-name (p) (match p (LP n d1 d2 d3 d4 n)))
+(defn lp-version (p) (match p (LP d1 v d2 d3 d4 v)))
+(defn lp-source (p) (match p (LP d1 d2 s d3 d4 s)))
+(defn lp-sig (p) (match p (LP d1 d2 d3 s d4 s)))
+(defn lp-sets (p) (match p (LP d1 d2 d3 d4 s s)))
+
+(defn lp-hash (p) (lsig-hash (lp-sig p)))
+(defn lp-key (p) (lsig-key (lp-sig p)))
+(defn lp-features (p) (lsets-features (lp-sets p)))
+(defn lp-capabilities (p) (lsets-capabilities (lp-sets p)))
+
+; The whole file: lock format version, compiler version and hash, the
+; packages, the capability closure and the graph hash.
+(deftype Lock (LK Int String String (List LockPkg) (List String) String))
+
+(defn lk-version (l) (match l (LK v d1 d2 d3 d4 d5 v)))
+(defn lk-compiler (l) (match l (LK d1 c d2 d3 d4 d5 c)))
+(defn lk-compiler-hash (l) (match l (LK d1 d2 h d3 d4 d5 h)))
+(defn lk-pkgs (l) (match l (LK d1 d2 d3 p d4 d5 p)))
+(defn lk-closure (l) (match l (LK d1 d2 d3 d4 c d5 c)))
+(defn lk-graph-hash (l) (match l (LK d1 d2 d3 d4 d5 g g)))
+
+(defn lk-format-version () 1)
+
+(defn lk-find (l name)
+  (lk-find-in (lk-pkgs l) name))
+
+(defn lk-find-in (pkgs name)
+  (match pkgs
+    (Nil None)
+    (Cons h t (if (> (str-eq (lp-name h) name) 0) (Some h) (lk-find-in t name)))))
+
+; ===========================================================================
+; READING
+; ===========================================================================
+
+(defn lk-ast-head (a)
+  (match a
+    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
+    (d3 "")))
+
+(defn lk-ast-args (a)
+  (match a
+    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
+    (d2 Nil)))
+
+(defn lk-str (a)
+  (match a
+    (AString s s)
+    (AstIdent s s)
+    (d1 "")))
+
+(defn lk-strs (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (lk-str h) (lk-strs t)))))
+
+(defn lk-find-form (forms head)
+  (match forms
+    (Nil None)
+    (Cons h t (if (> (str-eq (lk-ast-head h) head) 0) (Some h) (lk-find-form t head)))))
+
+(defn lk-find-forms (forms head)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (> (str-eq (lk-ast-head h) head) 0)
+        (Cons h (lk-find-forms t head))
+        (lk-find-forms t head)))))
+
+(defn lk-field (forms field)
+  (match (lk-find-form forms field)
+    (Some f (match (lk-ast-args f) (Cons a d1 (lk-str a)) (Nil "")))
+    (None "")))
+
+(defn lk-list-field (forms field)
+  (match (lk-find-form forms field)
+    (Some f (lk-strs (lk-ast-args f)))
+    (None Nil)))
+
+(defn lk-read (arena path)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      (ffi-call "zyl_panic" (str-concat "E_PKG_LOCK_INVALID: package: cannot read " path) 1000)
+      (let src (file-read fd 4194304)
+        (let d1 (file-close fd)
+          (lk-of-source arena src path))))))
+
+(defn lk-of-source (arena src path)
+  (let forms (zyl-parse arena src)
+    (match (lk-find-form forms "lock")
+      (Some f (lk-of-form (lk-ast-args f) path))
+      (None (ffi-call "zyl_panic"
+              (str-concat "E_PKG_LOCK_INVALID: package: no (lock ...) form in " path) 1000)))))
+
+(defn lk-of-form (forms path)
+  (let v (lk-int-field forms "version")
+    (if (= v (lk-format-version))
+      (LK v (lk-compiler-version-of forms) (lk-compiler-hash-of forms)
+          (lk-pkgs-of (lk-find-forms forms "pkg"))
+          (lk-list-field forms "capability-closure")
+          (lk-field forms "graph-hash"))
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_LOCK_INVALID: package: unknown lock version in " path) 1000))))
+
+(defn lk-int-field (forms field)
+  (match (lk-find-form forms field)
+    (Some f (match (lk-ast-args f) (Cons a d1 (lk-int-of a)) (Nil 0)))
+    (None 0)))
+
+(defn lk-int-of (a)
+  (match a
+    (AstInt n n)
+    (d1 0)))
+
+; `(compiler "5.0.0" (hash "blake3:..."))`
+(defn lk-compiler-version-of (forms)
+  (match (lk-find-form forms "compiler")
+    (Some f (match (lk-ast-args f) (Cons a d1 (lk-str a)) (Nil "")))
+    (None "")))
+
+(defn lk-compiler-hash-of (forms)
+  (match (lk-find-form forms "compiler")
+    (Some f (lk-field (lk-ast-args f) "hash"))
+    (None "")))
+
+(defn lk-pkgs-of (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (lk-pkg-of h) (lk-pkgs-of t)))))
+
+(defn lk-pkg-of (form)
+  (match (lk-ast-args form)
+    (Cons nameast rest
+      (match rest
+        (Cons verast body
+          (LP (lk-str nameast) (pk-version-of (lk-str verast))
+              (lk-source-of body)
+              (LSig (lk-field body "hash") (lk-field body "key") (lk-field body "sig"))
+              (LSets (lk-list-field body "features")
+                     (lk-list-field body "capabilities")
+                     (lk-list-field body "deps"))))
+        (Nil (ffi-call "zyl_panic" "E_PKG_LOCK_INVALID: package: lock entry without a version" 1000))))
+    (Nil (ffi-call "zyl_panic" "E_PKG_LOCK_INVALID: package: lock entry without a name" 1000))))
+
+; `(source (registry "url"))` / `(source (path "../x"))` /
+; `(source (git "url" (rev "...")))`
+(defn lk-source-of (body)
+  (match (lk-find-form body "source")
+    (Some f (lk-source-inner (lk-ast-args f)))
+    (None (PSRegistry))))
+
+(defn lk-source-inner (args)
+  (match args
+    (Nil (PSRegistry))
+    (Cons h d1
+      (let head (lk-ast-head h)
+        (if (> (str-eq head "path") 0)
+          (PSPath (lk-first-str h))
+          (if (> (str-eq head "git") 0)
+            (PSGit (lk-first-str h) (lk-field (lk-ast-args h) "rev"))
+            (PSRegistry)))))))
+
+(defn lk-first-str (form)
+  (match (lk-ast-args form)
+    (Cons a d1 (lk-str a))
+    (Nil "")))
+
+; ===========================================================================
+; CANONICAL SERIALISATION
+; ===========================================================================
+; The text produced here is what the graph hash is taken over, so every
+; choice in it is part of the format: field order, one package per form,
+; packages sorted by name, sets sorted, and no trailing whitespace.
+
+(defn lk-quote (s)
+  (str-concat "\"" (str-concat s "\"")))
+
+(defn lk-words (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil h)
+        (d1 (str-concat h (str-concat " " (lk-words t))))))))
+
+(defn lk-quoted-words (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil (lk-quote h))
+        (d1 (str-concat (lk-quote h) (str-concat " " (lk-quoted-words t))))))))
+
+(defn lk-source-str (s)
+  (match s
+    (PSRegistry (str-concat "(source (registry " (str-concat (lk-quote (lk-default-index)) "))")))
+    (PSPath p (str-concat "(source (path " (str-concat (lk-quote p) "))")))
+    (PSGit u r (str-concat "(source (git " (str-concat (lk-quote u)
+                  (str-concat " (rev " (str-concat (lk-quote r) ")))")))))))
+
+(defn lk-default-index () "https://github.com/zyl-lang/index")
+
+(defn lk-set-form (name xs)
+  (if (is-nil xs)
+    ""
+    (str-concat "\n    (" (str-concat name (str-concat " " (str-concat (lk-words xs) ")"))))))
+
+(defn lk-dep-form (xs)
+  (if (is-nil xs)
+    ""
+    (str-concat "\n    (deps " (str-concat (lk-quoted-words xs) ")"))))
+
+(defn lk-pkg-str (arena p)
+  (str-concat "  (pkg "
+    (str-concat (lk-quote (lp-name p))
+      (str-concat " " (str-concat (lk-quote (pv-str arena (lp-version p)))
+        (str-concat "\n    " (str-concat (lk-source-str (lp-source p))
+          (str-concat (lk-sig-str (lp-sig p))
+            (str-concat (lk-set-form "features" (lsets-features (lp-sets p)))
+              (str-concat (lk-set-form "capabilities" (lsets-capabilities (lp-sets p)))
+                (str-concat (lk-dep-form (lsets-deps (lp-sets p))) ")\n")))))))))))
+
+(defn lk-sig-str (s)
+  (if (= (str-length (lsig-hash s)) 0)
+    ""
+    (str-concat "\n    (hash " (str-concat (lk-quote (lsig-hash s))
+      (str-concat ") (key " (str-concat (lk-quote (lsig-key s))
+        (str-concat ") (sig " (str-concat (lk-quote (lsig-sig s)) ")"))))))))
+
+(defn lk-pkgs-str (arena pkgs)
+  (match pkgs
+    (Nil "")
+    (Cons h t (str-concat (lk-pkg-str arena h) (lk-pkgs-str arena t)))))
+
+; The body every hash is taken over: everything except the graph hash
+; itself, which cannot cover its own value.
+(defn lk-body-str (arena l)
+  (str-concat "(lock\n  (version 1)\n  (compiler "
+    (str-concat (lk-quote (lk-compiler l))
+      (str-concat " (hash " (str-concat (lk-quote (lk-compiler-hash l))
+        (str-concat "))\n" (str-concat (lk-pkgs-str arena (lk-sort-pkgs (lk-pkgs l)))
+          (str-concat "  (capability-closure "
+            (str-concat (lk-words (pk-caps-sorted (lk-closure l))) ")\n")))))))))
+
+(defn lk-to-string (arena l)
+  (str-concat (lk-body-str arena l)
+    (str-concat "  (graph-hash " (str-concat (lk-quote (lk-graph-hash l)) "))\n"))))
+
+; BLAKE3 over the canonical body (§31.6). Computed from the same text the
+; file will carry, so a reader can recompute it byte for byte.
+(defn lk-graph-hash-of (arena l)
+  (str-concat "blake3:"
+    (ffi-call "zyl_blake3_hex" arena (lk-body-str arena l) -1 32 1000)))
+
+(defn lk-with-graph-hash (arena l)
+  (match l
+    (LK v c ch pkgs closure d1 (LK v c ch pkgs closure (lk-graph-hash-of arena (LK v c ch pkgs closure ""))))))
+
+(defn lk-write (arena path l)
+  (let out (file-open path "w")
+    (let n (file-write out (lk-to-string arena (lk-with-graph-hash arena l)))
+      (let d1 (file-close out)
+        n))))
+
+(defn lk-sort-pkgs (pkgs)
+  (match pkgs
+    (Nil Nil)
+    (Cons h t (lk-insert-pkg h (lk-sort-pkgs t)))))
+
+(defn lk-insert-pkg (p pkgs)
+  (match pkgs
+    (Nil (Cons p Nil))
+    (Cons h t
+      (if (< (pk-cmp-str (lp-name p) (lp-name h) 0) 0)
+        (Cons p (Cons h t))
+        (Cons h (lk-insert-pkg p t))))))
+
+; ===========================================================================
+; COMPILER IDENTITY (§31.12)
+; ===========================================================================
+; Input 1 of hash finalization is the compiler's own hash. The compiler
+; knows where it is (argv[0]) and can hash itself, so a lock records the
+; exact binary that produced it rather than a version string anyone can
+; claim.
+
+(defn lk-compiler-self-hash (arena)
+  (let path (ffi-call "zyl_arg_str" 0 1000)
+    (let h (ffi-call "zyl_blake3_file_hex" arena path 32 1000)
+      (if (> h 0) (str-concat "blake3:" h) ""))))

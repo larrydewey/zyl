@@ -1,0 +1,10 @@
+; Features are additive: a gated form is a separate definition, so no
+; feature can ever change the signature of an existing one (§31.10).
+
+(pub defn base (n) (+ n 1))
+
+(feature-gate simd (pub defn fast (n) (* n 8)))
+
+; Declared but never requested by the app below, so this definition is
+; not part of the build at all.
+(feature-gate utf16 (pub defn wide (n) (* n 16)))

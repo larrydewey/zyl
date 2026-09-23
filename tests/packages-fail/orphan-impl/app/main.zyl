@@ -1,0 +1,6 @@
+(use acme/shapes { Describable Circle })
+
+(impl Describable Circle
+  (defn describe (self) 1))
+
+(defn main () 0)

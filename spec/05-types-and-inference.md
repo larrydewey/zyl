@@ -99,7 +99,7 @@ Must appear in same module as type. Fails if trait not derivable.
 
 ## 6. Generics
 
-> Canonical: `zyl_specification.txt` §6 (v4.2). This file is a structured copy.
+> Canonical: `zyl_specification.txt` §6 (v5.0). This file is a structured copy.
 
 ### 6.1 Generic Function Declaration
 

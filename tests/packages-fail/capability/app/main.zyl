@@ -1,0 +1,4 @@
+(defn reach-out (n)
+  (ffi-call "zyl_cstr_len" "abc" 1000))
+
+(defn main () (reach-out 0))

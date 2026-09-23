@@ -1,0 +1,324 @@
+; === Zyl Standard Library — Package Index and Trust ===
+; Module: compiler/index
+;
+; Spec v5.0 §31.8. The index is a git repository of S-expression
+; metadata, sharded by name, with no server component: anyone can host
+; one, and `zyl fetch` reads it through git like any other repository.
+;
+;     ac/me/acme/json.zyl
+;
+;     (index-entry (name "acme/json")
+;       (versions (v "1.4.0" (url "https://...tar.zst") (hash "blake3:...")
+;                    (key "ed25519:...") (sig "ed25519:...")
+;                    (zyl "5.0") (yanked false))))
+;
+; Trust is per publisher and pinned on first use. Verification is
+; MANDATORY and has no opt-out flag, because an opt-out is the flag every
+; compromised pipeline sets. Three failures stop a build outright:
+;
+;   E_PKG_UNSIGNED        the index entry carries no signature at all
+;   E_PKG_SIGNATURE_INVALID  the signature does not verify under the key
+;   E_PKG_KEY_CHANGED     the key differs from the one pinned for this name
+;
+; A yank is advisory (§31.8): it affects new resolutions only, never an
+; existing lock, so a yanked version that is already locked keeps
+; building while a fresh resolution refuses to select it.
+
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/package)
+(use compiler/parser)
+(use compiler/store)
+(use core/list)
+(use core/option)
+(use math/crypto/asymmetric/ed25519)
+(use math/words)
+
+; ===========================================================================
+; ENTRIES
+; ===========================================================================
+
+(deftype IdxVersion (IV PkgVersion String String IdxTrust IdxMeta))
+
+(deftype IdxTrust (ITrust String String))
+
+(defn itrust-key (t) (match t (ITrust k d1 k)))
+(defn itrust-sig (t) (match t (ITrust d1 s s)))
+
+(deftype IdxMeta (IMeta String Int))
+
+(defn imeta-zyl (m) (match m (IMeta z d1 z)))
+(defn imeta-yanked (m) (match m (IMeta d1 y y)))
+
+(defn iv-version (v) (match v (IV x d1 d2 d3 d4 x)))
+(defn iv-url (v) (match v (IV d1 u d2 d3 d4 u)))
+(defn iv-hash (v) (match v (IV d1 d2 h d3 d4 h)))
+(defn iv-trust (v) (match v (IV d1 d2 d3 t d4 t)))
+(defn iv-meta (v) (match v (IV d1 d2 d3 d4 m m)))
+
+(defn iv-key (v) (itrust-key (iv-trust v)))
+(defn iv-sig (v) (itrust-sig (iv-trust v)))
+(defn iv-yanked (v) (imeta-yanked (iv-meta v)))
+
+(deftype IdxEntry (IE String (List IdxVersion)))
+
+(defn ie-name (e) (match e (IE n d1 n)))
+(defn ie-versions (e) (match e (IE d1 v v)))
+
+; ===========================================================================
+; PATHS
+; ===========================================================================
+
+; `acme/json` -> `<index>/ac/me/acme/json.zyl`. Two-level sharding on the
+; name's own bytes keeps any one directory small without a hash step, so
+; a human can find an entry by reading the name.
+(defn idx-entry-path (root name)
+  (str-concat root
+    (str-concat "/" (str-concat (idx-shard name)
+      (str-concat "/" (str-concat name ".zyl"))))))
+
+(defn idx-shard (name)
+  (let flat (store-flat-name name)
+    (str-concat (idx-shard-part flat 0) (str-concat "/" (idx-shard-part flat 2)))))
+
+(defn idx-shard-part (s i)
+  (if (>= i (pk-len s))
+    "_"
+    (if (>= (+ i 2) (pk-len s))
+      (str-concat (pk-sub s i 1) "_")
+      (pk-sub s i 2))))
+
+; ===========================================================================
+; READING
+; ===========================================================================
+
+(defn idx-ast-head (a)
+  (match a
+    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
+    (d3 "")))
+
+(defn idx-ast-args (a)
+  (match a
+    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
+    (d2 Nil)))
+
+(defn idx-str (a)
+  (match a
+    (AString s s)
+    (AstIdent s s)
+    (d1 "")))
+
+(defn idx-find-form (forms head)
+  (match forms
+    (Nil None)
+    (Cons h t (if (> (str-eq (idx-ast-head h) head) 0) (Some h) (idx-find-form t head)))))
+
+(defn idx-find-forms (forms head)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (> (str-eq (idx-ast-head h) head) 0)
+        (Cons h (idx-find-forms t head))
+        (idx-find-forms t head)))))
+
+(defn idx-field (forms field)
+  (match (idx-find-form forms field)
+    (Some f (match (idx-ast-args f) (Cons a d1 (idx-str a)) (Nil "")))
+    (None "")))
+
+(defn idx-bool-field (forms field)
+  (let v (idx-field forms field)
+    (if (> (str-eq v "true") 0) 1 0)))
+
+(defn idx-read (arena root name)
+  (let path (idx-entry-path root name)
+    (let fd (file-open path "r")
+      (if (< fd 1)
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_NOT_FOUND: package: " (str-concat name
+            " is not present in the index")) 1000)
+        (let src (file-read fd 1048576)
+          (let d1 (file-close fd)
+            (idx-of-source arena src name)))))))
+
+(defn idx-of-source (arena src name)
+  (let forms (zyl-parse arena src)
+    (match (idx-find-form forms "index-entry")
+      (Some f (IE name (idx-versions-of (idx-ast-args f))))
+      (None (ffi-call "zyl_panic"
+              (str-concat "E_PKG_NOT_FOUND: package: malformed index entry for " name) 1000)))))
+
+(defn idx-versions-of (args)
+  (match (idx-find-form args "versions")
+    (Some f (idx-version-list (idx-find-forms (idx-ast-args f) "v")))
+    (None Nil)))
+
+(defn idx-version-list (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (idx-version-of h) (idx-version-list t)))))
+
+(defn idx-version-of (form)
+  (match (idx-ast-args form)
+    (Cons verast rest
+      (IV (pk-version-of (idx-str verast))
+          (idx-field rest "url")
+          (idx-field rest "hash")
+          (ITrust (idx-field rest "key") (idx-field rest "sig"))
+          (IMeta (idx-field rest "zyl") (idx-bool-field rest "yanked"))))
+    (Nil (ffi-call "zyl_panic" "E_PKG_NOT_FOUND: package: index version entry has no version" 1000))))
+
+(defn idx-find-version (entry v)
+  (idx-find-version-in (ie-versions entry) v))
+
+(defn idx-find-version-in (vs v)
+  (match vs
+    (Nil None)
+    (Cons h t (if (= (pv-cmp (iv-version h) v) 0) (Some h) (idx-find-version-in t v)))))
+
+(defn idx-require-version (arena entry v)
+  (match (idx-find-version entry v)
+    (Some iv iv)
+    (None (ffi-call "zyl_panic"
+            (str-concat "E_PKG_VERSION_NOT_FOUND: package: version " (str-concat (pv-str arena v)
+              (str-concat " of " (str-concat (ie-name entry) " is not present in the index")))) 1000))))
+
+; Highest non-yanked, non-pre-release version — what `zyl add` writes as
+; the requirement for a package the manifest does not yet name. A
+; pre-release is only ever selected by naming it exactly (§31.1).
+(defn idx-latest (entry)
+  (idx-latest-in (ie-versions entry) None))
+
+(defn idx-latest-in (vs best)
+  (match vs
+    (Nil best)
+    (Cons h t
+      (if (> (iv-yanked h) 0)
+        (idx-latest-in t best)
+        (if (> (str-length (pv-pre (iv-version h))) 0)
+          (idx-latest-in t best)
+          (idx-latest-in t (idx-better best h)))))))
+
+(defn idx-better (best h)
+  (match best
+    (None (Some h))
+    (Some b (if (> (pv-cmp (iv-version h) (iv-version b)) 0) (Some h) (Some b)))))
+
+; A yanked version is refused for a NEW resolution only; nothing here is
+; reachable from a build that already has the version in its lock.
+(defn idx-check-yanked (arena entry iv)
+  (if (> (iv-yanked iv) 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_YANKED: package: resolution selected yanked version "
+        (str-concat (pv-str arena (iv-version iv)) (str-concat " of " (ie-name entry)))) 1000)
+    1))
+
+; ===========================================================================
+; TRUST ON FIRST USE (§31.8)
+; ===========================================================================
+
+(defn idx-key-hex (k)
+  (store-strip-prefix k))
+
+; The pinned key for `name`, or "" when this is the first time the
+; toolchain has seen the package.
+(defn idx-pinned-key (name)
+  (let path (store-key-path name)
+    (if (= (ffi-call "zyl_path_exists" path 1000) 0)
+      ""
+      (let fd (file-open path "r")
+        (if (< fd 1)
+          ""
+          (let s (file-read fd 4096)
+            (let d1 (file-close fd)
+              (idx-trim s))))))))
+
+(defn idx-trim (s)
+  (let n (pk-len s)
+    (if (= n 0)
+      s
+      (if (= (pk-byte-at s (- n 1)) 10)
+        (idx-trim (pk-sub s 0 (- n 1)))
+        s))))
+
+(defn idx-pin-key (name key)
+  (let d1 (store-mkdir (store-keys-dir))
+    (let out (file-open (store-key-path name) "w")
+      (let d2 (file-write out key)
+        (file-close out)))))
+
+; First use pins; every later fetch must match. A key change is a hard
+; stop rather than a prompt: the honest case (a publisher rotating a key)
+; and the attack look identical from here, and only a human can tell them
+; apart.
+(defn idx-check-key (name key)
+  (let pinned (idx-pinned-key name)
+    (if (= (str-length pinned) 0)
+      (let d1 (idx-pin-key name key) 1)
+      (if (> (str-eq pinned key) 0)
+        1
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_KEY_CHANGED: package: publisher key for " (str-concat name
+            (str-concat " differs from the pinned key - pinned " (str-concat pinned
+              (str-concat ", index offers " key))))) 1000)))))
+
+; The publisher signs the BLAKE3 hash of the canonical archive (§31.8), so
+; the verified message is those 32 bytes — not the archive, which need not
+; even be downloaded to check that a signature belongs to a hash.
+(defn idx-verify (arena name iv)
+  (if (= (str-length (iv-sig iv)) 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_UNSIGNED: package: index entry for " (str-concat name
+        " carries no signature")) 1000)
+    (let d1 (idx-check-key name (iv-key iv))
+      (idx-verify-sig arena name iv))))
+
+(defn idx-verify-sig (arena name iv)
+  (let pub (w-from-hex arena (idx-key-hex (iv-key iv)))
+    (let sig (w-from-hex arena (store-strip-prefix (iv-sig iv)))
+      (let msg (w-from-hex arena (store-strip-prefix (iv-hash iv)))
+        (if (ed25519-verify arena pub msg 32 sig)
+          1
+          (ffi-call "zyl_panic"
+            (str-concat "E_PKG_SIGNATURE_INVALID: package: Ed25519 signature for "
+              (str-concat name " does not verify") ) 1000))))))
+
+; Sign an archive hash with a seed held in `keyfile` (64 hex characters).
+; `zyl publish` uses this; nothing in a build path ever does.
+(defn idx-sign-hash (arena seedhex hash)
+  (let seed (w-from-hex arena seedhex)
+    (let msg (w-from-hex arena (store-strip-prefix hash))
+      (str-concat "ed25519:" (w-hex-bytes (ed25519-sign arena seed msg 32) 64)))))
+
+(defn idx-public-key (arena seedhex)
+  (str-concat "ed25519:" (w-hex-bytes (ed25519-public-key arena (w-from-hex arena seedhex)) 32)))
+
+; ===========================================================================
+; SYNCHRONISATION
+; ===========================================================================
+; `zyl fetch` clones or updates the index with git, which is the only
+; transport it needs: an index is a repository, not a service.
+
+(defn idx-default-url () "https://github.com/zyl-lang/index")
+
+(defn idx-sync (url)
+  (let root (store-index-dir)
+    (if (> (ffi-call "zyl_path_exists" (str-concat root "/.git") 1000) 0)
+      (idx-pull root)
+      (idx-clone url root))))
+
+(defn idx-clone (url root)
+  (let d1 (store-safe url 2 "index url")
+    (let d2 (store-mkdir (store-home))
+      (let rc (store-run (str-concat "git clone -q --depth 1 '"
+                (str-concat url (str-concat "' '" (str-concat root "'")))))
+        (if (= rc 0)
+          root
+          (ffi-call "zyl_panic"
+            (str-concat "E_PKG_FETCH_FAILED: package: cannot clone index " url) 1000))))))
+
+(defn idx-pull (root)
+  (let rc (store-run (str-concat "git -C '" (str-concat root "' pull -q --ff-only")))
+    (if (= rc 0)
+      root
+      (ffi-call "zyl_panic" "E_PKG_FETCH_FAILED: package: cannot update the index" 1000))))

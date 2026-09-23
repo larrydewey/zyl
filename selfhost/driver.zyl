@@ -17,6 +17,14 @@
 (use compiler/ast)
 (use compiler/expr_inner)
 (use compiler/module_resolver)
+(use compiler/capability_check)
+(use compiler/cli)
+(use compiler/index)
+(use compiler/lock)
+(use compiler/mvs)
+(use compiler/package)
+(use compiler/store)
+(use compiler/workspace)
 (use compiler/macro_expand)
 (use compiler/mutability_check)
 (use compiler/arity_check)
@@ -52,7 +60,7 @@
 ; buffer (String). Does NOT write anywhere; callers decide the sink.
 ; ===========================================================================
 
-(defn compile-to-asm (arena srcbuf)
+(defn compile-to-asm (arena srcbuf srcpath)
   (dbg-log "balance-check\n")
   (let balance (sb-check-string srcbuf)
     (if (= (sb-result-balanced balance) 0)
@@ -63,11 +71,21 @@
         (dbg-log "parse\n")
         (let prog (zyl-parse arena srcbuf)
           (dbg-log "bridge\n")
-          (let exprs0 (convert-ast-list prog)
+          (begin
             (dbg-log "modules\n")
-            (let exprs1 (mr-resolve-program arena exprs0)
+            ; Module resolution works on the RAW parse tree: it qualifies
+            ; every identifier to a canonical key (spec v5.0 SS31.2) before
+            ; anything is converted to ExprInner, and it needs the source
+            ; path to find the package this file belongs to (SS31.3).
+            (let resolved (mr-resolve-program-full arena prog srcpath)
+            (let exprs1 (mrr-exprs resolved)
             (dbg-log "macros\n")
             (let exprs (me-expand-program exprs1)
+      (dbg-log "capability-check\n")
+      ; §31.9: enforcement runs after module resolution and before type
+      ; inference. It sits after macro expansion so that a construct a
+      ; macro introduces is checked like one written by hand.
+      (let d206 (cc-check-program exprs (mrr-grants resolved) (mrr-denied resolved))
       (dbg-log "duplicate-check\n")
       (let d203 (dc-check-program exprs)
       (dbg-log "arity-check\n")
@@ -133,7 +151,7 @@
                               (if (> blen 66060288)
                                 (ffi-call "zyl_panic" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
                                 buf))))))))))))))))))))
-        ))))))
+        ))))))))
 ))
 
 ; ===========================================================================
@@ -143,7 +161,7 @@
 (defn boot-run (arena fd)
   (let srcbuf (file-read fd 1048576)
     (let d1 (file-close fd)
-      (let buf (compile-to-asm arena srcbuf)
+      (let buf (compile-to-asm arena srcbuf "/tmp/zyl_boot_in.zyl")
         (let out (file-open "/tmp/zyl_boot_out.s" "w")
           (let n (file-write out buf)
             (let d2 (file-close out)
@@ -207,13 +225,26 @@
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
 ; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
 (defn cli-link (asmpath outpath)
-  (let cmd
-    (str-concat "cc "
-      (str-concat "-no-pie "
-        (str-concat asmpath
-          (str-concat " actor_runtime.c -o "
-            (str-concat outpath " -lpthread")))))
-    (ffi-call "zyl_exec_cmd" cmd 1000)))
+  (cli-link-with asmpath outpath ""))
+
+; `extra` carries a package's native objects and libraries (SS31.10),
+; already quoted by compiler/cli; an ordinary single-file compile passes
+; the empty string and the command is what it always was.
+(defn cli-link-with (asmpath outpath extra)
+  (ffi-call "zyl_exec_cmd" (cli-link-command asmpath outpath extra) 1000))
+
+; Same command, run as a CHILD: a package build has work left to do after
+; linking (zyl.buildinfo, and `zyl test` runs the binary), and
+; zyl_exec_cmd's execl would end the process here.
+(defn cli-link-child (asmpath outpath extra)
+  (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
+
+(defn cli-link-command (asmpath outpath extra)
+  (str-concat "cc "
+    (str-concat "-no-pie "
+      (str-concat asmpath
+        (str-concat " actor_runtime.c -o "
+          (str-concat outpath (str-concat " -lpthread" extra)))))))
 
 ; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a
 ; real, packaged install (checked via a ZYL_HOME override, else
@@ -265,7 +296,7 @@
                           (if (> fd 0)
                             (let srcbuf (file-read fd 4194304)
                               (let d2 (file-close fd)
-                                (let buf (compile-to-asm arena srcbuf)
+                                (let buf (compile-to-asm arena srcbuf src)
                                   (if (> emitflag 0)
                                     (cli-write-file outbase buf)
                                     (let asmpath (str-concat outbase ".s")
@@ -275,9 +306,225 @@
                               (print "zyl: error: cannot open source file")
                               1)))))))))))))))
 
+; ===========================================================================
+; PACKAGE SUBCOMMANDS (spec v5.0 SS31.11)
+; ===========================================================================
+; `zyl new | add | fetch | build | test | update | vendor | audit`
+; `zyl publish | key`
+;
+; A first argument that names a file (or an option) still means "compile
+; this", which is how every existing script and this repo's own boot
+; invoke the compiler. Anything else is a subcommand.
+
+(defn drv-is-subcommand (a)
+  (if (> (cli-ends-with-zyl a) 0)
+    0
+    (if (= (ffi-call "zyl_cstr_byte_at" a 0 1000) 45)
+      0
+      1)))
+
+(defn drv-arg (i)
+  (let argc (ffi-call "zyl_argc" 0)
+    (if (< i argc) (ffi-call "zyl_arg_str" i 1000) "")))
+
+(defn drv-has-flag (i flag)
+  (if (>= i (ffi-call "zyl_argc" 0))
+    0
+    (if (> (str-eq (drv-arg i) flag) 0) 1 (drv-has-flag (+ i 1) flag))))
+
+; The package root for a subcommand: the nearest directory at or above
+; the working directory that carries a zyl.pkg. A tool that guessed
+; differently from the compiler would resolve a different graph than the
+; one it built.
+(defn drv-package-dir (cwd depth)
+  (if (> (ffi-call "zyl_path_exists" (str-concat cwd "/zyl.pkg") 1000) 0)
+    cwd
+    (if (< depth 1)
+      (ffi-call "zyl_panic"
+        (str-concat "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at or above " cwd) 1000)
+      (drv-package-dir (ffi-call "zyl_dirname_cstr" cwd 1000) (- depth 1)))))
+
+; The module a package builds: the one named by the last segment of the
+; package name, which is also what `(use <pkg>)` reaches (SS31.4).
+(defn drv-entry-module (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (str-concat dir (str-concat "/" (str-concat (pk-last-segment (mf-name m)) ".zyl")))))
+
+(defn drv-output-path (arena dir)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (str-concat dir (str-concat "/" (pk-last-segment (mf-name m))))))
+
+; --locked: the lock must already describe exactly the graph the
+; manifests imply, and the capability closure may not have grown
+; (SS31.6, SS31.9).
+(defn drv-check-locked (arena dir m nodes)
+  (match (cli-read-lock arena dir)
+    (Some l
+      (let d1 (drv-check-lock-entries arena l nodes)
+        (cc-check-growth (lk-closure l)
+                         (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil)))))
+    (None (ffi-call "zyl_panic"
+            "E_PKG_LOCK_STALE: package: --locked was given but there is no zyl.lock" 1000))))
+
+(defn drv-check-lock-entries (arena l nodes)
+  (match nodes
+    (Nil 1)
+    (Cons n t
+      (match (lk-find l (mn-name n))
+        (Some lp (drv-check-lock-version arena l lp n t))
+        (None (ffi-call "zyl_panic"
+                (str-concat "E_PKG_LOCK_STALE: package: " (str-concat (mn-name n)
+                  " is required but absent from zyl.lock")) 1000))))))
+
+(defn drv-check-lock-version (arena l lp n rest)
+  (if (= (pv-cmp (lp-version lp) (mn-version n)) 0)
+    (drv-check-lock-entries arena l rest)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_LOCK_STALE: package: " (str-concat (mn-name n)
+        (str-concat " resolves to " (str-concat (pv-str arena (mn-version n))
+          (str-concat " but zyl.lock records " (pv-str arena (lp-version lp))))))) 1000)))
+
+; `zyl build`: resolve offline (SS31.7 -- a build never networks), check
+; the graph against the lock when asked, compile the entry module and
+; record what went into the binary (SS31.12).
+(defn drv-build (arena dir locked)
+  (let d0 (drv-check-workspace arena dir)
+    (drv-build-package arena dir locked)))
+
+; §31.11: a member may depend on another member by path, but must still
+; name the version that member's manifest declares — otherwise the member
+; could not be published as it stands.
+(defn drv-check-workspace (arena dir)
+  (let root (ws-find-root dir 16)
+    (if (= (str-length root) 0)
+      1
+      (ws-check-member-deps arena (ws-read arena root)))))
+
+(defn drv-build-package (arena dir locked)
+  (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+    (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
+      (let d1 (if (> locked 0) (drv-check-locked arena dir m nodes) 1)
+        (let src (drv-entry-module arena dir)
+          (let out (drv-output-path arena dir)
+            (drv-compile-file arena src out dir)))))))
+
+(defn drv-compile-file (arena src out dir)
+  (let fd (file-open src "r")
+    (if (< fd 1)
+      (begin
+        (print (str-concat "zyl: error: cannot open " src))
+        1)
+      (let srcbuf (file-read fd 4194304)
+        (let d1 (file-close fd)
+          (let native (cli-native-link-args arena dir
+                        (pk-read-manifest arena (str-concat dir "/zyl.pkg")))
+            (let buf (compile-to-asm arena srcbuf src)
+              (let asmpath (str-concat out ".s")
+                (let d2 (cli-write-file asmpath buf)
+                  (let rc (cli-link-child asmpath out native)
+                    (let d3 (drv-write-buildinfo arena dir out asmpath)
+                      rc)))))))))))
+
+; zyl.buildinfo (SS31.12): the compiler's own hash, the graph hash from the
+; lock, the native object hashes and the ICNF hash, in that order, so a
+; third party can verify a binary came from a claimed set of inputs.
+;
+; DEVIATION, recorded rather than hidden: the fourth input is the hash of
+; the emitted assembly, not of the ICNF itself. The ICNF has no
+; serialised form in this implementation, and assembly is a deterministic
+; function of it, so the field verifies the same claim through a
+; downstream artefact. A real ICNF hash needs an ICNF printer.
+(defn drv-write-buildinfo (arena dir out asmpath)
+  (let path (str-concat out ".buildinfo")
+    (let f (file-open path "w")
+      (let d1 (file-write f (drv-buildinfo-text arena dir asmpath))
+        (file-close f)))))
+
+(defn drv-buildinfo-text (arena dir asmpath)
+  (str-concat "(buildinfo\n  (compiler-hash \""
+    (str-concat (lk-compiler-self-hash arena)
+      (str-concat "\")\n  (graph-hash \""
+        (str-concat (drv-graph-hash arena dir)
+          (str-concat "\")\n  (native-objects)\n  (asm-hash \"blake3:"
+            (str-concat (ffi-call "zyl_blake3_file_hex" arena asmpath 32 1000) "\"))\n")))))))
+
+(defn drv-graph-hash (arena dir)
+  (match (cli-read-lock arena dir)
+    (Some l (lk-graph-hash l))
+    (None "")))
+
+; A test build resolves dev-deps as well; a plain build must not, since
+; dev-deps never enter a dependent's graph (§31.3).
+(defn drv-test (arena dir)
+  (let d1 (drv-check-workspace arena dir)
+    (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+      ; Resolved for the check, not for a value: a dev-dependency that
+      ; cannot be resolved is an error before anything is compiled.
+      (let d2 (mvs-resolve-with-dev arena (cli-ctx-offline arena dir m) m dir)
+        (let rc (drv-compile-file arena (drv-entry-module arena dir)
+                                  (drv-output-path arena dir) dir)
+          (if (= rc 0)
+            (ffi-call "zyl_run_bin" (drv-output-path arena dir) 1000)
+            rc))))))
+
+(defn drv-usage ()
+  (begin
+    (print "zyl <file.zyl> [-o out] [--emit-asm]   compile one file")
+    (print "zyl new <name>                         create a package")
+    (print "zyl add <name> [version]               add a dependency")
+    (print "zyl fetch                              resolve, verify and populate the store")
+    (print "zyl build [--locked]                   compile this package")
+    (print "zyl test                               compile and run this package")
+    (print "zyl update                             re-resolve and rewrite zyl.lock")
+    (print "zyl vendor                             copy the graph into ./vendor")
+    (print "zyl audit                              report capabilities per package")
+    (print "zyl publish                            archive, hash and sign this package")
+    (print "zyl key                                show or create the publisher key")
+    0))
+
+(defn drv-subcommand (arena cmd cwd)
+  (if (> (str-eq cmd "new") 0)
+    (cli-new arena cwd (drv-arg 2))
+  (if (> (str-eq cmd "add") 0)
+    (cli-add arena (drv-package-dir cwd 16) (drv-arg 2) (drv-arg 3))
+  (if (> (str-eq cmd "fetch") 0)
+    (cli-fetch arena (drv-package-dir cwd 16))
+  (if (> (str-eq cmd "update") 0)
+    (cli-update arena (drv-package-dir cwd 16))
+  (if (> (str-eq cmd "vendor") 0)
+    (cli-vendor arena (drv-package-dir cwd 16))
+  (if (> (str-eq cmd "audit") 0)
+    (cli-audit arena (drv-package-dir cwd 16))
+  (if (> (str-eq cmd "publish") 0)
+    (cli-publish arena (drv-package-dir cwd 16))
+  (if (> (str-eq cmd "key") 0)
+    (cli-key arena)
+  (if (> (str-eq cmd "build") 0)
+    (drv-build arena (drv-package-dir cwd 16) (drv-has-flag 2 "--locked"))
+  (if (> (str-eq cmd "test") 0)
+    (drv-test arena (drv-package-dir cwd 16))
+    (drv-usage))))))))))))
+
 (defn main ()
   (let arena (arena-create 1073741824)
     (let argc (ffi-call "zyl_argc" 0)
       (if (< argc 2)
         (boot-run-legacy arena)
-        (cli-run arena)))))
+        (drv-main-arg arena)))))
+
+; The bundle dir holds stdlib/ and actor_runtime.c; the compiler chdirs
+; there so module resolution and linking find them. A subcommand needs
+; the user's own directory too, since that is where the package is, so
+; both are resolved before anything moves.
+(defn drv-main-arg (arena)
+  (let a (ffi-call "zyl_arg_str" 1 1000)
+    (if (> (drv-is-subcommand a) 0)
+      (drv-run-subcommand arena a)
+      (cli-run arena))))
+
+(defn drv-run-subcommand (arena a)
+  (let cwd (ffi-call "zyl_getcwd" 0)
+    (let argv0 (ffi-call "zyl_arg_str" 0 1000)
+      (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
+        (let d1 (ffi-call "zyl_chdir" bundledir 1000)
+          (drv-subcommand arena a cwd))))))

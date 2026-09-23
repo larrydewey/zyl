@@ -67,15 +67,16 @@
 ; ===========================================================================
 
 (defn ch-parse-exprs (arena text)
-  (match (try (Ok (ch-run-pipeline arena text)) (catch e (Err e)))
+  (ch-parse-exprs-at arena "" text))
+
+(defn ch-parse-exprs-at (arena path text)
+  (match (try (Ok (ch-run-pipeline arena path text)) (catch e (Err e)))
     (Ok exprs (Some exprs))
     (Err d1 None)))
 
-(defn ch-run-pipeline (arena text)
+(defn ch-run-pipeline (arena path text)
   (let prog (zyl-parse arena text)
-    (let exprs0 (convert-ast-list prog)
-      (let exprs1 (mr-resolve-program arena exprs0)
-        (me-expand-program exprs1)))))
+    (me-expand-program (mr-resolve-program arena prog path))))
 
 ; ===========================================================================
 ; CALL GRAPH
@@ -89,7 +90,11 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name d1 body (list-append (ch-edges-for name body tbl) (ch-edges-top rest tbl)))
+        ; Both halves of an edge are SOURCE names: the resolver qualifies
+        ; definitions and references alike to canonical keys (§31.2), and
+        ; the editor asks about the names in the file.
+        (EDefn name d1 body
+          (list-append (ch-edges-for (lsp-source-name name) body tbl) (ch-edges-top rest tbl)))
         (d2 (ch-edges-top rest tbl))))))
 
 (defn ch-edges-for (caller body tbl)
@@ -98,12 +103,13 @@
 (defn ch-refs-to-edges (caller refs tbl)
   (match refs
     (Nil Nil)
-    (Cons name rest
-      (if (> (str-eq name caller) 0)
-        (ch-refs-to-edges caller rest tbl)
-        (if (> (st-is-known-fn tbl name) 0)
-          (Cons (CE caller name) (ch-refs-to-edges caller rest tbl))
-          (ch-refs-to-edges caller rest tbl))))))
+    (Cons raw rest
+      (let name (lsp-source-name raw)
+        (if (> (str-eq name caller) 0)
+          (ch-refs-to-edges caller rest tbl)
+          (if (> (st-is-known-fn tbl name) 0)
+            (Cons (CE caller name) (ch-refs-to-edges caller rest tbl))
+            (ch-refs-to-edges caller rest tbl)))))))
 
 (defn ch-dedup (edges) (ch-dedup-acc edges Nil))
 

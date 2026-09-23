@@ -1,6 +1,6 @@
 ; === Zyl Type Inference Engine ===
 ; Port of Rust type_inference.rs (~2752 loc) to Zyl (~1200 loc)
-; Core: infer_expr dispatch, collect_definitions, finalize_param_types
+; Core: infer-expr dispatch, collect_definitions, finalize_param_types
 ;
 ; FORMATTING: C-style block discipline — every open paren on its own line
 ; at the correct indent; every close paren on its own line aligned under
@@ -940,14 +940,14 @@
 ; record_make_variant mirrors the logic from infer-expr-make-variant
 ; but just records the instantiation without doing full type checking
 (defn record_make_variant (inferer adt_name variant_name args)
-    (let (variant_fields (infer_get_variant_fields inferer adt_name variant_name))
+    (let (variant_fields (infer-get-variant-fields inferer adt_name variant_name))
         (if (nil? variant_fields)
         inferer
         (let (mapping (extract_constructor_mapping inferer args variant_fields))
                 (if (nil? mapping)
                     inferer
                     (let (inst (AI mapping))
-                        (insert_adt_instantiation inferer adt_name inst)))))))
+                        (insert-adt-instantiation inferer adt_name inst)))))))
 
 (defn extract_constructor_mapping (inferer args fields)
     (extract_mapping_loop inferer args fields Nil))
@@ -958,10 +958,10 @@
 ; ftype). A field whose OWN type string is a bare generic param (e.g. "T")
 ; uses that string itself as both the param name and the lookup key.
 (defn extract_mapping_field (inferer arg field rest_args rest_fields acc)
-    (if (is_generic_param field)
-        (let (arg_type (infer_expr inferer arg))
-            (let (type_str (type_to_string arg_type))
-                (if (or (= type_str "") (str_contains type_str "?"))
+    (if (is-generic-param field)
+        (let (arg_type (infer-expr inferer arg))
+            (let (type_str (type-to-string arg_type))
+                (if (or (= type_str "") (str-contains type_str "?"))
                     (extract_mapping_loop inferer rest_args rest_fields acc)
                     (extract_mapping_loop inferer rest_args rest_fields
                         (Cons (Pair field type_str) acc)))))

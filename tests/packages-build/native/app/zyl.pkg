@@ -1,0 +1,7 @@
+; Native dependencies are declarative (§31.10): sources, flags, libraries
+; and include directories, never a build script. Shipping C needs the
+; `native` capability; calling into it needs `ffi`.
+(package
+  (name "app/native") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (capabilities io ffi native)
+  (native (sources "c/fast.c") (cflags "-O2" "-DZYL_NATIVE_TEST") (include-dirs "c")))

@@ -1,159 +1,1102 @@
-; === Zyl Standard Library — Compiler Module Resolver ===
+; === Zyl Standard Library — Compiler Module and Package Resolver ===
 ; Module: compiler/module_resolver
 ;
-; The self-hosted pipeline used to read only the one source file it was
-; given and hand its raw top-level exprs straight to type inference —
-; every `(use module/path)` form was silently dropped (ic-program simply
-; never matched EUseModule), so any program that relied on collections,
-; actors, ffi helpers, or even the implicitly-auto-loaded core prelude
-; (is-even/abs/square/... — the Rust bootstrap's module_resolver.rs
-; auto-injects core/core for every program) failed to link with
-; undefined references to functions that were never inlined into the
-; compilation unit at all.
+; Resolves a program's `use` graph into one compilation unit, per spec
+; v5.0 §24 and §31.4. Zyl compiles whole-program: packages ship source,
+; and the resolver splices the entire resolved graph into a single unit
+; that monomorphizes globally. There is no ABI and no separate
+; compilation in 5.0, so this module is where "which code is in the
+; build" is decided, once.
 ;
-; This module walks the parsed top-level (List Expr), extracts `use`
-; forms, recursively parses+resolves each dependency file under stdlib/,
-; and splices their bodies in (dependency-before-dependent order) ahead
-; of the main program's own body — mirroring module_resolver.rs, minus
-; its per-symbol `use` filtering (unused by anything in this bootstrap's
-; corpus) and its stdlib-shadowing rule (no test in the corpus redefines
-; a stdlib name, so it isn't needed here).
+; It runs in two passes, and the split matters:
+;
+;   1. DISCOVERY walks the `use` graph depth-first from the root module,
+;      parsing each file exactly once, recording its top-level
+;      definitions and its imports, and detecting cycles at both levels
+;      (E_MODULE_CYCLE within a package, E_PKG_CYCLE across packages).
+;   2. QUALIFICATION rewrites every unit's identifiers to canonical keys
+;      (§31.2) using a table built from the WHOLE discovered graph.
+;
+; A single pass would have made the meaning of a name depend on the order
+; the graph happened to be walked in: a module's table could only hold
+; what had already been loaded, so a sibling module loaded later would be
+; invisible to it. §24.4 says a definition is visible throughout its
+; package regardless, and determinism (§27) says the result may not
+; depend on traversal order, so the table is built only once everything
+; is known.
+;
+; Visibility (§24.4): within a package everything is visible; across a
+; package boundary only `pub` definitions are, and importing a private
+; one is E_PKG_PRIVATE_SYMBOL. The implicit standard library (§25) has no
+; manifest and is treated as fully public — Phase 2 of the package plan
+; gives it a real `zyl.pkg` and an explicit `pub` surface.
 
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/lock)
+(use compiler/package)
 (use compiler/parser)
+(use compiler/qualify)
+(use compiler/store)
+(use core/list)
+(use core/option)
 
-; Accumulator threaded through resolution: exprs collected so far, held
-; in REVERSE order (see mr-prepend-rev below), and the set of module
-; names already resolved, so a diamond dependency (two stdlib modules
-; both `use`-ing allocator/allocator) doesn't emit the same defn twice —
-; which would be a duplicate-symbol link error, not just wasted work.
-(deftype MRAcc (MRAcc (List Expr) (List String)))
+; ===========================================================================
+; PACKAGES IN THE GRAPH
+; ===========================================================================
 
-; reverse(xs) ++ acc, built by walking xs once and consing each element
-; onto acc in order — O(length xs), not O(length acc). mr-resolve-module
-; used to grow its expr list via `list-append exprs2 (mr-strip-use
-; file-exprs)`, which is O(current accumulator length) per call; doing
-; that once per resolved module made the whole resolution O(n^2) in the
-; total expr count, however small each individual module's own
-; contribution was — a standalone program `use`-ing something with a
-; large transitive dependency graph (e.g. compiler/icnf, which pulls in
-; the rest of the compiler stdlib) could take 40+ seconds just resolving
-; modules, well past this corpus's test-runner timeouts even though the
-; actual compile work was fast (integration/selfhost-codegen). Every
-; accumulator here is now built in reverse via this helper and reversed
-; back to normal order exactly once, at the very end.
-(defn mr-prepend-rev (xs acc)
-  (match xs
-    (Nil acc)
-    (Cons h t (mr-prepend-rev t (Cons h acc)))))
+; name, major (§31.2 key component), root directory, manifest-backed flag.
+; The flag is what distinguishes a real package, whose private symbols are
+; enforced, from the implicit stdlib, which has no manifest to declare a
+; surface in.
+(deftype MRPkg (MRP String Int String Int (List String) (List String)))
+
+(defn mrp-name (p) (match p (MRP n d1 d2 d3 d4 d5 n)))
+(defn mrp-major (p) (match p (MRP d1 m d2 d3 d4 d5 m)))
+(defn mrp-root (p) (match p (MRP d1 d2 r d3 d4 d5 r)))
+(defn mrp-manifested (p) (match p (MRP d1 d2 d3 f d4 d5 f)))
+(defn mrp-caps (p) (match p (MRP d1 d2 d3 d4 c d5 c)))
+
+; The unified feature set (§31.10): the union of what every dependent
+; asked of this package. Features are additive, so the package is compiled
+; ONCE with this set rather than once per requester.
+(defn mrp-features (p) (match p (MRP d1 d2 d3 d4 d5 f f)))
+
+(defn mr-stdlib-name () "zyl/std")
+
+; The stdlib is versioned with the compiler (§25), so its key major is the
+; compiler's own major and no manifest entry can shift it.
+; The standard library has no manifest to declare a surface or a ceiling
+; in: it IS what provides the capabilities of §31.9, so it holds all of
+; them and is never itself enforced.
+(defn mr-stdlib-pkg ()
+  (MRP (mr-stdlib-name) (pv-major (pk-version-of (pk-compiler-version))) "stdlib" 0
+       (Cons "io" (Cons "ffi" (Cons "actor" (Cons "secret" (Cons "native" (Cons "unsafe" Nil))))))
+       Nil))
+
+(defn mr-find-pkg (pkgs name)
+  (match pkgs
+    (Nil None)
+    (Cons h t (if (> (str-eq (mrp-name h) name) 0) (Some h) (mr-find-pkg t name)))))
+
+; ===========================================================================
+; IMPORTS
+; ===========================================================================
+
+; One imported symbol: the name the exporting module defines, and the name
+; the importing module calls it by (§24.2's renaming import).
+(deftype MRSym (MRS String String))
+
+(defn mrs-remote (s) (match s (MRS r d1 r)))
+(defn mrs-local (s) (match s (MRS d1 l l)))
+
+; package ("" = a module of the importing package), module path, a flag
+; for "import the whole surface", the explicit symbol list, and the
+; `:unsafe` marker.
+(deftype MRUse (MRU String String Int (List MRSym) Int))
+
+(defn mru-pkg (u) (match u (MRU p d1 d2 d3 d4 p)))
+(defn mru-module (u) (match u (MRU d1 m d2 d3 d4 m)))
+(defn mru-whole (u) (match u (MRU d1 d2 w d3 d4 w)))
+(defn mru-syms (u) (match u (MRU d1 d2 d3 s d4 s)))
+(defn mru-unsafe (u) (match u (MRU d1 d2 d3 d4 x x)))
+
+; ===========================================================================
+; DEFINITIONS
+; ===========================================================================
+
+; A top-level definition: its source name, its canonical key, and whether
+; it is `pub`. Privacy governs reachability only — a private definition
+; still gets a unique key, so renaming one can never break a consumer
+; (§24.4).
+(deftype MRDef (MRDF String String Int String))
+
+(defn mrd-name (d) (match d (MRDF n d1 d2 d3 n)))
+(defn mrd-key (d) (match d (MRDF d1 k d2 d3 k)))
+(defn mrd-pub (d) (match d (MRDF d1 d2 p d3 p)))
+
+; The feature that gates this definition, or "" when it is unconditional
+; (§31.10). A gated definition exists only when its feature is in the
+; package's unified set.
+(defn mrd-feature (d) (match d (MRDF d1 d2 d3 f f)))
+
+; One parsed module: which package it belongs to, its module path, its raw
+; forms, its imports and its definitions.
+(deftype MRUnit (MRUN String String (List Ast) (List MRUse) (List MRDef)))
+
+(defn mru2-pkg (u) (match u (MRUN p d1 d2 d3 d4 p)))
+(defn mru2-module (u) (match u (MRUN d1 m d2 d3 d4 m)))
+(defn mru2-forms (u) (match u (MRUN d1 d2 f d3 d4 f)))
+(defn mru2-uses (u) (match u (MRUN d1 d2 d3 u2 d4 u2)))
+(defn mru2-defs (u) (match u (MRUN d1 d2 d3 d4 d d)))
+
+; Discovery state: units in reverse dependency order, the ids already
+; visited, and the packages seen so far.
+(deftype MRDisc (MRD (List MRUnit) (List String) (List MRPkg)))
+
+(defn mrd-units (d) (match d (MRD u d1 d2 u)))
+(defn mrd-seen (d) (match d (MRD d1 s d2 s)))
+(defn mrd-pkgs (d) (match d (MRD d1 d2 p p)))
+
+; ===========================================================================
+; SMALL HELPERS
+; ===========================================================================
 
 (defn mr-str-in-list (s xs)
   (match xs
     (Nil 0)
     (Cons h t (if (> (str-eq s h) 0) 1 (mr-str-in-list s t)))))
 
-; EUseModule's single part IS the whole "a/b" path — lexer.zyl treats
-; `/` as an identifier character, so `(use collections/vec)` lexes
-; "collections/vec" as one token, not two idents to join.
-(defn mr-use-name (parts)
-  (match parts
-    (Nil "")
-    (Cons h d1 h)))
+(defn mr-unit-id (pkg module)
+  (str-concat pkg (str-concat "|" module)))
 
-; Extract dependency module-path strings from top-level EUseModule forms,
-; source order preserved.
+; reverse(xs) ++ acc: every accumulator here is built in reverse and
+; reversed once at the end, because appending to the end of the growing
+; expression list made resolution quadratic in the program's size.
+(defn mr-prepend-rev (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (mr-prepend-rev t (Cons h acc)))))
+
+(defn mr-ast-head (a)
+  (match a
+    (AList xs
+      (match xs
+        (Cons h d1 (match h (AstIdent n n) (d2 "")))
+        (Nil "")))
+    (d3 "")))
+
+(defn mr-ast-args (a)
+  (match a
+    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
+    (d2 Nil)))
+
+(defn mr-ident-of (a)
+  (match a
+    (AstIdent n n)
+    (d1 "")))
+
+(defn mr-starts-colon (s)
+  (if (= (pk-len s) 0) 0 (if (= (pk-byte-at s 0) 58) 1 0)))
+
+(defn mr-drop-colon (s)
+  (pk-sub s 1 (- (pk-len s) 1)))
+
+; ===========================================================================
+; USE FORMS (§24.2)
+; ===========================================================================
+; `(use pkg:module { a b })`, `(use pkg:module :unsafe)`, `(use module *)`,
+; `(use module { a => b })`. The lexer hands a `:name` back as a keyword,
+; which the reader spells ":name", so the colon form and the spaced form
+; are one token stream — which is exactly why `unsafe` is a reserved
+; module name (§24.2, E_PKG_RESERVED_MODULE).
+
+(defn mr-parse-use (args)
+  (match args
+    (Nil (MRU "" "" 1 Nil 0))
+    (Cons h t (mr-use-parts (mr-ident-of h) t (MRU "" "" 0 Nil 0)))))
+
+(defn mr-use-parts (first rest acc)
+  (match rest
+    (Nil (mr-use-finish first acc))
+    (Cons h t (mr-use-parts first t (mr-use-part h acc)))))
+
+(defn mr-use-part (a acc)
+  (match a
+    (AstIdent s (mr-use-ident s acc))
+    (AList syms (mr-use-syms syms acc))
+    (d1 acc)))
+
+(defn mr-use-ident (s acc)
+  (if (> (str-eq s "*") 0)
+    (match acc (MRU p m d1 sy u (MRU p m 1 sy u)))
+    (if (> (mr-starts-colon s) 0)
+      (mr-use-colon (mr-drop-colon s) acc)
+      (mr-use-colon s acc))))
+
+(defn mr-use-colon (s acc)
+  (if (> (str-eq s "unsafe") 0)
+    (match acc (MRU p m w sy d1 (MRU p m w sy 1)))
+    (match acc (MRU p m w sy u (MRU p s w sy u)))))
+
+; `{ a b }` / `{ a => b }`: a brace list reads as an AList, so aliases are
+; just the three-token shape `name => alias` inside it.
+(defn mr-use-syms (syms acc)
+  (match acc
+    (MRU p m w d1 u (MRU p m w (mr-sym-list syms) u))))
+
+(defn mr-sym-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (mr-sym-entry (mr-ident-of h) t))))
+
+(defn mr-sym-entry (name rest)
+  (match rest
+    (Nil (Cons (MRS name name) Nil))
+    (Cons a t
+      (if (> (str-eq (mr-ident-of a) "=>") 0)
+        (mr-sym-alias name t)
+        (Cons (MRS name name) (mr-sym-entry (mr-ident-of a) t))))))
+
+(defn mr-sym-alias (name rest)
+  (match rest
+    (Nil (Cons (MRS name name) Nil))
+    (Cons a t (Cons (MRS name (mr-ident-of a)) (mr-sym-list t)))))
+
+; With no module part the whole path is `first`: either a module of the
+; importing package (or of the implicit stdlib), or a dependency's root
+; module. Which one it is cannot be decided without the filesystem, so it
+; is decided in mr-target-module, where the package list is in hand.
+(defn mr-use-finish (first acc)
+  (match acc
+    (MRU p m w sy u
+      (if (= (str-length m) 0)
+        (MRU "" first w sy u)
+        (MRU first m w sy u)))))
+
 (defn mr-collect-uses (forms)
   (match forms
     (Nil Nil)
-    (Cons e rest
-      (match (Expr.inner e)
-        (EUseModule parts d1 d2 (Cons (mr-use-name parts) (mr-collect-uses rest)))
-        (d3 (mr-collect-uses rest))))))
+    (Cons f rest
+      (if (> (str-eq (mr-ast-head f) "use") 0)
+        (Cons (mr-parse-use (mr-ast-args f)) (mr-collect-uses rest))
+        (mr-collect-uses rest)))))
 
-; Drop use/module-decl/export forms from a body once dependencies are
-; inlined — they carry no runtime behavior of their own.
-(defn mr-strip-use (forms)
+; ===========================================================================
+; DEFINITION COLLECTION
+; ===========================================================================
+; Walks a module's top-level forms and records every definition it makes,
+; with the canonical key it will carry. `(pub ...)` wraps a definition
+; form and marks it exported.
+
+; Names the compiler itself recognises by spelling: `main` is the entry
+; symbol the runtime calls, and icnf inlines the four string builtins
+; straight to their runtime C symbols (ic-str-builtin-sym) rather than
+; calling a definition. Qualifying either would break the recognition, so
+; they never enter a symbol table — at their definition sites or at
+; their call sites.
+(defn mr-reserved-name (n)
+  (if (> (str-eq n "main") 0) 1
+  (if (> (str-eq n "str-concat") 0) 1
+  (if (> (str-eq n "str-length") 0) 1
+  (if (> (str-eq n "str-substring") 0) 1
+  (if (> (str-eq n "str-equal") 0) 1 0))))))
+
+(defn mr-collect-defs (arena pkg module forms)
   (match forms
     (Nil Nil)
-    (Cons e rest
-      (match (Expr.inner e)
-        (EUseModule d1 d2 d3 (mr-strip-use rest))
-        (EModuleDecl d4 (mr-strip-use rest))
-        (EExport d5 (mr-strip-use rest))
-        (d6 (Cons e (mr-strip-use rest)))))))
+    (Cons f rest
+      (list-append (mr-form-defs arena pkg module f 0)
+                   (mr-collect-defs arena pkg module rest)))))
+
+(defn mr-form-defs (arena pkg module f pub)
+  (let head (mr-ast-head f)
+    (if (> (str-eq head "pub") 0)
+      (mr-pub-defs arena pkg module (mr-ast-args f))
+      (if (> (str-eq head "feature-gate") 0)
+        (mr-gated-defs arena pkg module (mr-ast-args f))
+        (if (> (mr-def-head-p head) 0)
+          (mr-named-defs arena pkg module f head pub)
+          Nil)))))
+
+; `(feature-gate utf16 (pub defn parse-utf16 (b) ...))` — valid at top
+; level only (§31.10). The gated form is a definition in its own right,
+; which is what makes features additive by construction: a feature can
+; add a definition but can never alter one.
+(defn mr-gated-defs (arena pkg module args)
+  (match args
+    (Nil Nil)
+    (Cons featureast rest
+      (mr-tag-feature (mr-gated-inner arena pkg module rest) (mr-ident-of featureast)))))
+
+(defn mr-gated-inner (arena pkg module rest)
+  (match rest
+    (Nil Nil)
+    (Cons f d1 (mr-form-defs arena pkg module f 0))))
+
+(defn mr-tag-feature (defs feature)
+  (match defs
+    (Nil Nil)
+    (Cons d t
+      (Cons (MRDF (mrd-name d) (mrd-key d) (mrd-pub d) feature)
+            (mr-tag-feature t feature)))))
+
+; `pub` prefixes a definition INLINE — `(pub defn f ...)`, not
+; `(pub (defn f ...))` — so the wrapper's arguments ARE the definition's
+; own form, one list level up.
+(defn mr-pub-defs (arena pkg module args)
+  (match args
+    (Nil Nil)
+    (Cons d1 d2 (mr-form-defs arena pkg module (AList args) 1))))
+
+(defn mr-def-head-p (h)
+  (if (> (str-eq h "defn") 0) 1
+  (if (> (str-eq h "def") 0) 1
+  (if (> (str-eq h "deftype") 0) 1
+  (if (> (str-eq h "defstruct") 0) 1
+  (if (> (str-eq h "defstruct+") 0) 1
+  (if (> (str-eq h "trait") 0) 1
+  (if (> (str-eq h "macro") 0) 1
+  (if (> (str-eq h "defmacro") 0) 1 0)))))))))
+
+(defn mr-named-defs (arena pkg module f head pub)
+  (let args (mr-ast-args f)
+    (match args
+      (Nil Nil)
+      (Cons nameast rest
+        (let n (mr-ident-of nameast)
+          (if (= (str-length n) 0)
+            Nil
+            (if (> (mr-reserved-name n) 0)
+              Nil
+              (list-append
+                (Cons (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") Nil)
+                (mr-variant-defs arena pkg module head rest pub)))))))))
+
+; A deftype's variants are definitions in their own right: they become
+; constructors, so they need keys of their own or two packages could not
+; each define a `Node`.
+(defn mr-variant-defs (arena pkg module head rest pub)
+  (if (> (str-eq head "deftype") 0)
+    (mr-variant-list arena pkg module rest pub)
+    Nil))
+
+(defn mr-variant-list (arena pkg module xs pub)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (let n (mr-variant-name h)
+        (if (= (str-length n) 0)
+          (mr-variant-list arena pkg module t pub)
+          (Cons (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "")
+                (mr-variant-list arena pkg module t pub)))))))
+
+(defn mr-variant-name (v)
+  (match v
+    (AstIdent n n)
+    (AList xs (match xs (Cons h d1 (mr-ident-of h)) (Nil "")))
+    (d2 "")))
+
+; The definitions a package actually has, given its unified feature set:
+; everything ungated, plus the gated forms whose feature is in the set.
+(defn mr-active-defs (feats defs)
+  (match defs
+    (Nil Nil)
+    (Cons d t
+      (if (> (mr-def-active feats d) 0)
+        (Cons d (mr-active-defs feats t))
+        (mr-active-defs feats t)))))
+
+(defn mr-def-active (feats d)
+  (if (= (str-length (mrd-feature d)) 0)
+    1
+    (pk-has-capability feats (mrd-feature d))))
+
+; A gated definition that collides with a base definition is
+; E_PKG_FEATURE_COLLISION (§31.10): a feature may ADD a definition, never
+; replace one, and a collision would make the feature subtractive in
+; effect.
+(defn mr-check-feature-collisions (defs)
+  (match defs
+    (Nil 1)
+    (Cons d t
+      (if (= (str-length (mrd-feature d)) 0)
+        (mr-check-feature-collisions t)
+        (let d1 (mr-check-collision d t)
+          (mr-check-feature-collisions t))))))
+
+(defn mr-check-collision (gated rest)
+  (match rest
+    (Nil 1)
+    (Cons d t
+      (if (> (str-eq (mrd-name d) (mrd-name gated)) 0)
+        (if (= (str-length (mrd-feature d)) 0)
+          (ffi-call "zyl_panic"
+            (str-concat "E_PKG_FEATURE_COLLISION: package: gated definition "
+              (str-concat (mrd-name gated)
+                (str-concat " collides with a base definition of the same name (feature "
+                  (str-concat (mrd-feature gated) ")")))) 1000)
+          (mr-check-collision gated t))
+        (mr-check-collision gated t)))))
+
+(defn mr-find-def (defs name)
+  (match defs
+    (Nil None)
+    (Cons h t (if (> (str-eq (mrd-name h) name) 0) (Some h) (mr-find-def t name)))))
+
+(defn mr-defs-pairs (defs)
+  (match defs
+    (Nil Nil)
+    (Cons h t (Cons (QP (mrd-name h) (mrd-key h)) (mr-defs-pairs t)))))
+
+; ===========================================================================
+; FILE PATHS
+; ===========================================================================
+; A module path is a path relative to its package's root, with `.zyl`
+; appended. A package's root module — what `(use acme/json)` names — is
+; the module spelled by the package name's last segment, which is the
+; layout the standard library itself already uses (core/core, math/math).
+
+(defn mr-module-file (pkg module)
+  (str-concat (mrp-root pkg) (str-concat "/" (str-concat module ".zyl"))))
+
+(defn mr-root-module (pkg)
+  (pk-last-segment (mrp-name pkg)))
+
+(defn mr-file-exists (path)
+  (ffi-call "zyl_path_exists" path 1000))
 
 (defn mr-parse-file (arena path)
   (let fd (file-open path "r")
-    (let srcbuf (file-read fd 1048576)
-      (let d1 (file-close fd)
-        (convert-ast-list (zyl-parse arena srcbuf))))))
+    (if (< fd 1)
+      (ffi-call "zyl_panic" (str-concat "E_MODULE_NOT_FOUND: module: cannot open " path) 1000)
+      (let srcbuf (file-read fd 1048576)
+        (let d1 (file-close fd)
+          (zyl-parse arena srcbuf))))))
 
-(defn mr-module-path (name)
-  (str-concat "stdlib/" (str-concat name ".zyl")))
+; ===========================================================================
+; DISCOVERY
+; ===========================================================================
 
-; Resolve one module by name into acc, recursing into its own `use`
-; dependencies first so the merged list stays dependency-before-dependent.
-(defn mr-resolve-module (arena name acc)
-  (match acc
-    (MRAcc exprs resolved
-      (if (> (mr-str-in-list name resolved) 0)
-        acc
-        (let file-exprs (mr-parse-file arena (mr-module-path name))
-          (let uses (mr-collect-uses file-exprs)
-            (let acc2 (mr-resolve-uses arena uses (MRAcc exprs (Cons name resolved)))
-              (match acc2
-                (MRAcc exprs2 resolved2
-                  (MRAcc (mr-prepend-rev (mr-strip-use file-exprs) exprs2) resolved2))))))))))
+; Resolve a use form against the graph: which package it names, and which
+; module inside it. Order is fixed and total — a module of the importing
+; package, then the implicit stdlib, then a declared dependency's root
+; module — so the same source always names the same file.
+(defn mr-target-pkg (disc pkg u)
+  (if (> (str-length (mru-pkg u)) 0)
+    (mr-dep-pkg disc pkg (mru-pkg u))
+    (mr-implicit-pkg disc pkg (mru-module u))))
 
-(defn mr-resolve-uses (arena names acc)
-  (match names
+(defn mr-implicit-pkg (disc pkg module)
+  (if (> (mr-file-exists (mr-module-file pkg module)) 0)
+    pkg
+    (let std (mr-stdlib-pkg)
+      (if (> (mr-file-exists (mr-module-file std module)) 0)
+        std
+        (mr-dep-pkg disc pkg module)))))
+
+; A `use` naming a package that the manifest does not declare is
+; E_PKG_UNDECLARED_DEP (§24.2): the dependency graph is what the manifest
+; says it is, never what a source file reaches for.
+(defn mr-dep-pkg (disc pkg name)
+  (match (mr-find-pkg (mrd-pkgs disc) name)
+    (Some p p)
+    (None (ffi-call "zyl_panic"
+            (str-concat "E_PKG_UNDECLARED_DEP: module: use names package "
+              (str-concat name (str-concat ", absent from the manifest of " (mrp-name pkg)))) 1000))))
+
+(defn mr-target-module (disc pkg u)
+  (let target (mr-target-pkg disc pkg u)
+    (if (> (str-length (mru-pkg u)) 0)
+      (mru-module u)
+      (if (> (str-eq (mrp-name target) (mrp-name pkg)) 0)
+        (mru-module u)
+        (mr-target-module-name target (mru-module u))))))
+
+(defn mr-target-module-name (target module)
+  (if (> (mr-file-exists (mr-module-file target module)) 0)
+    module
+    (mr-root-module target)))
+
+; `unsafe` can never be a module name: the lexer discards whitespace, so
+; `(use pkg :unsafe)` and `(use pkg:unsafe)` are the same token stream and
+; the marker has to win (§24.2).
+(defn mr-check-module-name (module pkgname)
+  (if (> (str-eq module "unsafe") 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_RESERVED_MODULE: module: unsafe is a reserved module name, used in " pkgname) 1000)
+    1))
+
+(defn mr-discover (arena disc stack pkg module)
+  (let id (mr-unit-id (mrp-name pkg) module)
+    (if (> (mr-str-in-list id (mrd-seen disc)) 0)
+      disc
+      (if (> (mr-str-in-list id stack) 0)
+        (mr-cycle-error id stack)
+        (mr-discover-new arena disc stack pkg module)))))
+
+; A cycle inside one package is E_MODULE_CYCLE; a cycle that leaves and
+; re-enters a package is E_PKG_CYCLE (§24.5).
+(defn mr-cycle-error (id stack)
+  (if (> (mr-same-pkg-cycle id stack) 0)
+    (ffi-call "zyl_panic" (str-concat "E_MODULE_CYCLE: module: module graph is not a DAG at " id) 1000)
+    (ffi-call "zyl_panic" (str-concat "E_PKG_CYCLE: package: dependency graph is not a DAG at " id) 1000)))
+
+(defn mr-same-pkg-cycle (id stack)
+  (let p (mr-id-pkg id)
+    (mr-all-same-pkg p stack)))
+
+(defn mr-id-pkg (id)
+  (let i (pk-index-of id 124 0)
+    (if (< i 0) id (pk-sub id 0 i))))
+
+(defn mr-all-same-pkg (p stack)
+  (match stack
+    (Nil 1)
+    (Cons h t (if (> (str-eq (mr-id-pkg h) p) 0) (mr-all-same-pkg p t) 0))))
+
+(defn mr-discover-new (arena disc stack pkg module)
+  (let d1 (mr-check-module-name module (mrp-name pkg))
+    (let path (mr-module-file pkg module)
+      (if (= (mr-file-exists path) 0)
+        (mr-missing-module pkg module path)
+        (mr-discover-forms arena disc stack pkg module)))))
+
+(defn mr-missing-module (pkg module path)
+  (if (> (mrp-manifested pkg) 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_UNKNOWN_MODULE: module: module " (str-concat module
+        (str-concat " does not exist in package " (mrp-name pkg)))) 1000)
+    (ffi-call "zyl_panic"
+      (str-concat "E_MODULE_NOT_FOUND: module: module " (str-concat module
+        (str-concat " not found at " path))) 1000)))
+
+(defn mr-discover-forms (arena disc stack pkg module)
+  (let forms (mr-parse-file arena (mr-module-file pkg module))
+    (let uses (mr-collect-uses forms)
+      (let defs (mr-collect-defs arena pkg module forms)
+        (let id (mr-unit-id (mrp-name pkg) module)
+          (let disc2 (mr-discover-deps arena (mr-with-pkgs disc arena pkg)
+                                       (Cons id stack) pkg uses)
+            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id)))))))
+
+(defn mr-add-unit (disc unit id)
+  (match disc
+    (MRD units seen pkgs (MRD (Cons unit units) (Cons id seen) pkgs))))
+
+(defn mr-discover-deps (arena disc stack pkg uses)
+  (match uses
+    (Nil disc)
+    (Cons u rest
+      (mr-discover-deps arena (mr-discover-use arena disc stack pkg u) stack pkg rest))))
+
+(defn mr-discover-use (arena disc stack pkg u)
+  (let target (mr-target-pkg disc pkg u)
+    (mr-discover arena disc stack target (mr-target-module disc pkg u))))
+
+; ===========================================================================
+; DEPENDENCY PACKAGES
+; ===========================================================================
+; A package's own manifest is read once, when the package first enters the
+; graph, and its path dependencies become packages of their own. Registry
+; dependencies need the content store, which `zyl fetch` fills; a build
+; that needs one and has not got it is E_PKG_NOT_IN_STORE (§31.7).
+
+(defn mr-with-pkgs (disc arena pkg)
+  (if (> (mrp-manifested pkg) 0)
+    (mr-load-deps disc arena pkg)
+    disc))
+
+(defn mr-load-deps (disc arena pkg)
+  (let manifest-path (str-concat (mrp-root pkg) "/zyl.pkg")
+    (if (= (mr-file-exists manifest-path) 0)
+      disc
+      (let m (pk-read-manifest arena manifest-path)
+        (mr-add-dep-pkgs disc arena pkg (mf-deps m))))))
+
+(defn mr-add-dep-pkgs (disc arena pkg deps)
+  (match deps
+    (Nil disc)
+    (Cons d rest (mr-add-dep-pkgs (mr-add-dep-pkg disc arena pkg d) arena pkg rest))))
+
+(defn mr-add-dep-pkg (disc arena pkg d)
+  (match (mr-find-pkg (mrd-pkgs disc) (pd-name d))
+    (Some existing (mr-unify-features disc existing d))
+    (None (mr-new-dep-pkg disc arena pkg d))))
+
+; A second edge to a package it already knows contributes its features
+; and nothing else: §31.10 unifies them across the graph, so the set only
+; ever grows and the package is still compiled once.
+(defn mr-unify-features (disc existing d)
+  (let merged (pk-caps-union (mrp-features existing) (pd-features d))
+    (if (= (list-length merged) (list-length (mrp-features existing)))
+      disc
+      (mr-replace-pkg disc (MRP (mrp-name existing) (mrp-major existing) (mrp-root existing)
+                                (mrp-manifested existing) (mrp-caps existing) merged)))))
+
+(defn mr-replace-pkg (disc entry)
+  (match disc
+    (MRD units seen pkgs (MRD units seen (mr-replace-pkg-in pkgs entry)))))
+
+(defn mr-replace-pkg-in (pkgs entry)
+  (match pkgs
+    (Nil (Cons entry Nil))
+    (Cons h t
+      (if (> (str-eq (mrp-name h) (mrp-name entry)) 0)
+        (Cons entry t)
+        (Cons h (mr-replace-pkg-in t entry))))))
+
+(defn mr-new-dep-pkg (disc arena pkg d)
+  (let root (mr-dep-root arena pkg d)
+    (let d1 (mr-check-dep-features arena root d)
+      (let entry (MRP (pd-name d) (mr-dep-major d) root 1 (mr-dep-caps arena root)
+                      (pd-features d))
+        (match disc
+          (MRD units seen pkgs (MRD units seen (Cons entry pkgs))))))))
+
+; A requested feature must be one the dependency declares (§31.10);
+; otherwise the request is a typo that would silently enable nothing.
+(defn mr-check-dep-features (arena root d)
+  (if (is-nil (pd-features d))
+    1
+    (let path (str-concat root "/zyl.pkg")
+      (if (= (mr-file-exists path) 0)
+        1
+        (mr-check-features-in (mf-features (pk-read-manifest arena path))
+                              (pd-features d) (pd-name d))))))
+
+(defn mr-check-features-in (declared wanted name)
+  (match wanted
+    (Nil 1)
+    (Cons f t
+      (if (> (mr-feature-declared declared f) 0)
+        (mr-check-features-in declared t name)
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_FEATURE_UNKNOWN: package: feature " (str-concat f
+            (str-concat " is not declared by " name))) 1000)))))
+
+(defn mr-feature-declared (declared f)
+  (match declared
+    (Nil 0)
+    (Cons h t (if (> (str-eq (pf-name h) f) 0) 1 (mr-feature-declared t f)))))
+
+; A dependency's own ceiling comes from its own manifest, never from the
+; edge that named it: capabilities are declared, not granted (§31.9).
+(defn mr-dep-caps (arena root)
+  (let path (str-concat root "/zyl.pkg")
+    (if (> (mr-file-exists path) 0)
+      (mf-capabilities (pk-read-manifest arena path))
+      Nil)))
+
+(defn mr-dep-major (d)
+  (let pinned (pk-name-pinned-major (pd-name d))
+    (if (>= pinned 2) pinned (pv-major (pd-version d)))))
+
+(defn mr-dep-root (arena pkg d)
+  (match (pd-source d)
+    (PSPath p (str-concat (mrp-root pkg) (str-concat "/" p)))
+    (PSGit u r (mr-store-root arena pkg d))
+    (PSRegistry (mr-store-root arena pkg d))))
+
+; A registry or git dependency lives in the content store, under the hash
+; the lock recorded for it (§31.6, §31.7). The compiler never networks and
+; never guesses: without a lock entry there is nothing to look up, and the
+; answer is to run `zyl fetch`, not to reach for the index.
+(defn mr-store-root (arena pkg d)
+  (let lockpath (str-concat (mrp-root pkg) "/zyl.lock")
+    (if (= (mr-file-exists lockpath) 0)
+      (mr-no-store d)
+      (match (lk-find (lk-read arena lockpath) (pd-name d))
+        (Some lp (store-require (pd-name d) (pv-str arena (pd-version d)) (lp-hash lp)))
+        (None (mr-no-store d))))))
+
+(defn mr-no-store (d)
+  (ffi-call "zyl_panic"
+    (str-concat "E_PKG_NOT_IN_STORE: package: " (str-concat (pd-name d)
+      " is not in the store - run zyl fetch")) 1000))
+
+; ===========================================================================
+; QUALIFICATION
+; ===========================================================================
+
+(defn mr-pkg-pairs (units pkgname feats)
+  (mr-pkg-pairs-except units pkgname feats ""))
+
+; The package-wide surface as seen BY one module: every other module of
+; the package, and then — appended last, so it wins — that module's own
+; definitions.
+;
+; Precedence is the whole point. Two modules of one package may define the
+; same name — the standard library has `list-map` in both
+; `collections/collections` and `compiler/monomorphization` — and their
+; canonical keys differ because the module path is part of the key
+; (§31.2). Without this rule every module resolved such a name to
+; whichever definition happened to come last, including at the DEFINITION
+; site, so both definitions took the same key and the program held one
+; symbol defined twice.
+(defn mr-pkg-pairs-except (units pkgname feats skip)
+  (match units
+    (Nil Nil)
+    (Cons h t
+      (if (> (mr-unit-in-pkg h pkgname skip) 0)
+        (let d1 (mr-check-feature-collisions (mru2-defs h))
+          (list-append (mr-defs-pairs (mr-active-defs feats (mru2-defs h)))
+                       (mr-pkg-pairs-except t pkgname feats skip)))
+        (mr-pkg-pairs-except t pkgname feats skip)))))
+
+(defn mr-unit-in-pkg (u pkgname skip)
+  (if (= (str-eq (mru2-pkg u) pkgname) 0)
+    0
+    (if (> (str-eq (mru2-module u) skip) 0) 0 1)))
+
+; The table a module is qualified against, weakest first: the rest of its
+; package, then the modules it explicitly `use`s, then its own
+; definitions. Later entries win (see st-make).
+;
+; The middle tier is what makes an ambiguous name decidable. `st-build`
+; exists in two standard-library modules; a third module that names it
+; means the one it imported, not whichever the traversal reached last.
+; Without a `use` to go on the name stays ambiguous and the last
+; definition wins — which is the same rule the flat namespace had, now at
+; least confined to names nobody disambiguated.
+(defn mr-unit-table-pairs (units u feats)
+  (list-append (mr-pkg-pairs-except units (mru2-pkg u) feats (mru2-module u))
+    (list-append (mr-used-module-pairs units u feats)
+                 (mr-defs-pairs (mr-active-defs feats (mru2-defs u))))))
+
+(defn mr-used-module-pairs (units u feats)
+  (mr-used-pairs-in units (mru2-pkg u) feats (mru2-uses u)))
+
+(defn mr-used-pairs-in (units pkgname feats uses)
+  (match uses
+    (Nil Nil)
+    (Cons u2 t
+      (list-append (mr-used-one units pkgname feats (mru-module u2))
+                   (mr-used-pairs-in units pkgname feats t)))))
+
+; A `use` naming a module of ANOTHER package finds nothing here, which is
+; correct: those names arrive through the import table instead.
+(defn mr-used-one (units pkgname feats module)
+  (match (mr-find-unit units pkgname module)
+    (Some unit (mr-defs-pairs (mr-active-defs feats (mru2-defs unit))))
+    (None Nil)))
+
+(defn mr-find-unit (units pkgname module)
+  (match units
+    (Nil None)
+    (Cons h t
+      (if (> (str-eq (mru2-pkg h) pkgname) 0)
+        (if (> (str-eq (mru2-module h) module) 0) (Some h) (mr-find-unit t pkgname module))
+        (mr-find-unit t pkgname module)))))
+
+; Import pairs for one unit: everything its `use` forms bring in from
+; OTHER packages. Same-package imports need nothing here, since the
+; package table already carries the whole package (§24.4).
+(defn mr-import-pairs (disc units pkg uses)
+  (match uses
+    (Nil Nil)
+    (Cons u rest
+      (list-append (mr-one-import disc units pkg u)
+                   (mr-import-pairs disc units pkg rest)))))
+
+(defn mr-one-import (disc units pkg u)
+  (let target (mr-target-pkg disc pkg u)
+    (if (> (str-eq (mrp-name target) (mrp-name pkg)) 0)
+      Nil
+      (if (= (mrp-manifested target) 0)
+        (mr-implicit-import disc units pkg target u)
+        (mr-import-from disc units pkg target u)))))
+
+; The implicit standard library (SS25) has no manifest, so it declares
+; neither a `pub` surface nor a module-by-module import contract: using
+; ANY stdlib module exposes the whole loaded stdlib surface, which is what
+; every program compiled before packages existed already relied on
+; (testing/testing pulls in allocator's str-eq, collections pulls in map,
+; and neither is named by the program's own `use` lines). A named symbol
+; list still adds its aliases on top. Phase 2 of the package plan gives
+; stdlib a real zyl.pkg and an explicit surface, at which point this
+; collapses into the ordinary cross-package rule below.
+(defn mr-implicit-import (disc units pkg target u)
+  (list-append (mr-pkg-pairs units (mrp-name target) (mrp-features target))
+               (mr-alias-pairs disc units pkg target u)))
+
+; Only the renaming imports need adding separately: a plain `{ a b }` list
+; names symbols the whole-surface import already carries.
+(defn mr-alias-pairs (disc units pkg target u)
+  (match (mru-syms u)
+    (Nil Nil)
+    (Cons d1 d2 (mr-import-from disc units pkg target u))))
+
+(defn mr-import-from (disc units pkg target u)
+  (let module (mr-target-module disc pkg u)
+    (match (mr-find-unit units (mrp-name target) module)
+      (Some unit (mr-filter-import target unit u))
+      (None Nil))))
+
+; With an explicit symbol list, exactly those names are imported (and
+; checked); otherwise the module's whole visible surface is.
+(defn mr-filter-import (target unit u)
+  (match (mru-syms u)
+    (Nil (mr-visible-pairs target (mr-active-defs (mrp-features target) (mru2-defs unit))))
+    (Cons d1 d2 (mr-named-imports target unit (mru-syms u)))))
+
+(defn mr-visible-pairs (target defs)
+  (match defs
+    (Nil Nil)
+    (Cons h t
+      (if (> (mr-def-visible target h) 0)
+        (Cons (QP (mrd-name h) (mrd-key h)) (mr-visible-pairs target t))
+        (mr-visible-pairs target t)))))
+
+; The implicit stdlib has no manifest in which to write a `pub` surface,
+; so everything in it is visible; a manifested package exports only `pub`.
+(defn mr-def-visible (target d)
+  (if (= (mrp-manifested target) 0) 1 (mrd-pub d)))
+
+(defn mr-named-imports (target unit syms)
+  (match syms
+    (Nil Nil)
+    (Cons s rest
+      (Cons (mr-one-named-import target unit s) (mr-named-imports target unit rest)))))
+
+(defn mr-one-named-import (target unit s)
+  (match (mr-find-def (mr-active-defs (mrp-features target) (mru2-defs unit)) (mrs-remote s))
+    (Some d (mr-checked-import target unit d s))
+    (None (ffi-call "zyl_panic"
+            (str-concat "E_PKG_UNKNOWN_SYMBOL: module: symbol " (str-concat (mrs-remote s)
+              (str-concat " does not exist in " (mru2-module unit)))) 1000))))
+
+(defn mr-checked-import (target unit d s)
+  (if (> (mr-def-visible target d) 0)
+    (QP (mrs-local s) (mrd-key d))
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_PRIVATE_SYMBOL: module: symbol " (str-concat (mrd-name d)
+        (str-concat " imported from " (str-concat (mru2-module unit) " is not pub")))) 1000)))
+
+; ===========================================================================
+; SPLICING
+; ===========================================================================
+
+; `use`, `module` and `export` carry no runtime behaviour: they are the
+; resolver's own input and are dropped once it has read them. `pub` is
+; unwrapped, having been recorded at definition-collection time.
+(defn mr-strip-module-forms (feats forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (let h (mr-ast-head f)
+        (if (> (str-eq h "use") 0)
+          (mr-strip-module-forms feats rest)
+          (if (> (str-eq h "module") 0)
+            (mr-strip-module-forms feats rest)
+            (if (> (str-eq h "export") 0)
+              (mr-strip-module-forms feats rest)
+              (if (> (str-eq h "pub") 0)
+                (list-append (mr-unwrap-pub f) (mr-strip-module-forms feats rest))
+                (if (> (str-eq h "feature-gate") 0)
+                  (list-append (mr-unwrap-gate feats f) (mr-strip-module-forms feats rest))
+                  (Cons f (mr-strip-module-forms feats rest)))))))))))
+
+; An inactive feature's definitions are not compiled at all — that is what
+; makes an optional dependency optional (§31.10). An active one is
+; unwrapped to the definition it guards.
+(defn mr-unwrap-gate (feats f)
+  (match (mr-ast-args f)
+    (Nil Nil)
+    (Cons featureast rest
+      (if (> (pk-has-capability feats (mr-ident-of featureast)) 0)
+        (mr-gate-inner rest)
+        Nil))))
+
+(defn mr-gate-inner (rest)
+  (match rest
+    (Nil Nil)
+    (Cons f d1 (Cons f Nil))))
+
+(defn mr-unwrap-pub (f)
+  (match (mr-ast-args f)
+    (Nil Nil)
+    (Cons d1 d2 (Cons (AList (mr-ast-args f)) Nil))))
+
+(defn mr-qualify-units (arena disc all pkgs todo acc)
+  (match todo
     (Nil acc)
-    (Cons n rest (mr-resolve-uses arena rest (mr-resolve-module arena n acc)))))
+    (Cons u rest
+      (mr-qualify-units arena disc all pkgs rest
+        (mr-prepend-rev (mr-qualify-unit arena disc all pkgs u) acc)))))
 
+(defn mr-qualify-unit (arena disc units pkgs u)
+  (let pkg (mr-unit-pkg pkgs (mru2-pkg u))
+    (let ptab (st-make arena (mr-unit-table-pairs units u (mrp-features pkg)))
+      (let itab (st-make arena (mr-import-pairs disc units pkg (mru2-uses u)))
+        (let qualified (qf-forms (QT itab ptab) Nil
+                         (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))
+          (let d1 (mr-check-coherence qualified (mrp-name pkg))
+            (convert-ast-list qualified)))))))
+
+; ===========================================================================
+; TRAIT COHERENCE (SS24.6)
+; ===========================================================================
+; The orphan rule: a package may implement a trait for a type only if it
+; DEFINES the trait or DEFINES the type. Coherence is checked over the
+; whole resolved graph, and the check is cheap here because qualification
+; has just happened: a name's package half says who defines it, so
+; locality is read off the name rather than tracked in a side table. A
+; name with no package half is a builtin or an unresolved reference, and
+; is local to nobody.
+
+(defn mr-check-coherence (forms pkgname)
+  (match forms
+    (Nil 1)
+    (Cons f rest
+      (if (> (str-eq (mr-ast-head f) "impl") 0)
+        (let d1 (mr-check-impl f pkgname)
+          (mr-check-coherence rest pkgname))
+        (mr-check-coherence rest pkgname)))))
+
+(defn mr-check-impl (f pkgname)
+  (match (mr-ast-args f)
+    (Cons traitast rest
+      (match rest
+        (Cons typeast d1
+          (mr-orphan-verdict (mr-ident-of traitast) (mr-ident-of typeast) pkgname))
+        (Nil 1)))
+    (Nil 1)))
+
+(defn mr-orphan-verdict (trait type pkgname)
+  (if (> (mr-local-name trait pkgname) 0)
+    1
+    (if (> (mr-local-name type pkgname) 0)
+      1
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_ORPHAN_IMPL: trait: impl of " (str-concat (ck-symbol-of trait)
+          (str-concat " for " (str-concat (ck-symbol-of type)
+            (str-concat " where neither the trait nor the type is local to " pkgname))))) 1000))))
+
+(defn mr-local-name (n pkgname)
+  (if (> (str-eq (ck-package-of n) pkgname) 0) 1 0))
+
+(defn mr-unit-pkg (pkgs name)
+  (match (mr-find-pkg pkgs name)
+    (Some p p)
+    (None (mr-stdlib-pkg))))
+
+; ===========================================================================
+; ENTRY POINT
+; ===========================================================================
+
+; The root package: the manifest nearest the source file, or an implicit
+; one when a lone file is compiled directly. A lone file is still a
+; package as far as §31.2 is concerned — it needs a name to key its
+; symbols by — so it gets `local/main` at major 0, which no published
+; package can collide with (a published name is scoped and registered).
+; A lone file compiled directly is still a package as far as §31.2 is
+; concerned — its symbols need a name to be keyed by — but it has
+; declared nothing, so nothing is enforced against it. It holds every
+; capability for that reason, not as a grant.
+(defn mr-root-pkg (arena srcdir)
+  (if (> (mr-file-exists (str-concat srcdir "/zyl.pkg")) 0)
+    (mr-manifest-pkg arena srcdir)
+    (MRP "local/main" 0 srcdir 0
+         (Cons "io" (Cons "ffi" (Cons "actor" (Cons "secret" (Cons "native" (Cons "unsafe" Nil))))))
+         Nil)))
+
+(defn mr-manifest-pkg (arena srcdir)
+  (let m (pk-read-manifest arena (str-concat srcdir "/zyl.pkg"))
+    (let d1 (pk-check-edition (mf-edition m) (mf-name m))
+      (let d2 (pk-check-compiler (mf-zyl m) (mf-name m))
+        (let d3 (pk-check-capabilities (mf-capabilities m) (mf-name m))
+          (MRP (mf-name m) (mf-major m) srcdir 1 (mf-capabilities m) Nil))))))
+
+(defn mr-dirname (path)
+  (ffi-call "zyl_dirname_cstr" path 1000))
+
+(defn mr-basename-module (path)
+  (let base (mr-strip-dir path)
+    (if (> (mr-ends-zyl base) 0) (pk-sub base 0 (- (pk-len base) 4)) base)))
+
+(defn mr-strip-dir (path)
+  (let i (pk-last-slash path (- (pk-len path) 1))
+    (if (< i 0) path (pk-sub path (+ i 1) (- (pk-len path) (+ i 1))))))
+
+(defn mr-ends-zyl (s)
+  (if (< (pk-len s) 4)
+    0
+    (str-eq (pk-sub s (- (pk-len s) 4) 4) ".zyl")))
+
+; The implicit core prelude: a program that participates in the module
+; system but loads none of core/core, core/option or core/result gets
+; core/core anyway, matching what every such program has always been
+; compiled with. The compiler's own assembled bundle is exempt — its
+; `use` lines are stripped at assembly time and core is already inlined,
+; so re-splicing it would be a duplicate definition.
 (defn mr-core-loaded (uses)
   (match uses
     (Nil 0)
     (Cons u rest
-      (if (> (str-eq u "core/core") 0) 1
-      (if (> (str-eq u "core/option") 0) 1
-      (if (> (str-eq u "core/result") 0) 1
+      (if (> (str-eq (mru-module u) "core/core") 0) 1
+      (if (> (str-eq (mru-module u) "core/option") 0) 1
+      (if (> (str-eq (mru-module u) "core/result") 0) 1
       (mr-core-loaded rest)))))))
 
 (defn mr-bundle-source (forms)
   (match forms
     (Nil 0)
-    (Cons e rest
-      (match (Expr.inner e)
-       (EDef name d1
-         (if (> (str-eq name "__zyl_boot_bundle") 0) 1 (mr-bundle-source rest)))
-       (d2 (mr-bundle-source rest))))))
+    (Cons f rest
+      (if (> (str-eq (mr-ast-head f) "def") 0)
+        (mr-bundle-def f rest)
+        (mr-bundle-source rest)))))
 
-; Entry point: resolve every top-level `use` in `main-exprs` (recursively,
-; dependency-first), auto-injecting core/core when the program already
-; participates in the module system (has at least one `use`) but doesn't
-; load core/core, core/option, or core/result itself — matching the Rust
-; bootstrap's behavior of giving such programs is-even/abs/square/
-; result-ok/etc. for free (e.g. ffi.zyl `use`s only ffi/ffi yet calls
-; result-ok/result-unwrap from core/result).
-;
-; Gated on "has at least one `use`" rather than replicating the Rust
-; bootstrap's unconditional injection: the self-hosted compiler's OWN
-; bundled source (assemble.py's output) has every `use` line stripped
-; during assembly, since core/option, /result, and /list are already
-; inlined directly as bundle files. Unconditional auto-injection would
-; re-parse and re-splice those same definitions a second time, straight
-; into an E_DUPLICATE_VARIANT panic (or a duplicate-symbol link error)
-; the moment the self-hosted compiler tried to compile itself. No test
-; in this corpus needs core's helpers with literally zero `use` lines of
-; its own.
-(defn mr-resolve-program (arena main-exprs)
-  (let uses (mr-collect-uses main-exprs)
-    (let uses2
-      (if (> (mr-bundle-source main-exprs) 0)
-        uses
-        (if (> (mr-core-loaded uses) 0) uses (Cons "core/core" uses)))
-      (let acc (mr-resolve-uses arena uses2 (MRAcc Nil Nil))
-        (match acc
-          (MRAcc dep-exprs-rev d1
-            (list-reverse (mr-prepend-rev (mr-strip-use main-exprs) dep-exprs-rev))))))))
+(defn mr-bundle-def (f rest)
+  (match (mr-ast-args f)
+    (Cons nameast d1
+      (if (> (str-eq (mr-ident-of nameast) "__zyl_boot_bundle") 0) 1 (mr-bundle-source rest)))
+    (Nil (mr-bundle-source rest))))
+
+; Resolve `main-forms` (raw Ast, as parsed from `srcpath`) into one
+; spliced, fully qualified expression list in dependency-first order.
+(defn mr-resolve-program (arena main-forms srcpath)
+  (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+    (let module (mr-basename-module srcpath)
+      (let uses (mr-collect-uses main-forms)
+        (let defs (mr-collect-defs arena pkg module main-forms)
+          (let root (MRUN (mrp-name pkg) module main-forms
+                          (mr-root-uses main-forms uses) defs)
+            (mr-resolve-root arena pkg root (mr-root-uses main-forms uses))))))))
+
+(defn mr-root-uses (main-forms uses)
+  (if (> (mr-bundle-source main-forms) 0)
+    uses
+    (if (> (mr-core-loaded uses) 0)
+      uses
+      (Cons (MRU "" "core/core" 1 Nil 0) uses))))
+
+; What the resolver knows once it is done: the spliced program, the
+; capability ceiling of every package in it, and the root's graph-wide
+; denials (§31.9).
+(deftype MRResult (MRR (List Expr) (List CapGrant) (List String)))
+
+(defn mrr-exprs (r) (match r (MRR e d1 d2 e)))
+(defn mrr-grants (r) (match r (MRR d1 g d2 g)))
+(defn mrr-denied (r) (match r (MRR d1 d2 d d)))
+
+(defn mr-grants-of (pkgs)
+  (match pkgs
+    (Nil Nil)
+    (Cons p t (Cons (CG (mrp-name p) (mrp-caps p) (mrp-manifested p)) (mr-grants-of t)))))
+
+(defn mr-denied-of (arena pkg)
+  (let path (str-concat (mrp-root pkg) "/zyl.pkg")
+    (if (> (mr-file-exists path) 0)
+      (mf-denied (pk-read-manifest arena path))
+      Nil)))
+
+; Same resolution, with the package facts the capability pass needs.
+(defn mr-resolve-program-full (arena main-forms srcpath)
+  (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+    (let module (mr-basename-module srcpath)
+      (let uses (mr-collect-uses main-forms)
+        (let defs (mr-collect-defs arena pkg module main-forms)
+          (let root (MRUN (mrp-name pkg) module main-forms
+                          (mr-root-uses main-forms uses) defs)
+            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses))))))))
+
+(defn mr-resolve-full (arena pkg root uses)
+  (let disc0 (MRD Nil Nil (Cons pkg (Cons (mr-stdlib-pkg) Nil)))
+    (let id (mr-unit-id (mrp-name pkg) (mru2-module root))
+      (let disc1 (mr-discover-deps arena (mr-with-pkgs disc0 arena pkg)
+                                   (Cons id Nil) pkg uses)
+        (let disc (mr-add-unit disc1 root id)
+          (let units (list-reverse (mrd-units disc))
+            (MRR (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))
+                 (mr-grants-of (mrd-pkgs disc))
+                 (mr-denied-of arena pkg))))))))
+
+(defn mr-resolve-root (arena pkg root uses)
+  (let disc0 (MRD Nil Nil (Cons pkg (Cons (mr-stdlib-pkg) Nil)))
+    (let id (mr-unit-id (mrp-name pkg) (mru2-module root))
+      (let disc1 (mr-discover-deps arena (mr-with-pkgs disc0 arena pkg)
+                                   (Cons id Nil) pkg uses)
+        (let disc (mr-add-unit disc1 root id)
+          (let units (list-reverse (mrd-units disc))
+            (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))))))

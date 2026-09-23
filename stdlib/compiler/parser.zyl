@@ -104,7 +104,11 @@
     (TkString s (AstOf (AString s) rest))
     (TkIdent s (AstOf (AstIdent s) rest))
     (TkSymbol s (AstOf (AstIdent s) rest))
-    (TkKeyword s (AstOf (AstIdent s) rest))
+    ; A keyword keeps its ':' so a consumer can tell `(use pkg:mod)` from
+    ; `(use pkg mod)`: the lexer discards whitespace, so the two differ
+    ; only in this token's kind, and §24.2 gives the colon form its own
+    ; meaning (package:module). Consumers of `:le`/`:be` strip it.
+    (TkKeyword s (AstOf (AstIdent (str-concat ":" s)) rest))
     ; closers / colon / eof in atom position: empty form
     (TkEof (AstOf (AList Nil) rest))
     (TkLParen (AstOf (AList (no-forms)) rest))

@@ -1,0 +1,2 @@
+(use acme/plain { base })
+(defn main () (base 0))

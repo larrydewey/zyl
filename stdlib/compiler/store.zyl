@@ -1,0 +1,308 @@
+; === Zyl Standard Library — Content Store and Canonical Archives ===
+; Module: compiler/store
+;
+; Spec v5.0 §31.7. Two rules govern everything here:
+;
+;   `zyl fetch` is the ONLY command permitted to touch the network.
+;   `zyl build` reads the store and never networks (E_PKG_NOT_IN_STORE).
+;
+; The store is content-addressed: a package's directory is named by the
+; BLAKE3 hash of its canonical archive, so two packages with the same
+; contents share one directory and a tampered download cannot occupy the
+; name of a good one.
+;
+; The canonical archive is a tar whose every degree of freedom is pinned —
+; sorted paths, normalised modes, zeroed timestamps and ownership, no
+; symlinks or devices — so that producers on different machines agree on
+; the hash. The recorded hash is over the UNCOMPRESSED tar, which is why
+; the compressor's settings can never change a package's identity.
+;
+; Archiving and fetching shell out to `tar`, `zstd`, `git` and `curl`.
+; Every argument that reaches a shell is validated here first: a package
+; name, version, URL or revision that is not drawn from a strict
+; character set is refused rather than quoted, because quoting is a
+; weaker guarantee than never emitting the byte at all.
+
+(use compiler/package)
+(use core/list)
+(use core/option)
+
+; ===========================================================================
+; LOCATIONS
+; ===========================================================================
+
+; ZYL_HOME overrides, matching the compiler's own stdlib lookup; otherwise
+; $HOME/.zyl, the per-user toolchain convention the driver already uses.
+(defn store-home ()
+  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
+    (if (> zh 0)
+      zh
+      (let home (ffi-call "zyl_getenv" "HOME" 1000)
+        (if (> home 0) (str-concat home "/.zyl") ".zyl")))))
+
+(defn store-root ()
+  (str-concat (store-home) "/store"))
+
+; `~/.zyl/store/blake3/<hash>/` (§31.7). The algorithm is part of the
+; path so a future second hash never collides with this one's namespace.
+(defn store-dir (hash)
+  (str-concat (store-root) (str-concat "/blake3/" (store-strip-prefix hash))))
+
+; Hashes travel as "blake3:<hex>" in manifests and locks; on disk only the
+; hex is used.
+(defn store-strip-prefix (h)
+  (let i (pk-index-of h 58 0)
+    (if (< i 0) h (pk-sub h (+ i 1) (- (pk-len h) (+ i 1))))))
+
+(defn store-has (hash)
+  (ffi-call "zyl_path_exists" (store-dir hash) 1000))
+
+(defn store-index-dir ()
+  (str-concat (store-home) "/index"))
+
+(defn store-keys-dir ()
+  (str-concat (store-home) "/keys"))
+
+; A package's pinned publisher key lives beside the store, one file per
+; package, which is what makes trust-on-first-use (§31.8) survive a lock
+; being regenerated.
+(defn store-key-path (name)
+  (str-concat (store-keys-dir) (str-concat "/" (store-flat-name name))))
+
+; `acme/json` -> `acme_json`: one file per package, no nested directories
+; to create. Package names are already restricted to [a-z0-9-_/], so this
+; is injective over the names that can exist.
+(defn store-flat-name (name)
+  (store-replace-slash name 0 ""))
+
+(defn store-replace-slash (s i acc)
+  (if (>= i (pk-len s))
+    acc
+    (store-replace-slash s (+ i 1)
+      (str-concat acc (if (= (pk-byte-at s i) 47) "_" (pk-sub s i 1))))))
+
+; ===========================================================================
+; SHELL-SAFE ARGUMENTS
+; ===========================================================================
+; Everything below builds a command line. A byte outside these sets never
+; reaches it: the check is a whitelist, and the failure is an error, not
+; an escape.
+
+(defn store-path-char-ok (c)
+  (if (= (pk-name-char-ok c) 1)
+    1
+    (if (= c 46) 1                      ; .
+      (if (= c 43) 1 0))))              ; +
+
+(defn store-url-char-ok (c)
+  (if (= (store-path-char-ok c) 1)
+    1
+    (if (= c 58) 1                      ; :
+      (if (= c 126) 1                   ; ~
+        (if (= c 37) 1                  ; %
+          (if (= c 63) 1                ; ?
+            (if (= c 61) 1 0)))))))     ; =
+
+(defn store-chars-ok (s i upper)
+  (if (>= i (pk-len s))
+    1
+    (if (= (store-char-ok (pk-byte-at s i) upper) 0)
+      0
+      (store-chars-ok s (+ i 1) upper))))
+
+(defn store-char-ok (c upper)
+  (if (> upper 0)
+    (if (>= c 65) (if (<= c 90) 1 (store-char-ok2 c upper)) (store-char-ok2 c upper))
+    (store-char-ok2 c upper)))
+
+(defn store-char-ok2 (c upper)
+  (if (= upper 2) (store-url-char-ok c) (store-path-char-ok c)))
+
+; kind: 0 path-ish, 1 path-ish + uppercase, 2 URL + uppercase.
+(defn store-safe (s kind label)
+  (if (= (pk-len s) 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_FETCH_FAILED: package: empty " label) 1000)
+    (if (> (store-chars-ok s 0 (if (= kind 0) 0 (if (= kind 1) 1 2))) 0)
+      s
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_FETCH_FAILED: package: refusing unsafe characters in "
+          (str-concat label (str-concat ": " s))) 1000))))
+
+; zyl_system_cmd, never zyl_exec_cmd: the latter ends in execl and
+; REPLACES this process, which is exactly right for the link step at the
+; end of a compile and exactly wrong for everything here — a `cc -c`, a
+; `tar`, a `git fetch` all have to return so the build can continue.
+(defn store-run (cmd)
+  (ffi-call "zyl_system_cmd" cmd 1000))
+
+(defn store-mkdir (path)
+  (store-run (str-concat "mkdir -p '" (str-concat path "'"))))
+
+; ===========================================================================
+; CANONICAL ARCHIVE (§31.7)
+; ===========================================================================
+; Ordering, modes, timestamps and ownership are all forced. `--sort=name`
+; fixes the entry order; `--mtime=@0`, `--owner=0 --group=0` and
+; `--numeric-owner` zero the metadata; `--format=ustar` keeps the header
+; layout fixed; and modes are normalised on disk first, because tar's own
+; `--mode` cannot express "0644 for files, 0755 for directories".
+;
+; Excluded by the spec: build/, .git/, zyl.lock, plus the manifest's own
+; (exclude ...) patterns.
+
+(defn store-normalise-modes (root)
+  (let d1 (store-run (str-concat "find '" (str-concat root "' -type d -exec chmod 0755 {} +")))
+    (store-run (str-concat "find '" (str-concat root "' -type f -exec chmod 0644 {} +")))))
+
+(defn store-tar-flags ()
+  "--format=ustar --sort=name --numeric-owner --owner=0 --group=0 --mtime=@0 --exclude=./build --exclude=./.git --exclude=./zyl.lock")
+
+; Writes the UNCOMPRESSED canonical tar, whose hash is the package's
+; identity, and returns that hash as "blake3:<hex>".
+(defn store-write-tar (arena root outtar)
+  (store-write-tar-excluding arena root outtar Nil))
+
+; `exclude` carries the manifest's own (exclude ...) patterns (§31.3), on
+; top of the three the spec always drops. Each is validated before it
+; reaches the command line, like every other argument here.
+(defn store-write-tar-excluding (arena root outtar exclude)
+  (let d1 (store-safe root 1 "package root")
+    (let d2 (store-safe outtar 1 "archive path")
+      (let d3 (store-normalise-modes root)
+        (let rc (store-run
+                  (str-concat "tar " (str-concat (store-tar-flags)
+                    (str-concat (store-exclude-flags exclude)
+                      (str-concat " -cf '" (str-concat outtar
+                        (str-concat "' -C '" (str-concat root "' ."))))))))
+          (if (= rc 0)
+            (str-concat "blake3:" (ffi-call "zyl_blake3_file_hex" arena outtar 32 1000))
+            (ffi-call "zyl_panic"
+              (str-concat "E_PKG_ARCHIVE_INVALID: package: tar failed for " root) 1000)))))))
+
+(defn store-exclude-flags (exclude)
+  (match exclude
+    (Nil "")
+    (Cons h t
+      (let d1 (store-safe h 1 "exclude pattern")
+        (str-concat " --exclude='./" (str-concat h (str-concat "'" (store-exclude-flags t))))))))
+
+; zstd level 19 with long-distance matching off (§31.7). Compression is
+; transport only: the hash above is already fixed.
+(defn store-compress (tarpath outpath)
+  (let d1 (store-safe tarpath 1 "archive path")
+    (let d2 (store-safe outpath 1 "archive path")
+      (let rc (store-run
+                (str-concat "zstd -19 --long=0 -q -f -o '"
+                  (str-concat outpath (str-concat "' '" (str-concat tarpath "'")))))
+        (if (= rc 0)
+          outpath
+          (ffi-call "zyl_panic"
+            (str-concat "E_PKG_ARCHIVE_INVALID: package: zstd failed for " tarpath) 1000))))))
+
+(defn store-decompress (inpath outtar)
+  (let d1 (store-safe inpath 1 "archive path")
+    (let d2 (store-safe outtar 1 "archive path")
+      (let rc (store-run
+                (str-concat "zstd -d -q -f -o '"
+                  (str-concat outtar (str-concat "' '" (str-concat inpath "'")))))
+        (if (= rc 0)
+          outtar
+          (ffi-call "zyl_panic"
+            (str-concat "E_PKG_ARCHIVE_INVALID: package: cannot decompress " inpath) 1000))))))
+
+; A canonical archive holds regular files and directories only. tar's
+; verbose listing starts each line with the entry's type character, so a
+; symlink ('l'), device ('c'/'b'), fifo ('p') or hard link ('h') is
+; visible without extracting anything — which is the point: an archive is
+; checked BEFORE its contents touch the filesystem.
+(defn store-check-entries (tarpath)
+  (let rc (store-run
+            (str-concat "tar -tvf '" (str-concat tarpath
+              "' | grep -qE '^[lbcps]' && exit 1 || exit 0")))
+    (if (= rc 0)
+      1
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_ARCHIVE_INVALID: package: archive contains a non-regular entry: " tarpath) 1000))))
+
+(defn store-extract-tar (tarpath dest)
+  (let d1 (store-safe tarpath 1 "archive path")
+    (let d2 (store-safe dest 1 "destination")
+      (let d3 (store-check-entries tarpath)
+        (let d4 (store-mkdir dest)
+          (let rc (store-run
+                    (str-concat "tar --no-same-owner --no-same-permissions -xf '"
+                      (str-concat tarpath (str-concat "' -C '" (str-concat dest "'")))))
+            (if (= rc 0)
+              dest
+              (ffi-call "zyl_panic"
+                (str-concat "E_PKG_ARCHIVE_INVALID: package: cannot extract " tarpath) 1000))))))))
+
+; ===========================================================================
+; FETCHING (§31.7, §31.8)
+; ===========================================================================
+; The only networking in the toolchain. Both paths land in a temporary
+; file, are hashed, and only then move into the store under their hash —
+; so a partial or corrupted download is never visible as a valid package.
+
+(defn store-tmp-path (name suffix)
+  (str-concat (store-home) (str-concat "/tmp/" (str-concat (store-flat-name name) suffix))))
+
+(defn store-fetch-url (url out)
+  (let d1 (store-safe url 2 "url")
+    (let d2 (store-safe out 1 "download path")
+      (let d3 (store-mkdir (str-concat (store-home) "/tmp"))
+        (let rc (store-run
+                  (str-concat "curl -fsSL --proto '=https' -o '"
+                    (str-concat out (str-concat "' '" (str-concat url "'")))))
+          (if (= rc 0)
+            out
+            (ffi-call "zyl_panic"
+              (str-concat "E_PKG_FETCH_FAILED: package: curl failed for " url) 1000)))))))
+
+; A git dependency is pinned by revision, never by branch: a branch moves,
+; and §31.8 makes published versions immutable.
+(defn store-fetch-git (url rev dest)
+  (let d1 (store-safe url 2 "git url")
+    (let d2 (store-safe rev 1 "git revision")
+      (let d3 (store-safe dest 1 "destination")
+        (let d4 (store-mkdir dest)
+          (let rc (store-run
+                    (str-concat "git -C '" (str-concat dest
+                      (str-concat "' init -q && git -C '" (str-concat dest
+                        (str-concat "' fetch -q --depth 1 '" (str-concat url
+                          (str-concat "' '" (str-concat rev
+                            (str-concat "' && git -C '" (str-concat dest
+                              "' checkout -q FETCH_HEAD")))))))))))
+            (if (= rc 0)
+              dest
+              (ffi-call "zyl_panic"
+                (str-concat "E_PKG_FETCH_FAILED: package: git failed for " url) 1000))))))))
+
+; Install an already-verified archive into the store under its hash. The
+; hash is recomputed here rather than trusted from the caller: the store's
+; invariant is that a directory's name IS its contents' hash.
+(defn store-install (arena tarpath expected)
+  (let got (str-concat "blake3:" (ffi-call "zyl_blake3_file_hex" arena tarpath 32 1000))
+    (if (> (str-eq got expected) 0)
+      (let dir (store-dir got)
+        (if (> (ffi-call "zyl_path_exists" dir 1000) 0)
+          dir
+          (store-extract-tar tarpath dir)))
+      (ffi-call "zyl_panic"
+        (str-concat "E_PKG_HASH_MISMATCH: package: archive hash " (str-concat got
+          (str-concat " differs from the expected " expected))) 1000))))
+
+; Where a locked package's source lives, or an error naming what to run.
+; This is the one place `zyl build`'s offline rule is enforced.
+(defn store-require (name version hash)
+  (if (= (str-length hash) 0)
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_NOT_IN_STORE: package: " (str-concat name
+        " has no recorded hash - run zyl fetch")) 1000)
+    (let dir (store-dir hash)
+      (if (> (ffi-call "zyl_path_exists" dir 1000) 0)
+        dir
+        (ffi-call "zyl_panic"
+          (str-concat "E_PKG_NOT_IN_STORE: package: " (str-concat name
+            (str-concat " " (str-concat version " is not in the store - run zyl fetch")))) 1000)))))

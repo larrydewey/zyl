@@ -1,0 +1,2 @@
+(pub defn public-helper (n) (+ n 1))
+(defn private-helper (n) (+ n 2))

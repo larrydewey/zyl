@@ -1,0 +1,10 @@
+; Root module of app/native: `zyl build` compiles the module named by the
+; package's last segment, links the native object beside it, and records
+; what went into the binary in zyl.buildinfo (§31.12).
+
+(use testing/testing)
+
+(test "native object is linked and callable"
+  (assert-equal (ffi-call "zyl_native_double" 21 1000) 42))
+
+(run-tests)

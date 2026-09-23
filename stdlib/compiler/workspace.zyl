@@ -1,0 +1,206 @@
+; === Zyl Standard Library — Workspaces ===
+; Module: compiler/workspace
+;
+; Spec v5.0 §31.11. A workspace root carries `zyl-workspace.zyl`:
+;
+;     (workspace (members "stdlib" "selfhost" "tools/lsp") (overrides ...))
+;
+; One `zyl.lock` at the root covers every member, and one store and build
+; cache are shared. Members depend on one another by path and MUST still
+; carry a version matching the target's manifest, so a member stays
+; publishable on its own — a workspace is a development convenience, not
+; a different kind of package.
+;
+; Because §31.5 is a pure function of the manifests, a single root lock
+; cannot skew between members: two members that both depend on `acme/json`
+; see the same selection by construction, not by a lockfile rule.
+
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/package)
+(use compiler/parser)
+(use core/list)
+(use core/option)
+
+(deftype PkgWorkspace (WS String (List String) (List PkgOverride)))
+
+(defn ws-root (w) (match w (WS r d1 d2 r)))
+(defn ws-members (w) (match w (WS d1 m d2 m)))
+(defn ws-overrides (w) (match w (WS d1 d2 o o)))
+
+(defn ws-file-name () "zyl-workspace.zyl")
+
+(defn ws-path (dir)
+  (str-concat dir (str-concat "/" (ws-file-name))))
+
+(defn ws-exists (dir)
+  (ffi-call "zyl_path_exists" (ws-path dir) 1000))
+
+; The workspace root is the nearest directory at or above `dir` carrying
+; a workspace file; "" when there is none, which is the ordinary case of
+; a standalone package.
+(defn ws-find-root (dir depth)
+  (if (> (ws-exists dir) 0)
+    dir
+    (if (< depth 1)
+      ""
+      (ws-find-root (ffi-call "zyl_dirname_cstr" dir 1000) (- depth 1)))))
+
+(defn ws-read (arena dir)
+  (let fd (file-open (ws-path dir) "r")
+    (if (< fd 1)
+      (ffi-call "zyl_panic"
+        (str-concat "E_MANIFEST_INVALID: package: cannot read " (ws-path dir)) 1000)
+      (let src (file-read fd 1048576)
+        (let d1 (file-close fd)
+          (ws-of-source arena src dir))))))
+
+(defn ws-of-source (arena src dir)
+  (let forms (zyl-parse arena src)
+    (match (ws-find-form forms "workspace")
+      (Some f (WS dir (ws-members-of (ws-args f)) (ws-overrides-of (ws-args f))))
+      (None (ffi-call "zyl_panic"
+              (str-concat "E_MANIFEST_INVALID: package: no (workspace ...) form in "
+                (ws-path dir)) 1000)))))
+
+(defn ws-head (a)
+  (match a
+    (AList xs (match xs (Cons h d1 (match h (AstIdent n n) (d2 ""))) (Nil "")))
+    (d3 "")))
+
+(defn ws-args (a)
+  (match a
+    (AList xs (match xs (Cons d1 t t) (Nil Nil)))
+    (d2 Nil)))
+
+(defn ws-str (a)
+  (match a
+    (AString s s)
+    (AstIdent s s)
+    (d1 "")))
+
+(defn ws-strs (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (ws-str h) (ws-strs t)))))
+
+(defn ws-find-form (forms head)
+  (match forms
+    (Nil None)
+    (Cons h t (if (> (str-eq (ws-head h) head) 0) (Some h) (ws-find-form t head)))))
+
+(defn ws-members-of (args)
+  (match (ws-find-form args "members")
+    (Some f (ws-strs (ws-args f)))
+    (None Nil)))
+
+; PkgWorkspace overrides are the root's overrides for every member: they are
+; the one place §31.5 allows a selection to be forced graph-wide, and a
+; workspace has exactly one such place by construction.
+(defn ws-overrides-of (args)
+  (match (ws-find-form args "overrides")
+    (Some f (ws-override-list (ws-find-forms (ws-args f) "override")))
+    (None Nil)))
+
+(defn ws-find-forms (forms head)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (> (str-eq (ws-head h) head) 0)
+        (Cons h (ws-find-forms t head))
+        (ws-find-forms t head)))))
+
+(defn ws-override-list (forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t (Cons (ws-override-of h) (ws-override-list t)))))
+
+(defn ws-override-of (form)
+  (match (ws-args form)
+    (Cons nameast rest
+      (POv (pk-check-name (ws-str nameast)) (ws-override-version rest) (ws-override-source rest)))
+    (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: override entry has no name" 1000))))
+
+(defn ws-override-version (rest)
+  (match rest
+    (Cons b d1
+      (let s (ws-str b)
+        (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of s))))
+    (Nil (PV 0 0 0 ""))))
+
+(defn ws-override-source (rest)
+  (match (ws-find-form rest "path")
+    (Some f (PSPath (ws-first-str f)))
+    (None (PSRegistry))))
+
+(defn ws-first-str (form)
+  (match (ws-args form)
+    (Cons a d1 (ws-str a))
+    (Nil "")))
+
+; Member directories, absolute, in declaration order. Order is the
+; workspace file's own, which is what makes a workspace build
+; deterministic without sorting something the author wrote deliberately.
+(defn ws-member-dirs (w)
+  (ws-member-dirs-in (ws-root w) (ws-members w)))
+
+(defn ws-member-dirs-in (root members)
+  (match members
+    (Nil Nil)
+    (Cons m t (Cons (str-concat root (str-concat "/" m)) (ws-member-dirs-in root t)))))
+
+(defn ws-member-manifest (arena root member)
+  (pk-read-manifest arena (str-concat root (str-concat "/" (str-concat member "/zyl.pkg")))))
+
+; A member's path dependency on another member must still name a version,
+; and that version must be the one the target's manifest declares (§31.11)
+; — otherwise the member could not be published as it stands.
+(defn ws-check-member-deps (arena w)
+  (ws-check-members arena w (ws-members w)))
+
+(defn ws-check-members (arena w members)
+  (match members
+    (Nil 1)
+    (Cons m t
+      (let d1 (ws-check-member arena w m)
+        (ws-check-members arena w t)))))
+
+(defn ws-check-member (arena w m)
+  (let manifest (ws-member-manifest arena (ws-root w) m)
+    (ws-check-deps arena w (mf-deps manifest) (mf-name manifest))))
+
+(defn ws-check-deps (arena w deps from)
+  (match deps
+    (Nil 1)
+    (Cons d t
+      (let d1 (ws-check-dep arena w d from)
+        (ws-check-deps arena w t from)))))
+
+(defn ws-check-dep (arena w d from)
+  (match (pd-source d)
+    (PSPath p (ws-check-path-dep arena w d from p))
+    (PSGit u r 1)
+    (PSRegistry 1)))
+
+(defn ws-check-path-dep (arena w d from p)
+  (let path (str-concat (ws-root w) (str-concat "/" (str-concat p "/zyl.pkg")))
+    (if (= (ffi-call "zyl_path_exists" path 1000) 0)
+      1
+      (ws-compare-version arena (pk-read-manifest arena path) d from))))
+
+(defn ws-compare-version (arena target d from)
+  (if (= (pv-cmp (mf-version target) (pd-version d)) 0)
+    1
+    (ffi-call "zyl_panic"
+      (str-concat "E_PKG_VERSION_CONFLICT: package: " (str-concat from
+        (str-concat " requires " (str-concat (pd-name d)
+          (str-concat " " (str-concat (pv-str arena (pd-version d))
+            (str-concat " but the workspace member declares "
+              (pv-str arena (mf-version target))))))))) 1000)))
+
+; Where the lock lives for a package in `dir`: the workspace root when
+; there is one, the package's own directory otherwise. One lock per
+; workspace is what stops two members from skewing (§31.11).
+(defn ws-lock-dir (dir)
+  (let root (ws-find-root dir 16)
+    (if (= (str-length root) 0) dir root)))
