@@ -14,15 +14,19 @@ this extension:
 ./install.sh       # also installs it to ~/.zyl/bin/zyl-lsp
 ```
 
-Then install the extension:
+Then install the extension — `./install.sh --with-vscode` does all of
+this, including removing the grammar-only 0.1.0 (`zyl-lang.zyl-lang`),
+which claims the same language id and would otherwise shadow this one:
 
 ```bash
 cd editors/vscode
 npm install
-npm run compile
-npx vsce package                       # produces zyl-0.2.0.vsix
-code --install-extension zyl-0.2.0.vsix
+npx vsce package                       # compiles, produces zyl-0.3.0.vsix
+code --uninstall-extension zyl-lang.zyl-lang   # only if 0.1.0 is installed
+code --install-extension zyl-0.3.0.vsix
 ```
+
+Requires VS Code 1.91 or later (vscode-languageclient 10).
 
 For quick iteration, symlink the directory into your extensions folder
 instead of packaging it:
@@ -52,7 +56,7 @@ that builds your program, so the editor and `zyl` never disagree):
 | Rename | The declaration and every reference in the file |
 | Completion | Special forms, operators, built-ins, types, regions and capabilities, plus your own functions, ADTs, variants, structs and fields — and stdlib module paths inside `(use ...)` |
 | Signature help | Parameter names from your own `defn`, signatures for built-ins, with the current argument highlighted |
-| Document symbols | Outline and breadcrumbs, each symbol spanning its whole form |
+| Document symbols | Outline and breadcrumbs, each symbol spanning its whole form; `pub` and `feature-gate` wrappers show the definition inside |
 | Semantic tokens | Keyword, operator, function, type, variant, property, string, number and comment, full-document or by range |
 | Folding / selection | Per top-level form; selection expands from the identifier to the enclosing form |
 | Call hierarchy | Incoming and outgoing calls within the document |
@@ -61,7 +65,11 @@ that builds your program, so the editor and `zyl` never disagree):
 
 **From the extension itself:** a TextMate grammar covering every special
 form, bitwise and byte operation, atomic, region, capability and
-built-in; 17 snippets; a `zyl` build task; and **Zyl: Run Current File**
+built-in; highlighting for `zyl.pkg` manifests (their own language,
+`zyl-pkg`, so the server never compiles a manifest as a program); 17
+snippets; build tasks — `build <file>` for each open file, and `build`,
+`test` and `fetch` for every `zyl.pkg` in the workspace, run from the
+package's directory; and **Zyl: Run Current File**
 (`Ctrl+Shift+Enter`), which compiles and runs the *unsaved* buffer and
 shows its output in the Zyl output channel.
 
@@ -72,9 +80,9 @@ shows its output in the Zyl output channel.
 | `zyl.lsp.enable` | `true` | Run the language server at all |
 | `zyl.lsp.path` | `""` | Explicit path to `zyl-lsp`; empty means search |
 | `zyl.lsp.arguments` | `[]` | Extra arguments for the server |
-| `zyl.lsp.trace.server` | `"off"` | Log JSON-RPC traffic |
-| `zyl.inlayHints.parameterNames` | `true` | Parameter-name hints at call sites |
-| `zyl.compiler.path` | `""` | Explicit path to `zyl` for the build task |
+| `zyl.lsp.trace.server` | `"off"` | Log JSON-RPC traffic; needs the server log's level set to Trace |
+| `zyl.inlayHints.parameterNames` | `true` | Parameter-name hints at call sites; applies without a restart |
+| `zyl.compiler.path` | `""` | Explicit path to `zyl` for the build tasks; empty searches `$ZYL_HOME/bin`, `~/.zyl/bin`, the workspace's `build/boot/zyl-self`, then `$PATH` |
 
 The status bar item shows whether the server is running; clicking it
 opens the server log. **Zyl: Restart Language Server** picks up a new

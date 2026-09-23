@@ -149,9 +149,17 @@ if [ "$WITH_VSCODE" -eq 1 ]; then
     fi
     ( cd "$EXT_DIR" && npm install --silent && npm run --silent compile )
     if command -v code >/dev/null 2>&1; then
-        ( cd "$EXT_DIR" && npx --yes @vscode/vsce package --out /tmp/zyl-extension.vsix >/dev/null )
-        code --install-extension /tmp/zyl-extension.vsix --force
-        rm -f /tmp/zyl-extension.vsix
+        VSIX_DIR="$(mktemp -d)"
+        # vsce is a devDependency, so the `npm install` above provides it;
+        # stdin from /dev/null keeps any prompt from hanging the install.
+        ( cd "$EXT_DIR" && npx vsce package --out "$VSIX_DIR/zyl.vsix" </dev/null >/dev/null )
+        # 0.1.0 shipped as zyl-lang.zyl-lang (grammar only, no language
+        # client); it claims the same language id, so it has to go.
+        if code --list-extensions 2>/dev/null | grep -qx 'zyl-lang.zyl-lang'; then
+            code --uninstall-extension zyl-lang.zyl-lang >/dev/null
+        fi
+        code --install-extension "$VSIX_DIR/zyl.vsix" --force
+        rm -rf "$VSIX_DIR"
         echo "  extension installed; reload VS Code to pick it up"
     else
         # No `code` on PATH: link the built extension into the standard

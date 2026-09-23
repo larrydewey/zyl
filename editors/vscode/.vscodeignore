@@ -1,0 +1,7 @@
+src/**
+out/**/*.map
+node_modules/.bin/**
+tsconfig.json
+eslint.config.mjs
+.gitignore
+**/*.vsix

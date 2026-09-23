@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zyl Package Manifest",
+  "scopeName": "source.zyl.pkg",
+  "patterns": [
+    {
+      "comment": "Manifest fields (spec \u00a731.3) and workspace fields (\u00a731.11).",
+      "match": "(?<=\\()\\s*(package|workspace|members|name|version|zyl|edition|description|license|repository|capabilities|deny-capabilities|deps|dev-deps|dep|path|git|url|rev|features|feature|native|sources|cflags|include-dirs|link-libs|overrides|override|exclude|trusted)(?![^\\s()\\[\\]{}\";])",
+      "captures": {
+        "1": {
+          "name": "keyword.other.manifest.zyl"
+        }
+      }
+    },
+    {
+      "comment": "Capability names (\u00a731.9).",
+      "match": "(?<![^\\s()\\[\\]{}\";])(io|ffi|actor|unsafe|secret)(?![^\\s()\\[\\]{}\";])",
+      "name": "support.constant.capability.zyl"
+    },
+    {
+      "include": "source.zyl"
+    }
+  ]
+}

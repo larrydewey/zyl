@@ -11,6 +11,10 @@ import {
 let client: LanguageClient | undefined;
 let statusItem: vscode.StatusBarItem;
 let evalOutput: vscode.OutputChannel;
+// Created once in activate() and reused across restarts: a channel or
+// watcher made per start would pile up a new one on every restart.
+let serverLog: vscode.LogOutputChannel;
+let zylWatcher: vscode.FileSystemWatcher;
 
 /**
  * Where zyl-lsp might be, in the order worth trying:
@@ -65,6 +69,11 @@ function findCompiler(): string {
     const candidates = [
         process.env.ZYL_HOME ? path.join(process.env.ZYL_HOME, 'bin', 'zyl') : '',
         home ? path.join(home, '.zyl', 'bin', 'zyl') : '',
+        // The same checkout fallback the server search uses: ./boot.sh
+        // leaves the compiler's wrapper here.
+        ...(vscode.workspace.workspaceFolders ?? []).map((folder) =>
+            path.join(folder.uri.fsPath, 'build', 'boot', 'zyl-self'),
+        ),
     ].filter((p) => p.length > 0);
     for (const candidate of candidates) {
         try {
@@ -87,7 +96,7 @@ function setStatus(text: string, tooltip: string, warn: boolean): void {
     statusItem.show();
 }
 
-async function startClient(context: vscode.ExtensionContext): Promise<void> {
+async function startClient(): Promise<void> {
     const config = vscode.workspace.getConfiguration('zyl');
     if (!config.get<boolean>('lsp.enable', true)) {
         setStatus('Zyl (server off)', 'zyl.lsp.enable is false', false);
@@ -106,18 +115,26 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'zyl' }],
         synchronize: {
-            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.zyl'),
-            configurationSection: 'zyl',
+            fileEvents: zylWatcher,
         },
-        outputChannel: vscode.window.createOutputChannel('Zyl Language Server'),
-        initializationOptions: {
-            inlayHints: {
-                parameterNames: config.get<boolean>('inlayHints.parameterNames', true),
-            },
+        outputChannel: serverLog,
+        middleware: {
+            // The server always answers inlay-hint requests, so the
+            // setting is applied here, where it takes effect without a
+            // restart.
+            provideInlayHints: (document, range, token, next) =>
+                vscode.workspace
+                    .getConfiguration('zyl')
+                    .get<boolean>('inlayHints.parameterNames', true)
+                    ? next(document, range, token)
+                    : [],
         },
     };
 
-    client = new LanguageClient('zyl', 'Zyl Language Server', serverOptions, clientOptions);
+    // The client id is the prefix the library reads `<id>.trace.server`
+    // under, so 'zyl.lsp' is what makes the zyl.lsp.trace.server setting
+    // do anything.
+    client = new LanguageClient('zyl.lsp', 'Zyl Language Server', serverOptions, clientOptions);
     client.onDidChangeState((event) => {
         if (event.newState === State.Running) {
             setStatus('Zyl', `Language server running (${command})`, false);
@@ -135,6 +152,7 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
     } catch (err) {
         client = undefined;
         setStatus('Zyl (not found)', `Could not start ${command}`, true);
+        serverLog.error(`could not start ${command}: ${err}`);
         const choice = await vscode.window.showErrorMessage(
             `Zyl: could not start the language server (${command}). ` +
                 'Build it with ./boot.sh, or install it with ./install.sh.',
@@ -159,23 +177,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(statusItem);
 
     evalOutput = vscode.window.createOutputChannel('Zyl');
-    context.subscriptions.push(evalOutput);
+    serverLog = vscode.window.createOutputChannel('Zyl Language Server', { log: true });
+    zylWatcher = vscode.workspace.createFileSystemWatcher('**/*.zyl');
+    context.subscriptions.push(evalOutput, serverLog, zylWatcher);
 
-    await startClient(context);
+    // Commands are registered before the client starts: the server
+    // advertises its own `zyl.evalDocument`, which the client library
+    // registers as a VS Code command of that name, so the command the
+    // user runs is named differently to keep the two from colliding.
 
     context.subscriptions.push(
         vscode.commands.registerCommand('zyl.restartLSP', async () => {
             await stopClient();
-            await startClient(context);
+            await startClient();
         }),
         vscode.commands.registerCommand('zyl.stopLSP', async () => {
             await stopClient();
             setStatus('Zyl (stopped)', 'Language server stopped', true);
         }),
         vscode.commands.registerCommand('zyl.showServerLog', () => {
-            client?.outputChannel.show(true);
+            serverLog.show(true);
         }),
-        vscode.commands.registerCommand('zyl.evalDocument', () => runCurrentFile()),
+        vscode.commands.registerCommand('zyl.runCurrentFile', () => runCurrentFile()),
     );
 
     // A changed server path or a flipped enable switch only takes
@@ -189,17 +212,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 event.affectsConfiguration('zyl.lsp.arguments')
             ) {
                 await stopClient();
-                await startClient(context);
+                await startClient();
             }
         }),
     );
 
     context.subscriptions.push(
         vscode.tasks.registerTaskProvider('zyl', {
-            provideTasks: () => buildTasks(),
+            provideTasks: async () => [...buildTasks(), ...(await packageTasks())],
             resolveTask: (task) => task,
         }),
     );
+
+    await startClient();
 }
 
 /** `zyl <file> -o <file without extension>` for every open .zyl file. */
@@ -221,6 +246,39 @@ function buildTasks(): vscode.Task[] {
         );
         task.group = vscode.TaskGroup.Build;
         tasks.push(task);
+    }
+    return tasks;
+}
+
+/**
+ * `zyl build`, `zyl test` and `zyl fetch` for every package in the
+ * workspace, run from the directory holding its zyl.pkg (spec §31.11).
+ * Only `fetch` touches the network; the other two read the store.
+ */
+async function packageTasks(): Promise<vscode.Task[]> {
+    const compiler = findCompiler();
+    const manifests = await vscode.workspace.findFiles('**/zyl.pkg', '**/node_modules/**', 100);
+    manifests.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
+    const tasks: vscode.Task[] = [];
+    for (const manifest of manifests) {
+        const dir = path.dirname(manifest.fsPath);
+        const folder = vscode.workspace.getWorkspaceFolder(manifest);
+        const label = folder ? path.relative(folder.uri.fsPath, dir) || '.' : dir;
+        for (const command of ['build', 'test', 'fetch']) {
+            const task = new vscode.Task(
+                { type: 'zyl', command, package: dir },
+                folder ?? vscode.TaskScope.Workspace,
+                `${command} ${label}`,
+                'zyl',
+                new vscode.ShellExecution(compiler, [command], { cwd: dir }),
+            );
+            if (command === 'build') {
+                task.group = vscode.TaskGroup.Build;
+            } else if (command === 'test') {
+                task.group = vscode.TaskGroup.Test;
+            }
+            tasks.push(task);
+        }
     }
     return tasks;
 }

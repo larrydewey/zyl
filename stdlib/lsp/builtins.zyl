@@ -139,7 +139,11 @@
           "Declare this file's module name.")
   (Cons (ZB "export" "special-form" "(export name)"
           "Mark a name as part of the module's public surface.")
-  Nil))))
+  (Cons (ZB "pub" "special-form" "(pub defn name (params) body)"
+          "Make the wrapped top-level definition visible outside its package (§31.2). Without it a definition is package-private.")
+  (Cons (ZB "feature-gate" "special-form" "(feature-gate feature definition)"
+          "Include the wrapped top-level definition only when `feature` is enabled for this build (§31.10). Features are additive: a gate can add a definition, never change one.")
+  Nil))))))
 
 (defn builtins-operators ()
   (Cons (ZB "+" "operator" "(+ a b)" "Integer or float addition.")

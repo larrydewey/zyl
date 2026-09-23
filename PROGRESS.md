@@ -1,5 +1,51 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — VS Code extension 0.3.0 and package-aware LSP
+
+**The extension is on current tooling, actually installs, and no longer
+collides with its own server; the server understands the package forms.**
+
+- **Dependencies:** vscode-languageclient 9 -> 10.1 (engine now
+  `^1.91.0`), TypeScript 5 -> 6.0, ESLint 8 -> 10 with a flat
+  `eslint.config.mjs` and typescript-eslint, `@types/node` 20,
+  `@vscode/test-electron` 3, and `@vscode/vsce` 4 as a devDependency so
+  packaging no longer downloads it. `tsconfig.json` moves to
+  `module`/`moduleResolution: node16` (the client's `exports` map needs
+  it) and `types: ["node"]` (TypeScript 6 no longer includes every
+  `@types` package by default). TypeScript 7 is out but typescript-eslint
+  does not support it yet.
+- **Command collision:** the server advertises `zyl.evalDocument` as an
+  executeCommand, which the client library registers as a VS Code command
+  of that name; the extension then registered the same name itself, which
+  throws and aborts activation. The user-facing command is now
+  `zyl.runCurrentFile` (still "Zyl: Run Current File", Ctrl+Shift+Enter)
+  and still sends `zyl.evalDocument` to the server.
+- **Dead settings:** `zyl.lsp.trace.server` was never read (the library
+  reads `<client id>.trace.server`; the id is now `zyl.lsp`), and
+  `zyl.inlayHints.parameterNames` went out as an initialization option the
+  server ignores; it is now applied in client middleware, live.
+- **Leaks:** each restart created a new output channel and file watcher;
+  both are created once. The server log is a LogOutputChannel.
+- **Packaging:** `vsce package` failed on the README's relative link; the
+  manifest now carries `repository` (with `directory`), a `LICENSE` and a
+  `.vscodeignore`. `install.sh --with-vscode` uses the local vsce, a
+  `mktemp` directory, and uninstalls the grammar-only 0.1.0
+  (`zyl-lang.zyl-lang`), which claims the same language id.
+- **Packages in the editor:** `zyl.pkg` is its own language (`zyl-pkg`,
+  grammar `syntaxes/zyl-pkg.tmLanguage.json`) so the server never compiles
+  a manifest as a program; `build`/`test`/`fetch` tasks for every
+  `zyl.pkg` in the workspace; the compiler search falls back to
+  `build/boot/zyl-self`. The grammar knows `pub` and `feature-gate`.
+- **Server:** `lsp/builtins.zyl` gains `pub` and `feature-gate` (the two
+  forms `expr_inner.zyl` dispatched that the table lacked), and
+  `source_index.zyl` sees through both wrappers, so `(pub defn f ...)` and
+  `(feature-gate simd (pub defn f ...))` appear in the outline and resolve
+  for go-to-definition. `tests/lsp/lsp_protocol_test.py` adds a
+  package-forms test (96 checks).
+
+Known limit: the extension is not bundled (vsce warns about 182 JS files
+from the client library); an esbuild step would fix that.
+
 ## Current Session (2026-09-23) — `_` as the only discard, located diagnostics, and the end of an exponential
 
 **`_` is now the catch-all everywhere, a dropped `)` can no longer drive

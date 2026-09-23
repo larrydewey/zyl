@@ -206,7 +206,24 @@
                 (if (> (str-length name) 0)
                   (Some (TF kw name line col (- 0 1) (- 0 1)))
                   None))))
-          None)))))
+          (if (> (str-eq kw "pub") 0)
+            (si-try-header text kwend len line col)
+            (if (> (str-eq kw "feature-gate") 0)
+              (si-try-gated-header text kwend len line col)
+              None)))))))
+
+; `(pub defn f ...)` and `(feature-gate simd (pub defn f ...))` wrap a
+; definition rather than being one (§31.2, §31.10); the outline shows
+; the definition inside, placed at the wrapper's own bracket so that
+; its extent is the whole top-level form.
+(defn si-try-gated-header (text pos len line col)
+  (let p1 (si-skip-ws text pos len)
+    (let p2 (si-skip-ws text (si-word-scan-fwd text p1 len) len)
+      (if (< p2 len)
+        (if (> (str-eq (str-substring text p2 1) "(") 0)
+          (si-try-header text (+ p2 1) len line col)
+          None)
+        None))))
 
 ; Every head symbol that introduces a named top-level definition. Kept
 ; deliberately in step with expr_inner.zyl's own dispatch: a form that

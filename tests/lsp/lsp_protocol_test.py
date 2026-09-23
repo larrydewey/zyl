@@ -79,7 +79,7 @@ def converse(messages, timeout=120):
     return responses, notifications, err.decode()
 
 
-def session(*requests):
+def session(*requests, text=SAMPLE):
     """An initialize/didOpen/.../shutdown session around `requests`."""
     messages = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -87,7 +87,7 @@ def session(*requests):
         {"jsonrpc": "2.0", "method": "initialized", "params": {}},
         {"jsonrpc": "2.0", "method": "textDocument/didOpen",
          "params": {"textDocument": {"uri": URI, "languageId": "zyl",
-                                     "version": 1, "text": SAMPLE}}},
+                                     "version": 1, "text": text}}},
     ]
     messages.extend(requests)
     messages.append({"jsonrpc": "2.0", "id": 999, "method": "shutdown", "params": {}})
@@ -345,6 +345,44 @@ def test_diagnostics():
 
 
 # ---------------------------------------------------------------------------
+# Package forms (§31.2 visibility, §31.10 features)
+# ---------------------------------------------------------------------------
+
+PACKAGE_SAMPLE = """(pub defn base (n) (+ n 1))
+
+(feature-gate simd (pub defn fast (n) (* n 8)))
+
+(feature-gate utf16
+  (defn wide (n) (* n 16)))
+
+(defn helper (n) (base n))
+"""
+
+
+def test_package_forms():
+    responses, _, _ = session(
+        request(60, "textDocument/documentSymbol"),
+        request(61, "textDocument/hover", position=at(0, 2)),
+        request(62, "textDocument/hover", position=at(2, 4)),
+        request(63, "textDocument/definition", position=at(7, 19)),
+        text=PACKAGE_SAMPLE,
+    )
+    names = [s["name"] for s in responses.get(60) or []]
+    for expected in ("base", "fast", "wide", "helper"):
+        check("package/documentSymbol", expected in names, f"{expected} missing from {names}")
+    wide = next((s for s in responses.get(60) or [] if s["name"] == "wide"), {})
+    check("package/range", wide.get("range", {}).get("end", {}).get("line") == 5,
+          "a gated definition's range should span the whole feature-gate form")
+    for rid, word in ((61, "pub"), (62, "feature-gate")):
+        hover = json.dumps(responses.get(rid) or {}, ensure_ascii=False)
+        check(f"package/hover/{word}", word in hover and "§31" in hover, hover[:200])
+    target = responses.get(63)
+    target = target[0] if isinstance(target, list) and target else (target or {})
+    check("package/definition", target.get("range", {}).get("start", {}).get("line") == 0,
+          json.dumps(target))
+
+
+# ---------------------------------------------------------------------------
 
 TESTS = [
     ("capabilities", test_capabilities),
@@ -355,6 +393,7 @@ TESTS = [
     ("semantic tokens", test_semantic_tokens),
     ("rename", test_rename),
     ("diagnostics", test_diagnostics),
+    ("package forms", test_package_forms),
 ]
 
 

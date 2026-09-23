@@ -101,29 +101,35 @@
     "definitions": {
       "patterns": [
         {
-          "match": "(\\()\\s*(defn|fn|macro|defmacro)\\s+([^\\s()\\[\\]{}\";]+)",
+          "match": "(\\()\\s*(?:(pub)\\s+)?(defn|fn|macro|defmacro)\\s+([^\\s()\\[\\]{}\";]+)",
           "captures": {
             "1": {
               "name": "punctuation.section.parens.begin.zyl"
             },
             "2": {
-              "name": "storage.type.function.zyl"
+              "name": "storage.modifier.zyl"
             },
             "3": {
+              "name": "storage.type.function.zyl"
+            },
+            "4": {
               "name": "entity.name.function.zyl"
             }
           }
         },
         {
-          "match": "(\\()\\s*(deftype|defstruct\\+|defstruct|trait|alias)\\s+([^\\s()\\[\\]{}\";]+)",
+          "match": "(\\()\\s*(?:(pub)\\s+)?(deftype|defstruct\\+|defstruct|trait|alias)\\s+([^\\s()\\[\\]{}\";]+)",
           "captures": {
             "1": {
               "name": "punctuation.section.parens.begin.zyl"
             },
             "2": {
-              "name": "storage.type.class.zyl"
+              "name": "storage.modifier.zyl"
             },
             "3": {
+              "name": "storage.type.class.zyl"
+            },
+            "4": {
               "name": "entity.name.type.zyl"
             }
           }
@@ -211,7 +217,7 @@
       "patterns": [
         {
           "name": "keyword.control.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl|derive|defmacro|macro|alias|use|module|export|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|send|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|send|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },

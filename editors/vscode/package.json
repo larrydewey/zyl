@@ -2,11 +2,16 @@
   "name": "zyl",
   "displayName": "Zyl",
   "description": "Language support for Zyl: a deterministic Lisp systems language with region-based memory, capability types, and actor concurrency.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "zyl-lang",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/larrydewey/zyl",
+    "directory": "editors/vscode"
+  },
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages",
@@ -21,7 +26,9 @@
   ],
   "activationEvents": [
     "onLanguage:zyl",
-    "workspaceContains:**/*.zyl"
+    "onLanguage:zyl-pkg",
+    "workspaceContains:**/*.zyl",
+    "workspaceContains:**/zyl.pkg"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -31,6 +38,12 @@
         "aliases": ["Zyl", "zyl"],
         "extensions": [".zyl"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "zyl-pkg",
+        "aliases": ["Zyl Package Manifest"],
+        "filenames": ["zyl.pkg"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -38,6 +51,11 @@
         "language": "zyl",
         "scopeName": "source.zyl",
         "path": "./syntaxes/zyl.tmLanguage.json"
+      },
+      {
+        "language": "zyl-pkg",
+        "scopeName": "source.zyl.pkg",
+        "path": "./syntaxes/zyl-pkg.tmLanguage.json"
       }
     ],
     "snippets": [
@@ -87,7 +105,7 @@
           "type": "string",
           "enum": ["off", "messages", "verbose"],
           "default": "off",
-          "description": "Log the JSON-RPC traffic between VS Code and the Zyl language server."
+          "description": "Log the JSON-RPC traffic between VS Code and the Zyl language server. Takes effect when the Zyl Language Server output channel's log level is Trace (Developer: Set Log Level)."
         },
         "zyl.inlayHints.parameterNames": {
           "type": "boolean",
@@ -97,7 +115,7 @@
         "zyl.compiler.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the zyl compiler, used by the build task. Leave empty to search $ZYL_HOME/bin, ~/.zyl/bin and $PATH."
+          "description": "Path to the zyl compiler, used by the build task. Leave empty to search $ZYL_HOME/bin, ~/.zyl/bin, the workspace's build/boot/zyl-self, and finally $PATH."
         }
       }
     },
@@ -113,7 +131,7 @@
         "category": "Zyl"
       },
       {
-        "command": "zyl.evalDocument",
+        "command": "zyl.runCurrentFile",
         "title": "Run Current File",
         "category": "Zyl"
       },
@@ -126,21 +144,21 @@
     "menus": {
       "editor/context": [
         {
-          "command": "zyl.evalDocument",
+          "command": "zyl.runCurrentFile",
           "when": "editorLangId == zyl",
           "group": "z_commands"
         }
       ],
       "commandPalette": [
         {
-          "command": "zyl.evalDocument",
+          "command": "zyl.runCurrentFile",
           "when": "editorLangId == zyl"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "zyl.evalDocument",
+        "command": "zyl.runCurrentFile",
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
         "when": "editorLangId == zyl"
@@ -157,7 +175,6 @@
     "taskDefinitions": [
       {
         "type": "zyl",
-        "required": ["file"],
         "properties": {
           "file": {
             "type": "string",
@@ -166,6 +183,15 @@
           "output": {
             "type": "string",
             "description": "Output binary path. Defaults to the source file without its extension."
+          },
+          "command": {
+            "type": "string",
+            "enum": ["build", "test", "fetch"],
+            "description": "Package subcommand (spec §31.11), run from the directory holding zyl.pkg."
+          },
+          "package": {
+            "type": "string",
+            "description": "Directory holding the package's zyl.pkg."
           }
         }
       }
@@ -175,17 +201,19 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
+    "lint": "eslint src",
     "package": "vsce package"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^10.1.1"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
-    "@types/vscode": "^1.80.0",
-    "@vscode/test-electron": "^2.3.0",
-    "typescript": "^5.0.0",
-    "eslint": "^8.0.0"
+    "@types/node": "^20.19.0",
+    "@types/vscode": "~1.91.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "eslint": "^10.11.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.70.1"
   }
 }
