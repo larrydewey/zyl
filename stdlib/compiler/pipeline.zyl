@@ -1,0 +1,200 @@
+; === Zyl Standard Library — Compiler pipeline ===
+; Module: compiler/pipeline
+;
+; The one implementation of "source text in, lowered program out", used
+; by every front end: the `zyl` CLI, the REPL, and anything else that
+; needs the compiler's own phase order rather than an approximation of
+; it. It lived inside selfhost/driver.zyl until the REPL needed the same
+; pipeline stopped one phase earlier (at ICNF, for the interpreter)
+; rather than run through to assembly.
+;
+; The split is exactly that: `compile-to-fns` runs every phase from the
+; balance check through region inference and hands back the lowered
+; functions; `compile-to-asm` is that plus code generation. No phase may
+; depend on a later one, so there is nothing else to parameterize.
+;
+; Errors are reported the way the rest of the compiler reports them --
+; `zyl_panic` with a located `error[CODE]` message -- which a caller
+; that must survive them (the REPL) catches with `try`.
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/module_resolver)
+(use compiler/capability_check)
+(use compiler/macro_expand)
+(use compiler/mutability_check)
+(use compiler/arity_check)
+(use compiler/duplicate_check)
+(use compiler/exhaustiveness_check)
+(use compiler/unused_check)
+(use compiler/secret_check)
+(use compiler/type_inference)
+(use compiler/monomorphization)
+(use compiler/icnf)
+(use compiler/trait_dispatch)
+(use compiler/closure_inline)
+(use compiler/assert_lowering)
+(use compiler/region_inference)
+(use compiler/optimization)
+(use compiler/codegen)
+(use compiler/sexp_balance)
+(use compiler/error_codes)
+(use compiler/error_report)
+
+; Stage tracing, off unless ZYL_DEBUG_STAGES is set. This used to append to
+; /tmp/dbg unconditionally: a fixed path in a shared directory (on a
+; multi-user machine the file belongs to whoever compiled first and every
+; open after that fails), about twenty open/write/close cycles per compile,
+; and a write nobody asked for. zyl_getenv returns 0 when the variable is
+; unset.
+(defn dbg-log (msg)
+  (if (= (ffi-call "zyl_getenv" "ZYL_DEBUG_STAGES" 1000) 0)
+    0
+    (dbg-write msg)))
+
+(defn dbg-write (msg)
+  (let f (file-open "/tmp/dbg" "a")
+    (let _ (file-write f msg)
+      (file-close f))))
+
+; ===========================================================================
+; FRONT END — source text to ExprInner, with every check run
+; ===========================================================================
+
+; Parse, resolve modules, expand macros, then run the checks that must
+; precede type inference. Returns the checked ExprInner program.
+(defn compile-to-exprs (arena srcbuf srcpath)
+  (begin
+    (dbg-log "balance-check\n")
+    (compile-check-balance srcbuf srcpath)
+    (dbg-log "parse\n")
+    (let prog (zyl-parse-file arena srcbuf srcpath)
+      (dbg-log "modules\n")
+      ; Module resolution works on the RAW parse tree: it qualifies
+      ; every identifier to a canonical key (spec v5.0 §31.2) before
+      ; anything is converted to ExprInner, and it needs the source
+      ; path to find the package this file belongs to (§31.3).
+      (let resolved (mr-resolve-program-full arena prog srcpath)
+        (dbg-log "macros\n")
+        (let exprs (me-expand-program (mrr-exprs resolved))
+          (begin
+            (compile-run-checks exprs resolved)
+            exprs))))))
+
+; A file whose delimiters do not balance is reported here rather than
+; left for the parser: the balance checker knows which opener was never
+; closed and where, and the parser only knows that it ran out of input.
+(defn compile-check-balance (srcbuf srcpath)
+  (let balance (sb-check-string srcbuf)
+    (if (= (sb-result-balanced balance) 0)
+      ; Register the path first so report-unbalanced can name the file and
+      ; print the offending line. zyl_source_register dedupes by path, so
+      ; this is the same id zyl-parse-file goes on to use.
+      (report-unbalanced balance (ffi-call "zyl_source_register" srcpath srcbuf 1000))
+      0)))
+
+; §31.9: capability enforcement runs after module resolution and before
+; type inference. It sits after macro expansion so that a construct a
+; macro introduces is checked like one written by hand.
+(defn compile-run-checks (exprs resolved)
+  (begin
+    (dbg-log "capability-check\n")
+    (cc-check-program exprs (mrr-grants resolved) (mrr-denied resolved))
+    (dbg-log "duplicate-check\n")
+    (dc-check-program exprs)
+    (dbg-log "arity-check\n")
+    (ac-check-program exprs)
+    (dbg-log "mutability-check\n")
+    (mc-check-program exprs)
+    (dbg-log "exhaustiveness-check\n")
+    (ec-check-program exprs)
+    (dbg-log "unused-check\n")
+    (uc-check-program exprs)
+    (dbg-log "secret-check\n")
+    (sc-check-program exprs)
+    0))
+
+; ===========================================================================
+; MIDDLE — ExprInner to lowered, optimized, region-annotated functions
+; ===========================================================================
+
+; Type inference through region inference. Contract injection
+; (stdlib/compiler/contract_injection.zyl) is NOT wired in here: that
+; module's accessors/constructors (d-name, t-name, TestNode, ...) don't
+; match the actual DefnNode/TestDecl/TestSuiteNode shapes in
+; expr_inner.zyl, so it doesn't compile as part of the bundle. It was
+; silently omitted from assemble.py's file list, and this call used to
+; read "ci-expand-program" (1 arg) -- which, once the bundle was
+; assembled, actually resolved to closure_inline.zyl's SAME-NAMED but
+; different-arity `ci-expand-program(arena, prog)` function instead (a
+; genuine duplicate-symbol collision), silently passing garbage through
+; the mismatched second argument register. That corrupted state
+; downstream and crashed the self-hosted binary (ic-collect-vt-run) even
+; on trivial input. Pass exprs through unchanged until contract
+; injection is properly rewritten to match the real deftypes.
+; Returns: List(Icnf) — one IFn per function
+(defn lower-exprs (arena exprs)
+  (begin
+    (dbg-log "type-infer\n")
+    (let inferer (collect-definitions (inferer-new) exprs)
+      (dbg-log "mono\n")
+      (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
+        (let mono-exprs (monomorphize mono-ctx exprs)
+          (begin
+            (dbg-log "trait-dispatch\n")
+            (lower-after-mono arena (td-expand-program mono-exprs))))))))
+
+(defn lower-after-mono (arena td-exprs)
+  (begin
+    (dbg-log "closure-inline\n")
+    (let ci-exprs (ci-expand-program arena td-exprs)
+      (begin
+        (dbg-log "assert-lowering\n")
+        (let al-exprs (al-expand-program ci-exprs)
+          (begin
+            (dbg-log "lower\n")
+            (let fns (ic-program arena al-exprs)
+              (begin
+                ; Real constant folding + dead-branch elimination:
+                ; optimization.zyl was rewritten against this pipeline's
+                ; actual tree-shaped Icnf (see its own header comment for
+                ; why the old SSA-shaped version never did anything --
+                ; every function silently fell through its pattern match
+                ; and opt-optimize always returned Nil).
+                (dbg-log "optimize\n")
+                (let opt-fns (opt-optimize-fns fns)
+                  (begin
+                    ; Real escape analysis: region_inference.zyl rewrites
+                    ; a provably-non-escaping IVariant let-binding to
+                    ; IStackVariant (stack-allocated, see
+                    ; cg-stack-variant) in place.
+                    (dbg-log "region-infer\n")
+                    (ri-transform-fns opt-fns)))))))))))
+
+; Source text to lowered functions: everything except code generation.
+; Returns: List(Icnf)
+(defn compile-to-fns (arena srcbuf srcpath)
+  (lower-exprs arena (compile-to-exprs arena srcbuf srcpath)))
+
+; ===========================================================================
+; BACK END — lowered functions to x86_64 assembly text
+; ===========================================================================
+
+; Source text to assembly. Does NOT write anywhere; callers decide the
+; sink.
+; Returns: String (assembly)
+(defn compile-to-asm (arena srcbuf srcpath)
+  (codegen-fns arena (compile-to-fns arena srcbuf srcpath)))
+
+(defn codegen-fns (arena region-fns)
+  (begin
+    (dbg-log "codegen\n")
+    (let st (cg-program (cg-new arena) region-fns)
+      (let buf (cg-buffer st)
+        (let blen (alloc-strlen buf)
+          (if (> blen 66060288)
+            (ffi-call "zyl_panic" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
+            buf))))))

@@ -141,4 +141,18 @@ long long zyl_blake3_file_hex(long long arena, long long path, long long outbyte
 long long zyl_sym_escape(long long arena, long long src);
 long long zyl_mangle_key(long long arena, long long key);
 
+/* Interactive terminal primitives (REPL line editor). */
+long long zyl_term_is_tty(long long fd);
+long long zyl_term_raw_on(void);
+long long zyl_term_raw_off(void);
+long long zyl_term_read_byte(void);
+long long zyl_term_read_byte_timeout(long long ms);
+long long zyl_term_width(void);
+long long zyl_term_height(void);
+long long zyl_term_write(long long s);
+long long zyl_term_flush(void);
+long long zyl_mkdir_p(long long path);
+long long zyl_cstr_from_byte(long long b);
+long long zyl_cc_compile_log(long long path, long long logpath);
+
 #endif

@@ -1,0 +1,537 @@
+; === Zyl Standard Library — REPL key loop ===
+; Module: repl/reader
+;
+; Turns keystrokes into entries. Owns the interactive loop: read a key,
+; apply it to the editor state, redraw, repeat, until the user submits a
+; complete S-expression, cancels, or ends the input.
+;
+; Two behaviors here are the ones that make a REPL feel finished rather
+; than adequate:
+;
+;   Enter submits only when the entry is a complete S-expression. An
+;   unfinished form gets a newline indented to its nesting depth, so
+;   defining a function across five lines needs no continuation marker,
+;   no backslashes and no special multi-line mode to enter first.
+;
+;   Up and Down move between the lines of a multi-line entry, and reach
+;   for history only from the entry's first and last line respectively.
+;   Anything else makes editing the middle of a definition impossible.
+;
+; Completion candidates arrive as plain data (a list of names computed
+; by the caller before the entry starts) rather than as a callback, so
+; this module stays free of any dependency on the compiler.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use compiler/sexp_balance)
+(use repl/terminal)
+(use repl/line_editor)
+(use repl/highlight)
+
+; ===========================================================================
+; COMPLETENESS
+; ===========================================================================
+
+; Whether Enter should submit this text. A form with an open paren or an
+; open string is unfinished; a stray CLOSING paren is an error, and is
+; submitted rather than trapped, so the compiler can report it with a
+; caret instead of the editor silently refusing to accept the line.
+; Returns: Bool (0/1)
+(defn rd-complete-p (text)
+  (if (= (str-length (rd-trim text)) 0)
+    1
+    (match (sb-check-string text)
+      (Balanced 1)
+      (UnbalancedOpenString 0)
+      (UnclosedOpen _ _ _ 0)
+      (UnbalancedClose _ _ _ 1)
+      (MismatchedPair _ _ _ _ 1))))
+
+(defn rd-trim (s)
+  (let n (str-length s)
+    (let start (rd-trim-start s 0 n)
+      (let end (rd-trim-end s (- n 1))
+        (if (> end start) (str-substring s start (- end start)) "")))))
+
+(defn rd-trim-start (s i n)
+  (if (>= i n)
+    i
+    (if (= (rd-space-p (term-byte-at s i)) 1) (rd-trim-start s (+ i 1) n) i)))
+
+(defn rd-trim-end (s i)
+  (if (< i 0)
+    0
+    (if (= (rd-space-p (term-byte-at s i)) 1) (rd-trim-end s (- i 1)) (+ i 1))))
+
+(defn rd-space-p (b)
+  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+
+; ===========================================================================
+; THE LOOP
+; ===========================================================================
+
+; Read one entry. Returns LineOk with the submitted text, LineCancel if
+; Ctrl-C abandoned it, or LineEof at end of input.
+(defn reader-read-line (arena st prompt cprompt cands)
+  (let st1 (ES.with-screen st (Screen 0 0))
+    (let st2 (rd-draw arena st1 prompt cprompt)
+      (rd-loop arena st2 prompt cprompt cands))))
+
+; Redraw from the current state and record what is now on screen.
+(defn rd-draw (arena st prompt cprompt)
+  (let e (ES.ed st)
+    (let text (Ed.text e)
+      (ES.with-screen st
+        (ed-render arena (ES.screen st) prompt cprompt
+                   text (hl-colorize text) (Ed.cur e))))))
+
+(defn rd-loop (arena st prompt cprompt cands)
+  (let k (key-read)
+    (rd-dispatch arena st prompt cprompt cands k)))
+
+(defn rd-again (arena st prompt cprompt cands)
+  (let st2 (rd-draw arena st prompt cprompt)
+    (rd-loop arena st2 prompt cprompt cands)))
+
+; Apply one key. Anything that only changes the editor buffer goes
+; through rd-edit; the rest is control flow.
+(defn rd-dispatch (arena st prompt cprompt cands k)
+  (match k
+    (KEOF (rd-eof arena st prompt cprompt cands))
+    (KNone (rd-loop arena st prompt cprompt cands))
+    (KEnter (rd-enter arena st prompt cprompt cands))
+    (KTab (rd-tab arena st prompt cprompt cands))
+    (KBackTab (rd-again arena st prompt cprompt cands))
+    (KUp (rd-up arena st prompt cprompt cands))
+    (KDown (rd-down arena st prompt cprompt cands))
+    (KPageUp (rd-hist-move arena st prompt cprompt cands 1))
+    (KPageDown (rd-hist-move arena st prompt cprompt cands -1))
+    (KPasteStart (rd-paste arena st prompt cprompt cands ""))
+    (KPasteEnd (rd-again arena st prompt cprompt cands))
+    (KCtrl c (rd-ctrl arena st prompt cprompt cands c))
+    (KAlt c (rd-alt arena st prompt cprompt cands c))
+    (KChar c (rd-edit arena st prompt cprompt cands (ed-insert (ES.ed st) (byte-str c))))
+    (KEsc (rd-again arena st prompt cprompt cands))
+    (KLeft (rd-edit arena st prompt cprompt cands (ed-left (ES.ed st))))
+    (KRight (rd-edit arena st prompt cprompt cands (ed-right (ES.ed st))))
+    (KHome (rd-edit arena st prompt cprompt cands (ed-home (ES.ed st))))
+    (KEnd (rd-edit arena st prompt cprompt cands (ed-end (ES.ed st))))
+    (KDel (rd-edit arena st prompt cprompt cands (ed-delete (ES.ed st))))
+    (KWordLeft (rd-edit arena st prompt cprompt cands (ed-word-left (ES.ed st))))
+    (KWordRight (rd-edit arena st prompt cprompt cands (ed-word-right (ES.ed st))))
+    (KWordDel (rd-kill arena st prompt cprompt cands (ed-kill-word-fwd (ES.ed st))))
+    (KBackspace (rd-edit arena st prompt cprompt cands (ed-backspace (ES.ed st))))))
+
+(defn rd-edit (arena st prompt cprompt cands e)
+  (rd-again arena (ES.with-ed st e) prompt cprompt cands))
+
+(defn rd-kill (arena st prompt cprompt cands killed)
+  (rd-edit arena (ES.with-kill st (Killed.text killed)) prompt cprompt cands
+           (Killed.ed killed)))
+
+; ===========================================================================
+; SUBMIT, CANCEL, END
+; ===========================================================================
+
+; Enter: submit a complete entry, or open an indented continuation line.
+(defn rd-enter (arena st prompt cprompt cands)
+  (let e (ES.ed st)
+    (if (= (rd-complete-p (Ed.text e)) 1)
+      (rd-submit arena st prompt cprompt)
+      (rd-edit arena st prompt cprompt cands (ed-newline-indent e)))))
+
+; Finish the entry: move the cursor past the last row so the result
+; prints below it, and hand the text back.
+(defn rd-submit (arena st prompt cprompt)
+  (let e (ES.ed st)
+    (let st2 (ES.with-ed st (ed-buf-end e))
+      (let st3 (rd-draw arena st2 prompt cprompt)
+        (begin
+          (term-write "\r\n")
+          (LineOk (Ed.text e) (ES (Ed "" 0) (ES.hist st3) (Screen 0 0) (ES.kill st3))))))))
+
+; Ctrl-D: delete forward when there is something to delete, end the
+; session only on a genuinely empty entry.
+(defn rd-eof (arena st prompt cprompt cands)
+  (if (> (str-length (Ed.text (ES.ed st))) 0)
+    (rd-edit arena st prompt cprompt cands (ed-delete (ES.ed st)))
+    (begin
+      (term-write "\r\n")
+      (LineEof st))))
+
+; Ctrl-C: abandon this entry without leaving the REPL, exactly like a
+; shell. The abandoned text stays visible above the new prompt.
+(defn rd-cancel (arena st prompt cprompt)
+  (let st2 (ES.with-ed st (ed-buf-end (ES.ed st)))
+    (let st3 (rd-draw arena st2 prompt cprompt)
+      (begin
+        (term-write "\r\n")
+        (LineCancel (ES (Ed "" 0) (Hist (Hist.entries (ES.hist st3)) -1 "")
+                        (Screen 0 0) (ES.kill st3)))))))
+
+; ===========================================================================
+; HISTORY
+; ===========================================================================
+
+; Up: previous line of this entry if there is one, otherwise the
+; previous history entry.
+(defn rd-up (arena st prompt cprompt cands)
+  (if (= (ed-on-first-line (ES.ed st)) 0)
+    (rd-edit arena st prompt cprompt cands (ed-up-line (ES.ed st)))
+    (rd-hist-move arena st prompt cprompt cands 1)))
+
+(defn rd-down (arena st prompt cprompt cands)
+  (if (= (ed-on-last-line (ES.ed st)) 0)
+    (rd-edit arena st prompt cprompt cands (ed-down-line (ES.ed st)))
+    (rd-hist-move arena st prompt cprompt cands -1)))
+
+; Step `dir` entries back (+1) or forward (-1) through history. The
+; line in progress is stashed on the way out and restored on the way
+; back, so history navigation never destroys unsubmitted work.
+(defn rd-hist-move (arena st prompt cprompt cands dir)
+  (let h (ES.hist st)
+    (let idx (+ (Hist.index h) dir)
+      (let n (list-length (Hist.entries h))
+        (if (< idx -1)
+          (rd-again arena st prompt cprompt cands)
+          (if (>= idx n)
+            (rd-again arena st prompt cprompt cands)
+            (rd-hist-apply arena st prompt cprompt cands h idx)))))))
+
+(defn rd-hist-apply (arena st prompt cprompt cands h idx)
+  (let stash (if (= (Hist.index h) -1) (Ed.text (ES.ed st)) (Hist.stash h))
+    (let text (if (= idx -1) stash (rd-hist-nth (Hist.entries h) idx))
+      (let st2 (ES.with-hist st (Hist (Hist.entries h) idx stash))
+        (rd-edit arena st2 prompt cprompt cands (Ed text (str-length text)))))))
+
+(defn rd-hist-nth (entries i)
+  (match entries
+    (Nil "")
+    (Cons h t (if (<= i 0) h (rd-hist-nth t (- i 1))))))
+
+; ===========================================================================
+; CONTROL KEYS
+; ===========================================================================
+
+(defn rd-ctrl (arena st prompt cprompt cands c)
+  (if (= c 1) (rd-edit arena st prompt cprompt cands (ed-home (ES.ed st)))
+  (if (= c 5) (rd-edit arena st prompt cprompt cands (ed-end (ES.ed st)))
+  (if (= c 2) (rd-edit arena st prompt cprompt cands (ed-left (ES.ed st)))
+  (if (= c 6) (rd-edit arena st prompt cprompt cands (ed-right (ES.ed st)))
+  (if (= c 3) (rd-cancel arena st prompt cprompt)
+  (if (= c 4) (rd-eof arena st prompt cprompt cands)
+  (if (= c 11) (rd-kill arena st prompt cprompt cands (ed-kill-to-line-end (ES.ed st)))
+  (if (= c 21) (rd-kill arena st prompt cprompt cands (ed-kill-to-line-start (ES.ed st)))
+  (if (= c 23) (rd-kill arena st prompt cprompt cands (ed-kill-word-back (ES.ed st)))
+  (if (= c 25) (rd-edit arena st prompt cprompt cands (ed-insert (ES.ed st) (ES.kill st)))
+  (if (= c 20) (rd-edit arena st prompt cprompt cands (ed-transpose (ES.ed st)))
+  (if (= c 12) (rd-clear arena st prompt cprompt cands)
+  (if (= c 10) (rd-edit arena st prompt cprompt cands (ed-newline-indent (ES.ed st)))
+  (if (= c 18) (rd-search arena st prompt cprompt cands "")
+  (if (= c 15) (rd-submit arena st prompt cprompt)
+  (rd-again arena st prompt cprompt cands)))))))))))))))))
+
+(defn rd-alt (arena st prompt cprompt cands c)
+  (if (= c 13) (rd-edit arena st prompt cprompt cands (ed-newline-indent (ES.ed st)))
+  (if (= c 60) (rd-edit arena st prompt cprompt cands (ed-buf-start (ES.ed st)))
+  (if (= c 62) (rd-edit arena st prompt cprompt cands (ed-buf-end (ES.ed st)))
+  (rd-again arena st prompt cprompt cands)))))
+
+; Ctrl-L: clear the screen and redraw the entry at the top, without
+; disturbing what is being edited.
+(defn rd-clear (arena st prompt cprompt cands)
+  (begin
+    (term-write (ansi-clear-screen))
+    (rd-again arena (ES.with-screen st (Screen 0 0)) prompt cprompt cands)))
+
+; ===========================================================================
+; BRACKETED PASTE
+; ===========================================================================
+
+; Between ESC[200~ and ESC[201~ every byte is literal text -- a newline
+; in pasted code must not submit the entry, and a pasted tab must not
+; trigger completion.
+(defn rd-paste (arena st prompt cprompt cands acc)
+  (let k (key-read)
+    (match k
+      (KPasteEnd (rd-edit arena st prompt cprompt cands (ed-insert (ES.ed st) acc)))
+      (KEOF (rd-edit arena st prompt cprompt cands (ed-insert (ES.ed st) acc)))
+      (KChar c (rd-paste arena st prompt cprompt cands (str-concat acc (byte-str c))))
+      (KEnter (rd-paste arena st prompt cprompt cands (str-concat acc "\n")))
+      (KTab (rd-paste arena st prompt cprompt cands (str-concat acc "  ")))
+      (KNone (rd-paste arena st prompt cprompt cands acc))
+      (KCtrl _ (rd-paste arena st prompt cprompt cands acc))
+      (KAlt _ (rd-paste arena st prompt cprompt cands acc))
+      (KEsc (rd-paste arena st prompt cprompt cands acc))
+      (KUp (rd-paste arena st prompt cprompt cands acc))
+      (KDown (rd-paste arena st prompt cprompt cands acc))
+      (KLeft (rd-paste arena st prompt cprompt cands acc))
+      (KRight (rd-paste arena st prompt cprompt cands acc))
+      (KHome (rd-paste arena st prompt cprompt cands acc))
+      (KEnd (rd-paste arena st prompt cprompt cands acc))
+      (KDel (rd-paste arena st prompt cprompt cands acc))
+      (KWordLeft (rd-paste arena st prompt cprompt cands acc))
+      (KWordRight (rd-paste arena st prompt cprompt cands acc))
+      (KWordDel (rd-paste arena st prompt cprompt cands acc))
+      (KPageUp (rd-paste arena st prompt cprompt cands acc))
+      (KPageDown (rd-paste arena st prompt cprompt cands acc))
+      (KBackTab (rd-paste arena st prompt cprompt cands acc))
+      (KBackspace (rd-paste arena st prompt cprompt cands acc))
+      (KPasteStart (rd-paste arena st prompt cprompt cands acc)))))
+
+; ===========================================================================
+; COMPLETION
+; ===========================================================================
+
+; Tab at the start of a token indents; Tab after a partial name
+; completes it. Candidates are supplied by the caller: everything the
+; session knows about, plus the language's own names.
+(defn rd-tab (arena st prompt cprompt cands)
+  (let e (ES.ed st)
+    (let start (rd-token-start (Ed.text e) (Ed.cur e))
+      (let pre (str-substring (Ed.text e) start (- (Ed.cur e) start))
+        (if (= (str-length pre) 0)
+          (rd-edit arena st prompt cprompt cands (ed-insert e "  "))
+          (rd-complete arena st prompt cprompt cands pre))))))
+
+; Start of the token the cursor sits at the end of.
+(defn rd-token-start (text cur)
+  (if (<= cur 0)
+    0
+    (if (= (ed-word-byte (term-byte-at text (- cur 1))) 1)
+      (rd-token-start text (- cur 1))
+      cur)))
+
+(defn rd-complete (arena st prompt cprompt cands pre)
+  (let ms (rd-matches cands pre)
+    (let n (list-length ms)
+      (if (= n 0)
+        (rd-again arena st prompt cprompt cands)
+        (if (= n 1)
+          (rd-insert-completion arena st prompt cprompt cands pre (rd-first ms))
+          (rd-complete-many arena st prompt cprompt cands pre ms))))))
+
+; Several candidates: extend as far as they all agree, and if that adds
+; nothing, show them.
+(defn rd-complete-many (arena st prompt cprompt cands pre ms)
+  (let common (rd-common-prefix ms)
+    (if (> (str-length common) (str-length pre))
+      (rd-insert-completion arena st prompt cprompt cands pre common)
+      (rd-show-candidates arena st prompt cprompt cands ms))))
+
+(defn rd-insert-completion (arena st prompt cprompt cands pre full)
+  (let add (str-substring full (str-length pre) (- (str-length full) (str-length pre)))
+    (rd-edit arena st prompt cprompt cands (ed-insert (ES.ed st) add))))
+
+(defn rd-matches (cands pre)
+  (match cands
+    (Nil Nil)
+    (Cons c rest
+      (if (= (rd-starts-with c pre) 1)
+        (Cons c (rd-matches rest pre))
+        (rd-matches rest pre)))))
+
+(defn rd-starts-with (s pre)
+  (let n (str-length pre)
+    (if (> n (str-length s))
+      0
+      (str-eq (str-substring s 0 n) pre))))
+
+(defn rd-first (xs)
+  (match xs (Nil "") (Cons h _ h)))
+
+(defn rd-common-prefix (xs)
+  (match xs
+    (Nil "")
+    (Cons h t (rd-common-fold t h))))
+
+(defn rd-common-fold (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (rd-common-fold t (rd-common2 acc h)))))
+
+(defn rd-common2 (a b)
+  (str-substring a 0 (rd-common-len a b 0)))
+
+(defn rd-common-len (a b i)
+  (if (>= i (str-length a))
+    i
+    (if (>= i (str-length b))
+      i
+      (if (= (term-byte-at a i) (term-byte-at b i))
+        (rd-common-len a b (+ i 1))
+        i))))
+
+; Print the candidates below the entry and redraw it underneath, the way
+; a shell does. The list is capped: a hundred names scrolling the entry
+; off the screen helps nobody.
+(defn rd-show-candidates (arena st prompt cprompt cands ms)
+  (begin
+    (term-write "\r\n")
+    (term-write (rd-candidate-text arena ms (term-width)))
+    (rd-again arena (ES.with-screen st (Screen 0 0)) prompt cprompt cands)))
+
+(defn rd-candidate-text (arena ms cols)
+  (let n (list-length ms)
+    (if (> n 60)
+      (str-concat (rd-join (rd-take ms 60) cols 0 "")
+                  (str-concat "\r\n... " (str-concat (int-str arena (- n 60)) " more\r\n")))
+      (str-concat (rd-join ms cols 0 "") "\r\n"))))
+
+(defn rd-take (xs n)
+  (if (<= n 0)
+    Nil
+    (match xs (Nil Nil) (Cons h t (Cons h (rd-take t (- n 1)))))))
+
+; Lay the names out in columns of 24, wrapping at the terminal width.
+(defn rd-join (xs cols col acc)
+  (match xs
+    (Nil acc)
+    (Cons h t
+      (if (> (+ col 24) cols)
+        (rd-join t cols 24 (str-concat acc (str-concat "\r\n" (rd-pad h 24))))
+        (rd-join t cols (+ col 24) (str-concat acc (rd-pad h 24)))))))
+
+(defn rd-pad (s w)
+  (if (>= (str-length s) w)
+    (str-concat s " ")
+    (str-concat s (rd-spaces (- w (str-length s))))))
+
+(defn rd-spaces (n)
+  (if (<= n 0) "" (str-concat " " (rd-spaces (- n 1)))))
+
+; ===========================================================================
+; REVERSE SEARCH
+; ===========================================================================
+
+; Ctrl-R: incremental search backwards through history. Typing narrows,
+; Ctrl-R again steps to the next older match, Enter submits the match,
+; Escape keeps it in the buffer for editing, Ctrl-G restores what was
+; being typed before the search started.
+(defn rd-search (arena st prompt cprompt cands query)
+  (let st2 (rd-erase arena st)
+    (rd-search-loop arena st2 prompt cprompt cands query 0 (Ed.text (ES.ed st2)))))
+
+; Move back to the entry's first row and clear everything below it, so
+; another display can use those rows.
+(defn rd-erase (arena st)
+  (begin
+    (term-write (str-concat (ansi-cursor-up arena (Screen.crow (ES.screen st)))
+                            (str-concat "\r" (ansi-clear-below))))
+    (ES.with-screen st (Screen 0 0))))
+
+(defn rd-search-loop (arena st prompt cprompt cands query from saved)
+  (let hit (rd-search-find (Hist.entries (ES.hist st)) query from 0)
+    (begin
+      (rd-search-draw arena query hit)
+      (rd-search-key arena st prompt cprompt cands query from saved hit))))
+
+(defn rd-search-draw (arena query hit)
+  (term-write (str-concat (ansi-clear-line)
+                (str-concat "(reverse-i-search)`"
+                  (str-concat query (str-concat "': " (hl-colorize hit)))))))
+
+; First entry at or after index `from` that contains `query`.
+(defn rd-search-find (entries query from i)
+  (match entries
+    (Nil "")
+    (Cons h t
+      (if (< i from)
+        (rd-search-find t query from (+ i 1))
+        (if (= (rd-contains h query) 1)
+          h
+          (rd-search-find t query from (+ i 1)))))))
+
+(defn rd-search-index (entries query from i)
+  (match entries
+    (Nil -1)
+    (Cons h t
+      (if (< i from)
+        (rd-search-index t query from (+ i 1))
+        (if (= (rd-contains h query) 1)
+          i
+          (rd-search-index t query from (+ i 1)))))))
+
+(defn rd-contains (s sub)
+  (if (= (str-length sub) 0)
+    1
+    (rd-contains-at s sub 0)))
+
+(defn rd-contains-at (s sub i)
+  (if (> (+ i (str-length sub)) (str-length s))
+    0
+    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+      1
+      (rd-contains-at s sub (+ i 1)))))
+
+(defn rd-search-key (arena st prompt cprompt cands query from saved hit)
+  (let k (key-read)
+    (match k
+      (KChar c (rd-search-loop arena st prompt cprompt cands
+                               (str-concat query (byte-str c)) from saved))
+      (KBackspace (rd-search-loop arena st prompt cprompt cands
+                                  (rd-drop-last query) from saved))
+      (KCtrl c (rd-search-ctrl arena st prompt cprompt cands query from saved hit c))
+      (KEnter (rd-search-accept arena st prompt cprompt hit 1))
+      (KEsc (rd-search-exit arena st prompt cprompt cands hit))
+      (KEOF (rd-search-exit arena st prompt cprompt cands hit))
+      (KLeft (rd-search-exit arena st prompt cprompt cands hit))
+      (KRight (rd-search-exit arena st prompt cprompt cands hit))
+      (KUp (rd-search-exit arena st prompt cprompt cands hit))
+      (KDown (rd-search-exit arena st prompt cprompt cands hit))
+      (KHome (rd-search-exit arena st prompt cprompt cands hit))
+      (KEnd (rd-search-exit arena st prompt cprompt cands hit))
+      (KDel (rd-search-exit arena st prompt cprompt cands hit))
+      (KTab (rd-search-exit arena st prompt cprompt cands hit))
+      (KBackTab (rd-search-exit arena st prompt cprompt cands hit))
+      (KWordLeft (rd-search-exit arena st prompt cprompt cands hit))
+      (KWordRight (rd-search-exit arena st prompt cprompt cands hit))
+      (KWordDel (rd-search-exit arena st prompt cprompt cands hit))
+      (KPageUp (rd-search-exit arena st prompt cprompt cands hit))
+      (KPageDown (rd-search-exit arena st prompt cprompt cands hit))
+      (KPasteStart (rd-search-exit arena st prompt cprompt cands hit))
+      (KPasteEnd (rd-search-exit arena st prompt cprompt cands hit))
+      (KAlt _ (rd-search-exit arena st prompt cprompt cands hit))
+      (KNone (rd-search-key arena st prompt cprompt cands query from saved hit)))))
+
+(defn rd-search-ctrl (arena st prompt cprompt cands query from saved hit c)
+  (if (= c 18)
+    (rd-search-next arena st prompt cprompt cands query from saved)
+  (if (= c 7)
+    (rd-search-abort arena st prompt cprompt cands saved)
+  (if (= c 3)
+    (rd-search-abort arena st prompt cprompt cands saved)
+  (rd-search-exit arena st prompt cprompt cands hit)))))
+
+; Ctrl-R again: continue past the match currently shown.
+(defn rd-search-next (arena st prompt cprompt cands query from saved)
+  (let i (rd-search-index (Hist.entries (ES.hist st)) query from 0)
+    (if (< i 0)
+      (rd-search-loop arena st prompt cprompt cands query from saved)
+      (rd-search-loop arena st prompt cprompt cands query (+ i 1) saved))))
+
+; Leave search with the match in the buffer, ready to edit.
+(defn rd-search-exit (arena st prompt cprompt cands hit)
+  (let st2 (ES.with-ed st (Ed hit (str-length hit)))
+    (begin
+      (term-write (ansi-clear-line))
+      (rd-again arena (ES.with-screen st2 (Screen 0 0)) prompt cprompt cands))))
+
+; Enter inside search: submit the match directly.
+(defn rd-search-accept (arena st prompt cprompt hit _submit)
+  (let st2 (ES.with-ed st (Ed hit (str-length hit)))
+    (begin
+      (term-write (ansi-clear-line))
+      (rd-submit arena (ES.with-screen st2 (Screen 0 0)) prompt cprompt))))
+
+; Ctrl-G: forget the search, restore what was being typed.
+(defn rd-search-abort (arena st prompt cprompt cands saved)
+  (let st2 (ES.with-ed st (Ed saved (str-length saved)))
+    (begin
+      (term-write (ansi-clear-line))
+      (rd-again arena (ES.with-screen st2 (Screen 0 0)) prompt cprompt cands))))
+
+(defn rd-drop-last (s)
+  (if (<= (str-length s) 0) s (str-substring s 0 (- (str-length s) 1))))

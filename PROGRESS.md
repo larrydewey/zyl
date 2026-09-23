@@ -1,5 +1,85 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — a first-class REPL, stage 1: the line editor
+
+**`zyl repl` is a real interactive session now: raw-mode line editing
+with arrows and word motion, persistent history with reverse search,
+multi-line entries that continue until the form closes, Tab completion,
+syntax highlighting as you type, and meta commands.** The evaluation
+model underneath is still compile-and-run (stage 2 replaces it with an
+ICNF interpreter, which is what makes a *binding* — not just a
+definition — survive from one entry to the next).
+
+### What shipped
+
+- `stdlib/repl/terminal.zyl` — raw mode, window size, and the whole
+  escape-sequence grammar decoded into a `Key` type. No readline or
+  libedit dependency: the four primitives it needs (raw mode, a byte
+  with and without a timeout, the window size, an unbuffered write) are
+  in `runtime/actor_runtime.c`, and everything above them is Zyl.
+- `stdlib/repl/line_editor.zyl` — the editor state and its operations,
+  including multi-line layout. Width is counted in codepoints, so a
+  UTF-8 character occupies one column rather than its byte count.
+- `stdlib/repl/reader.zyl` — the key loop. Enter submits only a complete
+  S-expression; an unfinished one gets a newline indented to its nesting
+  depth. Up and Down move between the lines of an entry and reach for
+  history only from its first and last line.
+- `stdlib/repl/highlight.zyl` — lexical highlighting that runs on every
+  keystroke and colors half-written input without failing.
+- `stdlib/repl/history.zyl` — `~/.zyl/repl_history`, appended as each
+  entry is submitted rather than at exit, with newlines escaped so the
+  file stays one entry per line.
+- `stdlib/repl/eval.zyl` — evaluation, and the session's definitions.
+- `stdlib/repl/repl.zyl` — the session itself, the meta commands
+  (`:help :quit :history :defs :doc :load :save :reset :clear`), and a
+  scripted mode for when stdin is not a terminal.
+- `stdlib/compiler/pipeline.zyl` — the phase pipeline, moved out of
+  `selfhost/driver.zyl` so the CLI and the REPL run the same phases.
+  `compile-to-fns` stops at ICNF; `compile-to-asm` is that plus codegen.
+- `tools/repl.zyl` is now a thin `main` over the same modules, so the
+  standalone binary and `zyl repl` are the same code.
+
+### A real ABI bug, found by the REPL
+
+`tcsetattr` segfaulted on its **second** call and not its first. The
+cause was not the terminal code: this backend never established the
+SysV guarantee that rsp is 16-byte aligned at a `call`. `cg-function`
+sizes a frame as 16n+8, which leaves rsp at 8 mod 16 inside every body,
+and the parity pad in `cg-call-args` preserves whatever alignment
+happens to hold rather than establishing one. Most C functions do not
+care; one that copies a struct or an `__m128i` local compiles that copy
+into `movaps`, which faults rather than merely running slower.
+`cg-print` (printf with a float) and `cg-variant` (zyl_heap_alloc) had
+each been patched locally with a save/AND/restore of rsp; `cg-fire-ext`
+now does the same for **every** C call of arity 6 or less, which is
+every `ffi-call` in this tree. Arity 7 and up passes arguments on the
+stack at `[rsp]` and keeps the old behavior.
+
+Full reseed to a new fixed point; `./run_regression_tests.sh --full`
+is 88/88.
+
+### Also
+
+- `\e` and `\xNN` string escapes (`zyl_cstr_decode`): a program could
+  not write an ANSI control sequence as a literal before this.
+- `zyl_cc_compile_log`: the same compile as `zyl_cc_compile` with the
+  toolchain's output captured to a file, so a linker message becomes a
+  diagnostic the REPL prints rather than raw text interleaved into the
+  session.
+- A definition entered at the REPL is accepted only if the session still
+  **links** with it. No phase before linking resolves call targets, so a
+  definition that merely compiles can poison every later entry.
+
+### Known limitations (stage 1)
+
+- Bindings do not persist between entries; definitions do. The ICNF
+  interpreter (stage 2) is what fixes this.
+- Each entry recompiles the session's definitions, so entry latency
+  grows with the session.
+- The stdlib is not in scope at the prompt yet.
+- Values print through `print`, so an ADT or struct shows as a pointer.
+  A derivable `Show` is stage 3.
+
 ## Current Session (2026-09-23) — VS Code extension 0.3.0 and package-aware LSP
 
 **The extension is on current tooling, actually installs, and no longer

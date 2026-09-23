@@ -906,8 +906,43 @@
 (defn cg-fire-ext (st env name n)
   (let sym (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000)
     (let st2 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)
-      (let st3 (cg-emit-line st st2)
+      (let st3 (cg-ext-call-aligned st st2 n)
         (cg-call-cleanup st3 n)))))
+
+; A C function may assume the SysV guarantee that rsp is 16-byte aligned
+; at the call, and some do in a way that faults when it is not: gcc
+; compiles a struct copy or an __m128i local into `movaps`, which
+; requires the alignment rather than merely preferring it. This backend
+; cannot promise it by construction -- cg-function's frame leaves rsp at
+; 8 mod 16 inside a body, and every intermediate push (an argument
+; scratch slot, a variant field) shifts it again under any sub-
+; expression that contains its own call -- so the parity pad in
+; cg-call-args preserves whatever alignment happened to hold rather than
+; establishing one.
+;
+; Found the hard way: the REPL's `tcsetattr` (a 60-byte struct termios,
+; copied with movaps) segfaulted on its second call and not its first,
+; purely because the two call sites sat at different depths. printf with
+; a float argument (cg-print) and zyl_heap_alloc (cg-variant) had each
+; been patched with this same save/AND/restore locally; this puts it on
+; every C call instead of waiting for the next one to crash.
+;
+; r12 is callee-saved, so the callee hands it back. The register
+; arguments are already loaded by the time this runs (cg-call-args phase
+; 3), so moving rsp cannot disturb them.
+;
+; Arity 7 and up passes its extra arguments ON the stack, at [rsp] at
+; the moment of the call, so rsp is not free to move there; those keep
+; the parity-pad behavior. No ffi-call in this tree has that many
+; arguments, and a C function that both takes seven and needs aligned
+; SSE would need the alignment established before phase 2 instead.
+(defn cg-ext-call-aligned (st callstr n)
+  (if (> n 6)
+    (cg-emit-line st callstr)
+    (let st2 (cg-emit-line st "    mov r12, rsp")
+      (let st3 (cg-emit-line st2 "    and rsp, -16")
+        (let st4 (cg-emit-line st3 callstr)
+          (cg-emit-line st4 "    mov rsp, r12"))))))
 
 ; print: pick the format by the argument's kind.
 ; `print`'s own "value" (this is a Lisp where everything is an

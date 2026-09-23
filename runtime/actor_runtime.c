@@ -1002,6 +1002,14 @@ long long zyl_cstr_sanitize(long long arena, long long src) {
    opening quote): handle \n \t \" \\ escapes. Returns a NUL-terminated buffer
    in `arena`, or 0 if an escape is unterminated (caller reports a lex error).
    Deterministic: decodes left-to-right in source order. */
+/* Hex digit value, or -1. Used by zyl_cstr_decode's \xNN escape. */
+static int zyl_hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
 long long zyl_cstr_decode(long long arena, long long src, long long start, long long end) {
     if (!src) return 0;
     if (!zyl_cstr_valid(src, "cstr-decode")) return 0;
@@ -1021,6 +1029,17 @@ long long zyl_cstr_decode(long long arena, long long src, long long start, long 
             else if (n == '0') { out[o++] = '\0'; i += 2; }
             else if (n == '"') { out[o++] = '"'; i += 2; }
             else if (n == '\\') { out[o++] = '\\'; i += 2; }
+            /* \e is ESC (0x1b). Every ANSI control sequence a terminal
+               program emits starts with it, and without this escape the
+               REPL's line editor could not write one as a string literal
+               at all -- it would have to build each sequence byte by byte
+               at runtime. \xNN covers the rest of the non-printables. */
+            else if (n == 'e') { out[o++] = (char)27; i += 2; }
+            else if (n == 'x' && i + 3 < end
+                     && zyl_hexval(s[i + 2]) >= 0 && zyl_hexval(s[i + 3]) >= 0) {
+                out[o++] = (char)((zyl_hexval(s[i + 2]) << 4) | zyl_hexval(s[i + 3]));
+                i += 4;
+            }
             else return 0;
         } else if (c == '\\') {
             return 0; /* backslash at very end — unterminated escape */
@@ -2376,6 +2395,44 @@ long long zyl_cc_compile(long long path) {
     return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
 }
 
+/* Same as zyl_cc_compile, but with the toolchain's own stdout and
+   stderr redirected into `logpath`. The REPL needs this: a linker
+   message belongs in a diagnostic the REPL formats and prints, not
+   interleaved raw into the session transcript at whatever moment the
+   child happens to write it. Returns the child's exit status, or -1. */
+long long zyl_cc_compile_log(long long path, long long logpath) {
+    const char* asm_path = (const char*)(size_t)path;
+    const char* log_path = (const char*)(size_t)logpath;
+    if (!asm_path || !log_path) return -1;
+    size_t len = strlen(asm_path);
+    char out_path[512];
+    if (len >= 2 && asm_path[len - 2] == '.' && asm_path[len - 1] == 's') {
+        size_t base_len = len - 2;
+        if (base_len >= sizeof(out_path)) return -1;
+        memcpy(out_path, asm_path, base_len);
+        out_path[base_len] = 0;
+    } else {
+        if (len + 4 >= sizeof(out_path)) return -1;
+        snprintf(out_path, sizeof(out_path), "%s.bin", asm_path);
+    }
+    posix_spawn_file_actions_t fa;
+    if (posix_spawn_file_actions_init(&fa) != 0) return -1;
+    posix_spawn_file_actions_addopen(&fa, STDOUT_FILENO, log_path,
+                                     O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    posix_spawn_file_actions_adddup2(&fa, STDOUT_FILENO, STDERR_FILENO);
+    char* argv[] = {
+        (char*)"cc", (char*)"-no-pie", (char*)asm_path, (char*)"actor_runtime.c",
+        (char*)"-o", out_path, (char*)"-lpthread", NULL
+    };
+    pid_t pid;
+    int rc = posix_spawnp(&pid, "cc", &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    if (rc != 0) return -1;
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
+}
+
 /* Run a compiled binary to completion and return its exit status. Same
    posix_spawn rationale as zyl_cc_compile: must return control to the
    caller (the REPL loop) rather than replace this process. */
@@ -2836,4 +2893,186 @@ long long zyl_mangle_key(long long arena, long long key) {
     }
     free(full);
     return out;
+}
+
+/* ── Interactive terminal primitives (REPL line editor) ─────────────────
+   The REPL's line editor is written in Zyl (stdlib/repl/line_editor.zyl)
+   and needs exactly four things the language cannot express on its own:
+   putting the terminal into raw mode, reading one byte at a time with an
+   optional timeout (an escape sequence has to be distinguished from a
+   lone ESC by whether more bytes follow immediately), asking the kernel
+   how wide the window is, and guaranteeing the terminal is restored even
+   if the process dies somewhere the editor's own cleanup never runs.
+
+   No readline/libedit dependency: those pull an external library (GPL,
+   in readline's case) into every binary that links this runtime, and the
+   editor needs key handling this runtime can hand it directly. */
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <poll.h>
+
+static struct termios g_term_saved;
+static int g_term_saved_valid = 0;
+static int g_term_raw_active = 0;
+
+/* Restores the terminal from whatever exit path the process takes --
+   a normal return, exit(), or zyl_f_error/zyl_panic's own exit(1).
+   Without this, a REPL that dies mid-edit leaves the user's shell in
+   raw mode with no echo, which looks exactly like a hung terminal. */
+static void zyl_term_restore_atexit(void) {
+    if (g_term_raw_active && g_term_saved_valid) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_term_saved);
+        g_term_raw_active = 0;
+        /* Leave bracketed paste and any pending SGR behind us. */
+        (void)!write(STDOUT_FILENO, "\033[?2004l\033[0m", 12);
+    }
+}
+
+/* 1 if fd is a terminal. A REPL reading from a pipe must not try to
+   raw-mode it: there is nothing to put in raw mode, and the editor's
+   redraw escapes would end up in the captured output. */
+long long zyl_term_is_tty(long long fd) {
+    return isatty((int)fd) ? 1 : 0;
+}
+
+/* Raw mode: no canonical line buffering, no echo, no signal generation
+   (so Ctrl-C arrives as byte 3 for the editor to interpret rather than
+   killing the REPL), no XON/XOFF (so Ctrl-S is a key, not a terminal
+   freeze). Output post-processing (OPOST) stays ON: the editor emits
+   "\r\n" itself, and turning OPOST off gains nothing while making every
+   other library's printf output in the same process misalign.
+   VMIN=1/VTIME=0 makes a read block until exactly one byte is there.
+   Returns 0 on success, -1 if stdin is not a terminal or tcsetattr
+   fails. Idempotent: calling it twice does not overwrite the saved
+   original with the raw settings. */
+long long zyl_term_raw_on(void) {
+    struct termios raw;
+    if (!isatty(STDIN_FILENO)) return -1;
+    if (g_term_raw_active) return 0;
+    if (!g_term_saved_valid) {
+        if (tcgetattr(STDIN_FILENO, &g_term_saved) != 0) return -1;
+        g_term_saved_valid = 1;
+        atexit(zyl_term_restore_atexit);
+    }
+    raw = g_term_saved;
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) != 0) return -1;
+    g_term_raw_active = 1;
+    return 0;
+}
+
+long long zyl_term_raw_off(void) {
+    if (!g_term_raw_active || !g_term_saved_valid) return 0;
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_term_saved) != 0) return -1;
+    g_term_raw_active = 0;
+    return 0;
+}
+
+/* One byte from stdin. -1 means real EOF (Ctrl-D on an empty line at the
+   tty, or the end of a piped script); -2 means the read was interrupted
+   and the caller should simply ask again. Both are outside 0..255, so
+   neither can collide with a real byte. */
+long long zyl_term_read_byte(void) {
+    unsigned char c;
+    for (;;) {
+        ssize_t n = read(STDIN_FILENO, &c, 1);
+        if (n == 1) return (long long)c;
+        if (n == 0) return -1;
+        if (errno == EINTR) return -2;
+        return -1;
+    }
+}
+
+/* Same, but gives up after `ms` milliseconds and returns -3. This is
+   what makes a bare ESC keypress distinguishable from the start of an
+   arrow key's "\033[A": a real escape sequence's remaining bytes are
+   already in the buffer, while a lone ESC is followed by nothing. */
+long long zyl_term_read_byte_timeout(long long ms) {
+    struct pollfd p;
+    p.fd = STDIN_FILENO;
+    p.events = POLLIN;
+    p.revents = 0;
+    int r = poll(&p, 1, (int)ms);
+    if (r == 0) return -3;
+    if (r < 0) return (errno == EINTR) ? -2 : -1;
+    return zyl_term_read_byte();
+}
+
+/* Window size, for wrapping a long line across rows and for placing the
+   cursor after a redraw. 80x24 when the kernel will not say (not a tty,
+   or a terminal that does not implement TIOCGWINSZ). */
+long long zyl_term_width(void) {
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+        return (long long)ws.ws_col;
+    return 80;
+}
+
+long long zyl_term_height(void) {
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
+        return (long long)ws.ws_row;
+    return 24;
+}
+
+/* Write with no trailing newline and no stdio buffering in between.
+   The editor redraws by emitting escape sequences that must reach the
+   terminal in the same order as any printf output around them, so it
+   flushes stdout first and then writes directly. */
+long long zyl_term_write(long long s) {
+    if (!s) return 0;
+    const char* p = (const char*)(size_t)s;
+    size_t len = strlen(p);
+    size_t off = 0;
+    fflush(stdout);
+    while (off < len) {
+        ssize_t n = write(STDOUT_FILENO, p + off, len - off);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            break;
+        }
+        off += (size_t)n;
+    }
+    return (long long)off;
+}
+
+long long zyl_term_flush(void) {
+    fflush(stdout);
+    return 0;
+}
+
+/* mkdir -p, for the REPL's own state directory (~/.zyl). Returns 0 if
+   the directory exists afterwards, -1 otherwise. */
+long long zyl_mkdir_p(long long path) {
+    const char* p = (const char*)(size_t)path;
+    if (!p || !*p) return -1;
+    size_t len = strlen(p);
+    if (len >= PATH_MAX) return -1;
+    char buf[PATH_MAX];
+    memcpy(buf, p, len + 1);
+    for (size_t i = 1; i < len; i++) {
+        if (buf[i] == '/') {
+            buf[i] = 0;
+            if (mkdir(buf, 0755) != 0 && errno != EEXIST) return -1;
+            buf[i] = '/';
+        }
+    }
+    if (mkdir(buf, 0755) != 0 && errno != EEXIST) return -1;
+    return 0;
+}
+
+/* One-byte string, heap-allocated and NUL-terminated. The line editor
+   builds output a byte at a time (an escape sequence's parameters, a
+   typed character) and Zyl has no character type -- every such byte has
+   to become a one-character string before str-concat can join it. */
+long long zyl_cstr_from_byte(long long b) {
+    long long p = zyl_heap_alloc(2);
+    if (!p) return 0;
+    char* s = (char*)(size_t)p;
+    s[0] = (char)(b & 0xFF);
+    s[1] = 0;
+    return p;
 }

@@ -1,0 +1,117 @@
+; === Zyl Standard Library — REPL history ===
+; Module: repl/history
+;
+; Command history that survives the session, kept in ~/.zyl/repl_history
+; (or wherever ZYL_REPL_HISTORY points). Entries are stored newest-first
+; in memory -- which is the order history navigation walks -- and
+; oldest-first on disk, which is the order a person reading the file
+; expects.
+;
+; A multi-line entry is stored on one line with its newlines escaped, so
+; that the file stays one-entry-per-line and can be read, edited and
+; appended to with ordinary tools.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use repl/terminal)
+
+; How many entries to keep in memory and write back. Enough to cover
+; weeks of use; small enough that loading it is instant.
+(defn hist-limit () 5000)
+
+(defn hist-home ()
+  (let h (ffi-call "zyl_getenv" "HOME" 1000)
+    (if (> h 0) h "/tmp")))
+
+; The REPL's own state directory: ~/.zyl, or ZYL_STATE_DIR when set.
+; Deliberately NOT ZYL_HOME -- that names where the compiler's bundle
+; (stdlib/ and actor_runtime.c) lives, which during a build is a
+; throwaway output directory, and history does not belong there.
+(defn hist-dir ()
+  (let sd (ffi-call "zyl_getenv" "ZYL_STATE_DIR" 1000)
+    (if (> sd 0) sd (str-concat (hist-home) "/.zyl"))))
+
+(defn hist-path ()
+  (let p (ffi-call "zyl_getenv" "ZYL_REPL_HISTORY" 1000)
+    (if (> p 0) p (str-concat (hist-dir) "/repl_history"))))
+
+; Read the history file. Returns entries newest-first, capped at the
+; limit. A missing file is not an error: it is a first run.
+; Returns: List(String)
+(defn hist-load ()
+  (let fd (file-open (hist-path) "r")
+    (if (<= fd 0)
+      Nil
+      (let text (file-read fd 4194304)
+        (begin
+          (file-close fd)
+          (hist-take (list-reverse (hist-split text 0 (str-length text) "" Nil))
+                     (hist-limit)))))))
+
+; Split on newlines, unescaping as it goes, oldest-first. Blank lines
+; are dropped rather than becoming empty history entries.
+(defn hist-split (text i n acc out)
+  (if (>= i n)
+    (hist-emit acc out)
+    (let b (term-byte-at text i)
+      (if (= b 10)
+        (hist-split text (+ i 1) n "" (hist-emit acc out))
+        (if (= b 92)
+          (hist-split text (+ i 2) n (str-concat acc (hist-unescape text (+ i 1) n)) out)
+          (hist-split text (+ i 1) n (str-concat acc (byte-str b)) out))))))
+
+(defn hist-unescape (text i n)
+  (if (>= i n)
+    ""
+    (let b (term-byte-at text i)
+      (if (= b 110) "\n" (if (= b 92) "\\" (byte-str b))))))
+
+(defn hist-emit (entry out)
+  (if (= (str-length entry) 0) out (Cons entry out)))
+
+(defn hist-take (xs n)
+  (if (<= n 0)
+    Nil
+    (match xs (Nil Nil) (Cons h t (Cons h (hist-take t (- n 1)))))))
+
+; Append one entry. Called as soon as the entry is submitted, not at
+; exit: a REPL that loses its history when it crashes is worse than one
+; with no history at all.
+; Returns: Int (bytes written, or -1)
+(defn hist-append (entry)
+  (if (= (str-length entry) 0)
+    0
+    (begin
+      (ffi-call "zyl_mkdir_p" (hist-dir) 1000)
+      (let fd (file-open (hist-path) "a")
+        (if (<= fd 0)
+          -1
+          (let n (file-write fd (str-concat (hist-escape entry) "\n"))
+            (begin
+              (file-close fd)
+              n)))))))
+
+(defn hist-escape (entry)
+  (hist-escape-scan entry 0 (str-length entry) ""))
+
+(defn hist-escape-scan (s i n acc)
+  (if (>= i n)
+    acc
+    (let b (term-byte-at s i)
+      (if (= b 10)
+        (hist-escape-scan s (+ i 1) n (str-concat acc "\\n"))
+        (if (= b 92)
+          (hist-escape-scan s (+ i 1) n (str-concat acc "\\\\"))
+          (hist-escape-scan s (+ i 1) n (str-concat acc (byte-str b))))))))
+
+; Add to the in-memory list, newest first, skipping an immediate
+; repeat -- pressing Enter twice on the same command should not put it
+; in history twice.
+; Returns: List(String)
+(defn hist-push (entries entry)
+  (if (= (str-length entry) 0)
+    entries
+    (match entries
+      (Nil (Cons entry Nil))
+      (Cons h t (if (> (str-eq h entry) 0) entries (Cons entry (Cons h t)))))))

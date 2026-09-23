@@ -296,6 +296,23 @@ files = [
     'stdlib/compiler/sexp_balance.zyl',
     'stdlib/compiler/error_codes.zyl',
     'stdlib/compiler/error_report.zyl',
+    # The phase pipeline itself: one implementation of source-to-ICNF and
+    # source-to-assembly, shared by the CLI (selfhost/driver.zyl) and the
+    # REPL (stdlib/repl/*), which stops it one phase earlier.
+    'stdlib/compiler/pipeline.zyl',
+    # The REPL (`zyl repl`). lsp/builtins is the one file under lsp/ that
+    # ships here, and deliberately: it is the table of every special form,
+    # operator, builtin and type name, which the REPL's completion and
+    # :doc read exactly as the editor's hover does. It depends on core/
+    # only -- no language server comes with it.
+    'stdlib/lsp/builtins.zyl',
+    'stdlib/repl/terminal.zyl',
+    'stdlib/repl/highlight.zyl',
+    'stdlib/repl/line_editor.zyl',
+    'stdlib/repl/reader.zyl',
+    'stdlib/repl/history.zyl',
+    'stdlib/repl/eval.zyl',
+    'stdlib/repl/repl.zyl',
     # NOTE: stdlib/lsp/* is deliberately NOT part of this bundle. This file
     # assembles the SELF-HOSTED COMPILER's own source (what driver.zyl uses
     # to compile itself for the stage2/stage3 fixed-point check) -- driver.zyl

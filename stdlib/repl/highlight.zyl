@@ -1,0 +1,162 @@
+; === Zyl Standard Library — REPL syntax highlighting ===
+; Module: repl/highlight
+;
+; Colors an entry as it is typed. Purely lexical -- it runs on every
+; keystroke, so it cannot afford to parse, and it must never fail on
+; half-written input: an unterminated string is simply colored as a
+; string to its end.
+;
+; The output differs from the input only by ANSI escape sequences, which
+; occupy no columns. That is what lets the editor measure the plain text
+; and write the colored text and still put the cursor in the right
+; place (see ed-render).
+
+(use allocator/allocator)
+(use core/core)
+(use repl/terminal)
+
+; 256-color codes, chosen to stay legible on both light and dark
+; backgrounds: nothing here relies on the terminal's own foreground.
+(defn hl-reset () "\e[0m")
+(defn hl-comment () "\e[38;5;244m")
+(defn hl-string () "\e[38;5;114m")
+(defn hl-number () "\e[38;5;179m")
+(defn hl-keyword () "\e[38;5;176m")
+(defn hl-type () "\e[38;5;116m")
+(defn hl-paren () "\e[38;5;245m")
+
+(defn hl-wrap (color s)
+  (str-concat color (str-concat s (hl-reset))))
+
+; Color `text`. Never returns an error: every byte of the input appears
+; in the output in the same order.
+; Returns: String
+(defn hl-colorize (text)
+  (hl-scan text 0 (str-length text) ""))
+
+(defn hl-scan (text i n acc)
+  (if (>= i n)
+    acc
+    (let b (term-byte-at text i)
+      (if (= b 59) (hl-comment-run text i n acc)
+      (if (= b 34) (hl-string-run text (+ i 1) n acc)
+      (if (= (hl-paren-byte b) 1)
+        (hl-scan text (+ i 1) n (str-concat acc (hl-wrap (hl-paren) (byte-str b))))
+      (if (= (hl-atom-byte b) 1) (hl-atom-run text i n acc)
+        (hl-scan text (+ i 1) n (str-concat acc (byte-str b))))))))))
+
+(defn hl-paren-byte (b)
+  (if (= b 40) 1 (if (= b 41) 1 (if (= b 91) 1 (if (= b 93) 1 0)))))
+
+(defn hl-space-byte (b)
+  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+
+; An atom runs to the next delimiter: whitespace, a paren, a quote or a
+; comment.
+(defn hl-atom-byte (b)
+  (if (= (hl-space-byte b) 1) 0
+  (if (= (hl-paren-byte b) 1) 0
+  (if (= b 34) 0
+  (if (= b 59) 0
+  1)))))
+
+(defn hl-comment-run (text i n acc)
+  (let e (hl-find-newline text i n)
+    (hl-scan text e n
+             (str-concat acc (hl-wrap (hl-comment) (str-substring text i (- e i)))))))
+
+(defn hl-find-newline (text i n)
+  (if (>= i n)
+    n
+    (if (= (term-byte-at text i) 10) i (hl-find-newline text (+ i 1) n))))
+
+; `i` is just past the opening quote. An unterminated string colors to
+; the end of the input rather than giving up.
+(defn hl-string-run (text i n acc)
+  (let e (hl-find-quote text i n)
+    (hl-scan text e n
+             (str-concat acc (hl-wrap (hl-string) (str-substring text (- i 1) (- e (- i 1))))))))
+
+(defn hl-find-quote (text i n)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= b 92)
+        (hl-find-quote text (+ i 2) n)
+        (if (= b 34) (+ i 1) (hl-find-quote text (+ i 1) n))))))
+
+(defn hl-atom-run (text i n acc)
+  (let e (hl-atom-end text i n)
+    (let word (str-substring text i (- e i))
+      (hl-scan text e n (str-concat acc (hl-color-atom word))))))
+
+(defn hl-atom-end (text i n)
+  (if (>= i n)
+    n
+    (if (= (hl-atom-byte (term-byte-at text i)) 1)
+      (hl-atom-end text (+ i 1) n)
+      i)))
+
+(defn hl-color-atom (word)
+  (if (= (hl-number-p word) 1) (hl-wrap (hl-number) word)
+  (if (= (hl-keyword-p word) 1) (hl-wrap (hl-keyword) word)
+  (if (= (hl-type-p word) 1) (hl-wrap (hl-type) word)
+  word))))
+
+; A leading digit, or a sign followed by one.
+(defn hl-number-p (word)
+  (let n (str-length word)
+    (if (= n 0)
+      0
+      (let b0 (term-byte-at word 0)
+        (if (= (hl-digit-byte b0) 1)
+          1
+          (if (> n 1)
+            (if (= (hl-sign-byte b0) 1) (hl-digit-byte (term-byte-at word 1)) 0)
+            0))))))
+
+(defn hl-digit-byte (b)
+  (if (>= b 48) (if (<= b 57) 1 0) 0))
+
+(defn hl-sign-byte (b)
+  (if (= b 45) 1 (if (= b 43) 1 0)))
+
+; An initial capital marks a type or a variant constructor -- the
+; convention the whole language follows.
+(defn hl-type-p (word)
+  (if (= (str-length word) 0)
+    0
+    (let b (term-byte-at word 0)
+      (if (>= b 65) (if (<= b 90) 1 0) 0))))
+
+(defn hl-keyword-p (word)
+  (if (> (str-eq word "defn") 0) 1
+  (if (> (str-eq word "def") 0) 1
+  (if (> (str-eq word "deftype") 0) 1
+  (if (> (str-eq word "defstruct") 0) 1
+  (if (> (str-eq word "defstruct+") 0) 1
+  (if (> (str-eq word "defmacro") 0) 1
+  (if (> (str-eq word "let") 0) 1
+  (if (> (str-eq word "let-mut") 0) 1
+  (if (> (str-eq word "set!") 0) 1
+  (if (> (str-eq word "if") 0) 1
+  (if (> (str-eq word "match") 0) 1
+  (if (> (str-eq word "begin") 0) 1
+  (if (> (str-eq word "while") 0) 1
+  (if (> (str-eq word "for") 0) 1
+  (if (> (str-eq word "fn") 0) 1
+  (if (> (str-eq word "lambda") 0) 1
+  (if (> (str-eq word "trait") 0) 1
+  (if (> (str-eq word "impl") 0) 1
+  (if (> (str-eq word "use") 0) 1
+  (if (> (str-eq word "spawn") 0) 1
+  (if (> (str-eq word "send") 0) 1
+  (if (> (str-eq word "receive") 0) 1
+  (if (> (str-eq word "try") 0) 1
+  (if (> (str-eq word "catch") 0) 1
+  (if (> (str-eq word "ffi-call") 0) 1
+  (if (> (str-eq word "test") 0) 1
+  (if (> (str-eq word "assert") 0) 1
+  (if (> (str-eq word "assert-equal") 0) 1
+  (if (> (str-eq word "print") 0) 1
+  0))))))))))))))))))))))))))))))

@@ -1,0 +1,476 @@
+; === Zyl Standard Library — REPL line editor ===
+; Module: repl/line_editor
+;
+; A full-screen-free, multi-line-aware line editor: arrows and word
+; motion, Home/End, kill and yank, history navigation, incremental
+; reverse search, bracketed paste, and auto-indented continuation lines
+; for an S-expression that is not finished yet.
+;
+; Everything here is pure except the terminal writes: a keystroke maps
+; an editor state to a new editor state, and rendering is a function of
+; the state plus what was on screen last time. That is what makes the
+; redraw correct -- the editor never asks the terminal where the cursor
+; is, it knows, because it put it there.
+;
+; Width is counted in codepoints, not bytes: a UTF-8 continuation byte
+; (0b10xxxxxx) occupies no column of its own. Double-width characters
+; are still counted as one column -- a known limitation, and the only
+; one that needs a wcwidth table to fix.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use repl/terminal)
+
+; ===========================================================================
+; STATE
+; ===========================================================================
+
+; The text being edited and the cursor's byte offset into it. The text
+; may contain newlines: an unfinished S-expression spans lines.
+(deftype Ed (Ed String Int))
+
+(defn Ed.text (e) (match e (Ed t _ t)))
+(defn Ed.cur (e) (match e (Ed _ c c)))
+
+; History for this session: entries newest-first, the index currently
+; being viewed (-1 means "editing a fresh line"), and the line that was
+; stashed when history navigation started, so that walking back down to
+; the bottom restores exactly what was typed.
+(deftype Hist (Hist (List String) Int String))
+
+(defn Hist.entries (h) (match h (Hist e _ _ e)))
+(defn Hist.index (h) (match h (Hist _ i _ i)))
+(defn Hist.stash (h) (match h (Hist _ _ s s)))
+
+; What the last redraw left on screen: how many rows the entry occupied
+; (0-based index of its last row) and which row the cursor ended on.
+; Without both, a redraw cannot get back to the entry's first row.
+(deftype Screen (Screen Int Int))
+
+(defn Screen.rows (s) (match s (Screen r _ r)))
+(defn Screen.crow (s) (match s (Screen _ c c)))
+
+(deftype ES (ES Ed Hist Screen String))
+
+(defn ES.ed (s) (match s (ES e _ _ _ e)))
+(defn ES.hist (s) (match s (ES _ h _ _ h)))
+(defn ES.screen (s) (match s (ES _ _ sc _ sc)))
+(defn ES.kill (s) (match s (ES _ _ _ k k)))
+
+(defn ES.with-ed (s e) (ES e (ES.hist s) (ES.screen s) (ES.kill s)))
+(defn ES.with-hist (s h) (ES (ES.ed s) h (ES.screen s) (ES.kill s)))
+(defn ES.with-screen (s sc) (ES (ES.ed s) (ES.hist s) sc (ES.kill s)))
+(defn ES.with-kill (s k) (ES (ES.ed s) (ES.hist s) (ES.screen s) k))
+
+(defn es-new (entries)
+  (ES (Ed "" 0) (Hist entries -1 "") (Screen 0 0) ""))
+
+; What one call to the editor produced.
+(deftype LineResult
+  (LineOk String ES)     ; a complete entry, ready to evaluate
+  (LineCancel ES)        ; Ctrl-C: this entry is abandoned, session lives on
+  (LineEof ES))          ; Ctrl-D on an empty line, or end of input
+
+; ===========================================================================
+; BYTES AND WIDTH
+; ===========================================================================
+
+; A UTF-8 continuation byte carries no column of its own.
+(defn ed-cont-byte (b)
+  (if (>= b 128) (if (< b 192) 1 0) 0))
+
+(defn ed-space-byte (b)
+  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 0))))
+
+; Word characters for word motion: everything that is not whitespace and
+; not a delimiter. Zyl identifiers include -, ?, !, *, <, >, = and more,
+; so listing the delimiters is both shorter and more accurate than
+; listing the identifier characters.
+(defn ed-word-byte (b)
+  (if (= (ed-space-byte b) 1) 0
+  (if (= b 40) 0
+  (if (= b 41) 0
+  (if (= b 91) 0
+  (if (= b 93) 0
+  (if (= b 123) 0
+  (if (= b 125) 0
+  (if (= b 34) 0
+  1)))))))))
+
+; Byte offset one character to the left of `i` (a whole UTF-8 character,
+; not a byte).
+(defn ed-prev-char (s i)
+  (if (<= i 0)
+    0
+    (ed-prev-char-scan s (- i 1))))
+
+(defn ed-prev-char-scan (s i)
+  (if (<= i 0)
+    0
+    (if (= (ed-cont-byte (term-byte-at s i)) 1)
+      (ed-prev-char-scan s (- i 1))
+      i)))
+
+(defn ed-next-char (s i)
+  (let n (str-length s)
+    (if (>= i n)
+      n
+      (ed-next-char-scan s (+ i 1) n))))
+
+(defn ed-next-char-scan (s i n)
+  (if (>= i n)
+    n
+    (if (= (ed-cont-byte (term-byte-at s i)) 1)
+      (ed-next-char-scan s (+ i 1) n)
+      i)))
+
+; Display width of a string in columns, ignoring any ANSI escape
+; sequences it contains -- used for the prompt, which may be colored.
+(defn ed-display-width (s)
+  (ed-width-scan s 0 (str-length s) 0))
+
+(defn ed-width-scan (s i n acc)
+  (if (>= i n)
+    acc
+    (let b (term-byte-at s i)
+      (if (= b 27)
+        (ed-width-scan s (ed-skip-escape s (+ i 1) n) n acc)
+        (if (= (ed-cont-byte b) 1)
+          (ed-width-scan s (+ i 1) n acc)
+          (ed-width-scan s (+ i 1) n (+ acc 1)))))))
+
+; Past the end of an ANSI escape sequence that started at ESC: a CSI
+; ends at its final byte (0x40-0x7E), anything else is a single byte.
+(defn ed-skip-escape (s i n)
+  (if (>= i n)
+    n
+    (if (= (term-byte-at s i) 91)
+      (ed-skip-csi s (+ i 1) n)
+      (+ i 1))))
+
+(defn ed-skip-csi (s i n)
+  (if (>= i n)
+    n
+    (if (>= (term-byte-at s i) 64)
+      (+ i 1)
+      (ed-skip-csi s (+ i 1) n))))
+
+; ===========================================================================
+; LAYOUT
+; ===========================================================================
+
+; Where the cursor sits after the terminal has drawn text[0..end): row
+; relative to the entry's first row, column within that row.
+(deftype Pos (Pos Int Int))
+
+(defn Pos.row (p) (match p (Pos r _ r)))
+(defn Pos.col (p) (match p (Pos _ c c)))
+
+; `pw` is the prompt's width (the first row starts there), `cw` the
+; continuation prompt's (every row after a newline starts there).
+(defn ed-pos-at (text end cols pw cw)
+  (ed-pos-scan text 0 end cols pw cw 0 pw))
+
+(defn ed-pos-scan (text i end cols pw cw row col)
+  (if (>= i end)
+    (Pos row col)
+    (let b (term-byte-at text i)
+      (if (= b 10)
+        (ed-pos-scan text (+ i 1) end cols pw cw (+ row 1) cw)
+        (if (= (ed-cont-byte b) 1)
+          (ed-pos-scan text (+ i 1) end cols pw cw row col)
+          (ed-pos-advance text i end cols pw cw row (+ col 1)))))))
+
+; One printable character was drawn. Landing exactly on the right margin
+; means the terminal has wrapped: the next character belongs to the next
+; row, at column 0.
+(defn ed-pos-advance (text i end cols pw cw row col)
+  (if (>= col cols)
+    (ed-pos-scan text (+ i 1) end cols pw cw (+ row 1) 0)
+    (ed-pos-scan text (+ i 1) end cols pw cw row col)))
+
+; ===========================================================================
+; RENDERING
+; ===========================================================================
+
+; Replace every newline with a carriage return, a newline and the
+; continuation prompt. In raw mode a bare "\n" moves down without
+; returning to column 0, so the "\r" is not optional.
+(defn ed-expand-newlines (text cprompt)
+  (ed-expand-scan text 0 (str-length text) cprompt ""))
+
+(defn ed-expand-scan (text i n cprompt acc)
+  (if (>= i n)
+    acc
+    (let b (term-byte-at text i)
+      (if (= b 10)
+        (ed-expand-scan text (+ i 1) n cprompt
+                        (str-concat acc (str-concat "\r\n" cprompt)))
+        (ed-expand-scan text (+ i 1) n cprompt
+                        (str-concat acc (byte-str b)))))))
+
+; Redraw the entry in place and leave the cursor where the model says it
+; is. `plain` is what the layout is measured from; `colored` is what is
+; actually written, and may carry highlighting -- the two must contain
+; the same characters in the same order, differing only in escape
+; sequences, which occupy no columns.
+; Returns: Screen (what is now on screen)
+(defn ed-render (arena st prompt cprompt plain colored cur)
+  (let cols (term-width)
+    (let pw (ed-display-width prompt)
+      (let cw (ed-display-width cprompt)
+        (let endp (ed-pos-at plain (str-length plain) cols pw cw)
+          (let curp (ed-pos-at plain cur cols pw cw)
+            (ed-render-emit arena st prompt cprompt colored endp curp)))))))
+
+(defn ed-render-emit (arena st prompt cprompt colored endp curp)
+  (let head (str-concat (ansi-cursor-up arena (Screen.crow st))
+                        (str-concat "\r" (ansi-clear-below)))
+    (let body (str-concat prompt (ed-expand-newlines colored cprompt))
+      (let edge (if (= (Pos.col endp) 0) "\r\n" "")
+        (let back (ansi-cursor-up arena (- (Pos.row endp) (Pos.row curp)))
+          (let fwd (str-concat "\r" (ansi-cursor-right arena (Pos.col curp)))
+            (begin
+              (term-write (str-concat head
+                            (str-concat body
+                              (str-concat edge (str-concat back fwd)))))
+              (Screen (Pos.row endp) (Pos.row curp)))))))))
+
+; ===========================================================================
+; EDITING OPERATIONS
+; ===========================================================================
+
+(defn ed-insert (e s)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (Ed (str-concat (str-substring text 0 cur)
+                      (str-concat s (str-substring text cur (- (str-length text) cur))))
+          (+ cur (str-length s))))))
+
+(defn ed-delete-range (e from to)
+  (let text (Ed.text e)
+    (Ed (str-concat (str-substring text 0 from)
+                    (str-substring text to (- (str-length text) to)))
+        from)))
+
+(defn ed-backspace (e)
+  (let cur (Ed.cur e)
+    (if (<= cur 0)
+      e
+      (ed-delete-range e (ed-prev-char (Ed.text e) cur) cur))))
+
+(defn ed-delete (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (if (>= cur (str-length text))
+        e
+        (ed-delete-range e cur (ed-next-char text cur))))))
+
+(defn ed-left (e)
+  (Ed (Ed.text e) (ed-prev-char (Ed.text e) (Ed.cur e))))
+
+(defn ed-right (e)
+  (Ed (Ed.text e) (ed-next-char (Ed.text e) (Ed.cur e))))
+
+; Start of the logical line the cursor is on -- Home on a continuation
+; line goes to that line's start, not the whole entry's.
+(defn ed-line-start (text i)
+  (if (<= i 0)
+    0
+    (if (= (term-byte-at text (- i 1)) 10)
+      i
+      (ed-line-start text (- i 1)))))
+
+(defn ed-line-end (text i)
+  (let n (str-length text)
+    (if (>= i n)
+      n
+      (if (= (term-byte-at text i) 10)
+        i
+        (ed-line-end text (+ i 1))))))
+
+(defn ed-home (e)
+  (Ed (Ed.text e) (ed-line-start (Ed.text e) (Ed.cur e))))
+
+(defn ed-end (e)
+  (Ed (Ed.text e) (ed-line-end (Ed.text e) (Ed.cur e))))
+
+(defn ed-buf-start (e) (Ed (Ed.text e) 0))
+(defn ed-buf-end (e) (Ed (Ed.text e) (str-length (Ed.text e))))
+
+; Word motion: skip the run of non-word bytes, then the word itself.
+(defn ed-word-left-idx (text i)
+  (let j (ed-skip-back text i 0)
+    (ed-skip-back text j 1)))
+
+(defn ed-skip-back (text i want)
+  (if (<= i 0)
+    0
+    (let p (ed-prev-char text i)
+      (if (= (ed-word-byte (term-byte-at text p)) want)
+        (ed-skip-back text p want)
+        i))))
+
+(defn ed-word-right-idx (text i)
+  (let j (ed-skip-fwd text i 0)
+    (ed-skip-fwd text j 1)))
+
+(defn ed-skip-fwd (text i want)
+  (let n (str-length text)
+    (if (>= i n)
+      n
+      (if (= (ed-word-byte (term-byte-at text i)) want)
+        (ed-skip-fwd text (ed-next-char text i) want)
+        i))))
+
+(defn ed-word-left (e)
+  (Ed (Ed.text e) (ed-word-left-idx (Ed.text e) (Ed.cur e))))
+
+(defn ed-word-right (e)
+  (Ed (Ed.text e) (ed-word-right-idx (Ed.text e) (Ed.cur e))))
+
+; Vertical motion inside a multi-line entry: keep the column if the
+; target line is long enough, otherwise land at its end.
+(defn ed-up-line (e)
+  (let text (Ed.text e)
+    (let ls (ed-line-start text (Ed.cur e))
+      (if (<= ls 0)
+        e
+        (let col (- (Ed.cur e) ls)
+          (let ps (ed-line-start text (- ls 1))
+            (Ed text (ed-min (+ ps col) (- ls 1)))))))))
+
+(defn ed-down-line (e)
+  (let text (Ed.text e)
+    (let le (ed-line-end text (Ed.cur e))
+      (if (>= le (str-length text))
+        e
+        (let col (- (Ed.cur e) (ed-line-start text (Ed.cur e)))
+          (let ns (+ le 1)
+            (Ed text (ed-min (+ ns col) (ed-line-end text ns)))))))))
+
+(defn ed-min (a b) (if (< a b) a b))
+(defn ed-max (a b) (if (> a b) a b))
+
+; Whether the cursor is on the entry's first (last) logical line -- the
+; test that decides whether Up means "previous line" or "previous
+; history entry".
+(defn ed-on-first-line (e)
+  (if (= (ed-line-start (Ed.text e) (Ed.cur e)) 0) 1 0))
+
+(defn ed-on-last-line (e)
+  (if (>= (ed-line-end (Ed.text e) (Ed.cur e)) (str-length (Ed.text e))) 1 0))
+
+; ===========================================================================
+; KILL AND YANK
+; ===========================================================================
+
+; Each kill returns both the new buffer and the killed text; the caller
+; puts the latter in the kill register for Ctrl-Y.
+(deftype Killed (Killed Ed String))
+
+(defn Killed.ed (k) (match k (Killed e _ e)))
+(defn Killed.text (k) (match k (Killed _ t t)))
+
+(defn ed-kill-to-line-end (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (let stop (ed-kill-eol-target text cur)
+        (Killed (ed-delete-range e cur stop)
+                (str-substring text cur (- stop cur)))))))
+
+; Ctrl-K at the very end of a line kills the newline itself, joining the
+; next line up -- killing nothing at all there is the one behavior users
+; notice as broken.
+(defn ed-kill-eol-target (text cur)
+  (let le (ed-line-end text cur)
+    (if (= le cur)
+      (ed-min (+ cur 1) (str-length text))
+      le)))
+
+(defn ed-kill-to-line-start (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (let ls (ed-line-start text cur)
+        (Killed (ed-delete-range e ls cur)
+                (str-substring text ls (- cur ls)))))))
+
+(defn ed-kill-word-back (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (let from (ed-word-left-idx text cur)
+        (Killed (ed-delete-range e from cur)
+                (str-substring text from (- cur from)))))))
+
+(defn ed-kill-word-fwd (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (let to (ed-word-right-idx text cur)
+        (Killed (ed-delete-range e cur to)
+                (str-substring text cur (- to cur)))))))
+
+; Swap the two characters around the cursor (Ctrl-T).
+(defn ed-transpose (e)
+  (let text (Ed.text e)
+    (let cur (ed-transpose-anchor e)
+      (if (<= cur 0)
+        e
+        (let a (ed-prev-char text cur)
+          (let b (ed-next-char text cur)
+            (Ed (str-concat (str-substring text 0 a)
+                  (str-concat (str-substring text cur (- b cur))
+                    (str-concat (str-substring text a (- cur a))
+                                (str-substring text b (- (str-length text) b)))))
+                b)))))))
+
+; At the end of the buffer Ctrl-T swaps the last two characters, which
+; means anchoring one character back.
+(defn ed-transpose-anchor (e)
+  (let text (Ed.text e)
+    (let cur (Ed.cur e)
+      (if (>= cur (str-length text))
+        (ed-prev-char text cur)
+        cur))))
+
+; ===========================================================================
+; AUTO-INDENT
+; ===========================================================================
+
+; Nesting depth of text[0..end), ignoring parens inside strings and
+; line comments -- what a newly opened continuation line should be
+; indented to.
+(defn ed-depth-at (text end)
+  (ed-depth-scan text 0 end 0 0 0))
+
+(defn ed-depth-scan (text i end depth instr incom)
+  (if (>= i end)
+    depth
+    (let b (term-byte-at text i)
+      (if (= incom 1)
+        (ed-depth-scan text (+ i 1) end depth 0 (if (= b 10) 0 1))
+        (if (= instr 1)
+          (ed-depth-string text i end depth b)
+          (ed-depth-code text i end depth b))))))
+
+(defn ed-depth-string (text i end depth b)
+  (if (= b 92)
+    (ed-depth-scan text (+ i 2) end depth 1 0)
+    (ed-depth-scan text (+ i 1) end depth (if (= b 34) 0 1) 0)))
+
+(defn ed-depth-code (text i end depth b)
+  (if (= b 34) (ed-depth-scan text (+ i 1) end depth 1 0)
+  (if (= b 59) (ed-depth-scan text (+ i 1) end depth 0 1)
+  (if (= b 40) (ed-depth-scan text (+ i 1) end (+ depth 1) 0 0)
+  (if (= b 41) (ed-depth-scan text (+ i 1) end (ed-max 0 (- depth 1)) 0 0)
+  (ed-depth-scan text (+ i 1) end depth 0 0))))))
+
+(defn ed-spaces (n)
+  (if (<= n 0) "" (str-concat "  " (ed-spaces (- n 1)))))
+
+; A newline inside an unfinished form lands indented two columns per
+; open paren, so a continuation line starts where it belongs instead of
+; at column zero.
+(defn ed-newline-indent (e)
+  (ed-insert e (str-concat "\n" (ed-spaces (ed-depth-at (Ed.text e) (Ed.cur e))))))

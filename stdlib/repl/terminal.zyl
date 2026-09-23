@@ -1,0 +1,222 @@
+; === Zyl Standard Library — REPL terminal ===
+; Module: repl/terminal
+;
+; Raw-mode terminal access and key decoding for the REPL's line editor.
+; The runtime side is four primitives (raw on/off, one byte with and
+; without a timeout, window size, direct unbuffered write -- see
+; runtime/actor_runtime.c); everything above them, including the whole
+; escape-sequence grammar, lives here.
+;
+; Decoding an escape sequence needs the timeout read: pressing Escape
+; sends exactly one byte, while an arrow key sends three (ESC [ A) that
+; arrive together. Waiting a few milliseconds for a second byte and
+; giving up distinguishes the two, and is what every terminal line
+; editor does.
+
+(use allocator/allocator)
+
+; ===========================================================================
+; RAW MODE AND WINDOW
+; ===========================================================================
+
+; 1 if the given fd is a terminal. A REPL fed from a pipe must not raw-
+; mode it, and must not emit redraw escapes into the captured output.
+; Returns: Bool (0/1)
+(defn term-is-tty (fd)
+  (ffi-call "zyl_term_is_tty" fd 1000))
+
+; Enter raw mode: byte-at-a-time input, no echo, Ctrl-C delivered as a
+; byte rather than a signal. Returns 0 on success, -1 if stdin is not a
+; terminal. The runtime restores the original settings on any exit path.
+; Returns: Int
+(defn term-raw-on ()
+  (ffi-call "zyl_term_raw_on" 0))
+
+(defn term-raw-off ()
+  (ffi-call "zyl_term_raw_off" 0))
+
+(defn term-width ()
+  (ffi-call "zyl_term_width" 0))
+
+(defn term-height ()
+  (ffi-call "zyl_term_height" 0))
+
+; Write with no trailing newline, bypassing stdio buffering.
+; Returns: Int (bytes written)
+(defn term-write (s)
+  (ffi-call "zyl_term_write" s 1000))
+
+(defn term-flush ()
+  (ffi-call "zyl_term_flush" 0))
+
+; A one-byte string. Zyl has no character type, so a byte becomes a
+; string before it can be concatenated onto anything.
+; Returns: String
+(defn byte-str (b)
+  (ffi-call "zyl_cstr_from_byte" b 1000))
+
+(defn term-byte-at (s i)
+  (ffi-call "zyl_cstr_byte_at" s i 1000))
+
+(defn int-str (arena n)
+  (ffi-call "zyl_cstr_from_int" arena n 1000))
+
+; ===========================================================================
+; ANSI SEQUENCES
+; ===========================================================================
+
+(defn ansi-cursor-up (arena n)
+  (if (<= n 0) "" (str-concat "\e[" (str-concat (int-str arena n) "A"))))
+
+(defn ansi-cursor-down (arena n)
+  (if (<= n 0) "" (str-concat "\e[" (str-concat (int-str arena n) "B"))))
+
+(defn ansi-cursor-right (arena n)
+  (if (<= n 0) "" (str-concat "\e[" (str-concat (int-str arena n) "C"))))
+
+; Erase from the cursor to the end of the screen. The editor redraws by
+; going back to the first row of the entry, clearing everything below and
+; writing the entry again, so a shrinking entry leaves nothing behind.
+(defn ansi-clear-below ()
+  "\e[0J")
+
+(defn ansi-clear-line ()
+  "\r\e[0K")
+
+(defn ansi-clear-screen ()
+  "\e[H\e[2J")
+
+; Bracketed paste: with this on, a terminal wraps pasted text in
+; ESC[200~ ... ESC[201~, which is the only way to tell a pasted newline
+; (insert it, keep editing) from a typed Enter (submit).
+(defn ansi-paste-on ()
+  "\e[?2004h")
+
+(defn ansi-paste-off ()
+  "\e[?2004l")
+
+; ===========================================================================
+; KEYS
+; ===========================================================================
+
+; Every key the editor understands. KChar carries one byte: a UTF-8
+; character arrives as its 2-4 bytes in sequence, each a KChar, which is
+; exactly right for a buffer that stores bytes and a width calculation
+; that counts codepoints.
+(deftype Key
+  (KChar Int)        ; printable byte
+  (KCtrl Int)        ; control byte 0-31 with no dedicated meaning below
+  (KAlt Int)         ; ESC followed by this byte
+  (KUp) (KDown) (KLeft) (KRight)
+  (KHome) (KEnd) (KDel)
+  (KWordLeft) (KWordRight) (KWordDel)
+  (KPageUp) (KPageDown)
+  (KPasteStart) (KPasteEnd)
+  (KEnter) (KTab) (KBackTab) (KBackspace) (KEsc)
+  (KEOF)             ; read returned end of input
+  (KNone))           ; interrupted or undecodable: ask again
+
+; Blocking read of one key.
+; Returns: Key
+(defn key-read ()
+  (key-of-byte (ffi-call "zyl_term_read_byte" 0)))
+
+(defn key-of-byte (b)
+  (if (= b -1) (KEOF)
+  (if (= b -2) (KNone)
+  (if (= b 27) (key-read-escape)
+  (if (= b 13) (KEnter)
+  (if (= b 10) (KEnter)
+  (if (= b 9) (KTab)
+  (if (= b 127) (KBackspace)
+  (if (= b 8) (KBackspace)
+  (if (< b 32) (KCtrl b)
+  (KChar b)))))))))))
+
+; ESC arrived. A real escape sequence's remaining bytes are already in
+; the input buffer; a bare Escape keypress is followed by nothing, so a
+; short timeout separates them.
+(defn key-read-escape ()
+  (let b (ffi-call "zyl_term_read_byte_timeout" 40 1000)
+    (if (< b 0) (KEsc)
+    (if (= b 91) (key-read-csi "")
+    (if (= b 79) (key-read-ss3)
+    (key-alt-of b))))))
+
+; CSI: ESC [ <parameter and intermediate bytes> <final byte 0x40-0x7E>.
+(defn key-read-csi (params)
+  (let b (ffi-call "zyl_term_read_byte_timeout" 50 1000)
+    (if (< b 0) (KEsc)
+      (if (>= b 64)
+        (key-csi-final params b)
+        (key-read-csi (str-concat params (byte-str b)))))))
+
+(defn key-csi-final (params b)
+  (if (= b 126) (key-csi-tilde params)
+  (if (> (str-length params) 0) (key-csi-modified params b)
+  (key-csi-plain b))))
+
+; ESC [ A/B/C/D/H/F with no parameters: the plain arrows and Home/End.
+(defn key-csi-plain (b)
+  (if (= b 65) (KUp)
+  (if (= b 66) (KDown)
+  (if (= b 67) (KRight)
+  (if (= b 68) (KLeft)
+  (if (= b 72) (KHome)
+  (if (= b 70) (KEnd)
+  (if (= b 90) (KBackTab)
+  (KNone)))))))))
+
+; ESC [ <n> ~ : the keypad/editing block, plus bracketed paste markers.
+(defn key-csi-tilde (params)
+  (if (> (str-eq params "1") 0) (KHome)
+  (if (> (str-eq params "7") 0) (KHome)
+  (if (> (str-eq params "4") 0) (KEnd)
+  (if (> (str-eq params "8") 0) (KEnd)
+  (if (> (str-eq params "3") 0) (KDel)
+  (if (> (str-eq params "5") 0) (KPageUp)
+  (if (> (str-eq params "6") 0) (KPageDown)
+  (if (> (str-eq params "200") 0) (KPasteStart)
+  (if (> (str-eq params "201") 0) (KPasteEnd)
+  (KNone)))))))))))
+
+; ESC [ 1;<mod> <letter>: a modified arrow. Ctrl (mod 5), Alt (3) and
+; Ctrl+Alt (7) all mean word motion here; Shift (2) is treated as the
+; plain arrow rather than ignored, so shift-arrow still moves.
+(defn key-csi-modified (params b)
+  (let mod (key-modifier-of params)
+    (if (= mod 2) (key-csi-plain b)
+      (if (= b 67) (KWordRight)
+      (if (= b 68) (KWordLeft)
+      (if (= b 72) (KHome)
+      (if (= b 70) (KEnd)
+      (if (= b 51) (KWordDel)
+      (key-csi-plain b)))))))))
+
+; Modifier digit of a "1;5"-shaped parameter list, or 0 when absent.
+(defn key-modifier-of (params)
+  (let n (str-length params)
+    (let i (key-last-semicolon params (- n 1))
+      (if (< i 0)
+        0
+        (- (term-byte-at params (+ i 1)) 48)))))
+
+(defn key-last-semicolon (s i)
+  (if (< i 0)
+    -1
+    (if (= (term-byte-at s i) 59) i (key-last-semicolon s (- i 1)))))
+
+; SS3: ESC O <letter>. Application-keypad mode -- some terminals send the
+; arrows and Home/End this way instead of CSI.
+(defn key-read-ss3 ()
+  (let b (ffi-call "zyl_term_read_byte_timeout" 50 1000)
+    (if (< b 0) (KEsc) (key-csi-plain b))))
+
+; ESC <byte>: the Meta/Alt family. The three with editor meanings are
+; Alt-b / Alt-f (word motion) and Alt-Backspace (kill the word behind).
+(defn key-alt-of (b)
+  (if (= b 98) (KWordLeft)
+  (if (= b 102) (KWordRight)
+  (if (= b 100) (KWordDel)
+  (if (= b 127) (KCtrl 23)
+  (KAlt b))))))

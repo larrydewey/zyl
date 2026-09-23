@@ -1,0 +1,467 @@
+; === Zyl Standard Library — REPL ===
+; Module: repl/repl
+;
+; The session: prompt, read, evaluate, print, repeat, plus the meta
+; commands that make a REPL a place to work rather than a calculator.
+;
+; Two modes. On a terminal the full editor runs (repl/reader): arrows,
+; history, completion, highlighting, multi-line entries. On a pipe --
+; a test harness, `echo ... | zyl repl`, a script -- there is nothing to
+; put in raw mode and no cursor to move, so entries are read as plain
+; lines and nothing is echoed. Both modes evaluate through exactly the
+; same path, which is what keeps the scripted case honest.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use compiler/sexp_balance)
+(use lsp/builtins)
+(use repl/terminal)
+(use repl/line_editor)
+(use repl/reader)
+(use repl/history)
+(use repl/highlight)
+(use repl/eval)
+
+(defn repl-version () "0.1")
+
+; ===========================================================================
+; ENTRY POINT
+; ===========================================================================
+
+; Run a session to completion. Returns 0.
+(defn repl-run (arena)
+  (if (= (term-is-tty 0) 1)
+    (repl-interactive arena)
+    (repl-scripted arena)))
+
+(defn repl-interactive (arena)
+  (let entries (hist-load)
+    (begin
+      (repl-banner)
+      (term-write (ansi-paste-on))
+      (let code (repl-loop arena (es-new entries) (session-new))
+        (begin
+          (term-write (ansi-paste-off))
+          (term-raw-off)
+          code)))))
+
+(defn repl-banner ()
+  (begin
+    (print (str-concat "Zyl REPL " (str-concat (repl-version) " — :help for commands, :q to quit")))
+    (term-flush)
+    0))
+
+(defn repl-prompt () "\e[38;5;75mzyl>\e[0m ")
+(defn repl-cprompt () "\e[38;5;244m····\e[0m ")
+
+; ===========================================================================
+; THE LOOP
+; ===========================================================================
+
+; Raw mode is entered for the edit and left for the evaluation: while an
+; entry is being evaluated the terminal must behave normally, so that a
+; program that reads stdin, or one the user interrupts with Ctrl-C,
+; works the way it would outside the REPL.
+(defn repl-loop (arena st sess)
+  (begin
+    (term-raw-on)
+    (let res (reader-read-line arena st (repl-prompt) (repl-cprompt)
+                               (repl-candidates sess))
+      (begin
+        (term-raw-off)
+        (repl-after-read arena res sess)))))
+
+(defn repl-after-read (arena res sess)
+  (match res
+    (LineEof _ (repl-goodbye))
+    (LineCancel st (repl-loop arena st sess))
+    (LineOk text st (repl-handle arena st sess text))))
+
+(defn repl-goodbye ()
+  (begin
+    (print "Goodbye!")
+    0))
+
+; A submitted entry: remember it, then either run a meta command or
+; evaluate it.
+(defn repl-handle (arena st sess text)
+  (let trimmed (rd-trim text)
+    (if (= (str-length trimmed) 0)
+      (repl-loop arena st sess)
+      (let st2 (repl-remember st trimmed)
+        (if (= (repl-meta-p trimmed) 1)
+          (repl-meta arena st2 sess trimmed)
+          (repl-eval arena st2 sess trimmed))))))
+
+(defn repl-remember (st entry)
+  (begin
+    (hist-append entry)
+    (ES.with-hist st (Hist (hist-push (Hist.entries (ES.hist st)) entry) -1 ""))))
+
+(defn repl-eval (arena st sess text)
+  (let outcome (eval-entry arena sess text)
+    (begin
+      (repl-report (EvalOutcome.result outcome))
+      (repl-loop arena st (EvalOutcome.session outcome)))))
+
+(defn repl-report (result)
+  (match result
+    (EvalRan _ 0)
+    (EvalDefined name (repl-note (str-concat "defined " name)))
+    (EvalFailed msg (repl-error msg))))
+
+(defn repl-note (text)
+  (begin
+    (print (str-concat "\e[38;5;244m" (str-concat text "\e[0m")))
+    (term-flush)
+    0))
+
+; Diagnostics arrive already formatted by the compiler's own reporter --
+; `error[CODE]`, the source line, a caret and a help line -- so the REPL
+; prints them as they are rather than paraphrasing.
+; Written with term-write, not print: codegen picks print's format from
+; a static kind analysis, and a bare String PARAMETER is indistinguishable
+; from an Int there (see kind-of in codegen.zyl), so `(print msg)` prints
+; the pointer. term-write takes the pointer and writes the bytes.
+(defn repl-error (msg)
+  (begin
+    (term-write msg)
+    (term-write "\n")
+    0))
+
+; ===========================================================================
+; META COMMANDS
+; ===========================================================================
+
+(defn repl-meta-p (text)
+  (if (= (str-length text) 0) 0 (if (= (term-byte-at text 0) 58) 1 0)))
+
+(defn repl-meta (arena st sess text)
+  (let cmd (repl-meta-word text)
+    (let rest (rd-trim (str-substring text (+ 1 (str-length cmd))
+                                      (- (str-length text) (+ 1 (str-length cmd)))))
+      (repl-meta-run arena st sess cmd rest))))
+
+; The command word after the leading colon.
+(defn repl-meta-word (text)
+  (str-substring text 1 (- (repl-meta-end text 1) 1)))
+
+(defn repl-meta-end (text i)
+  (let n (str-length text)
+    (if (>= i n)
+      n
+      (if (= (term-byte-at text i) 32) i (repl-meta-end text (+ i 1))))))
+
+(defn repl-meta-run (arena st sess cmd rest)
+  (if (= (repl-cmd-p cmd "q" "quit") 1) (repl-goodbye)
+  (if (= (repl-cmd-p cmd "h" "help") 1) (repl-next arena st sess (repl-help))
+  (if (= (repl-cmd-p cmd "history" "hist") 1)
+    (repl-next arena st sess (repl-show-history (Hist.entries (ES.hist st))))
+  (if (= (repl-cmd-p cmd "clear" "cls") 1)
+    (repl-next arena st sess (term-write (ansi-clear-screen)))
+  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-do-reset arena st sess)
+  (if (= (repl-cmd-p cmd "load" "l") 1) (repl-do-load arena st sess rest)
+  (if (= (repl-cmd-p cmd "save" "s") 1) (repl-next arena st sess (repl-do-save sess rest))
+  (if (= (repl-cmd-p cmd "doc" "d") 1) (repl-next arena st sess (repl-do-doc rest))
+  (if (= (repl-cmd-p cmd "defs" "browse") 1) (repl-next arena st sess (repl-show-defs sess))
+  (repl-next arena st sess (repl-unknown cmd))))))))))))
+
+(defn repl-cmd-p (cmd short long)
+  (if (> (str-eq cmd short) 0) 1 (if (> (str-eq cmd long) 0) 1 0)))
+
+(defn repl-next (arena st sess _done)
+  (repl-loop arena st sess))
+
+(defn repl-unknown (cmd)
+  (repl-note (str-concat "unknown command :" (str-concat cmd " — :help lists them"))))
+
+(defn repl-help ()
+  (begin
+    (print "Commands")
+    (print "  :help              this list")
+    (print "  :quit              leave the session")
+    (print "  :history           entries from this and earlier sessions")
+    (print "  :defs              definitions in scope")
+    (print "  :doc NAME          documentation for a built-in or special form")
+    (print "  :load PATH         read a file's definitions into the session")
+    (print "  :save PATH         write the session's definitions to a file")
+    (print "  :reset             forget every definition")
+    (print "  :clear             clear the screen")
+    (print "Editing")
+    (print "  Enter              evaluate, or continue an unfinished form")
+    (print "  Up/Down            move within an entry, then through history")
+    (print "  Tab                complete a name")
+    (print "  Ctrl-R             search history")
+    (print "  Ctrl-A/E  Ctrl-K/U/W  Ctrl-Y   line editing and yank")
+    (print "  Ctrl-C             abandon this entry    Ctrl-D  leave")
+    0))
+
+(defn repl-show-history (entries)
+  (begin
+    (repl-print-history (list-reverse entries) 1)
+    0))
+
+(defn repl-print-history (entries i)
+  (match entries
+    (Nil 0)
+    (Cons h t
+      (begin
+        (print (str-concat "  " h))
+        (repl-print-history t (+ i 1))))))
+
+(defn repl-show-defs (sess)
+  (let defs (Session.defs sess)
+    (if (= (str-length (rd-trim defs)) 0)
+      (repl-note "no definitions yet")
+      (begin
+        (print (hl-colorize defs))
+        0))))
+
+(defn repl-do-reset (arena st sess)
+  (begin
+    (repl-note "session reset")
+    (repl-loop arena st (session-reset sess))))
+
+; :load reads a file and adds its definitions to the session, so a
+; project's code can be brought in and poked at.
+(defn repl-do-load (arena st sess path)
+  (let fd (file-open path "r")
+    (if (<= fd 0)
+      (repl-next arena st sess (repl-note (str-concat "cannot read " path)))
+      (let text (file-read fd 4194304)
+        (begin
+          (file-close fd)
+          (repl-load-text arena st sess path text))))))
+
+(defn repl-load-text (arena st sess path text)
+  (let outcome (eval-entry arena sess (repl-strip-uses text))
+    (match (EvalOutcome.result outcome)
+      (EvalFailed msg (repl-next arena st sess (repl-error msg)))
+      (EvalDefined _ (repl-loaded arena st (EvalOutcome.session outcome) path))
+      (EvalRan _ (repl-loaded arena st (EvalOutcome.session outcome) path)))))
+
+(defn repl-loaded (arena st sess path)
+  (begin
+    (repl-note (str-concat "loaded " path))
+    (repl-loop arena st sess)))
+
+; A loaded file's own `(use ...)` lines are dropped: the REPL program is
+; assembled as one unit and its module set is already resolved, so a
+; second resolution of the same module would be a duplicate definition
+; rather than an import.
+(defn repl-strip-uses (text)
+  (repl-strip-scan text 0 (str-length text) ""))
+
+(defn repl-strip-scan (text i n acc)
+  (if (>= i n)
+    acc
+    (let e (repl-line-end text i n)
+      (let line (str-substring text i (- e i))
+        (repl-strip-scan text (+ e 1) n
+          (if (= (rd-starts-with (rd-trim line) "(use ") 1)
+            acc
+            (str-concat acc (str-concat line "\n"))))))))
+
+(defn repl-line-end (text i n)
+  (if (>= i n)
+    n
+    (if (= (term-byte-at text i) 10) i (repl-line-end text (+ i 1) n))))
+
+(defn repl-do-save (sess path)
+  (if (= (str-length path) 0)
+    (repl-note ":save needs a path")
+    (let fd (file-open path "w")
+      (if (<= fd 0)
+        (repl-note (str-concat "cannot write " path))
+        (begin
+          (file-write fd (Session.defs sess))
+          (file-close fd)
+          (repl-note (str-concat "saved to " path)))))))
+
+; :doc answers from the same table the editor's hover uses, so the two
+; never disagree.
+(defn repl-do-doc (name)
+  (if (= (str-length name) 0)
+    (repl-note ":doc needs a name")
+    (repl-doc-find (builtins-all) name)))
+
+(defn repl-doc-find (bs name)
+  (match bs
+    (Nil (repl-note (str-concat "no documentation for " name)))
+    (Cons b rest
+      (if (> (str-eq (ZB.name b) name) 0)
+        (repl-doc-print b)
+        (repl-doc-find rest name)))))
+
+(defn repl-doc-print (b)
+  (begin
+    (print (hl-colorize (ZB.sig b)))
+    (print (str-concat "  " (ZB.doc b)))
+    0))
+
+; ===========================================================================
+; COMPLETION CANDIDATES
+; ===========================================================================
+
+; Everything Tab should offer: the meta commands, the language's own
+; names (the table lsp/builtins keeps in step with expr_inner.zyl), and
+; every name the session has defined.
+(defn repl-candidates (sess)
+  (list-append (repl-meta-names)
+    (list-append (repl-builtin-names (builtins-all))
+                 (repl-session-names (Session.defs sess)))))
+
+(defn repl-meta-names ()
+  (Cons ":help" (Cons ":quit" (Cons ":history" (Cons ":defs" (Cons ":doc"
+    (Cons ":load" (Cons ":save" (Cons ":reset" (Cons ":clear" Nil)))))))))) 
+
+(defn repl-builtin-names (bs)
+  (match bs
+    (Nil Nil)
+    (Cons b rest (Cons (ZB.name b) (repl-builtin-names rest)))))
+
+; Scan the session's definition text for the names it introduces. A
+; lexical scan, not a parse: it runs on every keystroke-driven
+; completion and must stay cheap, and a name that is half-typed is still
+; a name worth offering.
+(defn repl-session-names (defs)
+  (repl-names-scan defs 0 (str-length defs) Nil))
+
+(defn repl-names-scan (text i n acc)
+  (if (>= i n)
+    (list-reverse acc)
+    (if (= (repl-defn-start text i n) 1)
+      (let ns (eval-skip-space text (repl-skip-word text (eval-skip-space text (+ i 1) n) n) n)
+        (let e (repl-name-end text ns n)
+          (repl-names-scan text e n (Cons (str-substring text ns (- e ns)) acc))))
+      (repl-names-scan text (+ i 1) n acc))))
+
+; True at a '(' that opens a definition form.
+(defn repl-defn-start (text i n)
+  (if (= (term-byte-at text i) 40)
+    (let s (eval-skip-space text (+ i 1) n)
+      (repl-def-word (str-substring text s (- (repl-skip-word text s n) s))))
+    0))
+
+(defn repl-def-word (w)
+  (if (> (str-eq w "defn") 0) 1
+  (if (> (str-eq w "def") 0) 1
+  (if (> (str-eq w "deftype") 0) 1
+  (if (> (str-eq w "defstruct") 0) 1
+  (if (> (str-eq w "defmacro") 0) 1
+  0))))))
+
+(defn repl-skip-word (text i n)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= (eval-space-p b) 1) i
+      (if (= b 40) i
+      (if (= b 41) i
+      (repl-skip-word text (+ i 1) n)))))))
+
+(defn repl-name-end (text i n)
+  (repl-skip-word text i n))
+
+; ===========================================================================
+; SCRIPTED MODE
+; ===========================================================================
+
+; Input that is not a terminal: read entries as whole lines, evaluate
+; each, print nothing but what the entries themselves produce. Multi-
+; line forms still work -- lines accumulate until the form is complete.
+(defn repl-scripted (arena)
+  (repl-script-loop arena (session-new) "" ""))
+
+(defn repl-script-loop (arena sess pending acc)
+  (match (repl-script-line pending)
+    (SNone (repl-script-finish arena sess acc))
+    (SLine line rest (repl-script-entry arena sess line rest acc))))
+
+(deftype ScriptLine
+  (SLine String String)
+  (SNone))
+
+; One line out of the pending buffer, reading more input when the buffer
+; holds no complete line yet. A single read from a pipe routinely
+; returns many lines at once, so the leftovers are carried forward.
+(defn repl-script-line (pending)
+  (let nl (repl-find-nl pending 0 (str-length pending))
+    (if (>= nl 0)
+      (SLine (str-substring pending 0 nl)
+             (str-substring pending (+ nl 1) (- (str-length pending) (+ nl 1))))
+      (let chunk (file-read 0 65536)
+        (if (> (str-length chunk) 0)
+          (repl-script-line (str-concat pending chunk))
+          (if (> (str-length (rd-trim pending)) 0)
+            (SLine pending "")
+            (SNone)))))))
+
+(defn repl-find-nl (s i n)
+  (if (>= i n)
+    -1
+    (if (= (term-byte-at s i) 10) i (repl-find-nl s (+ i 1) n))))
+
+(defn repl-script-entry (arena sess line rest acc)
+  (let text (if (= (str-length acc) 0) line (str-concat acc (str-concat "\n" line)))
+    (if (= (rd-complete-p text) 1)
+      (repl-script-eval arena sess text rest)
+      (repl-script-loop arena sess rest text))))
+
+(defn repl-script-eval (arena sess text rest)
+  (let trimmed (rd-trim text)
+    (if (= (str-length trimmed) 0)
+      (repl-script-loop arena sess rest "")
+      (if (= (repl-script-quit-p trimmed) 1)
+        0
+        (let outcome (eval-entry arena sess trimmed)
+          (begin
+            (repl-report (EvalOutcome.result outcome))
+            (repl-script-loop arena (EvalOutcome.session outcome) rest "")))))))
+
+(defn repl-script-quit-p (text)
+  (if (> (str-eq text ":q") 0) 1 (if (> (str-eq text ":quit") 0) 1 0))) 
+
+(defn repl-script-finish (arena sess acc)
+  (if (= (str-length (rd-trim acc)) 0)
+    0
+    (let outcome (eval-entry arena sess (rd-trim acc))
+      (begin
+        (repl-report (EvalOutcome.result outcome))
+        0))))
+
+; ===========================================================================
+; BOOTSTRAP
+; ===========================================================================
+
+; The REPL compiles code, which means it needs the bundle directory --
+; stdlib/ for module resolution and actor_runtime.c for linking -- on
+; whatever machine it runs on. Prefer a real installed ~/.zyl (or
+; $ZYL_HOME) and fall back to the directory the binary itself sits in,
+; the same resolution order the compiler driver uses.
+(defn repl-zyl-home-candidate ()
+  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
+    (if (> zh 0)
+      zh
+      (let home (ffi-call "zyl_getenv" "HOME" 1000)
+        (if (> home 0) (str-concat home "/.zyl") "")))))
+
+(defn repl-resolve-bundledir (argv0dir)
+  (let candidate (repl-zyl-home-candidate)
+    (if (> (str-length candidate) 0)
+      (if (> (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000) 0)
+        candidate
+        argv0dir)
+      argv0dir)))
+
+; Everything a session needs, from any entry point: `zyl repl`, the
+; standalone binary, or a test harness.
+(defn repl-main (arena)
+  (begin
+    (let argv0 (ffi-call "zyl_arg_str" 0 1000)
+      (ffi-call "zyl_chdir"
+                (repl-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
+                1000))
+    (repl-run arena)))

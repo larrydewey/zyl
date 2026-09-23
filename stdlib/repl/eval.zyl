@@ -1,0 +1,251 @@
+; === Zyl Standard Library — REPL evaluation ===
+; Module: repl/eval
+;
+; Turns an entry into a result. The compiler has no interpreter yet, so
+; an expression is evaluated by building a program around it, compiling
+; it with the real pipeline (compiler/pipeline -- the same phases, in
+; the same order, as `zyl build`) and running it. The session's
+; definitions are carried in the program's text, so a function defined
+; on one line is callable on the next.
+;
+; This is the stage that the ICNF interpreter replaces: the phases up to
+; `compile-to-fns` stay exactly as they are, and only the last step --
+; assemble, link, run a child process -- gives way to evaluating the
+; lowered functions in this process, which is what makes a binding, and
+; not just a definition, survive from one entry to the next.
+;
+; Nothing here is allowed to take the REPL down: every compile and every
+; run is wrapped in `try`, because a REPL that exits on a type error is
+; not a REPL.
+
+(use allocator/allocator)
+(use core/core)
+(use core/list)
+(use core/option)
+(use core/result)
+(use compiler/pipeline)
+(use repl/terminal)
+(use repl/history)
+
+; What an entry did.
+(deftype EvalResult
+  (EvalRan Int)          ; ran to completion with this exit status
+  (EvalDefined String)   ; a definition, accepted and now in scope
+  (EvalFailed String))   ; diagnostics, ready to print
+
+; The accumulated session: the text of every definition entered so far,
+; and the number of entries evaluated.
+(deftype Session (Session String Int))
+
+(defn Session.defs (s) (match s (Session d _ d)))
+(defn Session.count (s) (match s (Session _ n n)))
+
+(defn session-new () (Session "" 0))
+
+(defn session-reset (s) (Session "" (Session.count s)))
+
+(defn session-add-defs (s text)
+  (Session (str-concat (Session.defs s) (str-concat "\n" text)) (+ (Session.count s) 1)))
+
+(defn session-bump (s)
+  (Session (Session.defs s) (+ (Session.count s) 1)))
+
+; ===========================================================================
+; CLASSIFYING AN ENTRY
+; ===========================================================================
+
+; Whether the entry is a top-level definition rather than an expression
+; to evaluate. Definitions are added to the session; expressions are
+; wrapped in a `main` and run.
+; Returns: Bool (0/1)
+(defn eval-definition-p (text)
+  (let head (eval-head text)
+    (if (> (str-eq head "defn") 0) 1
+    (if (> (str-eq head "def") 0) 1
+    (if (> (str-eq head "deftype") 0) 1
+    (if (> (str-eq head "defstruct") 0) 1
+    (if (> (str-eq head "defstruct+") 0) 1
+    (if (> (str-eq head "defmacro") 0) 1
+    (if (> (str-eq head "trait") 0) 1
+    (if (> (str-eq head "impl") 0) 1
+    (if (> (str-eq head "use") 0) 1
+    0)))))))))))
+
+; The head symbol of `(head ...)`, or "" if the entry is not a form.
+(defn eval-head (text)
+  (let n (str-length text)
+    (let i (eval-skip-space text 0 n)
+      (if (>= i n)
+        ""
+        (if (= (term-byte-at text i) 40)
+          (let start (eval-skip-space text (+ i 1) n)
+            (str-substring text start (- (eval-symbol-end text start n) start)))
+          "")))))
+
+(defn eval-skip-space (text i n)
+  (if (>= i n)
+    i
+    (if (= (eval-space-p (term-byte-at text i)) 1)
+      (eval-skip-space text (+ i 1) n)
+      i)))
+
+(defn eval-space-p (b)
+  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+
+(defn eval-symbol-end (text i n)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= (eval-space-p b) 1) i
+      (if (= b 40) i
+      (if (= b 41) i
+      (eval-symbol-end text (+ i 1) n)))))))
+
+; The name a definition introduces, for the "defined X" acknowledgement.
+; Returns: String
+(defn eval-defined-name (text)
+  (let n (str-length text)
+    (let i (eval-skip-space text 0 n)
+      (let h (eval-symbol-end text (eval-skip-space text (+ i 1) n) n)
+        (let s (eval-skip-space text h n)
+          (str-substring text s (- (eval-name-end text s n) s)))))))
+
+; A definition's name may be `(name args)` as in `(defn (f x) ...)` is
+; not the shape here, but `(impl Trait Type)` has two -- taking the text
+; up to the first delimiter covers every real case.
+(defn eval-name-end (text i n)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= (eval-space-p b) 1) i
+      (if (= b 41) i
+      (eval-name-end text (+ i 1) n))))))
+
+; ===========================================================================
+; PROGRAM ASSEMBLY
+; ===========================================================================
+
+; The program text for evaluating one expression: everything defined so
+; far, plus a `main` that prints the expression's value.
+(defn eval-program-expr (sess text)
+  (str-concat (Session.defs sess)
+              (str-concat "\n(defn main () (print " (str-concat text "))\n"))))
+
+; The program text for checking a definition: everything defined so far
+; including the new definition, plus a trivial `main` so the program is
+; complete. Compiling this is what type-checks the definition.
+(defn eval-program-defs (sess text)
+  (str-concat (Session.defs sess)
+              (str-concat "\n" (str-concat text "\n(defn main () 0)\n"))))
+
+; ===========================================================================
+; WORK DIRECTORY
+; ===========================================================================
+
+; Where the REPL writes the assembly and binary for an entry. Under the
+; REPL's own state directory rather than /tmp: a fixed /tmp path is
+; owned by whoever ran first on a shared machine, and every later user's
+; open fails.
+(defn eval-work-dir ()
+  (str-concat (hist-dir) "/repl"))
+
+(defn eval-asm-path ()
+  (str-concat (eval-work-dir) "/entry.s"))
+
+(defn eval-bin-path ()
+  (str-concat (eval-work-dir) "/entry"))
+
+(defn eval-log-path ()
+  (str-concat (eval-work-dir) "/entry.log"))
+
+(defn eval-read-file (path)
+  (let fd (file-open path "r")
+    (if (<= fd 0)
+      ""
+      (let text (file-read fd 262144)
+        (begin
+          (file-close fd)
+          text)))))
+
+(defn eval-write-file (path content)
+  (let fd (file-open path "w")
+    (if (<= fd 0)
+      -1
+      (let n (file-write fd content)
+        (begin
+          (file-close fd)
+          n)))))
+
+; ===========================================================================
+; EVALUATION
+; ===========================================================================
+
+; Compile `src` and return either its assembly or the diagnostics the
+; compiler produced. `try` is what keeps a type error from ending the
+; session: every reporting path in the compiler ends in zyl_panic, which
+; unwinds to here instead of exiting.
+; Returns: Result(String, String)
+(defn eval-compile (arena src)
+  (try (Ok (compile-to-asm arena src "<repl>")) (catch e (Err e))))
+
+; Evaluate one entry against the session. Returns the result and the
+; session it produced.
+(deftype EvalOutcome (EvalOutcome EvalResult Session))
+
+(defn EvalOutcome.result (o) (match o (EvalOutcome r _ r)))
+(defn EvalOutcome.session (o) (match o (EvalOutcome _ s s)))
+
+(defn eval-entry (arena sess text)
+  (if (= (eval-definition-p text) 1)
+    (eval-add-definition arena sess text)
+    (eval-expression arena sess text)))
+
+; A definition is accepted only if the whole session still compiles AND
+; links with it. Linking is what catches a call to a name nothing
+; defines: no phase before it resolves call targets, so a definition
+; that only compiles can still poison every later entry in the session.
+; Rejecting it here costs one `cc` per definition and keeps the session
+; in a state where everything in it works.
+(defn eval-add-definition (arena sess text)
+  (match (eval-compile arena (eval-program-defs sess text))
+    (Err msg (EvalOutcome (EvalFailed msg) sess))
+    (Ok asm (eval-accept-definition sess text asm))))
+
+(defn eval-accept-definition (sess text asm)
+  (match (eval-link asm)
+    (Err msg (EvalOutcome (EvalFailed msg) sess))
+    (Ok _ (EvalOutcome (EvalDefined (eval-defined-name text))
+                       (session-add-defs sess text)))))
+
+; Assemble and link, without running.
+; Returns: Result(Int, String)
+(defn eval-link (asm)
+  (begin
+    (term-flush)
+    (ffi-call "zyl_mkdir_p" (eval-work-dir) 1000)
+    (if (< (eval-write-file (eval-asm-path) asm) 0)
+      (Err "E_IO_WRITE_FAILED: could not write the entry's assembly")
+      (let rc (ffi-call "zyl_cc_compile_log" (eval-asm-path) (eval-log-path) 1000)
+        (if (= rc 0) (Ok rc) (Err (eval-link-diagnostic)))))))
+
+(defn eval-expression (arena sess text)
+  (match (eval-compile arena (eval-program-expr sess text))
+    (Err msg (EvalOutcome (EvalFailed msg) (session-bump sess)))
+    (Ok asm (EvalOutcome (eval-link-and-run asm) (session-bump sess)))))
+
+; Assemble, link and run. The child inherits this process's terminal, so
+; whatever it prints lands in the transcript exactly where it belongs --
+; after everything this process has already printed, which is why the
+; flush inside eval-link is not optional.
+(defn eval-link-and-run (asm)
+  (match (eval-link asm)
+    (Err msg (EvalFailed msg))
+    (Ok _ (EvalRan (ffi-call "zyl_run_bin" (eval-bin-path) 1000)))))
+
+; The toolchain's own message, wrapped in the compiler's diagnostic
+; shape. An undefined reference here is almost always a call to a name
+; nothing defines: the front end does not resolve call targets, so the
+; linker is the first phase that notices.
+(defn eval-link-diagnostic ()
+  (str-concat "error[E_LINK_FAILED]: this entry did not link\n  = help: a call to a name nothing defines reaches the linker as an undefined reference\n"
+              (eval-read-file (eval-log-path))))
