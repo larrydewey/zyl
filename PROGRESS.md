@@ -78,10 +78,6 @@ generation, no randomized ECDSA nonces).
 
 ### Not done (from the plan)
 
-- Phase 0's compiler-side work: the `TSecret` capability kind, the
-  constant-time effect checker, zeroization on scope exit, and debug
-  redaction. The library uses explicit `zeroize` and branchless
-  primitives instead, so the behaviour is there but unenforced.
 - BLAKE3's SIMD backend; the portable compression function is used.
 - ctgrind/valgrind instrumentation (`verify/timing.py` is the
   statistical substitute).
@@ -89,6 +85,98 @@ generation, no randomized ECDSA nonces).
 **The seed was re-cut twice** (`./boot.sh --bootstrap-from-self`,
 converging in 2 and 3 rounds); `build/boot/stage2.s`/`stage2.bin` are
 modified and not yet committed.
+
+## Current Session (2026-09-22, continued) — Phase 0: the Secret capability
+
+**`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0's enforcement half is
+implemented and the library is annotated. Full suite 73/73, fixed point
+holds.**
+
+### `TCSecret` (`stdlib/compiler/type_system.zyl`)
+
+A real `CapKind` variant, carrying the part the TYPE layer owns: a
+Secret is NOT `Send` (a secret crossing into another actor is the leak
+the capability exists to prevent), it IS FFI_Pinnable through its inner
+type (a key does reach AES-NI, but only via `ffi-pin`), and
+`cap-kind-compatible` lets it unify with a plain `TCCap` in either
+direction — the taint itself is tracked by name in the new checker, not
+carried in the unifier's substitution, because this inferer has no
+capability-polarity machinery and a Secret/Cap unification failure would
+reject ordinary code that passes a key through a generic helper.
+
+### `stdlib/compiler/secret_check.zyl` (new pass)
+
+Runs in `compile-to-asm` right after `unused-check`, over the
+pre-lowering Expr tree. A parameter annotated `Secret` — `(k Secret)` or
+`(k (Secret Int))` — seeds a taint propagated through lets, calls,
+arithmetic, constructors and byte loads, and interprocedurally by a
+fixpoint over functions whose body is tainted under their own Secret
+parameters. Rejections, all newly added to `error_codes.zyl`:
+
+| Shape | Code |
+|-------|------|
+| `if`/`while`/`for`/`cond` condition or `match` subject from a Secret | `E_CT_VIOLATION` |
+| Secret in an index argument (`w-get`, `list-nth`, `alloc-read-int`, …) or a byte offset | `E_CT_VIOLATION` |
+| Secret operand of `/` or `mod` (variable-latency divider) | `E_CT_VIOLATION` |
+| Secret reaching `print` | `E_SECRET_DEBUG` |
+| Secret reaching `spawn`, `send` or `file-write` | `E_SECRET_ESCAPE` |
+| Secret handed to `ffi-call` without `ffi-pin` | `E_FFI_PIN_REQUIRED` |
+| Secret consumed into a public result with no `zeroize` | `E_ZEROIZE_MISSING` (warning) |
+
+`E_FFI_TYPE_NOT_PINNABLE` is also catalogued. Diagnostics name the
+enclosing function (`in \`mr-check\`: E_CT_VIOLATION: …`) — the Expr
+tree carries no source spans, so the function name is the only location
+available; it is threaded as an `SCtx` alongside the list that was
+already being passed.
+
+Why syntactic rather than a type-level CT effect: param annotations in
+this pipeline are Exprs that type inference consults only loosely, and a
+real effect needs constraint machinery this inferer does not have. The
+practical limit is that taint crosses a call boundary only where the
+callee's parameters are annotated — an unannotated helper launders a
+secret.
+
+### `declassify` and the annotated library
+
+`math/secret/secret` gained `declassify` (identity at runtime, the one
+named way out) and its own primitives now carry `Secret` annotations, so
+every caller of `ct-eq`/`ct-select`/`bn-eq` is under the checker.
+`ct-eq-bool`/`ct-eq-words-bool` declassify by name, which is what lets an
+AEAD act on its own tag verdict.
+
+That immediately found **eight places in `stdlib/math` that branch on a
+secret-derived value**. All eight are legitimate published verdicts
+rather than leaks — Miller-Rabin's round result, ECDSA's r/s zero tests
+and RFC 6979 rejection loop, ECDSA verification (public inputs
+throughout), Ed25519 point decompression, X25519's RFC 7748 §6.1
+all-zero check, and RSA-OAEP's single combined accept bit — so each is
+now an explicit `declassify` with a comment stating why it is public.
+The value is that they are greppable and that a NEW one cannot be added
+silently.
+
+### Also fixed
+
+`run_regression_tests.sh` never pinned `ZYL_HOME`, so the suite resolved
+`stdlib/` from a populated `$HOME/.zyl` left by `install.sh` rather than
+from the checkout — edits to `stdlib/` in this tree were invisible to
+the tests (`boot.sh` has guarded against exactly this since the Rust
+eviction). It now exports the same `build/boot` path boot.sh does.
+
+### Verification
+
+`tests/regression/secret-capability.zyl` (9 accepting cases: branchless
+arithmetic, public-condition/secret-arm selection, both declassification
+routes, a public index over secret words, a pinned FFI handover) and
+seven `tests/compile-fail/secret-*.zyl`, one per rejection plus an
+interprocedural one. Full suite 73/73 with the fixed point holding; the
+seed was re-cut twice more with `--bootstrap-from-self` (2 rounds each).
+
+### Still open from Phase 0
+
+Zeroization on scope exit and `print` redaction both need codegen hooks
+(an epilogue and a print path) that do not exist; `Secret` annotations
+on the rest of `stdlib/math`'s entry points; the `Secret` trait for
+user-defined secret types, which waits on trait dispatch.
 
 ## Current Session (2026-09-19)
 

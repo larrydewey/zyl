@@ -23,6 +23,7 @@
 (use compiler/duplicate_check)
 (use compiler/exhaustiveness_check)
 (use compiler/unused_check)
+(use compiler/secret_check)
 (use compiler/monomorphization)
 (use compiler/contract_injection)
 (use compiler/region_inference)
@@ -77,6 +78,8 @@
       (let d202 (ec-check-program exprs)
       (dbg-log "unused-check\n")
       (let d204 (uc-check-program exprs)
+      (dbg-log "secret-check\n")
+      (let d205 (sc-check-program exprs)
       (dbg-log "type-infer\n")
       (let inferer (collect-definitions (inferer-new) exprs)
         (dbg-log "contract-injection\n")
@@ -130,7 +133,7 @@
                               (if (> blen 66060288)
                                 (ffi-call "zyl_panic" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
                                 buf))))))))))))))))))))
-        )))))
+        ))))))
 ))
 
 ; ===========================================================================

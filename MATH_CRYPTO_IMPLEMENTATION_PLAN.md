@@ -1,6 +1,7 @@
 # Zyl Math/Crypto Libraries — Implementation Plan
 
-**Status (2026-09-22): implemented, except Phase 0's compiler work.**
+**Status (2026-09-22): implemented, including Phase 0's enforcement
+half; Phase 0's codegen half is still open.**
 
 `stdlib/math/` now holds the hashes, symmetric and asymmetric
 primitives, KDFs, big-number arithmetic and RNGs described below, with
@@ -9,14 +10,48 @@ cross-verification against Python references in `verify/`. See
 `docs/math-crypto.md` for the delivered library and `PROGRESS.md` for
 the session that built it.
 
+**Phase 0 landed on 2026-09-22**: `TCSecret` is a real `CapKind`
+(`stdlib/compiler/type_system.zyl` — not Send, FFI_Pinnable through its
+inner type, unifies with `TCCap`), and `stdlib/compiler/secret_check.zyl`
+is a new pipeline pass (driver stage, after `unused-check`) that
+enforces the obligations. A parameter annotated `Secret` — `(k Secret)`
+or `(k (Secret Int))` — seeds a taint that propagates through lets,
+calls, arithmetic and constructors, interprocedurally via a
+secret-returning-function fixpoint. It rejects:
+
+| Shape | Code |
+|-------|------|
+| `if`/`while`/`for`/`cond` condition, `match` subject derived from a Secret | `E_CT_VIOLATION` |
+| Secret in the index argument of `w-get`/`w-set`/`list-nth`/`vec-get`/`alloc-read-int`/…, or a byte load/store offset | `E_CT_VIOLATION` |
+| Secret operand of `/` or `mod` (variable-latency divider) | `E_CT_VIOLATION` |
+| Secret reaching `print` | `E_SECRET_DEBUG` |
+| Secret reaching `spawn`, `send` or `file-write` | `E_SECRET_ESCAPE` |
+| Secret passed to `ffi-call` without `ffi-pin` | `E_FFI_PIN_REQUIRED` |
+| Secret consumed into a public result with no `zeroize` (warning) | `E_ZEROIZE_MISSING` |
+
+`declassify` (new, in `math/secret/secret`) is the one explicit way
+out, along with `ct-eq-bool`/`ct-eq-words-bool`, which are recognised
+as declassifying by name so an AEAD can act on its own tag verdict. The
+primitives in `math/secret/secret` now carry `Secret` annotations, so
+the rules apply to every caller of `ct-eq`/`ct-select`/`zeroize`.
+Tests: `tests/regression/secret-capability.zyl` (accepting side) and
+`tests/compile-fail/secret-*.zyl` (one per rejection).
+
 What this plan describes and the implementation does NOT do:
 
-- **Phase 0's compiler changes** — the `TCSecret` capability kind, the
-  CT effect checker, zeroization on scope exit, debug redaction and
-  `E_SECRET_*`/`E_CT_VIOLATION` error codes. The library uses explicit
-  `zeroize` and the branchless primitives in `math/secret/secret`
-  instead, so the runtime behaviour is present but the compiler does
-  not enforce it. `zyl_pin_alloc` does now mlock what it returns.
+- **Zeroization on scope exit and debug redaction in codegen.** Erasure
+  is still explicit (`zeroize`), with `E_ZEROIZE_MISSING` warning when a
+  terminal consumer forgets it; `print` REJECTS a secret rather than
+  redacting it to `<secret>`. Both of those need a codegen epilogue /
+  print-path hook that does not exist yet.
+- **A type-level CT effect.** The checker is a syntactic taint walk over
+  the pre-lowering Expr tree, not an effect in the unifier: param type
+  annotations in this pipeline are Exprs that type inference consults
+  only loosely, and a real effect would need constraint machinery this
+  inferer does not have. The practical limit is that taint crosses a
+  call boundary only where the callee's own parameters are annotated
+  `Secret`; an unannotated helper laundered a secret. `zyl_pin_alloc`
+  does mlock what it returns.
 - **Separate `runtime/crypto_*.c` files.** The C helpers live in
   `runtime/actor_runtime.c` under marked sections instead: the link
   command is hardcoded in three places (boot.sh, `cli-link` in
@@ -343,15 +378,25 @@ Phase 0 (TSecret + Pin)
 
 ## Next Steps
 
-1. Start **Phase 0**: Implement TSecret capability + Pin region in compiler
-   - Add `TCSecret` to `CapKind` ADT
-   - Add `CT` (constant-time) effect marker
-   - Implement `zeroize!` intrinsic
-   - Pin region = mlock'd non-pageable memory
-   - CT effect checker: reject secret-dependent branches/loads
-2. Add `stdlib/secret/secret.zyl` with `Secret` trait + blanket impl for `TSecret`
-3. Verify with unit tests + ctgrind/dudect on compiled output
-4. Proceed to Phase 1 infrastructure
+Phase 0's enforcement half and Phases 1-5 are done. What remains, in
+the order it is worth doing:
+
+1. **Annotate the rest of `stdlib/math`.** Taint only crosses a call
+   boundary where the callee's parameters are annotated, so the key
+   arguments of the AEADs, the KDFs, the signature schemes and the
+   bignum modular paths each need `Secret` to bring them under the
+   checker. Expect genuine findings: any `if` on key material in that
+   code is a leak the pass now names.
+2. **Zeroization on scope exit** — a codegen epilogue that erases
+   secret-typed frame slots, turning `E_ZEROIZE_MISSING` from a warning
+   into an unnecessary one.
+3. **Debug redaction** — `print` of a secret emitting `<secret>` rather
+   than being rejected, and the same in panic/crash dumps.
+4. **RSA key generation** and trait dispatch (`RsaKey`, `Secret` trait
+   for user-defined secret types), both blocked on trait dispatch in
+   the compiler rather than on anything in this plan.
+5. **BLAKE3 SIMD via FFI**, the one primitive still on its portable
+   compression function.
 
 ---
 

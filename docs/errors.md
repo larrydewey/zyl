@@ -13,6 +13,7 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
 | `E_CANNOT_INFER` | type: cannot infer concrete type for generic parameter '<value>' at <value> — no call-site evidence |
 | `E_CAPABILITY_LEAK` | capability: TMut leaked across boundary at <value> |
 | `E_CIRCULAR_MODULE` | module: circular dependency: <value> |
+| `E_CT_VIOLATION` | constant-time: secret-dependent <value> at <value> — branches, memory indices and divisions must not depend on a Secret value |
 | `E_CODEGEN` | codegen: <value> |
 | `E_CONTRACT_VIOLATION` | contract: contract violation - <value> at <value> |
 | `E_DIVISION_BY_ZERO` | numeric: division by zero at <value> |
@@ -24,6 +25,8 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
 | `E_EXPECTED_RCURLY` | parser: expected '}}' but found <value> at <value> |
 | `E_EXPECTED_RPAREN` | parser: expected ')' at <value> but found <value> |
 | `E_FFI_TIMEOUT` | ffi: call exceeded timeout of <value>ms at <value> |
+| `E_FFI_PIN_REQUIRED` | ffi: Secret argument to '<value>' must be handed over through `ffi-pin` (Pin region) at <value> |
+| `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type <value> which is not FFI_Pinnable |
 | `E_FLOAT_OVERFLOW` | lexer: float overflow in literal '<value>' |
 | `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal '<value>' |
 | `E_INVALID_CAPABILITY` | type: invalid capability usage for '<value>' — <value> at <value> |
@@ -37,6 +40,8 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
 | `E_REGION_ESCAPE` | region: value escapes region constraint at <value> |
 | `E_RESERVED_KEYWORD` | parser: reserved keyword '<value>' cannot be used as identifier at <value> |
 | `E_RETURN_TYPE_MISMATCH` | type: return type mismatch in '<value>': expected <value>, got <value> at <value> |
+| `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at <value> |
+| `E_SECRET_ESCAPE` | secret: Secret value escapes through <value> at <value> |
 | `E_SYMBOL_NOT_EXPORTED` | module: symbol '<value>' not exported by '<value>' |
 | `E_TEST_FAILURE` | test: assertion failed - <value> |
 | `E_TEST_RUNNER_ERROR` | test: runner error - <value> |
@@ -52,6 +57,14 @@ All compiler diagnostics from `src/error.rs` (`ZylError`), following spec
 | `E_UNKNOWN_TYPE` | type: unknown type '<value>' at <value> |
 | `E_UNTERMINATED_STRING` | lexer: unterminated string at <value> |
 | `E_USER_ERROR` | runtime: user error - <value> at <value> |
+
+## Warnings
+
+- `E_ZEROIZE_MISSING` (severity 2) — a function consumes a `Secret`
+  parameter into a public result and never calls `zeroize`/`zeroize-bytes`
+  on it. A warning rather than an error because erasure can legitimately
+  live one frame up; raised by `compiler/secret_check.zyl`, which exempts
+  secret-returning functions and the declassifiers themselves.
 
 ## Guard diagnostics (via E_USER_ERROR)
 

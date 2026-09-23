@@ -140,7 +140,12 @@
             (bn-set-small one n 1)
             (bn-sub candm1 cand one n)
             (mont-exp arena x b d (* 24 n) cand n)
-            (if (= (bn-eq x one n) 1)
+            ; Declassified: a Miller-Rabin round's verdict is public by
+            ; construction -- the loop that calls this REJECTS a composite
+            ; candidate and draws another, so the branch is the algorithm,
+            ; not a leak. (Candidate secrecy is preserved by every other
+            ; operation above staying constant-time.)
+            (if (= (declassify (bn-eq x one n)) 1)
               1
               (mr-square-loop arena x candm1 cand n s))))))))
 
@@ -149,7 +154,8 @@
 (defn mr-square-loop ((arena Int) (x Int) (candm1 Int) (cand Int) (n Int) (s Int))
   (if (<= s 0)
     0
-    (if (= (bn-eq x candm1 n) 1)
+    ; Same public round verdict as mr-check's first test.
+    (if (= (declassify (bn-eq x candm1 n)) 1)
       1
       (begin
         (mr-square-once arena x cand n)

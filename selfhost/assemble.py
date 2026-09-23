@@ -251,6 +251,7 @@ files = [
     'stdlib/compiler/duplicate_check.zyl',
     'stdlib/compiler/exhaustiveness_check.zyl',
     'stdlib/compiler/unused_check.zyl',
+    'stdlib/compiler/secret_check.zyl',
     'stdlib/compiler/resolver.zyl',
     'stdlib/compiler/type_system.zyl',
     'stdlib/compiler/type_inference.zyl',

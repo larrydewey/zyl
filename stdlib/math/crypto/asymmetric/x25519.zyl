@@ -272,7 +272,11 @@
 ; Returns: Option
 (defn x25519-checked ((arena Int) (scalar Int) (upoint Int))
   (let out (x25519 arena scalar upoint)
-    (if (= (ct-is-zero (x25519-or-acc out 0 0)) 1)
+    ; Declassified: RFC 7748 s6.1's all-zero check IS a published
+    ; verdict -- the caller learns it as None either way. What stays
+    ; secret is the shared secret itself, which the accumulator above
+    ; reduces to a single bit without branching.
+    (if (= (declassify (ct-is-zero (x25519-or-acc out 0 0))) 1)
       None
       (Some out))))
 

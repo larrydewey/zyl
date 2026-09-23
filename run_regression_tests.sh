@@ -21,6 +21,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ZYL_BIN="${SCRIPT_DIR}/build/boot/zyl-self"
+# Pin stdlib resolution to this checkout's build/boot/stdlib, the copy
+# boot.sh re-syncs from stdlib/ on every build. Without this the
+# compiler prefers a populated $HOME/.zyl left behind by install.sh
+# (see cli-resolve-bundledir in selfhost/driver.zyl), so a test could
+# pass or fail against a stdlib from an unrelated older checkout --
+# and an edit made to stdlib/ in THIS one would be invisible to the
+# suite. boot.sh already exports the same thing for the same reason.
+export ZYL_HOME="${SCRIPT_DIR}/build/boot"
 TESTS_DIR="${SCRIPT_DIR}/tests"
 
 # Defaults

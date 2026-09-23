@@ -89,7 +89,25 @@ bit width), never from a secret's value.
 Where a branch on secret-derived data is unavoidable and harmless it is
 marked as such in the source — an AEAD's final accept/reject decision
 is the main one, and it reveals only the verdict the caller is about to
-act on anyway.
+act on anyway. Since Phase 0 of the plan landed, "marked as such" is
+enforced rather than conventional: the parameters of
+`math/secret/secret` carry the `Secret` annotation, so
+`compiler/secret_check.zyl` rejects any branch, memory index, division,
+`print`, actor send or unpinned FFI call reached from one of those
+results, and the only way past it is an explicit `declassify` (or
+`ct-eq-bool`/`ct-eq-words-bool`, which declassify by name). Every
+deliberate declassification in this library is therefore a greppable
+call with a comment saying why the verdict is public:
+
+| Site | Why it is public |
+|------|------------------|
+| `chacha20poly` / `aesgcm` tag check | the AEAD verdict itself (via `ct-eq-words-bool`) |
+| `modular`'s Miller-Rabin rounds | a composite candidate is rejected and redrawn |
+| `ecdsa` r/s zero tests, RFC 6979 rejection | RFC 6979 3.2's own retry loop |
+| `ecdsa` verification | runs entirely on public inputs |
+| `ed25519` point decompression | decodes a public key or a signature's R |
+| `x25519` all-zero output | RFC 7748 §6.1's published low-order-point rejection |
+| `rsa` OAEP extraction | one combined bit, which is what keeps it free of a Manger oracle |
 
 `ct-eq-words` and `ct-eq-words-bool` are what tag and MAC comparison
 must use. `=` on two byte arrays compares addresses, and a hand-written
@@ -118,12 +136,15 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
 
 ## Not implemented
 
-- The `TSecret` capability, the constant-time effect checker, automatic
-  zeroization on scope exit and debug-output redaction described in
-  `MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0. These are compiler
-  changes; the library uses explicit `zeroize` and the branchless
-  primitives in `math/secret/secret` instead, so the runtime behaviour
-  is there but the compiler does not yet enforce it.
+- Automatic zeroization on scope exit and debug-output redaction
+  (`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0's codegen half). Erasure
+  is still explicit `zeroize`, with an `E_ZEROIZE_MISSING` warning when a
+  function consumes a `Secret` into a public result without it; `print`
+  of a secret is rejected outright rather than redacted to `<secret>`.
+- `Secret` annotations beyond `math/secret/secret` itself. Taint crosses
+  a call boundary only where the callee's own parameters are annotated,
+  so the AEAD, KDF, signature and bignum entry points are not yet under
+  the checker — annotating them is the next step in the plan.
 - BLAKE3's SIMD backend (the portable compression function is used).
 - ctgrind/valgrind instrumentation; `verify/timing.py` is the
   statistical substitute.

@@ -484,7 +484,13 @@
   (if (<= tries 0)
     (bn-alloc arena (ec-limbs c))
     (let k (ec-6979-candidate arena c kk v)
-      (if (= (ec-6979-acceptable arena c k) 1)
+      ; Declassified: RFC 6979 3.2 step h3 is a rejection loop, so
+      ; "this candidate was out of range" necessarily reaches control
+      ; flow. What it reveals is only that a draw was discarded -- with
+      ; probability under 2^-32 for every curve here -- and the
+      ; discarded candidate is never used again; the accepted nonce's
+      ; own value stays branch-free from here on.
+      (if (= (declassify (ec-6979-acceptable arena c k)) 1)
         k
         (begin
           (ec-6979-reseed arena kk v)
@@ -547,7 +553,10 @@
       (begin
         (ec-scalar-mul arena c rpt (ec-g c) k)
         (ecn-reduce arena c r (ec-affine-x arena c rpt))
-        (if (= (bn-is-zero r (ec-limbs c)) 1)
+        ; Declassified: "r came out zero" is a retry condition on the
+        ; NONCE, published by the resulting signature's absence, not by
+        ; timing -- RFC 6979 6ad2 3.2 step h has the signer draw again.
+        (if (= (declassify (bn-is-zero r (ec-limbs c))) 1)
           None
           (ecdsa-sign-s arena c priv z k r))))))
 
@@ -563,7 +572,8 @@
             (ecn-add arena c sum z rd)
             (ecn-inv arena c kinv k)
             (ecn-mul arena c s kinv sum)
-            (if (= (bn-is-zero s (ec-limbs c)) 1)
+            ; Same public retry condition as the r == 0 test above.
+            (if (= (declassify (bn-is-zero s (ec-limbs c))) 1)
               None
               (Some (ecdsa-encode arena c r s)))))))))
 
@@ -596,7 +606,10 @@
   (let scratch (bn-alloc arena (ec-limbs c))
     (let rok (bit-and (- 1 (bn-is-zero r (ec-limbs c))) (bn-sub scratch r (ec-order c) (ec-limbs c)))
       (let sok (bit-and (- 1 (bn-is-zero s (ec-limbs c))) (bn-sub scratch s (ec-order c) (ec-limbs c)))
-        (if (= (bit-and rok sok) 1)
+        ; Declassified: verification's inputs (r, s, the hash, the
+        ; public key) are all public, and the range verdict is part of
+        ; the answer this function returns.
+        (if (= (declassify (bit-and rok sok)) 1)
           (ecdsa-verify-equation arena c pub hash r s)
           false)))))
 
@@ -624,11 +637,14 @@
             (ec-scalar-mul arena c p1 (ec-g c) u1)
             (ec-scalar-mul arena c p2 pub u2)
             (ec-add arena c sum p1 p2)
-            (if (= (bn-is-zero (ec-pt-z c sum) (ec-limbs c)) 1)
+            ; Verification runs entirely on public data (signature,
+            ; message, public key); the point-at-infinity test is part of
+            ; the published verdict.
+            (if (= (declassify (bn-is-zero (ec-pt-z c sum) (ec-limbs c))) 1)
               false
               (begin
                 (ecn-reduce arena c got (ec-affine-x arena c sum))
-                (= (bn-eq got r (ec-limbs c)) 1)))))))))
+                (= (declassify (bn-eq got r (ec-limbs c))) 1)))))))))
 
 ; The public key for a private scalar: the point d*G.
 ; Returns: Int

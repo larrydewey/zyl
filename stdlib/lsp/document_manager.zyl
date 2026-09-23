@@ -8,7 +8,8 @@
 ;
 ; Every real diagnostic-producing check that DOES run here (parser syntax
 ; errors, mutability_check's E_MUT_CONFLICT/E_CAPABILITY_LEAK/
-; E_INVALID_CAPABILITY) reports failure by calling `zyl_panic`, which is
+; E_INVALID_CAPABILITY, secret_check's E_CT_VIOLATION/E_SECRET_*/
+; E_FFI_PIN_REQUIRED) reports failure by calling `zyl_panic`, which is
 ; `exit(1)` if uncaught -- fine for a one-shot CLI compile, fatal for a
 ; server that must keep running across many edits of not-yet-valid code.
 ; Everything past the balance check therefore runs inside `try`/`catch`;

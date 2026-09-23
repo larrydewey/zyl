@@ -460,7 +460,10 @@
     (begin
       (edf-mul arena ctx chk x x)
       (edf-mul arena ctx chk chk v)
-      (if (= (bn-eq chk u 11) 1)
+      ; Declassified: point decompression runs on a PUBLIC encoded
+      ; point (a public key or a signature's R), and which square root
+      ; branch it takes is a property of that public value.
+      (if (= (declassify (bn-eq chk u 11)) 1)
         (ed-decode-finish arena ctx ym x sign)
         (ed-decode-retry arena ctx ym x u v sign)))))
 
@@ -471,7 +474,8 @@
       (edf-mul arena ctx x x (ed-ctx-sqrtm1 ctx))
       (edf-mul arena ctx chk x x)
       (edf-mul arena ctx chk chk v)
-      (if (= (bn-eq chk u 11) 1)
+      ; Same public decompression verdict as ed-decode-select's.
+      (if (= (declassify (bn-eq chk u 11)) 1)
         (ed-decode-finish arena ctx ym x sign)
         None))))
 
@@ -482,7 +486,9 @@
   (let plain (bn-alloc arena 11)
     (begin
       (mont-from arena plain x (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
-      (if (= (bit-and (bn-is-zero plain 11) sign) 1)
+      ; Same: the x == 0 with sign == 1 encoding RFC 8032 rejects is a
+      ; property of the public encoding being decoded.
+      (if (= (declassify (bit-and (bn-is-zero plain 11) sign)) 1)
         None
         (begin
           (ed-decode-fix-sign arena ctx x plain sign)

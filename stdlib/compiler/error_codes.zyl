@@ -42,6 +42,12 @@
           (Cons (EC "E_GLOBAL_BYTEBUF_MUT" 4 1 "type: Global ByteBuf must be immutable")
               (Cons (EC "E_CANNOT_INFER" 5 1 "type: cannot infer concrete type for generic parameter G at S - no call-site evidence")
         (Cons (EC "E_CANNOT_INFER" 5 1 "type: cannot infer concrete type for generic parameter G at S - no call-site evidence")
+          (Cons (EC "E_CT_VIOLATION" 13 1 "constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value")
+          (Cons (EC "E_SECRET_ESCAPE" 13 1 "secret: Secret value escapes through M at S")
+          (Cons (EC "E_SECRET_DEBUG" 13 1 "secret: Secret value reaches a debug/print sink at S")
+          (Cons (EC "E_ZEROIZE_MISSING" 13 2 "secret: function F takes a Secret parameter but never zeroizes it")
+          (Cons (EC "E_FFI_PIN_REQUIRED" 16 1 "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S")
+          (Cons (EC "E_FFI_TYPE_NOT_PINNABLE" 16 1 "ffi: value has type T which is not FFI_Pinnable")
           (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: TMut leaked across boundary at S")
             (Cons (EC "E_CIRCULAR_MODULE" 9 1 "module: circular dependency: M")
               (Cons (EC "E_CODEGEN" 8 1 "codegen: M")
@@ -95,7 +101,7 @@
                                                                                                     (Cons (EC "E_UNKNOWN_TYPE" 4 1 "type: unknown type T at S")
                                                                                                       (Cons (EC "E_UNTERMINATED_STRING" 1 1 "lexer: unterminated string at S")
                                                                                                         (Cons (EC "E_USER_ERROR" 10 1 "runtime: user error - M at S")
-                                                                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

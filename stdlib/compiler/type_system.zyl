@@ -38,7 +38,30 @@
   (TCBox)
   (TCPin)
   (TCByte)
-  (TCAtomicByte))
+  (TCAtomicByte)
+  (TCSecret))
+
+; TCSecret (MATH_CRYPTO_IMPLEMENTATION_PLAN.md Phase 0) is TCap plus one
+; extra obligation: the value it wraps is key material, so it may not
+; steer control flow, address memory, reach a debug sink, or cross an
+; actor boundary. Those obligations are enforced syntactically by
+; compiler/secret_check.zyl over the pre-lowering Expr tree, not by this
+; type ADT -- what lives here is the part the TYPE layer owns: a Secret
+; is still FFI_Pinnable (a key does get handed to AES-NI, but only
+; through ffi-pin), it is NOT Send (spec/06 rule 5: a secret crossing
+; into another actor is exactly the leak the capability exists to
+; prevent), and it unifies with a plain TCap in either direction --
+; widening a Secret to a Cap loses no SOUNDNESS here because taint is
+; tracked by name in secret_check, not carried in the unifier's
+; substitution (this inferer has no capability-polarity machinery, and
+; a Secret/Cap unification failure would reject ordinary code that
+; merely passes a key through a generic helper).
+(defn cap-kind-compatible (k1 k2)
+  (if (= k1 k2)
+    true
+    (if (= k1 TCSecret)
+      (= k2 TCCap)
+      (if (= k2 TCSecret) (= k1 TCCap) false))))
 
 ; Memory regions (spec §9) — reintroduced by the byte-primitive work
 ; (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §1): TByteSlice/TByteBuf carry
@@ -254,6 +277,11 @@
         (TCBox false)
         (TCByte false)
         (TCAtomicByte false)
+        ; TCSecret falls through to the inner check with TCCap: a key is
+        ; an ordinary pinnable Int/String as far as the FFI boundary's
+        ; TYPE rule goes. What a Secret additionally owes at that
+        ; boundary -- being handed over through ffi-pin rather than
+        ; passed raw -- is E_FFI_PIN_REQUIRED in secret_check.zyl.
         (_ (is-ffi-pinnable inner))))
     (TMap k v (and (is-ffi-pinnable k) (is-ffi-pinnable v)))
     (TResult e h (and (is-ffi-pinnable e) (is-ffi-pinnable h)))
@@ -370,10 +398,12 @@
     (TByteSlice d1 true)
     (TByteBuf d1 true)
     (TCap kind inner
-      (or (= kind TCCap)
-        (or (= kind TCAtomic)
-          (or (= kind TCByte)
-            (or (= kind TCAtomicByte) (tc-is-send tc inner))))))
+      (if (= kind TCSecret)
+        false
+        (or (= kind TCCap)
+          (or (= kind TCAtomic)
+            (or (= kind TCByte)
+              (or (= kind TCAtomicByte) (tc-is-send tc inner)))))))
     (d1 false)))
 
 ; ===========================================================================
@@ -654,7 +684,7 @@
     (TCap k1 a
       (match t2
         (TCap k2 b
-          (if (= k1 k2) (unify s a b) (UErr "Capability kind mismatch")))
+          (if (cap-kind-compatible k1 k2) (unify s a b) (UErr "Capability kind mismatch")))
         (d1 (UErr "Type mismatch"))))
     (TStruct n1 fs1
       (match t2

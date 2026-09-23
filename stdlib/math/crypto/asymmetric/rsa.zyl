@@ -398,8 +398,14 @@
   (let lhash (sha256-bytes arena (w-alloc arena 1) 0)
     (let hashok (ct-eq-words db lhash 32)
       (let idx (rsa-oaep-find-one db (- k 33) 32 -1)
-        (if (= (bit-and (bit-and hashok (ct-is-zero firstbyte))
-                        (bit-and (if (>= idx 0) 1 0) (rsa-oaep-ps-zero db (if (< idx 0) 32 idx) 32 0))) 1)
+        ; Declassified deliberately and exactly once: every component
+        ; above is computed over the FULL buffer without branching, and
+        ; only the single combined accept/reject bit reaches control
+        ; flow here. That is what makes OAEP's decryption path free of a
+        ; Manger oracle -- a caller learns "decrypt failed", never which
+        ; check failed or where.
+        (if (= (declassify (bit-and (bit-and hashok (ct-is-zero firstbyte))
+                        (bit-and (if (>= idx 0) 1 0) (rsa-oaep-ps-zero db (if (< idx 0) 32 idx) 32 0)))) 1)
           (rsa-oaep-emit arena db k idx outlen)
           None)))))
 
