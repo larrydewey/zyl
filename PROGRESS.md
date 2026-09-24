@@ -28,7 +28,7 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   prints no warnings (swept 2026-09-24).
 - `./run_regression_tests.sh --full --no-boot` passes **168/168**
   (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
-  integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
+  integration 7, packages-fail 7, stress 4, scripts 4, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
@@ -199,8 +199,6 @@ Tooling and library:
   `collect-definitions`, and reports one diagnostic at a time.
 - The VS Code extension is not bundled (no esbuild step) and has no
   problem matcher, although CLI diagnostics now carry `file:line:col`.
-- There is no `zyl doc` generator. The REPL's `:doc` covers only built-ins
-  and special forms, from `stdlib/lsp/builtins.zyl`.
 - BLAKE3 uses the portable compression function (no SIMD). There is no
   ctgrind or valgrind instrumentation; `verify/timing.py` is the
   statistical substitute.
@@ -257,7 +255,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### P4: Tooling and packages
 
-- [ ] A `zyl doc` generator over the `;|`/`;;` doc-comment convention.
+- [x] A `zyl doc` generator over the stdlib's doc-comment convention (`;|` takes precedence).
 - [ ] A real package index; a build cache keyed by content hash;
       rejection of a nested `feature-gate`.
 - [ ] Unused-binding warnings in the language server (the check must
@@ -369,7 +367,18 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — arena documentation
+## Session (2026-09-24, latest) — zyl doc
+
+`zyl doc [file.zyl | dir] [-o out.md]` (`drv-doc`, new `compiler/doc.zyl`)
+writes Markdown: the file's leading comment block as the module doc
+(`; === Title ===` as the title), then each top-level definition in source
+order with its signature and the contiguous comment block above it (a
+blank line or a `; ===` separator ends it; `;|` lines take precedence when
+present). In a package (a `zyl.pkg` beside it) only `pub` definitions are
+listed. A directory is walked with the new runtime `zyl_list_zyl_files`
+(recursive, sorted). Test: `tests/scripts/zyl-doc.sh`.
+
+## Session (2026-09-24, earlier) — arena documentation
 
 Book §4.3 gains *Arenas: where collections keep their elements*: what an
 arena is, the `allocator/allocator` API, exactly which values the `arena`

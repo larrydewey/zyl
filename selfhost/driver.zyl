@@ -41,6 +41,7 @@
 (use compiler/codegen)
 (use compiler/pipeline)
 (use compiler/icnf_print)
+(use compiler/doc)
 (use repl/repl)
 (use repl/interp)
 (use compiler/sexp_balance)
@@ -466,6 +467,7 @@
     (print "zyl key                                show or create the publisher key")
     (print "zyl repl                               start an interactive session")
     (print "zyl eval <file.zyl>                    run a program without building one")
+    (print "zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments")
     0))
 
 (defn drv-subcommand (arena cmd cwd)
@@ -498,7 +500,37 @@
     (repl-run-in arena cwd)
   (if (> (str-eq cmd "eval") 0)
     (drv-eval arena cwd)
-    (drv-usage))))))))))))))
+  (if (> (str-eq cmd "doc") 0)
+    (drv-doc arena cwd)
+    (drv-usage)))))))))))))))
+
+; `zyl doc <file.zyl | dir> [-o out.md]`: Markdown from doc comments
+; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.
+(defn drv-doc (arena cwd)
+  (let target (cli-resolve-path cwd (if (= (str-length (drv-arg 2)) 0) "." (drv-arg 2)))
+    (let md (if (> (cli-ends-with-zyl target) 0)
+              (doc-file arena target (drv-doc-modname target) (drv-has-pkg (ffi-call "zyl_dirname_cstr" target 1000)))
+              (doc-dir arena target (drv-has-pkg target)))
+      (let out (drv-doc-out 3)
+        (if (= (str-length out) 0)
+          (begin (print md) 0)
+          (begin (cli-write-file (cli-resolve-path cwd out) md) 0))))))
+
+(defn drv-has-pkg (dir) (> (ffi-call "zyl_path_exists" (str-concat dir "/zyl.pkg") 1000) 0))
+
+; `-o path` after the target, or "".
+(defn drv-doc-out (i)
+  (if (>= i (ffi-call "zyl_argc" 0))
+    ""
+    (if (> (str-eq (drv-arg i) "-o") 0) (drv-arg (+ i 1)) (drv-doc-out (+ i 1)))))
+
+; `dir/name.zyl` -> `name`.
+(defn drv-doc-modname (p)
+  (let base (drv-doc-base p (- (str-length p) 1))
+    (str-substring base 0 (- (str-length base) 4))))
+
+(defn drv-doc-base (p i)
+  (if (< i 0) p (if (= (ffi-call "zyl_cstr_byte_at" p i 1000) 47) (str-substring p (+ i 1) (- (str-length p) (+ i 1))) (drv-doc-base p (- i 1)))))
 
 (defn main ()
   (let arena (arena-create 1073741824)

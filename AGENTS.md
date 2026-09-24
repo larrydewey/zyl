@@ -157,7 +157,8 @@ minute.
 
 The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 [--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
-`update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`.
+`update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`,
+`doc [file|dir] [-o out.md]`.
 
 ## Regression Tests
 

@@ -1851,6 +1851,73 @@ long long zyl_smap_global(long long i) {
     return g_global_smaps[i];
 }
 
+/* Every `.zyl` file under `dir`, recursively, as newline-separated paths
+   relative to `dir`, sorted bytewise (so the listing is deterministic).
+   Hidden entries are skipped. Returns "" for a missing directory. */
+#include <dirent.h>
+#include <sys/stat.h>
+long long zyl_heap_alloc(long long size);
+typedef struct { char** v; size_t n, cap; } ZylPathList;
+
+static void zyl_pl_push(ZylPathList* l, const char* s) {
+    if (l->n == l->cap) {
+        size_t nc = l->cap ? l->cap * 2 : 64;
+        char** nv = (char**)realloc(l->v, nc * sizeof(char*));
+        if (!nv) return;
+        l->v = nv; l->cap = nc;
+    }
+    l->v[l->n++] = strdup(s);
+}
+
+static void zyl_walk_zyl(const char* root, const char* rel, ZylPathList* out) {
+    char path[4096];
+    snprintf(path, sizeof path, "%s%s%s", root, rel[0] ? "/" : "", rel);
+    DIR* d = opendir(path);
+    if (!d) return;
+    struct dirent* e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        char sub[4096];
+        snprintf(sub, sizeof sub, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
+        char full[8200];
+        snprintf(full, sizeof full, "%s/%s", root, sub);
+        struct stat st;
+        if (stat(full, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) zyl_walk_zyl(root, sub, out);
+        else {
+            size_t n = strlen(sub);
+            if (n > 4 && strcmp(sub + n - 4, ".zyl") == 0) zyl_pl_push(out, sub);
+        }
+    }
+    closedir(d);
+}
+
+static int zyl_pl_cmp(const void* a, const void* b) {
+    return strcmp(*(char* const*)a, *(char* const*)b);
+}
+
+long long zyl_list_zyl_files(long long dir) {
+    ZylPathList l = {0};
+    if (dir) zyl_walk_zyl((const char*)(size_t)dir, "", &l);
+    qsort(l.v, l.n, sizeof(char*), zyl_pl_cmp);
+    size_t total = 1;
+    for (size_t i = 0; i < l.n; i++) total += strlen(l.v[i]) + 1;
+    char* buf = (char*)(size_t)zyl_heap_alloc((long long)total);
+    if (!buf) return 0;
+    buf[0] = 0;
+    size_t at = 0;
+    for (size_t i = 0; i < l.n; i++) {
+        size_t n = strlen(l.v[i]);
+        memcpy(buf + at, l.v[i], n);
+        at += n;
+        buf[at++] = '\n';
+        free(l.v[i]);
+    }
+    buf[at] = 0;
+    free(l.v);
+    return (long long)(size_t)buf;
+}
+
 /* Contracts under the `warn` profile report and continue. */
 long long zyl_contract_warn(long long msg) {
     fprintf(stderr, "warning: %s\n", msg ? (const char*)(size_t)msg : "contract violated");
@@ -4033,7 +4100,7 @@ long long zyl_int_text(long long n) {
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
-    X(zyl_contract_warn) X(zyl_err_is) \
+    X(zyl_contract_warn) X(zyl_err_is) X(zyl_list_zyl_files) \
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \

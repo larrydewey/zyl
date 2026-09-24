@@ -36,7 +36,7 @@
 
 ## P4: Tooling & Packages
 - [x] Documentation: arenas and the `arena`/`cap` arguments of `vec-create`, `map-create`, `set-create` (book §4.3 "Arenas"); a negative `cap` now means 0 instead of a null write
-- [ ] `zyl doc` generator over `;|`/`;;` doc-comment convention
+- [x] `zyl doc` generator (`compiler/doc.zyl`): module headers, item docs from the comment block above each definition, `;|` precedence, pub-only in packages
 - [ ] Real package index; content-hash build cache; reject nested `feature-gate`
 - [ ] LSP: return unused-binding warnings instead of printing them
 - [ ] Bundle VS Code extension with problem matcher

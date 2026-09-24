@@ -1,0 +1,231 @@
+; === Zyl Compiler — Documentation generator (`zyl doc`) ===
+; Module: compiler/doc
+;
+; Markdown from source comments. The convention it reads is the one the
+; standard library already follows:
+;
+;   - a module's doc is the comment block at the top of the file (the
+;     `; === Title ===` line gives its title; `Module:` lines are dropped);
+;   - an item's doc is the contiguous block of `;` comment lines directly
+;     above a top-level definition, stopping at a blank line, code, or a
+;     separator line (`; ===...`, `; ---...`);
+;   - if that block has any `;|` lines, only those are the doc.
+;
+; Definitions are listed in source order with their signature; in a
+; package (a zyl.pkg beside the sources), only `pub` ones.
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/parser)
+(use compiler/expr_inner)
+
+(defn doc-cap () 16777216)
+(defn doc-out (buf s) (ffi-call "zyl_str_append_capped" buf s (doc-cap) 1000))
+
+; Markdown for the file at `path`, titled `modname`.
+(defn doc-file (arena path modname pub-only)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      (str-concat "<!-- cannot open " (str-concat path " -->\n"))
+      (let src (file-read fd 16777216)
+        (let _ (file-close fd)
+          (let buf (arena-alloc-zeroed arena (doc-cap))
+            (begin
+              (doc-module buf src modname)
+              (doc-items buf src (zyl-parse-file arena src path) pub-only)
+              buf)))))))
+
+; Markdown for every `.zyl` file under `dir`, in sorted path order.
+(defn doc-dir (arena dir pub-only)
+  (let buf (arena-alloc-zeroed arena (doc-cap))
+    (begin
+      (doc-dir-files arena buf dir (ffi-call "zyl_list_zyl_files" dir 1000) 0 pub-only)
+      buf)))
+
+(defn doc-dir-files (arena buf dir list i pub-only)
+  (let j (doc-line-end list i)
+    (if (>= i j)
+      0
+      (let rel (str-substring list i (- j i))
+        (begin
+          (doc-out buf (doc-file arena (str-concat dir (str-concat "/" rel)) (str-substring rel 0 (- (str-length rel) 4)) pub-only))
+          (doc-out buf "\n")
+          (doc-dir-files arena buf dir list (+ j 1) pub-only))))))
+
+(defn doc-line-end (s i)
+  (if (>= i (str-length s)) i (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10) i (doc-line-end s (+ i 1)))))
+
+; --- the module header ---------------------------------------------------------
+
+(defn doc-module (buf src modname)
+  (begin
+    (doc-out buf "# Module `")
+    (doc-out buf modname)
+    (doc-out buf "`\n\n")
+    (doc-header-lines buf src 0 (str-length src))
+    (doc-out buf "\n")))
+
+; Leading comment lines, until the first line that is not a comment.
+(defn doc-header-lines (buf src i n)
+  (if (>= i n)
+    0
+    (let j (doc-line-end src i)
+      (let line (doc-trim (str-substring src i (- j i)))
+        (if (doc-comment-p line)
+          (begin
+            (doc-header-line buf line)
+            (doc-header-lines buf src (+ j 1) n))
+          0)))))
+
+(defn doc-header-line (buf line)
+  (let text (doc-strip line)
+    (if (or (doc-starts text "Module:") (doc-rule-p text))
+      0
+      (if (doc-starts text "===")
+        (begin (doc-out buf "*") (doc-out buf (doc-trim (doc-strip-eq text))) (doc-out buf "*\n\n"))
+        (begin (doc-out buf text) (doc-out buf "\n"))))))
+
+; `=== Title ===` -> ` Title `
+(defn doc-strip-eq (t)
+  (doc-rstrip-eq (doc-lstrip-eq t 0) (- (str-length (doc-lstrip-eq t 0)) 1)))
+
+(defn doc-lstrip-eq (t i)
+  (if (and (< i (str-length t)) (= (ffi-call "zyl_cstr_byte_at" t i 1000) 61))
+    (doc-lstrip-eq t (+ i 1))
+    (str-substring t i (- (str-length t) i))))
+
+(defn doc-rstrip-eq (t i)
+  (if (and (>= i 0) (= (ffi-call "zyl_cstr_byte_at" t i 1000) 61))
+    (doc-rstrip-eq t (- i 1))
+    (str-substring t 0 (+ i 1))))
+
+; --- items ------------------------------------------------------------------------
+
+(defn doc-items (buf src forms pub-only)
+  (match forms
+    (Nil 0)
+    (Cons f rest
+      (begin
+        (doc-item buf src f pub-only)
+        (doc-items buf src rest pub-only)))))
+
+(defn doc-item (buf src f pub-only)
+  (let is-pub (> (str-eq (ast-head f) "pub") 0)
+    (let def (if is-pub (doc-unwrap-pub f) f)
+      (if (and pub-only (not is-pub))
+        0
+        (if (doc-definition-p (ast-head def))
+          (begin
+            (doc-out buf "### `")
+            (doc-out buf (ast-text (ast-arg1 def)))
+            (doc-out buf "`\n\n```lisp\n")
+            (doc-out buf (doc-signature def))
+            (doc-out buf "\n```\n\n")
+            (let d (doc-comment-above src (ffi-call "zyl_span_off" f 1000))
+              (if (> (str-length d) 0) (begin (doc-out buf d) (doc-out buf "\n")) 0)))
+          0)))))
+
+(defn doc-unwrap-pub (f)
+  (match f
+    (AList xs (match xs (Cons _ t (AList t)) (Nil f)))
+    (_ f)))
+
+(defn doc-definition-p (h)
+  (or (> (str-eq h "defn") 0) (or (> (str-eq h "def") 0) (or (> (str-eq h "deftype") 0)
+    (or (> (str-eq h "defstruct") 0) (or (> (str-eq h "trait") 0) (> (str-eq h "defmacro") 0)))))))
+
+; A function shows its head and parameters; a type or trait shows in full.
+(defn doc-signature (def)
+  (if (or (> (str-eq (ast-head def) "defn") 0) (> (str-eq (ast-head def) "defmacro") 0))
+    (match def
+      (AList xs (str-concat "(" (str-concat (ast-text-list (doc-take xs 3)) ")")))
+      (_ ""))
+    (if (> (str-eq (ast-head def) "def") 0)
+      (str-concat "(def " (str-concat (ast-text (ast-arg1 def)) " ...)"))
+      (ast-text def))))
+
+(defn doc-take (xs n)
+  (if (<= n 0) Nil (match xs (Nil Nil) (Cons h t (Cons h (doc-take t (- n 1)))))))
+
+; --- the comment block above a definition ------------------------------------------
+
+; Doc text for the definition starting at byte `off`.
+(defn doc-comment-above (src off)
+  (if (< off 0)
+    ""
+    (let lines (doc-lines-above src (doc-line-start src off) Nil)
+      (doc-join (if (doc-any-bar lines) (doc-bar-only lines) lines)))))
+
+(defn doc-line-start (s i)
+  (if (<= i 0) 0 (if (= (ffi-call "zyl_cstr_byte_at" s (- i 1) 1000) 10) i (doc-line-start s (- i 1)))))
+
+; Comment lines directly above the line starting at `ls`, top to bottom.
+(defn doc-lines-above (src ls acc)
+  (if (<= ls 0)
+    acc
+    (let ps (doc-line-start src (- ls 1))
+      (let line (doc-trim (str-substring src ps (- (- ls 1) ps)))
+        (if (and (doc-comment-p line) (not (doc-rule-p (doc-strip line))))
+          (doc-lines-above src ps (Cons line acc))
+          acc)))))
+
+(defn doc-any-bar (lines)
+  (match lines
+    (Nil false)
+    (Cons l t (if (doc-starts l ";|") true (doc-any-bar t)))))
+
+(defn doc-bar-only (lines)
+  (match lines
+    (Nil Nil)
+    (Cons l t (if (doc-starts l ";|") (Cons l (doc-bar-only t)) (doc-bar-only t)))))
+
+(defn doc-join (lines)
+  (match lines
+    (Nil "")
+    (Cons l t (str-concat (doc-strip l) (str-concat "\n" (doc-join t))))))
+
+; --- text helpers --------------------------------------------------------------------
+
+(defn doc-comment-p (line) (doc-starts line ";"))
+
+(defn doc-starts (s p)
+  (and (>= (str-length s) (str-length p)) (> (ffi-call "zyl_cstr_eq" (str-substring s 0 (str-length p)) p 1000) 0)))
+
+; A separator: nothing but `=` or `-` after the semicolons.
+(defn doc-rule-p (text)
+  (and (> (str-length text) 2) (doc-all-rule text 0)))
+
+(defn doc-all-rule (t i)
+  (if (>= i (str-length t))
+    true
+    (let c (ffi-call "zyl_cstr_byte_at" t i 1000)
+      (if (or (= c 61) (or (= c 45) (= c 32))) (doc-all-rule t (+ i 1)) false))))
+
+; Drop the leading `;`s (and a `|`), then one space.
+(defn doc-strip (line) (doc-strip-space (doc-strip-semis line 0)))
+
+(defn doc-strip-semis (s i)
+  (if (and (< i (str-length s)) (let c (ffi-call "zyl_cstr_byte_at" s i 1000) (or (= c 59) (= c 124))))
+    (doc-strip-semis s (+ i 1))
+    (str-substring s i (- (str-length s) i))))
+
+(defn doc-strip-space (s)
+  (if (and (> (str-length s) 0) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 32))
+    (str-substring s 1 (- (str-length s) 1))
+    s))
+
+(defn doc-trim (s) (doc-rtrim (doc-ltrim s 0)))
+
+(defn doc-ltrim (s i)
+  (if (and (< i (str-length s)) (doc-space-p (ffi-call "zyl_cstr_byte_at" s i 1000)))
+    (doc-ltrim s (+ i 1))
+    (str-substring s i (- (str-length s) i))))
+
+(defn doc-rtrim (s)
+  (let n (doc-rtrim-end s (str-length s))
+    (str-substring s 0 n)))
+
+(defn doc-rtrim-end (s n)
+  (if (and (> n 0) (doc-space-p (ffi-call "zyl_cstr_byte_at" s (- n 1) 1000))) (doc-rtrim-end s (- n 1)) n))
+
+(defn doc-space-p (c) (or (= c 32) (or (= c 9) (= c 13))))

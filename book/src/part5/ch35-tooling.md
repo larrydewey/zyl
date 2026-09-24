@@ -54,6 +54,7 @@ installed, is not removed.
 ```
 zyl <file.zyl> [-o out] [--emit-asm]   compile one file
   --error-format=json                    report diagnostics as JSON lines
+  --contracts=strict|debug|warn|off|production   contract profile (default strict)
 zyl new <name>                         create a package
 zyl add <name> [version]               add a dependency
 zyl fetch                              resolve, verify and populate the store
@@ -66,6 +67,7 @@ zyl publish                            archive, hash and sign this package
 zyl key                                show or create the publisher key
 zyl repl                               start an interactive session
 zyl eval <file.zyl>                    run a program without building one
+zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments
 ```
 
 A first argument ending in `.zyl`, or starting with `-`, means "compile
@@ -100,6 +102,26 @@ against the *installed* standard library; set
 `zyl eval file.zyl` runs a program through the REPL's interpreter
 instead: no assembly, no linker, a few milliseconds for a small
 program. It cannot run actors.
+
+`zyl doc` writes Markdown documentation from the source's comments,
+for one file or every `.zyl` file under a directory (sorted, so the
+output is deterministic), to stdout or `-o`. It follows the convention
+the standard library uses:
+
+- the comment block at the top of a file is the module's doc; its
+  `; === Title ===` line becomes the title and `Module:` lines are dropped;
+- the contiguous `;` lines directly above a top-level `defn`, `def`,
+  `deftype`, `defstruct`, `trait` or `defmacro` are that definition's doc,
+  stopping at a blank line or a `; ===`/`; ---` separator;
+- if that block has any `;|` lines, only they are used, so ordinary
+  comments can sit beside a doc;
+- each definition is shown with its signature; in a package (a `zyl.pkg`
+  beside the file or in the directory) only `pub` definitions appear.
+
+```bash
+zyl doc stdlib/allocator/allocator.zyl      # one module to stdout
+zyl doc . -o API.md                         # a package, pub items only
+```
 
 The package subcommands are covered in Chapter 25.
 
