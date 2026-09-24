@@ -214,9 +214,18 @@ behaves the same on every machine.
 ```bash
 cd editors/vscode
 npm install
-npx vsce package              # compiles; produces zyl-0.3.0.vsix
-code --install-extension zyl-0.3.0.vsix
+npx vsce package              # type-checks and bundles; produces zyl-0.4.0.vsix
+code --install-extension zyl-0.4.0.vsix
 ```
+
+The build tasks (the file build, and `zyl build`/`test`/`fetch` for each
+package) use the `$zyl` problem matcher, which turns the compiler's
+`error[CODE]: message` / `warning[CODE]: message` headline and the
+`--> file:line:col` line under it into Problems-panel entries. Use it in
+your own `tasks.json` with `"problemMatcher": "$zyl"`. The package is
+bundled with esbuild (`npm run bundle`, run by `vsce package`), so the
+`.vsix` holds one `out/extension.js` rather than `node_modules`.
+
 
 `./install.sh --with-vscode` does the same, uninstalls the old
 grammar-only 0.1.0 extension (`zyl-lang.zyl-lang`) if present, and,

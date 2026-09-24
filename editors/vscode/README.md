@@ -21,9 +21,9 @@ which claims the same language id and would otherwise shadow this one:
 ```bash
 cd editors/vscode
 npm install
-npx vsce package                       # compiles, produces zyl-0.3.0.vsix
+npx vsce package                       # type-checks and bundles, produces zyl-0.4.0.vsix
 code --uninstall-extension zyl-lang.zyl-lang   # only if 0.1.0 is installed
-code --install-extension zyl-0.3.0.vsix
+code --install-extension zyl-0.4.0.vsix
 ```
 
 Requires VS Code 1.91 or later (vscode-languageclient 10).
@@ -109,3 +109,10 @@ compiler can currently report:
   file you have open, not files you have not opened.
 - **Renaming is textual**, and would rename a local binding that shadows
   the name being renamed.
+
+## Problem matcher
+
+The extension's build tasks use the `$zyl` problem matcher, which reads the
+compiler's `error[CODE]: message` / `warning[CODE]: message` headline and the
+`--> file:line:col` line under it. Use it in your own tasks with
+`"problemMatcher": "$zyl"`.

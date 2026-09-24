@@ -2,7 +2,7 @@
   "name": "zyl",
   "displayName": "Zyl",
   "description": "Language support for Zyl: a deterministic Lisp systems language with region-based memory, capability types, and actor concurrency.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "zyl-lang",
   "license": "MIT",
   "repository": {
@@ -172,6 +172,28 @@
         "editor.semanticHighlighting.enabled": true
       }
     },
+    "problemMatchers": [
+      {
+        "name": "zyl",
+        "owner": "zyl",
+        "source": "zyl",
+        "fileLocation": ["autoDetect", "${workspaceFolder}"],
+        "pattern": [
+          {
+            "regexp": "^(?:PANIC: )?(error|warning)\\[([A-Z0-9_]+)\\]: (.*)$",
+            "severity": 1,
+            "code": 2,
+            "message": 3
+          },
+          {
+            "regexp": "^\\s*--> (.*):(\\d+):(\\d+)$",
+            "file": 1,
+            "line": 2,
+            "column": 3
+          }
+        ]
+      }
+    ],
     "taskDefinitions": [
       {
         "type": "zyl",
@@ -198,7 +220,8 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle",
+    "bundle": "tsc -p ./ --noEmit && esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node20",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
@@ -212,6 +235,7 @@
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "typescript": "~6.0.0",
     "typescript-eslint": "^8.70.1"

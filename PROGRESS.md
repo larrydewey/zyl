@@ -28,7 +28,7 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   prints no warnings (swept 2026-09-24).
 - `./run_regression_tests.sh --full --no-boot` passes **168/168**
   (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
-  integration 7, packages-fail 7, stress 4, scripts 6, packages 2,
+  integration 7, packages-fail 7, stress 4, scripts 7, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
@@ -260,7 +260,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] A `zyl doc` generator over the stdlib's doc-comment convention (`;|` takes precedence).
 - [x] A package index (`ZYL_INDEX`, `zyl publish --index`), a build cache keyed by content hash, and nested `feature-gate` rejected.
 - [x] Unused-binding warnings in the language server.
-- [ ] Bundle the VS Code extension; add a problem matcher.
+- [x] Bundle the VS Code extension; add a problem matcher.
 - [ ] REPL: let a definition entered at the prompt capture a `def`
       binding.
 
@@ -367,7 +367,17 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — LSP warnings and located diagnostics
+## Session (2026-09-24, latest) — VS Code extension 0.4.0
+
+`editors/vscode` is bundled with esbuild (`npm run bundle`, the
+`vscode:prepublish` step): the `.vsix` drops from 394 files / 713 KB to 10
+files / 149 KB, `node_modules` excluded. A `$zyl` problem matcher reads the
+compiler's `error[CODE]:`/`warning[CODE]:` headline and `-->` location, and
+the extension's file and package tasks use it.
+`tests/scripts/vscode-problem-matcher.sh` checks the matcher's regexes
+against real compiler output.
+
+## Session (2026-09-24, earlier) — LSP warnings and located diagnostics
 
 The language server runs `unused_check` with warning capture on
 (`dm-unused-warnings`) and publishes each `warning[...]` block as a

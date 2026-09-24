@@ -1,6 +1,6 @@
 src/**
 out/**/*.map
-node_modules/.bin/**
+node_modules/**
 tsconfig.json
 eslint.config.mjs
 .gitignore

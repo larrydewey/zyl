@@ -243,6 +243,7 @@ function buildTasks(): vscode.Task[] {
             `build ${path.basename(file)}`,
             'zyl',
             new vscode.ShellExecution(compiler, [file, '-o', output]),
+            '$zyl',
         );
         task.group = vscode.TaskGroup.Build;
         tasks.push(task);
@@ -271,6 +272,7 @@ async function packageTasks(): Promise<vscode.Task[]> {
                 `${command} ${label}`,
                 'zyl',
                 new vscode.ShellExecution(compiler, [command], { cwd: dir }),
+                '$zyl',
             );
             if (command === 'build') {
                 task.group = vscode.TaskGroup.Build;

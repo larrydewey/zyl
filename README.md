@@ -198,7 +198,7 @@ document highlight, rename, completion, signature help, document and
 workspace symbols, semantic tokens, folding, selection ranges, call
 hierarchy, inlay hints (parameter names), quick fixes for unbalanced
 delimiters, and whole-document and range formatting. The VS Code
-extension in `editors/vscode` (version 0.3.0) adds TextMate grammars for
+extension in `editors/vscode` (version 0.4.0) adds TextMate grammars for
 `.zyl` files and `zyl.pkg` manifests, snippets, build/test/fetch tasks,
 and a **Run Current File** command that compiles and runs the unsaved
 buffer.
