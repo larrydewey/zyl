@@ -157,8 +157,8 @@ Compiler:
   uses its first arm's fallback; `(contracts off ...)` strips clauses. No
   profiles, no `checkpoint` rollback, no typed `recover` arms.
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
-  native-object and assembly hashes, but the graph hash is not mixed into
-  the binary's own hash.
+  native-object and assembly hashes and their final hash, which the binary
+  carries as `zyl_build_hash`.
 - `Secret`: frames holding secrets are zeroed on return, heap erasure is
   explicit (`zeroize`, `wipe`); Secret fields/types redact as `<secret>`;
   `set!` of a secret into a `let-mut` is not tracked. Taint crosses a call
@@ -255,7 +255,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       trait, Secret-field taint, `impl-not`; heap erasure stays explicit.
 - [x] A `receive` form and a runnable structured-message actor example.
 - [x] Top-level `def` in compiled programs (immutable globals, eager init).
-- [ ] Hash finalization that mixes the graph hash into the binary.
+- [x] Hash finalization that mixes the graph hash into the binary.
 
 ### P4: Tooling and packages
 
@@ -371,7 +371,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — receive and structured actor messages
+## Session (2026-09-24, latest) — hash finalization
+
+`zyl build`/`zyl test` (`drv-compile-file`, `driver.zyl`) now compute the
+§31.12 inputs in order (compiler, lock graph, native objects, assembly),
+their final BLAKE3 (`drv-build-hashes`), and append it to the assembly as
+`zyl_build_hash` in a `.zyl_build` section before linking; `.buildinfo`
+records each native object (package-relative path and hash, which used to
+be an empty list) and `final-hash`. `cli-native-objs`/`cli-native-args`
+split object compilation from link arguments. The same package built in
+another directory gives a byte-identical binary. The packages-build runner
+checks the final hash is in the binary. Remaining deviations: assembly
+hash for the ICNF hash, no recorded resolved graph.
+
+## Session (2026-09-24, earlier) — receive and structured actor messages
 
 `(receive)` and `(actor-self)` lower (ICNF, `ic-global-sym`) to the new
 runtime `zyl_actor_receive` / `zyl_actor_self`. `receive` pops the next

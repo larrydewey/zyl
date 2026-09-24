@@ -360,7 +360,9 @@ if [ "$MODE" = "full" ]; then
             TOTAL=$((TOTAL + 1))
             if (cd "${d}app" && "${ZYL_BIN}" build) > $RUN_TMP/zyl_pkgbuild.log 2>&1 \
                && (cd "${d}app" && ./"$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)") > $RUN_TMP/zyl_pkgrun.log 2>&1 \
-               && ! grep -q "FAIL" $RUN_TMP/zyl_pkgrun.log; then
+               && ! grep -q "FAIL" $RUN_TMP/zyl_pkgrun.log \
+               && grep -q "(final-hash \"blake3:" "${d}app"/*.buildinfo \
+               && grep -aq "$(sed -n 's/.*(final-hash "\(blake3:[0-9a-f]*\)").*/\1/p' "${d}app"/*.buildinfo)" "${d}app/$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)"; then
                 PASS=$((PASS + 1))
                 echo -e "  ${GREEN}✓${NC} packages-build/${local_name}"
             else

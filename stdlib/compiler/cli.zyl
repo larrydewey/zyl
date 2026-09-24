@@ -466,12 +466,21 @@
 ; Everything a link needs from one package's native block: its objects
 ; and its libraries, already shell-quoted, in manifest order.
 (defn cli-native-link-args (arena dir m)
+  (cli-native-args m (cli-native-objs arena dir m)))
+
+; The compiled objects of the native block, in manifest order (none without one).
+(defn cli-native-objs (arena dir m)
+  (let n (mf-native m)
+    (if (> (pn-is-empty n) 0)
+      Nil
+      (let _ (cli-check-native-capability m)
+        (cli-native-objects arena dir n (pn-sources n))))))
+
+(defn cli-native-args (m objs)
   (let n (mf-native m)
     (if (> (pn-is-empty n) 0)
       ""
-      (let _ (cli-check-native-capability m)
-      (str-concat (cli-quoted-paths (cli-native-objects arena dir n (pn-sources n)))
-        (cli-lib-args (pn-link-libs n)))))))
+      (str-concat (cli-quoted-paths objs) (cli-lib-args (pn-link-libs n))))))
 
 ; Shipping and compiling C sources needs the `native` capability, and
 ; USING the symbols needs `ffi` (§31.10) — the second half is enforced by

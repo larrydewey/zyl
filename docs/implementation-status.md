@@ -76,8 +76,10 @@ it compiles and runs correctly; the notes say where it stops.
   error types (the first arm's fallback always applies).
 - **Hash finalization** (§31.12): `zyl build` and `zyl test` write
   `zyl.buildinfo` with the compiler, graph, native-object and assembly
-  hashes, but the graph hash is not mixed into the binary's own hash,
-  and a single-file compile writes no buildinfo.
+  hashes and their final hash, which is embedded in the binary
+  (`zyl_build_hash`). The assembly hash stands in for an ICNF hash, the
+  resolved graph is not recorded, and a single-file compile writes no
+  buildinfo.
 - **Unlocated diagnostics:** `mutability_check`, `capability_check`,
   `unused_check`, `secret_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.

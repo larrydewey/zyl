@@ -21,7 +21,7 @@
 - [x] `Secret`: frame zeroization on return, redaction (`<secret>`), `Secret` trait, Secret-field taint; `impl-not` with a flow rule (`E_IMPL_FORBIDDEN`); open: heap erasure explicit, `set!` into `let-mut` untracked
 - [x] `receive` form, `actor-self`, and a runnable structured-message actor example (`book/examples/actor-counter/`)
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
-- [ ] Hash finalization mixing graph hash into binary
+- [x] Hash finalization: final hash of compiler/graph/native/asm hashes embedded in the binary (`zyl_build_hash`) and recorded in `.buildinfo`
 
 ## P4: Tooling & Packages
 - [ ] Documentation: what arenas are, and which values the arena/capacity arguments of `vec-create` and similar constructors accept (0 = private default arena, handles from `arena-create`, ...)

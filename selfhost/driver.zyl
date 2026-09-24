@@ -346,14 +346,15 @@
         1)
       (let srcbuf (file-read fd 4194304)
         (let _ (file-close fd)
-          (let native (cli-native-link-args arena dir
-                        (pk-read-manifest arena (str-concat dir "/zyl.pkg")))
-            (let buf (compile-to-asm arena srcbuf src)
-              (let asmpath (str-concat out ".s")
-                (let _ (cli-write-file asmpath buf)
-                  (let rc (cli-link-child asmpath out native)
-                    (let _ (drv-write-buildinfo arena dir out asmpath)
-                      rc)))))))))))
+          (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
+            (let objs (cli-native-objs arena dir m)
+              (let buf (compile-to-asm arena srcbuf src)
+                (let bi (drv-build-hashes arena dir objs buf)
+                  (let asmpath (str-concat out ".s")
+                    (let _ (cli-write-file asmpath (str-concat buf (drv-hash-section (bh-final bi))))
+                      (let rc (cli-link-child asmpath out (cli-native-args m objs))
+                        (let _ (drv-write-buildinfo out bi)
+                          rc)))))))))))))
 
 ; zyl.buildinfo (SS31.12): the compiler's own hash, the graph hash from the
 ; lock, the native object hashes and the ICNF hash, in that order, so a
@@ -364,19 +365,57 @@
 ; serialised form in this implementation, and assembly is a deterministic
 ; function of it, so the field verifies the same claim through a
 ; downstream artefact. A real ICNF hash needs an ICNF printer.
-(defn drv-write-buildinfo (arena dir out asmpath)
+;; Step 11: the four inputs in canonical order, and their final hash, which
+;; the binary carries as `zyl_build_hash` (section .zyl_build). The asm hash
+;; covers the program's assembly before that section is appended.
+(deftype BuildHashes (BH String String String String String))
+(defn bh-final (b) (match b (BH _ _ _ _ f f)))
+
+(defn drv-build-hashes (arena dir objs buf)
+  (let ch (lk-compiler-self-hash arena)
+    (let gh (drv-graph-hash arena dir)
+      (let nh (drv-object-hashes arena dir objs)
+        (let ah (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena buf -1 32 1000))
+          (let all (str-concat ch (str-concat "\n" (str-concat gh (str-concat "\n" (str-concat nh (str-concat "\n" ah))))))
+            (BH ch gh nh ah (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena all -1 32 1000)))))))))
+
+; `("path" "blake3:...")` per native object, in manifest order; the path is
+; package-relative, so the hash does not depend on where the package sits.
+(defn drv-object-hashes (arena dir objs)
+  (match objs
+    (Nil "")
+    (Cons o rest
+      (let h (str-concat " (\"" (str-concat (drv-rel dir o) (str-concat "\" \"blake3:" (str-concat (ffi-call "zyl_blake3_file_hex" arena o 32 1000) "\")"))))
+        (str-concat h (drv-object-hashes arena dir rest))))))
+
+(defn drv-rel (dir p)
+  (let n (+ (str-length dir) 1)
+    (if (and (> (str-length p) n) (> (ffi-call "zyl_cstr_eq" (str-substring p 0 n) (str-concat dir "/") 1000) 0))
+      (str-substring p n (- (str-length p) n))
+      p)))
+
+(defn drv-hash-section (final)
+  (str-concat "\n    .section .zyl_build,\"a\"\n    .globl zyl_build_hash\nzyl_build_hash:\n    .asciz \""
+    (str-concat final "\"\n    .text\n")))
+
+(defn drv-write-buildinfo (out bi)
   (let path (str-concat out ".buildinfo")
     (let f (file-open path "w")
-      (let _ (file-write f (drv-buildinfo-text arena dir asmpath))
+      (let _ (file-write f (drv-buildinfo-text bi))
         (file-close f)))))
 
-(defn drv-buildinfo-text (arena dir asmpath)
-  (str-concat "(buildinfo\n  (compiler-hash \""
-    (str-concat (lk-compiler-self-hash arena)
-      (str-concat "\")\n  (graph-hash \""
-        (str-concat (drv-graph-hash arena dir)
-          (str-concat "\")\n  (native-objects)\n  (asm-hash \"blake3:"
-            (str-concat (ffi-call "zyl_blake3_file_hex" arena asmpath 32 1000) "\"))\n")))))))
+(defn drv-buildinfo-text (bi)
+  (match bi
+    (BH ch gh nh ah fh
+      (str-concat "(buildinfo\n  (compiler-hash \""
+        (str-concat ch
+          (str-concat "\")\n  (graph-hash \""
+            (str-concat gh
+              (str-concat "\")\n  (native-objects"
+                (str-concat nh
+                  (str-concat ")\n  (asm-hash \""
+                    (str-concat ah
+                      (str-concat "\")\n  (final-hash \"" (str-concat fh "\"))\n")))))))))))))
 
 (defn drv-graph-hash (arena dir)
   (match (cli-read-lock arena dir)

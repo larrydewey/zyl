@@ -55,7 +55,8 @@ become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
 `recover` is `try`/`catch`, `(contracts off ...)` strips clauses;
 profiles and `checkpoint` rollback are not implemented. Hash finalization exists only for
 package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
-native-object and assembly hashes; spec §31.12 asks for an ICNF hash,
+native-object and assembly hashes, plus their final hash, which the
+binary carries as `zyl_build_hash`; spec §31.12 asks for an ICNF hash,
 which is a recorded deviation).
 
 ## Non-Negotiable Constraints

@@ -351,11 +351,15 @@ Contract forms are rewritten where every form is recognized,
 **Spec reference:** `zyl_specification.txt` §31.12
 
 `zyl build` and `zyl test` write `<out>.buildinfo` next to the binary:
-the compiler's own hash, the graph hash from `zyl.lock`, a native-object
-list, and the BLAKE3 hash of the emitted assembly. The assembly hash
-stands in for an ICNF hash because ICNF has no serialized form; this is
-a recorded deviation. A single-file compile writes no buildinfo, and
-the graph hash is not mixed into the binary.
+the compiler's own hash, the graph hash from `zyl.lock`, the BLAKE3 of
+each native object (package-relative path, manifest order), the BLAKE3
+of the emitted assembly, and the final hash: BLAKE3 over those four,
+newline-separated, in that order (`drv-build-hashes`, `driver.zyl`). The
+final hash is appended to the assembly after it was hashed, as
+`zyl_build_hash` in a `.zyl_build` section, so the binary names its own
+inputs. The assembly hash stands in for an ICNF hash because ICNF has no
+serialized form; this is a recorded deviation. A single-file compile
+writes no buildinfo.
 
 ---
 
