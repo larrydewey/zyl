@@ -88,8 +88,6 @@ it compiles and runs correctly; the notes say where it stops.
 - **Unlocated diagnostics:** `mutability_check`, `capability_check`,
   `unused_check`, `secret_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.
-- **C calls of arity 7 or more** do not get the stack realignment every
-  C call of arity 6 or less gets.
 - **No tail-call optimization.**
 - **Package system:** no index repository exists yet (the index URL in
   the examples is a placeholder), there is no build cache (§31.4), and

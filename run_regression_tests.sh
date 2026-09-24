@@ -229,10 +229,12 @@ run_diff_test() {
 #                          are not the same bytes in two runtimes.
 #   modules              — one of its tests spawns an actor.
 #   package-system       — its signature tests are Ed25519.
+#   c-abi                — hands a function to qsort as a C callback,
+#                          which needs a native function pointer.
 #   math-*               — minutes of interpreted arithmetic for what
 #                          the compiled suite already covers in seconds.
 #                          Matched by prefix, below.
-DIFF_SKIP="actors concurrency modules derive collections ffi-advanced package-system selfhost-codegen"
+DIFF_SKIP="actors concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi"
 
 diff_skipped() {
     local name="$1"

@@ -40,7 +40,8 @@ left back into `rax` and combines them:
 There is **no register allocator**. Parameters and locals live in stack
 slots addressed from `rbp`, and `rax`, `rcx`, `rdx`, `r10`, `r11`,
 `r12` and `rbx` are used as fixed scratch registers by particular
-instruction sequences. That makes the output long but trivially
+instruction sequences (the last two are saved by every function's
+prologue, §29.6). That makes the output long but trivially
 deterministic: the same ICNF always produces the same text.
 
 ### Values and representation kinds
@@ -147,9 +148,21 @@ the call itself, after the argument registers are loaded:
 
 `r12` is callee-saved in C, so the callee hands it back. `print`
 (`printf`) and variant allocation (`zyl_heap_alloc`) use the same
-sequence. A C call with seven or more arguments keeps the parity pad
-only, because its stack arguments must sit at `[rsp]`; no `ffi-call`
-in the tree has that many.
+sequence. A C call with seven or more arguments must have its stack
+arguments at `[rsp]`, so rounding `rsp` down would move them out from
+under the callee; instead the stack arguments are copied into a fresh
+aligned block below the current `rsp`:
+
+```asm
+    mov r12, rsp
+    sub rsp, 24           ; 8 * stack-argument count
+    and rsp, -16
+    mov r10, [r12+0]      ; copy each stack argument
+    mov [rsp+0], r10
+    ...
+    call snprintf
+    mov rsp, r12
+```
 
 ### Closure calls
 
@@ -276,10 +289,14 @@ checked program.
 name:
     push rbp
     mov rbp, rsp
-    sub rsp, 104          ; 16n+8
+    sub rsp, 120          ; 16n+8
+    mov [rbp-120], rbx    ; save the callee-saved registers codegen uses
+    mov [rbp-112], r12
     mov [rbp-8], rdi      ; spill parameters
     mov [rbp-16], rsi
     ...
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
     mov rsp, rbp
     pop rbp
     ret
@@ -289,12 +306,15 @@ There is no tail-call elimination: every call is a real `call`. Deep
 recursion is supported by running the program on a very large stack
 instead (§29.9).
 
-The prologue saves only `rbp`. Generated code uses `rbx` and `r12` as
-scratch without saving them, although SysV makes both callee-saved.
-That is harmless between Zyl functions, which never rely on them across
-a call, but it means a Zyl function called *from* C — the user's `main`
-under `zyl_call_on_big_stack`, a test function under `zyl_run_tests`,
-an actor body — does not preserve them for its C caller.
+Generated code uses `rbx` (the block pointer of a variant
+construction) and `r12` (the saved `rsp` around a C call) as scratch,
+and SysV makes both callee-saved. Zyl functions never rely on them
+across a call, but a Zyl function is also called *from* C — the user's
+`main` under `zyl_call_on_big_stack`, a test function under
+`zyl_run_tests`, an actor body, a comparator handed to `qsort` — and an
+optimized C caller keeps live values in them. So every prologue stores
+both in the two lowest words of the frame, below every local slot, and
+the epilogue reloads them. No other callee-saved register is used.
 
 ## 29.7 Data Representation
 

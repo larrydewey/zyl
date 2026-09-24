@@ -241,6 +241,12 @@ Emit into a CGState text buffer via `cg-emit` / `cg-emit-line` /
 `cg-emit-int`; labels via `cg-label-new`; rodata via `cg-with-rodata`.
 Alignment discipline for calls: pad BEFORE pushes when arg count is odd;
 pop into SysV regs in reverse; cleanup pad after the call.
+Every C call goes through `cg-ext-call-aligned` (arity 7+ copies its
+stack args to an aligned block). Callee-saved registers: `cg-function`
+saves and restores only `rbx` and `r12`, the two codegen uses; a new
+sequence that needs `r13`-`r15` must be added to
+`cg-save-callee-saved` / `cg-restore-callee-saved`, or C callers of Zyl
+functions (qsort comparators, test bodies, actor entries) break.
 
 ### Tests: the language's own test framework, not ad hoc `main` checks
 Top-level `(test "name" body)` forms + a trailing `(run-tests)` compile

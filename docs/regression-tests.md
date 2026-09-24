@@ -19,7 +19,7 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 123 tests and takes well under a minute on a
+A `--full --no-boot` run is 124 tests and takes well under a minute on a
 current machine (43 s as of 2026-09-23). `--full` adds one more entry,
 `boot/fixed-point`, which runs `./boot.sh` and takes as long as a
 bootstrap does.
@@ -83,7 +83,7 @@ steps go to `/tmp/zyl_*.log`.
 | Section | Source | Tests |
 |---------|--------|-------|
 | unit test | `tests/unit_test.zyl` | 1 |
-| regression | `tests/regression/*.zyl` | 52 |
+| regression | `tests/regression/*.zyl` | 53 |
 | stress | `tests/stress/*.zyl` | 4 |
 | integration | `tests/integration/*.zyl` | 7 |
 | interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 34 |
@@ -93,7 +93,7 @@ steps go to `/tmp/zyl_*.log`.
 | compile-fail | `tests/compile-fail/*.zyl` | 12 |
 | scripts | `tests/scripts/*.sh` | 2 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **123** |
+| **total** | | **124** |
 
 The smoke tests run directly only in `--quick`; in `--full` they are
 exercised through the interpreter-agreement section.
@@ -123,9 +123,10 @@ interpreter reports `E_UNSUPPORTED_INTERPRETED`), one that prints a
 value's address (`derive`), one that prints the bytes at a pinned address
 (`ffi-advanced`), one that assumes a fresh `alloc-malloc` block reads back
 as zeroes (`collections`), `package-system` (its signature tests are
-Ed25519), and every `math-*` file, which is minutes of interpreted
+Ed25519), `c-abi` (it hands a function to `qsort` as a C callback, which
+needs a native function pointer), and every `math-*` file, which is minutes of interpreted
 arithmetic for what the compiled run already covers in seconds. That is
-23 of the 57 regression and smoke files, leaving 34.
+24 of the 58 regression and smoke files, leaving 34.
 
 `docs/repl.md` lists the places the two back ends differ on purpose.
 
@@ -167,6 +168,8 @@ tests/
 │   ├── concurrency.zyl        # spawn, send, send-closure, mailboxes
 │   ├── ffi.zyl                # ffi-call, ffi-pin, ffi-unpin, timeout
 │   ├── ffi-advanced.zyl       # pinning, timeouts
+│   ├── c-abi.zyl              # C callbacks keep callee-saved registers;
+│   │                          #   C calls with more than six arguments
 │   ├── io.zyl                 # read-line, file-open/read/write/close
 │   ├── collections.zyl        # Vec, Map, Set, StringBuffer, allocator
 │   ├── modules.zyl            # module imports from stdlib

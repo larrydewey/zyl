@@ -1,0 +1,60 @@
+; C ABI regression tests: calls between C and generated code.
+
+(use allocator/allocator)
+
+(defstruct _abi_Box (v Int) (w Int))
+
+; glibc's qsort keeps its own state in callee-saved registers across the
+; comparator call. Generated code uses rbx (variant construction) and r12
+; (the saved rsp around every C call); functions used to clobber both
+; without saving them, so qsort came back with a wrongly ordered array.
+(defn _abi-cmp (pa pb)
+  (let a (struct-get (make-_abi_Box (alloc-read-int pa) 0) "v")
+    (let b (struct-get (make-_abi_Box (alloc-read-int pb) 0) "v")
+      (if (< a b) -1 (if (> a b) 1 0)))))
+
+(defn _abi-fill (p i n)
+  (if (>= i n)
+    0
+    (begin
+      (alloc-write-int (+ p (* i 8)) (- 1000 (* (% (* i 37) 64) 3)))
+      (_abi-fill p (+ i 1) n))))
+
+(defn _abi-sorted (p i n)
+  (if (>= i n)
+    1
+    (if (> (alloc-read-int (+ p (* (- i 1) 8))) (alloc-read-int (+ p (* i 8))))
+      0
+      (_abi-sorted p (+ i 1) n))))
+
+(defn _abi-qsort-ok ()
+  (let p (alloc-malloc (* 64 8))
+    (begin
+      (_abi-fill p 0 64)
+      (ffi-call "qsort" p 64 8 _abi-cmp 1000)
+      (_abi-sorted p 1 64))))
+
+(test "c-callback-preserves-callee-saved"
+  (assert-equal (_abi-qsort-ok) 1))
+
+; A C call with more than six arguments passes the rest on the stack and
+; used to get no rsp realignment. snprintf is varargs; with a nonzero al
+; it spills the SSE registers with movaps, which faults on a misaligned
+; stack, so these calls segfaulted at some call depths.
+(defn _abi-fmt9 (buf a b c d e f)
+  (ffi-call "snprintf" buf 64 "%lld-%lld-%lld-%lld-%lld-%lld" a b c d e f 1000))
+
+(defn _abi-deep (buf k)
+  (if (= k 0) (_abi-fmt9 buf 1 2 3 4 5 6) (+ 0 (_abi-deep buf (- k 1)))))
+
+(test "c-call-arity-9-depth-0"
+  (assert-equal (_abi-deep (alloc-malloc 64) 0) 11))
+(test "c-call-arity-9-depth-1"
+  (assert-equal (_abi-deep (alloc-malloc 64) 1) 11))
+(test "c-call-arity-9-depth-2"
+  (let buf (alloc-malloc 64)
+    (begin
+      (_abi-deep buf 2)
+      (assert-equal (alloc-strlen buf) 11))))
+
+(run-tests)

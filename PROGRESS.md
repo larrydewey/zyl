@@ -138,8 +138,6 @@ Compiler:
 - `Secret`: no zeroization on scope exit, no `print` redaction, no
   `Secret` trait for user-defined types. Taint crosses a call boundary
   only where the callee's parameters are annotated.
-- C calls of arity 7 or more do not get the rsp realignment that
-  `cg-fire-ext` gives every C call of arity 6 or less.
 - `codegen.zyl` performs no tail-call optimization. `assemble.py` still
   collapses whitespace in the bundle so that `lexer.zyl`'s mutually
   recursive whitespace skip stays within the stack.
@@ -210,7 +208,6 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 - [ ] Field and return kinds in codegen, so compiled `print` and `==`
       agree with the interpreter; then derivable `Show`.
-- [ ] rsp realignment for C calls of arity 7 or more.
 - [ ] Tail-call optimization in `codegen.zyl`, or a self-tail-recursive
       whitespace skip in `lexer.zyl`, so `assemble.py` no longer needs to
       collapse whitespace.

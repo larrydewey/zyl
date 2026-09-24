@@ -18,6 +18,10 @@
 ;     left-to-right (spec evaluation-order rule).
 ;   - Floats travel as bit patterns in rax and move to xmm0/xmm1 for SSE
 ;     arithmetic; print selects %d/%f/%s by the operand's kind.
+;   - rbx and r12, the only callee-saved registers the emitted code
+;     touches, are saved in the two lowest frame words by every
+;     function's prologue and restored by its epilogue, so C callers of
+;     Zyl functions keep them (cg-save-callee-saved).
 ;
 ; Emitter state is an immutable CGState threaded functionally through
 ; every emitter function (no mutable records, no raw cells):
@@ -933,17 +937,31 @@
 ; 3), so moving rsp cannot disturb them.
 ;
 ; Arity 7 and up passes its extra arguments ON the stack, at [rsp] at
-; the moment of the call, so rsp is not free to move there; those keep
-; the parity-pad behavior. No ffi-call in this tree has that many
-; arguments, and a C function that both takes seven and needs aligned
-; SSE would need the alignment established before phase 2 instead.
+; the moment of the call, so rsp cannot simply be rounded down: the
+; S stack arguments are copied into a fresh 16-byte-aligned block below
+; the current rsp (through r10, which carries no argument), and the call
+; is made from there. The block lies entirely below r12, so the copy
+; never overwrites a source word. Without it a varargs callee such as
+; snprintf, which spills the SSE registers with movaps when al is
+; nonzero, faulted whenever the call sat at the wrong depth.
 (defn cg-ext-call-aligned (st callstr n)
-  (if (> n 6)
-    (cg-emit-line st callstr)
-    (let st2 (cg-emit-line st "    mov r12, rsp")
-      (let st3 (cg-emit-line st2 "    and rsp, -16")
-        (let st4 (cg-emit-line st3 callstr)
-          (cg-emit-line st4 "    mov rsp, r12"))))))
+  (let st2 (cg-emit-line st "    mov r12, rsp")
+    (let st3 (if (> n 6) (cg-ext-stack-args-realign st2 (- n 6)) (cg-emit-line st2 "    and rsp, -16"))
+      (let st4 (cg-emit-line st3 callstr)
+        (cg-emit-line st4 "    mov rsp, r12")))))
+
+(defn cg-ext-stack-args-realign (st count)
+  (let st2 (cg-emit-int (cg-emit st "    sub rsp, ") (* 8 count))
+    (let st3 (cg-emit-line (cg-nl st2) "    and rsp, -16")
+      (cg-ext-copy-stack-arg st3 0 count))))
+
+(defn cg-ext-copy-stack-arg (st k count)
+  (if (>= k count)
+    st
+    (let st2 (cg-emit-int (cg-emit st "    mov r10, [r12+") (* 8 k))
+      (let st3 (cg-emit-line st2 "]")
+        (let st4 (cg-emit-int (cg-emit st3 "    mov [rsp+") (* 8 k))
+          (cg-ext-copy-stack-arg (cg-emit-line st4 "], r10") (+ k 1) count))))))
 
 ; print: pick the format by the argument's kind.
 ; `print`'s own "value" (this is a Lisp where everything is an
@@ -1431,23 +1449,49 @@
         (let nslots (icnf-add2 (list-length params)
                                (+ (icnf-slot-count body) 8))
           ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
-          ; Entry rsp is 8 mod 16 (after push rbp), so fsz must be 16n+8
-          (let fsz (+ 8 (* 16 (+ 1 (/ nslots 2))))
+          ; Entry rsp is 8 mod 16 (after push rbp), so fsz must be 16n+8.
+          ; The extra 16 bytes at the bottom of the frame hold the
+          ; caller's rbx and r12 (see cg-save-callee-saved).
+          (let fsz (+ 24 (* 16 (+ 1 (/ nslots 2))))
           (let st1 st
            (let st2 (cg-emit st1 (cg-sym-mangled (cg-arena-of st) name))
              (let st3 (cg-emit-line st2 ":")
                (let st4 (cg-emit-line st3 "    push rbp")
                  (let st5 (cg-emit-line st4 "    mov rbp, rsp")
                    (let st6 (cg-emit st5 "    sub rsp, ")
-                     (let st7 (cg-nl (cg-emit-int st6 fsz))
+                     (let st7 (cg-save-callee-saved (cg-nl (cg-emit-int st6 fsz)) fsz)
                        (let st8 (cg-param-spills st7 0 (list-length params))
                          ; per-function slot counter reset after params
                          (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                            (let st10 (cg-expr st9 env body)
+                            (let st10 (cg-restore-callee-saved (cg-expr st9 env body) fsz)
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))
     st))
+
+; SysV makes rbx and r12-r15 callee-saved. Generated code uses rbx (the
+; block pointer in cg-variant) and r12 (the saved rsp around every
+; aligned C call, cg-ext-call-aligned / cg-print-call / cg-variant /
+; setjmp), and nothing else in that set. Zyl-to-Zyl calls never rely on
+; either surviving a call, but C does: a Zyl function is entered from C
+; as main's big-stack worker, as a test body under zyl_run_tests, as an
+; actor entry, and as any callback handed to a C function (qsort's
+; comparator), and a C caller compiled with optimization keeps live
+; values in these registers across the call. So every generated function
+; saves both in the two lowest words of its frame and restores them
+; before returning. The pair lives below every local slot, where no
+; slot offset reaches.
+(defn cg-save-callee-saved (st fsz)
+  (let st2 (cg-emit-int (cg-emit st "    mov [rbp-") fsz)
+    (let st3 (cg-emit-line st2 "], rbx")
+      (let st4 (cg-emit-int (cg-emit st3 "    mov [rbp-") (- fsz 8))
+        (cg-emit-line st4 "], r12")))))
+
+(defn cg-restore-callee-saved (st fsz)
+  (let st2 (cg-emit-int (cg-emit st "    mov rbx, [rbp-") fsz)
+    (let st3 (cg-emit-line st2 "]")
+      (let st4 (cg-emit-int (cg-emit st3 "    mov r12, [rbp-") (- fsz 8))
+        (cg-emit-line st4 "]")))))
 
 (defn ifn-tag-p (f)
   (match f
