@@ -276,7 +276,7 @@ measurement worked.
 ## Struct Regression Tests
 
 **Trigger before modifying:** `ast.zyl`, `codegen.zyl`, `icnf.zyl`,
-`type_inference.zyl`, `parser.zyl`, `region_inference.zyl` — all under
+`type_annotate.zyl`, `parser.zyl`, `region_inference.zyl` — all under
 `stdlib/compiler/`.
 
 ```bash

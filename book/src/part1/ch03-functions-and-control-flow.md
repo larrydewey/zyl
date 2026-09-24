@@ -32,12 +32,10 @@ Functions are the core building blocks of Zyl programs. This chapter covers func
   (+ a b))
 ```
 
-Annotations are optional, and type inference works without them. In
-the current compiler they do one more job: they tell the code generator
-what a parameter holds. That is why `greet` above annotates `name` as
-`String` — without the annotation, `(print name)` would print the
-string's address. The same goes for `Float` parameters used in
-arithmetic (Chapter 2, §2.2).
+Annotations are optional, and type inference works without them:
+`greet` would print `name` as text unannotated too, because every call
+passes a String. An annotation documents intent and constrains
+inference; it is not checked (Chapter 15).
 
 There is no return-type annotation. Anything after the parameter list
 is the body, so `(defn add ((a Int) (b Int)) Int (+ a b))` treats `Int`
@@ -352,8 +350,7 @@ Things to know about the current implementation:
   failed `assert-` forms of Chapter 11) transfer control to `catch`.
 - The catch clause uses one handler expression. Write several steps as
   a `begin`, or call a function, as `report` does.
-- The message is a String; pass it to a `String`-annotated function (or
-  `print-string`) to print it.
+- The message is a String, and prints as one.
 - **Known bug:** if `error` is raised inside a function that was called
   with an even number of arguments (2, 4, ...), the program can hang
   instead of reaching the handler. Whether it hangs depends on the
@@ -496,9 +493,10 @@ arguments, `(print a b)` prints each on its own line. To put text and
 a value on one line, build the string first with `str-concat`. `print`
 evaluates to 0.
 
-`print-string`, `print-float` and `print-int` (core library) do the
-same with an annotated parameter, for values whose type the code
-generator cannot see (Chapter 2, §2.2).
+`print` follows the value's inferred type (Chapter 2, §2.2), and a value
+whose type has a `Show` impl prints as its `show` text: `(print (Some 1))`
+prints `Some(1)`. `print-string`, `print-float` and `print-int` (core
+library) are the same with a fixed type.
 
 Reading input: `read-line` is recognized by the parser but not yet
 implemented by the code generator (it evaluates to 0). File I/O is in

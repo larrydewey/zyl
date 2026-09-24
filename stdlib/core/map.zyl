@@ -12,6 +12,7 @@
 ; Two-type-parameter generic deftype, same pattern as
 ; compiler/sexp_balance.zyl's `SBPair A B`.
 
+(use core/show)
 (use core/option)
 (use core/list)
 
@@ -94,3 +95,17 @@
   (match pairs
     (Nil acc)
     (Cons e rest (map-from-list-acc rest (map-insert acc (ME.key e) (ME.value e))))))
+
+(impl Show Map
+  (defn show (self)
+    (match self
+      (MapC entries (str-concat "{" (str-concat (map-show-entries entries) "}"))))))
+
+(defn map-show-entries (entries)
+  (match entries
+    (Nil "")
+    (Cons e rest
+      (let item (str-concat (Show.show (ME.key e)) (str-concat ": " (Show.show (ME.value e))))
+        (match rest
+          (Nil item)
+          (_ (str-concat item (str-concat ", " (map-show-entries rest)))))))))

@@ -151,32 +151,23 @@ variant is tested; the inner constructor is not checked (Chapter 4,
 
 ### Float Fields
 
-A `Float` field is stored correctly, but the code generator does not
-know that a pattern-bound name holds a Float. Hand pattern-bound Floats
-to a `Float`-annotated function, and print a Float result with
-`print-float`:
+A pattern-bound name has its field's declared type, so Float fields
+work directly:
 
 ```lisp
 (deftype Shape (Circle Float) (Rect Float Float))
 
-(defn circle-area ((r Float)) (* 3.14 r r))
-(defn rect-area ((w Float) (h Float)) (* w h))
-
 (defn area (s)
   (match s
-    (Circle r (circle-area r))
-    (Rect w h (rect-area w h))))
+    (Circle r (* 3.14 (* r r)))
+    (Rect w h (* w h))))
 
 (defn main ()
   (begin
-    (print-float (area (Circle 2.0)))     ; 12.560000
-    (print-float (area (Rect 1.5 2.0)))   ; 3.000000
+    (print (area (Circle 2.0)))     ; 12.560000
+    (print (area (Rect 1.5 2.0)))   ; 3.000000
     0))
 ```
-
-Writing `(* w h)` directly in the `Rect` arm multiplies the two bit
-patterns as integers, and a plain `print` of the result shows the
-Float's bits as an integer.
 
 ## 6.3 Exhaustiveness Checking
 
@@ -350,8 +341,8 @@ that can fail returns a `Result`:
     0))
 ```
 
-Note `print-string` for the message: a String bound by a pattern prints
-as its address with a plain `print` (Chapter 2, §2.2).
+A plain `print` works too: the message is bound with its field type,
+String.
 
 ### Result Chaining
 

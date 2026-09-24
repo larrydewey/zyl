@@ -9,6 +9,7 @@
 ; OPTION ADT — Generic: Option<T>
 ; ===========================================================================
 
+(use core/show)
 (use allocator/allocator)
 
 (deftype Option (Some T) None)
@@ -78,3 +79,9 @@
   (match opt
     (Some v (begin (f v) opt))
     (None opt)))
+
+(impl Show Option
+  (defn show (self)
+    (match self
+      (Some x (str-concat "Some(" (str-concat (Show.show x) ")")))
+      (None "None"))))

@@ -165,20 +165,18 @@ compare strings with `=`, which is a pointer comparison, so some
 lookups never match; `stdlib/lsp/compiler_bridge.zyl`'s header
 documents the problem.
 
-## Phase 7: Monomorphization and trait dispatch
+## Phase 7: Derive expansion and monomorphization
 
-**Implementation:** `monomorphization.zyl` (`monomorphize`),
-`trait_dispatch.zyl` (`td-expand-program`)
+**Implementation:** `derive.zyl` (`dv-expand-program`),
+`monomorphization.zyl` (`monomorphize`)
 
-1. Each generic function is instantiated per concrete use. A
-   specialization's name is the base name plus its type names, sorted
-   and joined with `_` (`canonical-name-from-type-map`), so naming is
-   deterministic.
+1. `(derive T Show)` becomes an `(impl Show T ...)` block whose `show`
+   prints `Variant(a, b)` or `Struct { f: a }` through `Show.show` on
+   each field. Other derivable traits generate nothing yet.
 2. Impl method bodies are lifted to top-level functions named
    `Trait.method_Type` (for example `OutputStream.write_Stdout`).
-3. Trait dispatch rewrites each call `(Trait.method recv args...)` into
-   a `match` on the receiver that calls the `Trait.method_Type` for the
-   receiver's runtime tag. No static type information is needed.
+
+Trait calls are resolved later, in the type annotation pass (Phase 8b).
 
 ## Phase 8: Source-level lowering
 
@@ -191,6 +189,27 @@ documents the problem.
 - **Assert lowering:** `(assert-equal l r)` where either side looks like
   an ADT or struct value becomes a `zyl_variant_eq` call. That
   comparison is shallow: tag plus each field as a raw word.
+
+## Phase 8b: Type annotation
+
+**Implementation:** `type_annotate.zyl` (`ta-annotate`)
+
+Hindley-Milner inference (union-find, Tarjan SCCs, let-polymorphism)
+over the final `ExprInner` program. Each node's type goes to runtime
+attr table 0; a unify conflict poisons the variables involved, so the
+pass fails open. At each SCC's close:
+
+- A trait call `(Trait.method recv ...)` whose receiver type is known
+  is renamed to `Trait.method_Type` (attr table 2).
+- A function that uses a trait method, or prints, on a type variable is
+  trait-generic; each call with concrete argument types gets its own
+  instance `f~T1,T2` (spec §6.4), typed with those types, so the trait
+  calls inside it resolve. Instances are appended to the program.
+- `print` of a value whose type has a `Show` impl prints `Show.show` of
+  it (attr table 3).
+
+A trait call it cannot resolve is lowered to a match on the receiver's
+runtime tag. `ZYL_DEBUG_TYPES=1` prints every function's scheme.
 
 ## Phase 9: ICNF lowering
 
@@ -325,8 +344,9 @@ Source (.zyl)
   -> [5]  Checks: capability, duplicate, arity, mutability,
           exhaustiveness, unused, secret
   -> [6]  Type inference                type_inference       -> TypeInferer
-  -> [7]  Monomorphization, trait dispatch
+  -> [7]  Derive expansion, monomorphization
   -> [8]  Closure inlining, assert lowering
+          Type annotation, trait resolution  type_annotate
   -> [9]  ICNF lowering                 icnf                 -> (List Icnf)
   -> [10] Optimization                  optimization
   -> [11] Region inference              region_inference
@@ -350,8 +370,9 @@ Each step consumes only the output of the steps above it:
 | Macro expansion | qualified `ExprInner` | the checks onward |
 | Checks | expanded `ExprInner` | type inference onward |
 | Type inference | checked `ExprInner` | monomorphization onward |
-| Monomorphization, trait dispatch | `ExprInner` + `TypeInferer` | lowering onward |
+| Derive expansion, monomorphization | `ExprInner` + `TypeInferer` | lowering onward |
 | Closure inlining, assert lowering | monomorphized `ExprInner` | ICNF onward |
+| Type annotation | lowered `ExprInner` | ICNF onward |
 | ICNF lowering | lowered `ExprInner` | optimization onward |
 | Optimization | ICNF | region inference onward |
 | Region inference | optimized ICNF | codegen |

@@ -295,15 +295,14 @@ Chapter 19 covers monomorphization and naming.
 
 (defn main ()
   (begin
-    (print-int (opt-or (Sm 4) 0))               ; 4
-    (print-string (opt-or (Sm "hi") "none"))    ; hi
-    (print-string (opt-or (Nn) "default"))      ; default
+    (print (opt-or (Sm 4) 0))               ; 4
+    (print (opt-or (Sm "hi") "none"))       ; hi
+    (print (opt-or (Nn) "default"))         ; default
     0))
 ```
 
-The typed `print-int` and `print-string` are deliberate. Chapter 15
-explains why a plain `print` of a generic function's result can format a
-`String` as an `Int`.
+A generic function's result has the type of its instantiation, so a
+plain `print` formats each one correctly (Chapter 15).
 
 ## 18.7 ADTs and Capabilities
 
@@ -327,19 +326,21 @@ message mentions a `let-mut` variable, or a `Secret`, is rejected.
 §5.6 lets `Eq`, `Ord`, `Debug`, `Show`, `Clone` and `Hash` be derived:
 
 ```lisp
-(derive Shape Eq Ord)
+(derive Shape Show)
+(print (Rect 2 3))        ; Rect(2, 3)
 ```
 
-`derive` is currently a no-op (Chapter 20). You get the same behavior
-whether or not you write it:
+`Show` is generated (Chapter 20): each variant prints as its name and
+its fields' `Show` text, `Circle(1.500000)`, and a struct as
+`Point { x: 1, y: 2 }`. Without a `Show` impl, `print` of an ADT value
+prints its address. The other traits are accepted and generate nothing;
+their behavior exists regardless:
 
 - `==` and `!=` on two ADT values compare structurally: the tag, then
   each field word.
 - `<`, `>`, `<=` and `>=` compare the fields lexicographically.
 - Both comparisons are shallow. A field that holds a string or another
   ADT value is compared by address, not by content.
-- `print` of an ADT value prints its address. No `Show` or `Debug`
-  output is generated.
 
 ## 18.9 Representation
 
@@ -409,4 +410,4 @@ There is no jump table and no merging of arms.
 | Guards | `if` | `\|` | `(when ...)` on literal arms only |
 | Nested patterns | yes | yes | no |
 | GADTs | no | yes (extension) | no |
-| Deriving | `#[derive(...)]` | `deriving` | `(derive ...)`, currently a no-op |
+| Deriving | `#[derive(...)]` | `deriving` | `(derive T Show)`; other traits not generated yet |

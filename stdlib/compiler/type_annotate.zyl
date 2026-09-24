@@ -26,27 +26,38 @@
 
 ; Handles (all mutable in the runtime).
 (deftype TaSt
-  (TaSt Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int))
+  (TaSt Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int Int))
 
-(defn ta-vars (st) (match st (TaSt x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-fnmap (st) (match st (TaSt _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-fnexp (st) (match st (TaSt _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-fnstate (st) (match st (TaSt _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-fnty (st) (match st (TaSt _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-fnsc (st) (match st (TaSt _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ x)))
-(defn ta-tjidx (st) (match st (TaSt _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ x)))
-(defn ta-tjlow (st) (match st (TaSt _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ x)))
-(defn ta-tjstack (st) (match st (TaSt _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ x)))
-(defn ta-types (st) (match st (TaSt _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ x)))
-(defn ta-variants (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ x)))
-(defn ta-fields (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ x)))
-(defn ta-pending (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ x)))
-(defn ta-counter (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ x)))
-(defn ta-onstack (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ x)))
-(defn ta-fieldtys (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x x)))
+(defn ta-vars (st) (match st (TaSt x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fnmap (st) (match st (TaSt _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fnexp (st) (match st (TaSt _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fnstate (st) (match st (TaSt _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fnty (st) (match st (TaSt _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fnsc (st) (match st (TaSt _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-tjidx (st) (match st (TaSt _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-tjlow (st) (match st (TaSt _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-tjstack (st) (match st (TaSt _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-types (st) (match st (TaSt _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-variants (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fields (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-pending (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-counter (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-onstack (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-fieldtys (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ _ x)))
+(defn ta-traits (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _ x)))
+(defn ta-impls (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ _ x)))
+(defn ta-special (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ _ x)))
+(defn ta-fntg (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ _ x)))
+(defn ta-fninst (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ _ x)))
+(defn ta-specs (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ _ x)))
+(defn ta-extra (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ _ x)))
+(defn ta-fnspecs (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ _ x)))
+(defn ta-fnsp (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x _ x)))
+(defn ta-fnpp (st) (match st (TaSt _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ x x)))
 
 (defn ta-st-new ()
-  (TaSt (ffi-call "zyl_wvec_global" 0 1000)
+  (TaSt
+        (ffi-call "zyl_wvec_global" 0 1000)
         (ffi-call "zyl_smap_new" 1000)
         (ffi-call "zyl_wvec_new" 1000)
         (ffi-call "zyl_wvec_new" 1000)
@@ -61,7 +72,17 @@
         (ffi-call "zyl_wvec_new" 1000)
         (ffi-call "zyl_wvec_new" 1000)
         (ffi-call "zyl_wvec_new" 1000)
-        (ffi-call "zyl_smap_global" 0 1000)))
+        (ffi-call "zyl_smap_global" 0 1000)
+        (ffi-call "zyl_smap_new" 1000)
+        (ffi-call "zyl_smap_global" 1 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_smap_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)
+        (ffi-call "zyl_wvec_new" 1000)))
 
 ; --- small helpers ------------------------------------------------------------
 
@@ -394,8 +415,26 @@
         (match (Expr.inner e)
           (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil 0 0)))
           (EDefn name _ _ (ta-add-fn st name e))
+          (EImplBlock trait type bodies (ta-add-impls st trait type bodies))
           (_ 0))
         (ta-collect-a st rest)))))
+
+; Impl methods by dotted `Trait.method`: (List (Pair type mangled)).
+(defn ta-add-impls (st trait type bodies)
+  (match bodies
+    (Nil 0)
+    (Cons ib rest
+      (begin
+        (match ib
+          (IB dn
+            (match dn
+              (DN mname _ _ (ta-add-impl st (str-concat trait (str-concat "." mname)) type)))))
+        (ta-add-impls st trait type rest)))))
+
+(defn ta-add-impl (st dotted type)
+  (let old (ta-sget (ta-impls st) dotted)
+    (let mangled (str-concat dotted (str-concat "_" type))
+      (ta-sput (ta-impls st) dotted (Cons (Pair type mangled) (if (= old 0) Nil old))))))
 
 (defn ta-add-fn (st name e)
   (let i (ta-wpush (ta-fnexp st) e)
@@ -405,7 +444,13 @@
       (ta-wpush (ta-fnty st) 0)
       (ta-wpush (ta-fnsc st) 0)
       (ta-wpush (ta-tjidx st) 0)
-      (ta-wpush (ta-tjlow st) 0))))
+      (ta-wpush (ta-tjlow st) 0)
+      (ta-wpush (ta-fntg st) 0)
+      (ta-wpush (ta-fninst st) 0)
+      (ta-wpush (ta-fnspecs st) 0)
+      (ta-wpush (ta-fnsp st) 0)
+      (ta-wpush (ta-fnpp st) 0)
+      i)))
 
 ; Params of every type first: a field may name a type declared later.
 (defn ta-collect-b (st exprs)
@@ -425,8 +470,30 @@
       (begin
         (match (Expr.inner e)
           (EDeftype name variants _ sm (ta-deftype st name variants sm))
+          (ETraitDecl name methods _ (ta-add-trait st name methods))
           (_ 0))
         (ta-collect-c st rest)))))
+
+; Method schemes by dotted name; `specs` "!show" names Show.show.
+(defn ta-add-trait (st name methods)
+  (match methods
+    (Nil 0)
+    (Cons m rest
+      (begin
+        (match m
+          (TM mname params ret (ta-add-method st (str-concat name (str-concat "." mname)) params ret)))
+        (ta-add-trait st name rest)))))
+
+(defn ta-add-method (st dotted params ret)
+  (match (ta-params st params Nil Nil Nil)
+    (TaPE ts _ scope _
+      (match (ta-conv-name st ret Nil scope)
+        (TaR rt _
+          (match (ta-gen st (TaF ts rt) Nil)
+            (TaGen t seen
+              (begin
+                (ta-sput (ta-traits st) dotted (TaSc (list-length seen) t))
+                (if (ta-key-is dotted "Show.show") (ta-sput (ta-specs st) "!show" dotted) 0)))))))))
 
 (defn ta-is-struct (sm)
   (match sm
@@ -551,8 +618,8 @@
 (defn ta-expr-node (st ctx env e)
   (match (Expr.inner e)
     (EAtom a (ta-atom st ctx env a))
-    (ECall op args (ta-call-expr st ctx env op args))
-    (EApply fname args (ta-call st ctx env fname args))
+    (ECall op args (ta-call-expr st ctx env e op args))
+    (EApply fname args (ta-call st ctx env e fname args))
     (ELet name val body (ta-let st ctx env name val body))
     (ELetMut name val body (ta-let st ctx env name val body))
     (EWithResource name val body (ta-let st ctx env name val body))
@@ -565,8 +632,8 @@
     (EBegin exprs (ta-last (ta-list st ctx env exprs) (ta-int)))
     (ECond clauses (ta-cond st ctx env clauses (ta-fresh st)))
     (EMatch subj arms (ta-match st ctx env subj arms))
-    (EPrint exprs (ta-walk-int st ctx env exprs))
-    (EFfiCall sym args _ (let _ (ta-list st ctx env args) (ta-ffi-ret st sym)))
+    (EPrint exprs (ta-print st ctx env exprs))
+    (EFfiCall sym args _ (let _ (ta-ffi-args st ctx env args) (ta-ffi-ret st sym)))
     (EFileOpen a b (ta-file-open st ctx env a b))
     (EFileRead a b (let _ (ta-list st ctx env (ta-l2 a b)) (ta-str)))
     (EFileWrite a b (ta-walk-int st ctx env (ta-l2 a b)))
@@ -580,7 +647,7 @@
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
-    (EFfiPin x (ta-walk-int st ctx env (Cons x Nil)))
+    (EFfiPin x (ta-seq (ta-ffi-args st ctx env (Cons x Nil)) (ta-int)))
     (EFfiUnpin x (ta-walk-int st ctx env (Cons x Nil)))
     (ESpawn b (ta-walk-int st ctx env (Cons b Nil)))
     (ESend a m (ta-walk-int st ctx env (ta-l2 a m)))
@@ -685,11 +752,11 @@
 
 ; --- calls --------------------------------------------------------------------
 
-(defn ta-call-expr (st ctx env op args)
+(defn ta-call-expr (st ctx env e op args)
   (match (Expr.inner op)
     (EAtom a
       (match a
-        (AIdent n (ta-call st ctx env n args))
+        (AIdent n (ta-call st ctx env e n args))
         (_ (ta-call-value st ctx env op args))))
     (_ (ta-call-value st ctx env op args))))
 
@@ -725,7 +792,7 @@
   (if (ta-streq n "ashr") 3
   0))))))))))))))))))))
 
-(defn ta-call (st ctx env n args)
+(defn ta-call (st ctx env e n args)
   (if (ta-streq n "ffi-call")
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
@@ -733,9 +800,10 @@
         (ta-op st ctx env oc args)
         (let bi (ta-builtin-sig st n)
           (if (= bi 0)
-            (ta-call-named st ctx env n args)
+            (ta-call-named st ctx env e n args)
             (ta-apply-type st bi (ta-list st ctx env args))))))))
 
+; Arithmetic or comparison on a type variable needs the instance type.
 (defn ta-op (st ctx env oc args)
   (let ts (ta-list st ctx env args)
     (if (= oc 3)
@@ -744,7 +812,13 @@
         (Nil (ta-int))
         (Cons h t
           (let _ (ta-unify-all st t h)
-            (if (= oc 2) (ta-bool) h)))))))
+            (let _ (ta-note-op st ctx h)
+              (if (= oc 2) (ta-bool) h))))))))
+
+(defn ta-note-op (st ctx t)
+  (match (ta-resolve st t)
+    (TaV i (if (< i 0) 0 (ta-note st ctx 0 4 "" t -1)))
+    (_ 0)))
 
 (defn ta-unify-all (st ts t)
   (match ts
@@ -764,15 +838,51 @@
   (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-int))
   0))))))))
 
-(defn ta-call-named (st ctx env n args)
+(defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)
     (if (= lt 0)
       (let fi (ta-sget (ta-fnmap st) n)
         (if (> fi 0)
-          (let tf (ta-fn-ref st ctx (- fi 1))
-            (ta-apply-type st tf (ta-list st ctx env args)))
-          (ta-call-ctor st ctx env n args)))
+          (ta-call-fn st ctx env e (- fi 1) args)
+          (let sc (ta-sget (ta-traits st) n)
+            (if (> sc 0)
+              (ta-trait-call st ctx env e n sc args)
+              (if (> (ta-sget (ta-impls st) n) 0)
+                (ta-trait-call st ctx env e n 0 args)
+                (ta-call-ctor st ctx env n args))))))
       (ta-apply-type st lt (ta-list st ctx env args)))))
+
+; A call to a function still open (same SCC) or trait-generic is recorded
+; so it can be specialized once its types are known.
+(defn ta-call-fn (st ctx env e fi args)
+  (let tf (ta-fn-ref st ctx fi)
+    (let ts (ta-list st ctx env args)
+      (let r (ta-fresh st)
+        (let ct (TaF ts r)
+          (let _ (ta-unify st tf ct)
+            (let s (ta-wget (ta-fnstate st) fi)
+              (if (or (= s 1) (> (ta-wget (ta-fntg st) fi) 0))
+                (ta-seq (ta-note st ctx e 1 "" ct fi) r)
+                r))))))))
+
+(defn ta-trait-call (st ctx env e n sc args)
+  (let ts (ta-list st ctx env args)
+    (let r (ta-fresh st)
+      (let ct (TaF ts r)
+        (let _ (if (= sc 0) 0 (ta-unify st (ta-inst st sc) ct))
+          (ta-seq (ta-note st ctx e 0 n ct -1) r))))))
+
+(defn ta-print (st ctx env exprs)
+  (match exprs
+    (Nil (ta-int))
+    (Cons a rest
+      (let t (ta-expr st ctx env a)
+        (ta-seq (ta-note st ctx a 2 "" t -1) (ta-print st ctx env rest))))))
+
+(deftype TaSp (TaSp Int Int Int String TaTy Int))
+
+(defn ta-note (st ctx node kind name t fi)
+  (ta-wpush (ta-special st) (TaSp ctx node kind name t fi)))
 
 (defn ta-call-ctor (st ctx env n args)
   (let vd (ta-ctor-lookup st n)
@@ -796,10 +906,24 @@
   (match args
     (Nil (ta-fresh st))
     (Cons sym rest
-      (let _ (ta-list st ctx env rest)
+      (let _ (ta-ffi-args st ctx env (ta-butlast rest))
+        (let _ (ta-list st ctx env (ta-last-only rest))
         (match (Expr.inner sym)
           (EAtom a (match a (AStr s (ta-ffi-ret st s)) (_ (ta-fresh st))))
-          (_ (ta-fresh st)))))))
+          (_ (ta-fresh st))))))))
+
+(defn ta-butlast (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (match t (Nil Nil) (_ (Cons h (ta-butlast t)))))))
+
+(defn ta-last-only (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (match t (Nil (Cons h Nil)) (_ (ta-last-only t))))))
+
+(defn ta-ffi-args (st ctx env args)
+  (ta-seq (ta-list st ctx env args) 0))
 
 (defn ta-ffi-ret (st s)
   (if (ta-ffi-str s) (ta-str) (ta-fresh st)))
@@ -814,7 +938,8 @@
   (if (ta-streq s "zyl_cstr_decode") true
   (if (ta-streq s "zyl_file_read_c") true
   (if (ta-streq s "zyl_int_text") true
-  (ta-streq s "zyl_json_quote")))))))))))
+  (if (ta-streq s "zyl_f_text") true
+  (ta-streq s "zyl_json_quote"))))))))))))
 
 ; --- functions and SCCs -------------------------------------------------------
 
@@ -868,6 +993,8 @@
       (ta-wset (ta-tjlow st) v c)
       (ta-wpush (ta-tjstack st) v)
       (ta-wset (ta-fnstate st) v 1)
+      (ta-wset (ta-fnsp st) v (ta-wlen (ta-special st)))
+      (ta-wset (ta-fnpp st) v (ta-wlen (ta-pending st)))
       (ta-visit-body st v (ta-wget (ta-fnexp st) v))
       (if (= (ta-wget (ta-tjlow st) v) (ta-wget (ta-tjidx st) v))
         (ta-close st v)
@@ -880,13 +1007,18 @@
         (TaPE ts env _ _
           (let r (ta-fresh st)
             (let _ (ta-wset (ta-fnty st) v (TaF ts r))
-              (ta-unify st r (ta-expr st v env body)))))))
+              (let inst (ta-wget (ta-fninst st) v)
+                (let _ (if (= inst 0) 0 (ta-unify st (TaF ts r) inst))
+                  (ta-unify st r (ta-expr st v env body)))))))))
     (_ 0)))
 
+; An SCC's pending struct-gets and uses are exactly those recorded since
+; its root's visit began: nested SCCs have already taken theirs.
 (defn ta-close (st v)
   (let members (ta-pop-scc st v Nil)
     (begin
-      (ta-flush-pending st members)
+      (ta-flush-pending st (ta-wget (ta-fnpp st) v))
+      (ta-resolve-specials st members (ta-wget (ta-fnsp st) v))
       (ta-gen-members st members))))
 
 (defn ta-pop-scc (st v acc)
@@ -1021,24 +1153,17 @@
         (Cons h t (match t (Nil h) (_ 0)))
         (Nil 0)))))
 
-; Retry this SCC's pending struct-gets; drop them (and keep other SCCs').
-(defn ta-flush-pending (st members)
+; Retry this SCC's pending struct-gets, then drop them.
+(defn ta-flush-pending (st from)
   (let pv (ta-pending st)
-    (let n (ta-wlen pv)
-      (let keep (ta-flush-loop st members pv 0 n Nil)
-        (begin
-          (ffi-call "zyl_wvec_truncate" pv 0 1000)
-          (ta-repush pv (list-reverse keep)))))))
+    (let _ (ta-flush-loop st pv from (ta-wlen pv))
+      (ffi-call "zyl_wvec_truncate" pv from 1000))))
 
-(defn ta-flush-loop (st members pv i n keep)
+(defn ta-flush-loop (st pv i n)
   (if (>= i n)
-    keep
-    (let p (ta-wget pv i)
-      (match p
-        (TaPend c ts field r
-          (if (ta-int-in c members)
-            (ta-seq (ta-sg-try st ts field r) (ta-flush-loop st members pv (+ i 1) n keep))
-            (ta-flush-loop st members pv (+ i 1) n (Cons p keep))))))))
+    0
+    (match (ta-wget pv i)
+      (TaPend _ ts field r (ta-seq (ta-sg-try st ts field r) (ta-flush-loop st pv (+ i 1) n))))))
 
 (defn ta-int-in (x xs)
   (match xs
@@ -1098,18 +1223,24 @@
       0)))
 
 ; Entry point: annotate every node of the program.
+; Returns the specialized instances to append to the program.
 (defn ta-annotate-program (exprs)
-  (let _ (ffi-call "zyl_attr_clear" 0 1000)
-    (let _ (ffi-call "zyl_attr_clear" 1 1000)
-      (let _ (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 0 1000) 0 1000)
-        (let st (ta-st-new)
-          (begin
-            (ta-collect-a st exprs)
-            (ta-collect-b st exprs)
-            (ta-collect-c st exprs)
-            (ta-register-fields st exprs)
-            (ta-top st exprs)
-            0))))))
+  (begin
+    (ffi-call "zyl_attr_clear" 0 1000)
+    (ffi-call "zyl_attr_clear" 1 1000)
+    (ffi-call "zyl_attr_clear" 2 1000)
+    (ffi-call "zyl_attr_clear" 3 1000)
+    (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 0 1000) 0 1000)
+    (ffi-call "zyl_smap_clear" (ffi-call "zyl_smap_global" 1 1000) 1000)
+    (let st (ta-st-new)
+      (begin
+        (ta-collect-a st exprs)
+        (ta-collect-b st exprs)
+        (ta-collect-c st exprs)
+        (ta-register-fields st exprs)
+        (ta-top st exprs)
+        (ta-resolve-specials st (Cons -1 Nil) 0)
+        (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
 
 ; Codegen kind of an annotated Expr: 1 String, 2 Float, else 0.
 (defn ta-kind (e)
@@ -1131,8 +1262,7 @@
     (_ 0)))
 
 (defn ta-annotate (exprs)
-  (let _ (ta-annotate-program exprs)
-    exprs))
+  (list-append exprs (ta-annotate-program exprs)))
 
 ; --- debugging (ZYL_DEBUG_TYPES=1 prints every function's scheme) -------------
 
@@ -1157,3 +1287,392 @@
   (match ts
     (Nil "")
     (Cons h t (str-concat " " (str-concat (ta-show st h) (ta-show-list st t))))))
+
+; --- deep copy (a specialized clone needs its own nodes) ----------------------
+
+(defn ta-copy (e)
+  (let out (ta-copy-node e)
+    (let _ (ffi-call "zyl_span_copy" out e 1000)
+      out)))
+
+(defn ta-copy-node (e)
+  (match (Expr.inner e)
+    (EAtom a (Expr (EAtom a)))
+    (ECall x0 x1 (Expr (ECall (ta-copy x0) (ta-copy-list x1))))
+    (EDef x0 x1 (Expr (EDef x0 (ta-copy x1))))
+    (EDefn x0 x1 x2 (Expr (EDefn x0 (ta-copy-params x1) (ta-copy x2))))
+    (ELet x0 x1 x2 (Expr (ELet x0 (ta-copy x1) (ta-copy x2))))
+    (ELetMut x0 x1 x2 (Expr (ELetMut x0 (ta-copy x1) (ta-copy x2))))
+    (EIf x0 x1 x2 (Expr (EIf (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (ETryCatch x0 x1 x2 (Expr (ETryCatch (ta-copy x0) x1 (ta-copy x2))))
+    (EMatch x0 x1 (Expr (EMatch (ta-copy x0) (ta-copy-arms x1))))
+    (ESpawn x0 (Expr (ESpawn (ta-copy x0))))
+    (ESend x0 x1 (Expr (ESend (ta-copy x0) (ta-copy x1))))
+    (ESendClosure x0 x1 x2 (Expr (ESendClosure (ta-copy x0) (ta-copy x1) x2)))
+    (EFfiCall x0 x1 x2 (Expr (EFfiCall x0 (ta-copy-list x1) x2)))
+    (EFfiPin x0 (Expr (EFfiPin (ta-copy x0))))
+    (EFfiUnpin x0 (Expr (EFfiUnpin (ta-copy x0))))
+    (EAssert x0 x1 (Expr (EAssert (ta-copy x0) x1)))
+    (EUnwrap x0 (Expr (EUnwrap (ta-copy x0))))
+    (EWhile x0 x1 (Expr (EWhile (ta-copy x0) (ta-copy x1))))
+    (EFor x0 x1 x2 (Expr (EFor (ta-copy-for x0) (ta-copy x1) (ta-copy x2))))
+    (ECond x0 (Expr (ECond (ta-copy-cond x0))))
+    (EBegin x0 (Expr (EBegin (ta-copy-list x0))))
+    (ELambda x0 x1 x2 (Expr (ELambda x0 (ta-copy-params x1) (ta-copy x2))))
+    (EFn x0 x1 x2 (Expr (EFn x0 (ta-copy-params x1) (ta-copy x2))))
+    (EStructGet x0 x1 (Expr (EStructGet (ta-copy x0) x1)))
+    (EMakeStruct x0 x1 (Expr (EMakeStruct x0 (ta-copy-list x1))))
+    (EMakeVariant x0 x1 x2 (Expr (EMakeVariant x0 x1 (ta-copy-list x2))))
+    (ESetBang x0 x1 (Expr (ESetBang x0 (ta-copy x1))))
+    (EPrint x0 (Expr (EPrint (ta-copy-list x0))))
+    (EExit x0 (Expr (EExit (ta-copy x0))))
+    (EClose x0 (Expr (EClose (ta-copy x0))))
+    (EFileOpen x0 x1 (Expr (EFileOpen (ta-copy x0) (ta-copy x1))))
+    (EFileRead x0 x1 (Expr (EFileRead (ta-copy x0) (ta-copy x1))))
+    (EFileWrite x0 x1 (Expr (EFileWrite (ta-copy x0) (ta-copy x1))))
+    (EFileClose x0 (Expr (EFileClose (ta-copy x0))))
+    (EBufAppend x0 x1 (Expr (EBufAppend (ta-copy x0) (ta-copy x1))))
+    (EWithResource x0 x1 x2 (Expr (EWithResource x0 (ta-copy x1) (ta-copy x2))))
+    (EAssertEqual x0 x1 (Expr (EAssertEqual (ta-copy x0) (ta-copy x1))))
+    (EAssertFail x0 x1 (Expr (EAssertFail (ta-copy x0) x1)))
+    (EAssertTrue x0 x1 (Expr (EAssertTrue (ta-copy x0) x1)))
+    (EAssertFalse x0 x1 (Expr (EAssertFalse (ta-copy x0) x1)))
+    (EApply x0 x1 (Expr (EApply x0 (ta-copy-list x1))))
+    (EUnknown x0 x1 (Expr (EUnknown x0 (ta-copy-list x1))))
+    (ELoadByte x0 x1 x2 (Expr (ELoadByte x0 (ta-copy x1) (ta-copy x2))))
+    (ELoadByteSigned x0 x1 x2 (Expr (ELoadByteSigned x0 (ta-copy x1) (ta-copy x2))))
+    (EStoreByte x0 x1 x2 x3 (Expr (EStoreByte x0 (ta-copy x1) (ta-copy x2) (ta-copy x3))))
+    (EStoreByteSigned x0 x1 x2 x3 (Expr (EStoreByteSigned x0 (ta-copy x1) (ta-copy x2) (ta-copy x3))))
+    (EByteSlice x0 x1 x2 (Expr (EByteSlice (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EByteSliceSub x0 x1 x2 (Expr (EByteSliceSub (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EByteBufAppend x0 x1 (Expr (EByteBufAppend (ta-copy x0) (ta-copy x1))))
+    (EByteBufLen x0 (Expr (EByteBufLen (ta-copy x0))))
+    (EByteBufCap x0 (Expr (EByteBufCap (ta-copy x0))))
+    (EByteBufPtr x0 (Expr (EByteBufPtr (ta-copy x0))))
+    (EAlignCheck x0 x1 (Expr (EAlignCheck (ta-copy x0) x1)))
+    (EAtomicLoad x0 x1 (Expr (EAtomicLoad (ta-copy x0) (ta-copy x1))))
+    (EAtomicStore x0 x1 x2 (Expr (EAtomicStore (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EAtomicAdd x0 x1 x2 (Expr (EAtomicAdd (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EAtomicSub x0 x1 x2 (Expr (EAtomicSub (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EAtomicCAS x0 x1 x2 x3 (Expr (EAtomicCAS (ta-copy x0) (ta-copy x1) (ta-copy x2) (ta-copy x3))))
+    (EAtomicFetchAdd x0 x1 x2 (Expr (EAtomicFetchAdd (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EAtomicMax x0 x1 x2 (Expr (EAtomicMax (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (EAtomicMin x0 x1 x2 (Expr (EAtomicMin (ta-copy x0) (ta-copy x1) (ta-copy x2))))
+    (_ e)))
+
+(defn ta-copy-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (ta-copy h) (ta-copy-list t)))))
+
+(defn ta-copy-params (ps)
+  (match ps
+    (Nil Nil)
+    (Cons p t
+      (let q (match p (P n ty (P n ty)))
+        (let _ (ffi-call "zyl_span_copy" q p 1000)
+          (Cons q (ta-copy-params t)))))))
+
+(defn ta-copy-arms (arms)
+  (match arms
+    (Nil Nil)
+    (Cons a t
+      (match a
+        (MA v pats body (Cons (MA v (ta-copy-list pats) (ta-copy body)) (ta-copy-arms t)))))))
+
+(defn ta-copy-for (bs)
+  (match bs
+    (Nil Nil)
+    (Cons pr t
+      (match pr
+        (Pair n vo (Cons (Pair n (match vo (Some v (Some (ta-copy v))) (None None))) (ta-copy-for t)))))))
+
+(defn ta-copy-cond (cs)
+  (match cs
+    (Nil Nil)
+    (Cons pr t
+      (match pr
+        (Pair c b (Cons (Pair (ta-copy c) (ta-copy b)) (ta-copy-cond t)))))))
+
+; --- trait resolution and specialization --------------------------------------
+; Entry status: 0 nothing to do, 1 act now (concrete), 2 generic (owner
+; must be specialized per call site).
+
+(defn ta-take-specials (st from)
+  (let sv (ta-special st)
+    (let es (ta-take-loop sv from (ta-wlen sv))
+      (let _ (ffi-call "zyl_wvec_truncate" sv from 1000)
+        es))))
+
+(defn ta-take-loop (sv i n)
+  (if (>= i n) Nil (Cons (ta-wget sv i) (ta-take-loop sv (+ i 1) n))))
+
+(defn ta-resolve-specials (st members from)
+  (let es (ta-take-specials st from)
+    (begin
+      (ta-default-locals st es (ta-member-vars st members Nil))
+      (ta-tg-fix st es)
+      (ta-act-list st members es))))
+
+; A variable in a use's type that no member's signature mentions can never
+; be fixed by a caller (e.g. E in `(Ok "yes")`): default it to Int.
+(defn ta-member-vars (st members acc)
+  (match members
+    (Nil acc)
+    (Cons m rest
+      (if (< m 0)
+        (ta-member-vars st rest acc)
+        (ta-member-vars st rest (ta-vars-of st (ta-wget (ta-fnty st) m) acc))))))
+
+(defn ta-vars-of (st t acc)
+  (match (ta-resolve st t)
+    (TaV i (if (< i 0) acc (if (ta-poisoned st i) acc (Cons i acc))))
+    (TaC _ args (ta-vars-of-list st args acc))
+    (TaF ps r (ta-vars-of-list st (Cons r ps) acc))))
+
+(defn ta-vars-of-list (st ts acc)
+  (match ts
+    (Nil acc)
+    (Cons h t (ta-vars-of-list st t (ta-vars-of st h acc)))))
+
+(defn ta-default-locals (st es keep)
+  (match es
+    (Nil 0)
+    (Cons sp rest
+      (match sp
+        (TaSp _ _ _ _ t _
+          (begin
+            (ta-default-list st (ta-vars-of st t Nil) keep)
+            (ta-default-locals st rest keep)))))))
+
+(defn ta-default-list (st vs keep)
+  (match vs
+    (Nil 0)
+    (Cons v rest
+      (begin
+        (if (ta-int-in v keep) 0 (ta-unify st (TaV v) (ta-int)))
+        (ta-default-list st rest keep)))))
+
+(defn ta-tg-fix (st es)
+  (if (> (ta-tg-pass st es 0) 0) (ta-tg-fix st es) 0))
+
+(defn ta-tg-pass (st es changed)
+  (match es
+    (Nil changed)
+    (Cons sp rest
+      (match sp
+        (TaSp c _ _ _ _ _
+          (if (< c 0)
+            (ta-tg-pass st rest changed)
+            (if (> (ta-wget (ta-fntg st) c) 0)
+              (ta-tg-pass st rest changed)
+              (if (= (ta-sp-status st sp) 2)
+                (ta-seq (ta-wset (ta-fntg st) c 1) (ta-tg-pass st rest 1))
+                (ta-tg-pass st rest changed)))))))))
+
+(defn ta-sp-status (st sp)
+  (match sp
+    (TaSp _ _ kind name t fi
+      (if (= kind 1)
+        (ta-fn-status st fi t)
+        (if (= kind 0)
+          (ta-trait-status st name t)
+          (if (= kind 4)
+            (ta-open-var st (ta-resolve st t))
+            (ta-print-status st t)))))))
+
+; Only the arguments decide an instance.
+(defn ta-args-of (t)
+  (match t
+    (TaF ps _ ps)
+    (_ (Cons t Nil))))
+
+; 1 concrete, 0 has an unbound variable, -1 poisoned.
+(defn ta-conc (st t)
+  (match (ta-resolve st t)
+    (TaV i (if (< i 0) 0 (if (ta-poisoned st i) -1 0)))
+    (TaC _ args (ta-conc-list st args 1))
+    (TaF ps r (ta-conc-list st (Cons r ps) 1))))
+
+(defn ta-conc-list (st ts acc)
+  (match ts
+    (Nil acc)
+    (Cons h t
+      (let c (ta-conc st h)
+        (if (< c 0) -1 (ta-conc-list st t (if (= c 0) 0 acc)))))))
+
+(defn ta-args-status (st ct)
+  (let c (ta-conc-list st (ta-args-of ct) 1)
+    (if (= c 1) 1 (if (= c 0) 2 0))))
+
+(defn ta-fn-status (st fi ct)
+  (if (= (ta-wget (ta-fntg st) fi) 0) 0 (ta-args-status st ct)))
+
+; A resolved impl is always renamed; a trait-generic one may also need an instance.
+(defn ta-impl-status (st fi ct)
+  (if (= (ta-wget (ta-fntg st) fi) 0)
+    1
+    (let s (ta-args-status st ct)
+      (if (= s 2) 2 1))))
+
+(defn ta-recv (st ct)
+  (match ct
+    (TaF ps _ (match ps (Cons h _ (ta-resolve st h)) (Nil (ta-poisoned-var st))))
+    (_ (ta-resolve st ct))))
+
+(defn ta-impl-fn (st dotted n)
+  (let fi (ta-sget (ta-fnmap st) (str-concat dotted (str-concat "_" n)))
+    (- fi 1)))
+
+(defn ta-open-var (st t)
+  (match t
+    (TaV i (if (< i 0) 0 (if (ta-poisoned st i) 0 2)))
+    (_ 0)))
+
+(defn ta-trait-status (st name ct)
+  (let r (ta-recv st ct)
+    (match r
+      (TaC n _
+        (let fi (ta-impl-fn st name n)
+          (if (< fi 0) 0 (ta-impl-status st fi ct))))
+      (_ (ta-open-var st r)))))
+
+(defn ta-prim (n)
+  (if (ta-builtin-type n) true false))
+
+(defn ta-show-ct (t) (TaF (Cons t Nil) (ta-str)))
+
+(defn ta-print-status (st t)
+  (let r (ta-resolve st t)
+    (match r
+      (TaC n _
+        (if (ta-prim n)
+          0
+          (let sd (ta-sget (ta-specs st) "!show")
+            (if (= sd 0)
+              0
+              (let fi (ta-impl-fn st sd n)
+                (if (< fi 0) 0 (ta-impl-status st fi (ta-show-ct r))))))))
+      (_ (ta-open-var st r)))))
+
+(defn ta-act-list (st members es)
+  (match es
+    (Nil 0)
+    (Cons sp rest
+      (begin
+        (if (= (ta-sp-status st sp) 1) (ta-act st members sp) 0)
+        (ta-act-list st members rest)))))
+
+(defn ta-act (st members sp)
+  (match sp
+    (TaSp _ node kind name t fi
+      (if (= kind 1)
+        (ta-set-name node 2 (ta-specialize st fi t))
+        (if (= kind 0)
+          (let r (ta-recv st t)
+            (match r
+              (TaC n _ (ta-set-name node 2 (ta-impl-target st members (ta-impl-fn st name n) t)))
+              (_ 0)))
+          (let r (ta-resolve st t)
+            (match r
+              (TaC n _
+                (ta-set-name node 3
+                  (ta-impl-target st members (ta-impl-fn st (ta-sget (ta-specs st) "!show") n) (ta-show-ct r))))
+              (_ 0))))))))
+
+(defn ta-set-name (node tbl name)
+  (ffi-call "zyl_attr_set" tbl node name 1000))
+
+; Unify the impl's type with the use, then pick it or an instance of it.
+(defn ta-impl-target (st members fi ct)
+  (let _ (ta-unify-fn st members fi ct)
+    (if (and (> (ta-wget (ta-fntg st) fi) 0) (= (ta-args-status st ct) 1))
+      (ta-specialize st fi ct)
+      (ta-fn-name st fi))))
+
+(defn ta-unify-fn (st members fi ct)
+  (let s0 (ta-wget (ta-fnstate st) fi)
+    (let _ (if (= s0 0) (ta-visit st fi) 0)
+      (let s (ta-wget (ta-fnstate st) fi)
+        (if (= s 2)
+          (ta-unify st (ta-inst st (ta-wget (ta-fnsc st) fi)) ct)
+          (if (ta-int-in fi members) (ta-unify st (ta-wget (ta-fnty st) fi) ct) 0))))))
+
+(defn ta-fn-name (st fi)
+  (match (Expr.inner (ta-wget (ta-fnexp st) fi))
+    (EDefn name _ _ name)
+    (_ "")))
+
+; One instance per (function, argument types); capped per function.
+(defn ta-specialize (st fi ct)
+  (let key (str-concat (ta-fn-name st fi) (str-concat "~" (ta-canon-list st (ta-args-of ct))))
+    (if (> (ta-sget (ta-specs st) key) 0)
+      key
+      (let used (ta-wget (ta-fnspecs st) fi)
+        (if (> used 31)
+          (ta-fn-name st fi)
+          (let _ (ta-wset (ta-fnspecs st) fi (+ used 1))
+            (let _ (ta-sput (ta-specs st) key 1)
+              (ta-make-instance st fi key ct))))))))
+
+(defn ta-make-instance (st fi key ct)
+  (let clone (ta-copy-defn (ta-wget (ta-fnexp st) fi) key)
+    (let ci (ta-add-fn st key clone)
+      (begin
+        (ta-wset (ta-fninst st) ci ct)
+        (ta-wpush (ta-extra st) clone)
+        (ta-visit st ci)
+        key))))
+
+(defn ta-copy-defn (e name)
+  (match (Expr.inner e)
+    (EDefn _ params body
+      (let out (Expr (EDefn name (ta-copy-params params) (ta-copy body)))
+        (let _ (ffi-call "zyl_span_copy" out e 1000)
+          out)))
+    (_ e)))
+
+(defn ta-canon (st t)
+  (match (ta-resolve st t)
+    (TaV _ "?")
+    (TaC n args (match args (Nil n) (_ (str-concat n (str-concat "<" (str-concat (ta-canon-list st args) ">"))))))
+    (TaF ps r (str-concat "fn<" (str-concat (ta-canon-list st ps) (str-concat ">" (ta-canon st r)))))))
+
+(defn ta-canon-list (st ts)
+  (match ts
+    (Nil "")
+    (Cons h t
+      (let a (ta-canon st h)
+        (match t (Nil a) (_ (str-concat a (str-concat "," (ta-canon-list st t)))))))))
+
+(defn ta-extra-list (st i n)
+  (if (>= i n) Nil (Cons (ta-wget (ta-extra st) i) (ta-extra-list st (+ i 1) n))))
+
+; Renamed call target (table 2) / Show function for a print argument (table 3).
+(defn ta-renamed (e) (ffi-call "zyl_attr_get" 2 e 1000))
+(defn ta-print-show (e) (ffi-call "zyl_attr_get" 3 e 1000))
+
+; --- readable types (REPL :type, diagnostics) ---------------------------------
+
+(defn ta-pretty (st t)
+  (match (ta-resolve st t)
+    (TaV i (if (< i 0) (ta-slot-name (- 0 (+ i 1))) (if (ta-poisoned st i) "?" "a")))
+    (TaC n args (match args (Nil (ta-short n)) (_ (str-concat "(" (str-concat (ta-short n) (str-concat " " (str-concat (ta-pretty-list st args) ")")))))))
+    (TaF ps r (str-concat "(" (str-concat (ta-pretty-list st ps) (str-concat " -> " (str-concat (ta-pretty st r) ")")))))))
+
+(defn ta-pretty-list (st ts)
+  (match ts
+    (Nil "")
+    (Cons h t (match t (Nil (ta-pretty st h)) (_ (str-concat (ta-pretty st h) (str-concat " " (ta-pretty-list st t))))))))
+
+(defn ta-slot-name (k)
+  (if (= k 0) "a" (if (= k 1) "b" (if (= k 2) "c" (if (= k 3) "d" (str-concat "t" (ffi-call "zyl_int_text" k 1000)))))))
+
+; The inferred type of `node` after annotating `exprs` (REPL `:type`).
+(defn ta-type-text (exprs node)
+  (let _ (ta-annotate-program exprs)
+    (let t (ta-attr node)
+      (if (= t 0)
+        "?"
+        (match (ta-gen (ta-st-new) t Nil)
+          (TaGen g _ (ta-pretty (ta-st-new) g)))))))

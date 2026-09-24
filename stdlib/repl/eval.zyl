@@ -32,7 +32,8 @@
 (use compiler/pipeline)
 (use compiler/icnf)
 (use compiler/expr_inner)
-(use compiler/type_inference)
+(use compiler/type_annotate)
+(use compiler/derive)
 (use compiler/type_system)
 (use repl/terminal)
 (use repl/history)
@@ -208,7 +209,8 @@
     (if (> (str-eq head "defmacro") 0) 1
     (if (> (str-eq head "trait") 0) 1
     (if (> (str-eq head "impl") 0) 1
-    0)))))))))
+    (if (> (str-eq head "derive") 0) 1
+    0))))))))))
 
 ; ===========================================================================
 ; BUILDING THE PROGRAM
@@ -353,45 +355,10 @@
         out))))
 
 (defn eval-type-infer (arena sess text gs)
-  (let exprs (compile-to-exprs arena (eval-program-expr sess text gs) "<repl>")
-    (let inferer (collect-definitions (inferer-new) exprs)
-      (match (eval-entry-body exprs)
-        (None "?")
-        (Some body (eval-type-text (infer-expr inferer body)))))))
-
-; The REPL's own rendering of a Type. compiler/type_system's
-; type-to-string is deliberately left alone: monomorphization builds
-; specialized function names out of it, so its output is part of the
-; generated symbol names and therefore of the self-hosting fixed point.
-; This one exists to be read.
-(defn eval-type-text (t)
-  (match t
-    (TInt "Int")
-    (TFloat "Float")
-    (TBool "Bool")
-    (TString "String")
-    (TUnit "Unit")
-    (TByte "Byte")
-    (TByteSlice _ "ByteSlice")
-    (TByteBuf _ "ByteBuf")
-    (TFun ts (str-concat "Fn(" (str-concat (eval-type-list ts) ")")))
-    (TList ts (str-concat "List<" (str-concat (eval-type-list ts) ">")))
-    (TArray el _ (str-concat "Array<" (str-concat (eval-type-text el) ">")))
-    (TCap _ inner (str-concat "Cap<" (str-concat (eval-type-text inner) ">")))
-    (TStruct n _ n)
-    (TVar _ _ "unresolved — inference had no evidence for this expression")
-    (TMap k v (str-concat "Map<" (str-concat (eval-type-text k)
-                  (str-concat ", " (str-concat (eval-type-text v) ">")))))
-    (TResult o e (str-concat "Result<" (str-concat (eval-type-text o)
-                    (str-concat ", " (str-concat (eval-type-text e) ">")))))))
-
-(defn eval-type-list (ts)
-  (match ts
-    (Nil "")
-    (Cons h t
-      (match t
-        (Nil (eval-type-text h))
-        (Cons _ _ (str-concat (eval-type-text h) (str-concat ", " (eval-type-list t))))))))
+  (let exprs (dv-expand-program (compile-to-exprs arena (eval-program-expr sess text gs) "<repl>"))
+    (match (eval-entry-body exprs)
+      (None "?")
+      (Some body (ta-type-text exprs body)))))
 
 ; The body of the function the entry was wrapped in.
 (defn eval-entry-body (exprs)

@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §4, §5, §6, §17
 **Related:** `spec/06-capability-types.md`, `spec/10-structs-and-data-types.md`
-**Implementation:** `stdlib/compiler/type_system.zyl`, `stdlib/compiler/type_inference.zyl`, `stdlib/compiler/monomorphization.zyl`, `stdlib/compiler/trait_dispatch.zyl`
+**Implementation:** `stdlib/compiler/type_system.zyl`, `stdlib/compiler/type_inference.zyl`, `stdlib/compiler/monomorphization.zyl`, `stdlib/compiler/type_annotate.zyl`, `stdlib/compiler/derive.zyl`
 
 ---
 
@@ -266,12 +266,15 @@ are not separate types; they are `CapKind`s inside `TCap` (see
 
 ### Traits
 
-- `impl` blocks are collected by `trait_dispatch.zyl`. A call to
-  `Trait.method` is rewritten into a `match` on the receiver's runtime
-  variant tag that calls the per-type implementation (`Trait.method_Type`).
-  Dispatch is therefore by runtime tag, not static resolution.
-- `trait` declarations are not parsed into a node and have no effect.
-  There is no `where` clause.
+- A call to `Trait.method` is resolved statically from the receiver's
+  inferred type (`type_annotate.zyl`) to the per-type implementation
+  (`Trait.method_Type`); only a receiver of unknown type falls back to a
+  `match` on its runtime variant tag. A function that calls a trait
+  method on a type variable is instantiated per concrete type.
+- `trait` declarations are parsed (`ETraitDecl`); their method signatures
+  type calls. There is no `where` clause.
+- `(derive T Show)` generates a `Show` impl; the prelude trait `Show`
+  (`core/show`) drives `print`. Other derivable traits generate nothing.
 - Coherence (§5.3) is not checked: `E_DUPLICATE_IMPL` and
   `E_TRAIT_NOT_FOUND` are catalogued but never raised. A trait method call
   with no matching impl becomes an undefined symbol at link time.

@@ -1,0 +1,63 @@
+; Show Regression Tests — the prelude Show trait, container impls,
+; `(derive T Show)`, and `print` of a value whose type has a Show impl.
+
+(use collections/vec)
+(use core/map)
+
+(deftype StShape (StCircle Float) (StRect Int Int) (StEmpty))
+(derive StShape Show)
+
+(defstruct StPerson (name String) (age Int))
+(derive StPerson [Show])
+
+(deftype StPair (StMk A B))
+(derive StPair Show)
+
+(deftype StTree (StLeaf Int) (StNode StTree StTree))
+(derive StTree Show)
+
+(test "show-primitives"
+  (begin
+    (assert-equal (Show.show 42) "42")
+    (assert-equal (Show.show 1.5) "1.500000")
+    (assert-equal (Show.show true) "true")
+    (assert-equal (Show.show "s") "s")))
+
+(test "show-vec"
+  (assert-equal (Show.show (vec-push (vec-push (vec-create-default 2) "Hello") "World")) "[Hello, World]"))
+
+(test "show-list-option-result"
+  (begin
+    (assert-equal (Show.show (Cons 1 (Cons 2 Nil))) "[1, 2]")
+    (assert-equal (Show.show (Cons (Some 1) (Cons None Nil))) "[Some(1), None]")
+    (assert-equal (Show.show (Ok "yes")) "Ok(yes)")))
+
+(test "show-map"
+  (assert-equal (Show.show (map-insert (map-insert (map-new) "a" 1) "b" 2)) "{b: 2, a: 1}"))
+
+(test "derive-show-adt"
+  (begin
+    (assert-equal (Show.show (StRect 2 3)) "StRect(2, 3)")
+    (assert-equal (Show.show StEmpty) "StEmpty")
+    (assert-equal (Show.show (StCircle 0.5)) "StCircle(0.500000)")))
+
+(test "derive-show-struct"
+  (assert-equal (Show.show (make-StPerson "Ann" 30)) "StPerson { name: Ann, age: 30 }"))
+
+(test "derive-show-generic-and-recursive"
+  (begin
+    (assert-equal (Show.show (StMk "k" (Some 2))) "StMk(k, Some(2))")
+    (assert-equal (Show.show (StNode (StLeaf 1) (StNode (StLeaf 2) (StLeaf 3)))) "StNode(StLeaf(1), StNode(StLeaf(2), StLeaf(3)))")))
+
+(test "vec-of-derived"
+  (assert-equal (Show.show (vec-push (vec-create-default 1) (StRect 1 1))) "[StRect(1, 1)]"))
+
+; print routes through Show; the differential run compares this output.
+(test "print-uses-show"
+  (begin
+    (print (vec-push (vec-push (vec-create-default 2) "Hello") "World"))
+    (print (make-StPerson "Bo" 5))
+    (print (Cons 1.5 Nil))
+    0))
+
+(run-tests)

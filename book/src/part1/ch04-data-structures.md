@@ -47,15 +47,12 @@ Arguments are evaluated left-to-right, matched to fields in declaration order.
       (begin
         (print (struct-get p "x"))              ; 3
         (print (struct-get alice "age"))        ; 30
-        (print-string (struct-get alice "name"))))))  ; Alice
+        (print (struct-get alice "name"))))))  ; Alice
 ```
 
-**Field names are strings** — not symbols, not bare identifiers.
-
-Note `print-string` for the `name` field: the code generator treats
-every field value as an Int when it decides how to print, so
-`(print (struct-get alice "name"))` would print the string's address
-(Chapter 2, §2.2).
+**Field names are strings** — not symbols, not bare identifiers. A
+field's declared type follows it out: `(struct-get alice "name")` is a
+String and prints as text.
 
 ### Immutability by Default (Critical!)
 
@@ -92,8 +89,7 @@ This creates a new `Point` and rebinds `p` to it. The old `Point` becomes unreac
 ```
 
 `defstruct+` is accepted and defines the struct exactly as `defstruct`
-does. The specification uses it to attach derived traits; derivation is
-not implemented yet (§4.9).
+does. To derive traits, use a standalone `derive` (§4.9).
 
 ### Nested Structs
 
@@ -195,12 +191,8 @@ An arm names a variant, then one binder per field, then the body.
   (print (perimeter (Triangle 3 4 5)))) ; 12
 ```
 
-The shapes here use `Int` fields on purpose. A `Float` field works for
-storage, but the code generator does not know that a name bound by a
-pattern holds a Float: `(* w h)` on two pattern-bound Floats multiplies
-their bit patterns as integers. Pass them to a `Float`-annotated
-function instead, and print the result with `print-float`. Chapter 6
-shows the pattern.
+A pattern-bound name has its field's type: with `(Rectangle Float
+Float)`, `(* w h)` multiplies Floats.
 
 ### Patterns
 
@@ -276,22 +268,25 @@ Zyl's collections are library code, not built-in syntax. Import them:
 (use collections/set)
 ```
 
-All three store **Int** elements (and Int keys) in the current library,
-and all three are *persistent in style*: an operation returns the
-updated collection, and you keep using the value it returns.
+`Vec` holds elements of any one type, `(Vec T)`; `collections/map` and
+`collections/set` are Int-keyed, Int-valued hash tables. For a map with
+String keys and values of any type, use `core/map` (below). All of them
+are *persistent in style*: an operation returns the updated collection,
+and you keep using the value it returns.
 
 ### Vectors (`Vec`) — `collections/vec.zyl`
 
-Growable arrays with O(1) indexing.
+Growable arrays with O(1) indexing, generic in their element type:
+`(vec-get v i)` on a `(Vec String)` is a String.
 
 | Function | Result |
 |----------|--------|
 | `(vec-create arena cap)` | Empty Vec with room for `cap` elements; arena 0 means "make a private one" |
 | `(vec-push v x)` | The Vec with `x` appended (grows as needed) |
 | `(vec-pop v)` | The Vec without its last element |
-| `(vec-get v i)` | Element `i`, or -1 if `i` is out of bounds |
+| `(vec-get v i)` | Element `i`, or the word -1 if `i` is out of bounds |
 | `(vec-set v i x)` | The Vec with element `i` replaced (an `i` past the length but within capacity extends it; beyond capacity, no change) |
-| `(vec-last v)` | The last element, or -1 if empty |
+| `(vec-last v)` | The last element, or the word -1 if empty |
 | `(vec-len v)` / `(vec-cap v)` | Length / capacity |
 
 Use `let-mut` to track the current version:
@@ -312,9 +307,29 @@ Use `let-mut` to track the current version:
 ```
 
 A Vec's buffer is shared by the versions derived from it, so treat the
-old value as used up once you have pushed onto it.
+old value as used up once you have pushed onto it. `(print v)` prints
+the elements, `[42, 99]`, through the `Show` trait (§4.9).
 
-### Maps (`Map`) — `collections/map.zyl`
+### String-keyed maps (`Map`) — `core/map.zyl`
+
+`core/map` is a generic association list, `(Map String V)`: keys are
+compared with `str-eq`, values may be any type, and lookup returns an
+`Option`.
+
+```lisp
+(use core/map)
+(use core/option)
+
+(defn main ()
+  (let m (map-insert (map-insert (map-new) "a" (Some 1)) "b" None)
+    (begin
+      (match (map-get m "a")
+        (Some v (print v))             ; Some(1)
+        (None (print "missing")))
+      (print m))))                     ; {b: None, a: Some(1)}
+```
+
+### Int maps (`Map`) — `collections/map.zyl`
 
 An association from Int keys to Int values, kept in insertion order.
 
@@ -466,16 +481,26 @@ recursive field simply holds a pointer to another block.
 ## 4.9 Deriving Traits
 
 The specification lets you derive `Eq`, `Ord`, `Show`, `Debug`, `Clone`
-and `Hash`:
+and `Hash`. `Show` is implemented:
 
 ```lisp
-(derive Point Eq Ord)
+(defstruct Person (name String) (age Int))
+(derive Person Show)                     ; or (derive Person [Show])
+(deftype Shape (Circle Float) (Rect Int Int))
+(derive Shape Show)
+
+(defn main ()
+  (begin
+    (print (make-Person "Ann" 30))       ; Person { name: Ann, age: 30 }
+    (print (Rect 2 3))))                 ; Rect(2, 3)
 ```
 
-The compiler accepts this form, but it does not generate anything yet.
-You get most of `Eq` without it: `==` already compares structs and ADT
-values field by field, one level deep (Chapter 2, §2.6). There is no
-derived `Show`; printing a struct prints its address.
+`print` of any value whose type has a `Show` impl prints its text; the
+standard library provides impls for the primitives, `List`, `Option`,
+`Result`, `Vec` and `Map`. A value with no impl prints as a word (a
+struct or ADT value prints its address). The other derivable traits are
+accepted and generate nothing yet; `==` already compares structs and
+ADT values field by field, one level deep (Chapter 2, §2.6).
 
 ## 4.10 Module Imports for Stdlib Types
 

@@ -41,8 +41,10 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse,
   module resolution and qualification, macro expansion, the checks
   (capability, duplicate definition, arity, mutability/aliasing,
-  exhaustiveness, unused, secret), type inference, monomorphization,
-  trait dispatch, closure lifting, assert lowering, ICNF lowering,
+  exhaustiveness, unused, secret), derive expansion, type inference,
+  monomorphization (impl lifting), closure lifting, assert lowering,
+  type annotation (HM, static trait resolution, per-type
+  specialization), ICNF lowering,
   optimization (constant folding and dead-branch elimination), region
   inference (a provably non-escaping variant becomes `IStackVariant`),
   x86_64 code generation, and linking with `cc`.
@@ -125,11 +127,15 @@ Compiler:
   HM pass over the final Expr program, as well as from literals and
   annotations. Values read from `Vec`, `Map`, ADT fields, struct fields,
   generic returns and closure captures print and compare correctly.
-  Still a word: a value whose type is a type variable inside a shared
-  generic body (e.g. `(defn show (x) (print x))`), since bodies are not
-  specialized per type. `==` on inferred ADT values is still by address
-  unless the operand is a constructor expression; derivable `Show`
-  (spec §5.6) is not implemented.
+  Trait calls resolve statically from the receiver's type, and a
+  function that uses a trait method or `print` on a type variable is
+  specialized per concrete call (`f~T`). The prelude trait `Show`
+  (`core/show`) has impls for the primitives, `List`, `Option`,
+  `Result`, `Vec` and `Map`; `(derive T Show)` writes one for an ADT or
+  struct; `print` of a value with a Show impl prints its text.
+  Still open: `==` on inferred ADT values is by address unless an
+  operand is a constructor expression; `derive` of anything but `Show`
+  generates nothing; `(defstruct ... (:derive ...))` is not parsed.
 - Call targets are resolved only in codegen (`cg-call-user`): a call to
   an undefined function, including the unimplemented `(list ...)`
   literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
@@ -360,6 +366,47 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-24, later still) — Show, static traits, specialization
+
+- `type_annotate.zyl` resolves trait calls from inferred receiver types
+  (spec §5.4); the runtime-tag dispatch pass `trait_dispatch.zyl` is
+  gone, and an unresolvable call falls back to the same tag match in ICNF
+  lowering (`ic-trait-dispatch`). Mixed ADT/primitive impls now dispatch
+  correctly.
+- Functions that use a trait method or `print` on a type variable are
+  specialized per call site with concrete argument types (spec §6.4),
+  named `f~T1,T2`; at most 32 instances per function. Purely local
+  unconstrained variables (E in `(Ok "yes")`) default to Int.
+- `trait` declarations are parsed (`ETraitDecl`); method signatures type
+  trait calls.
+- `core/show`: `(trait Show (show (self) String))` plus impls for Int,
+  Float, Bool, String; impls for List, Option, Result (core), Vec
+  (collections/vec) and Map (core/map). `compiler/derive.zyl` expands
+  `(derive T Show)` / `(derive T [Show])`. `print` routes through Show.
+- `assert-equal` picks float comparison from inferred kinds, not only
+  from a float literal anywhere in the expression.
+- The REPL keeps `derive` entries as definitions.
+- `=`/`<`/arithmetic on a type variable also make a function
+  trait-generic, so `(defn same (a b) (= a b))` compares Strings by
+  content in its String instance. String `<`/`>`/`<=`/`>=` order by bytes
+  (`zyl_cstr_cmp`) in codegen and the interpreter.
+- The pipeline no longer runs the legacy `collect-definitions`
+  (monomorphization gets an empty inferer and only lifts impls): with
+  content comparison inside its generic helpers, the old inferer's
+  control flow changed and it crashed the self-compile, as its own
+  header warned. The REPL's `:type` now uses `ta-type-text`.
+- Uses recorded per SCC are taken as the suffix recorded since the SCC
+  root's visit (no rescans).
+- `./boot.sh` ends by refreshing an existing install (`uninstall.sh` +
+  `install.sh`; `ZYL_INSTALL_HOME`, `ZYL_NO_INSTALL_REFRESH=1`).
+- Book, `docs/compiler-pipeline.md`, `docs/repl.md`, AGENTS.md and the
+  zyl skill updated for all of the above.
+- Tests: `show-trait.zyl`, `trait-static-dispatch.zyl`; the REPL script
+  checks a derived Show. 142/142 pass.
+- Open: annotations are still not enforced (a Float passed to an
+  `(a Int)` parameter compiles); `E_TYPE_MISMATCH` from annotation
+  conflicts is the natural next step.
 
 ## Session (2026-09-24, later) — generic collections, type annotation pass
 

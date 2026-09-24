@@ -1,0 +1,48 @@
+; Trait Static Dispatch Regression Tests — trait calls are resolved from
+; the receiver's inferred type (spec §5.4), and a function that uses a
+; trait on a type variable is specialized per call site (spec §6.4).
+
+(use collections/vec)
+
+(trait TsArea (area (self) Int))
+(deftype TsShape (TsCirc Int) (TsSq Int))
+(deftype TsTri (TsTri Int))
+(impl TsArea TsShape (defn area (self) (match self (TsCirc r (* 3 (* r r))) (TsSq s (* s s)))))
+(impl TsArea TsTri (defn area (self) (match self (TsTri b b))))
+(impl TsArea Int (defn area (self) (* self 100)))
+
+; Runtime tag dispatch sent a TsTri or an Int to the TsShape impl here.
+(test "adt-and-primitive-impls-dispatch-statically"
+  (begin
+    (assert-equal (TsArea.area (TsTri 9)) 9)
+    (assert-equal (TsArea.area (TsSq 3)) 9)
+    (assert-equal (TsArea.area 2) 200)))
+
+(trait TsDesc (desc (self) String))
+(impl TsDesc Int (defn desc (self) "int"))
+(impl TsDesc String (defn desc (self) (str-concat "str:" self)))
+(impl TsDesc Vec (defn desc (self) (str-concat "vec of " (TsDesc.desc (vec-get self 0)))))
+
+(defn ts-twice (x) (str-concat (TsDesc.desc x) (TsDesc.desc x)))
+
+(test "generic-function-specialized-per-type"
+  (begin
+    (assert-equal (ts-twice "a") "str:astr:a")
+    (assert-equal (ts-twice 1) "intint")))
+
+(test "generic-impl-specialized-per-element-type"
+  (begin
+    (assert-equal (TsDesc.desc (vec-push (vec-create-default 1) "e")) "vec of str:e")
+    (assert-equal (TsDesc.desc (vec-push (vec-create-default 1) 7)) "vec of int")))
+
+(defn ts-show-it (x) (print x))
+
+; A print inside a generic body prints by the instance's type.
+(test "print-in-generic-body"
+  (begin
+    (ts-show-it "text")
+    (ts-show-it 42)
+    (ts-show-it 2.5)
+    0))
+
+(run-tests)

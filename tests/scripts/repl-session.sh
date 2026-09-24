@@ -16,8 +16,10 @@ out="$(printf '%s\n' \
   '(g (RsA "x"))' \
   '(use collections/vec)' \
   '(vec-get (vec-push (vec-create-default 2) "v") 0)' \
+  '(derive RsT Show)' \
+  '(print (RsA "shown"))' \
   | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out"
-for want in '=> 3' '=> "a!"' '=> "x"' '=> "v"'; do
+for want in '=> 3' '=> "a!"' '=> "x"' '=> "v"' 'RsA(shown)'; do
   printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g' | grep -qF -- "$want" || fail "missing '$want' in: $out"
 done
 echo "repl-session: ok"

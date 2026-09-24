@@ -7,6 +7,8 @@
 #   3. stage2 compiles the selfhost source  -> stage3.s
 #   4. stage3.s must be byte-identical to stage2.s (fixed point)
 #   5. CLI smoke-test + cargo-free zyl-self wrapper
+#   6. an existing install (~/.zyl, or $ZYL_INSTALL_HOME) is refreshed with
+#      uninstall.sh + install.sh; ZYL_NO_INSTALL_REFRESH=1 skips it
 #
 # Re-seeding (only needed when the compiler source changes the fixed point):
 #   ./boot.sh --bootstrap-from-self  rebuild stage2.s/stage2.bin using the
@@ -200,6 +202,17 @@ step "Building zyl-lsp (LSP server)"
 "${OUT}/stage2.bin" "${SCRIPT_DIR}/selfhost/lsp_main.zyl" -o "${OUT}/zyl-lsp" >/dev/null
 [ -x "${OUT}/zyl-lsp" ] || die "zyl-lsp build failed"
 ok "zyl-lsp linked"
+
+# ── refresh an existing install so it never runs a stale stdlib ─────────
+# ZYL_HOME may point at build/boot here, so the install location has its
+# own variable. ZYL_NO_INSTALL_REFRESH=1 skips this.
+INSTALL_HOME="${ZYL_INSTALL_HOME:-$HOME/.zyl}"
+if [ -z "${ZYL_NO_INSTALL_REFRESH:-}" ] && [ -x "${INSTALL_HOME}/bin/zyl" ]; then
+    step "Refreshing the install in ${INSTALL_HOME}"
+    ZYL_HOME="$INSTALL_HOME" "${SCRIPT_DIR}/uninstall.sh" >/dev/null || die "uninstall.sh failed"
+    ZYL_HOME="$INSTALL_HOME" "${SCRIPT_DIR}/install.sh" >/dev/null || die "install.sh failed"
+    ok "install refreshed"
+fi
 
 echo ""
 echo "Self-hosting verified: fixed point holds (no Rust in the build path)."

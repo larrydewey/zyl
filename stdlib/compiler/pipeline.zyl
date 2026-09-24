@@ -34,10 +34,10 @@
 (use compiler/type_inference)
 (use compiler/monomorphization)
 (use compiler/icnf)
-(use compiler/trait_dispatch)
 (use compiler/closure_inline)
 (use compiler/assert_lowering)
 (use compiler/type_annotate)
+(use compiler/derive)
 (use compiler/region_inference)
 (use compiler/optimization)
 (use compiler/codegen)
@@ -139,16 +139,17 @@
 ; on trivial input. Pass exprs through unchanged until contract
 ; injection is properly rewritten to match the real deftypes.
 ; Returns: List(Icnf) — one IFn per function
-(defn lower-exprs (arena exprs)
+(defn lower-exprs (arena exprs0)
+  (let exprs (dv-expand-program exprs0)
   (begin
-    (dbg-log "type-infer\n")
-    (let inferer (collect-definitions (inferer-new) exprs)
+    ; Types come from type_annotate (after lowering); monomorphization only
+    ; needs an empty inferer to lift impl bodies.
+    (let inferer (inferer-new)
       (dbg-log "mono\n")
       (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
         (let mono-exprs (monomorphize mono-ctx exprs)
           (begin
-            (dbg-log "trait-dispatch\n")
-            (lower-after-mono arena (td-expand-program mono-exprs))))))))
+            (lower-after-mono arena mono-exprs))))))))
 
 (defn lower-after-mono (arena td-exprs)
   (begin

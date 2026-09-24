@@ -9,6 +9,7 @@
 ; RE-EXPORTS FROM MODULES
 ; ===========================================================================
 
+(use core/show)
 (use core/option)
 (use core/result)
 (use core/list)

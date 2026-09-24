@@ -9,6 +9,7 @@
 ; RESULT ADT — Generic: Result<T, E>
 ; ===========================================================================
 
+(use core/show)
 (use allocator/allocator)
 
 (deftype Result (Ok T) (Err E))
@@ -90,3 +91,9 @@
   (match res
     (Ok v (Ok v))
     (Err e (f e))))
+
+(impl Show Result
+  (defn show (self)
+    (match self
+      (Ok x (str-concat "Ok(" (str-concat (Show.show x) ")")))
+      (Err e (str-concat "Err(" (str-concat (Show.show e) ")"))))))

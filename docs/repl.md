@@ -178,14 +178,10 @@ before the first prompt, because compiling needs `stdlib/` and
 The same commands work when input is piped, so a script can end with
 `:defs` or start with `:load`.
 
-`:type` reports what type inference knows. For a literal, a struct or an
-annotated function that is the type; for many applications it says
-*unresolved*, because inference has no evidence there — several of
-`type_inference.zyl`'s own name lookups compare strings with `=`, which
-is pointer comparison, so a builtin operator is never recognized by
-name. `stdlib/lsp/compiler_bridge.zyl`'s header documents that bug and
-why fixing it is its own project; `:type` reports honestly rather than
-guessing around it.
+`:type` reports the type `compiler/type_annotate.zyl` infers for the
+expression, generalized: after `(use collections/vec)`, `:type (vec-push (vec-create-default 1) "a")`
+is `(Vec String)`, `:type (fn (x) x)` is `(a -> a)`. A type the pass
+could not pin down prints as `a` (unconstrained) or `?` (conflicting).
 
 ## What carries over between sessions
 

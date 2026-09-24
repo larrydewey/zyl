@@ -103,9 +103,10 @@ in `docs/compiler-pipeline.md`.
 | File | Responsibility |
 |---|---|
 | `type_system.zyl` | Type ADT, substitutions, environments, trait context, `TypeInferer` record |
-| `type_inference.zyl` | Best-effort HM inference: `collect-definitions` records signatures and return types |
-| `monomorphization.zyl` | Generic instantiation with sorted canonical names; lifts impl bodies to `Trait.method_Type` |
-| `trait_dispatch.zyl` | Rewrites `(Trait.method recv ...)` into a match on the receiver's runtime tag |
+| `type_inference.zyl` | Older best-effort inferer; no longer run by the pipeline (the REPL and LSP use `type_annotate`) |
+| `type_annotate.zyl` | HM inference over the lowered program; kinds for codegen, static trait resolution, per-type instances |
+| `derive.zyl` | Expands `(derive T Show)` into an impl block |
+| `monomorphization.zyl` | Lifts impl bodies to `Trait.method_Type` (runs with an empty inferer) |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `assert_lowering.zyl` | Rewrites `assert-equal` on ADT/struct values to a `zyl_variant_eq` call |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |

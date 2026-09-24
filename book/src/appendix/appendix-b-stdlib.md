@@ -39,6 +39,18 @@ Operators and special forms (`+ - * / %`, `= == != < > <= >=`,
 arguments are evaluated before the call, so `(when false (print "x"))`
 still prints. Use `if` when the body has an effect.
 
+### `core/show` — Readable Text
+
+```lisp
+(trait Show (show (self) String))
+; impls: Int, Float, Bool, String here; List, Option, Result in core;
+; Vec in collections/vec; Map in core/map
+```
+
+Part of the prelude. `print` of a value whose type has a `Show` impl
+prints `(Show.show v)`, so `(print (Cons 1 (Cons 2 Nil)))` prints
+`[1, 2]`; `(derive T Show)` writes the impl for an ADT or struct.
+
 ### `core/option` — Optional Values
 
 ```lisp
@@ -96,7 +108,8 @@ and a function can be passed to a higher-order function.
 ```
 
 An association list of `ME` entries with string keys, compared with
-`str-eq`. Iteration order is deterministic, which is what lets the
+`str-eq`; values may be of any type, `(Map String V)`, and a map prints
+as `{k: v, ...}` (newest entry first). Iteration order is deterministic, which is what lets the
 compiler use this map internally without breaking reproducible builds.
 `map-get` returns an `Option`.
 This `Map` is not the arena-backed `Map` of `collections/map`; a
@@ -105,9 +118,10 @@ program should load one or the other.
 ## B.2 Collections
 
 `collections/vec`, `collections/map` and `collections/set` are
-arena-backed and hold `Int` elements and keys. Each is a struct (a
-pointer, a length, a capacity and the owning arena); an operation that
-changes the contents returns an updated struct. The new struct can
+arena-backed. `Vec` is generic, `(Vec T)`; `collections/map` and
+`collections/set` hold `Int` keys and values. Each holds a pointer, a
+length, a capacity and the owning arena; an operation that changes the
+contents returns an updated value. The new struct can
 share its storage with the old one, so treat the old value as used up.
 Pass an arena from `(arena-create block-size)`, or `0` for a private
 arena created on the spot.
@@ -116,15 +130,17 @@ arena created on the spot.
 
 ```lisp
 (use collections/vec)
-(defstruct Vec (ptr Int) (len Int) (cap Int) (arena Int))
+(deftype Vec (VecC Int Int Int Int T))  ; ptr len cap arena, phantom T
 ;(vec-create (arena Int) (cap Int)) (vec-create-default (cap Int))
-;(vec-len (v Vec)) (vec-cap (v Vec))
-;(vec-get (v Vec) (i Int))              ; -1 when out of bounds
-;(vec-set (v Vec) (i Int) (value Int))  ; a write past len extends it, up to cap
-;(vec-push (v Vec) (value Int))         ; reallocates when full
-;(vec-pop (v Vec)) (vec-last (v Vec))   ; vec-last is -1 when empty
-;(vec-free (v Vec))
+;(vec-len v) (vec-cap v)
+;(vec-get v (i Int))                    ; a T; the word -1 when out of bounds
+;(vec-set v (i Int) value)              ; a write past len extends it, up to cap
+;(vec-push v value)                     ; reallocates when full
+;(vec-pop v) (vec-last v)               ; vec-last is the word -1 when empty
+;(vec-free v)
 ```
+
+A Vec prints as `[a, b, ...]` (`Show`).
 
 There is no `vec-slice`, `vec-append` or `vec-clear`.
 
@@ -400,10 +416,11 @@ compiler is built from that entry file like any program.
 | `qualify.zyl` | Canonical symbol keys (§31.2) |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `type_system.zyl` | Type ADT, substitution, type environment |
-| `type_inference.zyl` | Hindley–Milner inference |
+| `type_inference.zyl` | Older inferer (no longer run by the pipeline) |
+| `type_annotate.zyl` | Hindley–Milner inference, trait resolution, per-type instances |
+| `derive.zyl` | `derive Show` expansion |
 | `region_inference.zyl` | Stack promotion of non-escaping variants |
-| `monomorphization.zyl` | Monomorphization |
-| `trait_dispatch.zyl` | Trait method dispatch |
+| `monomorphization.zyl` | Impl method lifting |
 | `closure_inline.zyl` | Closure inlining (retired; identity pass) |
 | `assert_lowering.zyl` | Lowering of `assert-equal` |
 | `contract_injection.zyl` | Contract overlay |

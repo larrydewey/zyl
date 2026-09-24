@@ -38,13 +38,15 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
     (sc-check-program exprs)      ; Secret
     0))
 
-(defn lower-exprs (arena exprs)
-  (let inferer (collect-definitions (inferer-new) exprs)          ; type inference
-    (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
-      (let mono-exprs (monomorphize mono-ctx exprs)               ; monomorphization
-        (lower-after-mono arena (td-expand-program mono-exprs)))))) ; trait dispatch
+(defn lower-exprs (arena exprs0)
+  (let exprs (dv-expand-program exprs0)                           ; derive Show
+    (let inferer (inferer-new)                                    ; empty: impl lifting only
+      (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
+        (let mono-exprs (monomorphize mono-ctx exprs)             ; lift impl bodies
+          (lower-after-mono arena mono-exprs))))))
 
-;; lower-after-mono: closure inlining -> assert lowering -> ICNF
+;; lower-after-mono: closure inlining -> assert lowering
+;;                   -> type annotation (ta-annotate) -> ICNF
 ;;                   -> optimization -> region inference
 ;; compile-to-fns  = compile-to-exprs + lower-exprs   (stops at ICNF)
 ;; compile-to-asm  = compile-to-fns + codegen
@@ -132,78 +134,52 @@ downstream.
 
 ## 30.3 Writing a Pass: Type Inference
 
-### Type ADT (`type_system.zyl`)
+The active inferer is `type_annotate.zyl`. (`type_system.zyl` and
+`type_inference.zyl` hold the older inferer; the pipeline now uses only
+their data types and an empty `TypeInferer` for monomorphization.)
+
+### Types and the store
 
 ```lisp
-(deftype Type
-  (TInt) (TFloat) (TBool) (TString) (TUnit)
-  (TByte)
-  (TByteSlice Region)
-  (TByteBuf Region)
-  (TFun (List Type))
-  (TList (List Type))
-  (TArray Type Int)
-  (TCap CapKind Type)                   ; capability wrapper
-  (TStruct String (List Type))
-  (TVar Int Type)                       ; type variable
-  (TMap Type Type)
-  (TResult Type Type))
-
-(deftype CapKind
-  (TCCap) (TCMut) (TCAtomic) (TCBox) (TCPin)
-  (TCByte) (TCAtomicByte) (TCSecret))
+(deftype TaTy (TaV Int) (TaC String (List TaTy)) (TaF (List TaTy) TaTy))
 ```
 
-Capabilities are one constructor, `TCap`, parameterized by a `CapKind`,
-rather than a constructor per capability.
+`TaC` is a named type with arguments (`Int`, `(Vec String)`), `TaF` a
+function type, `TaV` a type variable. Variables live in a runtime word
+vector (`zyl_wvec_*`): slot `i` holds 0 (unbound), 1 (poisoned) or the
+type it is bound to. Unification is union-find with an occurs check. A
+conflict poisons the variables involved instead of failing, so
+inference degrades rather than rejects. Negative `TaV` ids are template
+slots, used for generalized schemes and constructor types.
 
-### Substitution and environment
+### Order and generalization
 
-```lisp
-(deftype TypeBind (TB Int Type))
-(deftype Subst (SBindings (List TypeBind)))
-(deftype EnvBind (EB String Type))
-(deftype TypeEnv (TEBindings (List EnvBind)))
-```
+Top-level functions are visited depth-first from their references; the
+call graph's strongly connected components (Tarjan, state in word
+vectors) are closed callees-first. At an SCC's close its struct-gets
+with unknown receivers are retried, its recorded *uses* (trait calls,
+calls of trait-generic functions, prints and operators on type
+variables) are resolved, and its members are generalized. Global lookups
+(functions, types, variants, struct fields) go through content-hashed
+string maps (`zyl_smap_*`); nothing is iterated, so output stays
+deterministic.
 
-`unify` (`type_system.zyl`) takes a substitution and two types and
-returns an extended substitution or a failure (`UnifyResult`).
+### Results
 
-### The inferer
-
-All inference state is one immutable record, `TypeInferer`, with twenty
-fields — the environment, the substitution, the next fresh variable,
-known functions and their return types, ADT definitions, struct
-definitions, the trait context, observed argument types for later
-monomorphization, and so on — each with an accessor
-(`ti-env`, `ti-subst`, ...). `collect-definitions` walks the program's
-top-level forms and infers each `defn` body with `infer-expr`, a large
-`match` over `ExprInner`:
-
-```lisp
-(defn infer-expr (inferer expr)
-  (match (Expr.inner expr)
-    (EAtom atom
-      (match atom
-        (AInt _ (inferer-return-int inferer))
-        (AFloat _ (inferer-return-float inferer))
-        (ABool _ (inferer-return-bool inferer))
-        (AStr _ (inferer-return-string inferer))
-        ...))
-    ...))
-```
+Each Expr node's type goes to attr table 0 (`zyl_attr_set 0 node ty`),
+keyed by the node's address. ICNF lowering reads it (`ta-kind`) and stores
+a codegen kind on the new Icnf node (table 1); trait-call targets and
+instance names go to table 2, `print`-via-`Show` targets to table 3.
+Instances of trait-generic functions are deep copies of the definition
+(`ta-copy-defn`), typed with the call's argument types and appended to
+the program. `ZYL_DEBUG_TYPES=1` prints every scheme as it is generalized.
 
 Two properties to know before touching it:
 
-- **It degrades rather than rejects.** A unification failure generally
-  produces a fresh type variable, not an error. The hard errors a user
-  sees come from the check passes in §30.1, not from inference.
-- **Some of its name lookups compare strings with `=`**, which on two
-  dynamically built strings is pointer comparison, so a builtin
-  operator is not always recognized by name. The REPL's `:type` reports
-  such expressions as *unresolved*. Fixing it changes control flow deep
-  in generic-instantiation tracking; `stdlib/lsp/compiler_bridge.zyl`'s
-  header records why it has not been done yet.
+- **Keep kinds across rebuilds.** A pass that rebuilds ICNF nodes must
+  call `ic-keep-kind`, or rebuilt nodes lose their String/Float kind.
+- **The compiler compiles itself with it.** Its own generic helpers get
+  instances; a change that alters inference changes the fixed point.
 
 The Secret capability is enforced by `secret_check.zyl`, a syntactic
 taint pass, not by the unifier (Chapter 33).

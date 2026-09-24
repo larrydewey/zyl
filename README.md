@@ -313,8 +313,8 @@ stdlib/compiler/              # The compiler, written in Zyl (37 modules)
 ├── capability_check.zyl, duplicate_check.zyl, arity_check.zyl,
 │   mutability_check.zyl, exhaustiveness_check.zyl, unused_check.zyl,
 │   secret_check.zyl          # Pre-inference checks
-├── type_system.zyl, type_inference.zyl, monomorphization.zyl,
-│   trait_dispatch.zyl, closure_inline.zyl, assert_lowering.zyl
+├── type_system.zyl, type_inference.zyl, derive.zyl, monomorphization.zyl,
+│   closure_inline.zyl, assert_lowering.zyl, type_annotate.zyl
 ├── icnf.zyl, optimization.zyl, region_inference.zyl, codegen.zyl
 ├── package.zyl, workspace.zyl, lock.zyl, index.zyl, mvs.zyl, store.zyl,
 │   cli.zyl                   # Package system (spec §31)

@@ -12,10 +12,9 @@ the full reference.
 
 ### Polymorphic Functions: Leave Parameters Unannotated
 
-Every Zyl value is one 64-bit word, so a function whose parameters carry
-no type annotation already accepts arguments of any type. Type
-inference analyzes such a function separately at each call site, with
-that site's argument types.
+A function whose parameters carry no type annotation is generic: type
+inference gives it a polymorphic type, and each call site instantiates
+it with that site's argument types.
 
 ```lisp
 (defn first-of (a _) a)
@@ -28,22 +27,20 @@ that site's argument types.
 
 (defn main ()
   (begin
-    (print-int (first-of 5 "s"))             ; 5
-    (print-string (first-of "a" 2))          ; a
-    (print-string (choose true "yes" "no"))  ; yes
-    (print-int (smaller 3 5))                ; 3
+    (print (first-of 5 "s"))             ; 5
+    (print (first-of "a" 2))             ; a
+    (print (choose true "yes" "no"))     ; yes
+    (print (smaller 3 5))                ; 3
+    (print (smaller "b" "a"))            ; a
     0))
 ```
 
-Two things to know:
-
-- **Print polymorphic results with a typed printer.** The type of a
-  polymorphic call's result does not flow back into `print`, so
-  `(print (first-of "a" 2))` prints the string's address. `print-int`,
-  `print-string` and `print-float` say what to print.
-- **Operators are not overloaded.** `<` compares machine words. On two
-  strings, `smaller` compares their addresses. (On two struct or ADT
-  values the comparison operators do compare fields — Chapter 4, §4.9.)
+A result's type flows back to the caller, so `print` shows it correctly.
+Where a generic body does something that depends on the type — `print`,
+`=`, `<`, arithmetic, or a trait method on a parameter — the compiler
+generates one instance of the function per concrete argument-type
+combination it is called with (§7.6), so `smaller` on Strings compares
+text and on Ints compares numbers.
 
 The core library already defines `identity`, `min`, `max`, `abs`,
 `compose` and a few others. Defining a function with one of those names
@@ -106,9 +103,9 @@ way. One generic ADT can be used at several types in the same program:
 
 (defn main ()
   (begin
-    (print-int (maybe-or (Just 4) 0))                ; 4
-    (print-string (maybe-or (Just "hi") "none"))     ; hi
-    (print-string (maybe-or (Nothing) "default"))    ; default
+    (print (maybe-or (Just 4) 0))                    ; 4
+    (print (maybe-or (Just "hi") "none"))            ; hi
+    (print (maybe-or (Nothing) "default"))           ; default
     (print (count-items (Cons 1 (Cons 2 Nil))))      ; 2
     (print (count-items (Cons "a" Nil)))             ; 1
     0))
@@ -172,10 +169,10 @@ in one case, the orphan rule (§7.4).
 
 ### How a Call Finds Its Method
 
-The specification resolves trait calls statically, from types. The
-current compiler instead turns each `(Trait.method recv ...)` into a
-`match` on the receiver's runtime tag, with one arm per implementing
-type. That works well for structs, because each struct has its own tag:
+Trait calls are resolved statically, from the receiver's inferred type
+(spec §5.4): `(Area.area (Tri 9))` calls the `Tri` impl directly,
+whatever else implements `Area` — structs, multi-variant ADTs and
+primitives such as `Int` alike.
 
 ```lisp
 (defstruct Circle (r))
@@ -184,10 +181,10 @@ type. That works well for structs, because each struct has its own tag:
 (trait Describe (describe self))
 
 (impl Describe Circle
-  (defn describe (self) (begin (print-string "circle") (struct-get self "r"))))
+  (defn describe (self) (begin (print "circle") (struct-get self "r"))))
 
 (impl Describe Rect
-  (defn describe (self) (begin (print-string "rect") (* (struct-get self "w") (struct-get self "h")))))
+  (defn describe (self) (begin (print "rect") (* (struct-get self "w") (struct-get self "h")))))
 
 (defn describe-all (xs)
   (match xs
@@ -201,30 +198,30 @@ type. That works well for structs, because each struct has its own tag:
 ;; 14
 ```
 
-A list of different struct types, each dispatched to its own impl,
-behaves like dynamic dispatch over a closed set of types.
+The list above mixes two struct types, so its element type has no single
+answer. A call like that, whose receiver type inference cannot pin down,
+falls back to a `match` on the receiver's runtime tag, with one arm per
+implementing type. For structs that is still exact, since each struct has
+its own tag; for a mix that includes a multi-variant ADT or a primitive
+it can pick the wrong impl, so keep heterogeneous collections to
+structs, or wrap the cases in one ADT.
 
-It does not work for every combination:
+A generic function that calls a trait method on one of its parameters is
+compiled once per concrete receiver type (§7.6):
 
-- **A trait with exactly one impl** always works, whatever the type:
-  a struct, an ADT or a primitive such as `Int`.
-- **Several impls where one is for a multi-variant ADT or a primitive
-  type** dispatch wrongly. An ADT's name is not one of its variants, so
-  its arm catches every receiver. With `(impl Show Int ...)` next to
-  `(impl Show Point ...)`, a `Point` receiver runs the `Int` impl.
+```lisp
+(trait Desc (desc (self) String))
+(impl Desc Int (defn desc (self) "int"))
+(impl Desc String (defn desc (self) (str-concat "str:" self)))
 
-> **Compiler defect.** A trait call written directly as the first
-> argument of `struct-get` is not rewritten, and the program fails to
-> link:
->
-> ```lisp
-> (struct-get (Scale.scale r 3) "h")     ; undefined reference to `_ZYL_Scale_scale'
-> ```
->
-> Bind the result first: `(let r2 (Scale.scale r 3) (struct-get r2 "h"))`.
+(defn twice (x) (str-concat (Desc.desc x) (Desc.desc x)))
 
-Until dispatch uses static types, implement traits for structs, or give
-a trait over an ADT or primitive type a single impl.
+(defn main ()
+  (begin
+    (print (twice "a"))     ; str:astr:a
+    (print (twice 1))       ; intint
+    0))
+```
 
 ### The Standard Library's Trait
 
@@ -268,8 +265,10 @@ C3. No conflicting impls.
   ```
 
 - **C3** cannot arise except as a C1 duplicate: an `impl` names a single
-  type, so generic impls such as `(impl Container (Vec T) ...)` cannot
-  be written.
+  type. An impl for a generic type is written with the bare type name,
+  `(impl Show Vec ...)`, and covers every element type; its body is
+  instantiated per element type where the element's own trait methods
+  are called.
 
 ## 7.5 Trait Bounds and Resolution
 
@@ -277,9 +276,10 @@ In the specification, a bound such as `(T : Ord)` requires every call
 site's concrete type to implement the trait, and trait resolution
 happens during type inference: collect the bounds, substitute the
 concrete types at each call, find the impl, verify the bound. Since
-bounds cannot be written (§7.1), none of this is checked, and a
-`Trait.method` call with no impl at all fails at link time rather than
-with `E_TRAIT_NOT_FOUND`.
+bounds cannot be written (§7.1), they are not checked. The impl is found
+from the inferred receiver type; a `Trait.method` call with no impl for a
+known receiver type falls back to the runtime match, and with no impl at
+all it fails at link time rather than with `E_TRAIT_NOT_FOUND`.
 
 ## 7.6 Monomorphization
 
@@ -294,12 +294,14 @@ so the name does not depend on parameter order:
 (pair 1 "hi")        → pair_Int_String
 ```
 
-The current compiler does not need these copies. Because every value is
-one word, a polymorphic function is compiled once, and every call site
-shares that body; only type inference is repeated per call site. The
-per-type functions that do exist are impl methods: each method body
-becomes a function named `Trait.method_Type`, such as `Area.area_Rect`.
-Chapter 19 describes the naming and its limits.
+Because every value is one word, most polymorphic functions need no
+copies and are compiled once. A copy is made only for a function whose
+body depends on a type parameter — it prints one, compares or does
+arithmetic on one, or calls a trait method on one. Each distinct tuple of
+concrete argument types gets one instance, named after the function and
+its argument types (`smaller~String,String`), at most 32 per function.
+Impl methods become functions named `Trait.method_Type`, such as
+`Area.area_Rect`. Chapter 19 has the details.
 
 ## 7.7 Deriving Traits
 
@@ -307,19 +309,18 @@ The specification lets you derive `Eq`, `Ord`, `Show`, `Debug`, `Clone`
 and `Hash`, inline on `defstruct+` or with a standalone `derive`:
 
 ```lisp
-(defstruct+ Pt (x) (y) (:derive [Eq Ord]))
-(derive Pt Eq Ord)
+(derive Pt Show)            ; or (derive Pt [Show Eq])
 ```
 
-Both forms are accepted and currently do nothing: no impl is generated,
-no field requirement is checked, and even an unknown trait name is
-accepted. You get the same behavior with or without them:
+`(derive T Show)` (or `(derive T [Show])`) generates a `Show` impl, and
+`print` then shows the value (Chapter 4, §4.9). The inline `(:derive
+...)` option on `defstruct+` is not parsed, and the other traits are
+accepted and generate nothing; you get their behavior without them:
 
 - `==` and `!=` compare two struct or ADT values field by field;
 - `<`, `>`, `<=` and `>=` compare the fields lexicographically;
 - both are shallow: a string or nested-value field is compared by
-  address;
-- `print` of a struct prints its address — there is no derived `Show`.
+  address.
 
 ```lisp
 (defstruct Pt (x) (y))
@@ -398,33 +399,32 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 
 ## For Experts: Under the Hood
 
-### Per-Call-Site Inference
+### Inference and Instances
 
-For a function with unannotated parameters, type inference does not
-generalize a type scheme. It infers the body again at each call site
-with that site's argument types, and caches the result under a key built
-from the function name and the argument types. A recursive call with the
-same argument types reuses the cached result. Type errors found this way
-are not reported (Chapter 15); the inferred types guide code generation
-(print formats, float arithmetic) but do not reject programs.
+`stdlib/compiler/type_annotate.zyl` runs Hindley–Milner inference over
+the lowered program: top-level functions are inferred one strongly
+connected component of the call graph at a time and generalized, so each
+call instantiates a function's type afresh. Type errors are not reported
+(Chapter 15); the inferred types guide code generation and trait
+resolution. A function whose body depends on a type variable gets one
+instance per concrete argument-type tuple, named `key~T1,T2`.
 
-### Canonical Naming
+### Naming
 
-`canonical-name-from-type-map` in `stdlib/compiler/monomorphization.zyl`
-builds a name from the base name and the concrete type names,
-deduplicated, sorted and joined with `_`. The name the linker finally
+Impl methods are named `Trait.method_Type`. The name the linker finally
 sees is mangled from the canonical symbol key of the package system
 (spec §31.2); for `Area.area_Rect` in a program `shapes.zyl` it is along
 the lines of `zy_local_x2Fmain_0__shapes__Area_x2Earea_...Rect`.
 
 ### Trait Dispatch
 
-`stdlib/compiler/trait_dispatch.zyl` runs after monomorphization. It
-rewrites each qualified call into a `match` on the receiver whose arms
-are named after the implementing types. Each arm calls that type's
-lifted method. The arm names are ordinary constructor patterns, which is
-why a struct (a one-variant ADT named after itself) dispatches correctly
-and a multi-variant ADT's name acts as a catch-all.
+The type annotation pass redirects each qualified call to the lifted
+method for the receiver's inferred type. Only when that type is unknown
+does ICNF lowering emit a `match` on the receiver whose arms are named
+after the implementing types; those arm names are ordinary constructor
+patterns, which is why a struct (a one-variant ADT named after itself)
+dispatches correctly there and a multi-variant ADT's name acts as a
+catch-all.
 
 ### Representation
 

@@ -38,8 +38,8 @@ sequence); the table groups them by what they do.
 | Modules and packages (spec §31) | `module_resolver.zyl`, `qualify.zyl` (canonical symbol keys), `package.zyl`, `store.zyl`, `workspace.zyl`, `lock.zyl`, `index.zyl`, `mvs.zyl`, `cli.zyl`, `capability_check.zyl`, `resolver.zyl` (now only a small helper) |
 | Macro expansion | `macro_expand.zyl` |
 | Checks | `duplicate_check.zyl`, `arity_check.zyl`, `mutability_check.zyl`, `exhaustiveness_check.zyl`, `unused_check.zyl`, `secret_check.zyl` |
-| Types | `type_system.zyl` (Type, Subst, TypeEnv, TraitContext, TypeInferer), `type_inference.zyl` (HM inference) |
-| Middle | `monomorphization.zyl`, `trait_dispatch.zyl`, `closure_inline.zyl`, `assert_lowering.zyl` |
+| Types | `type_annotate.zyl` (HM inference, trait resolution, per-type instances), `type_system.zyl` and `type_inference.zyl` (the older inferer; only its data types and an empty context for monomorphization remain in use) |
+| Middle | `derive.zyl`, `monomorphization.zyl`, `closure_inline.zyl`, `assert_lowering.zyl` |
 | ICNF and after | `icnf.zyl` (lowering), `optimization.zyl`, `region_inference.zyl` (escape analysis on ICNF), `codegen.zyl` (x86_64) |
 | Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl` |
 | Not wired in | `contract_injection.zyl` — its accessors do not match the current `ExprInner` shapes, so nothing imports it and the pipeline passes programs through unchanged (see the comment above `lower-exprs` in `pipeline.zyl`) |

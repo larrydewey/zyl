@@ -666,6 +666,14 @@ long long zyl_cstr_key_matches(long long key, long long name) {
     return (long long)(tail[-1] == ':' && tail[-2] == ':' && memcmp(tail, n, nl) == 0);
 }
 
+/* Byte-wise ordering of two strings: -1, 0 or 1 (NULL sorts first). */
+long long zyl_cstr_cmp(long long p1, long long p2) {
+    if (p1 == p2) return 0;
+    if (!p1 || !p2) return p1 ? 1 : -1;
+    int c = strcmp((const char*)(size_t)p1, (const char*)(size_t)p2);
+    return c < 0 ? -1 : (c > 0 ? 1 : 0);
+}
+
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
@@ -3879,7 +3887,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cc_compile) X(zyl_cc_compile_log) X(zyl_chdir) \
     X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
-    X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
+    X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
     X(zyl_cstr_key_matches) \
     X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \

@@ -147,10 +147,10 @@ used"; it may repeat, and any `_`-prefixed name is likewise exempt from
 the unused, shadowing and duplicate-parameter checks.
 
 **Dispatch**: How a trait method call is resolved. A call
-`(Trait.method receiver ...)` becomes a match on the receiver's
-variant tag that calls the per-type implementation
-(`trait_dispatch.zyl`); there is no dynamic dispatch through trait
-objects.
+`(Trait.method receiver ...)` is redirected to the per-type
+implementation for the receiver's inferred type (`type_annotate.zyl`);
+when that type is unknown it becomes a match on the receiver's variant
+tag. There is no dynamic dispatch through trait objects.
 
 ## E
 

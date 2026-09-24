@@ -35,7 +35,6 @@
 (use compiler/monomorphization)
 (use compiler/region_inference)
 (use compiler/icnf)
-(use compiler/trait_dispatch)
 (use compiler/closure_inline)
 (use compiler/assert_lowering)
 (use compiler/optimization)

@@ -4,6 +4,7 @@
 ; Elements are stored as machine words, so any value fits. The last field
 ; is a phantom that carries T for type inference and is never read.
 
+(use core/show)
 (use allocator/allocator)
 
 (deftype Vec (VecC Int Int Int Int T)) ; ptr len cap arena phantom
@@ -106,3 +107,13 @@
   (begin
     (alloc-free (vec-ptr v))
     (vec-with v 0 0 0)))
+
+(impl Show Vec (defn show (self) (str-concat "[" (str-concat (vec-show-from self 0) "]"))))
+
+(defn vec-show-from (v (i Int))
+  (if (>= i (vec-len v))
+    ""
+    (let item (Show.show (vec-get v i))
+      (if (= i (- (vec-len v) 1))
+        item
+        (str-concat item (str-concat ", " (vec-show-from v (+ i 1))))))))

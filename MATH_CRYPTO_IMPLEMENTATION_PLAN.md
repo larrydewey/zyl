@@ -41,7 +41,7 @@ library is `docs/math-crypto.md`.
 | 3 Asymmetric | Done except RSA key generation |
 | 4 KDF | Done, SHA-256 only for HKDF/PBKDF2 |
 | 5 Parent module and integration | Done: `math.zyl` plus `tests/integration/math-protocol.zyl`; there is no `math_tests.zyl` or `tests/math/` |
-| Trait layer (`Rng`, `CryptoRng`, `Hash`, `Aead`, `RsaKey`, `Secret`) | Not done: every module exposes plain functions. The compiler has trait dispatch (`stdlib/compiler/trait_dispatch.zyl`, which picks an impl by the receiver's runtime tag), but the library was not built around it |
+| Trait layer (`Rng`, `CryptoRng`, `Hash`, `Aead`, `RsaKey`, `Secret`) | Not done: every module exposes plain functions. The compiler resolves trait calls statically from inferred types (`stdlib/compiler/type_annotate.zyl`), but the library was not built around traits |
 | `CryptoError` ADT | Not done: failures are reported per function (e.g. `-1`, `None`, `0`) |
 
 ### How the secret checker behaves
@@ -413,7 +413,7 @@ the order it is worth doing:
    than being rejected, and the same in panic/crash dumps.
 4. **RSA key generation**, and the trait layer (`RsaKey`, a `Secret`
    trait for user-defined secret types, `Rng`/`Hash`/`Aead`). The
-   compiler's trait dispatch (`stdlib/compiler/trait_dispatch.zyl`)
+   compiler's trait resolution (`stdlib/compiler/type_annotate.zyl`)
    dispatches on a receiver's runtime tag; whether that is sufficient for
    these traits has not been evaluated.
 5. **BLAKE3 SIMD via FFI**, the one primitive still on its portable

@@ -373,10 +373,8 @@
     (match (parse-defstruct rest)
       (Some expr expr)
       (None (Expr (EUnknown "defstruct+" (convert-ast-list rest)))))
-  (if (> (str-eq n "impl") 0)
-    (match (parse-impl rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "impl" (convert-ast-list rest)))))
+  (if (> (ds-impl-or-trait n) 0)
+    (ds-impl-or-trait-form n rest)
   (if (> (str-eq n "def") 0)
     (match (parse-def rest)
       (Some expr expr)
@@ -1050,6 +1048,40 @@
           (match (ast-nth args 1 (AstInt 0)) (AstIdent n n) (_ "___"))
           (parse-impl-bodies (ast-list-nth-rest args 2)))))
     None))
+
+(defn ds-impl-or-trait (n)
+  (if (> (str-eq n "impl") 0) 1 (str-eq n "trait")))
+
+(defn ds-impl-or-trait-form (n rest)
+  (if (> (str-eq n "impl") 0)
+    (match (parse-impl rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "impl" (convert-ast-list rest)))))
+    (match (parse-trait rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "trait" (convert-ast-list rest)))))))
+
+; (trait Name (method (params...) RetType)*)
+(defn parse-trait (args)
+  (match args
+    (Cons nm methods
+      (match nm
+        (AstIdent n (Some (Expr (ETraitDecl n (parse-trait-methods methods) None))))
+        (_ None)))
+    (Nil None)))
+
+(defn parse-trait-methods (ms)
+  (match ms
+    (Nil Nil)
+    (Cons m rest
+      (match m
+        (AList parts (Cons (parse-trait-method parts) (parse-trait-methods rest)))
+        (_ (parse-trait-methods rest))))))
+
+(defn parse-trait-method (parts)
+  (TM (a-ident-to-str (ast-nth parts 0 (AstInt 0)))
+      (parse-params (ast-nth parts 1 (AstInt 0)))
+      (a-ident-to-str (ast-nth parts 2 (AstInt 0)))))
 
 (defn parse-impl-bodies (forms)
   (match forms
@@ -2023,12 +2055,15 @@
           (parse-derive-traits (ast-list-nth-rest args 1)))))
     None))
 
+; `(derive T Show Eq)` or `(derive T [Show Eq])`.
 (defn parse-derive-traits (xs)
   (match xs
     (Nil Nil)
     (Cons t rest
-      (let hd (match t (AstIdent n n) (_ "___"))
-        (Cons hd (parse-derive-traits rest))))))
+      (match t
+        (AList inner (list-append (parse-derive-traits inner) (parse-derive-traits rest)))
+        (_ (let hd (match t (AstIdent n n) (_ "___"))
+             (Cons hd (parse-derive-traits rest))))))))
 
 (defn parse-macro (args)
   (match (ast-nth args 0 (AstInt 0))

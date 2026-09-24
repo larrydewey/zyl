@@ -358,7 +358,7 @@
 (defn in-string-compare-p (op a b)
   (if (= (in-is-str a) 1)
     (if (= (in-is-str b) 1)
-      (if (= op 9) 1 (if (= op 10) 1 0))
+      (if (and (> op 4) (< op 11)) 1 0)
       0)
     0))
 
@@ -366,8 +366,10 @@
   (match v (VStr _ 1) (_ 0)))
 
 (defn in-string-eq (op a b)
-  (let same (ffi-call "zyl_cstr_eq" (val-word a) (val-word b) 1000)
-    (if (= op 9) (VInt same) (VInt (if (> same 0) 0 1)))))
+  (if (> op 8)
+    (let same (ffi-call "zyl_cstr_eq" (val-word a) (val-word b) 1000)
+      (if (= op 9) (VInt same) (VInt (if (> same 0) 0 1))))
+    (in-int-compare-of op (ffi-call "zyl_cstr_cmp" (val-word a) (val-word b) 1000))))
 
 (defn in-float-pair (a b)
   (if (= (in-is-float a) 1) 1 (in-is-float b)))

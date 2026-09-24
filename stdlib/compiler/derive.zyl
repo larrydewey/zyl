@@ -1,0 +1,116 @@
+; === Zyl Compiler — Derive ===
+; Module: compiler/derive
+;
+; Expands `(derive Type Show ...)` into an impl block (spec §5.6). Runs
+; before monomorphization, which lifts the impl's method to a function.
+; Other derivable traits are accepted and generate nothing yet.
+
+(use core/list)
+(use compiler/expr_inner)
+
+(defn dv-expand-program (exprs)
+  (list-append exprs (dv-collect exprs exprs)))
+
+(defn dv-collect (all forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDerive tname traits (list-append (dv-derive all tname traits) (dv-collect all rest)))
+        (_ (dv-collect all rest))))))
+
+(defn dv-derive (all tname traits)
+  (match traits
+    (Nil Nil)
+    (Cons t rest
+      (if (> (ffi-call "zyl_cstr_key_matches" t "Show" 1000) 0)
+        (match (dv-find-type all tname)
+          (Some dt (Cons (dv-show-impl t tname dt) (dv-derive all tname rest)))
+          (None (dv-derive all tname rest)))
+        (dv-derive all tname rest)))))
+
+(defn dv-find-type (forms tname)
+  (match forms
+    (Nil None)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype n _ _ _ (if (> (str-eq n tname) 0) (Some e) (dv-find-type rest tname)))
+        (_ (dv-find-type rest tname))))))
+
+; --- Show --------------------------------------------------------------------
+
+(defn dv-id (n) (Expr (EAtom (AIdent n))))
+(defn dv-str (s) (Expr (EAtom (AStr s))))
+(defn dv-cat (a b) (Expr (EApply "str-concat" (Cons a (Cons b Nil)))))
+
+(defn dv-show-impl (trait tname dt)
+  (match (Expr.inner dt)
+    (EDeftype _ variants _ sm
+      (let body (Expr (EMatch (dv-id "self") (dv-show-arms trait variants (dv-is-struct sm))))
+        (Expr (EImplBlock trait tname (Cons (IB (DN "show" (Cons (P "self" None) Nil) body)) Nil)))))
+    (_ dt)))
+
+(defn dv-is-struct (sm)
+  (match sm
+    (Some _ 1)
+    (None 0)))
+
+(defn dv-show-arms (trait variants isst)
+  (match variants
+    (Nil Nil)
+    (Cons v rest
+      (let n (list-length (AV.fields v))
+        (let binds (dv-binders n 0)
+          (Cons (MA (AV.name v) (dv-bind-exprs binds) (dv-show-variant trait v binds isst))
+                (dv-show-arms trait rest isst)))))))
+
+(defn dv-binders (n i)
+  (if (>= i n) Nil (Cons (str-concat "_dv" (ffi-call "zyl_int_text" i 1000)) (dv-binders n (+ i 1)))))
+
+(defn dv-bind-exprs (bs)
+  (match bs
+    (Nil Nil)
+    (Cons b t (Cons (dv-id b) (dv-bind-exprs t)))))
+
+(defn dv-show-call (trait b) (Expr (EApply (str-concat trait ".show") (Cons (dv-id b) Nil))))
+
+; `Name`, `Name(a, b)`, or for a struct `Name { f: a, g: b }`.
+(defn dv-show-variant (trait v binds isst)
+  (let name (dv-short (AV.name v))
+    (match binds
+      (Nil (dv-str name))
+      (_
+        (if (> isst 0)
+          (dv-cat (dv-str (str-concat name " { ")) (dv-cat (dv-show-fields trait (AV.fields v) binds) (dv-str " }")))
+          (dv-cat (dv-str (str-concat name "(")) (dv-cat (dv-show-items trait binds) (dv-str ")"))))))))
+
+(defn dv-show-items (trait binds)
+  (match binds
+    (Nil (dv-str ""))
+    (Cons b t
+      (match t
+        (Nil (dv-show-call trait b))
+        (_ (dv-cat (dv-show-call trait b) (dv-cat (dv-str ", ") (dv-show-items trait t))))))))
+
+(defn dv-show-fields (trait names binds)
+  (match names
+    (Nil (dv-str ""))
+    (Cons f frest
+      (match binds
+        (Nil (dv-str ""))
+        (Cons b brest
+          (let one (dv-cat (dv-str (str-concat f ": ")) (dv-show-call trait b))
+            (match brest
+              (Nil one)
+              (_ (dv-cat one (dv-cat (dv-str ", ") (dv-show-fields trait frest brest)))))))))))
+
+; Text after the last "::".
+(defn dv-short (n) (dv-short-from n 0 -1))
+
+(defn dv-short-from (n i found)
+  (let c (ffi-call "zyl_cstr_byte_at" n i 1000)
+    (if (< c 1)
+      (if (< found 0) n (str-substring n (+ found 2) (- (str-length n) (+ found 2))))
+      (if (and (= c 58) (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58))
+        (dv-short-from n (+ i 2) i)
+        (dv-short-from n (+ i 1) found)))))

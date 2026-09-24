@@ -78,8 +78,8 @@ mismatch is not reported, and the runtime allocates every buffer with
 
 | Spec type | In the implementation |
 |-----------|-----------------------|
-| `Vec<T>` | A standard-library struct in `collections/vec`: `(defstruct Vec (ptr Int) (len Int) (cap Int) (arena Int))`. Elements are 8-byte words. Use `vec-create`, `vec-push`, `vec-get`, `vec-len`. |
-| `Map<K,V>` | A standard-library struct in `collections/map`, with `map-create`, `map-put`, `map-get`, `map-has`, `map-remove`. |
+| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC Int Int Int Int T))` (buffer, length, capacity, arena, and a phantom `T` that is never read). Elements are 8-byte words. Use `vec-create`, `vec-push`, `vec-get`, `vec-len`; `vec-get` returns `T`. |
+| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/map` is a separate Int-to-Int hash map. |
 | `Set<T>` | `collections/set` (not in §4.2). |
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
 | `Option<T>` | `(deftype Option (Some T) None)` in `core/option` (named in §25). |
@@ -104,6 +104,7 @@ so `Some`, `Ok` and `Cons` need no `use`.
     (begin
       (print (vec-len v))      ; 2
       (print (vec-get v 1))    ; 20
+      (print v)                ; [10, 20]
       0)))
 ```
 
@@ -160,8 +161,8 @@ left to right before the call.
 - Fields are immutable (§10). See Chapter 17.
 - A struct is represented as a one-variant ADT whose variant name is the
   struct name, so `(Point 1 2)` also constructs one. Each struct gets a
-  tag unique across the program, which is what trait dispatch relies on
-  (Chapter 20).
+  tag unique across the program, which is what the runtime fallback of
+  trait dispatch relies on (Chapter 20).
 - §4.7 makes structs nominal. `==` compares a struct's tag as well as its
   fields, so values of two struct types with the same fields are never
   equal. No type error is raised for mixing them, though (15.6).
@@ -184,22 +185,34 @@ writing `(id UserId)` in a parameter list is also accepted.
 
 ### What the inferer does
 
-- **Unification** follows Hindley–Milner (`unify` in `type_system.zyl`),
-  with an occurs check.
-- **No let-generalization.** Polymorphism comes from inferring each call
-  site separately instead. A call to a function with unannotated
-  parameters re-infers the body at the argument types of that site, and
-  caches the result under a key of the function name and argument types.
-- **The results are used**, not only computed. They decide how `print`
-  formats a value (`%lld`, `%f` or `%s`), they feed the FFI pinnability
-  check, and they record the concrete instantiations of generic ADTs for
-  monomorphization (Chapter 19).
+The pass is `compiler/type_annotate.zyl`, run on the fully lowered
+program just before ICNF lowering.
+
+- **Hindley–Milner with let-polymorphism.** Unification over union-find
+  with an occurs check. Top-level functions are inferred in dependency
+  order, one strongly connected component of the call graph at a time,
+  and generalized, so each call instantiates a function's type afresh.
+  Local `let`s are not generalized.
+- **Declared types count.** Parameter annotations, the field types of
+  `deftype` and `defstruct`, and `trait` method signatures all constrain
+  inference; a type name in a field that is not a known type (an
+  uppercase name like `T`) is a type parameter.
+- **The results are used**, not only computed. Every expression's type
+  reaches code generation, which picks `print`'s format (`%lld`, `%f`,
+  `%s`), String comparison and Float arithmetic from it — for a `Vec`
+  element, a struct field, a pattern-bound name, a closure capture or the
+  result of a generic call alike. Trait calls are resolved from it
+  (Chapter 20), and a function whose body depends on a type parameter is
+  instantiated per concrete type (15.8).
+- `ZYL_DEBUG_TYPES=1` prints every function's inferred type while
+  compiling; the REPL's `:type` shows an expression's type.
 
 ### What it does not do
 
-- **It does not reject type errors.** When unification fails, the
-  expression is given a fresh type variable and inference carries on.
-  All three of these compile without a diagnostic:
+- **It does not reject type errors.** A unification failure marks the
+  type variables involved as unknown, and code generation falls back to
+  what the literals and annotations say. All three of these compile
+  without a diagnostic:
 
   ```lisp
   (defn add ((a Int) (b Int)) (+ a b))
@@ -208,30 +221,15 @@ writing `(id UserId)` in a parameter list is also accepted.
     (begin
       (print (+ 1 "a"))       ; adds a string's address to 1
       (print (add 1 "x"))     ; annotation not enforced
-      (print (+ 1.5 2))       ; prints 1.500000
+      (print (+ 1.5 2))       ; wrong: Int and Float mixed
       0))
   ```
 
 - **It does not check annotations against known types.** An unknown name
   such as `(v Bogus)` is accepted.
-- **Types do not flow back out of a polymorphic call.** When a function
-  with unannotated parameters returns a `String` or `Float` at one call
-  site, a `print` of that result formats it as an `Int`:
-
-  ```lisp
-  (defn ident (x) x)
-
-  (defn main ()
-    (begin
-      (print (ident 5))          ; 5
-      (print (ident "s"))        ; prints the string's address
-      (print-string (ident "s")) ; s
-      0))
-  ```
-
-  Pass such a result to a typed function (`print-string`, `print-float`,
-  or any function with a `(name Type)` parameter), or bind it with a
-  typed parameter, when the type matters.
+- **Heterogeneous data loses its type.** A list holding a `Circle` and a
+  `Rect` has no single element type; values read from it are treated as
+  plain words (and trait calls on them use the runtime fallback).
 
 ### Annotations
 
@@ -248,15 +246,15 @@ name, or `Secret`/`(Secret Int)` (Chapter 17):
     0))
 ```
 
-Annotations are optional (§0 P7) and affect how values are printed and
-passed. They are not enforced. There is no return-type annotation and no
-annotation on `let`.
+Annotations are optional (§0 P7): inference usually finds the same
+type without them. They are not enforced. There is no return-type
+annotation and no annotation on `let`.
 
 ## 15.7 Type Errors
 
 | Code | Status |
 |------|--------|
-| `E_INVALID_CAPABILITY` | **Raised.** A value that is not FFI_Pinnable (for example a closure) is passed to `ffi-call` or `ffi-pin`. This is the only fatal diagnostic that type inference itself raises. |
+| `E_INVALID_CAPABILITY` | **Raised** by `mutability_check` (before inference) when a lambda is passed to `ffi-call`; a named top-level function may be passed, as a C callback. Type inference itself raises no errors. |
 | `E_BYTE_VALUE_OOB` | **Raised** by the parser for `(byte N)` outside 0–255. |
 | `E_TYPE_MISMATCH` | Catalogued in `error_codes.zyl`; never raised. |
 | `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised. |
@@ -291,7 +289,7 @@ observable).
 | struct, ADT variant | pointer to a heap block `[tag][field0][field1]...`, one word per slot, preceded by a hidden word holding the block's size in words |
 | closure | a code pointer, or a pointer to a heap `[tag, code, env]` block when it captures variables |
 | `ByteBuf`, `ByteSlice` | pointer to a runtime header holding the data pointer, length and capacity |
-| `Vec`, `Map` | ordinary structs (15.2) |
+| `Vec`, `Map` | ordinary ADT values (15.2) |
 
 The hidden size word is what lets `==`, `<` and `assert-equal` compare two
 separately allocated aggregates structurally (`zyl_variant_eq` and

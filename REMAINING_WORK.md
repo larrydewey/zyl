@@ -7,7 +7,7 @@
 - [x] Warning sweep: the self-build is warning-free, and parameter warnings carry spans (qualify and macro expansion now copy them)
 
 ## P2: Codegen Correctness
-- [x] Field and return kinds: `compiler/type_annotate.zyl` feeds inferred String/Float kinds to codegen and the interpreter (generic Vec/Map elements included); open: printing inside shared generic bodies, structural `==` on inferred ADT values
+- [x] Field and return kinds: `compiler/type_annotate.zyl` feeds inferred String/Float kinds to codegen and the interpreter (generic Vec/Map elements included); prelude `Show` trait with container impls and `derive Show`; trait calls resolved statically with per-type specialization; open: structural `==` on inferred ADT values, other derivable traits
 - [x] ~~Whitespace collapse / per-file paren check in `assemble.py`~~ — obsolete: the compiler builds from `selfhost/driver.zyl` through module resolution; `assemble.py` and the bundle are gone
 - [ ] Tail-call optimization in `codegen.zyl` (the lexer's mutually recursive whitespace skip still leaks a frame per character on very large single files)
 

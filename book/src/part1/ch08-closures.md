@@ -128,7 +128,7 @@ A closure is a first-class value. Any lambda body the compiler accepts elsewhere
 | Recursive lambda | Not supported; use `defn` |
 | Capturing lambda handed to `spawn` | Works for immutable captures; a `let-mut` capture is `E_CAPABILITY_LEAK` (§8.6) |
 
-One code-generation gap remains, and it is not specific to closures: the code generator picks string or float handling for `print`, `=` and arithmetic from annotations and literals only. An unannotated parameter, a captured variable and the result of a call through a function value are all treated as integers there, so `(let s "hi" (let g (fn () (print s)) (g)))` prints the string's address, and a captured `Float` in arithmetic is added as an integer. Passing such values to functions (`str-concat`, a `defn` with a `String` parameter) works; print or compare them where their kind is known.
+Captured variables, closure parameters and the results of calls through function values carry their inferred types, so `(let s "hi" (let g (fn () (print s)) (g)))` prints `hi` and a captured `Float` is added as a Float.
 
 ## 8.5 Higher-Order Function Patterns
 

@@ -224,7 +224,7 @@ post-processor actually does with each definition form.
 | `(defstruct Name Field*)`, `(defstruct+ ...)` | Recognized. |
 | `(trait Name ...)` | Accepted with no effect (Chapter 20). |
 | `(impl Trait Type (defn ...)*)` | Recognized (Chapter 20). |
-| `(derive Type Trait*)` | Parsed; currently a no-op (Chapter 20). |
+| `(derive Type Trait*)` | Generates `Show`; other traits accepted, nothing generated (Chapter 20). |
 | `(alias Name Type)` | Accepted with no effect. |
 | `(defmacro name (pattern*) template)` | Recognized; `macro` is a synonym (Chapter 23). |
 | `(use path ...)`, `(module name)`, `(pub <definition>)` | Recognized (Chapter 25). `export` is accepted but deprecated (§24.3). |

@@ -9,6 +9,7 @@
 ; LIST ADT — Generic: List<T>
 ; ===========================================================================
 
+(use core/show)
 (deftype List (Cons T (List T)) Nil)
 
 ; ===========================================================================
@@ -95,3 +96,13 @@
   (match xs
     (Nil 0)
     (Cons h t (+ h (list-sum t)))))
+
+(impl Show List (defn show (self) (str-concat "[" (str-concat (list-show-items self) "]"))))
+
+(defn list-show-items (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil (Show.show h))
+        (_ (str-concat (Show.show h) (str-concat ", " (list-show-items t))))))))

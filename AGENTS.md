@@ -42,8 +42,10 @@ This is spec §22's order:
 The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
 and differs from the list above: balance check → parse → module
 resolution → macro expansion → capability/duplicate/arity/mutability/
-exhaustiveness/unused/secret checks → type inference → monomorphization
-→ trait dispatch → closure lifting → assert lowering → ICNF lowering →
+exhaustiveness/unused/secret checks → derive expansion → type inference
+→ monomorphization (impl lifting) → closure lifting → assert lowering →
+type annotation (HM, static trait resolution, per-type specialization,
+`type_annotate.zyl`) → ICNF lowering →
 optimization → region inference (escape analysis over ICNF) → codegen →
 `cc` link. Contract injection (`contract_injection.zyl`) is not wired
 in: `requires`/`ensures`/`invariant`/`recover`/`checkpoint` are accepted
@@ -138,7 +140,10 @@ compiler to accept it, reseed, and only then use it in the compiler's
 own source. See `archive/rust-bootstrap-2026/README.md` and
 `docs/rust-eviction-plan.md` for the history.
 
-`./boot.sh` also builds `build/boot/zyl-lsp`. It does not build the
+A verified `./boot.sh` ends by refreshing an existing install (`~/.zyl`,
+or `$ZYL_INSTALL_HOME`) with `uninstall.sh` + `install.sh`, so the
+installed `zyl` never runs a stale stdlib; `ZYL_NO_INSTALL_REFRESH=1`
+skips it. `./boot.sh` also builds `build/boot/zyl-lsp`. It does not build the
 REPL binary; `zyl-self repl` runs the REPL, and `./install.sh` builds a
 standalone `zyl-repl` from `tools/repl.zyl`. Stage timeouts default to
 2400 s (`ZYL_STAGE_TIMEOUT`); a full verification takes well under a
@@ -168,7 +173,7 @@ integration, stress, packages, packages-fail, packages-build, scripts
 (shell checks of the repository's own scripts), lsp, and
 the unit test.
 
-**Trigger before modifying struct-related code** (`ast.zyl`, `codegen.zyl`, `icnf.zyl`, `type_inference.zyl`, `parser.zyl`, `region_inference.zyl` under `stdlib/compiler/`):
+**Trigger before modifying struct-related code** (`ast.zyl`, `codegen.zyl`, `icnf.zyl`, `type_annotate.zyl`, `parser.zyl`, `region_inference.zyl` under `stdlib/compiler/`):
 ```bash
 ./run_regression_tests.sh --full --no-boot --filter structs
 ```

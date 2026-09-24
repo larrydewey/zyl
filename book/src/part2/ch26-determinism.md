@@ -92,11 +92,11 @@ Rule: no phase may depend on a later phase.
  4. Macro expansion      me-expand-program
  5. Static checks        capability (§31.9), duplicate definitions, arity, mutability,
                          match exhaustiveness, unused bindings, Secret handling
- 6. Definition typing    collect-definitions (type_inference.zyl)
- 7. Monomorphization     monomorphize
- 8. Trait dispatch       td-expand-program
- 9. Closure inlining     ci-expand-program
-10. Assert lowering      al-expand-program
+ 6. Derive expansion     dv-expand-program
+ 7. Monomorphization     monomorphize (impl lifting)
+ 8. Closure inlining     ci-expand-program
+ 9. Assert lowering      al-expand-program
+10. Type annotation      ta-annotate (HM, trait resolution, instances)
 11. ICNF lowering        ic-program
 12. Optimization         opt-optimize-fns
 13. Region inference     ri-transform-fns

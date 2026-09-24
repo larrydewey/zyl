@@ -1,0 +1,13 @@
+; === Zyl Standard Library — Show ===
+; Module: core/show
+; Provides: the Show trait (readable text for a value) and its impls for
+; the primitive types. `print` of a value whose type has a Show impl
+; prints `(Show.show v)`; `(derive T Show)` writes the impl for an ADT or
+; struct. Container impls live beside their types.
+
+(trait Show (show (self) String))
+
+(impl Show Int (defn show (self) (ffi-call "zyl_int_text" self 1000)))
+(impl Show Float (defn show (self) (ffi-call "zyl_f_text" self 1000)))
+(impl Show Bool (defn show (self) (if self "true" "false")))
+(impl Show String (defn show (self) self))

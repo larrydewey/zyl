@@ -348,7 +348,7 @@
     (IBinop op l r
      (if (> (if (= (kind-of st env l) 2) 1 (if (= (kind-of st env r) 2) 1 0)) 0)
        (cg-fbinop st env op l r)
-       (if (> (if (or (= op 9) (= op 10)) (if (or (= (kind-of st env l) 1) (= (kind-of st env r) 1)) 1 0) 0) 0)
+       (if (> (if (and (> op 4) (< op 11)) (if (or (= (kind-of st env l) 1) (= (kind-of st env r) 1)) 1 0) 0) 0)
          (cg-strbinop st env op l r)
          (if (> (if (and (> op 4) (< op 11)) (if (or (= (kind-of st env l) 3) (= (kind-of st env r) 3)) 1 0) 0) 0)
            (cg-variantbinop st env op l r)
@@ -581,11 +581,15 @@
 ; String `=`/`!=`: content comparison via the C runtime (zyl_cstr_eq),
 ; reusing cg-call-args' proven-safe ABI/stack-alignment handling instead
 ; of hand-rolling a new call sequence.
+; String `<`/`>`/`<=`/`>=` order by bytes (zyl_cstr_cmp).
 (defn cg-strbinop (st env op l r)
-  (let st2 (cg-expr st env (IFfi "zyl_cstr_eq" (Cons l (Cons r Nil))))
-    (if (= op 10)
-      (cg-emit-line st2 "    xor rax, 1")
-      st2)))
+  (if (> op 8)
+    (let st2 (cg-expr st env (IFfi "zyl_cstr_eq" (Cons l (Cons r Nil))))
+      (if (= op 10)
+        (cg-emit-line st2 "    xor rax, 1")
+        st2))
+    (let st2 (cg-expr st env (IFfi "zyl_cstr_cmp" (Cons l (Cons r Nil))))
+      (cg-variant-cmp-set st2 op))))
 
 ; Struct/variant `==`/`!=`: structural comparison via the C runtime
 ; (zyl_variant_eq), same shape as cg-strbinop above. `<`/`>`/`<=`/`>=`

@@ -57,26 +57,18 @@ currently reject an expression that mixes the two, such as
 `(+ 1 2.5)` — it computes a wrong answer instead — so treat mixing
 them as an error you have to catch yourself.
 
-Two more things are worth knowing now, because they affect what
-`print` shows:
+The compiler infers every value's type (Chapter 15), and `print`,
+arithmetic and comparison follow it: a Float that arrives through an
+unannotated parameter, a struct field or a pattern match is still a
+Float. A function whose parameter type is left open is compiled once
+per type it is called with, so it works for each:
 
-- The code generator decides how to print a value from what it can see.
-  A Float that arrives through an **unannotated** parameter is handled
-  as an Int. Annotate the parameter as `(x Float)` and arithmetic and
-  printing both work:
+```lisp
+(defn half (x) (/ x 2.0))
 
-  ```lisp
-  (defn half ((x Float))
-    (/ x 2.0))
-
-  (defn main ()
-    (print (half 5.0)))    ; 2.500000
-  ```
-
-- When `print` cannot tell a value is a Float (for example, a Float
-  returned through a pattern match), use `print-float`, which takes an
-  annotated Float parameter. It is in the core library that every
-  program gets automatically.
+(defn main ()
+  (print (half 5.0)))    ; 2.500000
+```
 
 ### Booleans (`Bool`)
 
@@ -110,17 +102,12 @@ The string built-ins:
 | `(str-substring s start len)` | `len` bytes starting at byte `start` |
 | `(str-eq a b)` | 1 if the two strings have the same contents, else 0 |
 
-There is no `+` for strings. `==` compares the contents of literals and
-of `str-concat` results, but on strings the compiler cannot see the
-origin of — a parameter, a struct field — it compares addresses. Use
-`str-eq` whenever you mean "same text".
-
-The same visibility rule applies to printing. A string in an
-unannotated parameter prints as a number (its address); annotate the
-parameter `(s String)`, or print it with `print-string`:
+There is no `+` for strings. `==` and `!=` on two Strings compare their
+contents, wherever the strings came from — a parameter, a struct field,
+a `Vec` element. `str-eq` does the same explicitly.
 
 ```lisp
-(defn shout ((s String))
+(defn shout (s)
   (print (str-concat s "!")))
 
 (defn main ()
@@ -492,7 +479,7 @@ true / false    ; Bool
 (and or not)                    ; Boolean
 (set! var value)                ; Rebinding (let-mut only)
 (print expr)                    ; One value and a newline to stdout
-(print-string s) (print-float f); When print cannot see the type
+(print-string s) (print-float f); Typed printers (print already follows types)
 (struct-get struct "field")     ; Struct field access
 (bit-and bit-or bit-xor bit-not); Bitwise (Chapter 32)
 (shl shr ashr)                  ; Shifts -- shr logical, ashr arithmetic

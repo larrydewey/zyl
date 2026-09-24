@@ -432,8 +432,8 @@
 (defn ic-expr-node (arena expr vt)
   (match (Expr.inner expr)
     (EAtom atom (ic-atom arena atom vt))
-    (ECall op args (ic-call-expr arena op args vt))
-    (EApply fname args (ic-apply arena fname args vt))
+    (ECall op args (ic-call-renamed arena expr op args vt))
+    (EApply fname args (ic-apply-renamed arena expr fname args vt))
     (ELet name val body (ic-lower-let arena name val body vt))
     (ELetMut name val body (ic-lower-let arena name val body vt))
     ; (with-resource (name init) body): regression/with-resource.zyl's
@@ -492,11 +492,11 @@
     ; literal, though a bare variable holding a float with no literal in
     ; sight still falls through to exact `=` unrecognized.
     (EAssertEqual l r
-     (if (> (ic-looks-float l) 0) (ic-assert-float-eq arena l r vt)
-     (if (> (ic-looks-float r) 0) (ic-assert-float-eq arena l r vt)
-     (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
-          (IConst 0)
-          (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil))))))
+     (if (> (ic-assert-is-float l r) 0)
+       (ic-assert-float-eq arena l r vt)
+       (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
+            (IConst 0)
+            (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))))
     (EAssertTrue e _
      (IIf (ic-expr arena e vt)
           (IConst 0)
@@ -671,6 +671,16 @@
     (EApply fname args (ic-looks-float-any args))
     (ECall op args (ic-looks-float-any args))
     (_ 0)))
+
+; Inferred kinds decide; the literal guess applies only when neither side is a String.
+(defn ic-assert-is-float (l r)
+  (let kl (ta-kind l)
+    (let kr (ta-kind r)
+      (if (or (= kl 2) (= kr 2))
+        1
+        (if (or (= kl 1) (= kr 1))
+          0
+          (if (> (ic-looks-float l) 0) 1 (ic-looks-float r)))))))
 
 (defn ic-looks-float-any (args)
   (match args
@@ -1050,6 +1060,15 @@
   (let tmp (str-intern arena (str-concat "_callee_" (ic-int-to-str (ic-fresh-id arena))))
     (ILet tmp (ic-expr arena op vt) (ic-keep-span (ICall tmp (ic-expr-list arena args vt)) op))))
 
+; A call the type pass resolved (trait impl or specialized instance).
+(defn ic-call-renamed (arena expr op args vt)
+  (let nm (ta-renamed expr)
+    (if (= nm 0) (ic-call-expr arena op args vt) (ICall (str-intern arena nm) (ic-expr-list arena args vt)))))
+
+(defn ic-apply-renamed (arena expr fname args vt)
+  (let nm (ta-renamed expr)
+    (if (= nm 0) (ic-apply arena fname args vt) (ICall (str-intern arena nm) (ic-expr-list arena args vt)))))
+
 ; Apply: operator, ffi-call, or call/variant routing by head-symbol name
 ; (no-dispatch arch: recognition happens here, never in the reader).
 (defn ic-apply (arena fname args vt)
@@ -1111,10 +1130,34 @@
   (let tag (vt-tag-of vt (str-intern arena fname))
     (if (> tag -1)
       (IVariant (str-intern arena fname) tag (ic-expr-list arena args vt))
-      ; A call through a local holding a function value is still an
-      ; ICall: codegen sees the name bound to a slot and emits
-      ; cg-call-indirect, which handles closures and plain functions.
-      (ICall (str-intern arena fname) (ic-expr-list arena args vt)))))
+      (let impls (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 1 1000) fname 1000)
+        (if (= impls 0)
+          (ic-plain-call arena fname args vt)
+          (ic-trait-dispatch arena impls args vt))))))
+
+; A trait call the type pass could not resolve: match the receiver's tag,
+; one arm per impl type (a non-variant type name acts as a catch-all).
+(defn ic-trait-dispatch (arena impls args vt)
+  (match args
+    (Nil (IConst 0))
+    (Cons recv rest
+      (ILet "_td_recv" (ic-expr arena recv vt)
+        (IMatch (ILoad "_td_recv") (ic-trait-arms arena impls rest vt))))))
+
+(defn ic-trait-arms (arena impls rest vt)
+  (match impls
+    (Nil Nil)
+    (Cons pr more
+      (match pr
+        (Pair type mangled
+          (Cons (IArm (str-intern arena type) (vt-tag-of vt (str-intern arena type)) Nil
+                      (ICall (str-intern arena mangled) (Cons (ILoad "_td_recv") (ic-expr-list arena rest vt))))
+                (ic-trait-arms arena more rest vt)))))))
+
+; A call through a local holding a function value is still an ICall:
+; codegen sees the name bound to a slot and emits cg-call-indirect.
+(defn ic-plain-call (arena fname args vt)
+  (ICall (str-intern arena fname) (ic-expr-list arena args vt)))
 
 ; Binary operator: exactly two arguments lowers directly, unary minus
 ; (- x) supported, three or more arguments fold left-associatively
@@ -1166,9 +1209,16 @@
 
 (defn ic-print-step (arena a rest vt)
   (if (is-nil rest)
-    (IPrint (ic-expr arena a vt))
-    (ISeq (Cons (IPrint (ic-expr arena a vt))
+    (IPrint (ic-print-arg arena a vt))
+    (ISeq (Cons (IPrint (ic-print-arg arena a vt))
                 (Cons (ic-print arena rest vt) (no-icnfs))))))
+
+; A value whose type has a Show impl prints as its `show` text.
+(defn ic-print-arg (arena a vt)
+  (let sh (ta-print-show a)
+    (if (= sh 0)
+      (ic-expr arena a vt)
+      (ic-mark-kind (ICall (str-intern arena sh) (Cons (ic-expr arena a vt) Nil)) 1))))
 
 ; (ffi-call "sym" a b timeout): arrives here as EApply("ffi-call", args)
 ; since expr_inner.zyl's dispatch has no dedicated ffi-call parser — drop
