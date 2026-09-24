@@ -191,9 +191,6 @@ REPL and interpreter:
   `E_UNSUPPORTED_INTERPRETED`.
 - Heavy numeric work allocates per operation and is slow and
   memory-hungry when interpreted.
-- A definition entered at the prompt cannot refer to a `def` binding:
-  after `(def k 5)`, `(defn f (x) (+ x k))` is accepted but `(f 1)` fails
-  with `E_UNBOUND_VARIABLE`.
 
 Tooling and library:
 
@@ -261,8 +258,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] A package index (`ZYL_INDEX`, `zyl publish --index`), a build cache keyed by content hash, and nested `feature-gate` rejected.
 - [x] Unused-binding warnings in the language server.
 - [x] Bundle the VS Code extension; add a problem matcher.
-- [ ] REPL: let a definition entered at the prompt capture a `def`
-      binding.
+- [x] REPL: a definition entered at the prompt can use a `def` binding.
 
 ### Deferred design work (not started unless noted)
 
@@ -367,7 +363,17 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — VS Code extension 0.4.0
+## Session (2026-09-24, latest) — REPL definitions see prompt defs
+
+`eval-global-defs` (`repl/eval.zyl`) emits each prompt `def` into the
+session program as `(def k (if false SRC (zyl-repl-global "k")))`: the
+value comes from a runtime table the binding fills (`zyl_repl_global_set`
+/ `_get`), the dead branch types it, and SRC is never re-run. Def cells are
+cleared before each entry (`zyl_global_clear`), so `:reset` leaves nothing
+stale. `tests/scripts/repl-session.sh` checks a definition using a def, a
+String def, and that the def's expression ran once.
+
+## Session (2026-09-24, earlier) — VS Code extension 0.4.0
 
 `editors/vscode` is bundled with esbuild (`npm run bundle`, the
 `vscode:prepublish` step): the `.vsix` drops from 394 files / 713 KB to 10

@@ -22,4 +22,20 @@ out="$(printf '%s\n' \
 for want in '=> 3' '=> "a!"' '=> "x"' '=> "v"' 'RsA(shown)'; do
   printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g' | grep -qF -- "$want" || fail "missing '$want' in: $out"
 done
+# A definition entered at the prompt can use a prompt `def`; the def's
+# expression is not run again.
+out2="$(printf '%s\n' \
+  '(def base (begin (print "computed") 10))' \
+  '(defn add-base (x) (+ x base))' \
+  '(add-base 5)' \
+  '(add-base 6)' \
+  '(def greet "hi")' \
+  '(defn shout () (str-concat greet "!"))' \
+  '(shout)' \
+  | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out2"
+plain="$(printf '%s' "$out2" | sed 's/\x1b\[[0-9;]*m//g')"
+for want in '=> 15' '=> 16' '=> "hi!"'; do
+  printf '%s' "$plain" | grep -qF -- "$want" || fail "missing '$want' in: $out2"
+done
+[ "$(printf '%s' "$plain" | grep -c computed)" = "1" ] || fail "a def's expression must run once: $out2"
 echo "repl-session: ok"

@@ -42,7 +42,7 @@
 - [x] Content-hash build cache (spec 31.4): `~/.zyl/cache/<key>`, `ZYL_NO_BUILD_CACHE=1` to bypass
 - [x] LSP: unused-binding and shadowing warnings are published as Warning diagnostics; every diagnostic is placed at its `--> line:col`
 - [x] VS Code extension 0.4.0: esbuild bundle (10-file `.vsix`) and a `$zyl` problem matcher used by the build tasks
-- [ ] REPL: let definitions at prompt capture `def` bindings
+- [x] REPL: definitions entered at the prompt can use `def` bindings
 
 ## Deferred Design Work
 - [x] Wider byte widths (16/32/64-bit)

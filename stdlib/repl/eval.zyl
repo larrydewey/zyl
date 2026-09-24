@@ -286,21 +286,34 @@
 ; The program for evaluating one expression: the session's modules, its
 ; definitions, and the expression wrapped in a function that takes the
 ; globals it mentions.
+; Each prompt `def` is also a top-level def of the program, so a later
+; definition can refer to it: its value comes from the runtime table the
+; binding filled (zyl-repl-global), and the dead `(if false SRC ...)`
+; branch gives it SRC's type without evaluating SRC again.
+(defn eval-global-defs (gs)
+  (match gs
+    (Nil "")
+    (Cons g rest
+      (str-concat "(def " (str-concat (Global.name g) (str-concat " (if false " (str-concat (Global.source g)
+        (str-concat " (zyl-repl-global \"" (str-concat (Global.name g) (str-concat "\")))\n" (eval-global-defs rest)))))))))))
+
 (defn eval-program-expr (sess text gs)
   (str-concat (eval-use-lines (Session.uses sess))
+    (str-concat (eval-global-defs (Session.globals sess))
     (str-concat (Session.defs sess)
       (str-concat "\n(defn " (str-concat (eval-entry-name)
         (str-concat " (" (str-concat (eval-param-list gs)
-          (str-concat ") " (str-concat text ")\n")))))))))
+          (str-concat ") " (str-concat text ")\n"))))))))))
 
 ; The program for checking a definition: the same, with the new
 ; definition in place and a trivial entry so that something references
 ; the module set.
 (defn eval-program-defs (sess text)
   (str-concat (eval-use-lines (Session.uses sess))
+    (str-concat (eval-global-defs (Session.globals sess))
     (str-concat (Session.defs sess)
       (str-concat "\n" (str-concat text
-        (str-concat "\n(defn " (str-concat (eval-entry-name) " () 0)\n")))))))
+        (str-concat "\n(defn " (str-concat (eval-entry-name) " () 0)\n"))))))))
 
 ; ===========================================================================
 ; RUNNING AN ENTRY
@@ -318,7 +331,8 @@
 ; arrive here as a message.
 ; Returns: Result(Val, String)
 (defn eval-interpret (fns name vals)
-  (try (Ok (in-call-fn fns name vals)) (catch e (Err e))))
+  (let _ (ffi-call "zyl_global_clear" 1000)
+    (try (Ok (in-call-fn fns name vals)) (catch e (Err e)))))
 
 ; ===========================================================================
 ; TYPES
@@ -458,8 +472,9 @@
 (defn eval-bind-global (name src res sess)
   (match res
     (Err msg (EvalOutcome (EvalFailed msg) sess))
-    (Ok v (EvalOutcome (EvalBound name (in-val-text v))
-                       (session-with-global sess name v src)))))
+    (Ok v (let _ (ffi-call "zyl_repl_global_set" name (val-word v) 1000)
+            (EvalOutcome (EvalBound name (in-val-text v))
+                         (session-with-global sess name v src))))))
 
 ; The expression inside `(def name <expr>)`, with the trailing paren of
 ; the `def` form removed.

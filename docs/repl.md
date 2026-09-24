@@ -48,7 +48,7 @@ The session carries three things:
 |---|---|---|
 | `uses` | the modules in scope | prepended to each entry's program as `(use ...)` lines |
 | `defs` | the text of every definition entered | re-lowered with each entry, so type inference stays whole-program |
-| `globals` | the values bound by `(def name expr)` | passed to the entry as arguments |
+| `globals` | the values bound by `(def name expr)` | passed to the entry as arguments, and readable by definitions as top-level defs |
 
 A global reaches an entry as a *parameter* of the function the entry is
 wrapped in, and only when the entry's text mentions it. `(+ x 1)`
@@ -84,11 +84,13 @@ stays in force. `:reset` clears the session so a name can be defined
 afresh. The caret of that diagnostic currently points into the REPL's
 generated wrapper (`<repl>:N:1`) rather than at the entry you typed.
 
-A definition cannot yet refer to a `def` binding: after `(def k 5)`,
-`(defn f (x) (+ x k))` is accepted, but `(f 1)` fails with
-`E_UNBOUND_VARIABLE`, because a global reaches only the entry that
-mentions it (as a parameter of that entry's wrapper), not the functions
-that entry calls. Pass the value as an argument instead.
+A definition can refer to a `def` binding: after `(def k 5)`,
+`(defn f (x) (+ x k))` and `(f 1)` give 6. Each binding is also emitted
+into the session program as a top-level `(def k (if false SRC
+(zyl-repl-global "k")))`: the live branch reads the value the binding
+stored (a runtime table), and the dead branch gives type inference SRC's
+type without running SRC again. Cached `def` values are cleared before
+each entry, so `:reset` never leaves an old value behind.
 
 ### Modules
 

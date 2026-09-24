@@ -1193,7 +1193,8 @@
           (if (> (str-eq n "actor-self") 0) "zyl_actor_self"
             (if (> (str-eq n "zyl-contract-warn") 0) "zyl_contract_warn"
               (if (> (str-eq n "zyl-err-is") 0) "zyl_err_is"
-                (if (> (str-eq n "zyl-reraise") 0) "zyl_panic" "")))))))))
+                (if (> (str-eq n "zyl-reraise") 0) "zyl_panic"
+                  (if (> (str-eq n "zyl-repl-global") 0) "zyl_repl_global_get" ""))))))))))
 
 (defn ic-call-or-variant-go (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))

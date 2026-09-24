@@ -86,8 +86,7 @@ it compiles and runs correctly; the notes say where it stops.
   capability enforcement applies only to packages with a manifest.
   `PROGRESS.md` has the full list, including the deliberate deviations.
 - **REPL:** actors are compile-only (the interpreter reports
-  `E_UNSUPPORTED_INTERPRETED`), and a definition entered at the prompt
-  cannot refer to a `def` binding. See `docs/repl.md`.
+  `E_UNSUPPORTED_INTERPRETED`). See `docs/repl.md`.
 - **Language server:** does not run type inference or the capability
   check, and reports one error at a time (warnings all together).
 

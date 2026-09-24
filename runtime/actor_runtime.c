@@ -1985,6 +1985,26 @@ long long zyl_err_is(long long msg, long long code) {
    the def's getter on first use (the init function runs them in order). */
 static long long g_def_cells = 0;
 
+/* Every cached `def` value dropped, so the next use recomputes it (the
+   REPL runs this before each entry: a `:reset` must not leave old values). */
+long long zyl_global_clear(void) {
+    if (g_def_cells) zyl_smap_clear(g_def_cells);
+    return 0;
+}
+
+/* The REPL's prompt `def`s, by name: the value each one was bound to. */
+static long long g_repl_globals = 0;
+
+long long zyl_repl_global_set(long long name, long long word) {
+    if (!g_repl_globals) g_repl_globals = zyl_smap_new();
+    zyl_smap_put(g_repl_globals, name, word);
+    return 0;
+}
+
+long long zyl_repl_global_get(long long name) {
+    return g_repl_globals ? zyl_smap_get(g_repl_globals, name) : 0;
+}
+
 long long zyl_global_ready(long long key) {
     return g_def_cells && zyl_smap_get(g_def_cells, key) ? 1 : 0;
 }
@@ -4150,7 +4170,8 @@ long long zyl_int_text(long long n) {
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
     X(zyl_contract_warn) X(zyl_err_is) X(zyl_list_zyl_files) X(zyl_list_files) \
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
-    X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
+    X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) \
+    X(zyl_repl_global_get) X(zyl_repl_global_set) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
