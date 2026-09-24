@@ -88,8 +88,8 @@ it compiles and runs correctly; the notes say where it stops.
 - **REPL:** actors are compile-only (the interpreter reports
   `E_UNSUPPORTED_INTERPRETED`), and a definition entered at the prompt
   cannot refer to a `def` binding. See `docs/repl.md`.
-- **Language server:** does not run `unused_check` or type inference and
-  reports one diagnostic at a time.
+- **Language server:** does not run type inference or the capability
+  check, and reports one error at a time (warnings all together).
 
 Design, rationale and the original phased plan for the package system:
 `docs/package-management-design.md`.

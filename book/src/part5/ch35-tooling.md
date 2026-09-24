@@ -315,10 +315,11 @@ language-servers = ["zyl-lsp"]
 
 Diagnostics come from running the real checks — `duplicate_check`,
 `arity_check`, `mutability_check`, `exhaustiveness_check` and
-`secret_check` — in the order `stdlib/compiler/pipeline.zyl` runs them.
-Two of the pipeline's checks are not run in the editor: the package
-capability check (`capability_check`, spec §31.9) and `unused_check`
-(§35.8).
+`secret_check` — in the order `stdlib/compiler/pipeline.zyl` runs them,
+plus `unused_check`, whose unused-binding and shadowing warnings appear
+as Warning diagnostics. Each diagnostic sits at the line and column the
+compiler reports. The package capability check (`capability_check`, spec
+§31.9) is not run in the editor.
 
 ## 35.7 How It Works, and What That Costs
 
@@ -353,13 +354,9 @@ server never reports a type it did not actually compute.
 
 Each of these is a consequence of the design above, not an oversight:
 
-- **One diagnostic at a time.** Every compiler check stops at its first
+- **One error at a time.** Every compiler check stops at its first
   problem, exactly as a command-line build does. Fix it, save, see the
-  next.
-- **Unused-binding warnings do not appear.** `unused_check` is not run
-  by the server; it reports by writing warnings to stderr, which the
-  server does not capture. Surfacing them needs the check to return
-  warnings rather than print them.
+  next. Warnings are reported all together.
 - **Completion does not offer local variables.** The text scan has no
   scope to read at a cursor.
 - **Hover shows declared types, not inferred ones.** A parameter's

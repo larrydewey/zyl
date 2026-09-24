@@ -40,7 +40,7 @@
 - [x] Reject nested `feature-gate` (`E_PKG_FEATURE_NESTED`)
 - [x] Package index: `ZYL_INDEX` (git URL or local path), `zyl publish --index DIR`, `file://` archives; tested end to end (open: hosting the default index repository)
 - [x] Content-hash build cache (spec 31.4): `~/.zyl/cache/<key>`, `ZYL_NO_BUILD_CACHE=1` to bypass
-- [ ] LSP: return unused-binding warnings instead of printing them
+- [x] LSP: unused-binding and shadowing warnings are published as Warning diagnostics; every diagnostic is placed at its `--> line:col`
 - [ ] Bundle VS Code extension with problem matcher
 - [ ] REPL: let definitions at prompt capture `def` bindings
 

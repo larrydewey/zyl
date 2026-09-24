@@ -97,10 +97,74 @@
 ; this file, still reports at the top of the file -- the old behavior,
 ; now only the fallback.
 (defn diagnostic-from-panic (msg text)
+  (diagnostic-of msg text DSError))
+
+; A located message (`--> file:line:col`) is placed exactly there; the
+; editor shows its headline and help line, not the source excerpt.
+(defn diagnostic-of (msg text sev)
   (let code (bridge-error-code msg)
     (let name (bridge-backticked msg)
-      (let rng (bridge-range-for-name text name)
-        (Diag rng (Some DSError) None (bridge-code-field code) None (Some "zyl") msg None None)))))
+      (let rng (match (bridge-location msg)
+                 (Some lc (bridge-range-at lc (if (> (str-length name) 0) (str-length name) 1)))
+                 (None (bridge-range-for-name text name)))
+        (Diag rng (Some sev) None (bridge-code-field code) None (Some "zyl") (bridge-short-message msg) None None)))))
+
+; Every `warning[...]` block in captured warning text, as Warning diagnostics.
+(defn diagnostics-from-warnings (warnings text)
+  (bridge-warning-blocks warnings text 0 (str-length warnings)))
+
+(defn bridge-warning-blocks (w text i n)
+  (let s (bridge-index-of-str w "warning[" i n)
+    (if (< s 0)
+      Nil
+      (let e (bridge-index-of-str w "\nwarning[" (+ s 1) n)
+        (let stop (if (< e 0) n e)
+          (Cons (diagnostic-of (str-substring w s (- stop s)) text DSWarning)
+                (bridge-warning-blocks w text stop n)))))))
+
+(defn bridge-index-of-str (s needle i n)
+  (let k (str-length needle)
+    (if (> (+ i k) n)
+      -1
+      (if (> (ffi-call "zyl_cstr_eq" (str-substring s i k) needle 1000) 0)
+        i
+        (bridge-index-of-str s needle (+ i 1) n)))))
+
+; (line col), 1-based, from the `--> path:line:col` line of a located message.
+(defn bridge-location (msg)
+  (let n (str-length msg)
+    (let a (bridge-index-of-str msg "--> " 0 n)
+      (if (< a 0)
+        None
+        (let e (bridge-line-end msg (+ a 4) n)
+          (let loc (str-substring msg (+ a 4) (- e (+ a 4)))
+            (let c2 (bridge-last-colon loc (- (str-length loc) 1))
+              (let c1 (if (< c2 1) -1 (bridge-last-colon loc (- c2 1)))
+                (if (< c1 0)
+                  None
+                  (Some (Pair (ffi-call "zyl_cstr_to_int" (str-substring loc (+ c1 1) (- c2 (+ c1 1))) 1000)
+                              (ffi-call "zyl_cstr_to_int" (str-substring loc (+ c2 1) (- (str-length loc) (+ c2 1))) 1000))))))))))))
+
+(defn bridge-line-end (s i n)
+  (if (>= i n) n (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10) i (bridge-line-end s (+ i 1) n))))
+
+(defn bridge-last-colon (s i)
+  (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) i (bridge-last-colon s (- i 1)))))
+
+(defn bridge-range-at (lc len)
+  (match lc
+    (Pair l c (Rng (Pos (- l 1) (- c 1)) (Pos (- l 1) (+ (- c 1) len))))))
+
+; The headline without `PANIC: error[CODE]: `, plus the `= help:` line.
+(defn bridge-short-message (msg)
+  (let n (str-length msg)
+    (let first (str-substring msg 0 (bridge-line-end msg 0 n))
+      (let b (bridge-index-of-str first "]: " 0 (str-length first))
+        (let head (if (< b 0) first (str-substring first (+ b 3) (- (str-length first) (+ b 3))))
+          (let h (bridge-index-of-str msg "= help: " 0 n)
+            (if (< h 0)
+              head
+              (str-concat head (str-concat "\n" (str-substring msg (+ h 2) (- (bridge-line-end msg h n) (+ h 2))))))))))))
 
 (defn bridge-code-field (code)
   (if (> (str-length code) 0) (Some (Left code)) None))

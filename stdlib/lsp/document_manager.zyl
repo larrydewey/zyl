@@ -23,10 +23,6 @@
 ;     of spec v5.0 §31.9. It needs the grants and denials that
 ;     mr-resolve-program-full returns; dm-frontend calls the plain
 ;     mr-resolve-program, which returns only the resolved forms.
-;   - unused_check, because it reports by writing warnings to stderr
-;     rather than returning them, so an editor would never see them.
-;     Surfacing those warnings as diagnostics needs the check to return
-;     them rather than print them.
 ;   - type_inference's collect-definitions, for the reasons set out at
 ;     length in lsp/compiler_bridge.zyl's header.
 ;
@@ -56,6 +52,7 @@
 (use compiler/arity_check)
 (use compiler/exhaustiveness_check)
 (use compiler/secret_check)
+(use compiler/unused_check)
 (use compiler/sexp_balance)
 (use lsp/compiler_bridge)
 
@@ -162,10 +159,19 @@
 ; for every name it declares -- which is exactly when you want them.
 (defn dm-check-and-index (doc text exprs)
   (let tbl (st-build exprs)
-    (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
-      (match outcome
-        (Ok _ (DS doc (Document.version doc) tbl Nil))
-        (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) Nil)))))))
+    (let warns (dm-unused-warnings exprs text)
+      (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
+        (match outcome
+          (Ok _ (DS doc (Document.version doc) tbl warns))
+          (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) warns))))))))
+
+; unused_check's warnings, captured instead of printed, as Warning diagnostics.
+(defn dm-unused-warnings (exprs text)
+  (let _ (ffi-call "zyl_warn_capture" 1 1000)
+    (let _ (try (uc-check-program exprs) (catch _e 0))
+      (let w (ffi-call "zyl_warn_take" 1000)
+        (let _ (ffi-call "zyl_warn_capture" 0 1000)
+          (diagnostics-from-warnings w text))))))
 
 ; The checks compiler/pipeline.zyl's compile-run-checks runs, in the same
 ; order. See this file's header for the ones it leaves out and why.

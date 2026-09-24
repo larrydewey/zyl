@@ -343,6 +343,15 @@ def test_diagnostics():
     clean = diagnostics_for("(defn add (a b) (+ a b))\n(defn main () (print (add 1 2)))\n")
     check("diagnostics/clean", clean == [], f"a valid program should be clean, got {clean}")
 
+    # unused_check's warnings are published as Warning diagnostics, located.
+    warned = diagnostics_for("(defn main ()\n  (let unused 1\n    (begin (print 2) 0)))\n") or []
+    unused = [d for d in warned if d.get("code") == "W_UNUSED_VARIABLE"]
+    check("diagnostics/unused-warning", len(unused) == 1, f"expected one W_UNUSED_VARIABLE, got {warned}")
+    if unused:
+        check("diagnostics/unused-warning", unused[0].get("severity") == 2, "should be a warning")
+        check("diagnostics/unused-warning", unused[0]["range"]["start"]["line"] == 1,
+              f"should point at the let on line 2, got {unused[0]['range']}")
+
 
 # ---------------------------------------------------------------------------
 # Package forms (§31.2 visibility, §31.10 features)

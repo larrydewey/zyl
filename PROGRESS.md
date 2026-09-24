@@ -259,8 +259,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 - [x] A `zyl doc` generator over the stdlib's doc-comment convention (`;|` takes precedence).
 - [x] A package index (`ZYL_INDEX`, `zyl publish --index`), a build cache keyed by content hash, and nested `feature-gate` rejected.
-- [ ] Unused-binding warnings in the language server (the check must
-      return them instead of printing them).
+- [x] Unused-binding warnings in the language server.
 - [ ] Bundle the VS Code extension; add a problem matcher.
 - [ ] REPL: let a definition entered at the prompt capture a `def`
       binding.
@@ -368,7 +367,17 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — build cache
+## Session (2026-09-24, latest) — LSP warnings and located diagnostics
+
+The language server runs `unused_check` with warning capture on
+(`dm-unused-warnings`) and publishes each `warning[...]` block as a
+Warning diagnostic (`diagnostics-from-warnings`). Every diagnostic now
+takes its range from the message's `--> file:line:col` line when it has
+one (`bridge-location`), instead of searching the text for the first
+backticked name, and shows the headline and help line rather than the
+rendered excerpt (`bridge-short-message`). LSP test extended.
+
+## Session (2026-09-24, earlier) — build cache
 
 `drv-compile-file` (package builds) now checks `~/.zyl/cache/<key>`, the
 key a BLAKE3 over the compiler hash, contract profile, lock graph hash and
