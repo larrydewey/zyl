@@ -30,7 +30,7 @@ For a package build, "same program" means the same resolved graph: same `zyl.pkg
 | Claim | Status |
 |-------|--------|
 | Same source → same assembly | **holds**: `.s` output is byte-identical across runs, and independent of the working directory and the `-o` path |
-| Same source → same binary | **does not hold**: two links differ in a few bytes (see §26.10) |
+| Same source → same binary | **holds** for the same toolchain: two builds, from any directory to any `-o` path, are byte-identical (see §26.10) |
 | Same inputs → same program output, single-threaded | holds, unless the program reads the environment through the FFI (§26.2) |
 | Same inputs → same actor output | **does not hold**: actors are OS threads (§26.2) |
 | Compiler self-application is a fixed point | **holds**: checked by `./boot.sh` (§26.7) |
@@ -323,17 +323,21 @@ cmp a.s b.s        # identical
 
 The assembly depends on the source file's base name, which becomes the module path in every symbol, but not on the directory or the output path.
 
-### Binary comparison (does not hold yet)
+### Binary comparison
 
 ```bash
 zyl prog.zyl -o a
 zyl prog.zyl -o b
-cmp a b            # differ: a few bytes in the symbol table
-strip -o a.s1 a; strip -o b.s1 b
-cmp a.s1 b.s1      # identical
+cmp a b            # identical
 ```
 
-The emitted assembly has no `.file` directive, so `cc` records the name of its random temporary object file (`/tmp/ccXXXXXX.o`) in the symbol table. Stripped binaries are identical. For the same reason, a freshly rebuilt `build/boot/stage2.bin` differs from the committed one while `stage2.s` is unchanged.
+The emitted assembly starts with `.file "prog.zyl"` (the source's basename,
+never its full path). Without it the assembler records no file symbol and
+the linker substitutes the name of `cc`'s random temporary object file
+(`/tmp/ccXXXXXX.o`), which made every link differ by those bytes.
+`tests/scripts/deterministic-link.sh` checks this, and a rebuilt
+`build/boot/stage2.bin` is identical to the committed one. The binary
+still depends on the C compiler and C library that link it.
 
 ### Boot verification
 
@@ -345,7 +349,6 @@ The emitted assembly has no `.file` directive, so `cc` records the name of its r
 
 | Source | Status |
 |--------|--------|
-| Binary symbol table | contains the C compiler's temporary file name; differs per link |
 | Actor output interleaving | varies per run (one pthread per actor) |
 | Heap addresses | vary per run; printing a pointer is non-deterministic |
 | Clock, PID, environment | reachable through `ffi-call` |

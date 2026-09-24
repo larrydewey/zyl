@@ -187,12 +187,12 @@
 ; sink.
 ; Returns: String (assembly)
 (defn compile-to-asm (arena srcbuf srcpath)
-  (codegen-fns arena (compile-to-fns arena srcbuf srcpath)))
+  (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath))
 
-(defn codegen-fns (arena region-fns)
+(defn codegen-fns (arena region-fns srcpath)
   (begin
     (dbg-log "codegen\n")
-    (let st (cg-program (cg-new arena) region-fns)
+    (let st (cg-program-file (cg-new arena) region-fns srcpath)
       (let buf (cg-buffer st)
         (let blen (alloc-strlen buf)
           (if (> blen 66060288)

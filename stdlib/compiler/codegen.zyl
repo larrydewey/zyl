@@ -1557,6 +1557,49 @@
   (let st0 (cg-collect-fnnames st fns)
     (cg-program-run st0 fns)))
 
+;; Like cg-program, but first names the assembly's source with a fixed
+;; `.file "<basename>"` directive. Without one, the assembler records no
+;; FILE symbol and the linker substitutes the name of the object file
+;; `cc` compiled into, which is a fresh random /tmp/ccXXXXXX.o on every
+;; build: two builds of the same source differed by those bytes in the
+;; symbol table. The basename (never the full path) keeps the output
+;; independent of where the checkout lives.
+(defn cg-program-file (st fns srcpath)
+  (let st1 (cg-emit st ".file \"")
+    (let st2 (cg-emit st1 (cg-file-name srcpath))
+      (cg-program (cg-emit-line st2 "\"") fns))))
+
+;; Basename of `path`, or "main.zyl" when it is empty or holds a byte that
+;; would need escaping inside a GAS string (a quote, a backslash, a
+;; control character).
+(defn cg-file-name (path)
+  (let len (ffi-call "zyl_cstr_len" path 1000)
+    (let start (cg-after-last-slash path 0 0 len)
+      (if (>= start len)
+        "main.zyl"
+        (if (> (cg-file-name-bad path start len) 0)
+          "main.zyl"
+          (str-substring path start (- len start)))))))
+
+(defn cg-after-last-slash (path i acc len)
+  (if (>= i len)
+    acc
+    (if (= (ffi-call "zyl_cstr_byte_at" path i 1000) 47)
+      (cg-after-last-slash path (+ i 1) (+ i 1) len)
+      (cg-after-last-slash path (+ i 1) acc len))))
+
+(defn cg-file-name-bad (path i len)
+  (if (>= i len)
+    0
+    (let c (ffi-call "zyl_cstr_byte_at" path i 1000)
+      (if (< c 32)
+        1
+        (if (= c 34)
+          1
+          (if (= c 92)
+            1
+            (cg-file-name-bad path (+ i 1) len)))))))
+
 (defn cg-program-run (st fns)
   (let st1 (cg-header st)
     (let st2 (cg-functions st1 fns)
