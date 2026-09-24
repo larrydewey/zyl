@@ -1,27 +1,59 @@
 ; === Zyl Standard Library — Compiler Macro Expansion ===
 ; Module: compiler/macro_expand
 ;
-; expr_inner.zyl recognizes `(macro Name (params) body)` as a distinct
-; node (EMacroDef) but nothing in the self-hosted pipeline ever EXPANDED
-; a call to a defined macro — `defmacro` (the spelling the test corpus
-; actually uses; parsed identically to `macro`, see the dispatch entry
-; below) fell through completely unrecognized as a plain function-call
-; expr, and even a real `(macro ...)` definition's call sites just
-; lowered as an ordinary call to a symbol nothing ever emits, linking
-; with an undefined reference.
+; Implements spec §19. Every top-level `defmacro` (or its synonym
+; `macro`) is collected into a table before anything expands (§19.5),
+; the definitions are removed from the program, and the whole program is
+; rewritten, replacing each call to a known macro with an instance of its
+; body (the template):
 ;
-; This module collects every top-level EMacroDef into a table (name ->
-; formal params + body template) and rewrites the whole program,
-; replacing each call to a known macro name with its body — substituting
-; every bare-identifier reference to a formal parameter with the
-; UNEVALUATED argument expression from the call site (true macro
-; semantics: arguments are spliced in as source, not evaluated first).
-; A macro whose body calls another macro (e.g. `when` expanding to
-; `unless`) expands fully: the substituted body is itself re-walked, so
-; the inner call is recognized and expanded too.
+; - Arguments are expanded first, then spliced into the template
+;   UNEVALUATED, in place of the parameter they are bound to (innermost
+;   first, §19.3). The instantiated template is walked again, so a macro
+;   whose template calls another macro (`when` expanding to `unless`)
+;   expands fully. A parameter is substituted wherever the template
+;   names it: in value position, as a call head, as a `let`/`let-mut`/
+;   `fn`/`for`/`try`/`with-resource`/`match` binder, as a `set!` target,
+;   and as the name of a `defn`, `def`, `deftype` or `impl` the template
+;   defines. In a binder or target position the argument must be a plain
+;   identifier.
+;
+; - Hygiene (§19.2). Every variable the TEMPLATE binds — `let`,
+;   `let-mut`, `fn`/`defn` parameters, `for`, `try`, `with-resource`
+;   and `match` binders — is renamed to a fresh `<name>__hyg<N>`, so a
+;   template binder can neither capture an argument's variables nor be
+;   seen by them. N comes from a counter threaded through the walk in
+;   source order: never an address, so the same program always expands
+;   to the same names. Arguments are the caller's code and keep their
+;   names. A template's free names resolve where the macro is DEFINED:
+;   module resolution has already qualified every reference to a
+;   top-level definition to its canonical key, so the only names a call
+;   site could still capture are its own local variables. A template
+;   that names a variable which is local at the call site and unbound at
+;   the definition is rejected (`E_UNBOUND_VARIABLE`) instead of
+;   silently capturing it.
+;
+; - Termination (§19.4, §28). A macro reached again while its own
+;   expansion is still in progress can never finish — templates are not
+;   evaluated, so no condition can stop the recursion — and is
+;   `E_MACRO_NON_TERMINATION`, as is any expansion nested deeper than
+;   me-max-depth.
+;
+; - Other checks: a call with the wrong number of arguments is
+;   `E_ARITY_MISMATCH`; two macros with one name, or a macro and a
+;   function with one name, are `E_DUPLICATE_DEFINITION`; a `defmacro`
+;   anywhere but top level (where its template could name the run-time
+;   locals around it) is `E_MACRO_ILLEGAL_ACCESS`.
+;
+; The walk covers every ExprInner shape, so a macro call expands wherever
+; it is written.
 
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/package)
+(use compiler/qualify)
+(use compiler/error_report)
+(use core/list)
 
 (deftype MacroTable
   (MEntry String (List String) Expr MacroTable)
@@ -42,6 +74,22 @@
     (MNil (Expr (EAtom ANil)))
     (MEntry n _ body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
 
+; Deeper than any real chain of macros calling macros; a recursive macro
+; is caught by the in-progress check long before this.
+(defn me-max-depth () 256)
+
+; --- diagnostics -------------------------------------------------------------
+
+(defn me-fail (code msg site help)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (let text (err-at code msg fid off help)
+        (ffi-call "zyl_panic" text 1000)))))
+
+(defn me-quote (n)
+  (let a (str-concat "`" (err-name n))
+    (str-concat a "`")))
+
 ; --- collect top-level macro defs --------------------------------------------
 
 (defn me-collect (forms mt)
@@ -50,27 +98,78 @@
     (Cons e rest
       (match (Expr.inner e)
         (EMacroDef name params body
-          (me-collect rest (MEntry name (me-param-names params) body mt)))
+          (let _ (me-check-dup-macro mt name e)
+            (me-collect rest (MEntry name (me-param-names params) body mt))))
         (_ (me-collect rest mt))))))
+
+(defn me-check-dup-macro (mt name site)
+  (if (> (mt-has mt name) 0)
+    (let m1 (str-concat "macro " (me-quote name))
+      (let msg (str-concat m1 " is defined more than once in this program")
+        (me-fail "E_DUPLICATE_DEFINITION" msg site "rename one of them, or delete the repeated definition")))
+    0))
+
+; A function and a macro sharing a name in one source file: every call
+; would silently mean the macro. Across files this is deliberate and
+; allowed: module resolution gives a macro named like an imported function
+; (a user `unless` over core/core's) that function's key, and the macro
+; then takes over its calls.
+(defn me-check-clash (forms mt)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (let _ (me-check-clash-one e mt)
+        (me-check-clash rest mt)))))
+
+(defn me-check-clash-one (e mt)
+  (match (Expr.inner e)
+    (EDefn name _ _
+      (if (> (me-same-file-macro mt name e) 0)
+        (let m1 (str-concat "function " (me-quote name))
+          (let msg (str-concat m1 " has the same name as a macro")
+            (me-fail "E_DUPLICATE_DEFINITION" msg e "rename the function or the macro")))
+        0))
+    (_ 0)))
+
+(defn me-same-file-macro (mt name e)
+  (if (> (mt-has mt name) 0)
+    (let mf (ffi-call "zyl_span_file" (mt-body mt name) 1000)
+      (let df (ffi-call "zyl_span_file" e 1000)
+        (if (= mf df) 1 0)))
+    0))
 
 (defn me-param-names (params)
   (match params
     (Nil Nil)
-    (Cons p rest (Cons (me-expr-ident p "") (me-param-names rest)))))
+    (Cons p rest (Cons (me-param-name p) (me-param-names rest)))))
 
-(defn me-expr-ident (e fb)
-  (match (Expr.inner e)
-    (EAtom atom (match atom (AIdent n n) (_ fb)))
-    (_ fb)))
+(defn me-param-name (p)
+  (match (Expr.inner p)
+    (EAtom atom
+      (match atom
+        (AIdent n n)
+        (_ (me-bad-param p))))
+    (_ (me-bad-param p))))
 
-; --- substitution environment: formal param name -> actual arg Expr --------
+(defn me-bad-param (p)
+  (let _ (me-fail "E_MALFORMED_PARAMETER" "a macro parameter must be a plain identifier" p "write the parameter as a name, e.g. (defmacro m (x) ...)")
+    ""))
 
-(deftype SEnv (SBind String Expr SEnv) (SNil))
+; --- substitution environment ------------------------------------------------
+; SBind: a macro parameter and the argument expression bound to it.
+; SRen:  a template binder and the fresh name it was renamed to.
+; The innermost entry for a name wins, so a template binder that reuses a
+; parameter's name shadows the parameter, exactly as it would in code.
 
-(defn senv-lookup (env name)
+(deftype SEnv (SBind String Expr SEnv) (SRen String String SEnv) (SNil))
+
+(deftype SHit (SHParam Expr) (SHRen String) (SHNone))
+
+(defn senv-find (env name)
   (match env
-    (SNil None)
-    (SBind n e rest (if (> (str-eq n name) 0) (Some e) (senv-lookup rest name)))))
+    (SNil SHNone)
+    (SBind n e rest (if (> (str-eq n name) 0) (SHParam e) (senv-find rest name)))
+    (SRen n nm rest (if (> (str-eq n name) 0) (SHRen nm) (senv-find rest name)))))
 
 (defn senv-from-lists (params args)
   (match params
@@ -80,66 +179,658 @@
         (Nil SNil)
         (Cons a arest (SBind p a (senv-from-lists prest arest)))))))
 
-; --- rewrite: substitute params + expand macro calls, recursively ----------
+; --- walk context --------------------------------------------------------------
+; senv, the macro table, the macros whose expansion is in progress
+; (innermost first; empty outside any template), and the local variables
+; bound at the call site (tracked only outside templates, since template
+; binders are renamed and cannot capture anything).
 
-(defn me-rewrite-list (forms senv mt)
-  (me-rewrite-list-acc forms senv mt Nil))
+(deftype MeCx (MeCx SEnv MacroTable (List String) (List String)))
 
-(defn me-rewrite-list-acc (forms senv mt acc)
+(defn cx-senv (cx) (match cx (MeCx s _ _ _ s)))
+(defn cx-mt (cx) (match cx (MeCx _ m _ _ m)))
+(defn cx-stack (cx) (match cx (MeCx _ _ k _ k)))
+(defn cx-locals (cx) (match cx (MeCx _ _ _ l l)))
+
+(defn cx-in-template (cx)
+  (match (cx-stack cx)
+    (Nil 0)
+    (Cons _ _ 1)))
+
+(defn cx-add-local (cx name)
+  (match cx (MeCx s m k l (MeCx s m k (Cons name l)))))
+
+(defn cx-add-ren (cx name nm)
+  (match cx (MeCx s m k l (MeCx (SRen name nm s) m k l))))
+
+(defn me-in-list (name xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (if (> (str-eq h name) 0) 1 (me-in-list name t)))))
+
+; --- results: every rewrite threads the fresh-name counter ------------------
+
+(deftype MeR (MeR Expr Int))
+(deftype MeRL (MeRL (List Expr) Int))
+(deftype MeB (MeB String MeCx Int))
+(deftype MeBP (MeBP (List Param) MeCx Int))
+(deftype MeFB (MeFB (List (Pair String (Option Expr))) MeCx Int))
+(deftype MeArms (MeArms (List MatchArm) Int))
+(deftype MeP (MeP Expr MeCx Int))
+(deftype MePL (MePL (List Expr) MeCx Int))
+
+(defn me-nth (xs i)
+  (match xs
+    (Nil (Expr (EAtom ANil)))
+    (Cons h t (if (= i 0) h (me-nth t (- i 1))))))
+
+(defn me-tail (xs)
+  (match xs
+    (Nil Nil)
+    (Cons _ t t)))
+
+(defn me-spanned (out site)
+  (let _ (ffi-call "zyl_span_copy" out site 1000)
+    out))
+
+; --- binders -------------------------------------------------------------------
+
+; `_` discards and compiler-internal `__` names are never renamed.
+(defn me-bind-fixed (name)
+  (if (> (str-eq name "_") 0)
+    1
+    (if (< (str-length name) 2)
+      0
+      (if (> (str-eq (str-substring name 0 2) "__") 0) 1 0))))
+
+(defn me-bind (site name cx n)
+  (if (> (me-bind-fixed name) 0)
+    (MeB name cx n)
+    (if (> (cx-in-template cx) 0)
+      (me-bind-template site name cx n)
+      (MeB name (cx-add-local cx name) n))))
+
+(defn me-bind-template (site name cx n)
+  (match (senv-find (cx-senv cx) name)
+    (SHParam a (MeB (me-arg-ident a site name) cx n))
+    (SHRen _ (me-fresh name cx n))
+    (SHNone (me-fresh name cx n))))
+
+(defn me-fresh (name cx n)
+  (let suffix (str-concat "__hyg" (int-to-str n))
+    (let nm (str-concat name suffix)
+      (MeB nm (cx-add-ren cx name nm) (+ n 1)))))
+
+; A parameter used where a NAME is needed (binder, set! target, defined
+; name): its argument must be an identifier, which becomes that name.
+(defn me-arg-ident (a site pname)
+  (match (Expr.inner a)
+    (EAtom atom
+      (match atom
+        (AIdent x x)
+        (_ (me-bad-arg-ident site pname))))
+    (_ (me-bad-arg-ident site pname))))
+
+(defn me-bad-arg-ident (site pname)
+  (let m1 (str-concat "macro parameter " (me-quote pname))
+    (let msg (str-concat m1 " is used as a name in the template, so its argument must be a plain identifier")
+      (let _ (me-fail "E_MALFORMED_PARAMETER" msg site "pass an identifier for this argument")
+        pname))))
+
+; A name the template defines or assigns rather than binds.
+(defn me-name-subst (site name cx)
+  (match (senv-find (cx-senv cx) name)
+    (SHParam a (me-arg-ident a site name))
+    (SHRen nm nm)
+    (SHNone name)))
+
+(defn me-set-target (site name cx)
+  (match (senv-find (cx-senv cx) name)
+    (SHParam a (me-arg-ident a site name))
+    (SHRen nm nm)
+    (SHNone (me-check-free site name cx))))
+
+; A free template name that is a local variable at the call site would be
+; captured by it; at the definition site (top level) it names nothing.
+(defn me-check-free (site name cx)
+  (if (> (cx-in-template cx) 0)
+    (if (> (me-in-list name (cx-locals cx)) 0)
+      (me-capture-fail site name cx)
+      name)
+    name))
+
+(defn me-capture-fail (site name cx)
+  (let mname (me-nth-str (cx-stack cx))
+    (let m1 (str-concat "macro " (me-quote mname))
+      (let m2 (str-concat m1 " refers to ")
+        (let m3 (str-concat m2 (me-quote name))
+          (let msg (str-concat m3 ", which is not bound where the macro is defined; the local variable of that name at this call site cannot be captured (macros are hygienic)")
+            (let _ (me-fail "E_UNBOUND_VARIABLE" msg site "pass the value to the macro as an argument")
+              name)))))))
+
+(defn me-nth-str (xs)
+  (match xs
+    (Nil "")
+    (Cons h _ h)))
+
+(defn me-bind-params (site params cx n)
+  (me-bind-params-acc site params cx n Nil))
+
+(defn me-bind-params-acc (site params cx n acc)
+  (match params
+    (Nil (MeBP (list-reverse acc) cx n))
+    (Cons p rest
+      (match p
+        (P pname ty
+          (match (me-bind site pname cx n)
+            (MeB nm cx2 n2 (me-bind-params-acc site rest cx2 n2 (Cons (P nm ty) acc)))))))))
+
+; --- rewrite -------------------------------------------------------------------
+
+(defn me-rewrite-list (forms cx n)
+  (me-rewrite-list-acc forms cx n Nil))
+
+(defn me-rewrite-list-acc (forms cx n acc)
   (match forms
-    (Nil (list-reverse acc))
-    (Cons e rest (me-rewrite-list-acc rest senv mt (Cons (me-rewrite e senv mt) acc)))))
+    (Nil (MeRL (list-reverse acc) n))
+    (Cons e rest
+      (match (me-rewrite e cx n)
+        (MeR e2 n2 (me-rewrite-list-acc rest cx n2 (Cons e2 acc)))))))
 
 ; Macro expansion rebuilds every node it walks, so the rewritten node keeps
-; the original's position -- see qf-form for the same note.
-(defn me-rewrite (e senv mt)
-  (let out (me-rewrite-node e senv mt)
-    (let _ (ffi-call "zyl_span_copy" out e 1000)
-      out)))
-
-(defn me-rewrite-node (e senv mt)
+; the original's position -- see qf-form for the same note. An identifier
+; replaced by an argument is the exception: the argument keeps its OWN
+; position (it is shared by every use of the parameter).
+(defn me-rewrite (e cx n)
   (match (Expr.inner e)
-    (EAtom atom (me-rewrite-atom e atom senv))
-    (ECall op args (Expr (ECall (me-rewrite op senv mt) (me-rewrite-list args senv mt))))
-    (EApply fname args (me-rewrite-apply fname args senv mt))
-    (ELet name val body (Expr (ELet name (me-rewrite val senv mt) (me-rewrite body senv mt))))
-    (ELetMut name val body (Expr (ELetMut name (me-rewrite val senv mt) (me-rewrite body senv mt))))
-    (EIf c t eb (Expr (EIf (me-rewrite c senv mt) (me-rewrite t senv mt) (me-rewrite eb senv mt))))
-    (EWhile c body (Expr (EWhile (me-rewrite c senv mt) (me-rewrite body senv mt))))
-    (ESetBang name val (Expr (ESetBang name (me-rewrite val senv mt))))
-    (EBegin exprs (Expr (EBegin (me-rewrite-list exprs senv mt))))
-    (EPrint exprs (Expr (EPrint (me-rewrite-list exprs senv mt))))
-    (EAssertEqual l r (Expr (EAssertEqual (me-rewrite l senv mt) (me-rewrite r senv mt))))
-    (EAssertTrue ex msg (Expr (EAssertTrue (me-rewrite ex senv mt) msg)))
-    (EAssertFalse ex msg (Expr (EAssertFalse (me-rewrite ex senv mt) msg)))
-    (EStructGet se field (Expr (EStructGet (me-rewrite se senv mt) field)))
-    (EDefn name params body (Expr (EDefn name params (me-rewrite body senv mt))))
-    (ETestDecl name body meta (Expr (ETestDecl name (me-rewrite body senv mt) meta)))
-    (_ e)))
+    (EAtom atom (me-rewrite-atom e atom cx n))
+    (_ (me-rewrite-spanned e cx n))))
 
-(defn me-rewrite-atom (e atom senv)
+(defn me-rewrite-spanned (e cx n)
+  (match (me-rewrite-node e cx n)
+    (MeR out n2 (MeR (me-spanned out e) n2))))
+
+(defn me-rewrite-atom (e atom cx n)
   (match atom
-    (AIdent name (me-subst-ident e name senv))
+    (AIdent name (MeR (me-ref e name cx) n))
+    (_ (MeR e n))))
+
+(defn me-ref (e name cx)
+  (match (senv-find (cx-senv cx) name)
+    (SHParam a a)
+    (SHRen nm (me-spanned (Expr (EAtom (AIdent nm))) e))
+    (SHNone (let _ (me-check-free e name cx) e))))
+
+; Rewrite a fixed list of children, then rebuild with me-rebuild.
+(defn me-kids (e kids cx n)
+  (match (me-rewrite-list kids cx n)
+    (MeRL ks n2 (MeR (me-rebuild (Expr.inner e) ks) n2))))
+
+(defn me-k1 (e a cx n) (me-kids e (Cons a Nil) cx n))
+(defn me-k2 (e a b cx n) (me-kids e (Cons a (Cons b Nil)) cx n))
+(defn me-k3 (e a b c cx n) (me-kids e (Cons a (Cons b (Cons c Nil))) cx n))
+(defn me-k4 (e a b c d cx n) (me-kids e (Cons a (Cons b (Cons c (Cons d Nil)))) cx n))
+
+; The same node with its Expr children replaced, in order, by `ks`.
+(defn me-rebuild (inner ks)
+  (let k0 (me-nth ks 0)
+    (let k1 (me-nth ks 1)
+      (let k2 (me-nth ks 2)
+        (let k3 (me-nth ks 3)
+          (Expr (me-rebuild-inner inner ks k0 k1 k2 k3)))))))
+
+(defn me-rebuild-inner (inner ks k0 k1 k2 k3)
+  (match inner
+    (ECall _ _ (ECall k0 (me-tail ks)))
+    (EIf _ _ _ (EIf k0 k1 k2))
+    (ESpawn _ (ESpawn k0))
+    (ESend _ _ (ESend k0 k1))
+    (ESendClosure _ _ caps (ESendClosure k0 k1 caps))
+    (EFfiCall name _ t (EFfiCall name ks t))
+    (EFfiPin _ (EFfiPin k0))
+    (EFfiUnpin _ (EFfiUnpin k0))
+    (EAssert _ msg (EAssert k0 msg))
+    (EUnwrap _ (EUnwrap k0))
+    (EWhile _ _ (EWhile k0 k1))
+    (EBegin _ (EBegin ks))
+    (EStructGet _ field (EStructGet k0 field))
+    (EMakeStruct name _ (EMakeStruct name ks))
+    (EMakeVariant t v _ (EMakeVariant t v ks))
+    (EPrint _ (EPrint ks))
+    (EExit _ (EExit k0))
+    (EClose _ (EClose k0))
+    (EFileOpen _ _ (EFileOpen k0 k1))
+    (EFileRead _ _ (EFileRead k0 k1))
+    (EFileWrite _ _ (EFileWrite k0 k1))
+    (EFileClose _ (EFileClose k0))
+    (EBufAppend _ _ (EBufAppend k0 k1))
+    (EAliasDecl name _ (EAliasDecl name k0))
+    (EAssertEqual _ _ (EAssertEqual k0 k1))
+    (EAssertFail _ msg (EAssertFail k0 msg))
+    (EAssertTrue _ msg (EAssertTrue k0 msg))
+    (EAssertFalse _ msg (EAssertFalse k0 msg))
+    (ESetup _ (ESetup ks))
+    (ETeardown _ (ETeardown ks))
+    (ETestCompile _ o (ETestCompile k0 o))
+    (EUnknown name _ (EUnknown name ks))
+    (ELoadByte en _ _ (ELoadByte en k0 k1))
+    (ELoadByteSigned en _ _ (ELoadByteSigned en k0 k1))
+    (EStoreByte en _ _ _ (EStoreByte en k0 k1 k2))
+    (EStoreByteSigned en _ _ _ (EStoreByteSigned en k0 k1 k2))
+    (EByteSlice _ _ _ (EByteSlice k0 k1 k2))
+    (EByteSliceSub _ _ _ (EByteSliceSub k0 k1 k2))
+    (EByteBufAppend _ _ (EByteBufAppend k0 k1))
+    (EByteBufLen _ (EByteBufLen k0))
+    (EByteBufCap _ (EByteBufCap k0))
+    (EByteBufPtr _ (EByteBufPtr k0))
+    (EAlignCheck _ al (EAlignCheck k0 al))
+    (EAtomicLoad _ _ (EAtomicLoad k0 k1))
+    (EAtomicStore _ _ _ (EAtomicStore k0 k1 k2))
+    (EAtomicAdd _ _ _ (EAtomicAdd k0 k1 k2))
+    (EAtomicSub _ _ _ (EAtomicSub k0 k1 k2))
+    (EAtomicCAS _ _ _ _ (EAtomicCAS k0 k1 k2 k3))
+    (EAtomicFetchAdd _ _ _ (EAtomicFetchAdd k0 k1 k2))
+    (EAtomicMax _ _ _ (EAtomicMax k0 k1 k2))
+    (EAtomicMin _ _ _ (EAtomicMin k0 k1 k2))
+    (_ inner)))
+
+(defn me-rewrite-node (e cx n)
+  (match (Expr.inner e)
+    (EAtom _ (MeR e n))
+    (ECall op args (me-kids e (Cons op args) cx n))
+    (EDef name val (me-def e name val cx n))
+    (EDefn name params body (me-defn e name params body cx n))
+    (ELet name val body (me-let e 0 name val body cx n))
+    (ELetMut name val body (me-let e 1 name val body cx n))
+    (EIf c t eb (me-k3 e c t eb cx n))
+    (ETryCatch body name handler (me-try e body name handler cx n))
+    (EMatch scrut arms (me-match e scrut arms cx n))
+    (ESpawn a (me-k1 e a cx n))
+    (ESend a b (me-k2 e a b cx n))
+    (ESendClosure a b _ (me-k2 e a b cx n))
+    (EFfiCall _ args _ (me-kids e args cx n))
+    (EFfiPin a (me-k1 e a cx n))
+    (EFfiUnpin a (me-k1 e a cx n))
+    (EAssert a _ (me-k1 e a cx n))
+    (EError _ (MeR e n))
+    (EUnwrap a (me-k1 e a cx n))
+    (EWhile c body (me-k2 e c body cx n))
+    (EFor bindings c body (me-for e bindings c body cx n))
+    (ECond clauses (me-cond clauses cx n))
+    (EBegin exprs (me-kids e exprs cx n))
+    (ELambda name params body (me-lambda e 0 name params body cx n))
+    (EFn name params body (me-lambda e 1 name params body cx n))
+    (EStructGet se _ (me-k1 e se cx n))
+    (EMakeStruct _ args (me-kids e args cx n))
+    (EMakeVariant _ _ args (me-kids e args cx n))
+    (ESetBang name val (me-set e name val cx n))
+    (EModuleDecl _ (MeR e n))
+    (EUseModule _ _ _ (MeR e n))
+    (EExport _ (MeR e n))
+    (EPrint exprs (me-kids e exprs cx n))
+    (EReadLine (MeR e n))
+    (EExit a (me-k1 e a cx n))
+    (EClose a (me-k1 e a cx n))
+    (EFileOpen a b (me-k2 e a b cx n))
+    (EFileRead a b (me-k2 e a b cx n))
+    (EFileWrite a b (me-k2 e a b cx n))
+    (EFileClose a (me-k1 e a cx n))
+    (EBufAppend a b (me-k2 e a b cx n))
+    (EWithResource name init body (me-with e name init body cx n))
+    (EDeftype name variants tps der (me-deftype e name variants tps der cx n))
+    (ETraitDecl _ _ _ (MeR e n))
+    (EImplBlock _ _ bodies (me-impl e bodies cx n))
+    (EStructDef _ _ (MeR e n))
+    (EStructDefPlus _ _ (MeR e n))
+    (EAliasDecl _ a (me-k1 e a cx n))
+    (EDerive _ _ (MeR e n))
+    (ETestSuite name tests meta (me-suite name tests meta cx n))
+    (ETestDecl name body meta (me-test name body meta cx n))
+    (EAssertEqual l r (me-k2 e l r cx n))
+    (EAssertFail a _ (me-k1 e a cx n))
+    (EAssertTrue a _ (me-k1 e a cx n))
+    (EAssertFalse a _ (me-k1 e a cx n))
+    (ETestProperty name g body (me-property name g body cx n))
+    (ESetup exprs (me-kids e exprs cx n))
+    (ETeardown exprs (me-kids e exprs cx n))
+    (ERunTests _ (MeR e n))
+    (ETestCompile a _ (me-k1 e a cx n))
+    (EApply fname args (me-apply e fname args cx n))
+    (EMacroDef name _ _ (me-nested-macro e name))
+    (EUnknown _ args (me-kids e args cx n))
+    (EByteLit _ (MeR e n))
+    (ELoadByte _ a b (me-k2 e a b cx n))
+    (ELoadByteSigned _ a b (me-k2 e a b cx n))
+    (EStoreByte _ a b c (me-k3 e a b c cx n))
+    (EStoreByteSigned _ a b c (me-k3 e a b c cx n))
+    (EByteSlice a b c (me-k3 e a b c cx n))
+    (EByteSliceSub a b c (me-k3 e a b c cx n))
+    (EByteBuf _ _ (MeR e n))
+    (EByteBufAppend a b (me-k2 e a b cx n))
+    (EByteBufLen a (me-k1 e a cx n))
+    (EByteBufCap a (me-k1 e a cx n))
+    (EByteBufPtr a (me-k1 e a cx n))
+    (EAlignCheck a _ (me-k1 e a cx n))
+    (EAtomicLoad a b (me-k2 e a b cx n))
+    (EAtomicStore a b c (me-k3 e a b c cx n))
+    (EAtomicAdd a b c (me-k3 e a b c cx n))
+    (EAtomicSub a b c (me-k3 e a b c cx n))
+    (EAtomicCAS a b c d (me-k4 e a b c d cx n))
+    (EAtomicFetchAdd a b c (me-k3 e a b c cx n))
+    (EAtomicMax a b c (me-k3 e a b c cx n))
+    (EAtomicMin a b c (me-k3 e a b c cx n))))
+
+(defn me-nested-macro (e name)
+  (let m1 (str-concat "macro " (me-quote name))
+    (let msg (str-concat m1 " is defined inside another form, where its template could name run-time values")
+      (let _ (me-fail "E_MACRO_ILLEGAL_ACCESS" msg e "define macros at top level")
+        (MeR e 0)))))
+
+; --- binding forms -------------------------------------------------------------
+
+(defn me-let (e mutp name val body cx n)
+  (match (me-rewrite val cx n)
+    (MeR v2 n2
+      (match (me-bind e name cx n2)
+        (MeB nm cx2 n3
+          (match (me-rewrite body cx2 n3)
+            (MeR b2 n4 (MeR (me-mk-let mutp nm v2 b2) n4))))))))
+
+(defn me-mk-let (mutp nm v b)
+  (if (= mutp 1)
+    (Expr (ELetMut nm v b))
+    (Expr (ELet nm v b))))
+
+(defn me-set (e name val cx n)
+  (let nm (me-set-target e name cx)
+    (match (me-rewrite val cx n)
+      (MeR v2 n2 (MeR (Expr (ESetBang nm v2)) n2)))))
+
+(defn me-def (e name val cx n)
+  (let nm (me-name-subst e name cx)
+    (match (me-rewrite val cx n)
+      (MeR v2 n2 (MeR (Expr (EDef nm v2)) n2)))))
+
+(defn me-defn (e name params body cx n)
+  (let nm (me-name-subst e name cx)
+    (match (me-bind-params e params cx n)
+      (MeBP ps cx2 n2
+        (match (me-rewrite body cx2 n2)
+          (MeR b2 n3 (MeR (Expr (EDefn nm ps b2)) n3)))))))
+
+(defn me-lambda (e fnp name params body cx n)
+  (match (me-bind-params e params cx n)
+    (MeBP ps cx2 n2
+      (match (me-rewrite body cx2 n2)
+        (MeR b2 n3 (MeR (me-mk-lambda fnp name ps b2) n3))))))
+
+(defn me-mk-lambda (fnp name ps b)
+  (if (= fnp 1)
+    (Expr (EFn name ps b))
+    (Expr (ELambda name ps b))))
+
+(defn me-try (e body name handler cx n)
+  (match (me-rewrite body cx n)
+    (MeR b2 n2
+      (match (me-bind e name cx n2)
+        (MeB nm cx2 n3
+          (match (me-rewrite handler cx2 n3)
+            (MeR h2 n4 (MeR (Expr (ETryCatch b2 nm h2)) n4))))))))
+
+(defn me-with (e name init body cx n)
+  (match (me-rewrite init cx n)
+    (MeR i2 n2
+      (match (me-bind e name cx n2)
+        (MeB nm cx2 n3
+          (match (me-rewrite body cx2 n3)
+            (MeR b2 n4 (MeR (Expr (EWithResource nm i2 b2)) n4))))))))
+
+; (for (name init) ... cond body): each init is rewritten in the scope the
+; bindings before it established, then its name is bound for the rest.
+(defn me-for (e bindings c body cx n)
+  (match (me-for-bindings e bindings cx n Nil)
+    (MeFB bs cx2 n2
+      (match (me-rewrite c cx2 n2)
+        (MeR c2 n3
+          (match (me-rewrite body cx2 n3)
+            (MeR b2 n4 (MeR (Expr (EFor bs c2 b2)) n4))))))))
+
+(defn me-for-bindings (e bindings cx n acc)
+  (match bindings
+    (Nil (MeFB (list-reverse acc) cx n))
+    (Cons b rest
+      (match b
+        (Pair name init
+          (match (me-rewrite-opt init cx n)
+            (MeRL is n2
+              (match (me-bind e name cx n2)
+                (MeB nm cx2 n3
+                  (me-for-bindings e rest cx2 n3 (Cons (Pair nm (me-opt-of is)) acc)))))))))))
+
+; An Option Expr as a zero- or one-element list, and back.
+(defn me-rewrite-opt (o cx n)
+  (match o
+    (None (MeRL Nil n))
+    (Some x (me-rewrite-list (Cons x Nil) cx n))))
+
+(defn me-opt-of (xs)
+  (match xs
+    (Nil None)
+    (Cons h _ (Some h))))
+
+(defn me-cond (clauses cx n)
+  (match (me-cond-acc clauses cx n Nil)
+    (MeR out n2 (MeR out n2))))
+
+(defn me-cond-acc (clauses cx n acc)
+  (match clauses
+    (Nil (MeR (Expr (ECond (list-reverse acc))) n))
+    (Cons cl rest
+      (match cl
+        (Pair c b
+          (match (me-rewrite-list (Cons c (Cons b Nil)) cx n)
+            (MeRL ks n2
+              (me-cond-acc rest cx n2 (Cons (Pair (me-nth ks 0) (me-nth ks 1)) acc)))))))))
+
+; --- match -----------------------------------------------------------------------
+
+(defn me-match (e scrut arms cx n)
+  (match (me-rewrite scrut cx n)
+    (MeR s2 n2
+      (match (me-arms e arms cx n2 Nil)
+        (MeArms as n3 (MeR (Expr (EMatch s2 as)) n3))))))
+
+(defn me-arms (e arms cx n acc)
+  (match arms
+    (Nil (MeArms (list-reverse acc) n))
+    (Cons arm rest
+      (match arm
+        (MA v pats body
+          (match (me-arm-head e v pats cx n)
+            (MeB v2 cx2 n2
+              (match (me-pats e pats cx2 n2 Nil)
+                (MePL ps cx3 n3
+                  (match (me-rewrite body cx3 n3)
+                    (MeR b2 n4 (me-arms e rest cx n4 (Cons (MA v2 ps b2) acc)))))))))))))
+
+; A lowercase arm head with no fields binds the whole scrutinee; any other
+; head names a constructor (and may be a parameter naming one).
+(defn me-arm-head (e v pats cx n)
+  (if (> (me-binder-like v) 0)
+    (match pats
+      (Nil (me-bind e v cx n))
+      (Cons _ _ (MeB (me-name-subst e v cx) cx n)))
+    (MeB v cx n)))
+
+(defn me-binder-like (name)
+  (if (> (me-bind-fixed name) 0)
+    0
+    (if (> (pk-index-of name 64 0) -1)
+      0
+      (if (> (qf-upper-p name) 0) 0 1))))
+
+(defn me-pats (e pats cx n acc)
+  (match pats
+    (Nil (MePL (list-reverse acc) cx n))
+    (Cons p rest
+      (match (me-pat e p cx n)
+        (MeP p2 cx2 n2 (me-pats e rest cx2 n2 (Cons p2 acc)))))))
+
+(defn me-pat (e p cx n)
+  (match (Expr.inner p)
+    (EAtom atom (me-pat-atom e p atom cx n))
+    (EApply f args
+      (match (me-pats e args cx n Nil)
+        (MePL as cx2 n2 (MeP (me-spanned (Expr (EApply (me-name-subst e f cx) as)) p) cx2 n2))))
+    (ECall op args
+      (match (me-pats e args cx n Nil)
+        (MePL as cx2 n2 (MeP (me-spanned (Expr (ECall op as)) p) cx2 n2))))
+    (_ (MeP p cx n))))
+
+(defn me-pat-atom (e p atom cx n)
+  (match atom
+    (AIdent name
+      (if (> (me-binder-like name) 0)
+        (match (me-bind e name cx n)
+          (MeB nm cx2 n2 (MeP (me-spanned (Expr (EAtom (AIdent nm))) p) cx2 n2)))
+        (MeP p cx n)))
+    (_ (MeP p cx n))))
+
+; --- definitions -----------------------------------------------------------------
+
+(defn me-deftype (e name variants tps der cx n)
+  (MeR (Expr (EDeftype (me-name-subst e name cx) (me-variants e variants cx) tps der)) n))
+
+(defn me-variants (e vs cx)
+  (match vs
+    (Nil Nil)
+    (Cons v rest
+      (match v
+        (AV vn fields (Cons (AV (me-name-subst e vn cx) fields) (me-variants e rest cx)))))))
+
+(defn me-impl (e bodies cx n)
+  (match (me-impl-bodies e bodies cx n Nil)
+    (MeR out n2 (MeR out n2))))
+
+(defn me-impl-bodies (e bodies cx n acc)
+  (match bodies
+    (Nil (MeR (me-impl-node e (list-reverse acc) cx) n))
+    (Cons b rest
+      (match b
+        (IB dn
+          (match dn
+            (DN name params body
+              (match (me-defn e name params body cx n)
+                (MeR d2 n2 (me-impl-bodies e rest cx n2 (Cons (IB (me-dn-of d2 dn)) acc)))))))))))
+
+(defn me-impl-node (e bs cx)
+  (match (Expr.inner e)
+    (EImplBlock tr ty _ (Expr (EImplBlock (me-name-subst e tr cx) (me-name-subst e ty cx) bs)))
     (_ e)))
 
-(defn me-subst-ident (e name senv)
-  (match (senv-lookup senv name)
-    (Some e2 e2)
-    (None e)))
+(defn me-dn-of (d fallback)
+  (match (Expr.inner d)
+    (EDefn name params body (DN name params body))
+    (_ fallback)))
 
-; `fname`'s own args are rewritten under the CURRENT senv first (so an
+(defn me-test (name body meta cx n)
+  (match (me-rewrite body cx n)
+    (MeR b2 n2 (MeR (Expr (ETestDecl name b2 meta)) n2))))
+
+(defn me-property (name g body cx n)
+  (match (me-rewrite body cx n)
+    (MeR b2 n2 (MeR (Expr (ETestProperty name g b2)) n2))))
+
+(defn me-suite (name tests meta cx n)
+  (match (me-suite-items tests cx n Nil)
+    (MeR out n2 (MeR (me-suite-node name out meta) n2))))
+
+; The rewritten items travel inside a throwaway ETestSuite node so one
+; result type serves.
+(defn me-suite-node (name holder meta)
+  (match (Expr.inner holder)
+    (ETestSuite _ items _ (Expr (ETestSuite name items meta)))
+    (_ holder)))
+
+(defn me-suite-items (items cx n acc)
+  (match items
+    (Nil (MeR (Expr (ETestSuite "" (list-reverse acc) None)) n))
+    (Cons it rest
+      (match it
+        (Test td
+          (match td
+            (TD tn body meta
+              (match (me-rewrite body cx n)
+                (MeR b2 n2 (me-suite-items rest cx n2 (Cons (Test (TD tn b2 meta)) acc)))))))
+        (Suite sn
+          (match sn
+            (TSN sname sitems smeta
+              (match (me-suite-items sitems cx n Nil)
+                (MeR holder n2
+                  (me-suite-items rest cx n2 (Cons (Suite (TSN sname (me-suite-items-of holder) smeta)) acc)))))))))))
+
+(defn me-suite-items-of (holder)
+  (match (Expr.inner holder)
+    (ETestSuite _ items _ items)
+    (_ Nil)))
+
+; --- macro calls -----------------------------------------------------------------
+
+; `fname`'s own args are rewritten under the CURRENT context first (so an
 ; outer macro's params used inside a nested macro call are already
-; substituted), then — when fname names a known macro — the macro body
-; is rewritten under a FRESH senv binding its formals to those rewritten
-; args, and the result is returned as-is (no further top-level wrapping)
-; so a body that itself calls another macro keeps expanding: `when`'s
-; body `(unless (not cond) body)` becomes a call to `unless`, which this
-; same function then also matches and expands.
-(defn me-rewrite-apply (fname args senv mt)
-  (let args2 (me-rewrite-list args senv mt)
-    (if (> (mt-has mt fname) 0)
-      (me-rewrite (mt-body mt fname) (senv-from-lists (mt-params mt fname) args2) mt)
-      (Expr (EApply fname args2)))))
+; substituted); a head that is a parameter or a renamed binder is
+; resolved; then, when the head names a known macro, its template is
+; instantiated.
+(defn me-apply (e fname args cx n)
+  (match (me-rewrite-list args cx n)
+    (MeRL args2 n2
+      (match (senv-find (cx-senv cx) fname)
+        (SHParam a (me-apply-param e a args2 cx n2))
+        (SHRen nm (MeR (Expr (EApply nm args2)) n2))
+        (SHNone (me-apply-name e (me-check-free e fname cx) args2 cx n2))))))
+
+(defn me-apply-param (e a args2 cx n)
+  (match (Expr.inner a)
+    (EAtom atom
+      (match atom
+        (AIdent x (me-apply-name e x args2 cx n))
+        (_ (MeR (Expr (ECall a args2)) n))))
+    (_ (MeR (Expr (ECall a args2)) n))))
+
+(defn me-apply-name (e fname args2 cx n)
+  (if (> (mt-has (cx-mt cx) fname) 0)
+    (me-expand e fname args2 cx n)
+    (MeR (Expr (EApply fname args2)) n)))
+
+(defn me-expand (e fname args2 cx n)
+  (let _ (me-check-termination e fname cx)
+    (let params (mt-params (cx-mt cx) fname)
+      (let _ (me-check-arity e fname params args2)
+        (let cx2 (MeCx (senv-from-lists params args2) (cx-mt cx) (Cons fname (cx-stack cx)) (cx-locals cx))
+          (me-rewrite (mt-body (cx-mt cx) fname) cx2 n))))))
+
+(defn me-check-termination (e fname cx)
+  (if (> (me-in-list fname (cx-stack cx)) 0)
+    (let m1 (str-concat "macro " (me-quote fname))
+      (let msg (str-concat m1 " expands to a call of itself, so its expansion never ends")
+        (me-fail "E_MACRO_NON_TERMINATION" msg e "a macro's template is not evaluated at expansion time; write the recursion as a function")))
+    (if (>= (list-length (cx-stack cx)) (me-max-depth))
+      (let m1 (str-concat "expansion of macro " (me-quote fname))
+        (let msg (str-concat m1 " is nested too deeply")
+          (me-fail "E_MACRO_NON_TERMINATION" msg e "a chain of macros expanding to macros must be shorter than 256")))
+      0)))
+
+(defn me-check-arity (e fname params args)
+  (let want (list-length params)
+    (let got (list-length args)
+      (if (= want got)
+        0
+        (let m1 (str-concat "macro " (me-quote fname))
+          (let m2 (str-concat m1 " takes ")
+            (let m3 (str-concat m2 (int-to-str want))
+              (let m4 (str-concat m3 " argument(s), but this call passes ")
+                (let msg (str-concat m4 (int-to-str got))
+                  (me-fail "E_ARITY_MISMATCH" msg e "pass exactly one argument per macro parameter"))))))))))
 
 ; --- entry point --------------------------------------------------------
 
@@ -150,8 +841,11 @@
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EMacroDef _ _ msg (me-strip rest))
-        (msg (Cons e (me-strip rest)))))))
+        (EMacroDef _ _ _ (me-strip rest))
+        (_ (Cons e (me-strip rest)))))))
 
 (defn me-expand-program (forms)
-  (me-rewrite-list (me-strip forms) SNil (me-collect forms MNil)))
+  (let mt (me-collect forms MNil)
+    (let _ (me-check-clash forms mt)
+      (match (me-rewrite-list (me-strip forms) (MeCx SNil mt Nil Nil) 0)
+        (MeRL out _ out)))))

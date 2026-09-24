@@ -130,7 +130,7 @@ Covered in Chapter 25. It is the only pass that reads files other than the sourc
 
 ### Macro expansion
 
-`stdlib/compiler/macro_expand.zyl` collects every top-level `defmacro` first, then expands. See Chapter 23 for what it does and does not implement: the §19 hygiene and termination rules are not enforced.
+`stdlib/compiler/macro_expand.zyl` collects every top-level `defmacro` first, then expands. Hygiene renames template binders to `name__hygN`, where `N` comes from a counter threaded through the walk in source order, so the expanded program is a pure function of the source. See Chapter 23.
 
 ### Static checks
 

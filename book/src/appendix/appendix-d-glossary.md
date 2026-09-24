@@ -201,8 +201,8 @@ arena-based.
 call sites (§6).
 
 **Gensym**: A generated unique symbol. §19.2 requires macro hygiene by
-gensym renaming; the current expander substitutes parameters without
-renaming the names a template introduces.
+gensym renaming; the expander renames every name a template binds to a
+fresh `name__hygN`, numbered in source order.
 
 **Global region**: Immutable constants with program lifetime (§9, R7).
 

@@ -47,36 +47,50 @@ gaps are recorded here, not papered over.
 ### What is implemented
 
 - **Definition:** `(defmacro name (p1 p2 ...) body)`; `macro` is accepted as
-  a synonym. The body is the last form after the parameter list.
+  a synonym. The body is the last form after the parameter list. A
+  parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
 - **Registration (§19.5):** top-level macro definitions are collected
   before expansion (`me-collect`) and then removed from the program
-  (`me-strip`). A macro defined anywhere other than top level is not
-  registered.
+  (`me-strip`). Two macros with one name are `E_DUPLICATE_DEFINITION`, as
+  are a macro and a `defn` with one name in the same source file. (Across
+  files a macro may share an imported function's name: module resolution
+  gives it that function's canonical key, and the macro takes over the
+  function's calls.)
 - **Expansion order (§19.3):** innermost first. For a call to a registered
   macro, the arguments are expanded first; the body is then instantiated
   with its parameters bound to the expanded arguments, and the result is
   walked again, so a macro call produced by an expansion is itself
-  expanded.
-- **Substitution:** a parameter name occurring as a bare identifier in the
-  body is replaced by the corresponding argument. Parameters are paired
-  with arguments positionally; extra arguments or parameters are ignored.
+  expanded. The walk covers every ExprInner shape, so a macro call expands
+  in any position (`match` arms, `fn` bodies, `for`, `try`,
+  `with-resource`, `impl` methods, tests, top level).
+- **Substitution:** a parameter is replaced by its argument wherever the
+  body names it. Where the body needs a name (a `let`/`let-mut`/`fn`/
+  `for`/`try`/`with-resource`/`match` binder, a `set!` target, the name
+  of a `defn`/`def`/`deftype`/`impl`), the argument must be an identifier
+  and becomes that name; anything else is `E_MALFORMED_PARAMETER`.
+  Parameters and arguments are paired positionally, and a count mismatch
+  is `E_ARITY_MISMATCH` at the call.
+- **Hygiene (§19.2):** every variable the body binds is renamed to a fresh
+  `name__hygN` per expansion; `N` is a counter threaded through the walk
+  in source order, so expansion stays deterministic. `_` and
+  compiler-internal `__` names are not renamed. Arguments are not renamed.
+  Free names resolve at the definition site: module resolution has already
+  qualified every reference to a top-level definition, and a free body
+  name that is a local variable at the call site is `E_UNBOUND_VARIABLE`
+  instead of being captured.
+- **Termination (§19.4, §28):** a macro called while its own expansion is
+  in progress (directly or through other macros) is
+  `E_MACRO_NON_TERMINATION`; since bodies are not evaluated, such an
+  expansion can never finish. Expansion nested more than 256 deep is
+  reported the same way.
+- **Runtime access (§19.4):** a `defmacro` anywhere but top level, where
+  its body could name run-time variables of the enclosing form, is
+  `E_MACRO_ILLEGAL_ACCESS`.
 - **Pipeline position:** expansion runs after module resolution and
   before the static checks and type inference (see the pipeline in
   `spec/00-language-overview.md`).
 
 ### What is not implemented
 
-- **Hygiene (§19.2).** There is no gensym renaming. A name introduced by a
-  macro body can capture, or be captured by, a name at the call site.
 - **Patterns.** Parameters are plain names; there is no `&` rest parameter
   and no destructuring.
-- **Termination check.** There is no expansion depth limit, so a
-  self-recursive macro does not terminate. `E_MACRO_NON_TERMINATION` is
-  catalogued in `error_codes.zyl` but never raised.
-- **Runtime-access check (§19.4).** `E_MACRO_ILLEGAL_ACCESS` is catalogued
-  but never raised.
-- **Coverage.** The expander descends into applications, calls, `let`,
-  `let-mut`, `if`, `while`, `set!`, `begin`, `print`, the `assert-*`
-  forms, `struct-get`, `defn` and `test`. A macro call inside `match`,
-  `fn`/`lambda`, `for`, `try`, `with-resource`, `deftype` or `impl` is
-  left unexpanded.

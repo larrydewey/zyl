@@ -24,8 +24,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. It still prints
   many non-fatal `W_UNUSED_PARAMETER` and `W_SHADOWED_BINDING` warnings.
-- `./run_regression_tests.sh --full --no-boot` passes **121/121**:
-  regression 52, interpreter 34, compile-fail 12, integration 7,
+- `./run_regression_tests.sh --full --no-boot` passes **128/128**:
+  regression 52, interpreter 34, compile-fail 19, integration 7,
   packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1,
   unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -51,6 +51,15 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   (`spawn`, `send`, `actor-wait`), FFI with pinning and timeouts, the
   bitwise operators, 8-bit byte loads and stores, byte slices, atomics,
   `align-check`, and the `Secret` capability's constant-time checks.
+- Macro expansion (`macro_expand.zyl`) implements spec §19: gensym
+  hygiene (template binders renamed to `name__hygN` from a source-order
+  counter; a free template name that is a call-site local is
+  `E_UNBOUND_VARIABLE`), expansion in every form, parameters substituted
+  in binder and `set!`-target positions, `E_MACRO_NON_TERMINATION` for a
+  macro reached during its own expansion, `E_MACRO_ILLEGAL_ACCESS` for a
+  non-top-level `defmacro`, `E_ARITY_MISMATCH` for a wrong argument
+  count, `E_DUPLICATE_DEFINITION` for a repeated macro name. Parameters
+  are still plain names (no patterns or rest parameters).
 - Located diagnostics (`error[CODE]`, `--> file:line:col`, the source
   line, a caret and a `= help:` line) for the four balance errors,
   `E_MALFORMED_PARAMETER`, `E_ARITY_MISMATCH`, `E_NON_EXHAUSTIVE_MATCH`,

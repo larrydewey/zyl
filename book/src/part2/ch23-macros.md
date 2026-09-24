@@ -2,7 +2,7 @@
 
 Complete reference for Zyl's macro system: definition, substitution, expansion order, and the hygiene and termination rules the specification requires.
 
-The normative text is spec v5.0 §19. The implementation is `stdlib/compiler/macro_expand.zyl`, which runs after module resolution and before the static checks and type inference (see Chapter 26). The implemented system is much smaller than §19 describes, and this chapter documents the implementation and marks each place where the specification asks for more.
+The normative text is spec v5.0 §19. The implementation is `stdlib/compiler/macro_expand.zyl`, which runs after module resolution and before the static checks and type inference (see Chapter 26). This chapter documents the implementation and marks where it is narrower than §19: parameters are plain names, not patterns.
 
 ## 23.1 Macro Definition
 
@@ -16,13 +16,14 @@ defmacro ::= "(" "defmacro" Identifier "(" Identifier* ")" Body ")"
 
 `(macro name ...)` is accepted as a synonym.
 
-- **Parameters** are plain identifiers. Spec §19.1 calls them patterns; the implementation has no destructuring, literal or rest parameters.
+- **Parameters** are plain identifiers. Spec §19.1 calls them patterns; the implementation has no destructuring, literal or rest parameters. A parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
 - **The body** is ordinary Zyl code, not a quoted template. If the body has several forms, only the last is kept, silently, so wrap multiple forms in `begin`.
 - **Expansion** happens at compile time. Macro definitions are removed from the program once expanded.
+- **Top level only.** A `defmacro` inside a function body or any other form is `E_MACRO_ILLEGAL_ACCESS`: its template could name the run-time variables around it, which a compile-time rewrite cannot see.
 
 ## 23.2 How a Macro Call Expands
 
-A macro call `(name arg1 arg2 ...)` is replaced by the macro's body, with every occurrence of a parameter name replaced by the corresponding **unevaluated argument expression**. That is all an expansion does. Nothing in the body runs at compile time: an `if`, a `match` or a call in the body is copied into the program and runs when the program runs.
+A macro call `(name arg1 arg2 ...)` is replaced by the macro's body, with every occurrence of a parameter name replaced by the corresponding **unevaluated argument expression**, and every variable the body itself binds renamed (§23.4). Nothing in the body runs at compile time: an `if`, a `match` or a call in the body is copied into the program and runs when the program runs.
 
 ```lisp
 (defmacro my-unless (c body) (if c 0 body))
@@ -57,22 +58,34 @@ Because arguments are substituted, not evaluated, an argument used twice in the 
 ### Arguments
 
 - Parameters and arguments are paired by position.
-- **Extra arguments are dropped silently.**
-- **A missing argument** leaves the parameter's name in the expansion, where it usually surfaces as `E_UNBOUND_VARIABLE` pointing at the macro body.
+- A call must pass exactly one argument per parameter. Too many or too few is `E_ARITY_MISMATCH`, reported at the call.
 
 ### Where parameters are substituted
 
-Substitution walks function calls, `let` and `let-mut` values and bodies, `if`, `while`, the value of `set!`, `begin`, `print`, the assertions, `struct-get`, `defn` and `test`. It does **not** walk into `match`, `fn`/`lambda`, `try` or `for`, and it does not replace a parameter used as a `let` binder or a `set!` target:
+A parameter is substituted wherever the body names it, in every form: calls, `let` and `let-mut`, `if`, `while`, `for`, `match` (scrutinee, patterns and arms), `fn`/`lambda`, `try`, `with-resource`, `begin`, the assertions, `test` bodies and the rest. It is also substituted where the body needs a **name**:
+
+| Position | Example body | The argument must be |
+|----------|--------------|----------------------|
+| `let`/`let-mut` binder | `(let n v body)` | an identifier, which becomes the binder |
+| `set!` target | `(set! a b)` | an identifier, the variable assigned |
+| `fn`/`defn` parameter, `for`/`try`/`with-resource`/`match` binder | `(fn (p) ...)` | an identifier |
+| name of a `defn`, `def`, `deftype` or `impl` | `(defn name (k) (* k k))` | an identifier |
+
+An argument that is not an identifier in one of these positions is `E_MALFORMED_PARAMETER`.
 
 ```lisp
-(defmacro pick (x) (match x (Some v v) (None 0)))
-;; (pick (Some 5)) → E_UNBOUND_VARIABLE: unbound identifier `x`
-
 (defmacro bind (n v body) (let n v body))
-;; (bind q 7 (+ q 1)) → binds a variable literally named `n`; `q` is unbound
+(print (bind q 7 (+ q 1)))                  ; 8
+
+(defmacro swap! (a b) (let tmp a (begin (set! a b) (set! b tmp))))
+(let-mut x 1 (let-mut y 2 (begin (swap! x y) (print x) (print y))))   ; 2, 1
+
+(defmacro def-square (name) (defn name (k) (* k k)))
+(def-square sq)
+(print (sq 5))                              ; 25
 ```
 
-The same limit applies to recognising macro calls. A macro call inside a `match` arm or a `try` is not expanded, and fails at link time as an undefined reference. A macro call inside a `fn` body is not expanded either, and currently compiles to a program that crashes. Call macros only from positions the expander walks.
+Macro calls are recognised in every position too: inside `match` arms, `fn` bodies, `for` loops, `try`, `impl` methods, `test` bodies, and at top level, where a call can expand to a definition, as `def-square` does.
 
 ## 23.3 No Quasiquote
 
@@ -80,37 +93,30 @@ Zyl has no quasiquote, unquote or unquote-splicing: the body itself is the templ
 
 ## 23.4 Hygiene
 
-Spec §19.2 requires gensym-based hygiene: every variable a macro introduces is renamed to a unique symbol, so that a macro's binders cannot capture the caller's variables and the caller's bindings cannot capture the macro's free names.
+Spec §19.2 requires gensym-based hygiene: every variable a macro introduces is renamed to a unique symbol, so that a macro's binders cannot capture the caller's variables and the caller's bindings cannot capture the macro's free names. The expander implements both halves.
 
-**The implementation performs no renaming.** Expansion is textual substitution, so capture happens in both directions.
-
-A macro's binder captures the caller's variable:
+**Body binders are renamed.** Every variable the body binds (`let`, `let-mut`, `fn`/`lambda` and `defn` parameters, `for`, the `catch` name of a `try`, `with-resource`, and `match` pattern variables) gets a fresh name of the form `name__hygN` in each expansion. `N` comes from a counter that advances in source order, never from an address, so the same program always expands to the same names (Chapter 26). Arguments are the caller's code and keep their names, so they still refer to the caller's variables:
 
 ```lisp
 (defmacro add-tmp (x) (let tmp 100 (+ tmp x)))
 
-(let tmp 1 (print (add-tmp tmp)))
-;; compile time: W_SHADOWED_BINDING: `tmp` shadows an outer binding of the same name
-;; prints 200   (a hygienic expansion would print 101)
+(let tmp 1 (print (add-tmp tmp)))   ; 101
 ```
 
-A macro's free name picks up whatever the call site has in scope:
+The expansion is `(let tmp__hyg0 100 (+ tmp__hyg0 tmp))`. `_` is never renamed, and a renamed name keeps its leading underscore, so the unused-variable warnings treat it the same way.
+
+**Free names resolve where the macro is defined.** Module resolution runs before expansion and rewrites every reference to a top-level definition to its canonical key (Chapter 25), so a function the body calls is the one visible at the definition, whatever the call site binds. The only names a call site could still capture are its own local variables. A body that names a variable which is unbound at the definition but local at the call site is rejected instead of captured:
 
 ```lisp
 (defmacro getv () v)
 
-(let v 3 (print (getv)))   ; prints 3
+(let v 3 (print (getv)))
+;; error[E_UNBOUND_VARIABLE]: macro `getv` refers to `v`, which is not bound
+;; where the macro is defined; the local variable of that name at this call
+;; site cannot be captured (macros are hygienic)
 ```
 
-Function names in call position are not captured this way, because call heads are resolved to canonical keys (Chapter 25) before expansion.
-
-Until hygiene is implemented:
-
-- Give macro-introduced binders distinctive names that a caller is unlikely to use.
-- Treat `W_SHADOWED_BINDING` in code that uses macros as a likely capture.
-- Prefer functions: they are hygienic by construction.
-
-A `swap!` macro cannot be written: `set!` targets are not substituted (§23.2), so `(set! a b)` in a macro body always names a variable literally called `a`.
+A value the macro needs from the call site must be passed as an argument. Where a parameter supplies a binder (the `bind` and `swap!` examples in §23.2), the name is the caller's, and it binds or assigns the caller's variable, as intended.
 
 ## 23.5 Expansion Algorithm
 
@@ -118,10 +124,10 @@ Spec §19.3 specifies post-order (innermost-first) traversal; §19.5 says macros
 
 The implementation:
 
-1. **Registration.** Every *top-level* `defmacro` is collected before any expansion, so a macro can be used before it is defined. Macros defined inside other forms are not collected. If two macros share a name, the last definition wins, without a diagnostic.
+1. **Registration.** Every *top-level* `defmacro` is collected before any expansion, so a macro can be used before it is defined. Two macros with one name are `E_DUPLICATE_DEFINITION`, as are a macro and a function with one name in the same file.
 2. **Arguments first.** At each call, the arguments are expanded first.
-3. **Substitution.** The expanded arguments are substituted into the body.
-4. **Re-expansion.** The result is walked again, so macros used inside a macro body expand too. This is how `my-when` → `my-unless` works above.
+3. **Substitution and renaming.** The expanded arguments are substituted into the body, and the body's binders are renamed (§23.4).
+4. **Re-expansion.** The result is walked again, so macros used inside a macro body expand too. This is how `my-when` expands through `my-unless` above.
 
 ```lisp
 (defn main () (print (triple 7)))       ; used before its definition: prints 21
@@ -129,19 +135,23 @@ The implementation:
 (defmacro triple (x) (+ x (+ x x)))
 ```
 
+A macro may share its name with a function it imports: module resolution gives the macro that function's key, and the macro then takes over every call to it (Chapter 10 shows a macro `unless` over `core/core`'s function).
+
 ### Termination
 
-Spec §19.4 requires deterministic expansion, and §28 defines `E_MACRO_NON_TERMINATION` for an expansion loop. **The implementation has no depth limit and never emits this code.** Because a macro body is not evaluated at expansion time, *any* recursive macro diverges, even one whose recursion is guarded by an `if`:
+Spec §19.4 requires deterministic expansion, and §28 defines `E_MACRO_NON_TERMINATION` for an expansion loop. Because a macro body is not evaluated at expansion time, *any* macro whose expansion reaches a call to itself diverges, even one whose recursion is guarded by an `if`. The expander reports it as soon as a macro is called while its own expansion is still in progress, directly or through other macros:
 
 ```lisp
 (defmacro countdown (n) (if (= n 0) 0 (countdown (- n 1))))
-;; (countdown 3) → the compiler never finishes
+;; (countdown 3) → error[E_MACRO_NON_TERMINATION]: macro `countdown`
+;;                 expands to a call of itself, so its expansion never ends
 
-(defmacro forever (x) (forever x))
-;; (forever 1) → PANIC: error[E_OUT_OF_MEMORY]: memory budget exhausted ...
+(defmacro ping (x) (pong x))
+(defmacro pong (x) (ping x))
+;; (ping 1) → E_MACRO_NON_TERMINATION, pointing at the call in `pong`
 ```
 
-Do not write recursive macros. Recursion belongs in functions.
+A chain of distinct macros nested more than 256 deep is also `E_MACRO_NON_TERMINATION`. Recursion belongs in functions.
 
 ## 23.6 Built-in Forms That Look Like Macros
 
@@ -170,21 +180,23 @@ Both `and` and `or` short-circuit:
 | Constraint | Status |
 |------------|--------|
 | AST-only | holds: a macro receives and produces syntax trees |
-| No runtime access | holds by construction: the body is never evaluated at compile time, so it cannot touch runtime values (`E_MACRO_ILLEGAL_ACCESS` is never needed and never emitted) |
-| Deterministic | holds for terminating macros: expansion is a pure function of the source, though duplicate names resolve to the last definition |
-| Terminating | **not enforced** (§23.5) |
-| Hygienic | **not implemented** (§23.4) |
+| No runtime access | holds by construction: the body is never evaluated at compile time. A `defmacro` that is not at top level, where its body could name run-time variables, is `E_MACRO_ILLEGAL_ACCESS` |
+| Deterministic | holds: expansion is a pure function of the source, and fresh names come from a source-order counter |
+| Terminating | enforced: `E_MACRO_NON_TERMINATION` (§23.5) |
+| Hygienic | enforced (§23.4) |
 
 ## 23.8 Macro Errors
 
-| Error | Status |
-|-------|--------|
-| `E_MACRO_NON_TERMINATION` | specified (§28), never emitted: a looping macro hangs the compiler or exhausts memory (`E_OUT_OF_MEMORY`) |
-| `E_MACRO_ILLEGAL_ACCESS` | specified (§28), never emitted |
-| `E_UNBOUND_VARIABLE` | what a missing argument or an unsubstituted parameter usually produces |
-| link-time `undefined reference` | a macro call in a position the expander does not walk (§23.2) |
+| Error | When |
+|-------|------|
+| `E_MACRO_NON_TERMINATION` | a macro reached again during its own expansion, or expansion nested more than 256 deep |
+| `E_MACRO_ILLEGAL_ACCESS` | a `defmacro` inside a function body or other form |
+| `E_ARITY_MISMATCH` | a macro call with the wrong number of arguments |
+| `E_DUPLICATE_DEFINITION` | two macros with one name, or a macro and a function with one name in one file |
+| `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, or a non-identifier argument used where the body needs a name |
+| `E_UNBOUND_VARIABLE` | a body names a variable that is local at the call site but unbound where the macro is defined (§23.4) |
 
-There is no arity check for macro calls.
+Each one points at the offending form in the source.
 
 ## 23.9 Debugging Macros
 
@@ -192,7 +204,7 @@ There is no flag that prints the expanded program and no REPL command for macro 
 
 - `zyl prog.zyl --emit-asm -o prog.s`, then read the assembly for the function using the macro.
 - The REPL (`zyl repl`) accepts `defmacro` definitions, so you can try a macro interactively and look at what it computes.
-- `W_SHADOWED_BINDING` and `E_UNBOUND_VARIABLE` diagnostics that point into a macro body usually mean capture or an unsubstituted parameter.
+- A diagnostic that names `something__hygN` refers to a variable a macro body bound, renamed by hygiene.
 - `tests/regression/macros.zyl` shows the supported style.
 
 ## 23.10 Patterns That Work
@@ -218,29 +230,34 @@ The condition is tested at run time. A macro cannot remove code at compile time,
 
 ### Evaluating an argument exactly once
 
-Bind the argument in a helper **function**, not in a `let` inside the macro:
+Bind the argument with a `let` inside the macro. Hygiene (§23.4) keeps the binder from colliding with anything at the call site:
+
+```lisp
+(defmacro square (x) (let n x (* n n)))   ; x evaluated once
+```
+
+A helper function works as well:
 
 ```lisp
 (defn square-fn (n) (* n n))
-(defmacro square (x) (square-fn x))   ; x evaluated once
+(defmacro square (x) (square-fn x))
 ```
 
 ## 23.11 Best Practices
 
 1. **Prefer functions.** Use a macro only when you need call-by-name evaluation or new surface syntax.
-2. **Keep macro bodies to calls, `if`, `let` values and `begin`**, the forms the expander walks.
-3. **Do not introduce binders in a macro body**: there is no hygiene.
-4. **Never write a recursive macro**: there is no termination check.
-5. **Remember that arguments are substituted**, and may be evaluated more than once or not at all.
-6. **Keep backquote, comma, quote and `@` out of source files** outside strings and comments.
+2. **Pass what the body needs from the call site as an argument**: a hygienic body cannot see the caller's locals.
+3. **Never write a recursive macro**: it is rejected with `E_MACRO_NON_TERMINATION`.
+4. **Remember that arguments are substituted**, and may be evaluated more than once or not at all.
+5. **Keep backquote, comma, quote and `@` out of source files** outside strings and comments.
 
 ## 23.12 Comparison with Other Lisps
 
 | Feature | Common Lisp | Scheme (R7RS) | Racket | Zyl (implemented) |
 |---------|-------------|---------------|--------|-------------------|
-| Hygiene | manual (`gensym`) | `syntax-rules` | `syntax-parse` | none (spec requires gensym hygiene) |
+| Hygiene | manual (`gensym`) | `syntax-rules` | `syntax-parse` | automatic renaming of body binders |
 | Template syntax | quasiquote | pattern templates | quasisyntax | the body itself; parameters substituted |
 | Parameters | destructuring lambda list | patterns | patterns | plain identifiers |
 | Expansion-time evaluation | ✅ | ❌ (`syntax-rules`) | ✅ | ❌ |
 | Procedural macros | ✅ | ❌ (`syntax-rules`) | ✅ | ❌ |
-| Termination check | ❌ | ❌ | ❌ | ❌ (spec requires one) |
+| Termination check | ❌ | ❌ | ❌ | ✅ (a macro reached during its own expansion) |

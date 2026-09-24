@@ -75,8 +75,10 @@ enforcing that in definition forms is listed under FUTURE in §30. Today
 
 | Code | Cause |
 |---|---|
-| `E_MACRO_NON_TERMINATION` | Expansion exceeded the maximum depth. *Catalogued only.* |
-| `E_MACRO_ILLEGAL_ACCESS` | A macro reached a runtime value. *Catalogued only.* |
+| `E_MACRO_NON_TERMINATION` | A macro was called while its own expansion was in progress (directly or through other macros), or expansion nested more than 256 deep. |
+| `E_MACRO_ILLEGAL_ACCESS` | A `defmacro` inside a function body or other form, where its template could name run-time values. |
+
+Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLICATE_DEFINITION` (a macro name defined twice, or shared with a function in the same file), `E_MALFORMED_PARAMETER` (a non-identifier parameter, or a non-identifier argument where the template needs a name) and `E_UNBOUND_VARIABLE` (a template naming a call-site local, which hygiene forbids it to capture).
 
 ## A.5 Types, Names and Arity (phases 4 and 5)
 
@@ -260,14 +262,13 @@ not reach your editor, because the language server does not run
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 47 of the catalog's 111 distinct
+**In the catalog, never raised.** 45 of the catalog's 111 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_INVALID_CHAR`, `E_UNEXPECTED_EOF`,
   `E_INTEGER_OVERFLOW`, `E_FLOAT_OVERFLOW`, `E_UNBALANCED_PARENS`,
   `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
   `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
-- Macros: `E_MACRO_NON_TERMINATION`, `E_MACRO_ILLEGAL_ACCESS`.
 - Types: `E_TYPE_MISMATCH`, `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_TYPE`,
   `E_UNKNOWN_GENERIC_PARAM`, `E_CANNOT_INFER`.
 - Regions and buffers: `E_REGION_ESCAPE`, `E_UNINITIALIZED_USE`,
@@ -284,10 +285,10 @@ codes are not raised anywhere in the compiler, runtime or REPL:
 - Contracts, numerics and FFI: `E_CONTRACT_VIOLATION`, `E_OVERFLOW`,
   `E_FFI_TYPE_NOT_PINNABLE`, `E_FFI_TIMEOUT`.
 
-Fifteen of these are codes spec §28 requires: `E_USER_ERROR`,
+Thirteen of these are codes spec §28 requires: `E_USER_ERROR`,
 `E_ASSERT_FAIL`, `E_FFI_TIMEOUT`, `E_REGION_ESCAPE`,
-`E_MACRO_NON_TERMINATION`, `E_UNINITIALIZED_USE`, `E_TRAIT_NOT_FOUND`,
-`E_DUPLICATE_IMPL`, `E_MACRO_ILLEGAL_ACCESS`, `E_CONTRACT_VIOLATION`,
+`E_UNINITIALIZED_USE`, `E_TRAIT_NOT_FOUND`,
+`E_DUPLICATE_IMPL`, `E_CONTRACT_VIOLATION`,
 `E_OVERFLOW`, `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`,
 `E_TRAIT_NOT_DERIVABLE` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36

@@ -1,0 +1,11 @@
+; Compile-fail: a macro defined inside a function body, whose template
+; names that function's run-time parameter. Macros are compile-time and
+; collected at top level (spec §19.4, §19.5); the compiler must reject this
+; with E_MACRO_ILLEGAL_ACCESS.
+
+(defn _cf_f (k)
+  (begin
+    (defmacro _cf_addk (x) (+ x k))
+    (_cf_addk 1)))
+
+(defn main () (begin (print (_cf_f 2)) 0))

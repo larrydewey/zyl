@@ -1,0 +1,8 @@
+; Compile-fail: a macro and a function with one name in one file. Every
+; call would silently mean the macro; the compiler must reject this with
+; E_DUPLICATE_DEFINITION.
+
+(defmacro _cf_m (x) (+ x 1))
+(defn _cf_m (x) (+ x 2))
+
+(defn main () (begin (print (_cf_m 1)) 0))
