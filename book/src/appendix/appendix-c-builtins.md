@@ -167,7 +167,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `begin` | `(begin expr ...)` | value is the last expression |
 | `try` | `(try body (catch e handler))` | catches a runtime panic, binding its message to `e` |
 | `with-resource` | `(with-resource (name init) body)` | binds `name` for `body`; no release step is run yet |
-| `assert` | `(assert expr)` or `(assert expr "message")` | a false `expr` panics with `assert failed`; the message is not printed |
+| `assert` | `(assert expr)` or `(assert expr "message")` | a false `expr` panics with the message (a string literal), else `assert failed` |
 | `unwrap` | `(unwrap expr)` | the value of `Some`/`Ok`; `None` or `Err` panics with `unwrap on None` |
 | `error` | `(error "message")` | library function (`allocator/allocator`); panics with the message |
 | `when` | `(when cond body)` | library function (`core/core`); `body` is evaluated even when `cond` is false |
@@ -300,17 +300,15 @@ than silently lowered. Chapter 32 covers this family in full.
 
 | Form | Syntax | Today |
 |---|---|---|
-| `requires` | `(requires condition)` | evaluates `condition` and discards it |
-| `ensures` | `(ensures condition)` | evaluates `condition` and discards it |
-| `contracts` | `(contracts off form)` | yields `form` |
-| `checkpoint` | `(checkpoint expr)` | yields `expr` |
-| `recover` | `(recover body fallback)` | yields `body`; `fallback` is ignored |
+| `requires` | `(requires condition)` | raises `E_CONTRACT_VIOLATION` when `condition` is false |
+| `ensures` | `(ensures condition)` | checked after the body; `result` is the return value |
+| `invariant` | `(invariant condition)` | checked where written, like `requires` |
+| `contracts` | `(contracts off form)`, `(contracts off)` | strips every clause in `form` (or the next top-level form) |
+| `checkpoint` | `(checkpoint expr)` | yields `expr`; no rollback |
+| `recover` | `(recover body ((Type) fallback) ...)` | `body`, or the first arm's `fallback` if `body` raises |
 
 Contracts are an optional overlay and never alter type inference,
-ownership, regions or scheduling. None of these forms is enforced yet:
-a failing `requires` does not stop the program, and
-`E_CONTRACT_VIOLATION` is never raised. Spec §23 also lists
-`invariant`, which the compiler does not recognise.
+ownership, regions or scheduling. There are no profiles.
 
 ## C.14 Testing
 

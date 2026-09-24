@@ -114,7 +114,6 @@ in `docs/compiler-pipeline.md`.
 | `region_inference.zyl` | Escape analysis: a non-escaping variant becomes `IStackVariant` |
 | `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly |
 | `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`) |
-| `contract_injection.zyl` | Written but not compiled: not in the bundle, not called (see below) |
 
 **Diagnostics**
 
@@ -141,12 +140,9 @@ inference, and `compile-to-asm` is that plus code generation. The CLI
 (`selfhost/driver.zyl`), `zyl eval` and the REPL all call it, which is
 what keeps a compile and a REPL entry running the same compiler.
 
-`contract_injection.zyl` is not in `selfhost/assemble.py`'s file list
-and nothing calls it: its accessors do not match the real `ExprInner`
-shapes. The comment above `lower-exprs` in `pipeline.zyl` explains why.
-`requires`, `ensures`, `checkpoint` and `recover` are parsed by
-`expr_inner.zyl` and lower to their inner expression; nothing checks
-them.
+Contracts have no pass of their own: `expr_inner.zyl` rewrites
+`requires`, `ensures`, `invariant` and `recover` into checks and
+`try`/`catch` while converting the parse tree (`contract-defn-body`).
 
 ### REPL, file by file
 

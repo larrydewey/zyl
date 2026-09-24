@@ -912,7 +912,7 @@
         (let qualified (qf-forms (QT itab ptab) Nil
                          (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))
           (let _ (mr-check-coherence qualified (mrp-name pkg))
-            (convert-ast-list qualified)))))))
+            (convert-top-forms qualified)))))))
 
 ; ===========================================================================
 ; TRAIT COHERENCE (SS24.6)

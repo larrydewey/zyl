@@ -122,19 +122,19 @@ Not normative.
 
 ### Contracts
 
-The contract overlay of §23 is not implemented.
+The overlay is lowered while the parse tree is converted
+(`expr_inner.zyl`, `contract-defn-body`):
 
-- `(requires c)` and `(ensures c)` are parsed to `c` itself: the condition
-  is evaluated for its value and never checked.
-- `(checkpoint e)` is `e`; `(recover body ...)` is `body` with the
-  fallback discarded; `(contracts off e)` is `e`.
-- `invariant` has no parser entry.
-- There are no profiles and no flag to enable contracts.
-  `E_CONTRACT_VIOLATION` is never raised.
-- `contract_injection.zyl` contains a lowering (requires/ensures/invariant
-  to a checked `if`, recover to try/catch) but it is not called: its
-  constructors do not match the post-processor's node shapes. See the
-  comment in `stdlib/compiler/pipeline.zyl`.
+- `(requires c)` and `(invariant c)` are checks: a false `c` raises
+  `E_CONTRACT_VIOLATION: precondition of f failed: c` (or `invariant of
+  f`), catchable with `try`.
+- A `defn`'s `(ensures c)` clauses run after the body with its value bound
+  to `result`; `postcondition of f failed: c` on failure.
+- `(recover body ((Type) fallback) ...)` is `try`/`catch` with the first
+  arm's fallback; the error type is not tested.
+- `(contracts off form)` and a bare `(contracts off)` before a top-level
+  form strip every clause in that form.
+- `(checkpoint e)` is `e`: no rollback. There are no profiles.
 
-Because the forms are parsed as pass-throughs, the non-interference rule
-(P8, G8) holds trivially.
+A check is ordinary code: its condition is typed and evaluated like any
+other expression, so keep conditions pure (P8, G8).

@@ -497,10 +497,10 @@
        (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
             (IConst 0)
             (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))))
-    (EAssertTrue e _
+    (EAssertTrue e m
      (IIf (ic-expr arena e vt)
           (IConst 0)
-          (IFfi "zyl_panic" (Cons (IStr "assert-true failed") Nil))))
+          (IFfi "zyl_panic" (Cons (IStr (match m (Some t t) (None "assert-true failed"))) Nil))))
     (EAssertFalse e _
      (IIf (ic-expr arena e vt)
           (IFfi "zyl_panic" (Cons (IStr "assert-false failed") Nil))
@@ -514,7 +514,7 @@
     ; undefined-reference link error rather than a silent no-op.
     (EAssertFail e _ (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
     ; assert: (assert e) lowers to if e then 0 else panic (item 22).
-    (EAssert e _ (IIf (ic-expr arena e vt) (IConst 0) (IFfi "zyl_panic" (Cons (IStr "assert failed") Nil))))
+    (EAssert e m (IIf (ic-expr arena e vt) (IConst 0) (IFfi "zyl_panic" (Cons (IStr (ic-assert-msg m)) Nil))))
     ; unwrap: (unwrap e) lowers to match on Some tag 0 (item 23).
     (EUnwrap e (ic-unwrap arena e vt))
     (EStructGet se field (ic-struct-get arena se field vt))
@@ -1098,6 +1098,12 @@
 ; shape, so it always returns false when self-hosted codegen (not the
 ; Rust bootstrap) compiles a call to it. Comparing through zyl_cstr_eq
 ; directly via ffi-call, as done here, sidesteps kind-of entirely.
+; (assert c "msg") panics with msg; any other message form keeps the fixed text.
+(defn ic-assert-msg (m)
+  (match m
+    (Some x (match (Expr.inner x) (EAtom a (match a (AStr t t) (_ "assert failed"))) (_ "assert failed")))
+    (None "assert failed")))
+
 (defn ic-starts-with-make (s)
   (if (>= (str-length s) 5)
     (ffi-call "zyl_cstr_eq" (str-substring s 0 5) "make-" 1000)

@@ -77,7 +77,7 @@ A test body may contain several forms, evaluated in order (wrapping them in `beg
 
 For nested data, assert on the individual fields, or on a count or sum computed from the structure.
 
-> **`assert` and `assert-fail`:** a false `(assert expr "msg")` fails the test, but reports only `assert failed`, not your message; `assert-true` reports better. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
+> **`assert` and `assert-fail`:** a false `(assert expr "msg")` fails the test with your message when it is a string literal (`assert failed` otherwise); `(assert-true expr "msg")` does the same. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
 
 ## 11.3 Running Tests
 

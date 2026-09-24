@@ -124,20 +124,8 @@
 ; MIDDLE — ExprInner to lowered, optimized, region-annotated functions
 ; ===========================================================================
 
-; Type inference through region inference. Contract injection
-; (stdlib/compiler/contract_injection.zyl) is NOT wired in here: that
-; module's accessors/constructors (d-name, t-name, TestNode, ...) don't
-; match the actual DefnNode/TestDecl/TestSuiteNode shapes in
-; expr_inner.zyl, so it doesn't compile as part of the bundle. It was
-; silently omitted from assemble.py's file list, and this call used to
-; read "ci-expand-program" (1 arg) -- which, once the bundle was
-; assembled, actually resolved to closure_inline.zyl's SAME-NAMED but
-; different-arity `ci-expand-program(arena, prog)` function instead (a
-; genuine duplicate-symbol collision), silently passing garbage through
-; the mismatched second argument register. That corrupted state
-; downstream and crashed the self-hosted binary (ic-collect-vt-run) even
-; on trivial input. Pass exprs through unchanged until contract
-; injection is properly rewritten to match the real deftypes.
+; Type inference through region inference. Contracts were already lowered
+; to checks by the parse (expr_inner.zyl's contract-defn-body).
 ; Returns: List(Icnf) — one IFn per function
 (defn lower-exprs (arena exprs0)
   (let exprs (dv-expand-program exprs0)

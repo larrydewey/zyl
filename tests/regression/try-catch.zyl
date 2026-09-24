@@ -1,0 +1,23 @@
+; Try/Catch Regression Tests — an `error` raised inside a called function
+; unwinds to the enclosing try, whatever the callee's arity.
+
+(defn tc-one (b) (if (> b 0) b (error "one")))
+(defn tc-two (a b) (if (> b 0) (/ a b) (error "two")))
+(defn tc-four (a b c d) (if (> d 0) (+ a (+ b c)) (error "four")))
+
+(test "catch-from-odd-and-even-arity"
+  (begin
+    (assert-equal (try (tc-one 0) (catch e -1)) -1)
+    (assert-equal (try (tc-two 1 0) (catch e -2)) -2)
+    (assert-equal (try (tc-four 1 2 3 0) (catch e -4)) -4)
+    (assert-equal (try (tc-two 6 3) (catch e -2)) 2)))
+
+(test "catch-binds-message"
+  (begin
+    (assert-true (str-eq (try (tc-two 1 0) (catch e e)) "two"))
+    (assert-true (str-eq (try (tc-four 1 2 3 0) (catch e e)) "four"))))
+
+(test "nested-try"
+  (assert-equal (try (+ 1 (try (tc-two 1 0) (catch e 10))) (catch e 100)) 11))
+
+(run-tests)

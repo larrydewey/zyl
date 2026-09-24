@@ -336,7 +336,7 @@
         (Nil Nil)
         (Cons m rest
         (match m
-            (TM name params ret
+            (TM name params ret _
                 (Cons
                     (Pair name params)
                     (method-params-from-methods rest)))))))
@@ -346,7 +346,7 @@
         (Nil Nil)
         (Cons m rest
         (match m
-            (TM name params ret
+            (TM name params ret _
                 (Cons
                     (Pair name ret)
                     (method-rets-from-methods rest)))))))

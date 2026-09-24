@@ -1,5 +1,6 @@
 ; Contract System Regression Tests — requires, ensures, invariant, recover, checkpoint
-; Spec §23 (contracts are a compile-time overlay; core semantics are preserved)
+; Spec §23: a violated requires/ensures/invariant raises E_CONTRACT_VIOLATION;
+; a passing one leaves the program's value unchanged.
 
 (use core/core)
 (use core/result)
@@ -160,5 +161,57 @@
     42
   )
 )
+
+; Violations raise E_CONTRACT_VIOLATION, catchable like any error.
+(defn _ct-div (a b)
+  (requires (> b 0))
+  (/ a b))
+
+(defn _ct-abs (x)
+  (ensures (>= result 0))
+  (if (< x 0) (- 0 x) x))
+
+(defn _ct-bad-abs (x)
+  (begin
+    (ensures (>= result 0))
+    x))
+
+(defn _ct-count (i)
+  (begin
+    (invariant (< i 100))
+    (if (= i 0) 0 (_ct-count (- i 1)))))
+
+(defn _ct-msg (thunk) (try (thunk) (catch e e)))
+
+(test "contract-requires-violated"
+  (begin
+    (assert-equal (_ct-div 10 2) 5)
+    (assert-true (str-eq (_ct-msg (fn () (_ct-div 1 0)))
+      "E_CONTRACT_VIOLATION: precondition of _ct-div failed: (> b 0)"))))
+
+(test "contract-ensures-binds-result"
+  (begin
+    (assert-equal (_ct-abs -3) 3)
+    (assert-true (str-eq (_ct-msg (fn () (_ct-bad-abs -2)))
+      "E_CONTRACT_VIOLATION: postcondition of _ct-bad-abs failed: (>= result 0)"))))
+
+(test "contract-invariant"
+  (begin
+    (assert-equal (_ct-count 5) 0)
+    (assert-true (str-eq (_ct-msg (fn () (_ct-count 100)))
+      "E_CONTRACT_VIOLATION: invariant of _ct-count failed: (< i 100)"))))
+
+; recover runs the first arm's fallback when the body raises.
+(defn _ct-recovered () (recover (_ct-div 1 0) ((String) 42)))
+
+(test "contract-recover-fallback"
+  (assert-equal (_ct-recovered) 42))
+
+; A bare (contracts off) directive strips the next definition's clauses.
+(contracts off)
+(defn _ct-unchecked (b) (requires (> b 0)) b)
+
+(test "contract-off-directive"
+  (assert-equal (_ct-unchecked -1) -1))
 
 (run-tests)

@@ -49,9 +49,11 @@ generated structural `T.==`, `E_TYPE_MISMATCH` for an argument that
 clashes with a parameter or field annotation, `type_annotate.zyl`) →
 ICNF lowering →
 optimization → region inference (escape analysis over ICNF) → codegen →
-`cc` link. Contract injection (`contract_injection.zyl`) is not wired
-in: `requires`/`ensures`/`invariant`/`recover`/`checkpoint` are accepted
-and currently have no effect. Hash finalization exists only for
+`cc` link. Contracts are lowered where forms are recognized
+(`convert-ast`, `expr_inner.zyl`): `requires`/`ensures`/`invariant`
+become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
+`recover` is `try`/`catch`, `(contracts off ...)` strips clauses;
+profiles and `checkpoint` rollback are not implemented. Hash finalization exists only for
 package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
 native-object and assembly hashes; spec §31.12 asks for an ICNF hash,
 which is a recorded deviation).
@@ -99,7 +101,7 @@ which is a recorded deviation).
 
 ### Contracts
 - Contracts never alter core semantics (type inference, ownership, regions, concurrency)
-- Contracts are an optional overlay (currently parsed but not enforced — see above)
+- Contracts are an optional overlay: enforced as runtime checks, stripped by `(contracts off ...)` (no profiles yet — see above)
 
 ## Architecture Decisions (Do Not Reverse)
 

@@ -470,8 +470,8 @@ with `E_ASSERT_FAIL` when the condition is false, and `(unwrap r)`, which
 extracts an `Ok`/`Some` value or aborts. Both work today, with two
 differences from the specification:
 
-- A false `(assert c "msg")` panics with `assert failed`: the message is
-  not printed and no `E_ASSERT_FAIL` code is shown.
+- A false `(assert c "msg")` panics with `msg` when it is a string
+  literal (`assert failed` otherwise); no `E_ASSERT_FAIL` code is shown.
 - `(unwrap x)` of `None` or of an `Err` panics with `unwrap on None`
   either way.
 

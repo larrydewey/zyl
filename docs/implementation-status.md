@@ -49,7 +49,7 @@ it compiles and runs correctly; the notes say where it stops.
 | Byte primitives | 8-bit loads and stores, byte buffers, slices, atomics and alignment work. The 16-, 32- and 64-bit widths are reserved and rejected with `E_RESERVED_KEYWORD` |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
 | Type inference | Best-effort. It feeds monomorphization and codegen, and rejects only an argument to a top-level function or constructor that definitely clashes with its annotation (`E_TYPE_MISMATCH`): `(+ 1 "a")` compiles |
-| Contracts | `requires`, `ensures`, `invariant`, `recover`, `checkpoint` parse and are not checked |
+| Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` falls back on error; `(contracts off ...)` strips them. No profiles; `checkpoint` does not roll back |
 
 ### Known gaps
 
@@ -74,10 +74,9 @@ it compiles and runs correctly; the notes say where it stops.
 - **Top-level `def`** does not create a global in a compiled file; a use
   of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL gives
   top-level `def` a meaning.
-- **Contract injection** (§23): `contract_injection.zyl` is written but
-  is not in the bundle and not called; its accessors do not match the
-  real `ExprInner` shapes. See the comment above `lower-exprs` in
-  `stdlib/compiler/pipeline.zyl`.
+- **Contracts** (§23): no profiles (`strict`, `debug`, `warn`,
+  `production`), no `checkpoint` rollback, and `recover` ignores its arms'
+  error types (the first arm's fallback always applies).
 - **Hash finalization** (§31.12): `zyl build` and `zyl test` write
   `zyl.buildinfo` with the compiler, graph, native-object and assembly
   hashes, but the graph hash is not mixed into the binary's own hash,

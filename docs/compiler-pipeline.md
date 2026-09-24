@@ -42,8 +42,8 @@ in a different shape, and this document describes what the code does:
   on the AST before type inference.
 - **Trait dispatch, closure inlining and assert lowering** are
   source-to-source rewrites between monomorphization and ICNF lowering.
-- **Contract injection** is not wired in, and **hash finalization**
-  happens only for package builds, as a `zyl.buildinfo` file.
+- **Contract injection** happens during parsing (`convert-ast`), and
+  **hash finalization** happens only for package builds, as a `zyl.buildinfo` file.
 
 ---
 
@@ -329,15 +329,22 @@ build appends its native objects and libraries (§31.10). With
 `--emit-asm`, the assembly is written to the output path and nothing is
 linked.
 
-## Phase 14: Contract injection (not wired in)
+## Phase 14: Contract injection (during parsing)
 
 **Spec reference:** `zyl_specification.txt` §23
 
-`contract_injection.zyl` exists but is not in the bundle and is not
-called; its accessors do not match the real `ExprInner` shapes (see the
-comment above `lower-exprs` in `pipeline.zyl`). `requires`, `ensures`,
-`checkpoint` and `recover` parse and lower to their inner expression,
-which is evaluated and not checked.
+Contract forms are rewritten where every form is recognized,
+`convert-ast` in `expr_inner.zyl`, so later phases see ordinary code:
+
+- `(requires C)` and `(invariant C)` become `(assert-true C "E_CONTRACT_VIOLATION: ...")`;
+  inside a `defn` body the message names the function.
+- `(ensures C)` clauses of a `defn` move after the body, which is bound
+  to `result`: `(let result BODY (begin checks... result))`.
+- `(recover BODY ((Type) fallback) ...)` becomes `(try BODY (catch _ fallback))`
+  with the first arm's fallback; the error type is not tested.
+- `(contracts off FORM)`, and a bare `(contracts off)` before a top-level
+  form, drop every clause inside that form.
+- `(checkpoint E)` is `E`: there is no rollback, and there are no profiles.
 
 ## Phase 15: Hash finalization (package builds only)
 

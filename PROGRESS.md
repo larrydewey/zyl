@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **148/148**
-  (updated 2026-09-24): regression 59, interpreter 39, compile-fail 24,
+- `./run_regression_tests.sh --full --no-boot` passes **150/150**
+  (updated 2026-09-24): regression 60, interpreter 40, compile-fail 24,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -155,10 +155,10 @@ Compiler:
   `secret_check`, `E_INVALID_CAPABILITY`, and the remaining errors in
   `expr_inner`. Warnings carry spans, parameter warnings included (qualification
   and macro expansion copy the parameter's span since 2026-09-24).
-- Contract injection (spec §23) is not in the pipeline.
-  Nothing imports `contract_injection.zyl`, and `requires`,
-  `ensures`, `invariant`, `recover` and `checkpoint` parse as no-op
-  passthroughs.
+- Contracts (spec §23) are lowered during parsing: `requires`, `ensures`
+  (with `result`) and `invariant` raise `E_CONTRACT_VIOLATION`; `recover`
+  uses its first arm's fallback; `(contracts off ...)` strips clauses. No
+  profiles, no `checkpoint` rollback, no typed `recover` arms.
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
   native-object and assembly hashes, but the graph hash is not mixed into
   the binary's own hash.
@@ -255,8 +255,8 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### P3: Language features
 
-- [ ] Contract injection (spec §23) against the real `expr_inner.zyl`
-      shapes, and back into the pipeline.
+- [x] Contract injection (spec §23), lowered in `expr_inner.zyl`;
+      open: profiles, `checkpoint` rollback, typed `recover` arms.
 - [ ] 16-, 32- and 64-bit byte loads and stores; a distinct type for
       byte-buffer handles.
 - [ ] `Secret`: zeroization on scope exit, `print` redaction, a `Secret`
@@ -379,7 +379,35 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — tail calls, print of non-Show payloads
+## Session (2026-09-24, latest) — contracts, even-arity try, trait return types
+
+**Contracts are enforced.** `expr_inner.zyl` lowers them where forms are
+recognized (`contract-defn-body`, `contract-check`): `requires` and
+`invariant` become `(assert-true C "E_CONTRACT_VIOLATION: precondition
+of f failed: C")`; a `defn`'s `ensures` clauses run after the body with
+its value bound to `result`; `recover` is `try`/`catch` with the first
+arm's fallback; `(contracts off FORM)` and a bare top-level
+`(contracts off)` strip clauses from the parse tree
+(`convert-top-forms`). The dead `contract_injection.zyl` is deleted.
+`assert` and `assert-true` now panic with a string-literal message
+(`ic-assert-msg`).
+
+**`try` around a call with an even number of arguments.** The try path
+popped the saved frame pointer before the body, so the body's first
+call-argument scratch slot overwrote it; the catch path then read a
+garbage frame (segfault, or a hang). The frame pointer now lives in the
+`try`'s own frame slot. Test: `tests/regression/try-catch.zyl`.
+
+**Trait method return types.** A trait method's return type was kept as
+a bare name, so `(Result Int String)` became a fresh variable and
+`print` of the call printed an address. `TM` now carries the parsed
+return type (`ta-add-method` converts it), extra `(p Type)` forms between
+the parameter list and the return type are parameters, and a resolvable
+trait call takes its impl's type before local defaulting
+(`ta-pre-unify`), so a method with no declared return type works too.
+Test: `trait-return-types` in `trait-static-dispatch.zyl`.
+
+## Session (2026-09-24, earlier) — tail calls, print of non-Show payloads
 
 **`print` of a container whose payload has no `Show`.** `Result` already
 had a prelude `Show` impl (`core/result.zyl`) and `(print (Ok 5))`

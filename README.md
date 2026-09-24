@@ -263,7 +263,7 @@ assert lowering → ICNF generation → optimization → region inference
 - **Testing framework** — `(test "name" ...)` with `assert-equal` and friends, `zyl test` for packages
 - **REPL** — `zyl repl`, backed by an ICNF interpreter, with a line editor written in Zyl
 - **Language server** — `zyl-lsp`, written in Zyl, plus a VS Code extension
-- **Contracts (parsed only)** — `requires`/`ensures`/`invariant`/`recover`/`checkpoint` are accepted, but the contract-injection pass is not wired into the pipeline, so contracts are currently not enforced
+- **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), `ensures` sees the return value as `result`, `recover` supplies a fallback, `(contracts off ...)` strips them; no profiles, and `checkpoint` does not roll back
 
 ## Compilation Pipeline
 
@@ -280,7 +280,7 @@ assert lowering → ICNF generation → optimization → region inference
 | 9. Region Inference | ✅ | Escape analysis over ICNF: non-escaping variants move to the stack |
 | 10. Code Generation | ✅ | x86_64, System V AMD64 ABI |
 | 11. Linking | ✅ | cc + actor_runtime.c + pthread |
-| — Contract Injection | ❌ | `contract_injection.zyl` exists but is not wired in (see `pipeline.zyl`) |
+| — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`); no profiles |
 
 The implementation's order differs from spec §22's (which puts region
 inference before monomorphization and contract injection after
@@ -318,8 +318,7 @@ stdlib/compiler/              # The compiler, written in Zyl (37 modules)
 ├── icnf.zyl, optimization.zyl, region_inference.zyl, codegen.zyl
 ├── package.zyl, workspace.zyl, lock.zyl, index.zyl, mvs.zyl, store.zyl,
 │   cli.zyl                   # Package system (spec §31)
-├── error_codes.zyl, error_report.zyl   # Error catalog and rendering
-└── contract_injection.zyl    # Not wired into the pipeline
+└── error_codes.zyl, error_report.zyl   # Error catalog and rendering
 
 stdlib/                       # The implicit standard library (package zyl/std)
 ├── core/                     # core, list, option, result, map (auto-loaded)

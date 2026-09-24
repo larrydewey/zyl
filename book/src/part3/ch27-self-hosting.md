@@ -42,7 +42,6 @@ sequence); the table groups them by what they do.
 | Middle | `derive.zyl`, `monomorphization.zyl`, `closure_inline.zyl`, `assert_lowering.zyl` |
 | ICNF and after | `icnf.zyl` (lowering), `optimization.zyl`, `region_inference.zyl` (escape analysis on ICNF), `codegen.zyl` (x86_64) |
 | Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl` |
-| Not wired in | `contract_injection.zyl` — its accessors do not match the current `ExprInner` shapes, so nothing imports it and the pipeline passes programs through unchanged (see the comment above `lower-exprs` in `pipeline.zyl`) |
 
 ### Self-Host Driver (`selfhost/`)
 

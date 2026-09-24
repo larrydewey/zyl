@@ -54,9 +54,9 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
 
 Two things differ from the phase list in the specification. Region
 inference runs on ICNF, after optimization, because what it produces is
-an ICNF rewrite (Chapter 28, §28.5). And contract injection is not
-wired in: `contract_injection.zyl` does not match the current
-`ExprInner` shapes, so nothing imports it.
+an ICNF rewrite (Chapter 28, §28.5). And contract injection has no
+phase of its own: `expr_inner.zyl` lowers contract forms to checks while
+converting the parse tree.
 
 ## 30.2 AST Representation
 

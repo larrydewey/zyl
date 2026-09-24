@@ -423,7 +423,6 @@ compiler is built from that entry file like any program.
 | `monomorphization.zyl` | Impl method lifting |
 | `closure_inline.zyl` | Closure inlining (retired; identity pass) |
 | `assert_lowering.zyl` | Lowering of `assert-equal` |
-| `contract_injection.zyl` | Contract overlay |
 | `icnf.zyl` | ICNF lowering |
 | `optimization.zyl` | Safe-only optimizations (constant folding, dead code) |
 | `codegen.zyl` | x86-64 code generation |

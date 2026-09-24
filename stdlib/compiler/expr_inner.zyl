@@ -147,7 +147,8 @@
 (defn AV.name (v) (match v (AV n _ n)))
 (defn AV.fields (v) (match v (AV _ f f)))
 
-(deftype TraitMethod (TM String (List Param) String))
+; name, params, return name, return type expression
+(deftype TraitMethod (TM String (List Param) String (Option Expr)))
 
 (deftype ImplBody (IB DefnNode))
 
@@ -288,71 +289,180 @@
 ; is never compared at all, so every one of those arms fired unconditionally
 ; on the FIRST arm's variant (AstIdent), making every special form after the
 ; first permanently unreachable.
-; (contracts off expr): Rust's own bootstrap (src/ast.rs) recognizes
-; this as a special form and wraps expr in a ContractsOff AST node,
-; which is only ever unwrapped by compiler/contract_injection.zyl
-; (ci-strip-contracts). That module is deliberately excluded from the
-; self-hosted bundle (see driver.zyl's own passthrough comment: its
-; accessors don't match the real DefnNode/TestDecl/TestSuiteNode
-; shapes) -- but this self-hosted parser never had a ContractsOff node
-; or any other "contracts"-keyword handling at all, so `n` fell through
-; every case below and "contracts" parsed as an ordinary call to a
-; function that doesn't exist. Whatever it wrapped (typically a
-; top-level defn) was just an argument to that nonexistent call, not
-; recognized as a defn in its own right, so it never reached
-; collect-definitions/ic-toplevel's EDefn handling and was silently
-; never compiled at all -- a link-time "undefined reference", not a
-; parse error, since the rest of the (contracts off ...) form still
-; parsed as *something* (just not anything meaningful).
-;
-; Since this pipeline never injects or checks contracts in the first
-; place (same passthrough as above), "contracts off X" and plain X are
-; already equivalent here -- no ContractsOff node is needed, just parse
-; straight through to X so a wrapped top-level defn is recognized as a
-; defn again.
+;; Contracts (spec 23): recognized here like every other form.
+;; requires/invariant become checks, ensures wraps the defn body, recover is try/catch.
+
+; Contract clause source text, for violation messages.
+(defn ast-text (a)
+  (match a
+    (AstIdent n n)
+    (AstInt n (ffi-call "zyl_int_text" n 1000))
+    (AstFloat t t)
+    (AString t (str-concat "\"" (str-concat t "\"")))
+    (AstBool b (if b "true" "false"))
+    (AList xs (str-concat "(" (str-concat (ast-text-list xs) ")")))))
+
+(defn ast-text-list (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (let ht (ast-text h)
+        (if (nil? t) ht (str-concat ht (str-concat " " (ast-text-list t))))))))
+
+(defn ast-call2 (hd a b) (AList (Cons (AstIdent hd) (Cons a (Cons b Nil)))))
+
+; (assert-true C "E_CONTRACT_VIOLATION: <what> failed: C"), spanned at the clause.
+(defn contract-check (what clause c)
+  (let msg (str-concat "E_CONTRACT_VIOLATION: " (str-concat what (str-concat " failed: " (ast-text c))))
+    (let chk (AList (Cons (AstIdent "assert-true") (Cons c (Cons (AString msg) Nil))))
+      (let _ (ffi-call "zyl_span_copy" chk clause 1000)
+        chk))))
+
+; Head name of a list form, or "".
+(defn ast-head (a)
+  (match a
+    (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil "")))
+    (_ "")))
+
+(defn ast-arg1 (a)
+  (match a
+    (AList xs (ast-nth xs 1 (AstInt 0)))
+    (_ (AstInt 0))))
+
+(defn contract-head-p (n)
+  (or (> (str-eq n "requires") 0) (or (> (str-eq n "ensures") 0) (> (str-eq n "invariant") 0))))
+
+; What a nested clause checks; `fname` is "" outside a defn body.
+(defn contract-what (kind fname)
+  (let base (if (> (str-eq kind "requires") 0) "precondition"
+              (if (> (str-eq kind "ensures") 0) "postcondition" "invariant"))
+    (if (= (str-length fname) 0) base (str-concat base (str-concat " of " (contract-short-name fname (str-length fname)))))))
+
+; Symbol part of a canonical key (after the last ':').
+(defn contract-short-name (n i)
+  (if (= i 0)
+    n
+    (if (= (ffi-call "zyl_cstr_byte_at" n (- i 1) 1000) 58)
+      (str-substring n i (- (str-length n) i))
+      (contract-short-name n (- i 1)))))
+
+(defn parse-contract-clause (kind args clause)
+  (convert-ast (contract-check (contract-what kind "") clause (ast-nth args 0 (AstInt 0)))))
+
+; (contracts off FORM): FORM with every contract clause removed.
 (defn parse-contracts-off (args)
   (match (ast-nth args 0 (AstInt 0))
     (AstIdent mode
       (if (> (str-eq mode "off") 0)
-        (convert-ast (ast-nth args 1 (AstInt 0)))
+        (convert-ast (contract-strip (ast-nth args 1 (AstInt 0))))
         (Expr (EUnknown "contracts" (convert-ast-list args)))))
     (_ (Expr (EUnknown "contracts" (convert-ast-list args))))))
 
-; requires/ensures/recover/checkpoint: same gap and same fix as
-; "contracts" above (this parser never had nodes for them, and their
-; real handling lives only in the excluded contract_injection.zyl), and
-; regression/contracts.zyl's own header comment states the same
-; contract-free semantics explicitly: "requires, ensures, invariant,
-; recover, checkpoint" are "a compile-time overlay; core semantics are
-; preserved" -- i.e. even where a real implementation existed, none of
-; these forms are supposed to change what the wrapped code actually
-; does. requires/ensures wrap a single condition used only for a
-; (never-enforced) precondition/postcondition check -- parse straight
-; through to that condition expression, whose value is simply unused
-; when these sit inside a `begin`, matching what evaluating-and-
-; discarding a real check's condition would do anyway. `checkpoint`
-; "preserves the body value" per that same comment -- parse straight
-; through to its single argument. `recover`'s own regression test
-; comment is explicit too: "recover keeps the body value (fallback arm
-; is the overlay)" -- parse straight through to its first argument
-; (the body), ignoring the fallback arm entirely, since it would only
-; ever run on a real failure this pipeline never detects.
-(defn parse-requires-ensures (args)
-  (convert-ast (ast-nth args 0 (AstInt 0))))
+(defn contract-strip (a)
+  (match a
+    (AList xs
+      (let r (AList (contract-strip-list xs))
+        (let _ (ffi-call "zyl_span_copy" r a 1000) r)))
+    (_ a)))
 
+(defn contract-strip-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (if (contract-head-p (ast-head h))
+        (contract-strip-list t)
+        (Cons (contract-strip h) (contract-strip-list t))))))
+
+; Top-level forms; a bare (contracts off) strips contracts from the next form.
+(defn convert-top-forms (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (if (contract-off-directive-p f)
+        (match rest
+          (Nil Nil)
+          (Cons g more (Cons (convert-ast (contract-strip g)) (convert-top-forms more))))
+        (Cons (convert-ast f) (convert-top-forms rest))))))
+
+(defn contract-off-directive-p (f)
+  (match f
+    (AList xs
+      (if (= (list-length xs) 2)
+        (if (> (str-eq (ast-head f) "contracts") 0)
+          (match (ast-nth xs 1 (AstInt 0)) (AstIdent m (> (str-eq m "off") 0)) (_ false))
+          false)
+        false))
+    (_ false)))
+
+;; Defn body: named checks for requires/invariant; ensures run on `result` after the body.
+(defn contract-defn-body (fname forms)
+  (match forms
+    (Cons only rest
+      (if (and (nil? rest) (> (str-eq (ast-head only) "begin") 0))
+        (match only
+          (AList xs (match xs (Cons _ kids (contract-wrap fname kids only true)) (Nil (parse-body-list forms))))
+          (_ (parse-body-list forms)))
+        (contract-wrap fname forms only false)))
+    (Nil (parse-body-list forms))))
+
+(defn contract-any (forms)
+  (match forms
+    (Nil false)
+    (Cons h t (if (contract-head-p (ast-head h)) true (contract-any t)))))
+
+(defn contract-wrap (fname forms site in-begin)
+  (if (contract-any forms)
+    (let pre (contract-pre fname forms)
+      (let body (if in-begin (convert-ast (AList (Cons (AstIdent "begin") pre))) (parse-body-list pre))
+        (let posts (contract-posts fname forms)
+          (if (nil? posts)
+            body
+            (let r (Expr (ELet "result" body
+                     (Expr (EBegin (convert-ast-list (list-append posts (Cons (AstIdent "result") Nil)))))))
+              (let _ (ffi-call "zyl_span_copy" r site 1000) r))))))
+    (if in-begin (convert-ast site) (parse-body-list forms))))
+
+; Body with requires/invariant turned into named checks and ensures removed.
+(defn contract-pre (fname forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (let k (ast-head h)
+        (if (> (str-eq k "ensures") 0)
+          (contract-pre fname t)
+          (if (contract-head-p k)
+            (Cons (contract-check (contract-what k fname) h (ast-arg1 h)) (contract-pre fname t))
+            (Cons h (contract-pre fname t))))))))
+
+(defn contract-posts (fname forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (> (str-eq (ast-head h) "ensures") 0)
+        (Cons (contract-check (contract-what "ensures" fname) h (ast-arg1 h)) (contract-posts fname t))
+        (contract-posts fname t)))))
+
+; checkpoint: no rollback yet, the body's value.
 (defn parse-checkpoint (args)
   (convert-ast (ast-nth args 0 (AstInt 0))))
 
+; (recover BODY ((Type) fallback) ...): try BODY, first arm's fallback on error.
 (defn parse-recover (args)
-  (convert-ast (ast-nth args 0 (AstInt 0))))
+  (match args
+    (Cons body arms
+      (match arms
+        (Cons arm _
+          (convert-ast (AList (Cons (AstIdent "try") (Cons body
+            (Cons (AList (Cons (AstIdent "catch") (Cons (AstIdent "_contract_err")
+              (Cons (ast-list-last (match arm (AList xs xs) (_ Nil)) (AstInt 0)) Nil)))) Nil))))))
+        (Nil (convert-ast body))))
+    (Nil (Expr (EAtom ANil)))))
 
 (defn dispatch-special (n rest)
   (if (> (str-eq n "contracts") 0)
     (parse-contracts-off rest)
-  (if (> (str-eq n "requires") 0)
-    (parse-requires-ensures rest)
-  (if (> (str-eq n "ensures") 0)
-    (parse-requires-ensures rest)
+  (if (contract-head-p n)
+    (parse-contract-clause n rest (AList (Cons (AstIdent n) rest)))
   (if (> (str-eq n "checkpoint") 0)
     (parse-checkpoint rest)
   (if (> (str-eq n "recover") 0)
@@ -596,7 +706,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (byte-form-dispatch n rest)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -897,7 +1007,7 @@
             (EDefn
               n
               (parse-params (ast-nth args 1 (AstInt 0)))
-              (parse-body-from args 2))))
+              (contract-defn-body n (ast-list-nth-rest args 2)))))
         None))
     (_ None)))
 
@@ -1078,10 +1188,18 @@
         (AList parts (Cons (parse-trait-method parts) (parse-trait-methods rest)))
         (_ (parse-trait-methods rest))))))
 
+; (name (params) [(p Type)...] Ret): forms between the list and Ret are extra params.
 (defn parse-trait-method (parts)
-  (TM (a-ident-to-str (ast-nth parts 0 (AstInt 0)))
-      (parse-params (ast-nth parts 1 (AstInt 0)))
-      (a-ident-to-str (ast-nth parts 2 (AstInt 0)))))
+  (let ret (if (ast-has-at-least parts 3) (ast-list-last parts (AstInt 0)) (AstInt 0))
+    (TM (a-ident-to-str (ast-nth parts 0 (AstInt 0)))
+        (list-append (parse-params (ast-nth parts 1 (AstInt 0))) (parse-trait-extra (ast-list-nth-rest parts 2)))
+        (a-ident-to-str ret)
+        (if (ast-has-at-least parts 3) (Some (convert-ast ret)) None))))
+
+(defn parse-trait-extra (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (nil? t) Nil (Cons (parse-single-param h) (parse-trait-extra t))))))
 
 (defn parse-impl-bodies (forms)
   (match forms
@@ -1245,7 +1363,10 @@
               (_ (sequence-two only restbody)))))))))
 
 (defn parse-body-from (args start)
-  (let rest (ast-list-nth-rest args start)
+  (parse-body-list (ast-list-nth-rest args start)))
+
+(defn parse-body-list (rest)
+  (begin
     (if (<= (list-length rest) 1)
       (match rest
         (Nil (Expr (EAtom ANil)))
@@ -1914,8 +2035,13 @@
       (Expr
         (EAssertTrue
           (convert-ast (ast-nth args 0 (AstInt 0)))
-          None)))
+          (ast-string-opt (ast-nth args 1 (AstInt 0))))))
     None))
+
+(defn ast-string-opt (a)
+  (match a
+    (AString t (Some t))
+    (_ None)))
 
 (defn parse-assert-false (args)
   (if (ast-has-at-least args 1)

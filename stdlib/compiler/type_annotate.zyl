@@ -487,13 +487,13 @@
     (Cons m rest
       (begin
         (match m
-          (TM mname params ret (ta-add-method st (str-concat name (str-concat "." mname)) params ret)))
+          (TM mname params ret rte (ta-add-method st (str-concat name (str-concat "." mname)) params ret rte)))
         (ta-add-trait st name rest)))))
 
-(defn ta-add-method (st dotted params ret)
+(defn ta-add-method (st dotted params ret rte)
   (match (ta-params st params Nil Nil Nil)
     (TaPE ts _ scope _
-      (match (ta-conv-name st ret Nil scope)
+      (match (match rte (Some te (ta-conv st te scope)) (None (ta-conv-name st ret Nil scope)))
         (TaR rt _
           (match (ta-gen st (TaF ts rt) Nil)
             (TaGen t seen
@@ -1608,9 +1608,25 @@
 (defn ta-resolve-specials (st members from)
   (let es (ta-take-specials st from)
     (begin
+      (ta-pre-unify st members es)
       (ta-default-locals st es (ta-member-vars st members Nil))
       (ta-tg-fix st es)
       (ta-act-list st members es))))
+
+;; Resolvable trait calls take their impl's type before defaulting (return types the trait left open).
+(defn ta-pre-unify (st members es)
+  (match es
+    (Nil 0)
+    (Cons sp rest
+      (begin
+        (match sp
+          (TaSp _ _ kind name t _
+            (if (and (= kind 0) (= (ta-sp-status st sp) 1))
+              (match (ta-recv st t)
+                (TaC n _ (ta-unify-fn st members (ta-impl-fn st name n) t))
+                (_ 0))
+              0)))
+        (ta-pre-unify st members rest)))))
 
 ; A variable in a use's type that no member's signature mentions can never
 ; be fixed by a caller (e.g. E in `(Ok "yes")`): default it to Int.

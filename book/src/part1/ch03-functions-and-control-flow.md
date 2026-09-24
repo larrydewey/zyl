@@ -355,22 +355,13 @@ Things to know about the current implementation:
 - The catch clause uses one handler expression. Write several steps as
   a `begin`, or call a function, as `report` does.
 - The message is a String, and prints as one.
-- **Known bug:** if `error` is raised inside a function that was called
-  with an even number of arguments (2, 4, ...), the program can hang
-  instead of reaching the handler. Whether it hangs depends on the
-  argument values, not only their number: with `(defn f (a b) (error
-  "x"))`, `(f 1 2)`, `(f 1 0)` and `(f 1 "a")` hang, while `(f 0 1)`,
-  `(f "a" 1)` and `(f (Some 1) 2)` are caught — in these tests it hangs
-  when the first argument is a nonzero plain integer. Functions of 0, 1
-  or 3 arguments were unaffected. Until this is fixed, prefer `Result`
-  values for failures you expect to handle.
 
 ### `unwrap` and `assert`
 
 The specification defines `(unwrap r)` and `(assert condition "message")`.
-Both work, but both lose information when they fail: a false `assert`
-panics with `assert failed` (your message is not printed), and `unwrap`
-of `None` or of an `Err` panics with `unwrap on None`. Where the message
+Both work. A false `assert` panics with your message when it is a
+string literal (`assert failed` otherwise); `unwrap` of `None` or of an
+`Err` panics with `unwrap on None`. Where the message
 matters, use `result-expect` / `option-expect` instead of `unwrap`, and
 an explicit check with `error` instead of `assert`:
 

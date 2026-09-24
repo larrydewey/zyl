@@ -183,7 +183,7 @@ frame, and everything else stays on the heap. No pass reports
 | `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
 | `E_LIST_NTH_OOB` | The compiler's internal `list-nth` given an out-of-range index |
 | `E_USER_ERROR` | `(error "...")`. *Catalogued only: `error` panics with its message, printed as `PANIC: <message>`, and unwinds to the nearest `try` if there is one.* |
-| `E_ASSERT_FAIL` | A failed `assert`. *Catalogued only: a failed `assert` panics as `PANIC: assert failed`, without this code or its message (Appendix C.7). The test assertions panic with `assert-equal failed` and similar.* |
+| `E_ASSERT_FAIL` | A failed `assert`. *Catalogued only: a failed `assert` panics as `PANIC: <message>` when the message is a string literal, else `PANIC: assert failed`, without this code (Appendix C.7). The test assertions panic with `assert-equal failed` and similar.* |
 | `E_NULL_POINTER` | A null dereference. *Catalogued only.* |
 | `E_BYTE_OOB` | A byte offset outside its buffer. *Catalogued only.* |
 | `E_BYTEBUF_CAP_EXCEEDED` | An append past a buffer's fixed capacity. *Catalogued only: the append returns 0 and leaves the buffer unchanged.* |
@@ -234,7 +234,7 @@ Chapter 25 package capabilities.
 | `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
 | `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter; compiled code does not check for it.* |
 | `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |
-| `E_CONTRACT_VIOLATION` | A `requires` or `ensures` clause failed. *Catalogued only: contract forms are parsed but not enforced (Appendix C.13).* |
+| `E_CONTRACT_VIOLATION` | A `requires`, `ensures` or `invariant` clause failed at run time; the message names the clause and its function. Catchable with `try`. |
 
 Exhaustiveness is a compile-time error, not a warning. `_` is the
 catch-all pattern; it may repeat, and it must be the last arm.
