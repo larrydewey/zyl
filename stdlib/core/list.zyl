@@ -106,3 +106,35 @@
       (match t
         (Nil (Show.show h))
         (_ (str-concat (Show.show h) (str-concat ", " (list-show-items t))))))))
+
+(impl Debug List (defn debug (self) (str-concat "[" (str-concat (list-debug-items self) "]"))))
+
+(defn list-debug-items (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil (Debug.debug h))
+        (_ (str-concat (Debug.debug h) (str-concat ", " (list-debug-items t))))))))
+
+(impl Eq List (defn eq (self other) (== self other)))
+
+; Lexicographic; a proper prefix sorts first.
+(impl Ord List (defn compare (self other) (list-compare self other)))
+
+(defn list-compare (a b)
+  (match a
+    (Nil (match b (Nil 0) (Cons _ _ -1)))
+    (Cons x xs
+      (match b
+        (Nil 1)
+        (Cons y ys (let c (Ord.compare x y) (if (= c 0) (list-compare xs ys) c)))))))
+
+(impl Hash List (defn hash (self) (list-hash self 1469598103934665603)))
+
+(defn list-hash (xs h)
+  (match xs
+    (Nil h)
+    (Cons x rest (list-hash rest (* (bit-xor h (Hash.hash x)) 1099511628211)))))
+
+(impl Clone List (defn clone (self) self))

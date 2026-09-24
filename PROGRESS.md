@@ -369,7 +369,21 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — open follow-ups from P1-P3
+## Session (2026-09-24, latest) — derivable traits
+
+`derive.zyl` now derives all six traits of spec 5.6: Show, Debug (strings
+quoted), Eq (`==`), Ord (`compare`: variant order, then fields
+lexicographically), Hash (FNV-style fold, deterministic) and Clone
+(identity). The prelude (`core/show.zyl`) declares Debug/Eq/Ord/Hash/Clone
+with impls for the primitives, and `core/list`, `core/option`,
+`core/result` implement them; Vec and Map implement only Show. Every
+derive checks its fields (`dv-check-fields`): a field type without the
+trait, a Secret field under Eq/Ord/Hash, or an underivable trait is a
+located `E_TRAIT_NOT_DERIVABLE`. Secret types keep compiler-made
+`<secret>` Show and Debug; the prelude adds `(impl-not Debug/Eq/Ord/Hash
+Secret)`. Tests: `derive-traits.zyl`, three compile-fail cases.
+
+## Session (2026-09-24, earlier) — open follow-ups from P1-P3
 
 - Lexer: a byte it cannot tokenize is `E_INVALID_CHAR` (`check-lexed-to-end`,
   `parser.zyl`); an open string is `E_UNTERMINATED_STRING`. It used to end

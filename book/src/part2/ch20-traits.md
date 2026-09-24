@@ -212,9 +212,8 @@ The specification resolves traits in Phase 3, with type inference (§5.4,
 
 The implementation does steps 2, 3 and 5 at each call site from inferred
 types (20.2). Bounds cannot be declared (Chapter 19), so 1 and 4 do not
-exist. A call to a `Trait.method` that has no impl at all is left
-unchanged and fails at link time as an undefined symbol, not as
-`E_TRAIT_NOT_FOUND`.
+exist. A call to a `Trait.method` on a receiver of known type that has
+no impl for it is `E_TRAIT_NOT_FOUND`, located at the call.
 
 ## 20.5 Trait Objects
 
@@ -285,28 +284,49 @@ instance for the concrete type:
     0))
 ```
 
-A field whose type has no `Show` impl is not rejected
-(`E_TRAIT_NOT_DERIVABLE` is never raised); its `show` call falls back to
-the runtime match. The other derivable traits are accepted and generate
-nothing, and an unknown trait name is accepted. What you get without
-them:
+The other five traits are declared in the prelude (`core/show`) with
+impls for `Int`, `Float`, `Bool`, `String`, `List`, `Option` and
+`Result`, and each derives:
+
+| Trait | Method | Derived meaning |
+|-------|--------|-----------------|
+| `Debug` | `(Debug.debug x)` | like `Show`, with strings quoted: `Person { name: "Ann", age: 30 }` |
+| `Eq` | `(Eq.eq a b)` | structural equality, the same as `==` |
+| `Ord` | `(Ord.compare a b)` | -1, 0 or 1: variants in declaration order, then fields lexicographically |
+| `Hash` | `(Hash.hash x)` | a deterministic `Int`, equal for equal values |
+| `Clone` | `(Clone.clone x)` | the value itself (values are immutable) |
+
+```lisp
+(deftype Shape (Circle Int) (Rect Int Int) (Empty))
+(derive Shape Eq Ord Hash)
+(Ord.compare (Circle 5) (Rect 1 1))   ; -1: Circle is declared first
+(Ord.compare (Rect 1 2) (Rect 1 1))   ; 1
+```
+
+**The field requirement is checked.** Every field's type must implement
+the trait: a primitive, the type being derived (recursion), a type
+parameter or an untyped field is fine; any other type needs an impl or
+a derive of its own, or the derive is `E_TRAIT_NOT_DERIVABLE`, naming
+the field type. `Vec` and `Map` implement only `Show`. A `Secret` field
+is redacted by `Show` and `Debug`, but a record with one cannot derive
+`Eq`, `Ord` or `Hash`, since that comparison would not be constant-time
+(Chapter 33). An unknown trait name is `E_TRAIT_NOT_DERIVABLE` too.
+
+What the operators give you without a derive:
 
 - **Equality.** `==`, `!=` and `assert-equal` on two struct or ADT values
-  compare by content, recursing into nested ADT and string fields, through
-  an equality function the type-annotation pass generates per type
-  (Chapter 18, §18.8). A type with a `Secret` field, or a value of a type
-  inference cannot determine, gets the runtime's shallow comparison
-  instead: tag, then field words.
+  compare by content, through an equality function the type-annotation
+  pass generates per type. A type with a `Secret` field, or a value of a
+  type inference cannot determine, gets the runtime's shallow comparison.
 - **Ordering.** `<`, `>`, `<=` and `>=` compare the fields
   lexicographically, and are shallow: a string or nested-ADT field is
-  compared by address, not by content.
-- **`Debug`, `Clone` and `Hash`** have no generated functions to call.
+  compared by address. Use a derived `Ord` for a real ordering.
 
 ## 20.7 Derivation Errors
 
 | Code | Cause | Status |
 |------|-------|--------|
-| `E_TRAIT_NOT_DERIVABLE` | a field lacks the trait being derived (§5.6, §6.6) | catalogued; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a field lacks the trait being derived (§5.6, §6.6), a Secret field under Eq/Ord/Hash, or a trait that is not derivable | raised |
 
 The specification defines no other derive-specific codes.
 
@@ -336,10 +356,10 @@ collection does today, and `for` is a condition loop (§12.6).
 |------|-------------|--------|
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type belongs to the package (§24.6) | raised |
 | `E_IMPL_FORBIDDEN` | an impl or derive an `impl-not` forbids, or an impl whose result exposes a protected value | raised |
-| `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | catalogued; a missing impl fails at link time instead |
+| `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | raised for a known receiver type, and for dot calls |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | catalogued; a duplicate fails in the assembler instead |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type lacks a bound's trait (§6.7) | catalogued; never raised |
-| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | catalogued; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised |
 
 ## 20.11 Traits in the Standard Library
 

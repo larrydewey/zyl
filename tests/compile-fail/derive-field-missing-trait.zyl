@@ -1,0 +1,8 @@
+; Compile-fail: every field's type must implement the derived trait
+; (E_TRAIT_NOT_DERIVABLE, spec 5.6).
+
+(defstruct _cf_P (x Int))
+(defstruct _cf_W (p _cf_P))
+(derive _cf_W Eq)
+
+(defn main () 0)

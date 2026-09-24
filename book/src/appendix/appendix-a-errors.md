@@ -206,7 +206,7 @@ frame, and everything else stays on the heap. No pass reports
 | `E_TRAIT_NOT_FOUND` | No implementation for a required trait. *Catalogued only.* |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | A concrete type lacks a required trait. *Catalogued only.* |
 | `E_IMPL_FORBIDDEN` | An `impl` or `derive` that an `(impl-not Trait Target)` declaration forbids, or an impl of that trait whose result is derived from a protected value (Chapter 20). |
-| `E_TRAIT_NOT_DERIVABLE` | `derive` asked for a trait that cannot be derived for this type. *Catalogued only.* |
+| `E_TRAIT_NOT_DERIVABLE` | `derive` of a trait that is not derivable, or whose field requirement fails: a field type without the trait, or a `Secret` field under `Eq`/`Ord`/`Hash`. |
 | `E_DUPLICATE_IMPL` | Two implementations of one trait for one type. *Catalogued only.* |
 
 ## A.12 Capabilities, Aliasing and Secrets (phase 13)

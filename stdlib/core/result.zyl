@@ -97,3 +97,26 @@
     (match self
       (Ok x (str-concat "Ok(" (str-concat (Show.show x) ")")))
       (Err e (str-concat "Err(" (str-concat (Show.show e) ")"))))))
+
+(impl Debug Result
+  (defn debug (self)
+    (match self
+      (Ok x (str-concat "Ok(" (str-concat (Debug.debug x) ")")))
+      (Err e (str-concat "Err(" (str-concat (Debug.debug e) ")"))))))
+
+(impl Eq Result (defn eq (self other) (== self other)))
+
+; Ok sorts before Err.
+(impl Ord Result
+  (defn compare (self other)
+    (match self
+      (Ok x (match other (Ok y (Ord.compare x y)) (Err _ -1)))
+      (Err e (match other (Ok _ 1) (Err f (Ord.compare e f)))))))
+
+(impl Hash Result
+  (defn hash (self)
+    (match self
+      (Ok x (* (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211))
+      (Err e (* (bit-xor 1099511628211 (Hash.hash e)) 1469598103934665603)))))
+
+(impl Clone Result (defn clone (self) self))

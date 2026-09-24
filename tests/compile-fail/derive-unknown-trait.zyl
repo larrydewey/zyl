@@ -1,0 +1,7 @@
+; Compile-fail: only Show, Debug, Eq, Ord, Hash and Clone are derivable
+; (E_TRAIT_NOT_DERIVABLE).
+
+(defstruct _cf_Q (x Int))
+(derive _cf_Q Frobnicate)
+
+(defn main () 0)

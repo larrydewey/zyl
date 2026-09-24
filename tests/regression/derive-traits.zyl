@@ -1,0 +1,47 @@
+; Derivable traits (spec 5.6): Show, Debug, Eq, Ord, Hash, Clone, derived
+; for ADTs, structs and generic types, with the prelude impls for the
+; primitives and List/Option/Result.
+
+(deftype DtShape (DtCircle Int) (DtRect Int Int) (DtEmpty))
+(derive DtShape Show Debug Eq Ord Hash Clone)
+
+(defstruct DtPerson (name String) (age Int))
+(derive DtPerson Debug Eq Ord Hash)
+
+(deftype DtPair (DtMk A B))
+(derive DtPair Eq Ord)
+
+(test "derived-eq"
+  (begin
+    (assert-true (Eq.eq (DtRect 1 2) (DtRect 1 2)))
+    (assert-false (Eq.eq (DtRect 1 2) (DtRect 1 3)))
+    (assert-true (Eq.eq (make-DtPerson "ann" 3) (make-DtPerson "ann" 3)))))
+
+(test "derived-ord-variant-then-fields"
+  (begin
+    (assert-equal (Ord.compare (DtCircle 5) (DtRect 1 1)) -1)
+    (assert-equal (Ord.compare (DtRect 1 2) (DtRect 1 1)) 1)
+    (assert-equal (Ord.compare DtEmpty DtEmpty) 0)
+    (assert-equal (Ord.compare (make-DtPerson "ann" 9) (make-DtPerson "bob" 1)) -1)
+    (assert-equal (Ord.compare (DtMk "a" 2) (DtMk "a" 1)) 1)))
+
+(test "derived-hash-is-structural"
+  (begin
+    (assert-equal (Hash.hash (DtRect 1 2)) (Hash.hash (DtRect 1 2)))
+    (assert-false (= (Hash.hash (DtRect 1 2)) (Hash.hash (DtRect 2 1))))
+    (assert-equal (Hash.hash "abc") (Hash.hash (str-concat "a" "bc")))))
+
+(test "derived-clone-and-debug"
+  (begin
+    (assert-true (Eq.eq (Clone.clone (DtRect 4 5)) (DtRect 4 5)))
+    (assert-true (str-eq (Debug.debug (make-DtPerson "ann" 3)) "DtPerson { name: \"ann\", age: 3 }"))
+    (assert-true (str-eq (Debug.debug (Cons "a" (Cons "b" Nil))) "[\"a\", \"b\"]"))
+    (assert-true (str-eq (Debug.debug (Some 1)) "Some(1)"))))
+
+(test "container-impls"
+  (begin
+    (assert-equal (Ord.compare (Cons 1 (Cons 2 Nil)) (Cons 1 (Cons 3 Nil))) -1)
+    (assert-equal (Ord.compare None (Some 1)) -1)
+    (assert-equal (Ord.compare (Ok 1) (Err "e")) -1)))
+
+(run-tests)

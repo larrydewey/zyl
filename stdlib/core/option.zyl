@@ -85,3 +85,26 @@
     (match self
       (Some x (str-concat "Some(" (str-concat (Show.show x) ")")))
       (None "None"))))
+
+(impl Debug Option
+  (defn debug (self)
+    (match self
+      (Some x (str-concat "Some(" (str-concat (Debug.debug x) ")")))
+      (None "None"))))
+
+(impl Eq Option (defn eq (self other) (== self other)))
+
+; None sorts before Some.
+(impl Ord Option
+  (defn compare (self other)
+    (match self
+      (None (match other (None 0) (Some _ -1)))
+      (Some x (match other (None 1) (Some y (Ord.compare x y)))))))
+
+(impl Hash Option
+  (defn hash (self)
+    (match self
+      (None 1469598103934665603)
+      (Some x (* (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211)))))
+
+(impl Clone Option (defn clone (self) self))

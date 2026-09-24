@@ -1,9 +1,11 @@
-; === Zyl Standard Library — Show ===
+; === Zyl Standard Library — Show and the derivable traits ===
 ; Module: core/show
-; Provides: the Show trait (readable text for a value) and its impls for
-; the primitive types. `print` of a value whose type has a Show impl
-; prints `(Show.show v)`; `(derive T Show)` writes the impl for an ADT or
-; struct. Container impls live beside their types.
+; Provides: the derivable traits of spec 5.6 -- Show (readable text),
+; Debug (text with strings quoted), Eq, Ord (compare: -1, 0 or 1), Hash
+; (a deterministic Int) and Clone -- with their impls for the primitive
+; types, plus the Secret trait. `print` of a value whose type has a Show
+; impl prints `(Show.show v)`; `(derive T Show Eq ...)` writes the impls
+; for an ADT or struct. Container impls live beside their types.
 
 (trait Show (show (self) String))
 
@@ -11,10 +13,57 @@
 ; appears, prints as `<secret>`, and `wipe` erases it (spec: TSecret).
 (trait Secret (wipe (self) Int))
 
-; A Secret type's only Show is the compiler's, which prints `<secret>`.
+; A Secret type's only Show and Debug are the compiler's, which print
+; `<secret>`; comparing or hashing key material is not constant-time.
 (impl-not Show Secret)
+(impl-not Debug Secret)
+(impl-not Eq Secret)
+(impl-not Ord Secret)
+(impl-not Hash Secret)
+
+(trait Debug (debug (self) String))
+(trait Eq (eq (self other) Bool))
+(trait Ord (compare (self other) Int))
+(trait Hash (hash (self) Int))
+(trait Clone (clone (self)))
 
 (impl Show Int (defn show (self) (ffi-call "zyl_int_text" self 1000)))
 (impl Show Float (defn show (self) (ffi-call "zyl_f_text" self 1000)))
 (impl Show Bool (defn show (self) (if self "true" "false")))
 (impl Show String (defn show (self) self))
+
+(impl Debug Int (defn debug (self) (ffi-call "zyl_int_text" self 1000)))
+(impl Debug Float (defn debug (self) (ffi-call "zyl_f_text" self 1000)))
+(impl Debug Bool (defn debug (self) (if self "true" "false")))
+(impl Debug String (defn debug (self) (str-concat "\"" (str-concat self "\""))))
+
+(impl Eq Int (defn eq (self other) (= self other)))
+(impl Eq Float (defn eq (self other) (= self other)))
+(impl Eq Bool (defn eq (self other) (= self other)))
+(impl Eq String (defn eq (self other) (= self other)))
+
+(impl Ord Int (defn compare (self other) (if (< self other) -1 (if (> self other) 1 0))))
+(impl Ord Float (defn compare (self other) (if (< self other) -1 (if (> self other) 1 0))))
+(impl Ord Bool (defn compare (self other) (show-ord-int (if self 1 0) (if other 1 0))))
+(impl Ord String (defn compare (self other) (if (< self other) -1 (if (> self other) 1 0))))
+
+(defn show-ord-int (a b) (if (< a b) -1 (if (> a b) 1 0)))
+
+; FNV-1a over the value's word, or over a string's bytes.
+(impl Hash Int (defn hash (self) (show-mix 1469598103934665603 self)))
+(impl Hash Float (defn hash (self) (show-mix 1469598103934665603 (ffi-call "zyl_cstr_of_word" self 1000))))
+(impl Hash Bool (defn hash (self) (show-mix 1469598103934665603 (if self 1 0))))
+(impl Hash String (defn hash (self) (show-str-hash self 0 1469598103934665603)))
+
+(defn show-mix (h w) (* (bit-xor h w) 1099511628211))
+
+(defn show-str-hash (s i h)
+  (if (>= i (ffi-call "zyl_cstr_len" s 1000))
+    h
+    (show-str-hash s (+ i 1) (show-mix h (ffi-call "zyl_cstr_byte_at" s i 1000)))))
+
+; Values are immutable, so a clone is the value itself.
+(impl Clone Int (defn clone (self) self))
+(impl Clone Float (defn clone (self) self))
+(impl Clone Bool (defn clone (self) self))
+(impl Clone String (defn clone (self) self))

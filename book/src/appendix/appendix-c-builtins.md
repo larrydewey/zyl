@@ -217,7 +217,7 @@ constructor patterns cannot be mixed in one `match`.
 | `make-variant` | `(make-variant (Type) Variant field ...)` | **not lowered**; call the constructor, `(Variant field ...)` |
 | `trait` | `(trait Name (method (param ...) ReturnType) ...)` | |
 | `impl` | `(impl Trait Type (defn method (self ...) body) ...)` | call a method as `(Trait.method receiver ...)` |
-| `derive` | `(derive Type Trait ...)` | |
+| `derive` | `(derive Type Trait ...)` | Show, Debug, Eq, Ord, Hash, Clone; fields must implement the trait |
 | `alias` | `(alias Name Type)` | transparent |
 | `macro`, `defmacro` | `(defmacro name (param ...) template)` | |
 

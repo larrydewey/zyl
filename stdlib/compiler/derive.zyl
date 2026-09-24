@@ -1,93 +1,118 @@
 ; === Zyl Compiler — Derive ===
 ; Module: compiler/derive
 ;
-; Expands `(derive Type Show ...)` into an impl block (spec §5.6). Runs
-; before monomorphization, which lifts the impl's method to a function.
-; Other derivable traits are accepted and generate nothing yet.
+; Expands `(derive Type Show Debug Eq Ord Hash Clone)` into impl blocks
+; (spec §5.6). Runs before monomorphization, which lifts each impl's method
+; to a function. Every field's type must implement the trait (the type
+; being derived counts, as does a type parameter or an untyped field);
+; otherwise, or for a trait that is not derivable, E_TRAIT_NOT_DERIVABLE.
 
 (use core/list)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 (defn dv-expand-program (exprs)
-  (list-append exprs (list-append (dv-collect exprs exprs) (dv-secret-shows exprs exprs))))
+  (list-append exprs
+    (list-append (dv-collect exprs exprs)
+      (list-append (dv-fixed-texts exprs "Show" "show" exprs) (dv-fixed-texts exprs "Debug" "debug" exprs)))))
 
 ;; Redaction: Secret fields and types implementing the Secret trait show as
-;; `<secret>` (shapes recorded by secret_check.zyl in global map 4).
+;; `<secret>`; fields and types an (impl-not Show X) / (impl-not Debug X)
+;; protects show as `<hidden>` (shapes from secret_check.zyl, map 4, and
+;; module_resolver.zyl, map 5).
 (defn dv-shape (tag n) (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 4 1000) (str-concat tag (dv-short n)) 1000))
 (defn dv-secret-type (n) (> (dv-shape "t|" n) 0))
 
-(defn dv-ctor-mask (n)
-  (let c (dv-shape "c|" n)
+(defn dv-mask-of (tag n)
+  (let c (dv-shape tag n)
     (if (= c 0) 0 (- c 1))))
 
-; Fields protected by (impl-not Show X) show as `<hidden>` (label "Show|").
-(defn dv-hidden-mask (n)
-  (let c (dv-shape "c|Show|" n)
-    (if (= c 0) 0 (- c 1))))
+(defn dv-ctor-mask (n) (dv-mask-of "c|" n))
+(defn dv-hidden-mask (label n) (dv-mask-of (str-concat "c|" (str-concat label "|")) n))
 
-(defn dv-hidden-type (n)
-  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 5 1000) (str-concat "p|Show|" (dv-short n)) 1000) 0))
+(defn dv-hidden-type (label n)
+  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 5 1000) (str-concat "p|" (str-concat label (str-concat "|" (dv-short n)))) 1000) 0))
 
-; Secret types show as `<secret>` and other (impl-not Show X) types as
-; `<hidden>`: the only Show they have is this compiler-made one.
-(defn dv-secret-shows (all forms)
+; Secret types get a `label` impl printing `<secret>`, protected ones `<hidden>`:
+; the only one they have is this compiler-made impl.
+(defn dv-fixed-texts (all label method forms)
   (match forms
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
         (EDeftype ty _ _ _
-          (if (and (or (dv-secret-type ty) (dv-hidden-type ty)) (not (dv-has-show all ty)))
-            (Cons (dv-fixed-impl (dv-show-trait all) ty (if (dv-secret-type ty) "<secret>" "<hidden>")) (dv-secret-shows all rest))
-            (dv-secret-shows all rest)))
-        (_ (dv-secret-shows all rest))))))
+          (if (and (or (dv-secret-type ty) (dv-hidden-type label ty)) (not (dv-has-impl all label ty)))
+            (Cons (dv-fixed-impl (dv-trait-key all label) method ty (if (dv-secret-type ty) "<secret>" "<hidden>"))
+                  (dv-fixed-texts all label method rest))
+            (dv-fixed-texts all label method rest)))
+        (_ (dv-fixed-texts all label method rest))))))
 
-(defn dv-has-show (forms ty)
+; `ty` already has an impl (written or derived) of the trait named `label`.
+(defn dv-has-impl (forms label ty)
   (match forms
     (Nil false)
     (Cons e rest
       (match (Expr.inner e)
-        (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr "Show" 1000) 0) (> (str-eq t ty) 0)) true (dv-has-show rest ty)))
-        (EDerive t traits (if (and (> (str-eq t ty) 0) (dv-lists-show traits)) true (dv-has-show rest ty)))
-        (_ (dv-has-show rest ty))))))
+        (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr label 1000) 0) (dv-same t ty)) true (dv-has-impl rest label ty)))
+        (EDerive t traits (if (and (dv-same t ty) (dv-lists label traits)) true (dv-has-impl rest label ty)))
+        (_ (dv-has-impl rest label ty))))))
 
-(defn dv-lists-show (traits)
+(defn dv-lists (label traits)
   (match traits
     (Nil false)
-    (Cons t rest (if (> (ffi-call "zyl_cstr_key_matches" t "Show" 1000) 0) true (dv-lists-show rest)))))
+    (Cons t rest (if (> (ffi-call "zyl_cstr_key_matches" t label 1000) 0) true (dv-lists label rest)))))
 
-; The Show trait's canonical name, as the prelude declared it.
-(defn dv-show-trait (forms)
+; A trait's canonical name, as the prelude declared it.
+(defn dv-trait-key (forms label)
   (match forms
-    (Nil "Show")
+    (Nil label)
     (Cons e rest
       (match (Expr.inner e)
-        (ETraitDecl n _ _ (if (> (ffi-call "zyl_cstr_key_matches" n "Show" 1000) 0) n (dv-show-trait rest)))
-        (_ (dv-show-trait rest))))))
+        (ETraitDecl n _ _ (if (> (ffi-call "zyl_cstr_key_matches" n label 1000) 0) n (dv-trait-key rest label)))
+        (_ (dv-trait-key rest label))))))
 
-(defn dv-redacted-impl (trait tname) (dv-fixed-impl trait tname "<secret>"))
+(defn dv-fixed-impl (trait method tname text)
+  (Expr (EImplBlock trait tname (Cons (IB (DN method (Cons (P "_self" None) Nil) (dv-str text))) Nil))))
 
-(defn dv-fixed-impl (trait tname text)
-  (Expr (EImplBlock trait tname (Cons (IB (DN "show" (Cons (P "_self" None) Nil) (dv-str text))) Nil))))
+; --- driver ------------------------------------------------------------------
 
 (defn dv-collect (all forms)
   (match forms
     (Nil Nil)
     (Cons e rest
       (match (Expr.inner e)
-        (EDerive tname traits (list-append (dv-derive all tname traits) (dv-collect all rest)))
+        (EDerive tname traits (list-append (dv-derive all e tname traits) (dv-collect all rest)))
         (_ (dv-collect all rest))))))
 
-(defn dv-derive (all tname traits)
+(defn dv-derive (all site tname traits)
   (match traits
     (Nil Nil)
     (Cons t rest
-      (if (> (ffi-call "zyl_cstr_key_matches" t "Show" 1000) 0)
-        (if (or (dv-secret-type tname) (dv-hidden-type tname))
-          (dv-derive all tname rest)
-          (match (dv-find-type all tname)
-            (Some dt (Cons (dv-show-impl t tname dt) (dv-derive all tname rest)))
-            (None (dv-derive all tname rest))))
-        (dv-derive all tname rest)))))
+      (match (dv-find-type all tname)
+        (Some dt (list-append (dv-derive-one all site tname t dt) (dv-derive all site tname rest)))
+        (None (dv-derive all site tname rest))))))
+
+(defn dv-derive-one (all site tname t dt)
+  (let short (dv-short t)
+    (if (dv-text-trait short)
+      (if (or (dv-secret-type tname) (dv-hidden-type short tname))
+        Nil
+        (let _ (dv-check-fields all site tname short dt)
+          (Cons (dv-text-impl t (if (> (str-eq short "Show") 0) "show" "debug") short tname dt) Nil)))
+      (if (dv-value-trait short)
+        (let _ (dv-check-fields all site tname short dt)
+          (Cons (dv-value-impl t short tname dt) Nil))
+        (dv-fail site (str-concat "`" (str-concat short "` is not derivable"))
+          "derivable traits are Show, Debug, Eq, Ord, Hash and Clone")))))
+
+(defn dv-text-trait (s) (or (> (str-eq s "Show") 0) (> (str-eq s "Debug") 0)))
+
+(defn dv-value-trait (s)
+  (or (> (str-eq s "Eq") 0) (or (> (str-eq s "Ord") 0) (or (> (str-eq s "Hash") 0) (> (str-eq s "Clone") 0)))))
+
+(defn dv-fail (site msg help)
+  (ffi-call "zyl_panic"
+    (err-at "E_TRAIT_NOT_DERIVABLE" msg (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000) help) 1000))
 
 (defn dv-find-type (forms tname)
   (match forms
@@ -97,43 +122,127 @@
         (EDeftype n _ _ _ (if (> (str-eq n tname) 0) (Some e) (dv-find-type rest tname)))
         (_ (dv-find-type rest tname))))))
 
-; --- Show --------------------------------------------------------------------
+; --- field constraint ----------------------------------------------------------
+
+(defn dv-check-fields (all site tname short dt)
+  (match (Expr.inner dt)
+    (EDeftype _ variants _ _ (dv-check-variants all site tname short variants))
+    (_ 0)))
+
+(defn dv-check-variants (all site tname short vs)
+  (match vs
+    (Nil 0)
+    (Cons v rest
+      (begin
+        (dv-check-types all site tname short (AV.name v) (dv-field-types (AV.name v)) 0)
+        (dv-check-variants all site tname short rest)))))
+
+; Declared field types, recorded by the parse (expr_inner.zyl record-field-types).
+(defn dv-field-types (cname)
+  (let raw (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 0 1000) cname 1000)
+    (if (= raw 0) Nil (ffi-call "zyl_cstr_of_word" raw 1000))))
+
+(defn dv-check-types (all site tname short cname types i)
+  (match types
+    (Nil 0)
+    (Cons t rest
+      (begin
+        (dv-check-field all site tname short cname t i)
+        (dv-check-types all site tname short cname rest (+ i 1))))))
+
+(defn dv-check-field (all site tname short cname t i)
+  (if (= (bit-and (shr (dv-ctor-mask cname) i) 1) 1)
+    (if (dv-text-trait short)
+      0
+      (dv-fail site (str-concat "cannot derive `" (str-concat short (str-concat "` for `" (str-concat (dv-short tname) "`: it has a Secret field"))))
+        "comparing or hashing key material is not constant-time; compare with ct-eq instead"))
+    (if (and (dv-text-trait short) (= (bit-and (shr (dv-hidden-mask short cname) i) 1) 1))
+      0
+      (let n (dv-type-head t)
+        (if (dv-field-ok all tname short n)
+          0
+          (dv-fail site (str-concat "cannot derive `" (str-concat short (str-concat "` for `" (str-concat (dv-short tname)
+                    (str-concat "`: field type `" (str-concat (dv-short n) (str-concat "` does not implement `" (str-concat short "`"))))))))
+            (str-concat "implement or derive " (str-concat short (str-concat " for " (dv-short n))))))))))
+
+(defn dv-type-head (t)
+  (match (Expr.inner t)
+    (EAtom a (match a (AIdent n n) (_ "_")))
+    (EApply n _ n)
+    (_ "_")))
+
+; Untyped, the type itself, a type parameter, a primitive, or a type with the impl.
+(defn dv-field-ok (all tname short n)
+  (if (> (str-eq n "_") 0) true
+    (if (dv-same n tname) true
+      (if (dv-prim n) true
+        (if (not (dv-declared-type all n)) true
+          (dv-has-impl all short n))))))
+
+; Same type, whether or not either name is qualified.
+(defn dv-same (a b) (> (str-eq (dv-short a) (dv-short b)) 0))
+
+(defn dv-prim (n)
+  (let s (dv-short n)
+    (or (> (str-eq s "Int") 0) (or (> (str-eq s "Float") 0) (or (> (str-eq s "Bool") 0) (> (str-eq s "String") 0))))))
+
+(defn dv-declared-type (forms n)
+  (match forms
+    (Nil false)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype d _ _ _ (if (dv-same d n) true (dv-declared-type rest n)))
+        (_ (dv-declared-type rest n))))))
+
+; --- shared builders ------------------------------------------------------------
 
 (defn dv-id (n) (Expr (EAtom (AIdent n))))
 (defn dv-str (s) (Expr (EAtom (AStr s))))
-(defn dv-cat (a b) (Expr (EApply "str-concat" (Cons a (Cons b Nil)))))
-
-(defn dv-show-impl (trait tname dt)
-  (match (Expr.inner dt)
-    (EDeftype _ variants _ sm
-      (let body (Expr (EMatch (dv-id "self") (dv-show-arms trait variants (dv-is-struct sm))))
-        (Expr (EImplBlock trait tname (Cons (IB (DN "show" (Cons (P "self" None) Nil) body)) Nil)))))
-    (_ dt)))
+(defn dv-int (n) (Expr (EAtom (AInt n))))
+(defn dv-call (f args) (Expr (EApply f args)))
+(defn dv-call2 (f a b) (dv-call f (Cons a (Cons b Nil))))
+(defn dv-cat (a b) (dv-call2 "str-concat" a b))
+(defn dv-method (trait m) (str-concat trait (str-concat "." m)))
 
 (defn dv-is-struct (sm)
   (match sm
     (Some _ 1)
     (None 0)))
 
-(defn dv-show-arms (trait variants isst)
-  (match variants
-    (Nil Nil)
-    (Cons v rest
-      (let n (list-length (AV.fields v))
-        (let binds (dv-binders n 0)
-          (Cons (MA (AV.name v) (dv-bind-exprs binds) (dv-show-variant trait v (dv-redact binds (dv-ctor-mask (AV.name v)) (dv-hidden-mask (AV.name v)) 0) isst))
-                (dv-show-arms trait rest isst)))))))
-
-(defn dv-binders (n i)
-  (if (>= i n) Nil (Cons (str-concat "_dv" (ffi-call "zyl_int_text" i 1000)) (dv-binders n (+ i 1)))))
+(defn dv-binders (pre n i)
+  (if (>= i n) Nil (Cons (str-concat pre (ffi-call "zyl_int_text" i 1000)) (dv-binders pre n (+ i 1)))))
 
 (defn dv-bind-exprs (bs)
   (match bs
     (Nil Nil)
     (Cons b t (Cons (dv-id b) (dv-bind-exprs t)))))
 
-; A binder of a Secret (or Show-protected) field becomes "!secret" ("!hidden"),
-; which dv-show-call prints as that marker.
+(defn dv-self-param () (Cons (P "self" None) Nil))
+(defn dv-self-other () (Cons (P "self" None) (Cons (P "other" None) Nil)))
+
+(defn dv-impl (trait tname method params body)
+  (Expr (EImplBlock trait tname (Cons (IB (DN method params body)) Nil))))
+
+; --- Show and Debug -------------------------------------------------------------
+
+(defn dv-text-impl (trait method label tname dt)
+  (match (Expr.inner dt)
+    (EDeftype _ variants _ sm
+      (dv-impl trait tname method (dv-self-param)
+        (Expr (EMatch (dv-id "self") (dv-text-arms (dv-method trait method) label variants (dv-is-struct sm))))))
+    (_ dt)))
+
+(defn dv-text-arms (call label variants isst)
+  (match variants
+    (Nil Nil)
+    (Cons v rest
+      (let binds (dv-binders "_dv" (list-length (AV.fields v)) 0)
+        (Cons (MA (AV.name v) (dv-bind-exprs binds)
+                  (dv-text-variant call v (dv-redact binds (dv-ctor-mask (AV.name v)) (dv-hidden-mask label (AV.name v)) 0) isst))
+              (dv-text-arms call label rest isst))))))
+
+; A binder of a Secret (or protected) field becomes "!secret" ("!hidden"),
+; which dv-text-call prints as that marker.
 (defn dv-redact (binds mask hmask i)
   (match binds
     (Nil Nil)
@@ -141,42 +250,102 @@
       (Cons (if (= (bit-and (shr mask i) 1) 1) "!secret" (if (= (bit-and (shr hmask i) 1) 1) "!hidden" b))
             (dv-redact t mask hmask (+ i 1))))))
 
-(defn dv-show-call (trait b)
+(defn dv-text-call (call b)
   (if (> (str-eq b "!secret") 0)
     (dv-str "<secret>")
     (if (> (str-eq b "!hidden") 0)
       (dv-str "<hidden>")
-      (Expr (EApply (str-concat trait ".show") (Cons (dv-id b) Nil))))))
+      (dv-call call (Cons (dv-id b) Nil)))))
 
 ; `Name`, `Name(a, b)`, or for a struct `Name { f: a, g: b }`.
-(defn dv-show-variant (trait v binds isst)
+(defn dv-text-variant (call v binds isst)
   (let name (dv-short (AV.name v))
     (match binds
       (Nil (dv-str name))
       (_
         (if (> isst 0)
-          (dv-cat (dv-str (str-concat name " { ")) (dv-cat (dv-show-fields trait (AV.fields v) binds) (dv-str " }")))
-          (dv-cat (dv-str (str-concat name "(")) (dv-cat (dv-show-items trait binds) (dv-str ")"))))))))
+          (dv-cat (dv-str (str-concat name " { ")) (dv-cat (dv-text-fields call (AV.fields v) binds) (dv-str " }")))
+          (dv-cat (dv-str (str-concat name "(")) (dv-cat (dv-text-items call binds) (dv-str ")"))))))))
 
-(defn dv-show-items (trait binds)
+(defn dv-text-items (call binds)
   (match binds
     (Nil (dv-str ""))
     (Cons b t
       (match t
-        (Nil (dv-show-call trait b))
-        (_ (dv-cat (dv-show-call trait b) (dv-cat (dv-str ", ") (dv-show-items trait t))))))))
+        (Nil (dv-text-call call b))
+        (_ (dv-cat (dv-text-call call b) (dv-cat (dv-str ", ") (dv-text-items call t))))))))
 
-(defn dv-show-fields (trait names binds)
+(defn dv-text-fields (call names binds)
   (match names
     (Nil (dv-str ""))
     (Cons f frest
       (match binds
         (Nil (dv-str ""))
         (Cons b brest
-          (let one (dv-cat (dv-str (str-concat f ": ")) (dv-show-call trait b))
+          (let one (dv-cat (dv-str (str-concat f ": ")) (dv-text-call call b))
             (match brest
               (Nil one)
-              (_ (dv-cat one (dv-cat (dv-str ", ") (dv-show-fields trait frest brest)))))))))))
+              (_ (dv-cat one (dv-cat (dv-str ", ") (dv-text-fields call frest brest)))))))))))
+
+; --- Eq, Ord, Hash, Clone ------------------------------------------------------
+
+(defn dv-value-impl (trait short tname dt)
+  (match (Expr.inner dt)
+    (EDeftype _ variants _ _
+      (if (> (str-eq short "Eq") 0)
+        (dv-impl trait tname "eq" (dv-self-other) (dv-call2 "==" (dv-id "self") (dv-id "other")))
+        (if (> (str-eq short "Clone") 0)
+          (dv-impl trait tname "clone" (dv-self-param) (dv-id "self"))
+          (if (> (str-eq short "Hash") 0)
+            (dv-impl trait tname "hash" (dv-self-param)
+              (Expr (EMatch (dv-id "self") (dv-hash-arms (dv-method trait "hash") variants 0))))
+            (dv-impl trait tname "compare" (dv-self-other)
+              (Expr (EMatch (dv-id "self") (dv-ord-arms (dv-method trait "compare") variants variants 0))))))))
+    (_ dt)))
+
+; FNV-style: start from the variant's position, fold in each field's hash.
+(defn dv-hash-arms (call variants i)
+  (match variants
+    (Nil Nil)
+    (Cons v rest
+      (let binds (dv-binders "_dv" (list-length (AV.fields v)) 0)
+        (Cons (MA (AV.name v) (dv-bind-exprs binds) (dv-hash-fold call binds (dv-int (+ i 1469598103934665603))))
+              (dv-hash-arms call rest (+ i 1)))))))
+
+(defn dv-hash-fold (call binds acc)
+  (match binds
+    (Nil acc)
+    (Cons b t
+      (dv-hash-fold call t
+        (dv-call2 "*" (dv-call2 "bit-xor" acc (dv-call call (Cons (dv-id b) Nil))) (dv-int 1099511628211))))))
+
+; Variants order by declaration, then fields lexicographically.
+(defn dv-ord-arms (call all vs i)
+  (match vs
+    (Nil Nil)
+    (Cons v rest
+      (let avs (dv-binders "_dva" (list-length (AV.fields v)) 0)
+        (Cons (MA (AV.name v) (dv-bind-exprs avs) (Expr (EMatch (dv-id "other") (dv-ord-inner call all i avs 0))))
+              (dv-ord-arms call all rest (+ i 1)))))))
+
+(defn dv-ord-inner (call vs i avs j)
+  (match vs
+    (Nil Nil)
+    (Cons v rest
+      (let bs (dv-binders "_dvb" (list-length (AV.fields v)) 0)
+        (Cons (MA (AV.name v) (dv-bind-exprs bs)
+                  (if (< i j) (dv-int -1) (if (> i j) (dv-int 1) (dv-lex call avs bs))))
+              (dv-ord-inner call rest i avs (+ j 1)))))))
+
+(defn dv-lex (call avs bs)
+  (match avs
+    (Nil (dv-int 0))
+    (Cons a arest
+      (match bs
+        (Nil (dv-int 0))
+        (Cons b brest
+          (Expr (ELet "_dvc" (dv-call2 call (dv-id a) (dv-id b))
+            (Expr (EIf (dv-call2 "!=" (dv-id "_dvc") (dv-int 0)) (dv-id "_dvc") (dv-lex call arest brest))))))))))
 
 ; Text after the last "::".
 (defn dv-short (n) (dv-short-from n 0 -1))
