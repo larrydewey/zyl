@@ -18,8 +18,8 @@
 ; than one giant Cons chain. Both compile, but a single ~200-deep
 ; nesting is a needlessly large single expression for monomorphization
 ; to walk, and the split gives each group a name that says what it is.
-; Nullary functions, not top-level `def`: a `def` never becomes a
-; readable global in this compiler (see codegen.zyl's cg-load-nonslot).
+; Nullary functions keep each group a plain function the compiler can
+; walk once.
 
 (use core/core)
 (use core/list)
@@ -123,14 +123,16 @@
   (Cons (ZB "trait" "special-form" "(trait Name (method (param ...) ReturnType) ...)"
           "Declare a trait: a set of method signatures a type can implement.")
   (Cons (ZB "impl" "special-form" "(impl Trait Type (defn method (self ...) body) ...)"
-          "Implement a trait for a type. Duplicate impls are rejected at compile time.")
+          "Implement a trait for a type. A second impl of the same pair is E_DUPLICATE_IMPL.")
+  (Cons (ZB "impl-not" "special-form" "(impl-not Trait Target)"
+          "Forbid implementing Trait for Target, or for any type implementing trait Target (E_IMPL_FORBIDDEN). No impl of Trait may return a value derived from a protected one, so wrappers cannot expose it either.")
   (Cons (ZB "derive" "special-form" "(derive Type Trait ...)"
-          "Derive trait implementations mechanically. Only derivable traits are accepted.")
+          "Derive Show, Debug, Eq, Ord, Hash or Clone. Every field's type must implement the trait (E_TRAIT_NOT_DERIVABLE).")
   (Cons (ZB "macro" "special-form" "(macro name (param ...) template)"
           "Define a macro. Expansion is innermost-first with gensym hygiene.")
   (Cons (ZB "defmacro" "special-form" "(defmacro name (param ...) template)"
           "Define a macro; a spelling of `macro`.")
-  Nil))))))))))))
+  Nil)))))))))))))
 
 (defn builtins-modules ()
   (Cons (ZB "use" "special-form" "(use path/to/module)"
@@ -202,8 +204,12 @@
   (Cons (ZB "spawn" "special-form" "(spawn expr)"
           "Spawn an actor. Rejected on a `Secret` operand: a secret must not cross an actor boundary.")
   (Cons (ZB "send" "special-form" "(send actor message)"
-          "Send a message to an actor. Delivery order is deterministic. Rejected on a `Secret` operand.")
-  Nil)))
+          "Send a message to an actor; FIFO per sender. Rejected on a `Secret` operand.")
+  (Cons (ZB "receive" "special-form" "(receive)"
+          "The next data message in the running actor's mailbox, blocking until one arrives. Queued closure messages run first.")
+  (Cons (ZB "actor-self" "special-form" "(actor-self)"
+          "The running actor's id. On main, opens main's mailbox so actors can reply to it.")
+  Nil)))))
 
 (defn builtins-ffi ()
   (Cons (ZB "ffi-call" "special-form" "(ffi-call \"symbol\" arg ... timeout)"
@@ -263,12 +269,16 @@
 
 (defn builtins-contracts ()
   (Cons (ZB "requires" "special-form" "(requires condition)"
-          "Precondition. Contracts are an overlay: they never change inference, ownership, regions or scheduling.")
-  (Cons (ZB "ensures" "special-form" "(ensures condition)" "Postcondition, checked on return.")
-  (Cons (ZB "contracts" "special-form" "(contracts (requires ...) (ensures ...))" "Group a function's contract clauses.")
-  (Cons (ZB "recover" "special-form" "(recover body handler)" "Recover from a contract violation at a checkpoint.")
-  (Cons (ZB "checkpoint" "special-form" "(checkpoint name)" "Mark a recovery point.")
-  Nil))))))
+          "Precondition, checked on entry: a false condition raises E_CONTRACT_VIOLATION.")
+  (Cons (ZB "ensures" "special-form" "(ensures condition)" "Postcondition, checked after the body; `result` is the return value.")
+  (Cons (ZB "invariant" "special-form" "(invariant condition)" "Checked where written, like `requires`.")
+  (Cons (ZB "contracts" "special-form" "(contracts profile form)"
+          "Compile `form` (or, bare, the next top-level form) under a contract profile: strict, debug, warn, off or production.")
+  (Cons (ZB "recover" "special-form" "(recover body ((E_CODE) fallback) ((String) fallback) ...)"
+          "`body`, or the fallback of the first arm matching the error: an E_ code by message prefix, a type name or `_` for any.")
+  (Cons (ZB "checkpoint" "special-form" "(checkpoint expr)"
+          "`expr`; if it raises, the outer let-mut variables it assigned are restored before the error propagates.")
+  Nil)))))))
 
 (defn builtins-testing ()
   (Cons (ZB "test" "special-form" "(test \"name\" body)" "One test case.")
@@ -295,13 +305,15 @@
   (Cons (ZB "Result" "type" "(Result T E)" "`(Ok value)` or `(Err error)`.")
   (Cons (ZB "Vec" "type" "(Vec T)" "Growable vector.")
   (Cons (ZB "Map" "type" "(Map K V)" "Ordered map; iteration order is deterministic.")
+  (Cons (ZB "ByteBuf" "type" "ByteBuf" "A byte buffer handle, from `bytebuf`.")
+  (Cons (ZB "ByteSlice" "type" "ByteSlice" "A byte slice handle, from `byteslice`.")
   (Cons (ZB "Secret" "capability" "(Secret T)"
           "Secret capability. A secret may not steer control flow, index memory, divide, print, spawn, send or be written to a file, and reaches FFI only through `ffi-pin`. Leave it with `declassify`, `ct-eq-bool` or `ct-eq-words-bool`.")
   (Cons (ZB "TCap" "capability" "TCap" "Shared immutable access; any number of references may coexist.")
   (Cons (ZB "TMut" "capability" "TMut" "Exclusive mutable ownership; exactly one reference exists.")
   (Cons (ZB "declassify" "builtin" "(declassify value)"
           "Deliberately drop the Secret capability. The one explicit escape hatch; every use is a decision worth a comment.")
-  Nil)))))))))))))))
+  Nil)))))))))))))))))
 
 (defn builtins-regions ()
   (Cons (ZB "Stack" "region" "Stack" "Stack region: reclaimed at scope exit. Promoted to Heap if a value escapes.")

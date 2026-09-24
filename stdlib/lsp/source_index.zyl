@@ -86,7 +86,28 @@
         ""
         (let start (si-word-scan-back text clamped)
           (let end (si-word-scan-fwd text clamped len)
-            (if (> end start) (str-substring text start (- end start)) "")))))))
+            (if (> end start) (si-dot-segment (str-substring text start (- end start)) (- clamped start)) "")))))))
+
+; Dot syntax (`p.x.y`, `(p.m)`, `.m`): the segment under the cursor. A
+; name starting uppercase (`Trait.method`) is one identifier and stays whole.
+(defn si-dot-segment (w at)
+  (let c (sb-char-code (str-substring w 0 1))
+    (if (and (>= c 65) (<= c 90))
+      w
+      (if (= (si-index-of-dot w 0) -1)
+        w
+        (let a (si-seg-start w at)
+          (let b (si-seg-end w at (str-length w))
+            (if (> b a) (str-substring w a (- b a)) w)))))))
+
+(defn si-index-of-dot (w i)
+  (if (>= i (str-length w)) -1 (if (= (sb-char-code (str-substring w i 1)) 46) i (si-index-of-dot w (+ i 1)))))
+
+(defn si-seg-start (w i)
+  (if (<= i 0) 0 (if (= (sb-char-code (str-substring w (- i 1) 1)) 46) i (si-seg-start w (- i 1)))))
+
+(defn si-seg-end (w i n)
+  (if (>= i n) n (if (= (sb-char-code (str-substring w i 1)) 46) i (si-seg-end w (+ i 1) n))))
 
 (defn si-word-scan-back (text i)
   (if (<= i 0)

@@ -52,6 +52,9 @@
       "include": "#ffi-symbols"
     },
     {
+      "include": "#members"
+    },
+    {
       "include": "#constructors"
     },
     {
@@ -217,7 +220,7 @@
       "patterns": [
         {
           "name": "keyword.control.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|send|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl-not|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|send|receive|actor-self|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },
@@ -273,7 +276,7 @@
       "patterns": [
         {
           "name": "support.type.zyl",
-          "match": "\\b(Int|Float|Bool|String|Unit|List|Option|Result|Vec|Map|Array|Tuple)\\b"
+          "match": "\\b(Int|Float|Bool|String|Unit|List|Option|Result|Vec|Map|ByteBuf|ByteSlice|Array|Tuple)\\b"
         }
       ]
     },
@@ -329,6 +332,14 @@
         {
           "name": "variable.other.zyl",
           "match": "(?<![^\\s()\\[\\]{}\";])[a-z_][A-Za-z0-9_'+*/<>=!?-]*"
+        }
+      ]
+    },
+    "members": {
+      "patterns": [
+        {
+          "name": "variable.other.member.zyl",
+          "match": "(?<=[A-Za-z0-9_)\\]?!])\\.[a-z_][A-Za-z0-9_?!-]*(?:\\.[a-z_][A-Za-z0-9_?!-]*)*"
         }
       ]
     }

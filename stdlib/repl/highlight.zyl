@@ -158,5 +158,13 @@
   (if (> (str-eq word "test") 0) 1
   (if (> (str-eq word "assert") 0) 1
   (if (> (str-eq word "assert-equal") 0) 1
+  (if (> (str-eq word "impl-not") 0) 1
+  (if (> (str-eq word "actor-self") 0) 1
+  (if (> (str-eq word "requires") 0) 1
+  (if (> (str-eq word "ensures") 0) 1
+  (if (> (str-eq word "invariant") 0) 1
+  (if (> (str-eq word "recover") 0) 1
+  (if (> (str-eq word "checkpoint") 0) 1
+  (if (> (str-eq word "contracts") 0) 1
   (if (> (str-eq word "print") 0) 1
-  0))))))))))))))))))))))))))))))
+  0))))))))))))))))))))))))))))))))))))))
