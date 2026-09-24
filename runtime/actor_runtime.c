@@ -13,6 +13,12 @@ extern char** environ;
 #define ZYL_HEAP_ARENA_DEFAULT_BLOCK (1024 * 1024)
 #define ZYL_PIN_ARENA_DEFAULT_BLOCK (256 * 1024)
 
+/* Lowest address the kernel will ever map on Linux by default
+ * (/proc/sys/vm/mmap_min_addr, 0x10000 on most distros; 0x1000 is the
+ * conservative floor even on the most permissive configs). Used to reject
+ * small bogus integers misused as pointers before dereferencing them. */
+#define ZYL_MIN_CALL_ADDR 0x1000LL
+
 static ZylActorSystem g_system;
 static void* g_heap_arena = NULL;
 static void* g_pin_arena = NULL;
@@ -120,6 +126,12 @@ static void zyl_raise_stack_limit(void) {
 void zyl_ensure_arenas(void) {
     static int stack_raised = 0;
     if (!stack_raised) { stack_raised = 1; zyl_raise_stack_limit(); }
+    /* Idempotent (bodies behind g_system.initialized); registers the
+       item-26 actor drain as an atexit handler exactly once, whether or
+       not the program ever spawns. The compiler emits zyl_ensure_arenas
+       in every generated main prologue, so every compiled program
+       drains its actors before exit. */
+    zyl_actor_init();
     if (!g_heap_arena) {
         g_heap_arena = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
     }
@@ -145,10 +157,30 @@ void zyl_actor_init(void) {
     memset(&g_system, 0, sizeof(g_system));
     g_system.next_id = 0;
     g_system.initialized = 1;
+    atexit(zyl_actor_wait_all);
 }
 
 uint32_t zyl_actor_spawn(void (*entry)(void*), void* state) {
     if (!g_system.initialized) zyl_actor_init();
+
+    /* The compiler lowers a capture-free lambda's value to a plain code
+       pointer (entry with state=0), but a CAPTURING lambda is a heap
+       [tag, code, env] triple (ic-closure-magic, 2051230803 -- see
+       icnf.zyl ic-closure-magic), and codegen currently passes that whole
+       triplet value in the `entry` slot with state=0. Calling it as code
+       segfaults (the triplet is data, not text). Decompose the triplet
+       here instead: code = [1], env = [2], the env being exactly the
+       `_clos_env` trailing argument a lifted zero-arg closure fn expects.
+       For a capture-free lambda the code pointer's first qword is not the
+       magic tag, so nothing changes. Each spawned body is a zero-arg
+       lambda, so the one-arg (env) ABI is exactly right. */
+    if ((unsigned long long)(size_t)entry >= ZYL_MIN_CALL_ADDR) {
+        const long long* p = (const long long*)(size_t)entry;
+        if (p[0] == 2051230803LL) {
+            entry = (void (*)(void*))(size_t)p[1];
+            state = (void*)(size_t)p[2];
+        }
+    }
 
     uint32_t id = g_system.next_id;
     if (id >= ZYL_MAX_ACTORS) {
@@ -182,7 +214,10 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
        slot in the fixed actors[] array, so sending to it would lock/touch
        an actor whose mutex/cond were never pthread_*_init'd. */
     if (!g_system.initialized || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
-        free(msg);
+        /* msg is a caller-owned opaque value (an int, an arena block, a
+           caller's string) -- NEVER freed here. Dropping the send must not
+           free() an arbitrary value: `(send 5 7)` used to crash with
+           "free(): invalid pointer". */
         return;
     }
 
@@ -190,7 +225,6 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
 
     ZylMessage* m = (ZylMessage*)malloc(sizeof(ZylMessage));
     if (!m) {
-        free(msg);
         return;
     }
     m->kind = ZYL_MSG_DATA;
@@ -201,7 +235,6 @@ void zyl_actor_send(uint32_t actor_id, void* msg) {
     if (!actor->alive) {
         pthread_mutex_unlock(&actor->lock);
         free(m);
-        free(msg);
         return;
     }
     if (actor->mailbox_tail) {
@@ -279,8 +312,13 @@ void* zyl_actor_thread_entry(void* arg) {
     for (;;) {
         pthread_mutex_lock(&actor->lock);
         while (actor->alive && !actor->mailbox_head) {
+            /* parked: blocked here with an empty mailbox, so this thread
+               cannot be mid-message and cannot enqueue anywhere. wait_all
+               keys its quiescence check on this. */
+            actor->parked = 1;
             pthread_cond_wait(&actor->cond, &actor->lock);
         }
+        actor->parked = 0;
         if (!actor->alive) {
             pthread_mutex_unlock(&actor->lock);
             break;
@@ -327,13 +365,16 @@ void zyl_actor_wait_all(void) {
        non-empty, skip stopping that actor this round and re-run the whole
        drain+stop pass instead. */
     for (;;) {
+        /* Phase 1: drain. Wait until no active, running actor has pending
+           mail. (An actor whose consumer already stopped -- running==0 --
+           can no longer process mail; it can't send more either.) */
         int pending;
         do {
             pending = 0;
             for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
                 ZylActor* actor = &g_system.actors[i];
                 pthread_mutex_lock(&actor->lock);
-                int active = !actor->joined && (actor->running || actor->thread) && actor->mailbox_count > 0;
+                int active = !actor->joined && actor->thread && actor->running && actor->mailbox_count > 0;
                 pthread_mutex_unlock(&actor->lock);
                 if (active) {
                     pending = 1;
@@ -343,19 +384,40 @@ void zyl_actor_wait_all(void) {
             if (pending) usleep(1000);
         } while (pending);
 
-        int retry = 0;
+        /* Phase 2: quiescence check, re-checking under each actor's lock.
+           Every active running actor must be parked (consumer blocked in
+           cond_wait on an empty mailbox). A parked consumer holds no
+           message, so it cannot be executing a body that sends to another
+           actor; with every sender parked and the main thread (the only
+           other sender) inside wait_all, no further message can land. If
+           any active running actor is still mid-message, loop again. The
+           old code instead stopped and joined actors in id order, so a
+           still-running higher-id actor could reply to an already-stopped
+           lower-id one and the reply was silently dropped. */
+        int quiesced = 1;
         for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
             ZylActor* actor = &g_system.actors[i];
             pthread_mutex_lock(&actor->lock);
-            int active = !actor->joined && (actor->running || actor->thread);
-            if (active && actor->mailbox_count > 0) {
-                /* Message landed since the drain poll above; don't stop
-                   this actor yet, let the outer loop drain it and retry. */
-                pthread_mutex_unlock(&actor->lock);
-                retry = 1;
-                continue;
+            int active = !actor->joined && actor->thread;
+            if (active && actor->running && (actor->mailbox_count > 0 || !actor->parked)) {
+                quiesced = 0;
             }
-            if (active) actor->alive = 0;
+            pthread_mutex_unlock(&actor->lock);
+            if (!quiesced) break;
+        }
+        if (!quiesced) continue;
+
+        /* Phase 3: stop every active actor in one pass, then join. All
+           consumers are parked and can only wake on a broadcast issued
+           right after their OWN alive=0 write, so nothing is dropped. */
+        for (uint32_t i = 0; i < ZYL_MAX_ACTORS; i++) {
+            ZylActor* actor = &g_system.actors[i];
+            pthread_mutex_lock(&actor->lock);
+            int active = !actor->joined && actor->thread;
+            if (active) {
+                actor->alive = 0;
+                actor->parked = 0;
+            }
             pthread_t t = actor->thread;
             pthread_mutex_unlock(&actor->lock);
             if (active) {
@@ -366,9 +428,15 @@ void zyl_actor_wait_all(void) {
                 pthread_mutex_unlock(&actor->lock);
             }
         }
-        if (!retry) break;
+        break;
     }
 }
+
+/* Waits for all spawned actors to finish their pending messages before the
+   process exits (registered as an atexit handler from zyl_actor_init). This
+   is what makes a program whose main returns before its actors finish still
+   run every sent message to completion: without it, "42 was printed only if
+   the scheduler happened to run the actor before main returned". */
 
 /* ==========================================================================
    Dynamic closure invocation. A closure value is either a raw code pointer
@@ -389,7 +457,6 @@ void zyl_actor_wait_all(void) {
  * slot or a small bogus integer misused as code, never a real function or
  * env-block pointer. Reject those before the indirect call/deref instead
  * of segfaulting (or worse, "succeeding") on attacker-influenced data. */
-#define ZYL_MIN_CALL_ADDR 0x1000LL
 
 static long long zyl_call_guard(long long v) {
     if (v < ZYL_MIN_CALL_ADDR) {
@@ -735,12 +802,19 @@ typedef struct {
 
 static ZylByteBufHeader* zyl_bytebuf_of(long long buf) {
     if (!buf) return NULL;
+    /* Handle is an opaque value; a small integer (or null) must be
+       rejected before the magic deref below, or `(store-u8 1 7 1000)`
+       segfaults on h->magic. Any real malloc'd header is >= mmap_min_addr
+       and 8-aligned (malloc returns suitably aligned blocks; both headers
+       start with a long long so the handle is always 8-aligned). */
+    if ((unsigned long long)buf < ZYL_MIN_CALL_ADDR || ((unsigned long long)buf & 7) != 0) return NULL;
     ZylByteBufHeader* h = (ZylByteBufHeader*)(size_t)buf;
     return h->magic == ZYL_BYTEBUF_MAGIC ? h : NULL;
 }
 
 static ZylByteSliceHeader* zyl_byteslice_of(long long slice) {
     if (!slice) return NULL;
+    if ((unsigned long long)slice < ZYL_MIN_CALL_ADDR || ((unsigned long long)slice & 7) != 0) return NULL;
     ZylByteSliceHeader* h = (ZylByteSliceHeader*)(size_t)slice;
     return h->magic == ZYL_BYTESLICE_MAGIC ? h : NULL;
 }
@@ -2340,10 +2414,10 @@ long long zyl_system_cmd(long long cmd) {
 
 long long zyl_exec_cmd(long long cmd) {
     const char* cmd_str = (const char*)(size_t)cmd;
-    /* mkstemp atomically creates+opens with O_EXCL: unlike the old
-     * predictable "/tmp/zyl_link_<pid>.sh" + fopen(), this can't be raced
-     * by a pre-planted symlink at that path (classic /tmp TOCTOU). */
-    char script_path[] = "/tmp/zyl_link_XXXXXX";
+    const char* tmpdir = getenv("TMPDIR");
+    const char* tmpl = tmpdir ? tmpdir : "/tmp";
+    char script_path[512];
+    snprintf(script_path, sizeof(script_path), "%s/zyl_link_XXXXXX", tmpl);
     int fd = mkstemp(script_path);
     if (fd < 0) return -1;
     FILE* f = fdopen(fd, "w");

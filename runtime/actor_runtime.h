@@ -36,6 +36,7 @@ typedef struct ZylActor {
     int alive;
     int running;
     int joined;
+    int parked;
 } ZylActor;
 
 typedef struct {

@@ -498,6 +498,10 @@
     ; "assert-fail" function that was never defined anywhere, an
     ; undefined-reference link error rather than a silent no-op.
     (EAssertFail e _ (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
+    ; assert: (assert e) lowers to if e then 0 else panic (item 22).
+    (EAssert e _ (IIf (ic-expr arena e vt) (IConst 0) (IFfi "zyl_panic" (Cons (IStr "assert failed") Nil))))
+    ; unwrap: (unwrap e) lowers to match on Some tag 0 (item 23).
+    (EUnwrap e (ic-unwrap arena e vt))
     (EStructGet se field (ic-struct-get arena se field vt))
     ; (for (name init)... cond body): no separate step clause — the
     ; corpus's own `for` bodies always `set!` the loop var themselves.
@@ -1264,6 +1268,10 @@
     0
     (let _ (ic-check-variants-exist arms vt)
       (ic-check-exhaustive-gid arms vt))))
+
+; unwrap-on-Some lowers to a match binding the fresh name; unwrap on any
+; other variant panics (item 23).
+(defn ic-unwrap (arena e vt) (let tag 0 (let vn (str-intern arena (str-concat "_uv" (ic-int-to-str (ic-fresh-id arena)))) (IMatch (ic-expr arena e vt) (Cons (IArm (str-intern arena "Some") tag (Cons vn (no-strs)) (ILoad vn)) (Cons (IArm (str-intern arena "_unwrap_none") -1 (no-strs) (IFfi "zyl_panic" (Cons (IStr "unwrap on None") Nil))) (no-iarms)))))))
 
 ; (match scrutinee arm...)
 (defn ic-match (arena subj arms vt)
