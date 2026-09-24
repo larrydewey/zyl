@@ -33,7 +33,6 @@
 (use compiler/unused_check)
 (use compiler/secret_check)
 (use compiler/monomorphization)
-(use compiler/contract_injection)
 (use compiler/region_inference)
 (use compiler/icnf)
 (use compiler/trait_dispatch)

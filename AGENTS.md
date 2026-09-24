@@ -124,7 +124,6 @@ BROKEN` or `reproduced asm differs from committed seed`), which needs
 reseeding before anything else will trust the new `build/boot/stage2.s`:
 
 ```bash
-python3 selfhost/assemble.py    # Re-bundle stdlib/compiler/*.zyl into selfhost/zyl_selfhost_compiler.zyl
 ./boot.sh --bootstrap-from-self # Reseed using the self-hosted compiler (no Rust)
 ./boot.sh                       # Verify the new seed reaches a clean fixed point
 git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
@@ -180,7 +179,7 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 
 ## Architecture Notes
 
-- Entry point: `selfhost/driver.zyl` (assembled into `selfhost/zyl_selfhost_compiler.zyl` by `selfhost/assemble.py`, compiled to `build/boot/stage2.bin`/`zyl-self`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
+- Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 2 GB (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
 - Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.3.0). Protocol tests: `tests/lsp/lsp_protocol_test.py`.
 - REPL: `stdlib/repl/` (reader, line editor, highlighting, history, ICNF interpreter `interp.zyl`, session `eval.zyl`/`repl.zyl`), reached through `zyl repl`; `tools/repl.zyl` is only the standalone `main`. It is a working tool — see `docs/repl.md`.
 - Single binary — no workspace, no crates, no Cargo anywhere in the active path

@@ -297,9 +297,7 @@ zyl_specification.txt         # Canonical language specification (v5.0)
 
 selfhost/                     # Self-hosted compiler entry points
 ├── driver.zyl                # `zyl` CLI: compile, package subcommands, repl, eval
-├── lsp_main.zyl              # Language server entry point
-├── assemble.py               # Bundles stdlib + driver into one source file
-└── zyl_selfhost_compiler.zyl # The assembled bundle boot.sh compiles
+└── lsp_main.zyl              # Language server entry point
 
 build/boot/                   # Committed seed (stage2.s, stage2.bin) and
                               # everything boot.sh produces (zyl-self, zyl-lsp)
@@ -361,8 +359,7 @@ tests/
 
 - `cc` (a C compiler) and `pthread` — that's it; no Rust, no Cargo
 - Linux x86_64 (the only target; other platforms are untested)
-- `python3` only to re-bundle the compiler source after editing it
-  (`selfhost/assemble.py`) and for the LSP protocol tests
+- `python3` only for the LSP protocol tests
 - Node.js/npm only for building the VS Code extension
 
 ## Examples

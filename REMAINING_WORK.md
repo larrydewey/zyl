@@ -1,8 +1,6 @@
-# Remaining Work (after items 5,6,11,22,23,26,27 complete)
+# Remaining Work (after items 5,6,11,22,23,26,27 + type-name fix complete)
 
 ## P1: Diagnostics
-- [ ] Locate remaining diagnostics: thread offending node to failure, call `err-at`
-- [ ] Fix `=`-on-strings comparisons in `type_inference.zyl` (root of "cannot determine type of match scrutinee" and REPL `:type` unresolved)
 - [ ] Labelled secondary spans for capability/region errors
 - [ ] "Did you mean" suggestions (edit-distance over in-scope names)
 - [ ] Structured JSON error output for tools/LSP
@@ -10,8 +8,8 @@
 
 ## P2: Codegen Correctness
 - [ ] Field and return kinds so compiled `print`/`==` agree with interpreter
-- [ ] Tail-call optimization in `codegen.zyl` (or self-tail-recursive whitespace skip in `lexer.zyl`) so `assemble.py` no longer collapses whitespace
-- [ ] Per-file paren-depth check in `assemble.py`
+- [x] ~~Whitespace collapse / per-file paren check in `assemble.py`~~ — obsolete: the compiler builds from `selfhost/driver.zyl` through module resolution; `assemble.py` and the bundle are gone
+- [ ] Tail-call optimization in `codegen.zyl` (the lexer's mutually recursive whitespace skip still leaks a frame per character on very large single files)
 
 ## P3: Language Features
 - [ ] Contract injection (spec §23) against real `expr_inner.zyl` shapes, wired into pipeline
@@ -36,4 +34,4 @@
 - [ ] Ergonomic zero-copy views beyond `byteslice` (parsing, substrings, array slices)
 
 ---
-*Items 22 (assert), 23 (unwrap), 5/6/11/26/27 (runtime) complete as of commit be7405f*
+*Items 22 (assert), 23 (unwrap), 5/6/11/26/27 (runtime), and type-name-matching fix complete as of commit f6ea129*
