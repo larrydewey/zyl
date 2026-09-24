@@ -253,18 +253,21 @@
 ; `env` the local bindings. Nothing is threaded back out: a binding is a
 ; cell, so `set!` writes through the environment rather than replacing
 ; it.
+; A node with no String/Float kind needs no retag, so its evaluation is a
+; tail call: interpreted tail calls then run in constant host stack.
 (defn in-eval (fns env e)
-  (in-retag e (in-eval-node fns env e)))
+  (let k (ffi-call "zyl_attr_get" 1 e 1000)
+    (if (= k 0)
+      (in-eval-node fns env e)
+      (in-retag-kind k (in-eval-node fns env e)))))
 
-; A word whose static type is String or Float (attr table 1, from
-; compiler/type_annotate) is retagged, as codegen treats it.
-(defn in-retag (e v)
+(defn in-retag-kind (k v)
   (match v
-    (VInt w
-      (let k (ffi-call "zyl_attr_get" 1 e 1000)
-        (if (= k 0) v (in-val-of-kind w k))))
+    (VInt w (in-val-of-kind w k))
     (_ v)))
 
+; A word whose static type is String or Float (attr table 1, from
+; compiler/type_annotate) is retagged, as codegen treats it (in-eval).
 (defn in-eval-node (fns env e)
   (match e
     (IConst n (VInt n))
@@ -472,7 +475,10 @@
 (defn in-seq (fns env xs last)
   (match xs
     (Nil last)
-    (Cons h t (in-seq fns env t (in-eval fns env h)))))
+    (Cons h t
+      (match t
+        (Nil (in-eval fns env h))
+        (_ (in-seq fns env t (in-eval fns env h)))))))
 
 ; The body sees the binding; what follows the `let` does not, which
 ; costs nothing to arrange: the extended environment is a new head cons

@@ -89,15 +89,15 @@ Zyl supports full recursion:
   (print (sum-to 1000000 0)))     ; 500000500000
 ```
 
-**Tail calls.** The specification calls for guaranteed TCO. The code
-generator gives it to the common case: a direct call to a top-level
-function in tail position (an `if` branch, a `let` body, the last form
-of a `begin`, a `match` arm body) with at most six arguments becomes a
-jump, so `sum-to` above runs in constant stack, and so does mutual
-recursion. Calls through a function value, calls with more than six
-arguments and calls inside `try`/`catch` still push a frame; for those,
-deep recursion relies on the large dedicated stack `main` runs on. The
-REPL interpreter does no TCO.
+**Tail calls.** The specification calls for guaranteed TCO. A call in
+tail position (an `if` branch, a `let` body, the last form of a `begin`,
+a `match` arm body) becomes a jump, whether it names a function or goes
+through a function value, so `sum-to` above runs in constant stack, and
+so does mutual recursion. Two cases still push a frame: a tail call that
+needs more stack arguments (beyond the sixth) than its caller received,
+and any call inside `try`/`catch`, a `while` body, or a function that
+handles secrets (Chapter 33). The REPL interpreter also runs tail calls
+in constant stack, except ones returning a String or Float.
 
 ### Mutual Recursion
 
@@ -536,9 +536,10 @@ implemented by the code generator (it evaluates to 0). File I/O is in
 
 ### Tail Calls
 
-A direct call to a top-level function in tail position, with at most
-six arguments, restores the callee-saved registers, tears down the
-frame and `jmp`s to the callee. Every other call is a `call`; the
+A call in tail position restores the callee-saved registers, tears down
+the frame and `jmp`s to the callee (through `r10` for a function value);
+arguments beyond the sixth are written into the caller's own incoming
+stack-argument slots, so they must fit there. Every other call is a `call`; the
 generated entry stub runs `main` on a large dedicated stack, which
 keeps deep non-tail recursion practical.
 

@@ -30,7 +30,7 @@
 - [x] Dot syntax: `(expr).field` (chained, and `((expr).f.m args)` calls `m` on a field)
 - [x] Secret checker / impl-not flow rule diagnostics are located (`error[CODE]` with file:line:col)
 - [x] Derivable traits: Show, Debug, Eq, Ord, Hash, Clone, with the field requirement checked (`E_TRAIT_NOT_DERIVABLE`); open: Vec/Map implement only Show
-- [ ] Tail calls: indirect calls and calls with more than six arguments; interpreter TCO
+- [x] Tail calls: indirect calls, stack arguments within the caller's incoming area, and interpreter TCO (except String/Float results)
 - [ ] Contracts: profiles, `checkpoint` rollback, typed `recover` arms
 - [ ] Hash finalization: a real ICNF hash (needs an ICNF printer) and the resolved graph recorded in `.buildinfo`
 

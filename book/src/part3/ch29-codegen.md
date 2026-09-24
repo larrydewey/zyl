@@ -326,9 +326,11 @@ name:
     ret
 ```
 
-A direct call to a top-level function in tail position with at most
-six arguments is a jump (`cg-tail`): the arguments are staged as usual,
-`rbx`/`r12` restored, the frame torn down, then `jmp`. Every other call
+A call in tail position is a jump (`cg-tail`): the arguments are staged
+in scratch slots, arguments beyond the sixth copied into the caller's
+incoming stack-argument area (which bounds how many a tail call may
+pass), registers loaded, `rbx`/`r12` restored, the frame torn down, then
+`jmp` to the symbol, or to `r10` for a function value. Every other call
 is a real `call`; deep recursion there is supported by running the
 program on a very large stack (§29.9).
 

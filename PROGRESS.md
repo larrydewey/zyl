@@ -161,11 +161,11 @@ Compiler:
   explicit (`zeroize`, `wipe`); Secret fields/types redact as `<secret>`;
   `set!` of a secret into a `let-mut` is not tracked. Taint crosses a call
   boundary only where the callee's parameters are annotated.
-- Tail calls are partial: a direct call to a top-level function in tail
-  position with at most six arguments is a jump (`cg-tail`); indirect
-  calls, calls with more than six arguments and calls inside
-  `try`/`catch` or `while` still push a frame. The REPL interpreter does
-  no TCO.
+- Tail calls are jumps (`cg-tail`), direct or through a function value;
+  exceptions: stack arguments beyond the caller's own, calls inside
+  `try`/`catch` or `while`, and frame-wiping (secret) functions. The REPL
+  interpreter runs tail calls in constant stack unless the result has a
+  String/Float kind (retagged).
 
 Package system:
 

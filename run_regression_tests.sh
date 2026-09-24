@@ -234,7 +234,7 @@ run_diff_test() {
 #   math-*               — minutes of interpreted arithmetic for what
 #                          the compiled suite already covers in seconds.
 #                          Matched by prefix, below.
-#   tail-calls           — 10^8-deep loops; the interpreter has no TCO.
+#   tail-calls           — 10^8-deep loops, far too slow interpreted.
 DIFF_SKIP="actors actor-receive concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls"
 
 diff_skipped() {

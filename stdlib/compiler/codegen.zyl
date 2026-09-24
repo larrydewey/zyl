@@ -397,21 +397,63 @@
       (ICall name args (cg-tail-call st env name args tl e))
       (_ (cg-expr st env e)))))
 
-; Direct call to a top-level function with register-only args: reuse the frame.
-(defn cg-tail-ok (st env name args)
-  (and (= (env-lookup env name) 0)
-       (and (= (cg-fn-known st name) 1) (<= (list-length args) 6))))
+;; Tail calls reuse the frame. tl packs the frame size and this function's
+;; parameter count (cg-tail-tl); a callee may take stack arguments only as
+;; far as this function's own incoming stack-argument area reaches.
+(defn cg-tail-tl (fsz nparams) (+ fsz (* 1000000 nparams)))
+(defn cg-tl-fsz (tl) (% tl 1000000))
+(defn cg-tl-params (tl) (/ tl 1000000))
 
-(defn cg-tail-call (st env name args fsz site)
-  (if (cg-tail-ok st env name args)
-    (let n (list-length args)
-      (let st2 (cg-scratch-all st env args)
-        (let st3 (cg-restore-callee-saved (cg-load-reg-args st2 n (- n 1)) fsz)
-          (let st4 (cg-emit-line st3 "    mov rsp, rbp")
-            (let st5 (cg-emit-line st4 "    pop rbp")
-              (let sym (cg-sym-for (cg-arena-of st5) name 1)
-                (cg-emit-line st5 (cg-cat2 (cg-arena-of st5) (str-intern (cg-arena-of st5) "    jmp ") sym))))))))
-    (cg-expr st env site)))
+(defn cg-tail-fits (tl m) (<= (cg-stack-count m) (cg-stack-count (cg-tl-params tl))))
+
+(defn cg-tail-call (st env name args tl site)
+  (let m (list-length args)
+    (if (= (env-lookup env name) 0)
+      (if (and (= (cg-fn-known st name) 1) (cg-tail-fits tl m))
+        (cg-tail-direct st env name args tl)
+        (cg-expr st env site))
+      (if (cg-tail-fits tl (+ m 1))
+        (cg-tail-indirect st env name args tl)
+        (cg-expr st env site)))))
+
+(defn cg-tail-direct (st env name args tl)
+  (let n (list-length args)
+    (let st2 (cg-tail-stage (cg-scratch-all st env args) n)
+      (let sym (cg-sym-for (cg-arena-of st2) name 1)
+        (cg-emit-line (cg-tail-leave st2 tl) (cg-cat2 (cg-arena-of st2) (str-intern (cg-arena-of st2) "    jmp ") sym))))))
+
+; Through a local function value: the env goes last, as in cg-call-indirect.
+(defn cg-tail-indirect (st env name args tl)
+  (let off (env-lookup env name)
+    (let m (+ (list-length args) 1)
+      (let st3 (cg-closure-env-scratch (cg-label-pair (cg-scratch-all st env args)) off)
+        (let st4 (cg-tail-stage st3 m)
+          (match (cg-label-new st4)
+            (CGR st5 _ lc
+              (let st6 (cg-closure-magic-cmp st5 "r10" off)
+                (let st7 (cg-nl (cg-emit (cg-emit st6 "    jne ") lc))
+                  (let st8 (cg-label-def (cg-emit-line st7 "    mov r10, [r10+8]") lc)
+                    (cg-emit-line (cg-tail-leave st8 tl) "    jmp r10")))))))))))
+
+; n args are in scratch slots: stack args to the incoming area, then registers.
+(defn cg-tail-stage (st n)
+  (cg-tail-regs (cg-tail-stack st n 6) n (- (cg-min-int n 6) 1)))
+
+(defn cg-tail-stack (st n i)
+  (if (>= i n)
+    st
+    (let st2 (cg-emit-line (cg-emit-int (cg-emit st "    mov r10, [rsp+") (* 8 (- n 1 i))) "]")
+      (let st3 (cg-emit-line (cg-emit-int (cg-emit st2 "    mov [rbp+") (+ 16 (* 8 (- i 6)))) "], r10")
+        (cg-tail-stack st3 n (+ i 1))))))
+
+(defn cg-tail-regs (st n i)
+  (if (< i 0)
+    st
+    (cg-tail-regs (cg-load-reg-one st (cg-reg-of i) (* 8 (- n 1 i))) n (- i 1))))
+
+(defn cg-tail-leave (st tl)
+  (let st2 (cg-restore-callee-saved st (cg-tl-fsz tl))
+    (cg-emit-line (cg-emit-line st2 "    mov rsp, rbp") "    pop rbp")))
 
 ; Every name visible at this point: locals first, then top-level functions.
 (defn cg-visible-names (st env)
@@ -1552,7 +1594,7 @@
                        (let st8 (cg-param-spills st7 0 (list-length params))
                          ; per-function slot counter reset after params
                          (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                            (let st10 (cg-body-exit st9 env body fsz (cg-wipes-frame name))
+                            (let st10 (cg-body-exit st9 env body fsz (list-length params) (cg-wipes-frame name))
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))
@@ -1571,10 +1613,10 @@
       (str-substring n 0 i)
       (cg-base-name n (+ i 1)))))
 
-(defn cg-body-exit (st env body fsz wipe)
+(defn cg-body-exit (st env body fsz np wipe)
   (if wipe
     (cg-wipe-frame (cg-restore-callee-saved (cg-expr st env body) fsz) fsz)
-    (cg-restore-callee-saved (cg-tail st env body fsz) fsz)))
+    (cg-restore-callee-saved (cg-tail st env body (cg-tail-tl fsz np)) fsz)))
 
 ; rep stosq over [rbp-fsz, rbp), keeping the result in r11 meanwhile.
 (defn cg-wipe-frame (st fsz)

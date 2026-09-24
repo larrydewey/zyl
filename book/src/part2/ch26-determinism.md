@@ -165,7 +165,7 @@ Nothing is reordered.
 - **Stack machine**: every value passes through `rax`, with `rcx` for the second operand and `rbp`-relative slots for locals. There is no register allocator.
 - **Frames** are sized per function.
 - **Calls** are direct for known functions, and indirect through the closure record for closures.
-- **Partial tail-call optimization.** A direct tail call with at most six arguments is a jump; every other call pushes a frame, and deep recursion survives because `main` runs on a thread with a very large reserved stack (`zyl_call_on_big_stack` in the runtime). This is how the implementation meets §14's stack-safety guarantee in practice.
+- **Tail-call optimization.** A tail call is a jump (unless its stack arguments outgrow the caller's, or it is inside `try`/`while`); every other call pushes a frame, and deep recursion survives because `main` runs on a thread with a very large reserved stack (`zyl_call_on_big_stack` in the runtime). This is how the implementation meets §14's stack-safety guarantee in practice.
 
 ### Linking
 

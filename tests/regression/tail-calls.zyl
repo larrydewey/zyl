@@ -43,4 +43,23 @@
 (test "string accumulator"
   (assert-equal (tc-str-loop 3 "a") "axxx"))
 
+(defn tc-sum8 (n a b c d e f g)
+  (if (= n 0) (+ a (+ b (+ c (+ d (+ e (+ f g)))))) (tc-sum8 (- n 1) a b c d e f (+ g 1))))
+
+(defn tc-via-local (n acc)
+  (let g (fn (k a) (if (= k 0) a (tc-via-local (- k 1) (+ a 1))))
+    (g n acc)))
+
+(defn tc-closure-loop (step n acc)
+  (let f (fn (k a) (if (= k 0) a (tc-closure-loop step (- k 1) (+ a step))))
+    (f n acc)))
+
+(test "stack-argument tail call"
+  (assert-equal (tc-sum8 50000000 1 2 3 4 5 6 0) 50000021))
+
+(test "tail call through a local function value"
+  (begin
+    (assert-equal (tc-via-local 30000000 0) 30000000)
+    (assert-equal (tc-closure-loop 2 30000000 0) 60000000)))
+
 (run-tests)
