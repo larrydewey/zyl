@@ -32,6 +32,11 @@ ZYL_BIN="${SCRIPT_DIR}/build/boot/zyl-self"
 export ZYL_HOME="${SCRIPT_DIR}/build/boot"
 TESTS_DIR="${SCRIPT_DIR}/tests"
 
+# Per-run scratch directory, so two checkouts (or worktrees) can run the
+# suite at the same time without overwriting each other's test binaries.
+RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/zyl_tests.XXXXXX")"
+trap 'rm -rf "$RUN_TMP"' EXIT
+
 # Defaults
 MODE="quick"
 FILTER=""
@@ -99,7 +104,7 @@ run_test() {
     
     # Compile
     local output
-    if ! output=$("${ZYL_BIN}" "$file" "/tmp/zyl_test_${TOTAL}.bin" 2>&1); then
+    if ! output=$("${ZYL_BIN}" "$file" "$RUN_TMP/zyl_test_${TOTAL}.bin" 2>&1); then
         echo -e "  ${RED}✗${NC} ${name}: compilation failed"
         if [ "$VERBOSE" -eq 1 ]; then
             echo "    $output"
@@ -110,7 +115,7 @@ run_test() {
     
     # Run
     local actual exit_code
-    actual=$(timeout "$TIMEOUT" "/tmp/zyl_test_${TOTAL}.bin" 2>/dev/null) || exit_code=$?
+    actual=$(timeout "$TIMEOUT" "$RUN_TMP/zyl_test_${TOTAL}.bin" 2>/dev/null) || exit_code=$?
     
     if [ "${exit_code:-0}" -ne 0 ]; then
         echo -e "  ${RED}✗${NC} ${name}: runtime failure (exit ${exit_code:-1})"
@@ -147,7 +152,7 @@ run_fail_test() {
     fi
     
     local output
-    if output=$("${ZYL_BIN}" "$file" "/tmp/zyl_test_${TOTAL}.bin" 2>&1); then
+    if output=$("${ZYL_BIN}" "$file" "$RUN_TMP/zyl_test_${TOTAL}.bin" 2>&1); then
         echo -e "  ${RED}✗${NC} ${name}: expected compilation to fail, but it succeeded"
         if [ "$VERBOSE" -eq 1 ]; then
             echo "    $output"
@@ -175,14 +180,14 @@ run_diff_test() {
 
     TOTAL=$((TOTAL + 1))
 
-    if ! "${ZYL_BIN}" "$file" -o "/tmp/zyl_diff_${TOTAL}.bin" >/dev/null 2>&1; then
+    if ! "${ZYL_BIN}" "$file" -o "$RUN_TMP/zyl_diff_${TOTAL}.bin" >/dev/null 2>&1; then
         echo -e "  ${RED}✗${NC} ${name}: does not compile"
         FAIL=$((FAIL + 1))
         return
     fi
 
     local compiled interpreted
-    compiled=$(timeout "$TIMEOUT" "/tmp/zyl_diff_${TOTAL}.bin" 2>/dev/null) || true
+    compiled=$(timeout "$TIMEOUT" "$RUN_TMP/zyl_diff_${TOTAL}.bin" 2>/dev/null) || true
     interpreted=$(timeout "$DIFF_TIMEOUT" "${ZYL_BIN}" eval "$file" 2>/dev/null) || true
 
     if [ "$compiled" = "$interpreted" ]; then
@@ -357,17 +362,17 @@ if [ "$MODE" = "full" ]; then
         local_name=$(basename "$d")
         if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
             TOTAL=$((TOTAL + 1))
-            if (cd "${d}app" && "${ZYL_BIN}" build) > /tmp/zyl_pkgbuild.log 2>&1 \
-               && (cd "${d}app" && ./"$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)") > /tmp/zyl_pkgrun.log 2>&1 \
-               && ! grep -q "FAIL" /tmp/zyl_pkgrun.log; then
+            if (cd "${d}app" && "${ZYL_BIN}" build) > $RUN_TMP/zyl_pkgbuild.log 2>&1 \
+               && (cd "${d}app" && ./"$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)") > $RUN_TMP/zyl_pkgrun.log 2>&1 \
+               && ! grep -q "FAIL" $RUN_TMP/zyl_pkgrun.log; then
                 PASS=$((PASS + 1))
                 echo -e "  ${GREEN}✓${NC} packages-build/${local_name}"
             else
                 FAIL=$((FAIL + 1))
                 echo -e "  ${RED}✗${NC} packages-build/${local_name}"
                 if [ "$VERBOSE" -eq 1 ]; then
-                    sed 's/^/      /' /tmp/zyl_pkgbuild.log
-                    sed 's/^/      /' /tmp/zyl_pkgrun.log
+                    sed 's/^/      /' $RUN_TMP/zyl_pkgbuild.log
+                    sed 's/^/      /' $RUN_TMP/zyl_pkgrun.log
                 fi
             fi
         fi
@@ -393,13 +398,13 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "lsp" | grep -qi -- "$FILTER"; then
         if [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
             TOTAL=$((TOTAL + 1))
-            if python3 "${SCRIPT_DIR}/tests/lsp/lsp_protocol_test.py" > /tmp/zyl_lsp_test.log 2>&1; then
+            if python3 "${SCRIPT_DIR}/tests/lsp/lsp_protocol_test.py" > $RUN_TMP/zyl_lsp_test.log 2>&1; then
                 PASS=$((PASS + 1))
                 echo -e "  ${GREEN}✓${NC} lsp/protocol"
             else
                 FAIL=$((FAIL + 1))
                 echo -e "  ${RED}✗${NC} lsp/protocol"
-                sed 's/^/      /' /tmp/zyl_lsp_test.log
+                sed 's/^/      /' $RUN_TMP/zyl_lsp_test.log
             fi
         else
             echo -e "  ${YELLOW}-${NC} lsp/protocol (build/boot/zyl-lsp missing -- run ./boot.sh)"
@@ -418,14 +423,14 @@ fi
 # goes undetected, so a green result means the measurement worked.
 if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER"; then
     TOTAL=$((TOTAL + 1))
-    if python3 "${SCRIPT_DIR}/verify/timing.py" --quick > /tmp/zyl_timing.log 2>&1; then
+    if python3 "${SCRIPT_DIR}/verify/timing.py" --quick > $RUN_TMP/zyl_timing.log 2>&1; then
         PASS=$((PASS + 1))
         echo -e "  ${GREEN}✓${NC} timing-leakage"
-        sed 's/^/      /' /tmp/zyl_timing.log
+        sed 's/^/      /' $RUN_TMP/zyl_timing.log
     else
         FAIL=$((FAIL + 1))
         echo -e "  ${RED}✗${NC} timing-leakage"
-        sed 's/^/      /' /tmp/zyl_timing.log
+        sed 's/^/      /' $RUN_TMP/zyl_timing.log
     fi
 fi
 
@@ -434,12 +439,13 @@ if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ]; then
     TOTAL=$((TOTAL + 1))
     echo ""
     echo "=== Self-hosting fixed point (boot.sh) ==="
-    if "${SCRIPT_DIR}/boot.sh" > /tmp/zyl_boot_check.log 2>&1; then
+    if "${SCRIPT_DIR}/boot.sh" > $RUN_TMP/zyl_boot_check.log 2>&1; then
         PASS=$((PASS + 1))
         echo -e "  ${GREEN}✓${NC} boot/fixed-point"
     else
         FAIL=$((FAIL + 1))
-        echo -e "  ${RED}✗${NC} boot/fixed-point (see /tmp/zyl_boot_check.log)"
+        cp "$RUN_TMP/zyl_boot_check.log" "${SCRIPT_DIR}/build/boot/boot_check.log" 2>/dev/null || true
+        echo -e "  ${RED}✗${NC} boot/fixed-point (see build/boot/boot_check.log)"
     fi
 fi
 
