@@ -139,7 +139,7 @@ interpreter and diffs the two outputs).
 Code in `stdlib/compiler/` and `selfhost/` is compiled by the previous
 generation of itself, so it has to avoid constructs that generation
 miscompiles. The current list (the full, annotated version is
-`skills/zyl/SKILL.md` §2):
+`rules/boot-lifted-constraints.md` in the separate zyl-skill repository):
 
 ```
 1. Function arity > 6 works (lifted 2026-08-25: stack-passed args)

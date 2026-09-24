@@ -278,7 +278,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ## Constraints for Compiler Source Written in Zyl
 
-The full list, with examples, is `skills/zyl/SKILL.md` §2. Its constraint
+The full list, with examples, is `rules/boot-lifted-constraints.md` in the zyl-skill repository (`~/git/larry/zyl-skill`; formerly `skills/zyl/SKILL.md` §2). Its constraint
 3 still tells you to name wildcards `d1`, `d2`, ...; that is superseded,
 as recorded below.
 

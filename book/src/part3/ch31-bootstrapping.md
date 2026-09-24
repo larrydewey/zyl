@@ -191,7 +191,7 @@ Shrink the input until the difference is one construct, and add it to
 
 Code in `stdlib/compiler/` and `selfhost/` is compiled by the previous
 generation of itself. The current list is in Chapter 27, §27.5, and the
-annotated one in `skills/zyl/SKILL.md` §2. In short: balance parens per
+annotated one in `rules/boot-lifted-constraints.md` in the separate zyl-skill repository. In short: balance parens per
 top-level form and per file; one `deftype` per name; fresh buffers for
 `buf-append`; bind calls with `let` rather than combining two calls in
 one binop; no `main` in a library module; `use` every module whose
