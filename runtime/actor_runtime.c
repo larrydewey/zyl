@@ -652,6 +652,20 @@ long long zyl_cstr_eq(long long p1, long long p2) {
     return (long long)(strcmp(s1, s2) == 0);
 }
 
+/* 1 when `key` equals `name` or is a qualified key ending in "::name".
+ * Allocation-free: type inference calls it inside every linear lookup. */
+long long zyl_cstr_key_matches(long long key, long long name) {
+    if (key == name) return 1;
+    if (!key || !name) return 0;
+    const char* k = (const char*)(size_t)key;
+    const char* n = (const char*)(size_t)name;
+    size_t kl = strlen(k), nl = strlen(n);
+    if (kl == nl) return (long long)(memcmp(k, n, kl) == 0);
+    if (kl < nl + 2) return 0;
+    const char* tail = k + (kl - nl);
+    return (long long)(tail[-1] == ':' && tail[-2] == ':' && memcmp(tail, n, nl) == 0);
+}
+
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
@@ -1596,6 +1610,51 @@ long long zyl_span_line_text(long long fid, long long off) {
     return (long long)(size_t)buf;
 }
 
+/* Diagnostic snippet: at most ZYL_SNIP_WIDTH bytes of the line around
+ * `off`, "..."-marked where cut, so a huge line cannot balloon a report. */
+#define ZYL_SNIP_WIDTH 120
+
+static int zyl_snip_window(long long fid, long long off, long long* ws, long long* we, int* pre, int* post) {
+    if (fid < 0 || fid >= g_src_file_count || off < 0) return 0;
+    ZylSrcFile* f = &g_src_files[fid];
+    if (!f->text || (size_t)off > f->len) return 0;
+    long long start = off, end = off;
+    while (start > 0 && f->text[start - 1] != '\n') start--;
+    while ((size_t)end < f->len && f->text[end] != '\n') end++;
+    long long s = start, e = end;
+    if (end - start > ZYL_SNIP_WIDTH) {
+        s = off - ZYL_SNIP_WIDTH / 2;
+        if (s < start) s = start;
+        e = s + ZYL_SNIP_WIDTH;
+        if (e > end) { e = end; s = end - ZYL_SNIP_WIDTH; }
+    }
+    *ws = s; *we = e; *pre = s > start; *post = e < end;
+    return 1;
+}
+
+long long zyl_span_snippet(long long fid, long long off) {
+    static const char empty[] = "";
+    long long s, e; int pre, post;
+    if (!zyl_snip_window(fid, off, &s, &e, &pre, &post)) return (long long)(size_t)empty;
+    size_t n = (size_t)(e - s);
+    char* buf = (char*)malloc(n + 7);
+    if (!buf) return (long long)(size_t)empty;
+    size_t j = 0;
+    if (pre) { memcpy(buf, "...", 3); j = 3; }
+    memcpy(buf + j, g_src_files[fid].text + s, n);
+    j += n;
+    if (post) { memcpy(buf + j, "...", 3); j += 3; }
+    buf[j] = 0;
+    return (long long)(size_t)buf;
+}
+
+/* 1-based caret column of `off` within zyl_span_snippet's text. */
+long long zyl_span_snippet_col(long long fid, long long off) {
+    long long s, e; int pre, post;
+    if (!zyl_snip_window(fid, off, &s, &e, &pre, &post)) return 0;
+    return off - s + 1 + (pre ? 3 : 0);
+}
+
 /* Inverse of zyl_span_line/zyl_span_col: sexp_balance tracks 1-based
  * line/col directly, so its results come back here to be rendered. */
 long long zyl_span_offset_at(long long fid, long long line, long long col) {
@@ -2140,6 +2199,33 @@ void zyl_register_test(const char* name, int (*fn)(void)) {
     }
 }
 
+long long zyl_diag_json(void);
+long long zyl_json_quote(long long s);
+
+/* JSON-mode panic: a message err-diag already rendered as JSON passes
+ * through; a bare "E_CODE: text" is wrapped with its code split off. */
+static void zyl_panic_json(const char* msg) {
+    if (msg[0] == '{') { fprintf(stderr, "%s\n", msg); return; }
+    size_t k = 0;
+    if ((msg[0] == 'E' || msg[0] == 'W') && msg[1] == '_') {
+        k = 2;
+        while ((msg[k] >= 'A' && msg[k] <= 'Z') || (msg[k] >= '0' && msg[k] <= '9') || msg[k] == '_') k++;
+        if (msg[k] != ':') k = 0;
+    }
+    char code[128] = "";
+    const char* text = msg;
+    if (k && k < sizeof(code)) {
+        memcpy(code, msg, k);
+        code[k] = 0;
+        text = msg + k + 1;
+        while (*text == ' ') text++;
+    }
+    fprintf(stderr,
+        "{\"severity\":\"error\",\"code\":%s,\"message\":%s,\"file\":\"\",\"line\":0,\"column\":0,\"labels\":[],\"help\":\"\"}\n",
+        (const char*)(size_t)zyl_json_quote((long long)(size_t)code),
+        (const char*)(size_t)zyl_json_quote((long long)(size_t)text));
+}
+
 void zyl_panic(const char* msg) {
     if (g_try_top) {
         struct ZylTryFrame* f = g_try_top;
@@ -2152,6 +2238,10 @@ void zyl_panic(const char* msg) {
          * instead of killing the whole process. */
         g_in_test = 0;
         longjmp(g_test_jmp, 1);
+    }
+    if (zyl_diag_json()) {
+        zyl_panic_json(msg ? msg : "assertion failed");
+        exit(1);
     }
     fprintf(stderr, "PANIC: %s\n", msg ? msg : "assertion failed");
     exit(1);
@@ -2374,6 +2464,87 @@ long long zyl_path_exists(long long path) {
 long long zyl_getenv(long long name) {
     const char* v = getenv((const char*)(size_t)name);
     return v ? (long long)(size_t)v : 0;
+}
+
+/* Diagnostic format: 1 = JSON (one object per diagnostic), 0 = text.
+ * Set only by the compiler (--error-format=json); programs keep text. */
+static int g_diag_json = 0;
+
+long long zyl_diag_json(void) {
+    return g_diag_json;
+}
+
+long long zyl_diag_json_set(long long on) {
+    g_diag_json = on ? 1 : 0;
+    return 0;
+}
+
+/* Warning sink: stderr by default; a capturing caller (the LSP) collects
+ * them instead and drains the buffer with zyl_warn_take. */
+static char* g_warn_buf = NULL;
+static size_t g_warn_len = 0, g_warn_cap = 0;
+static int g_warn_capture = 0;
+
+long long zyl_warn_capture(long long on) {
+    g_warn_capture = on ? 1 : 0;
+    g_warn_len = 0;
+    return 0;
+}
+
+long long zyl_warn_emit(long long msg) {
+    const char* m = msg ? (const char*)(size_t)msg : "";
+    size_t n = strlen(m);
+    if (!g_warn_capture) {
+        ssize_t w = write(2, m, n);
+        w = write(2, "\n", 1);
+        (void)w;
+        return 0;
+    }
+    if (g_warn_len + n + 2 > g_warn_cap) {
+        size_t nc = g_warn_cap ? g_warn_cap : 1024;
+        while (g_warn_len + n + 2 > nc) nc *= 2;
+        char* nb = (char*)realloc(g_warn_buf, nc);
+        if (!nb) return 0;
+        g_warn_buf = nb;
+        g_warn_cap = nc;
+    }
+    memcpy(g_warn_buf + g_warn_len, m, n);
+    g_warn_len += n;
+    g_warn_buf[g_warn_len++] = '\n';
+    g_warn_buf[g_warn_len] = 0;
+    return 0;
+}
+
+/* Captured warnings, newline-separated; the buffer is reset. */
+long long zyl_warn_take(void) {
+    char* out = (char*)malloc(g_warn_len + 1);
+    if (!out) return (long long)(size_t)"";
+    if (g_warn_len) memcpy(out, g_warn_buf, g_warn_len);
+    out[g_warn_len] = 0;
+    g_warn_len = 0;
+    return (long long)(size_t)out;
+}
+
+/* `s` as a quoted JSON string literal (malloc'd). */
+long long zyl_json_quote(long long s) {
+    const unsigned char* p = s ? (const unsigned char*)(size_t)s : (const unsigned char*)"";
+    size_t n = strlen((const char*)p);
+    char* out = (char*)malloc(n * 6 + 3);
+    if (!out) return (long long)(size_t)"\"\"";
+    size_t j = 0;
+    out[j++] = '"';
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = p[i];
+        if (c == '"' || c == '\\') { out[j++] = '\\'; out[j++] = (char)c; }
+        else if (c == '\n') { out[j++] = '\\'; out[j++] = 'n'; }
+        else if (c == '\t') { out[j++] = '\\'; out[j++] = 't'; }
+        else if (c == '\r') { out[j++] = '\\'; out[j++] = 'r'; }
+        else if (c < 0x20) { j += (size_t)sprintf(out + j, "\\u%04x", c); }
+        else out[j++] = (char)c;
+    }
+    out[j++] = '"';
+    out[j] = 0;
+    return (long long)(size_t)out;
 }
 
 long long zyl_chdir(long long path) {
@@ -3508,9 +3679,11 @@ long long zyl_int_text(long long n) {
     X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
+    X(zyl_cstr_key_matches) \
     X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
-    X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_dirname_cstr) \
+    X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
+    X(zyl_diag_json_set) X(zyl_dirname_cstr) \
     X(zyl_ensure_arenas) X(zyl_exec_cmd) X(zyl_f_add) \
     X(zyl_f_cmp) X(zyl_f_div) X(zyl_f_error) \
     X(zyl_f_mul) X(zyl_f_of_int) X(zyl_f_parse) \
@@ -3523,6 +3696,7 @@ long long zyl_int_text(long long n) {
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
+    X(zyl_json_quote) \
     X(zyl_load_byte) X(zyl_load_byte_signed) X(zyl_mangle_key) \
     X(zyl_mem_alloc) X(zyl_mem_free) X(zyl_mem_read) \
     X(zyl_mem_write) X(zyl_mkdir_p) X(zyl_mlock) \
@@ -3532,6 +3706,7 @@ long long zyl_int_text(long long n) {
     X(zyl_session_arena) X(zyl_source_path) X(zyl_source_register) \
     X(zyl_span_col) X(zyl_span_copy) X(zyl_span_file) \
     X(zyl_span_line) X(zyl_span_line_text) X(zyl_span_off) \
+    X(zyl_span_snippet) X(zyl_span_snippet_col) \
     X(zyl_span_offset_at) X(zyl_span_set) X(zyl_store_byte) \
     X(zyl_store_byte_signed) X(zyl_str_append) X(zyl_str_append_capped) \
     X(zyl_sym_escape) X(zyl_system_cmd) X(zyl_term_flush) \
@@ -3540,6 +3715,7 @@ long long zyl_int_text(long long n) {
     X(zyl_term_width) X(zyl_term_write) X(zyl_try_frame_msg) \
     X(zyl_try_last_msg) X(zyl_try_pop) X(zyl_try_push) \
     X(zyl_variant_cmp) X(zyl_variant_eq) X(zyl_variant_field) \
+    X(zyl_warn_capture) X(zyl_warn_emit) X(zyl_warn_take) \
     X(zyl_word_of_cstr) X(zyl_zeroize)
 
 /* Forward declarations for the interpreter helpers named above. */

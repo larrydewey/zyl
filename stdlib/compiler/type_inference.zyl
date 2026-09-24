@@ -18,19 +18,10 @@
 
 (use compiler/type_system)
 
-; Name matching helper: qualified name (pkg@ver::module::Name) vs unqualified (Name)
-(defn type-name-has-suffix (n suffix)
-  (let nl (str-length n)
-    (let sl (str-length suffix)
-      (if (> nl sl)
-        (let start (- nl sl)
-          (let sub (str-substring n start sl)
-            (> (str-eq sub suffix) 0))
-        0)))))
-
+; Qualified key (pkg@ver::module::Name) vs bare Name, without allocating:
+; this runs inside every linear lookup, and an arena never frees.
 (defn type-name-matches (n name)
-  (or (> (str-eq n name) 0)
-      (type-name-has-suffix n (str-concat "::" name))))
+  (> (ffi-call "zyl_cstr_key_matches" n name 1000) 0))
 
 (defn fresh-var (inferer)
     ; return current next-index and bump-by-1

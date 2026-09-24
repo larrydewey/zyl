@@ -54,6 +54,7 @@
 (use core/option)
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 ; uc-check-unused-functions is NOT wired in here, even though it's fully
 ; implemented below: core/core (compose, is-even, print-string, ...) is
@@ -81,25 +82,14 @@
     0
     (str-eq (str-substring name 0 1) "_")))
 
-(defn uc-nonexempt (names)
-  (match names
-    (Nil Nil)
-    (Cons n rest (if (> (uc-is-exempt n) 0) (uc-nonexempt rest) (Cons n (uc-nonexempt rest))))))
-
 (defn uc-in-list (name xs)
   (match xs
     (Nil 0)
     (Cons h t (if (> (str-eq h name) 0) 1 (uc-in-list name t)))))
 
-; Compiler diagnostics belong on stderr (matches zyl_panic's own
-; fprintf(stderr, ...) in the runtime -- see runtime/actor_runtime.c),
-; not stdout, which stays free for the program's own output. Raw fd
-; write rather than `print`: `print` goes through libc's buffered
-; stdout, and warnings emitted here must survive whatever exit path the
-; caller takes afterward (same reasoning as the LSP server's own
-; fd-2 debug writes elsewhere in this codebase).
+; Warnings go through the runtime sink: stderr, or the LSP's capture buffer.
 (defn uc-warn-line (msg)
-  (file-write 2 (str-concat msg "\n")))
+  (ffi-call "zyl_warn_emit" msg 1000))
 
 ; ===========================================================================
 ; UNUSED TOP-LEVEL FUNCTION
@@ -280,38 +270,40 @@
           (let m5 (str-concat m4 "`'s parameter list")
             (ffi-call "zyl_panic" m5 1000)))))))
 
-(defn uc-check-unused-names (refs names kind)
-  (match names
+; Each P node carries its source span (parse-single-param copies it).
+(defn uc-check-unused-params (refs params)
+  (match params
     (Nil 0)
-    (Cons n rest
-      (begin
-        (if (> (uc-in-list n refs) 0) 0 (uc-warn-unused n kind))
-        (uc-check-unused-names refs rest kind)))))
+    (Cons p rest
+      (let n (P.name p)
+        (begin
+          (if (> (uc-is-exempt n) 0) 0 (if (> (uc-in-list n refs) 0) 0 (uc-warn-unused n "parameter" p)))
+          (uc-check-unused-params refs rest))))))
 
-(defn uc-warn-unused (name kind)
-  (let m1 "W_UNUSED_"
-    (let m2 (if (> (str-eq kind "parameter") 0) (str-concat m1 "PARAMETER: `") (str-concat m1 "VARIABLE: `"))
-      (let m3 (str-concat m2 name)
-        (uc-warn-line (str-concat m3 "` is never used"))))))
+(defn uc-warn-unused (name kind site)
+  (let code (if (> (str-eq kind "parameter") 0) "W_UNUSED_PARAMETER" "W_UNUSED_VARIABLE")
+    (let m1 (str-concat "`" name)
+      (let msg (str-concat m1 "` is never used")
+        (err-warn-at code msg site "remove it, or prefix it with `_` to mark it deliberately unused")))))
 
 ; ===========================================================================
 ; SHADOWING
 ; ===========================================================================
 
-(defn uc-check-shadow (name scope)
+(defn uc-check-shadow (name scope site)
   (if (> (uc-is-exempt name) 0)
     0
-    (if (> (uc-in-list name scope) 0) (uc-warn-shadow name) 0)))
+    (if (> (uc-in-list name scope) 0) (uc-warn-shadow name site) 0)))
 
-(defn uc-check-shadow-list (names scope)
+(defn uc-check-shadow-list (names scope site)
   (match names
     (Nil 0)
-    (Cons n rest (begin (uc-check-shadow n scope) (uc-check-shadow-list rest scope)))))
+    (Cons n rest (begin (uc-check-shadow n scope site) (uc-check-shadow-list rest scope site)))))
 
-(defn uc-warn-shadow (name)
-  (let m1 "W_SHADOWED_BINDING: `"
-    (let m2 (str-concat m1 name)
-      (uc-warn-line (str-concat m2 "` shadows an outer binding of the same name")))))
+(defn uc-warn-shadow (name site)
+  (let m1 (str-concat "`" name)
+    (let msg (str-concat m1 "` shadows an outer binding of the same name")
+      (err-warn-at "W_SHADOWED_BINDING" msg site "rename one of the two bindings"))))
 
 ; ===========================================================================
 ; TOP-LEVEL DRIVER
@@ -334,7 +326,7 @@
       (uc-check-dup-params name pnames Nil)
       (let refs (uc-refs body)
         (begin
-          (uc-check-unused-names refs (uc-nonexempt pnames) "parameter")
+          (uc-check-unused-params refs params)
           (uc-walk-scope body refs pnames))))))
 
 (defn uc-check-fn-body (body)
@@ -351,17 +343,17 @@
     (Nil 0)
     (Cons h t (begin (uc-walk-scope h refs scope) (uc-walk-list t refs scope)))))
 
-(defn uc-walk-for-bindings (bindings refs scope)
+(defn uc-walk-for-bindings (bindings refs scope site)
   (match bindings
     (Nil scope)
     (Cons pr rest
       (match pr
         (Pair name valOpt
           (begin
-            (uc-check-shadow name scope)
-            (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+            (uc-check-shadow name scope site)
+            (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable" site)))
             (match valOpt (Some v (uc-walk-scope v refs scope)) (None 0))
-            (uc-walk-for-bindings rest refs (Cons name scope))))))))
+            (uc-walk-for-bindings rest refs (Cons name scope) site)))))))
 
 (defn uc-walk-cond-clauses (clauses refs scope)
   (match clauses
@@ -378,7 +370,7 @@
         (MA _ patterns body
           (let pnames (uc-pattern-names patterns)
             (begin
-              (uc-check-shadow-list pnames scope)
+              (uc-check-shadow-list pnames scope body)
               (uc-walk-scope body refs (list-append pnames scope))
               (uc-walk-arms rest refs scope))))))))
 
@@ -390,12 +382,12 @@
         (EAtom atom (match atom (AIdent n (Cons n (uc-pattern-names rest))) (_ (uc-pattern-names rest))))
         (_ (uc-pattern-names rest))))))
 
-(defn uc-walk-lambda-like (label params body refs scope)
+(defn uc-walk-lambda-like (label params body refs scope site)
   (let pnames (uc-param-names params)
     (begin
       (uc-check-dup-params label pnames Nil)
-      (uc-check-shadow-list pnames scope)
-      (uc-check-unused-names refs (uc-nonexempt pnames) "parameter")
+      (uc-check-shadow-list pnames scope site)
+      (uc-check-unused-params refs params)
       (uc-walk-scope body refs (list-append pnames scope)))))
 
 (defn uc-walk-scope (e refs scope)
@@ -403,30 +395,30 @@
     (ESetBang _ val (uc-walk-scope val refs scope))
     (ELet name val body
       (begin
-        (uc-check-shadow name scope)
-        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+        (uc-check-shadow name scope e)
+        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (ELetMut name val body
       (begin
-        (uc-check-shadow name scope)
-        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable")))
+        (uc-check-shadow name scope e)
+        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) 0 (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (EDef _ val (uc-walk-scope val refs scope))
     (EIf c t eb (begin (uc-walk-scope c refs scope) (uc-walk-scope t refs scope) (uc-walk-scope eb refs scope)))
     (EWhile c body (begin (uc-walk-scope c refs scope) (uc-walk-scope body refs scope)))
     (EFor bindings cond body
-      (let newscope (uc-walk-for-bindings bindings refs scope)
+      (let newscope (uc-walk-for-bindings bindings refs scope e)
         (begin (uc-walk-scope cond refs newscope) (uc-walk-scope body refs newscope))))
     (ECond clauses (uc-walk-cond-clauses clauses refs scope))
     (EBegin exprs (uc-walk-list exprs refs scope))
-    (ELambda _ params body (uc-walk-lambda-like "<lambda>" params body refs scope))
-    (EFn _ params body (uc-walk-lambda-like "<fn>" params body refs scope))
+    (ELambda _ params body (uc-walk-lambda-like "<lambda>" params body refs scope e))
+    (EFn _ params body (uc-walk-lambda-like "<fn>" params body refs scope e))
     (ETryCatch tbody cvar handler
       (begin
         (uc-walk-scope tbody refs scope)
-        (uc-check-shadow cvar scope)
+        (uc-check-shadow cvar scope e)
         (uc-walk-scope handler refs (Cons cvar scope))))
     (EMatch subj arms (begin (uc-walk-scope subj refs scope) (uc-walk-arms arms refs scope)))
     (ECall op args (begin (uc-walk-scope op refs scope) (uc-walk-list args refs scope)))

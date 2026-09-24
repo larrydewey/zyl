@@ -936,6 +936,11 @@
 ; destructure — corrupting field binding entirely ("rbp0"/undefined
 ; symbol at link time). Sequential matches sidestep the nesting.
 (defn parse-single-param (p)
+  (let r (parse-single-param-node p)
+    (let _ (ffi-call "zyl_span_copy" r p 1000)
+      r)))
+
+(defn parse-single-param-node (p)
   (match p
     (AstIdent name (P name None))
     (AList lst (parse-param-list p lst))

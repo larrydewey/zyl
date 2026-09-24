@@ -38,11 +38,13 @@
       (let lo (str-substring "0123456789" (% n 10) 1)
         (str-concat hi lo)))))
 
+; Halving recursion: O(n) bytes total, not the O(n^2) of one char per step.
 (defn space-run (n)
   (if (<= n 0)
     ""
-    (let s (space-run (- n 1))
-      (str-concat s " "))))
+    (let h (space-run (/ n 2))
+      (let hh (str-concat h h)
+        (if (= (% n 2) 1) (str-concat hh " ") hh)))))
 
 ; Caret line: col-1 spaces then ^. col is 1-based.
 (defn pointer-line (col)
@@ -150,49 +152,256 @@
     (if (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58) 1 0)
     0))
 
+; A secondary span: another place the diagnostic points at, with its own
+; short message (the binding a `set!` targets, the definition a capability
+; is used in). Int-first field order, as above.
+(deftype ErrLabel
+  (ELbl fid Int off Int text String))
+
+(defn err-label (fid off text) (ELbl fid off text))
+
+; Label at the recorded span of `node`.
+(defn err-label-at (node text)
+  (ELbl (ffi-call "zyl_span_file" node 1000) (ffi-call "zyl_span_off" node 1000) text))
+
 (defn err-at (code msg fid off help)
-  (let head (err-header code msg)
-    (if (< off 0)
-      (err-nowhere head help)
-      (err-somewhere head fid off help))))
+  (err-at-labels code msg fid off Nil help))
 
-(defn err-nowhere (head help)
-  (let tag "\n  = help: "
-    (let h1 (str-concat head tag)
-      (str-concat h1 help))))
+(defn err-at-labels (code msg fid off labels help)
+  (err-diag "error" code msg fid off labels help))
 
-(defn err-somewhere (head fid off help)
+; One renderer for errors and warnings; `sev` is "error" or "warning".
+(defn err-diag (sev code msg fid off labels help)
+  (if (> (ffi-call "zyl_diag_json" 1000) 0)
+    (err-json sev code msg fid off labels help)
+    (err-text sev code msg fid off labels help)))
+
+; A warning at `node`, emitted through the runtime's warning sink.
+(defn err-warn-at (code msg node help)
+  (let fid (ffi-call "zyl_span_file" node 1000)
+    (let off (ffi-call "zyl_span_off" node 1000)
+      (ffi-call "zyl_warn_emit" (err-diag "warning" code msg fid off Nil help) 1000))))
+
+(defn err-text (sev code msg fid off labels help)
+  (let open (str-concat sev "[")
+    (let h1 (str-concat open code)
+      (let h2 (str-concat h1 "]: ")
+        (let head (str-concat h2 msg)
+          (if (< off 0)
+            (err-tail head labels 0 fid help)
+            (if (<= (ffi-call "zyl_span_line" fid off 1000) 0)
+              (err-tail head labels 0 fid help)
+              (err-full head fid off labels help))))))))
+
+; Labels, then the help line; `gw` is the gutter width (0 = no snippet).
+(defn err-tail (head labels gw fid help)
+  (let l1 (err-labels-text labels gw fid)
+    (let s1 (str-concat head l1)
+      (if (= (str-length help) 0)
+        s1
+        (let pad (space-run gw)
+          (let s2 (str-concat s1 "\n ")
+            (let s3 (str-concat s2 pad)
+              (let s4 (str-concat s3 " = help: ")
+                (str-concat s4 help)))))))))
+
+(defn err-labels-text (labels gw fid)
+  (match labels
+    (Nil "")
+    (Cons l rest
+      (let t (err-label-text l gw fid)
+        (let r (err-labels-text rest gw fid)
+          (str-concat t r))))))
+
+; A located label renders its own source line with a `-` under the column;
+; one in another file names that file first.
+(defn err-label-text (l gw pfid)
+  (match l
+    (ELbl fid off text
+      (if (< off 0)
+        (err-label-note gw text)
+        (if (<= (ffi-call "zyl_span_line" fid off 1000) 0)
+          (err-label-note gw text)
+          (err-label-snippet fid off text gw pfid))))))
+
+(defn err-label-note (gw text)
+  (let pad (space-run gw)
+    (let s1 (str-concat "\n " pad)
+      (let s2 (str-concat s1 " = note: ")
+        (str-concat s2 text)))))
+
+(defn err-label-snippet (fid off text gw pfid)
   (let line (ffi-call "zyl_span_line" fid off 1000)
-    (if (<= line 0)
-      (err-nowhere head help)
-      (err-full head fid off help))))
+    (let col (ffi-call "zyl_span_snippet_col" fid off 1000)
+      (let src (ffi-call "zyl_span_snippet" fid off 1000)
+        (let ls (int-to-str line)
+          (let w (if (> (str-length ls) gw) (str-length ls) gw)
+            (let gut (space-run w)
+              (let lpad (space-run (- w (str-length ls)))
+                (let pad (space-run (- col 1))
+                  (let where (if (= fid pfid) "" (err-label-where fid off gut))
+                    (let s1 (str-concat where "\n ")
+                      (let s2 (str-concat s1 lpad)
+                        (let s3 (str-concat s2 ls)
+                          (let s4 (str-concat s3 " | ")
+                            (let s5 (str-concat s4 src)
+                              (let s6 (str-concat s5 "\n ")
+                                (let s7 (str-concat s6 gut)
+                                  (let s8 (str-concat s7 " | ")
+                                    (let s9 (str-concat s8 pad)
+                                      (let sa (str-concat s9 "- ")
+                                        (str-concat sa text)))))))))))))))))))))
 
-(defn err-full (head fid off help)
+(defn err-label-where (fid off gut)
+  (let path (ffi-call "zyl_source_path" fid 1000)
+    (let ls (int-to-str (ffi-call "zyl_span_line" fid off 1000))
+      (let cs (int-to-str (ffi-call "zyl_span_col" fid off 1000))
+        (let s1 (str-concat "\n" gut)
+          (let s2 (str-concat s1 " ::: ")
+            (let s3 (str-concat s2 path)
+              (let s4 (str-concat s3 ":")
+                (let s5 (str-concat s4 ls)
+                  (let s6 (str-concat s5 ":")
+                    (str-concat s6 cs)))))))))))
+
+(defn err-full (head fid off labels help)
   (let line (ffi-call "zyl_span_line" fid off 1000)
     (let col (ffi-call "zyl_span_col" fid off 1000)
       (let path (ffi-call "zyl_source_path" fid 1000)
-        (let text (ffi-call "zyl_span_line_text" fid off 1000)
+        (let text (ffi-call "zyl_span_snippet" fid off 1000)
           (let ls (int-to-str line)
             (let cs (int-to-str col)
-              (let gut (space-run (str-length ls))
-                (let pad (space-run (- col 1))
-                  (let s1 (str-concat head "\n  --> ")
-                    (let s2 (str-concat s1 path)
-                      (let s3 (str-concat s2 ":")
-                        (let s4 (str-concat s3 ls)
-                          (let s5 (str-concat s4 ":")
-                            (let s6 (str-concat s5 cs)
-                              (let s7 (str-concat s6 "\n ")
-                                (let s8 (str-concat s7 gut)
-                                  (let s9 (str-concat s8 " |\n ")
-                                    (let sa (str-concat s9 ls)
-                                      (let sb (str-concat sa " | ")
-                                        (let sc (str-concat sb text)
-                                          (let sd (str-concat sc "\n ")
-                                            (let se (str-concat sd gut)
-                                              (let sf (str-concat se " | ")
-                                                (let sg (str-concat sf pad)
-                                                  (let sh (str-concat sg "^\n ")
-                                                    (let si (str-concat sh gut)
-                                                      (let sj (str-concat si " = help: ")
-                                                        (str-concat sj help)))))))))))))))))))))))))))))
+              (let gw (str-length ls)
+                (let gut (space-run gw)
+                  (let pad (space-run (- (ffi-call "zyl_span_snippet_col" fid off 1000) 1))
+                    (let s1 (str-concat head "\n  --> ")
+                      (let s2 (str-concat s1 path)
+                        (let s3 (str-concat s2 ":")
+                          (let s4 (str-concat s3 ls)
+                            (let s5 (str-concat s4 ":")
+                              (let s6 (str-concat s5 cs)
+                                (let s7 (str-concat s6 "\n ")
+                                  (let s8 (str-concat s7 gut)
+                                    (let s9 (str-concat s8 " |\n ")
+                                      (let sa (str-concat s9 ls)
+                                        (let sb (str-concat sa " | ")
+                                          (let sc (str-concat sb text)
+                                            (let sd (str-concat sc "\n ")
+                                              (let se (str-concat sd gut)
+                                                (let sf (str-concat se " | ")
+                                                  (let sg (str-concat sf pad)
+                                                    (let sh (str-concat sg "^")
+                                                      (err-tail sh labels gw fid help))))))))))))))))))))))))))))
+
+; ---------------------------------------------------------------------------
+; JSON: one object per diagnostic (severity, code, message, file, line,
+; column, labels, help); an unknown location is file "", line 0.
+; ---------------------------------------------------------------------------
+
+(defn err-json (sev code msg fid off labels help)
+  (let s1 (str-concat "{\"severity\":" (ffi-call "zyl_json_quote" sev 1000))
+    (let s2 (str-concat s1 ",\"code\":")
+      (let s3 (str-concat s2 (ffi-call "zyl_json_quote" code 1000))
+        (let s4 (str-concat s3 ",\"message\":")
+          (let s5 (str-concat s4 (ffi-call "zyl_json_quote" msg 1000))
+            (let s6 (str-concat s5 (err-json-loc fid off))
+              (let s7 (str-concat s6 ",\"labels\":[")
+                (let s8 (str-concat s7 (err-json-labels labels 1))
+                  (let s9 (str-concat s8 "],\"help\":")
+                    (let sa (str-concat s9 (ffi-call "zyl_json_quote" help 1000))
+                      (str-concat sa "}"))))))))))))
+
+; `,"file":..,"line":..,"column":..` for a span.
+(defn err-json-loc (fid off)
+  (let line (if (< off 0) 0 (ffi-call "zyl_span_line" fid off 1000))
+    (let known (if (> line 0) 1 0)
+      (let col (if (> known 0) (ffi-call "zyl_span_col" fid off 1000) 0)
+        (let path (if (> known 0) (ffi-call "zyl_source_path" fid 1000) "")
+          (let s1 (str-concat ",\"file\":" (ffi-call "zyl_json_quote" path 1000))
+            (let s2 (str-concat s1 ",\"line\":")
+              (let s3 (str-concat s2 (int-to-str line))
+                (let s4 (str-concat s3 ",\"column\":")
+                  (str-concat s4 (int-to-str col)))))))))))
+
+(defn err-json-labels (labels first)
+  (match labels
+    (Nil "")
+    (Cons l rest
+      (match l
+        (ELbl fid off text
+          (let sep (if (> first 0) "" ",")
+            (let s1 (str-concat sep "{\"message\":")
+              (let s2 (str-concat s1 (ffi-call "zyl_json_quote" text 1000))
+                (let s3 (str-concat s2 (err-json-loc fid off))
+                  (let s4 (str-concat s3 "}")
+                    (str-concat s4 (err-json-labels rest 0))))))))))))
+
+; ---------------------------------------------------------------------------
+; SUGGESTIONS — "did you mean": the closest candidate by edit distance,
+; compared on the user-visible part of each name (err-name).
+; ---------------------------------------------------------------------------
+
+; Closest name in `cands` to `name`, or "" when none is close enough.
+; Ties go to the earliest candidate, so the answer is deterministic.
+(defn err-suggest (name cands)
+  (let short (err-name name)
+    (let limit (err-suggest-limit (str-length short))
+      (err-suggest-best short cands limit "" (+ limit 1)))))
+
+(defn err-suggest-limit (n)
+  (if (< n 3) 1 (if (< n 7) 2 3)))
+
+(defn err-suggest-best (short cands limit best bestd)
+  (match cands
+    (Nil best)
+    (Cons c rest
+      (let cs (err-name c)
+        (if (> (str-eq cs short) 0)
+          (err-suggest-best short rest limit best bestd)
+          (let d (err-edit-distance short cs)
+            (if (< d bestd)
+              (err-suggest-best short rest limit cs d)
+              (err-suggest-best short rest limit best bestd))))))))
+
+; "did you mean `x`?" or `fallback` when nothing is close.
+(defn err-suggest-help (name cands fallback)
+  (let s (err-suggest name cands)
+    (if (= (str-length s) 0)
+      fallback
+      (let m1 (str-concat "did you mean `" s)
+        (str-concat m1 "`?")))))
+
+; Levenshtein distance, one row at a time.
+(defn err-edit-distance (a b)
+  (err-ed-rows a b 0 (err-ed-init 0 (str-length b))))
+
+(defn err-ed-init (i n)
+  (if (> i n) Nil (Cons i (err-ed-init (+ i 1) n))))
+
+(defn err-ed-rows (a b i prev)
+  (if (>= i (str-length a))
+    (err-ed-last prev)
+    (let c (ffi-call "zyl_cstr_byte_at" a i 1000)
+      (err-ed-rows a b (+ i 1) (Cons (+ i 1) (err-ed-row c b 0 prev (+ i 1)))))))
+
+(defn err-ed-row (c b j prev left)
+  (if (>= j (str-length b))
+    Nil
+    (match prev
+      (Nil Nil)
+      (Cons diag rest
+        (match rest
+          (Nil Nil)
+          (Cons up _
+            (let cost (if (= c (ffi-call "zyl_cstr_byte_at" b j 1000)) 0 1)
+              (let v (err-min3 (+ up 1) (+ left 1) (+ diag cost))
+                (Cons v (err-ed-row c b (+ j 1) rest v))))))))))
+
+(defn err-ed-last (row)
+  (match row
+    (Nil 0)
+    (Cons h t (match t (Nil h) (_ (err-ed-last t))))))
+
+(defn err-min3 (a b c)
+  (let m (if (< a b) a b)
+    (if (< m c) m c)))

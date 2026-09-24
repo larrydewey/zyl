@@ -493,5 +493,8 @@ collapsed = collapse_whitespace(txt)
 d2 = count_depth(collapsed)
 print('Collapsed depth:', d2, '(should be 0)')
 
-open('selfhost/zyl_selfhost_compiler.zyl', 'w').write(collapsed)
+# Optional argv[1]: write elsewhere (boot.sh uses it to check freshness).
+import sys
+out_path = sys.argv[1] if len(sys.argv) > 1 else 'selfhost/zyl_selfhost_compiler.zyl'
+open(out_path, 'w').write(collapsed)
 print('wrote', len(collapsed), 'bytes (collapsed from', len(src), ')')

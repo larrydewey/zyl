@@ -65,6 +65,9 @@ BOOTSTRAP_SELF=0
 # exponential fixed since then brought a stage down to about ten seconds;
 # the generous cap stays as headroom for a slow machine.
 STAGE_TIMEOUT="${ZYL_STAGE_TIMEOUT:-2400}"
+# Allocation ceiling per stage: a self-compile needs ~1.4 GB, so growth past
+# 2 GB is a regression and fails loudly instead of swapping the machine.
+export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-2147483648}"
 
 mkdir -p "$OUT"
 cd "$SCRIPT_DIR"
@@ -139,6 +142,15 @@ if [ "$BOOTSTRAP" -eq 1 ]; then
     echo "  git add -f build/boot/stage2.s build/boot/stage2.bin && git commit"
     exit 0
 fi
+
+# ── 0. committed bundle must match the sources it is assembled from ─────
+# Otherwise a source edit is never compiled here and the check proves nothing.
+step "bundle: selfhost source matches stdlib/compiler + selfhost/driver.zyl"
+python3 "${SCRIPT_DIR}/selfhost/assemble.py" "${OUT}/bundle_check.zyl" >/dev/null
+cmp -s "${OUT}/bundle_check.zyl" "$SRC" \
+    || die "selfhost/zyl_selfhost_compiler.zyl is stale — run: python3 selfhost/assemble.py && ./boot.sh --bootstrap-from-self"
+rm -f "${OUT}/bundle_check.zyl"
+ok "bundle up to date"
 
 # ── 1. stage1 from committed seed ────────────────────────────────────────
 step "stage1: cc from committed stage2.s"

@@ -37,6 +37,7 @@
 
 (use compiler/ast)
 (use compiler/expr_inner)
+(use core/option)
 (use compiler/error_report)
 
 ; --- entry point ------------------------------------------------------------
@@ -50,8 +51,8 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn _ _ body (mc-expr body Nil))
-          (ETestDecl _ body _ (mc-expr body Nil))
+          (EDefn _ _ body (mc-expr body Nil Nil))
+          (ETestDecl _ body _ (mc-expr body Nil Nil))
           (_ 0))
         (mc-check-top rest)))))
 
@@ -92,36 +93,55 @@
           (let hint "closures capture by value (spec 7); return the new value from the closure and set! it at the binding's own scope"
             (ffi-call "zyl_panic" (err-at "E_MUT_CONFLICT" msg fid off hint) 1000)))))))
 
-(defn mc-check-set (e name mutscope)
+(defn mc-check-set (e name mutscope lets)
   (let status (mc-scope-status name mutscope 0)
     (if (= status 2)
       (mc-fail-captured-set e name)
       (if (= status 0)
-        (ffi-call "zyl_panic" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
+        (mc-fail-immutable-set e name lets)
         0))))
 
-(defn mc-list (xs mutscope)
+; `lets` holds (Pair name node) for each plain `let` in scope, innermost first.
+(defn mc-find-let (name lets)
+  (match lets
+    (Nil None)
+    (Cons pr rest
+      (match pr
+        (Pair n node (if (> (str-eq n name) 0) (Some node) (mc-find-let name rest)))))))
+
+(defn mc-fail-immutable-set (e name lets)
+  (let m1 (str-concat "set! target `" (err-name name))
+    (let msg (str-concat m1 "` is not a let-mut binding in scope")
+      (let labels (match (mc-find-let name lets)
+                    (Some node (Cons (err-label-at node "bound here by `let`, which is immutable (TCap)") Nil))
+                    (None Nil))
+        (let off (ffi-call "zyl_span_off" e 1000)
+          (let fid (ffi-call "zyl_span_file" e 1000)
+            (let hint "only a let-mut binding is TMut and may be assigned; declare it with `let-mut`"
+              (ffi-call "zyl_panic" (err-at-labels "E_MUT_CONFLICT" msg fid off labels hint) 1000))))))))
+
+(defn mc-list (xs mutscope lets)
   (match xs
     (Nil 0)
-    (Cons h t (begin (mc-expr h mutscope) (mc-list t mutscope)))))
+    (Cons h t (begin (mc-expr h mutscope lets) (mc-list t mutscope lets)))))
 
-(defn mc-arms (arms mutscope)
+(defn mc-arms (arms mutscope lets)
   (match arms
     (Nil 0)
     (Cons a rest
       (match a
-        (MA _ _ body (begin (mc-expr body mutscope) (mc-arms rest mutscope)))))))
+        (MA _ _ body (begin (mc-expr body mutscope lets) (mc-arms rest mutscope lets)))))))
 
-(defn mc-cond-clauses (clauses mutscope)
+(defn mc-cond-clauses (clauses mutscope lets)
   (match clauses
     (Nil 0)
     (Cons pr rest
       (match pr
         (Pair c b
           (begin
-            (mc-expr c mutscope)
-            (mc-expr b mutscope)
-            (mc-cond-clauses rest mutscope)))))))
+            (mc-expr c mutscope lets)
+            (mc-expr b mutscope lets)
+            (mc-cond-clauses rest mutscope lets)))))))
 
 (defn mc-for-names (bindings)
   (match bindings
@@ -130,7 +150,7 @@
       (match pr
         (Pair name _ (Cons name (mc-for-names rest)))))))
 
-(defn mc-for-inits (bindings mutscope)
+(defn mc-for-inits (bindings mutscope lets)
   (match bindings
     (Nil 0)
     (Cons pr rest
@@ -138,9 +158,9 @@
         (Pair _ opt
           (begin
             (match opt
-              (Some e2 (mc-expr e2 mutscope))
+              (Some e2 (mc-expr e2 mutscope lets))
               (None 0))
-            (mc-for-inits rest mutscope)))))))
+            (mc-for-inits rest mutscope lets)))))))
 
 (defn mc-append (xs ys)
   (match xs
@@ -167,41 +187,41 @@
 
 ; --- the actual check ---------------------------------------------------
 
-(defn mc-expr (e mutscope)
+(defn mc-expr (e mutscope lets)
   (match (Expr.inner e)
     (ESetBang name val
       (begin
-        (mc-check-set e name mutscope)
-        (mc-expr val mutscope)))
+        (mc-check-set e name mutscope lets)
+        (mc-expr val mutscope lets)))
     (ELet name val body
       (begin
-        (mc-expr val mutscope)
-        (mc-expr body mutscope)))
+        (mc-expr val mutscope lets)
+        (mc-expr body mutscope (Cons (Pair name e) lets))))
     (ELetMut name val body
       (begin
-        (mc-expr val mutscope)
-        (mc-expr body (Cons name mutscope))))
-    (EDef _ val (mc-expr val mutscope))
+        (mc-expr val mutscope lets)
+        (mc-expr body (Cons name mutscope) (Cons (Pair name e) lets))))
+    (EDef _ val (mc-expr val mutscope lets))
     (EIf c t eb
       (begin
-        (mc-expr c mutscope)
-        (mc-expr t mutscope)
-        (mc-expr eb mutscope)))
-    (EWhile c body (begin (mc-expr c mutscope) (mc-expr body mutscope)))
+        (mc-expr c mutscope lets)
+        (mc-expr t mutscope lets)
+        (mc-expr eb mutscope lets)))
+    (EWhile c body (begin (mc-expr c mutscope lets) (mc-expr body mutscope lets)))
     (EFor bindings cond body
       (let names (mc-for-names bindings)
         (begin
-          (mc-for-inits bindings mutscope)
-          (mc-expr cond (mc-append names mutscope))
-          (mc-expr body (mc-append names mutscope)))))
-    (ECond clauses (mc-cond-clauses clauses mutscope))
-    (EBegin exprs (mc-list exprs mutscope))
-    (ELambda _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope)))
-    (EFn _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope)))
+          (mc-for-inits bindings mutscope lets)
+          (mc-expr cond (mc-append names mutscope) lets)
+          (mc-expr body (mc-append names mutscope) lets))))
+    (ECond clauses (mc-cond-clauses clauses mutscope lets))
+    (EBegin exprs (mc-list exprs mutscope lets))
+    (ELambda _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope) lets))
+    (EFn _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope) lets))
     (ETryCatch tbody _ handler
-      (begin (mc-expr tbody mutscope) (mc-expr handler mutscope)))
-    (EMatch subj arms (begin (mc-expr subj mutscope) (mc-arms arms mutscope)))
-    (ECall op args (begin (mc-expr op mutscope) (mc-list args mutscope)))
+      (begin (mc-expr tbody mutscope lets) (mc-expr handler mutscope lets)))
+    (EMatch subj arms (begin (mc-expr subj mutscope lets) (mc-arms arms mutscope lets)))
+    (ECall op args (begin (mc-expr op mutscope lets) (mc-list args mutscope lets)))
     ; `(ffi-call "sym" a b timeout)` arrives here as EApply("ffi-call",
     ; args) -- expr_inner.zyl's dispatch has no dedicated ffi-call
     ; parser (see icnf.zyl's own ic-expr comment on this same fact) --
@@ -215,7 +235,7 @@
         (if (> (str-eq fname "ffi-call") 0)
           (mc-check-ffi-args (mc-butlast args))
           0)
-        (mc-list args mutscope)))
+        (mc-list args mutscope lets)))
     ; spec/07 R4: ffi-call requires an FFI_Pinnable argument type (Int,
     ; Float, Bool, String, or composed thereof) -- a closure is none of
     ; those (it's a heap [tag,code,env] triple or bare code pointer,
@@ -229,24 +249,24 @@
     (EFfiCall _ args _
       (begin
         (mc-check-ffi-args args)
-        (mc-list args mutscope)))
-    (EFfiPin e2 (mc-expr e2 mutscope))
-    (EFfiUnpin e2 (mc-expr e2 mutscope))
-    (EAssert c _ (mc-expr c mutscope))
-    (EUnwrap e2 (mc-expr e2 mutscope))
-    (EStructGet se _ (mc-expr se mutscope))
-    (EMakeStruct _ fields (mc-list fields mutscope))
-    (EMakeVariant _ _ args (mc-list args mutscope))
-    (EPrint exprs (mc-list exprs mutscope))
-    (EExit c (mc-expr c mutscope))
-    (EClose e2 (mc-expr e2 mutscope))
-    (EFileOpen a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
-    (EFileRead a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
-    (EFileWrite a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
-    (EFileClose e2 (mc-expr e2 mutscope))
-    (EBufAppend a b (begin (mc-expr a mutscope) (mc-expr b mutscope)))
+        (mc-list args mutscope lets)))
+    (EFfiPin e2 (mc-expr e2 mutscope lets))
+    (EFfiUnpin e2 (mc-expr e2 mutscope lets))
+    (EAssert c _ (mc-expr c mutscope lets))
+    (EUnwrap e2 (mc-expr e2 mutscope lets))
+    (EStructGet se _ (mc-expr se mutscope lets))
+    (EMakeStruct _ fields (mc-list fields mutscope lets))
+    (EMakeVariant _ _ args (mc-list args mutscope lets))
+    (EPrint exprs (mc-list exprs mutscope lets))
+    (EExit c (mc-expr c mutscope lets))
+    (EClose e2 (mc-expr e2 mutscope lets))
+    (EFileOpen a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
+    (EFileRead a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
+    (EFileWrite a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
+    (EFileClose e2 (mc-expr e2 mutscope lets))
+    (EBufAppend a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
     (EWithResource _ init body
-      (begin (mc-expr init mutscope) (mc-expr body mutscope)))
+      (begin (mc-expr init mutscope lets) (mc-expr body mutscope lets)))
     ; spec/07 R3 / spec/06 rule 5: a spawned closure must only capture
     ; Send-capable (TCap/TAtomic) variables, and a sent message must
     ; itself be Send-capable -- a let-mut (TMut) variable escaping into
@@ -260,29 +280,46 @@
     (ESpawn closure
       (begin
         (if (> (mc-refs-any closure mutscope) 0)
-          (ffi-call "zyl_panic" "E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor" 1000)
+          (mc-fail-leak e closure mutscope lets "spawned closure captures let-mut (TMut) variable `" "only Send-capable (non-mut) captures may cross into another actor")
           0)
-        (mc-expr closure mutscope)))
+        (mc-expr closure mutscope lets)))
     (ESend actor msg
       (begin
-        (mc-expr actor mutscope)
+        (mc-expr actor mutscope lets)
         (if (> (mc-refs-any msg mutscope) 0)
-          (ffi-call "zyl_panic" "E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable" 1000)
+          (mc-fail-leak e msg mutscope lets "message sent to an actor references let-mut (TMut) variable `" "messages must be Send-capable; send a copy bound with plain `let`")
           0)
-        (mc-expr msg mutscope)))
+        (mc-expr msg mutscope lets)))
     (ESendClosure actor closure _
-      (begin (mc-expr actor mutscope) (mc-expr closure mutscope)))
-    (ETestDecl _ body _ (mc-expr body mutscope))
-    (EAssertEqual l r (begin (mc-expr l mutscope) (mc-expr r mutscope)))
-    (EAssertFail e2 _ (mc-expr e2 mutscope))
-    (EAssertTrue e2 _ (mc-expr e2 mutscope))
-    (EAssertFalse e2 _ (mc-expr e2 mutscope))
-    (ETestProperty _ _ body (mc-expr body mutscope))
-    (ESetup exprs (mc-list exprs mutscope))
-    (ETeardown exprs (mc-list exprs mutscope))
-    (ETestCompile e2 _ (mc-expr e2 mutscope))
-    (EDefn _ _ body (mc-expr body Nil))
+      (begin (mc-expr actor mutscope lets) (mc-expr closure mutscope lets)))
+    (ETestDecl _ body _ (mc-expr body mutscope lets))
+    (EAssertEqual l r (begin (mc-expr l mutscope lets) (mc-expr r mutscope lets)))
+    (EAssertFail e2 _ (mc-expr e2 mutscope lets))
+    (EAssertTrue e2 _ (mc-expr e2 mutscope lets))
+    (EAssertFalse e2 _ (mc-expr e2 mutscope lets))
+    (ETestProperty _ _ body (mc-expr body mutscope lets))
+    (ESetup exprs (mc-list exprs mutscope lets))
+    (ETeardown exprs (mc-list exprs mutscope lets))
+    (ETestCompile e2 _ (mc-expr e2 mutscope lets))
+    (EDefn _ _ body (mc-expr body Nil Nil))
     (_ 0)))
+
+; First name of `names` that `e` references, or "".
+(defn mc-first-ref (e names)
+  (match names
+    (Nil "")
+    (Cons n rest (if (> (mc-refs-any e (Cons n Nil)) 0) n (mc-first-ref e rest)))))
+
+(defn mc-fail-leak (site inner mutscope lets what hint)
+  (let name (mc-first-ref inner mutscope)
+    (let m1 (str-concat what (err-name name))
+      (let msg (str-concat m1 "` from the enclosing scope")
+        (let labels (match (mc-find-let name lets)
+                      (Some node (Cons (err-label-at node "declared `let-mut` here") Nil))
+                      (None Nil))
+          (let off (ffi-call "zyl_span_off" site 1000)
+            (let fid (ffi-call "zyl_span_file" site 1000)
+              (ffi-call "zyl_panic" (err-at-labels "E_CAPABILITY_LEAK" msg fid off labels hint) 1000))))))))
 
 ; --- free-variable-reference scan (for ESpawn/ESend above) --------------
 ; True if `e` references ANY name in `names` anywhere in its tree.

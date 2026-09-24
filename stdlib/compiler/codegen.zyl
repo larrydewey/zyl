@@ -47,6 +47,7 @@
 ; f_shd at link time since the module resolver had no way to know to
 ; pull resolver.zyl in too.
 (use compiler/resolver)
+(use core/list)
 (use compiler/error_report)
 
 ; --- Emitter state ----------------------------------------------------------
@@ -376,16 +377,32 @@
   (if (= (env-lookup env name) 0)
     (if (= (cg-fn-known st name) 1)
       (cg-call-args st env name args true 0)
-      (cg-fail-undefined-fn name site))
+      (cg-fail-undefined-fn st env name site))
     (cg-call-args st env name args true 0)))
 
-(defn cg-fail-undefined-fn (n site)
+; Every name visible at this point: locals first, then top-level functions.
+(defn cg-visible-names (st env)
+  (list-append (cg-env-names env) (cg-fn-names (cgg-fns st))))
+
+(defn cg-env-names (env)
+  (match env
+    (EnvBind n _ _ rest (Cons n (cg-env-names rest)))
+    (EnvNil Nil)))
+
+(defn cg-fn-names (fns)
+  (if (is-nil fns)
+    Nil
+    (match (fnhead fns)
+      (FN s _ (Cons s (cg-fn-names (fntail fns))))
+      (FNNil (cg-fn-names (fntail fns))))))
+
+(defn cg-fail-undefined-fn (st env n site)
   (let m1 "call to undefined function `"
     (let m2 (str-concat m1 (err-name n))
       (let msg (str-concat m2 "`")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
-            (let hint "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)"
+            (let hint (err-suggest-help n (cg-visible-names st env) "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)")
               (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
                 (ffi-call "zyl_panic" text 1000)))))))))
 
@@ -409,7 +426,7 @@
     (cg-load-fnref st n)
     (if (> (str-eq n "nil") 0)
       (cg-load-unresolved st)
-      (cg-fail-unbound n site))))
+      (cg-fail-unbound st env n site))))
 
 ; A name that resolves to neither a bound local slot nor a known
 ; top-level function is a genuine unbound identifier (`nil` is the one
@@ -425,13 +442,13 @@
 ; first dereferenced the resulting garbage/near-null pointer. Hard
 ; failure at compile time, at the actual unbound reference, replaces
 ; that entire class of bug with a real error at the real location.
-(defn cg-fail-unbound (n site)
+(defn cg-fail-unbound (st env n site)
   (let m1 "unbound identifier `"
     (let m2 (str-concat m1 (err-name n))
       (let msg (str-concat m2 "`")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
-            (let hint "check the spelling, or bind it with `let` before this point"
+            (let hint (err-suggest-help n (cg-visible-names st env) "check the spelling, or bind it with `let` before this point")
               (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
                 (ffi-call "zyl_panic" text 1000)))))))))
 

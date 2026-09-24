@@ -35,6 +35,7 @@
 (use compiler/expr_inner)
 (use compiler/package)
 (use compiler/qualify)
+(use compiler/error_report)
 (use core/list)
 (use core/option)
 
@@ -156,106 +157,110 @@
 
 (defn cc-check-form (e grants denied)
   (match (Expr.inner e)
-    (EDefn name _ body (cc-check-owned name body grants denied))
-    (EDef name value (cc-check-owned name value grants denied))
+    (EDefn name _ body (cc-check-owned name body grants denied e))
+    (EDef name value (cc-check-owned name value grants denied e))
     (_ 1)))
 
-(defn cc-check-owned (name body grants denied)
+(defn cc-check-owned (name body grants denied dnode)
   (let pkg (ck-package-of name)
     (match (cc-find-grant grants pkg)
-      (Some g (if (= (cg-enforced g) 0) 1 (cc-walk body (cg-caps g) denied pkg name)))
+      (Some g (if (= (cg-enforced g) 0) 1 (cc-walk body (cg-caps g) denied pkg name dnode)))
       (None 1))))
 
 ; Depth-first over the body. The first violation stops the build with the
 ; offending package, the construct's capability and the definition that
 ; used it, because a capability error is about a boundary and naming only
 ; one side of it is useless.
-(defn cc-walk (e caps denied pkg fname)
+(defn cc-walk (e caps denied pkg fname dnode)
   (let need (cc-expr-capability e)
-    (let _ (cc-require need caps denied pkg fname)
-      (cc-walk-children e caps denied pkg fname))))
+    (let _ (cc-require need caps denied pkg fname dnode e)
+      (cc-walk-children e caps denied pkg fname dnode))))
 
-(defn cc-require (need caps denied pkg fname)
+(defn cc-require (need caps denied pkg fname dnode site)
   (if (= (str-length need) 0)
     1
     (if (> (pk-has-capability denied need) 0)
-      (ffi-call "zyl_panic"
-        (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: " (str-concat fname
-          (str-concat " uses " (str-concat need
-            " , which the root package forbids with deny-capabilities")))) 1000)
+      (cc-fail site dnode
+        (str-concat (err-name fname) (str-concat " uses " (str-concat need ", which the root package forbids with deny-capabilities")))
+        "remove the use, or lift the root package's deny-capabilities entry")
       (if (> (pk-has-capability caps need) 0)
         1
-        (ffi-call "zyl_panic"
-          (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: package " (str-concat pkg
-            (str-concat " uses " (str-concat need
-              (str-concat " in " (str-concat fname
-                " without declaring it in zyl.pkg")))))) 1000)))))
+        (cc-fail site dnode
+          (str-concat "package " (str-concat pkg (str-concat " uses " (str-concat need (str-concat " in " (str-concat (err-name fname) " without declaring it in zyl.pkg"))))))
+          (str-concat "add `" (str-concat need "` to the package's (capabilities ...) in zyl.pkg")))))))
 
-(defn cc-walk-list (xs caps denied pkg fname)
+; Primary span at the construct; a secondary label at the definition using it.
+(defn cc-fail (site dnode msg hint)
+  (let labels (Cons (err-label-at dnode "in this definition") Nil)
+    (let off (ffi-call "zyl_span_off" site 1000)
+      (let fid (ffi-call "zyl_span_file" site 1000)
+        (ffi-call "zyl_panic" (err-at-labels "E_PKG_CAPABILITY_VIOLATION" msg fid off labels hint) 1000)))))
+
+(defn cc-walk-list (xs caps denied pkg fname dnode)
   (match xs
     (Nil 1)
     (Cons h t
-      (let _ (cc-walk h caps denied pkg fname)
-        (cc-walk-list t caps denied pkg fname)))))
+      (let _ (cc-walk h caps denied pkg fname dnode)
+        (cc-walk-list t caps denied pkg fname dnode)))))
 
 ; Structural recursion over the expression forms that carry sub-terms.
 ; Anything not listed here holds no expression to walk into.
-(defn cc-walk-children (e caps denied pkg fname)
+(defn cc-walk-children (e caps denied pkg fname dnode)
   (match (Expr.inner e)
     (ECall f args
-      (let _ (cc-walk f caps denied pkg fname) (cc-walk-list args caps denied pkg fname)))
-    (EApply _ args (cc-walk-list args caps denied pkg fname))
-    (EDefn _ _ body (cc-walk body caps denied pkg fname))
-    (EDef _ v (cc-walk v caps denied pkg fname))
+      (let _ (cc-walk f caps denied pkg fname dnode) (cc-walk-list args caps denied pkg fname dnode)))
+    (EApply _ args (cc-walk-list args caps denied pkg fname dnode))
+    (EDefn _ _ body (cc-walk body caps denied pkg fname dnode))
+    (EDef _ v (cc-walk v caps denied pkg fname dnode))
     (ELet _ v b
-      (let _ (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk v caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (ELetMut _ v b
-      (let _ (cc-walk v caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk v caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EIf c t f
-      (let _ (cc-walk c caps denied pkg fname)
-        (let _ (cc-walk t caps denied pkg fname) (cc-walk f caps denied pkg fname))))
+      (let _ (cc-walk c caps denied pkg fname dnode)
+        (let _ (cc-walk t caps denied pkg fname dnode) (cc-walk f caps denied pkg fname dnode))))
     (ETryCatch b _ h
-      (let _ (cc-walk b caps denied pkg fname) (cc-walk h caps denied pkg fname)))
+      (let _ (cc-walk b caps denied pkg fname dnode) (cc-walk h caps denied pkg fname dnode)))
     (EMatch s arms
-      (let _ (cc-walk s caps denied pkg fname) (cc-walk-arms arms caps denied pkg fname)))
-    (EBegin xs (cc-walk-list xs caps denied pkg fname))
-    (EPrint xs (cc-walk-list xs caps denied pkg fname))
+      (let _ (cc-walk s caps denied pkg fname dnode) (cc-walk-arms arms caps denied pkg fname dnode)))
+    (EBegin xs (cc-walk-list xs caps denied pkg fname dnode))
+    (EPrint xs (cc-walk-list xs caps denied pkg fname dnode))
     (EWhile c b
-      (let _ (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk c caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EFor _ c b
-      (let _ (cc-walk c caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (ELambda _ _ b (cc-walk b caps denied pkg fname))
-    (EFn _ _ b (cc-walk b caps denied pkg fname))
-    (ESpawn b (cc-walk b caps denied pkg fname))
+      (let _ (cc-walk c caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
+    (ELambda _ _ b (cc-walk b caps denied pkg fname dnode))
+    (EFn _ _ b (cc-walk b caps denied pkg fname dnode))
+    (ESpawn b (cc-walk b caps denied pkg fname dnode))
     (ESend a b
-      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (EFfiCall _ args _ (cc-walk-list args caps denied pkg fname))
-    (EFfiPin b (cc-walk b caps denied pkg fname))
-    (EFfiUnpin b (cc-walk b caps denied pkg fname))
+      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
+    (EFfiCall _ args _ (cc-walk-list args caps denied pkg fname dnode))
+    (EFfiPin b (cc-walk b caps denied pkg fname dnode))
+    (EFfiUnpin b (cc-walk b caps denied pkg fname dnode))
     (EFileOpen a b
-      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EFileRead a b
-      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
+      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EFileWrite a b
-      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (EFileClose b (cc-walk b caps denied pkg fname))
-    (EClose b (cc-walk b caps denied pkg fname))
+      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
+    (EFileClose b (cc-walk b caps denied pkg fname dnode))
+    (EClose b (cc-walk b caps denied pkg fname dnode))
     (EWithResource _ a b
-      (let _ (cc-walk a caps denied pkg fname) (cc-walk b caps denied pkg fname)))
-    (EUnwrap b (cc-walk b caps denied pkg fname))
-    (EMakeStruct _ args (cc-walk-list args caps denied pkg fname))
-    (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname))
-    (ESetBang _ v (cc-walk v caps denied pkg fname))
-    (EStructGet b _ (cc-walk b caps denied pkg fname))
-    (EAssert b _ (cc-walk b caps denied pkg fname))
+      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
+    (EUnwrap b (cc-walk b caps denied pkg fname dnode))
+    (EMakeStruct _ args (cc-walk-list args caps denied pkg fname dnode))
+    (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname dnode))
+    (ESetBang _ v (cc-walk v caps denied pkg fname dnode))
+    (EStructGet b _ (cc-walk b caps denied pkg fname dnode))
+    (EAssert b _ (cc-walk b caps denied pkg fname dnode))
     (_ 1)))
 
-(defn cc-walk-arms (arms caps denied pkg fname)
+(defn cc-walk-arms (arms caps denied pkg fname dnode)
   (match arms
     (Nil 1)
     (Cons a rest
-      (let _ (cc-walk (MA.body a) caps denied pkg fname)
-        (cc-walk-arms rest caps denied pkg fname)))))
+      (let _ (cc-walk (MA.body a) caps denied pkg fname dnode)
+        (cc-walk-arms rest caps denied pkg fname dnode)))))
 
 ; ===========================================================================
 ; CLOSURE REPORTING (§31.9)

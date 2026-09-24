@@ -847,10 +847,13 @@
   (if (> (str-eq sym "zyl_sym_escape") 0) 1
   (if (> (str-eq sym "zyl_mangle_key") 0) 1
   (if (> (str-eq sym "zyl_span_line_text") 0) 1
+  (if (> (str-eq sym "zyl_span_snippet") 0) 1
+  (if (> (str-eq sym "zyl_json_quote") 0) 1
+  (if (> (str-eq sym "zyl_warn_take") 0) 1
   (if (> (str-eq sym "zyl_source_path") 0) 1
   (if (> (str-eq sym "zyl_blake3_hex") 0) 1
   (if (> (str-eq sym "zyl_blake3_file_hex") 0) 1
-  0))))))))))))))))))))))
+  0)))))))))))))))))))))))))
 
 
 

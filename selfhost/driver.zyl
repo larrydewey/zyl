@@ -121,10 +121,12 @@
     (let a (ffi-call "zyl_arg_str" i 1000)
       (if (> (str-eq a "--emit-asm") 0)
         (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
+      (if (> (str-eq a "--error-format=json") 0)
+        (cli-parse-opts (+ i 1) argc acc)
         (if (> (str-eq a "-o") 0)
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
             (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
-          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))
+          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag))))))))))
 
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
 ; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
@@ -400,6 +402,7 @@
 (defn drv-usage ()
   (begin
     (print "zyl <file.zyl> [-o out] [--emit-asm]   compile one file")
+    (print "  --error-format=json                    report diagnostics as JSON lines")
     (print "zyl new <name>                         create a package")
     (print "zyl add <name> [version]               add a dependency")
     (print "zyl fetch                              resolve, verify and populate the store")
@@ -451,7 +454,17 @@
     (let argc (ffi-call "zyl_argc" 0)
       (if (< argc 2)
         (boot-run-legacy arena)
-        (drv-main-arg arena)))))
+        (begin
+          (drv-scan-error-format 1 argc)
+          (drv-main-arg arena))))))
+
+; `--error-format=json` anywhere on the line switches every diagnostic to JSON.
+(defn drv-scan-error-format (i argc)
+  (if (>= i argc)
+    0
+    (if (> (str-eq (ffi-call "zyl_arg_str" i 1000) "--error-format=json") 0)
+      (ffi-call "zyl_diag_json_set" 1 1000)
+      (drv-scan-error-format (+ i 1) argc))))
 
 ; The bundle dir holds stdlib/ and actor_runtime.c; the compiler chdirs
 ; there so module resolution and linking find them. A subcommand needs
