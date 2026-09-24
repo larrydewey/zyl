@@ -5,14 +5,13 @@
 #   --full       Run every suite (~45s via the self-hosted compiler),
 #                then the self-hosting fixed-point check (./boot.sh)
 #                unless --no-boot is given
-#   --dry-run    List tests without running (approximate: ignores
-#                --filter and does not list every --full suite)
+#   --dry-run    List the tests the same options would run, without
+#                running them (honours --filter and the mode)
 #   --filter N   Only run tests whose name contains N (case-insensitive
 #                substring), within the chosen mode -- regression and
 #                stress tests only run in --full, so e.g.
 #                `--full --no-boot --filter structs`
 #   --verbose    Print compiler output
-#   --depth N    Accepted but currently unused
 #   --timeout N  Per-test timeout in seconds (default: 10)
 #   --boot       Force the self-hosting fixed-point verification
 #                (./boot.sh) in any mode
@@ -41,7 +40,6 @@ trap 'rm -rf "$RUN_TMP"' EXIT
 MODE="quick"
 FILTER=""
 VERBOSE=0
-DEPTH=100
 TIMEOUT=10
 # The interpreted side of a differential run is slower than native code
 # by the usual interpreter factor, so it gets its own budget.
@@ -66,7 +64,6 @@ while [[ $# -gt 0 ]]; do
         # contained: `--filter math` matched nothing at all.
         --filter) FILTER="$2"; shift 2 ;;
         --verbose) VERBOSE=1; shift ;;
-        --depth) DEPTH="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 2 ;;
     esac
@@ -90,10 +87,23 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# --dry-run: count and list a selected test instead of running it. Every
+# suite goes through this, so a dry run selects exactly what a real run
+# with the same mode and --filter would.
+dry_listed() {
+    if [ "$DRY_RUN" -eq 1 ]; then
+        TOTAL=$((TOTAL + 1))
+        echo "  - $1"
+        return 0
+    fi
+    return 1
+}
+
 run_test() {
     local name="$1"
     local file="$2"
     
+    dry_listed "$name" && return
     TOTAL=$((TOTAL + 1))
     
     if [ ! -f "$file" ]; then
@@ -143,6 +153,7 @@ run_fail_test() {
     local name="$1"
     local file="$2"
     
+    dry_listed "$name" && return
     TOTAL=$((TOTAL + 1))
     
     if [ ! -f "$file" ]; then
@@ -178,6 +189,7 @@ run_diff_test() {
     local name="$1"
     local file="$2"
 
+    dry_listed "$name" && return
     TOTAL=$((TOTAL + 1))
 
     if ! "${ZYL_BIN}" "$file" -o "$RUN_TMP/zyl_diff_${TOTAL}.bin" >/dev/null 2>&1; then
@@ -238,28 +250,8 @@ echo ""
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "=== Dry Run ==="
-    if [ "$MODE" = "quick" ]; then
-        for f in "${TESTS_DIR}"/smoke/*.zyl; do
-            [ -f "$f" ] && echo "  - $(basename "$f" .zyl)"
-        done
-        echo "  - unit_test"
-    else
-        for dir in smoke stress regression integration; do
-            for f in "${TESTS_DIR}"/${dir}/*.zyl; do
-                [ -f "$f" ] && echo "  - ${dir}/$(basename "$f" .zyl)"
-            done
-        done
-        for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
-            [ -f "$f" ] && echo "  - compile-fail/$(basename "$f" .zyl)"
-        done
-        echo "  - unit_test"
-    fi
-    echo ""
-    echo "Total: $TOTAL tests"
-    exit 0
 fi
-
-echo "Mode: ${MODE} | Filter: ${FILTER:-none} | Depth: ${DEPTH} | Timeout: ${TIMEOUT}s"
+echo "Mode: ${MODE} | Filter: ${FILTER:-none} | Timeout: ${TIMEOUT}s"
 echo ""
 
 # Run unit test (comprehensive harness)
@@ -361,6 +353,7 @@ if [ "$MODE" = "full" ]; then
         [ -d "$d" ] || continue
         local_name=$(basename "$d")
         if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+            dry_listed "packages-build/${local_name}" && continue
             TOTAL=$((TOTAL + 1))
             if (cd "${d}app" && "${ZYL_BIN}" build) > $RUN_TMP/zyl_pkgbuild.log 2>&1 \
                && (cd "${d}app" && ./"$(basename "$(ls "${d}app"/*.zyl | head -1)" .zyl)") > $RUN_TMP/zyl_pkgrun.log 2>&1 \
@@ -396,7 +389,9 @@ fi
 # short-lived server processes), so it runs in both quick and full mode.
 if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "lsp" | grep -qi -- "$FILTER"; then
-        if [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
+        if dry_listed "lsp/protocol"; then
+            :
+        elif [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
             TOTAL=$((TOTAL + 1))
             if python3 "${SCRIPT_DIR}/tests/lsp/lsp_protocol_test.py" > $RUN_TMP/zyl_lsp_test.log 2>&1; then
                 PASS=$((PASS + 1))
@@ -421,7 +416,8 @@ fi
 # it lives here rather than in a developer's shell history. The script
 # fails if its own positive control (a deliberately leaky comparison)
 # goes undetected, so a green result means the measurement worked.
-if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER"; then
+if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER" \
+   && ! dry_listed "timing-leakage"; then
     TOTAL=$((TOTAL + 1))
     if python3 "${SCRIPT_DIR}/verify/timing.py" --quick > $RUN_TMP/zyl_timing.log 2>&1; then
         PASS=$((PASS + 1))
@@ -435,7 +431,7 @@ if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER"; then
 fi
 
 # Self-hosting fixed-point verification (default in --full; slow)
-if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ]; then
+if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ] && ! dry_listed "boot/fixed-point"; then
     TOTAL=$((TOTAL + 1))
     echo ""
     echo "=== Self-hosting fixed point (boot.sh) ==="
@@ -451,6 +447,12 @@ fi
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo ""
+    echo "Total: $TOTAL tests"
+    exit 0
+fi
 
 echo ""
 echo "=== Results: ${PASS}/${TOTAL} passed, ${FAIL} failed (${ELAPSED}s) ==="

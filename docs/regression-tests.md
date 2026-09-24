@@ -16,7 +16,7 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --quick            # unit test + smoke tests + LSP protocol test (the default)
 ./run_regression_tests.sh --full             # every section below, then ./boot.sh
 ./run_regression_tests.sh --full --no-boot   # every section, without the fixed-point check
-./run_regression_tests.sh --dry-run          # list test files without running them
+./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
 A `--full --no-boot` run is 121 tests and takes well under a minute on a
@@ -30,13 +30,12 @@ bootstrap does.
 |------|-------------|
 | `--quick` | Run `tests/unit_test.zyl`, `tests/smoke/*.zyl` and the LSP protocol test (default) |
 | `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, package, compile-fail and LSP sections, then the fixed-point check |
-| `--dry-run` | List test files without running them (see the note below) |
+| `--dry-run` | List the tests the same mode and `--filter` would run, without running them |
 | `--filter N` | Run only tests whose name contains N, case-insensitively (see below) |
 | `--boot` | Run the fixed-point check (`./boot.sh`) in any mode |
 | `--no-boot` | Skip the fixed-point check that `--full` otherwise runs at the end |
 | `--verbose` | Print compiler output for a failed compile, the test output for a failed assertion, and the diff for an interpreter disagreement |
 | `--timeout N` | Per-test run timeout in seconds for compiled binaries (default: 10; the interpreted side of the agreement section has its own 60 s budget) |
-| `--depth N` | Accepted and echoed in the header, but currently has no effect: no test reads it |
 
 **`--filter` works within the mode, not across it.** The default mode is
 `--quick`, which only runs the unit test, the smoke tests and the LSP
@@ -55,10 +54,10 @@ selects that whole section, and `--filter structs` also selects
 `interpreter/structs`); and `packages NAME` for the three package
 sections.
 
-`--dry-run` lists `smoke`, `stress`, `regression`, `integration` and
-`compile-fail` files plus `unit_test`, and always prints `Total: 0 tests`.
-It does not reflect the interpreter, package or LSP sections, and in
-`--full` it lists the smoke tests, which `--full` does not run directly.
+`--dry-run` goes through the same selection as a real run, so it lists
+exactly the tests the same mode and `--filter` would run (every section,
+including the interpreter, package, LSP and fixed-point checks) and
+prints their count.
 
 ### What counts as a pass
 

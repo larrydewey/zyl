@@ -273,7 +273,7 @@ It does not prove the compiler correct. A bug that reproduces itself faithfully 
 | `--quick` / `--full` | select the mode (quick is the default) |
 | `--filter N` | run only tests whose name contains `N`, case-insensitively |
 | `--boot` / `--no-boot` | force or skip the fixed-point check (`--full` turns it on) |
-| `--dry-run`, `--verbose`, `--depth N`, `--timeout N` | list only, show output, recursion depth for stress tests, per-test timeout in seconds |
+| `--dry-run`, `--verbose`, `--timeout N` | list what would run (honouring the mode and `--filter`), show output, per-test timeout in seconds |
 
 `--filter` narrows the mode it is combined with. The `regression/` and `stress/` categories run only in `--full` mode, so `--filter structs` or `--filter balanced-parens` on its own, in quick mode, selects nothing. Combine it with `--full`.
 
