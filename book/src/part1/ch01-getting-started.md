@@ -220,7 +220,7 @@ runs:
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Macro expansion                                                 │
-│   Innermost-first template substitution (not yet hygienic)      │
+│   Innermost-first template substitution, gensym hygiene         │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -331,7 +331,7 @@ matter in a few places this book points out as they come up.
 |--------------|------------|
 | S-expression syntax | ✅ Same |
 | Homoiconicity | ✅ Code = data |
-| Macros | ⚠️ Template macros, innermost-first; not yet hygienic (Chapter 10) |
+| Macros | ✅ Template macros, innermost-first, hygienic (Chapter 10) |
 | `eval` at runtime | ❌ No `eval` function in compiled programs (the REPL and `zyl eval` interpret whole entries) |
 | Dynamic typing | ❌ Static Hindley-Milner inference + capabilities (type errors are not yet rejected; Chapter 15) |
 | GC | ❌ Region-based |

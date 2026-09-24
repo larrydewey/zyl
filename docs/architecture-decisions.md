@@ -47,8 +47,11 @@ macro boundaries, preserving lexical scoping semantics.
 **Implementation:** `stdlib/compiler/macro_expand.zyl`. A macro call's
 arguments are expanded before the macro itself, and the expanded body
 is walked again so a macro that calls another macro expands fully.
-**Not yet implemented:** gensym hygiene. Names a macro body binds are
-not renamed, so they can capture a caller's variable.
+Hygiene renames every binder a template introduces to a fresh
+`name__hygN` (a source-order counter, never an address); a free
+template name that is a local at the call site is `E_UNBOUND_VARIABLE`
+rather than captured. A macro reached during its own expansion is
+`E_MACRO_NON_TERMINATION`.
 **Alternative considered:** Pre-order expansion — rejected because it
 would cause outer macros to see unexpanded inner macro calls,
 producing incorrect results.

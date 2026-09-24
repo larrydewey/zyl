@@ -1,0 +1,7 @@
+; Compile-fail: two macros with one name. The last definition used to win
+; silently; the compiler must reject this with E_DUPLICATE_DEFINITION.
+
+(defmacro _cf_m (x) (+ x 1))
+(defmacro _cf_m (x) (+ x 2))
+
+(defn main () (begin (print (_cf_m 1)) 0))

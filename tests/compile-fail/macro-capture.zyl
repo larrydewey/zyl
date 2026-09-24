@@ -1,0 +1,7 @@
+; Compile-fail: the template names `v`, which is unbound where the macro
+; is defined. A hygienic macro (spec §19.2) must not pick up the caller's
+; local `v`; the compiler must reject this with E_UNBOUND_VARIABLE.
+
+(defmacro _cf_getv () v)
+
+(defn main () (let v 3 (begin (print (_cf_getv)) 0)))

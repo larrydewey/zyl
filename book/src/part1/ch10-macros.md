@@ -1,6 +1,6 @@
 # Chapter 10: Macros and Metaprogramming
 
-Macros let you write code that writes code. The specification (Spec §19) calls for **hygienic**, **innermost-first**, **deterministic** macros that are collected before expansion. The current compiler implements a smaller, simpler system: a macro is a **template** whose parameters are replaced by the unevaluated argument expressions. This chapter teaches the implemented system and marks where it still falls short of the specification. Every runnable example was compiled with `zyl` and run.
+Macros let you write code that writes code. The specification (Spec §19) calls for **hygienic**, **innermost-first**, **deterministic** macros that are collected before expansion. The compiler implements them as **templates**: a macro's parameters are replaced by the unevaluated argument expressions, and the variables the template binds are renamed so they cannot collide with the caller's. This chapter teaches the implemented system and marks where it is narrower than the specification. Every runnable example was compiled with `zyl` and run.
 
 ## 10.1 What Are Macros?
 
@@ -15,7 +15,7 @@ A macro is a compile-time rewrite rule:
 When the compiler sees a call `(name arg ...)`, it:
 
 1. Expands macro calls inside the arguments first
-2. Replaces each parameter name in `template` with the corresponding argument expression, **unevaluated**
+2. Replaces each parameter name in `template` with the corresponding argument expression, **unevaluated**, and renames the variables the template binds (§10.3)
 3. Expands the result again, so a template may call other macros
 
 Macro definitions exist only at compile time; they are removed from the program after expansion and produce no code of their own.
@@ -61,7 +61,7 @@ evaluated
 42
 ```
 
-If you need the argument evaluated once, bind it with `let` inside the template, keeping the hygiene caveat in §10.3 in mind, or write a function instead.
+If you need the argument evaluated once, bind it with `let` inside the template (hygiene, §10.3, keeps that binder private to the macro) or write a function instead.
 
 ### Macros vs Functions: Laziness
 
@@ -118,7 +118,7 @@ There is no way to print the *source* of the argument (the spec's `',expr`); a t
 
 ## 10.3 Hygiene
 
-The specification requires gensym-based hygiene: names a template introduces are renamed so they cannot collide with the caller's names. **The current expander performs no renaming.** A name bound inside a template is an ordinary name in the expanded code, so it can capture a variable from the call site:
+The specification requires gensym-based hygiene: names a template introduces are renamed so they cannot collide with the caller's names. The expander renames every variable a template binds (`let`, `let-mut`, `fn` parameters, `for`, `match` pattern variables, the `catch` name of a `try`) to a fresh name in each expansion, and leaves the arguments, which are the caller's code, alone:
 
 ```lisp
 (defmacro add-tmp (e)
@@ -129,13 +129,41 @@ The specification requires gensym-based hygiene: names a template introduces are
     (print (add-tmp tmp))))
 ```
 
-A hygienic expander would print 101 (the macro's `tmp` is 100, the caller's is 1). The current one prints:
-
 ```
-200
+101
 ```
 
-The expansion is `(let tmp 100 (+ tmp tmp))`, and both `tmp`s refer to the macro's binding. Until hygiene lands, give names bound inside templates a prefix no caller will use (for example `add-tmp-v` instead of `tmp`).
+The macro's `tmp` is 100 and the caller's is 1. The expansion is `(let tmp__hyg0 100 (+ tmp__hyg0 tmp))`: the fresh names are numbered by a counter that follows the source, so they are the same on every compile.
+
+It works the other way round too: a template cannot see the caller's local variables. A name the template uses without binding it means what it means where the macro is *defined*, at top level. If the caller has a local variable of that name, the compiler refuses to let the macro capture it:
+
+```lisp
+(defmacro getv () v)
+
+(defn main ()
+  (let v 3 (print (getv))))
+;; error[E_UNBOUND_VARIABLE]: macro `getv` refers to `v`, which is not bound
+;; where the macro is defined; ...
+```
+
+Pass such values in as arguments. When a parameter is used where the template needs a name, such as a `let` binder or a `set!` target, the caller's identifier is used, so a macro can bind or assign a variable the caller names:
+
+```lisp
+(defmacro swap! (a b)
+  (let tmp a (begin (set! a b) (set! b tmp))))
+
+(defn main ()
+  (let-mut tmp 1
+    (let-mut y 2
+      (begin (swap! tmp y) (print tmp) (print y)))))
+```
+
+```
+2
+1
+```
+
+The caller's variable is called `tmp` too, and the swap still works, because the template's own `tmp` was renamed.
 
 ## 10.4 Expansion Order
 
@@ -166,25 +194,19 @@ All `defmacro` forms are collected from the whole program **before** any expansi
 
 ## 10.6 Where Macros Expand
 
-The expander walks function bodies, test bodies, and nested `let`, `let-mut`, `if`, `cond`, `while`, `begin`, `print`, `set!` values, `struct-get`, the `assert-*` forms, and ordinary call arguments. It does **not** yet look inside:
-
-- `match` arms
-- `fn`/`lambda` bodies
-- `for` loops
-
-A macro call in one of those positions is left as a call to a function that does not exist, and linking fails with an `undefined reference` naming the macro. The same limit applies inside templates: a parameter used inside a `match` or `fn` in the template body is not substituted. Keep macro calls, and the parameters inside templates, in the positions listed above.
+A macro call expands wherever it is written: function and test bodies, `let`, `if`, `while`, `for`, `match` arms, `fn` bodies, `try`, `impl` methods, and at top level, where a macro can expand to a definition. Parameters are substituted everywhere in the template in the same way.
 
 ```lisp
 (defmacro square-it (x) (* x x))
+(defmacro def-square (name) (defn name (k) (square-it k)))
+
+(def-square sq)
 
 (defn main ()
-  (let-mut n 3
-    (begin
-      (while (< n 5)
-        (begin
-          (print (square-it n))
-          (set! n (+ n 1))))
-      (if (> n 0) (print (square-it 10)) (print 0)))))
+  (begin
+    (print (match (Some 3) (Some v (square-it v)) (None 0)))
+    (let f (fn (z) (square-it z)) (print (f 4)))
+    (print (sq 10))))
 ```
 
 ```
@@ -198,11 +220,21 @@ A macro call in one of those positions is left as a call to a function that does
 | Constraint | Status in the current compiler |
 |------------|--------------------------------|
 | AST-only | Holds: a template is syntax and can only produce syntax |
-| No runtime access | Holds: nothing in a template runs at compile time |
+| No runtime access | Holds: nothing in a template runs at compile time. A `defmacro` inside a function body, where the template could name the function's run-time variables, is rejected with `E_MACRO_ILLEGAL_ACCESS` |
 | Deterministic | Holds: expansion is a pure rewrite of the source |
-| Terminating | **Not checked**: a macro that expands to itself makes the compiler loop forever |
+| Terminating | Checked: a macro that expands, directly or through other macros, into another call to itself is rejected with `E_MACRO_NON_TERMINATION` |
 
-The error codes `E_MACRO_ILLEGAL_ACCESS` and `E_MACRO_NON_TERMINATION` are defined in the error catalog (`stdlib/compiler/error_codes.zyl`), but the expander does not report either yet. Avoid macros that expand, directly or through other macros, into another call to themselves.
+Because a template is never evaluated, a recursive macro can never stop, even when the recursion sits behind an `if`, so the compiler reports it rather than looping:
+
+```lisp
+(defmacro forever (x) (forever x))
+
+(defn main () (print (forever 1)))
+;; error[E_MACRO_NON_TERMINATION]: macro `forever` expands to a call of
+;; itself, so its expansion never ends
+```
+
+A macro call must pass exactly one argument per parameter (`E_ARITY_MISMATCH`), and a macro name may be defined only once (`E_DUPLICATE_DEFINITION`, also raised for a function with the same name as a macro in the same file).
 
 ## 10.8 Built-in Forms That Look Like Macros
 
@@ -251,15 +283,14 @@ The compiler has no option that prints the expanded program (the only output opt
 (run-tests)
 ```
 
-3. If linking fails with an `undefined reference` that names your macro, the call sits in a position the expander does not visit (§10.6).
+3. A diagnostic naming a variable like `tmp__hyg0` refers to a variable a macro template bound, renamed by hygiene (§10.3).
 
 ## 10.10 Macro Best Practices
 
 1. **Prefer functions.** Use a macro only when you need control over evaluation (skipping or repeating an argument).
 2. **Use each parameter once** in the template, unless repeated evaluation is the point.
-3. **Prefix names bound in templates** so they cannot capture the caller's variables (§10.3).
-4. **Keep calls in expandable positions**: not inside `match` arms, `fn` bodies, or `for` loops.
-5. **Never write self-expanding macros**: there is no termination check.
+3. **Pass what the template needs as arguments**: it cannot see the caller's local variables (§10.3).
+4. **Never write self-expanding macros**: they are rejected (§10.7).
 
 ---
 
@@ -269,21 +300,21 @@ The compiler has no option that prints the expanded program (the only output opt
 
 The expander is `stdlib/compiler/macro_expand.zyl`. It runs on the parsed program, after module resolution and before type inference:
 
-1. **Collect** (`me-collect`): walk the top-level forms and record every macro definition as a name, its parameter names, and its body template.
+1. **Collect** (`me-collect`): walk the top-level forms and record every macro definition as a name, its parameter names, and its body template, rejecting a duplicate name.
 2. **Strip** (`me-strip`): remove the macro definitions from the program.
-3. **Rewrite** (`me-rewrite`): walk every remaining form with a substitution environment that starts empty. At a call `(f arg ...)`:
-   - rewrite the arguments under the current environment, which expands the macros inside them first;
-   - if `f` names a macro, rewrite its template under a new environment that binds each parameter to the corresponding rewritten argument, and return the result.
+3. **Rewrite** (`me-rewrite`): walk every remaining form, every node shape, with a context holding a substitution environment, the macros whose expansion is in progress, and the call site's local variables. At a call `(f arg ...)`:
+   - rewrite the arguments under the current context, which expands the macros inside them first;
+   - if `f` names a macro, check that it is not already being expanded and that the argument count matches, then rewrite its template under a new environment that binds each parameter to the corresponding rewritten argument, and return the result.
 
-Identifiers found in the environment are replaced by the bound expression; nothing else is renamed. Each rewritten node keeps its original source position, so diagnostics inside expanded code point at the user's source.
+In a template, a binder is renamed by pushing a `name -> name__hygN` entry onto the environment for the binder's scope; an identifier is looked up in the environment and replaced by the argument or the fresh name it maps to. An argument is inserted as it is and not walked again, so the caller's names inside it are never renamed. Each rewritten node keeps its original source position, so diagnostics inside expanded code point at the user's source.
 
-### Why Hygiene Is Missing
+### Hygiene and Canonical Keys
 
-Hygiene requires renaming every binder a template introduces (a fresh, deterministic gensym per expansion) and leaving call-site identifiers alone. The current substitution environment only maps parameter names to arguments; there is no renaming step for `let` names inside the template, so a template binder and a caller variable with the same spelling become the same variable.
+Module resolution runs before expansion and rewrites every reference to a top-level definition to its canonical key (Chapter 25). A template's references to functions and globals are therefore already fixed to the definitions visible where the macro is written. What remains for the expander is the call site's local variables: renaming the template's binders keeps them from capturing the caller's, and the check against the call site's locals keeps a free template name from being captured by one.
 
 ### Determinism
 
-Expansion is a pure function of the source: the macro table is built in source order, the rewrite is a fixed traversal, and no counter or external input is involved. The same source always produces the same expanded program.
+Expansion is a pure function of the source: the macro table is built in source order, the rewrite is a fixed traversal, and the fresh-name counter is threaded through that traversal rather than taken from any global or address. The same source always produces the same expanded program.
 
 ---
 

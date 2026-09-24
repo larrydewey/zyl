@@ -1,0 +1,7 @@
+; Compile-fail: two macros that expand to each other never finish
+; expanding. The compiler must reject this with E_MACRO_NON_TERMINATION.
+
+(defmacro _cf_ping (x) (_cf_pong x))
+(defmacro _cf_pong (x) (_cf_ping x))
+
+(defn main () (begin (print (_cf_ping 1)) 0))

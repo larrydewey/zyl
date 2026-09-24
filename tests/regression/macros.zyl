@@ -41,4 +41,97 @@
 (test "macro-return-value"
   (assert-equal (_m-double 5) 10))
 
+; --- Hygiene (spec §19.2): template binders are renamed ---------------------
+
+; The template's `tmp` must not capture the caller's `tmp`.
+(defmacro _m-add-tmp (e) (let tmp 100 (+ tmp e)))
+
+(test "macro-hygiene-let-binder"
+  (let tmp 1 (assert-equal (_m-add-tmp tmp) 101)))
+
+; A parameter in `set!` target position names the caller's variable, and
+; the template's own `tmp` stays out of the caller's way -- even when the
+; caller's variable is itself called `tmp`.
+(defmacro _m-swap! (a b) (let tmp a (begin (set! a b) (set! b tmp))))
+
+(test "macro-swap-set-target"
+  (let-mut x 1
+    (let-mut y 2
+      (begin (_m-swap! x y)
+             (assert-equal (* 10 x) 20)
+             (assert-equal y 1)))))
+
+(test "macro-swap-hygienic"
+  (let-mut tmp 1
+    (let-mut y 2
+      (begin (_m-swap! tmp y)
+             (assert-equal tmp 2)
+             (assert-equal y 1)))))
+
+; A parameter in binder position binds the caller's name.
+(defmacro _m-bind (n v body) (let n v body))
+
+(test "macro-param-as-let-binder"
+  (assert-equal (_m-bind q 7 (+ q 1)) 8))
+
+; fn parameters and for binders are template binders too.
+(defmacro _m-apply-add (x) (let g (fn (y) (+ y x)) (g 1)))
+
+(test "macro-fn-param-hygiene"
+  (let y 40 (assert-equal (_m-apply-add y) 41)))
+
+(defmacro _m-sum-below (n)
+  (let-mut acc 0
+    (begin
+      (for (i 0) (< i n) (begin (set! acc (+ acc i)) (set! i (+ i 1))))
+      acc)))
+
+(test "macro-for-hygiene"
+  (let acc 1000 (let i 3 (assert-equal (+ acc (_m-sum-below i)) 1003))))
+
+; A match binder in the template does not capture the caller's name.
+(defmacro _m-or-zero (opt body) (match opt (Some tmp (+ tmp body)) (None 0)))
+
+(test "macro-match-binder-hygiene"
+  (let tmp 5 (assert-equal (_m-or-zero (Some 1) tmp) 6)))
+
+; --- Expansion reaches every form (match arms, fn bodies, for, try) ----------
+
+(test "macro-in-match-arm"
+  (assert-equal (match (Some 3) (Some v (_m-double v)) (None 0)) 6))
+
+(test "macro-in-literal-match-arm"
+  (assert-equal (match 2 (1 (_m-double 10)) (2 (_m-double 20)) (_ 0)) 40))
+
+(test "macro-in-fn-body"
+  (let f (fn (z) (_m-double z)) (assert-equal (f 4) 8)))
+
+(test "macro-in-try"
+  (assert-equal (try (_m-double (error "boom")) (catch e (_m-double 3))) 6))
+
+(test "macro-in-for"
+  (let-mut total 0
+    (begin
+      (for (i 0) (< i 3) (begin (set! total (+ total (_m-double i))) (set! i (+ i 1))))
+      (assert-equal total 6))))
+
+(defmacro _m-match-param (x) (match x (Some v v) (None 0)))
+
+(test "macro-param-in-match-scrutinee"
+  (assert-equal (_m-match-param (Some 5)) 5))
+
+; --- Macros that define things ------------------------------------------------
+
+(defmacro _m-def-square (name) (defn name (k) (* k k)))
+(_m-def-square _m_sq)
+
+(test "macro-defines-function"
+  (assert-equal (_m_sq 5) 25))
+
+(trait _MShow (mshow self))
+(impl _MShow Int (defn mshow (self) (_m-double self)))
+
+(test "macro-in-impl-method"
+  (assert-equal (_MShow.mshow 21) 42))
+
 (run-tests)

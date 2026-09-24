@@ -246,7 +246,7 @@ assert lowering → ICNF generation → optimization → region inference
 - **Deterministic compilation** — same source + same inputs → identical binaries; the compiler reproduces itself byte for byte
 - **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is currently a tree IR without either)
 - **Actor concurrency** — pthread-based actor runtime: `spawn` a closure as an actor, `send` it messages through its mailbox, and wait for it (`actor/actor` adds send-with-timeout, liveness and termination)
-- **Macros** — `defmacro` template macros, expanded innermost-first (spec §19.2's gensym hygiene is not implemented yet: a macro's binders can capture the caller's names)
+- **Macros** — `defmacro` template macros, expanded innermost-first with gensym hygiene (spec §19): a template's binders are renamed per expansion, and a macro that expands to itself is `E_MACRO_NON_TERMINATION`
 - **FFI** — `ffi-call` with a trailing timeout argument, `ffi-pin` for Pin-region memory, and a `Secret` value may only cross FFI pinned
 - **Structs and ADTs** — immutable structs by default, `deftype`/`match` with compile-time exhaustiveness and unreachable-arm checks; literal, OR (`(1 2 body)`), range (`(range lo hi)`) and guarded (`(when cond)`) patterns
 - **`_` as the discard** — in patterns, parameter lists and bindings; `_`-prefixed names are exempt from unused-binding warnings

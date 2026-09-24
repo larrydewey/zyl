@@ -1,0 +1,8 @@
+; Compile-fail: a macro whose template calls itself can never finish
+; expanding (templates are not evaluated, so nothing stops the recursion).
+; The compiler must reject this with E_MACRO_NON_TERMINATION instead of
+; hanging or exhausting memory (spec §19.4, §28).
+
+(defmacro _cf_forever (x) (_cf_forever x))
+
+(defn main () (begin (print (_cf_forever 1)) 0))

@@ -196,9 +196,9 @@ macro_rules! max { ($a:expr, $b:expr) => { if $a > $b { $a } else { $b } } }
 - Only template macros; no procedural macros and no quasiquote syntax.
 - Arguments are spliced in as source, so an argument used twice is
   evaluated twice — as in Rust's `macro_rules!`.
-- §19.2 specifies gensym hygiene; the current expander does not rename
-  names that a template introduces, so avoid binding names in a
-  template that a caller might also use.
+- Hygiene is automatic (§19.2): names a template binds are renamed per
+  expansion, and a template cannot see the caller's local variables, so
+  pass anything it needs from the call site as an argument.
 
 ### Cargo → Packages
 

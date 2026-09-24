@@ -1,0 +1,7 @@
+; Compile-fail: a macro call with more arguments than the macro has
+; parameters. The extra argument used to be dropped silently; the
+; compiler must reject this with E_ARITY_MISMATCH.
+
+(defmacro _cf_inc (x) (+ x 1))
+
+(defn main () (begin (print (_cf_inc 1 2)) 0))

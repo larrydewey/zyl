@@ -39,7 +39,7 @@ it compiles and runs correctly; the notes say where it stops.
 | `derive` | `Eq`, `Ord` and `Debug` are accepted. `==` and `<` compare structs and ADTs structurally (in compiled code this happens with or without a `derive`). `Show` is not implemented, and printing a struct or ADT prints an address |
 | Closures | Works, including closures that capture and escape (heap `[tag, code, env]` values) |
 | `try`/`catch` | Works: `(try body (catch e handler))`; `error` and `zyl_panic` unwind to the nearest `try` |
-| Macros | `defmacro` expansion works; macros are **not hygienic** (a name the macro body binds can capture the caller's variable) |
+| Macros | `defmacro` expansion works in every form, with gensym hygiene, arity, duplicate and termination checks; parameters are plain names (no patterns) |
 | Modules and packages | Works: `use`, canonical keys, `pub` visibility, capabilities |
 | Actors | `spawn`, `send`, `actor-wait` work for a spawn body that captures nothing. A spawn body that captures a variable hangs at run time |
 | FFI | `ffi-call` works. The trailing timeout argument is dropped by lowering and never enforced, and pinning is enforced only for `Secret` values (`E_FFI_PIN_REQUIRED`) |
@@ -74,9 +74,6 @@ it compiles and runs correctly; the notes say where it stops.
 - **Top-level `def`** does not create a global in a compiled file; a use
   of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL gives
   top-level `def` a meaning.
-- **Macro hygiene** is not implemented, and a macro call nested inside a
-  `match` arm or another form the expander does not walk is left
-  unexpanded.
 - **Contract injection** (§23): `contract_injection.zyl` is written but
   is not in the bundle and not called; its accessors do not match the
   real `ExprInner` shapes. See the comment above `lower-exprs` in

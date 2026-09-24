@@ -108,16 +108,21 @@ package's capability grants for Phase 5.
    The macro body is then rewritten with each formal parameter replaced
    by the unevaluated argument expression. The result is walked again,
    so a macro whose body calls another macro expands fully.
+3. **Hygiene.** Every binder the macro body introduces is renamed to a
+   fresh `name__hygN`; `N` is a counter threaded through the walk in
+   source order, so expansion is deterministic. Arguments keep their
+   names. Free body names were already qualified by module resolution;
+   one that is a local variable at the call site is
+   `E_UNBOUND_VARIABLE` rather than captured.
+4. **Checks.** A macro called during its own expansion is
+   `E_MACRO_NON_TERMINATION`; a wrong argument count is
+   `E_ARITY_MISMATCH`; a repeated macro name (or a macro and function of
+   one name in one file) is `E_DUPLICATE_DEFINITION`; a non-top-level
+   `defmacro` is `E_MACRO_ILLEGAL_ACCESS`.
 
-Two limits, both current behavior:
-
-- **No hygiene.** Names the macro body introduces are not renamed, so a
-  `let` inside a macro body can capture a caller's variable of the same
-  name. The spec's gensym hygiene is not implemented.
-- The walk covers calls, `let`/`let-mut`, `if`, `while`, `set!`,
-  `begin`, `print`, the asserts, `struct-get`, `defn` bodies and `test`
-  bodies. A macro call inside any other form (a `match` arm, for
-  example) is not expanded.
+The walk covers every `ExprInner` shape, so a macro call expands in any
+position, and a parameter is substituted in binder and `set!`-target
+positions as well as in value position.
 
 ## Phase 5: Checks
 
