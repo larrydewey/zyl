@@ -28,7 +28,7 @@ No phase may depend on a later phase. Determinism is required at every step.
 This is spec §22's order:
 
 1. Parsing → AST
-2. Macro Expansion (innermost-first, gensym hygiene — hygiene not yet implemented)
+2. Macro Expansion (innermost-first, gensym hygiene)
 3. Type Inference + Trait Resolution (+ derive validation)
 4. Region Inference + Capture Analysis
 5. Monomorphization (alphabetical canonical naming)
@@ -100,7 +100,7 @@ which is a recorded deviation).
 ## Architecture Decisions (Do Not Reverse)
 
 - **No-dispatch parsing:** the reader produces generic S-expression nodes; form recognition happens afterwards in one place (`convert-ast` in `stdlib/compiler/expr_inner.zyl`)
-- **Innermost-first macro expansion** with gensym hygiene (the hygiene half is specified, not yet implemented)
+- **Innermost-first macro expansion** with gensym hygiene
 - **ICNF as custom SSA IR** (not LLVM) for region annotation flow (today ICNF is a tree IR, not yet SSA and without region annotations)
 - **Region-based memory** (not GC) for deterministic reclamation
 - **Capability types** (TCap/TMut) for compile-time aliasing control
@@ -161,11 +161,12 @@ The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 `--filter` is a case-insensitive substring of the test name and applies
 *within* the selected mode — `--filter structs` alone runs in quick mode
 and selects nothing. `--full` runs `./boot.sh` first unless `--no-boot`
-is given. Other flags: `--verbose`, `--timeout N`, `--depth N`,
-`--boot`, `--dry-run` (which lists the mode's tests but ignores
-`--filter`). Categories in `--full`: regression, interpreter
+is given. Other flags: `--verbose`, `--timeout N`, `--boot`,
+`--dry-run` (lists exactly the tests a real run with the same mode and
+`--filter` would run). Categories in `--full`: regression, interpreter
 (differential REPL-interpreter-vs-codegen runs), compile-fail,
-integration, stress, packages, packages-fail, packages-build, lsp, and
+integration, stress, packages, packages-fail, packages-build, scripts
+(shell checks of the repository's own scripts), lsp, and
 the unit test.
 
 **Trigger before modifying struct-related code** (`ast.zyl`, `codegen.zyl`, `icnf.zyl`, `type_inference.zyl`, `parser.zyl`, `region_inference.zyl` under `stdlib/compiler/`):
