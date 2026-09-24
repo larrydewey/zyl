@@ -172,6 +172,33 @@ The type in an `impl` is a single name. An impl for a generic type names
 the bare type, `(impl Show Vec ...)`, and covers every instantiation, so
 overlap between impls cannot arise except as a C1 duplicate.
 
+### Forbidding an implementation: `impl-not`
+
+```lisp
+(impl-not Trait Type)     ; Type may never implement Trait
+(impl-not Trait Other)    ; no type implementing trait Other may implement Trait
+```
+
+`impl-not` is a top-level declaration, checked over the whole program
+after module resolution. Any `impl` or `derive` of the forbidden pair,
+in any module or package, is `E_IMPL_FORBIDDEN`, and the message names
+the declaration. When the target is a trait, every type implementing it
+is covered, whichever order the declarations appear in.
+
+It also carries a **flow rule** that closes the wrapper loophole: the
+result of any impl of `Trait`, for any type, may not be derived from a
+value the declaration protects. A value is protected when its type is
+the target (or implements the target trait), and so is a field of such
+a type, or a `match` binder of one. So with `(impl-not Dump Handle)`, a
+`Conn` holding a `Handle` cannot write a `Dump` that reads `self.h.fd`
+(`E_IMPL_FORBIDDEN`), although it can dump its other fields.
+
+For `Show`, the protected type gets a compiler-made `Show` that prints
+`<hidden>`, and a derived `Show` of a record shows such fields as
+`<hidden>`. The prelude uses this for key material,
+`(impl-not Show Secret)` (Chapter 33), where the text is `<secret>`.
+`declassify` is the explicit escape from the flow rule.
+
 ## 20.4 Trait Resolution
 
 The specification resolves traits in Phase 3, with type inference (§5.4,
@@ -308,6 +335,7 @@ collection does today, and `for` is a condition loop (§12.6).
 | Code | Cause (§28) | Status |
 |------|-------------|--------|
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type belongs to the package (§24.6) | raised |
+| `E_IMPL_FORBIDDEN` | an impl or derive an `impl-not` forbids, or an impl whose result exposes a protected value | raised |
 | `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | catalogued; a missing impl fails at link time instead |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | catalogued; a duplicate fails in the assembler instead |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type lacks a bound's trait (§6.7) | catalogued; never raised |

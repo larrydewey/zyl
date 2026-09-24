@@ -1,0 +1,10 @@
+; Compile-fail: a wrapper's impl of an impl-not trait may not expose the
+; protected value it holds (E_IMPL_FORBIDDEN).
+
+(defstruct _cf_Handle (fd Int))
+(trait _cf_Dump (dump (self) String))
+(impl-not _cf_Dump _cf_Handle)
+(defstruct _cf_Conn (host String) (h _cf_Handle))
+(impl _cf_Dump _cf_Conn (defn dump (self) (ffi-call "zyl_int_text" self.h.fd 1000)))
+
+(defn main () 0)

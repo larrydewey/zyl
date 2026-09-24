@@ -38,6 +38,7 @@
 (use compiler/parser)
 (use compiler/qualify)
 (use compiler/store)
+(use compiler/error_report)
 (use core/list)
 (use core/option)
 
@@ -934,6 +935,152 @@
           (mr-check-coherence rest pkgname))
         (mr-check-coherence rest pkgname)))))
 
+;; (impl-not Trait Target): no impl or derive of Trait for Target, or for any
+;; type implementing Target when Target is a trait. Checked over every unit,
+;; then the declarations are dropped. Names compare by symbol (after "::").
+(defn mr-impl-not (forms)
+  (let negs (mr-negs forms)
+    (begin
+      (ffi-call "zyl_smap_clear" (mr-neg-tab) 1000)
+      (if (nil? negs)
+        forms
+        (let impls (mr-impl-pairs forms)
+          (begin
+            (mr-index-impls impls)
+            (mr-check-forbidden negs forms)
+            (mr-record-negs impls negs)
+            (mr-drop-negs forms)))))))
+
+;; Map 5: "i|T|Y" per impl; for secret_check.zyl's flow rule, label "T|" per
+;; negated trait ("n#" count, "n#i") and "p|T|X" for each protected type.
+(defn mr-neg-tab () (ffi-call "zyl_smap_global" 5 1000))
+(defn mr-neg-put (k v) (ffi-call "zyl_smap_put" (mr-neg-tab) k v 1000))
+(defn mr-neg-get (k) (ffi-call "zyl_smap_get" (mr-neg-tab) k 1000))
+(defn mr-pair-key (tag a b) (str-concat tag (str-concat a (str-concat "|" b))))
+
+; (form, (trait-symbol, target-symbol)) per impl-not.
+(defn mr-negs (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (if (> (str-eq (mr-ast-head f) "impl-not") 0)
+        (match (mr-ast-args f)
+          (Cons t more
+            (match more
+              (Cons x _ (Cons (Pair f (Pair (ck-symbol-of (mr-ident-of t)) (ck-symbol-of (mr-ident-of x)))) (mr-negs rest)))
+              (Nil (mr-negs rest))))
+          (Nil (mr-negs rest)))
+        (mr-negs rest)))))
+
+(defn mr-drop-negs (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest (if (> (str-eq (mr-ast-head f) "impl-not") 0) (mr-drop-negs rest) (Cons f (mr-drop-negs rest))))))
+
+; (trait-symbol, type-symbol) of every impl.
+(defn mr-impl-pairs (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (if (> (str-eq (mr-ast-head f) "impl") 0)
+        (match (mr-ast-args f)
+          (Cons t more
+            (match more
+              (Cons y _ (Cons (Pair (ck-symbol-of (mr-ident-of t)) (ck-symbol-of (mr-ident-of y))) (mr-impl-pairs rest)))
+              (Nil (mr-impl-pairs rest))))
+          (Nil (mr-impl-pairs rest)))
+        (mr-impl-pairs rest)))))
+
+(defn mr-index-impls (impls)
+  (match impls
+    (Nil 0)
+    (Cons pr rest
+      (match pr (Pair t y (begin (mr-neg-put (mr-pair-key "i|" t y) 1) (mr-index-impls rest)))))))
+
+(defn mr-check-forbidden (negs forms)
+  (match forms
+    (Nil 0)
+    (Cons f rest
+      (let h (mr-ast-head f)
+        (begin
+          (if (> (str-eq h "impl") 0)
+            (match (mr-ast-args f)
+              (Cons t more (match more (Cons y _ (mr-forbid-one negs f (ck-symbol-of (mr-ident-of t)) (ck-symbol-of (mr-ident-of y)))) (Nil 0)))
+              (Nil 0))
+            (if (> (str-eq h "derive") 0)
+              (match (mr-ast-args f)
+                (Cons y ts (mr-forbid-derive negs f (ck-symbol-of (mr-ident-of y)) (mr-derive-names ts)))
+                (Nil 0))
+              0))
+          (mr-check-forbidden negs rest))))))
+
+; `(derive T A B)` or `(derive T [A B])`.
+(defn mr-derive-names (ts)
+  (match ts
+    (Nil Nil)
+    (Cons t rest
+      (match t
+        (AList xs (list-append (mr-derive-names xs) (mr-derive-names rest)))
+        (_ (Cons (ck-symbol-of (mr-ident-of t)) (mr-derive-names rest)))))))
+
+(defn mr-forbid-derive (negs f ty traits)
+  (match traits
+    (Nil 0)
+    (Cons t rest (begin (mr-forbid-one negs f t ty) (mr-forbid-derive negs f ty rest)))))
+
+(defn mr-forbid-one (negs f trait ty)
+  (match negs
+    (Nil 0)
+    (Cons n rest
+      (match n
+        (Pair decl pr
+          (match pr
+            (Pair nt target
+              (if (and (> (str-eq nt trait) 0) (or (> (str-eq target ty) 0) (> (mr-neg-get (mr-pair-key "i|" target ty)) 0)))
+                (mr-forbidden-fail f trait ty target)
+                (mr-forbid-one rest f trait ty)))))))))
+
+(defn mr-forbidden-fail (f trait ty target)
+  (let msg (str-concat "`" (str-concat trait (str-concat "` cannot be implemented for `" (str-concat ty "`"))))
+    (let why (if (> (str-eq target ty) 0)
+               (str-concat "forbidden by (impl-not " (str-concat trait (str-concat " " (str-concat target ")"))))
+               (str-concat "`" (str-concat ty (str-concat "` implements `" (str-concat target
+                 (str-concat "`, and (impl-not " (str-concat trait (str-concat " " (str-concat target ") forbids that")))))))))
+      (ffi-call "zyl_panic"
+        (err-at "E_IMPL_FORBIDDEN" msg (ffi-call "zyl_span_file" f 1000) (ffi-call "zyl_span_off" f 1000) why) 1000))))
+
+(defn mr-record-negs (impls negs)
+  (match negs
+    (Nil (mr-neg-put "n#" (mr-neg-get "n#c")))
+    (Cons n rest
+      (match n
+        (Pair _ pr
+          (match pr
+            (Pair t x
+              (let lbl (str-concat t "|")
+                (begin
+                  (if (> (mr-neg-get (str-concat "l|" lbl)) 0)
+                    0
+                    (let c (mr-neg-get "n#c")
+                      (begin
+                        (mr-neg-put (str-concat "l|" lbl) 1)
+                        (mr-neg-put (str-concat "n#" (ffi-call "zyl_int_text" c 1000)) lbl)
+                        (mr-neg-put "n#c" (+ c 1)))))
+                  (mr-neg-put (str-concat "p|" (str-concat lbl x)) 1)
+                  (mr-protect-implementors impls lbl x)
+                  (mr-record-negs impls rest))))))))))
+
+; Every type with an (impl X ty) is protected when X is a trait.
+(defn mr-protect-implementors (impls lbl x)
+  (match impls
+    (Nil 0)
+    (Cons pr rest
+      (match pr
+        (Pair t y
+          (begin
+            (if (> (str-eq t x) 0) (mr-neg-put (str-concat "p|" (str-concat lbl y)) 1) 0)
+            (mr-protect-implementors rest lbl x)))))))
+
 (defn mr-check-impl (f pkgname)
   (match (mr-ast-args f)
     (Cons traitast rest
@@ -1088,7 +1235,7 @@
                                    (Cons id Nil) pkg uses)
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
-            (MRR (convert-program (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil)))
+            (MRR (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))
                  (mr-grants-of (mrd-pkgs disc))
                  (mr-denied-of arena pkg))))))))
 
@@ -1099,4 +1246,4 @@
                                    (Cons id Nil) pkg uses)
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
-            (convert-program (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil)))))))))
+            (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))))))))

@@ -1552,11 +1552,38 @@
                        (let st8 (cg-param-spills st7 0 (list-length params))
                          ; per-function slot counter reset after params
                          (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                            (let st10 (cg-restore-callee-saved (cg-tail st9 env body fsz) fsz)
+                            (let st10 (cg-body-exit st9 env body fsz (cg-wipes-frame name))
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))
     st))
+
+; A function secret_check.zyl marked (Secret params or secret lets) zeroes its
+; whole frame on return and makes no tail calls, so no copy outlives the call.
+(defn cg-wipes-frame (name)
+  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 4 1000) (str-concat "w|" (cg-base-name name 0)) 1000) 0))
+
+; A specialized instance `f~T` is wiped like `f`.
+(defn cg-base-name (n i)
+  (if (>= i (ffi-call "zyl_cstr_len" n 1000))
+    n
+    (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 126)
+      (str-substring n 0 i)
+      (cg-base-name n (+ i 1)))))
+
+(defn cg-body-exit (st env body fsz wipe)
+  (if wipe
+    (cg-wipe-frame (cg-restore-callee-saved (cg-expr st env body) fsz) fsz)
+    (cg-restore-callee-saved (cg-tail st env body fsz) fsz)))
+
+; rep stosq over [rbp-fsz, rbp), keeping the result in r11 meanwhile.
+(defn cg-wipe-frame (st fsz)
+  (let st2 (cg-emit-line st "    mov r11, rax")
+    (let st3 (cg-emit-line (cg-emit-int (cg-emit st2 "    lea rdi, [rbp-") fsz) "]")
+      (let st4 (cg-emit-line (cg-emit-int (cg-emit st3 "    mov ecx, ") (/ fsz 8)) "")
+        (let st5 (cg-emit-line st4 "    xor eax, eax")
+          (let st6 (cg-emit-line st5 "    rep stosq")
+            (cg-emit-line st6 "    mov rax, r11")))))))
 
 ; SysV makes rbx and r12-r15 callee-saved. Generated code uses rbx (the
 ; block pointer in cg-variant) and r12 (the saved rsp around every

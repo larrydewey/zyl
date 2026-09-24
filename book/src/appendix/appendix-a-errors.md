@@ -205,6 +205,7 @@ frame, and everything else stays on the heap. No pass reports
 | `E_PKG_ORPHAN_IMPL` | An `impl` where neither the trait nor the type is local to the package |
 | `E_TRAIT_NOT_FOUND` | No implementation for a required trait. *Catalogued only.* |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | A concrete type lacks a required trait. *Catalogued only.* |
+| `E_IMPL_FORBIDDEN` | An `impl` or `derive` that an `(impl-not Trait Target)` declaration forbids, or an impl of that trait whose result is derived from a protected value (Chapter 20). |
 | `E_TRAIT_NOT_DERIVABLE` | `derive` asked for a trait that cannot be derived for this type. *Catalogued only.* |
 | `E_DUPLICATE_IMPL` | Two implementations of one trait for one type. *Catalogued only.* |
 

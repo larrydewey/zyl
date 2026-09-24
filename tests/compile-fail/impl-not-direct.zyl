@@ -1,0 +1,9 @@
+; Compile-fail: (impl-not Dump Handle) forbids implementing Dump for
+; Handle (E_IMPL_FORBIDDEN).
+
+(defstruct _cf_Handle (fd Int))
+(trait _cf_Dump (dump (self) String))
+(impl-not _cf_Dump _cf_Handle)
+(impl _cf_Dump _cf_Handle (defn dump (self) "fd"))
+
+(defn main () 0)

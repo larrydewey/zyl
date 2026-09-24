@@ -1138,7 +1138,7 @@
     (None "assert failed")))
 
 ; A byte access: one byte through `sym1`, a 16/32/64-bit one through `symn` with its width first.
-(defn ic-byte-access (arena sym1 symn endian args)
+(defn ic-byte-access (_arena sym1 symn endian args)
   (let e (IConst (endian-to-int endian))
     (if (= (endian-width endian) 1)
       (IFfi sym1 (Cons e args))

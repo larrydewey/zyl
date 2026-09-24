@@ -67,10 +67,10 @@ and every taint query answers no.
 
 | A secret may not… | Because | Error |
 |---|---|---|
-| steer control flow — an `if`, `while`, `for` or `cond` condition, or a `match` subject | the branch taken is visible in timing and in the branch predictor | `E_CT_VIOLATION` |
+| steer control flow — an `if`, `while`, `for` or `cond` condition, or the subject of a `match` with more than one arm | the branch taken is visible in timing and in the branch predictor | `E_CT_VIOLATION` |
 | address memory — the index argument of `w-get`, `w-set`, `list-nth`, `alloc-read-int`, or a load/store offset | the address touched is visible in the data cache | `E_CT_VIOLATION` |
 | go through `/` or `mod` | the divider's latency depends on its operands | `E_CT_VIOLATION` |
-| reach `print` | a debug sink is still a sink | `E_SECRET_DEBUG` |
+| reach `print`, an `error` message, or the text a `show` returns | a debug sink is still a sink | `E_SECRET_DEBUG` |
 | leave the process or the actor — `spawn`, `send`, `file-write` | that is the leak the capability exists to prevent | `E_SECRET_ESCAPE` |
 
 And one obligation: a secret reaches C only through `ffi-pin`, in the
@@ -185,10 +185,17 @@ Both write through a volatile pointer in the runtime, so the C compiler
 that builds the runtime cannot delete the stores as dead — the classic
 way a `memset` before a `free` silently disappears at `-O2`.
 
-Erasure is **explicit**. Zyl does not yet zeroize secret-typed values
-automatically at scope exit; that needs a codegen epilogue hook which
-does not exist. What the compiler does do is notice when you may have
-forgotten: a function that takes a `Secret` parameter, returns a
+**Stack slots are erased automatically.** A function with a `Secret`
+parameter (or one of a Secret type), a secret-returning function, and
+any function that binds a secret-derived `let` zeroes its whole frame
+when it returns (`rep stosq` over the frame, result kept in a register),
+and makes no tail calls, so no copy of a secret word outlives the call
+in its own frame. **Heap contents stay explicit**: `zeroize`, or
+`(k.wipe)` for a type implementing the `Secret` trait (§33.6). Nothing
+is wiped at scope exit automatically, because Zyl does not track moves:
+wiping a value that was stored somewhere else would destroy live data.
+
+The compiler also notices when you may have forgotten: a function that takes a `Secret` parameter, returns a
 *public* result, is not one of the declassifying functions, and never
 mentions `zeroize` or `zeroize-bytes` gets a warning on stderr:
 
@@ -200,7 +207,49 @@ It is a warning, despite the `E_` prefix: the compile continues. A
 function that returns a secret is not warned about, because the secret
 is still live in its caller.
 
-## 33.6 Why the Check Is Syntactic
+## 33.6 Secret Fields, Secret Types and Redaction
+
+**Fields.** A field declared `Secret` (or `(Secret Int)`) is secret when
+read: `(struct-get k "bytes")`, `k.bytes`, or a `match` binder in that
+position is tainted, so every rule of §33.2 applies to it.
+
+```lisp
+(defstruct Login (user String) (pw Secret))
+(derive Login Show)
+(print (make-Login "ann" 1234))    ; Login { user: ann, pw: <secret> }
+```
+
+**Types.** Implementing the prelude trait `Secret` makes a type key
+material everywhere: its constructors produce secret values, a parameter
+of that type is secret, a field of that type is a Secret field, and
+`wipe` is its erasure method.
+
+```lisp
+(deftype Key (KeyW Int))
+(impl Secret Key (defn wipe (self) (zeroize-key self)))
+(defstruct Vault (label String) (k Key))
+(derive Vault Show)
+(print (make-Vault "main" (KeyW 7)))   ; Vault { label: main, k: <secret> }
+```
+
+A secret placed in a Secret field does not taint the record around it,
+so `Vault` can be printed, while its `k` stays redacted. Destructuring a
+record with a single-arm `match` is not a branch and is allowed on a
+secret; the binders it produces are secret.
+
+**Redaction cannot be overridden.** The prelude declares
+`(impl-not Show Secret)` (Chapter 20): an `impl` or `derive` of `Show`
+for a Secret type is `E_IMPL_FORBIDDEN`, and the only `Show` such a type
+has is the compiler's, which prints `<secret>`. A wrapper cannot leak
+through its own `Show` either: any `show` whose text derives from a
+secret, through a field, a binder or a helper call, is `E_SECRET_DEBUG`.
+Printing a secret-tainted value directly is still `E_SECRET_DEBUG`;
+redaction covers what reaches `print` inside a record.
+
+The one sanctioned way out remains `declassify`, at a point you can grep
+for.
+
+## 33.7 Why the Check Is Syntactic
 
 `secret_check.zyl` walks the macro-expanded expression tree at the same
 stage as the mutability and exhaustiveness checks, rather than living
@@ -220,7 +269,7 @@ programming remains something you do deliberately; the capability is
 what stops a deliberate effort from being quietly undone three
 refactors later.
 
-## 33.7 Current Limits
+## 33.8 Current Limits
 
 Worth knowing before you rely on it:
 
@@ -228,9 +277,12 @@ Worth knowing before you rely on it:
   boundary only where the callee's own parameters are annotated, so the
   AEAD, KDF, signature and bignum entry points are not yet under the
   checker. Annotating them is the next step.
-- **Erasure is manual**, as described above.
-- **`print` of a secret is rejected, not redacted.** There is no
-  automatic `<secret>` substitution.
+- **Heap erasure is manual**: frames are wiped, heap blocks need
+  `zeroize` or `wipe`.
+- **`set!` of a secret into an existing `let-mut` variable is not
+  tracked**: the variable stays untainted.
+- A trait call reached through a function value, or a `try` that unwinds
+  past a function, skips that function's frame wipe.
 - **The checker is not a proof.** It rejects the operations it knows
   are timing-variable on the shapes it walks. `verify/timing.py`, a
   dudect-style statistical harness with a deliberately leaky comparison
@@ -248,4 +300,8 @@ Worth knowing before you rely on it:
 - `declassify`, `ct-eq-bool` and `ct-eq-words-bool` are the named,
   greppable ways out.
 - `zeroize` erases key material, and the compiler warns when a function
-  handling a secret never calls it.
+  handling a secret never calls it; frames that held secrets are zeroed
+  on return.
+- `Secret` fields and types implementing the `Secret` trait taint what
+  is read from them and print as `<secret>`; that redaction cannot be
+  overridden.

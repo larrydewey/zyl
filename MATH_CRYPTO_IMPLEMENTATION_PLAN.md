@@ -3,7 +3,8 @@
 ## Current Status (verified against the code, 2026-09-23)
 
 **Phases 1-5 are implemented; Phase 0's enforcement half is implemented;
-Phase 0's codegen half (zeroize on scope exit, debug redaction) is not.**
+Phase 0's codegen half is implemented as frame zeroization on return and
+`<secret>` redaction (2026-09-24); heap erasure stays explicit.**
 The plan below is kept as the original design; where the built library
 differs, this section is authoritative. The user-facing description of the
 library is `docs/math-crypto.md`.
@@ -32,7 +33,7 @@ library is `docs/math-crypto.md`.
 |-------|--------|
 | 0 — `TCSecret`, secret checker, error codes | Done |
 | 0 — CT effect in the type system | Not done: the checker is a syntactic taint walk, not a type-level effect |
-| 0 — zeroize on scope exit, `print`/panic redaction | Not done: needs codegen hooks. `print` of a secret is rejected (`E_SECRET_DEBUG`) instead |
+| 0 — zeroize on scope exit, `print`/panic redaction | Done 2026-09-24 in this form: frames holding secrets are zeroed on return (heap erasure explicit); Secret fields/types print `<secret>`; a secret in `print`, `error` or a `show` result is `E_SECRET_DEBUG` |
 | 0 — ctgrind/valgrind on compiled output | Not done: `verify/timing.py` is the substitute |
 | 1.1 Bignum | Done (different representation, see above) |
 | 1.2 RNG | Done for Linux; no Windows `BCryptGenRandom`; no TestU01/PractRand run |

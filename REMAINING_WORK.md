@@ -18,7 +18,7 @@
 - [x] `try` around an even-arity call segfaulted or hung (frame pointer overwritten)
 - [x] Trait method with a compound (or no) return type: `print` of the call printed an address
 - [x] 16-, 32-, 64-bit byte loads/stores; distinct `ByteBuf`/`ByteSlice` handle types
-- [ ] `Secret`: zeroization on scope exit, `print` redaction, `Secret` trait
+- [x] `Secret`: frame zeroization on return, redaction (`<secret>`), `Secret` trait, Secret-field taint; `impl-not` with a flow rule (`E_IMPL_FORBIDDEN`); open: heap erasure explicit, `set!` into `let-mut` untracked
 - [ ] `receive` form and runnable structured-message actor example
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
 - [ ] Hash finalization mixing graph hash into binary

@@ -70,6 +70,7 @@
                                       (Cons (EC "E_EXPECTED_RPAREN" 2 1 "parser: expected ) at S but found T")
                                         (Cons (EC "E_FFI_TIMEOUT" 16 1 "ffi: call exceeded timeout of M ms at S")
                                           (Cons (EC "E_FLOAT_OVERFLOW" 1 1 "lexer: float overflow in literal L at S")
+                                            (Cons (EC "E_IMPL_FORBIDDEN" 12 1 "trait: impl of T for U is forbidden by an impl-not declaration")
                                             (Cons (EC "E_INTEGER_OVERFLOW" 1 1 "lexer: integer overflow in literal L at S")
                                               (Cons (EC "E_INVALID_CAPABILITY" 13 1 "type: invalid capability usage for F - M at S")
                                                 (Cons (EC "E_INVALID_CHAR" 1 1 "lexer: invalid character C at S")
@@ -142,7 +143,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

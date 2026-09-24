@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **159/159**
-  (updated 2026-09-24): regression 62, interpreter 42, compile-fail 29,
+- `./run_regression_tests.sh --full --no-boot` passes **167/167**
+  (updated 2026-09-24): regression 63, interpreter 43, compile-fail 35,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -159,9 +159,10 @@ Compiler:
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
   native-object and assembly hashes, but the graph hash is not mixed into
   the binary's own hash.
-- `Secret`: no zeroization on scope exit, no `print` redaction, no
-  `Secret` trait for user-defined types. Taint crosses a call boundary
-  only where the callee's parameters are annotated.
+- `Secret`: frames holding secrets are zeroed on return, heap erasure is
+  explicit (`zeroize`, `wipe`); Secret fields/types redact as `<secret>`;
+  `set!` of a secret into a `let-mut` is not tracked. Taint crosses a call
+  boundary only where the callee's parameters are annotated.
 - Tail calls are partial: a direct call to a top-level function in tail
   position with at most six arguments is a jump (`cg-tail`); indirect
   calls, calls with more than six arguments and calls inside
@@ -252,8 +253,8 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       open: profiles, `checkpoint` rollback, typed `recover` arms.
 - [x] 16-, 32- and 64-bit byte loads and stores; `ByteBuf`/`ByteSlice`
       handle types.
-- [ ] `Secret`: zeroization on scope exit, `print` redaction, a `Secret`
-      trait.
+- [x] `Secret`: frame zeroization on return, `print` redaction, a `Secret`
+      trait, Secret-field taint, `impl-not`; heap erasure stays explicit.
 - [ ] A `receive` form and a runnable structured-message actor example.
 - [x] Top-level `def` in compiled programs (immutable globals, eager init).
 - [ ] Hash finalization that mixes the graph hash into the binary.
@@ -372,7 +373,31 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — wide byte access, handle types
+## Session (2026-09-24, latest) — Secret fields/types, redaction, frame wipe, impl-not
+
+**Secret shapes** (`secret_check.zyl`, global map 4): a field declared
+`Secret`, or of a type implementing the new prelude trait `Secret`
+(`core/show.zyl`, method `wipe`), taints what is read from it (struct-get,
+dot access, match binders); constructors of a Secret type produce
+secrets; a secret in a Secret field does not taint the record; a
+single-arm `match` on a secret is allowed (binders secret); a secret in
+an `error` message or in a `show` result is `E_SECRET_DEBUG`; impl method
+bodies are now checked at all. **Redaction** (`derive.zyl`): Secret
+fields and Secret types show as `<secret>`, fields/types under
+`(impl-not Show X)` as `<hidden>`, through compiler-made Show impls.
+**Frame wipe** (`codegen.zyl`, `cg-wipe-frame`): functions secret_check
+marks (Secret params, secret-returning, secret lets) zero their frame on
+return and make no tail calls. **`impl-not`** (`module_resolver.zyl`,
+`mr-impl-not`): `(impl-not Trait Target)` forbids the impl/derive for
+Target or any implementor of trait Target (`E_IMPL_FORBIDDEN`, new code),
+and a flow rule rejects impls of Trait whose result derives from a
+protected value (labels "T|" in the secret_check taint engine). The
+prelude declares `(impl-not Show Secret)`. Tests:
+`tests/regression/secret-types.zyl`, six compile-fail cases. Open:
+`set!` of a secret into a `let-mut` is not tracked; heap erasure stays
+explicit.
+
+## Session (2026-09-24, earlier) — wide byte access, handle types
 
 **`load-u16` .. `store-i64`.** The wide forms reuse the byte-form Expr
 nodes: the width rides in the `Endian` value (`EWide code width`), so no

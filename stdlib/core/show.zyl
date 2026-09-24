@@ -7,6 +7,13 @@
 
 (trait Show (show (self) String))
 
+; Key material: a type implementing Secret is secret-tainted wherever it
+; appears, prints as `<secret>`, and `wipe` erases it (spec: TSecret).
+(trait Secret (wipe (self) Int))
+
+; A Secret type's only Show is the compiler's, which prints `<secret>`.
+(impl-not Show Secret)
+
 (impl Show Int (defn show (self) (ffi-call "zyl_int_text" self 1000)))
 (impl Show Float (defn show (self) (ffi-call "zyl_f_text" self 1000)))
 (impl Show Bool (defn show (self) (if self "true" "false")))

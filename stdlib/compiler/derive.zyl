@@ -9,7 +9,65 @@
 (use compiler/expr_inner)
 
 (defn dv-expand-program (exprs)
-  (list-append exprs (dv-collect exprs exprs)))
+  (list-append exprs (list-append (dv-collect exprs exprs) (dv-secret-shows exprs exprs))))
+
+;; Redaction: Secret fields and types implementing the Secret trait show as
+;; `<secret>` (shapes recorded by secret_check.zyl in global map 4).
+(defn dv-shape (tag n) (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 4 1000) (str-concat tag (dv-short n)) 1000))
+(defn dv-secret-type (n) (> (dv-shape "t|" n) 0))
+
+(defn dv-ctor-mask (n)
+  (let c (dv-shape "c|" n)
+    (if (= c 0) 0 (- c 1))))
+
+; Fields protected by (impl-not Show X) show as `<hidden>` (label "Show|").
+(defn dv-hidden-mask (n)
+  (let c (dv-shape "c|Show|" n)
+    (if (= c 0) 0 (- c 1))))
+
+(defn dv-hidden-type (n)
+  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 5 1000) (str-concat "p|Show|" (dv-short n)) 1000) 0))
+
+; Secret types show as `<secret>` and other (impl-not Show X) types as
+; `<hidden>`: the only Show they have is this compiler-made one.
+(defn dv-secret-shows (all forms)
+  (match forms
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype ty _ _ _
+          (if (and (or (dv-secret-type ty) (dv-hidden-type ty)) (not (dv-has-show all ty)))
+            (Cons (dv-fixed-impl (dv-show-trait all) ty (if (dv-secret-type ty) "<secret>" "<hidden>")) (dv-secret-shows all rest))
+            (dv-secret-shows all rest)))
+        (_ (dv-secret-shows all rest))))))
+
+(defn dv-has-show (forms ty)
+  (match forms
+    (Nil false)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr "Show" 1000) 0) (> (str-eq t ty) 0)) true (dv-has-show rest ty)))
+        (EDerive t traits (if (and (> (str-eq t ty) 0) (dv-lists-show traits)) true (dv-has-show rest ty)))
+        (_ (dv-has-show rest ty))))))
+
+(defn dv-lists-show (traits)
+  (match traits
+    (Nil false)
+    (Cons t rest (if (> (ffi-call "zyl_cstr_key_matches" t "Show" 1000) 0) true (dv-lists-show rest)))))
+
+; The Show trait's canonical name, as the prelude declared it.
+(defn dv-show-trait (forms)
+  (match forms
+    (Nil "Show")
+    (Cons e rest
+      (match (Expr.inner e)
+        (ETraitDecl n _ _ (if (> (ffi-call "zyl_cstr_key_matches" n "Show" 1000) 0) n (dv-show-trait rest)))
+        (_ (dv-show-trait rest))))))
+
+(defn dv-redacted-impl (trait tname) (dv-fixed-impl trait tname "<secret>"))
+
+(defn dv-fixed-impl (trait tname text)
+  (Expr (EImplBlock trait tname (Cons (IB (DN "show" (Cons (P "_self" None) Nil) (dv-str text))) Nil))))
 
 (defn dv-collect (all forms)
   (match forms
@@ -24,9 +82,11 @@
     (Nil Nil)
     (Cons t rest
       (if (> (ffi-call "zyl_cstr_key_matches" t "Show" 1000) 0)
-        (match (dv-find-type all tname)
-          (Some dt (Cons (dv-show-impl t tname dt) (dv-derive all tname rest)))
-          (None (dv-derive all tname rest)))
+        (if (or (dv-secret-type tname) (dv-hidden-type tname))
+          (dv-derive all tname rest)
+          (match (dv-find-type all tname)
+            (Some dt (Cons (dv-show-impl t tname dt) (dv-derive all tname rest)))
+            (None (dv-derive all tname rest))))
         (dv-derive all tname rest)))))
 
 (defn dv-find-type (forms tname)
@@ -61,7 +121,7 @@
     (Cons v rest
       (let n (list-length (AV.fields v))
         (let binds (dv-binders n 0)
-          (Cons (MA (AV.name v) (dv-bind-exprs binds) (dv-show-variant trait v binds isst))
+          (Cons (MA (AV.name v) (dv-bind-exprs binds) (dv-show-variant trait v (dv-redact binds (dv-ctor-mask (AV.name v)) (dv-hidden-mask (AV.name v)) 0) isst))
                 (dv-show-arms trait rest isst)))))))
 
 (defn dv-binders (n i)
@@ -72,7 +132,21 @@
     (Nil Nil)
     (Cons b t (Cons (dv-id b) (dv-bind-exprs t)))))
 
-(defn dv-show-call (trait b) (Expr (EApply (str-concat trait ".show") (Cons (dv-id b) Nil))))
+; A binder of a Secret (or Show-protected) field becomes "!secret" ("!hidden"),
+; which dv-show-call prints as that marker.
+(defn dv-redact (binds mask hmask i)
+  (match binds
+    (Nil Nil)
+    (Cons b t
+      (Cons (if (= (bit-and (shr mask i) 1) 1) "!secret" (if (= (bit-and (shr hmask i) 1) 1) "!hidden" b))
+            (dv-redact t mask hmask (+ i 1))))))
+
+(defn dv-show-call (trait b)
+  (if (> (str-eq b "!secret") 0)
+    (dv-str "<secret>")
+    (if (> (str-eq b "!hidden") 0)
+      (dv-str "<hidden>")
+      (Expr (EApply (str-concat trait ".show") (Cons (dv-id b) Nil))))))
 
 ; `Name`, `Name(a, b)`, or for a struct `Name { f: a, g: b }`.
 (defn dv-show-variant (trait v binds isst)
