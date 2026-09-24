@@ -40,6 +40,7 @@
 (use compiler/optimization)
 (use compiler/codegen)
 (use compiler/pipeline)
+(use compiler/icnf_print)
 (use repl/repl)
 (use repl/interp)
 (use compiler/sexp_balance)
@@ -348,13 +349,14 @@
         (let _ (file-close fd)
           (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
             (let objs (cli-native-objs arena dir m)
-              (let buf (compile-to-asm arena srcbuf src)
-                (let bi (drv-build-hashes arena dir objs buf)
+              (let fns (compile-to-fns arena srcbuf src)
+                (let bi (drv-build-hashes arena dir objs fns)
+                  (let buf (codegen-fns arena fns src)
                   (let asmpath (str-concat out ".s")
                     (let _ (cli-write-file asmpath (str-concat buf (drv-hash-section (bh-final bi))))
                       (let rc (cli-link-child asmpath out (cli-native-args m objs))
-                        (let _ (drv-write-buildinfo out bi)
-                          rc)))))))))))))
+                        (let _ (drv-write-buildinfo arena dir out bi buf)
+                          rc))))))))))))))
 
 ; zyl.buildinfo (SS31.12): the compiler's own hash, the graph hash from the
 ; lock, the native object hashes and the ICNF hash, in that order, so a
@@ -365,19 +367,26 @@
 ; serialised form in this implementation, and assembly is a deterministic
 ; function of it, so the field verifies the same claim through a
 ; downstream artefact. A real ICNF hash needs an ICNF printer.
-;; Step 11: the four inputs in canonical order, and their final hash, which
-;; the binary carries as `zyl_build_hash` (section .zyl_build). The asm hash
-;; covers the program's assembly before that section is appended.
+;; Step 11: the four inputs of spec 31.12 in canonical order -- compiler,
+;; lock graph, native objects, ICNF (its canonical text, icnf_print.zyl) --
+;; and their final hash, which the binary carries as `zyl_build_hash`
+;; (section .zyl_build).
 (deftype BuildHashes (BH String String String String String))
 (defn bh-final (b) (match b (BH _ _ _ _ f f)))
 
-(defn drv-build-hashes (arena dir objs buf)
+(defn drv-build-hashes (arena dir objs fns)
   (let ch (lk-compiler-self-hash arena)
     (let gh (drv-graph-hash arena dir)
       (let nh (drv-object-hashes arena dir objs)
-        (let ah (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena buf -1 32 1000))
-          (let all (str-concat ch (str-concat "\n" (str-concat gh (str-concat "\n" (str-concat nh (str-concat "\n" ah))))))
-            (BH ch gh nh ah (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena all -1 32 1000)))))))))
+        (let ih (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena (icnf-text arena fns) -1 32 1000))
+          (let all (str-concat ch (str-concat "\n" (str-concat gh (str-concat "\n" (str-concat nh (str-concat "\n" ih))))))
+            (BH ch gh nh ih (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena all -1 32 1000)))))))))
+
+; The resolved graph from the lock (lk-graph-text), or none without a lock.
+(defn drv-graph-text (arena dir)
+  (match (cli-read-lock arena dir)
+    (Some l (lk-graph-text arena l))
+    (None "")))
 
 ; `("path" "blake3:...")` per native object, in manifest order; the path is
 ; package-relative, so the hash does not depend on where the package sits.
@@ -398,24 +407,28 @@
   (str-concat "\n    .section .zyl_build,\"a\"\n    .globl zyl_build_hash\nzyl_build_hash:\n    .asciz \""
     (str-concat final "\"\n    .text\n")))
 
-(defn drv-write-buildinfo (out bi)
+
+(defn drv-write-buildinfo (arena dir out bi asm)
   (let path (str-concat out ".buildinfo")
     (let f (file-open path "w")
-      (let _ (file-write f (drv-buildinfo-text bi))
+      (let _ (file-write f (drv-buildinfo-text bi (drv-graph-text arena dir)
+                             (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena asm -1 32 1000))))
         (file-close f)))))
 
-(defn drv-buildinfo-text (bi)
+(defn drv-buildinfo-text (bi graph ah)
   (match bi
-    (BH ch gh nh ah fh
+    (BH ch gh nh ih fh
       (str-concat "(buildinfo\n  (compiler-hash \""
         (str-concat ch
           (str-concat "\")\n  (graph-hash \""
             (str-concat gh
-              (str-concat "\")\n  (native-objects"
+              (str-concat "\")\n  (graph" (str-concat graph
+              (str-concat ")\n  (native-objects"
                 (str-concat nh
-                  (str-concat ")\n  (asm-hash \""
-                    (str-concat ah
-                      (str-concat "\")\n  (final-hash \"" (str-concat fh "\"))\n")))))))))))))
+                  (str-concat ")\n  (icnf-hash \""
+                    (str-concat ih
+                      (str-concat "\")\n  (asm-hash \"" (str-concat ah
+                      (str-concat "\")\n  (final-hash \"" (str-concat fh "\"))\n")))))))))))))))))
 
 (defn drv-graph-hash (arena dir)
   (match (cli-read-lock arena dir)

@@ -32,7 +32,7 @@
 - [x] Derivable traits: Show, Debug, Eq, Ord, Hash, Clone, with the field requirement checked (`E_TRAIT_NOT_DERIVABLE`); open: Vec/Map implement only Show
 - [x] Tail calls: indirect calls, stack arguments within the caller's incoming area, and interpreter TCO (except String/Float results)
 - [x] Contracts: profiles (`--contracts=P`, `(contracts P)`), `checkpoint` rollback of `let-mut` state, `recover` arms by error code
-- [ ] Hash finalization: a real ICNF hash (needs an ICNF printer) and the resolved graph recorded in `.buildinfo`
+- [x] Hash finalization: ICNF hash from a canonical ICNF printer (`icnf_print.zyl`), resolved graph recorded in `.buildinfo`
 
 ## P4: Tooling & Packages
 - [ ] Documentation: what arenas are, and which values the arena/capacity arguments of `vec-create` and similar constructors accept (0 = private default arena, handles from `arena-create`, ...)

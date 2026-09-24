@@ -158,6 +158,11 @@
   (let a (pkg-arena)
     (assert-equal (str-eq (str-substring (lk-graph-hash (lock-roundtrip a)) 0 7) "blake3:") 1)))
 
+(test "the buildinfo graph lists each package with version and hash"
+  (let a (pkg-arena)
+    (assert-true (str-eq (lk-graph-text a (demo-lock))
+                         "\n    (package \"acme/json\" \"1.4.0\" \"blake3:bb\")"))))
+
 ; --- Minimal Version Selection (§31.5) --------------------------------------
 
 (defn demo-ctx (a)

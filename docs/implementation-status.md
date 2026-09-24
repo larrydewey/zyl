@@ -74,12 +74,9 @@ it compiles and runs correctly; the notes say where it stops.
 - **Contracts** (§23): `checkpoint` rolls back `let-mut` variables only
   (byte-buffer writes are not undone); errors carry no type beyond their
   message, so `recover` arms match an error-code prefix.
-- **Hash finalization** (§31.12): `zyl build` and `zyl test` write
-  `zyl.buildinfo` with the compiler, graph, native-object and assembly
-  hashes and their final hash, which is embedded in the binary
-  (`zyl_build_hash`). The assembly hash stands in for an ICNF hash, the
-  resolved graph is not recorded, and a single-file compile writes no
-  buildinfo.
+- **Hash finalization** (§31.12): only package builds (`zyl build`, `zyl
+  test`) write `zyl.buildinfo` and embed `zyl_build_hash`; a single-file
+  compile writes neither.
 - **Unlocated diagnostics:** `mutability_check`, `capability_check`,
   `unused_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.

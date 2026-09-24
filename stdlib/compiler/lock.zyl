@@ -301,6 +301,18 @@
           (str-concat "  (capability-closure "
             (str-concat (lk-words (pk-caps-sorted (lk-closure l))) ")\n")))))))))
 
+; The resolved graph for zyl.buildinfo (spec 31.12): one
+; `(package "name" "version" "hash")` line per package, sorted by name.
+(defn lk-graph-text (arena l) (lk-graph-pkgs arena (lk-sort-pkgs (lk-pkgs l))))
+
+(defn lk-graph-pkgs (arena pkgs)
+  (match pkgs
+    (Nil "")
+    (Cons p rest
+      (let v (pv-str arena (lp-version p))
+        (str-concat "\n    (package " (str-concat (lk-quote (lp-name p)) (str-concat " " (str-concat (lk-quote v)
+          (str-concat " " (str-concat (lk-quote (lp-hash p)) (str-concat ")" (lk-graph-pkgs arena rest))))))))))))
+
 (defn lk-to-string (arena l)
   (str-concat (lk-body-str arena l)
     (str-concat "  (graph-hash " (str-concat (lk-quote (lk-graph-hash l)) "))\n"))))

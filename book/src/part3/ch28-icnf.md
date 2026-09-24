@@ -28,9 +28,10 @@ worth being exact about the difference:
 - **Phase position.** ICNF is produced after monomorphization, trait
   dispatch, closure inlining and assert lowering, and consumed by the
   optimizer, region inference and codegen, in that order (§28.6).
-- **No textual form.** ICNF has no printer. A package build's
-  `zyl.buildinfo` records the hash of the emitted assembly in the field
-  meant for the ICNF hash, for exactly that reason.
+- **Textual form.** `compiler/icnf_print.zyl` (`icnf-text`) writes the
+  lowered program as canonical s-expressions, one function per line,
+  with each node's codegen kind as a `:k` suffix. Package builds hash it
+  for `zyl.buildinfo`'s `icnf-hash`.
 
 ## 28.2 ICNF Structure
 

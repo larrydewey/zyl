@@ -1,0 +1,112 @@
+; === Zyl Compiler — ICNF printer ===
+; Module: compiler/icnf_print
+;
+; A canonical text form of lowered ICNF, for the build's ICNF hash (spec
+; §31.12, hash finalization). Every node is written as an s-expression in
+; a fixed order, with its codegen kind (attr table 1) where it has one, so
+; two lowerings print the same text exactly when codegen sees the same
+; program.
+
+(use allocator/allocator)
+(use compiler/icnf)
+
+(defn ip-cap () 134217728)
+
+; The text of `fns`, in their lowering order.
+(defn icnf-text (arena fns)
+  (let buf (arena-alloc-zeroed arena (ip-cap))
+    (begin
+      (ip-fns buf fns)
+      buf)))
+
+(defn ip-out (buf s) (ffi-call "zyl_str_append_capped" buf s (ip-cap) 1000))
+(defn ip-int (buf n) (ip-out buf (ffi-call "zyl_int_text" n 1000)))
+(defn ip-sp (buf) (ip-out buf " "))
+
+; A name or literal, quoted so no text can be mistaken for structure.
+(defn ip-str (buf s)
+  (begin
+    (ip-out buf "\"")
+    (if (ip-plain s 0 (ffi-call "zyl_cstr_len" s 1000)) (ip-out buf s) (ip-escaped buf s 0 (ffi-call "zyl_cstr_len" s 1000)))
+    (ip-out buf "\"")))
+
+(defn ip-special (c) (or (= c 34) (or (= c 92) (< c 32))))
+
+(defn ip-plain (s i n)
+  (if (>= i n) true (if (ip-special (ffi-call "zyl_cstr_byte_at" s i 1000)) false (ip-plain s (+ i 1) n))))
+
+; `"` and `\` get a backslash; control bytes become \xNN.
+(defn ip-escaped (buf s i n)
+  (if (>= i n)
+    0
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (begin
+        (if (ip-special c)
+          (if (< c 32)
+            (begin (ip-out buf "\\x") (ip-int buf c))
+            (begin (ip-out buf "\\") (ip-out buf (ffi-call "zyl_cstr_substr" s i 1 1000))))
+          (ip-out buf (ffi-call "zyl_cstr_substr" s i 1 1000)))
+        (ip-escaped buf s (+ i 1) n)))))
+
+(defn ip-fns (buf fns)
+  (match fns
+    (Nil 0)
+    (Cons f rest (begin (ip-node buf f) (ip-out buf "\n") (ip-fns buf rest)))))
+
+(defn ip-list (buf xs)
+  (match xs
+    (Nil 0)
+    (Cons x rest (begin (ip-sp buf) (ip-node buf x) (ip-list buf rest)))))
+
+(defn ip-strs (buf xs)
+  (match xs
+    (Nil 0)
+    (Cons x rest (begin (ip-sp buf) (ip-str buf x) (ip-strs buf rest)))))
+
+(defn ip-ints (buf xs)
+  (match xs
+    (Nil 0)
+    (Cons x rest (begin (ip-sp buf) (ip-int buf x) (ip-ints buf rest)))))
+
+(defn ip-open (buf tag) (begin (ip-out buf "(") (ip-out buf tag)))
+
+; `)` or ` :k)` when codegen gave the node a representation kind.
+(defn ip-close (buf e)
+  (let k (ffi-call "zyl_attr_get" 1 e 1000)
+    (if (= k 0) (ip-out buf ")") (begin (ip-out buf " :") (ip-int buf k) (ip-out buf ")")))))
+
+(defn ip-node (buf e)
+  (begin
+    (match e
+      (IConst n (begin (ip-open buf "const ") (ip-int buf n)))
+      (IStr s (begin (ip-open buf "str ") (ip-str buf s)))
+      (IFlt t (begin (ip-open buf "flt ") (ip-str buf t)))
+      (ILoad n (begin (ip-open buf "load ") (ip-str buf n)))
+      (IBinop op l r (begin (ip-open buf "op ") (ip-int buf op) (ip-sp buf) (ip-node buf l) (ip-sp buf) (ip-node buf r)))
+      (ICall n args (begin (ip-open buf "call ") (ip-str buf n) (ip-list buf args)))
+      (IFfi n args (begin (ip-open buf "ffi ") (ip-str buf n) (ip-list buf args)))
+      (IPrint a (begin (ip-open buf "print ") (ip-node buf a)))
+      (IIf c t f (begin (ip-open buf "if ") (ip-node buf c) (ip-sp buf) (ip-node buf t) (ip-sp buf) (ip-node buf f)))
+      (IWhile c b (begin (ip-open buf "while ") (ip-node buf c) (ip-sp buf) (ip-node buf b)))
+      (ISet n v (begin (ip-open buf "set ") (ip-str buf n) (ip-sp buf) (ip-node buf v)))
+      (ILet n v b (begin (ip-open buf "let ") (ip-str buf n) (ip-sp buf) (ip-node buf v) (ip-sp buf) (ip-node buf b)))
+      (ISeq xs (begin (ip-open buf "seq") (ip-list buf xs)))
+      (IVariant n tag fs (begin (ip-open buf "variant ") (ip-str buf n) (ip-sp buf) (ip-int buf tag) (ip-list buf fs)))
+      (IStackVariant n tag fs (begin (ip-open buf "stack-variant ") (ip-str buf n) (ip-sp buf) (ip-int buf tag) (ip-list buf fs)))
+      (IMatch s arms (begin (ip-open buf "match ") (ip-node buf s) (ip-arms buf arms)))
+      (IFn n ps body ks (begin (ip-open buf "fn ") (ip-str buf n) (ip-out buf " (") (ip-strs buf ps) (ip-out buf " ) (")
+                               (ip-ints buf ks) (ip-out buf " ) ") (ip-node buf body)))
+      (ICallClosure n args (begin (ip-open buf "call-closure ") (ip-str buf n) (ip-list buf args)))
+      (ITryCatch b v h (begin (ip-open buf "try ") (ip-node buf b) (ip-sp buf) (ip-str buf v) (ip-sp buf) (ip-node buf h))))
+    (ip-close buf e)))
+
+(defn ip-arms (buf arms)
+  (match arms
+    (Nil 0)
+    (Cons a rest
+      (begin
+        (match a
+          (IArm v tag binds body
+            (begin (ip-out buf " (arm ") (ip-str buf v) (ip-sp buf) (ip-int buf tag) (ip-out buf " (")
+                   (ip-strs buf binds) (ip-out buf " ) ") (ip-node buf body) (ip-out buf ")"))))
+        (ip-arms buf rest)))))

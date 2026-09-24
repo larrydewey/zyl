@@ -183,9 +183,12 @@ The runtime is compiled from source on every link. `zyl build` appends the objec
 (buildinfo
   (compiler-hash "blake3:...")   ; BLAKE3 of the compiler binary
   (graph-hash "blake3:...")      ; from zyl.lock; empty without a lock
+  (graph                         ; the resolved graph, sorted by name
+    (package "acme/json" "1.4.0" "blake3:..."))
   (native-objects ("build/native/c_fast.c.o" "blake3:..."))  ; manifest order
-  (asm-hash "blake3:...")        ; BLAKE3 of the emitted assembly
-  (final-hash "blake3:..."))     ; BLAKE3 of the four above, in order
+  (icnf-hash "blake3:...")       ; BLAKE3 of the canonical ICNF text
+  (asm-hash "blake3:...")        ; BLAKE3 of the emitted assembly (informational)
+  (final-hash "blake3:..."))     ; BLAKE3 of compiler, graph, native and ICNF hashes
 ```
 
 The final hash is linked into the binary as the read-only string
@@ -194,10 +197,7 @@ inputs it was built from: `objdump -s -j .zyl_build app` shows it.
 Native object paths are package-relative, so the same package built in
 two directories gives byte-identical binaries.
 
-§31.12 specifies four inputs: compiler hash, graph hash, native-object hashes and ICNF hash. It also requires the resolved graph to be recorded in canonical form. The implementation departs from this in two ways:
-
-- It hashes the assembly instead of the ICNF, because the ICNF has no serialised form. The assembly is a deterministic function of it.
-- It does not record the resolved graph.
+These are §31.12's four inputs, in its order, plus the resolved graph in canonical form. The ICNF hash is taken over `compiler/icnf_print.zyl`'s canonical text of the lowered program, including each node's codegen kind, so it changes exactly when what codegen sees changes.
 
 A plain `zyl file.zyl` compile writes no buildinfo.
 

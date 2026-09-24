@@ -56,9 +56,9 @@ become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
 back `let-mut` state, and the profile (`--contracts=P`, `(contracts P)`)
 picks panic, warn or strip. Hash finalization exists only for
 package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
-native-object and assembly hashes, plus their final hash, which the
-binary carries as `zyl_build_hash`; spec §31.12 asks for an ICNF hash,
-which is a recorded deviation).
+native-object and ICNF hashes, the resolved graph, the assembly hash,
+and the final hash of spec §31.12's four inputs, which the binary
+carries as `zyl_build_hash`).
 
 ## Non-Negotiable Constraints
 

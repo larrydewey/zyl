@@ -154,8 +154,9 @@ Compiler:
   (`--contracts=P`, `(contracts P)`); `checkpoint` rolls back `let-mut`
   state (not byte-buffer writes); `recover` arms match error codes.
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
-  native-object and assembly hashes and their final hash, which the binary
-  carries as `zyl_build_hash`.
+  native-object and ICNF hashes (spec order), the resolved graph, the
+  assembly hash, and the final hash, which the binary carries as
+  `zyl_build_hash`.
 - `Secret`: frames holding secrets are zeroed on return, heap erasure is
   explicit (`zeroize`, `wipe`); Secret fields/types redact as `<secret>`;
   `set!` of a secret into a `let-mut` is not tracked. Taint crosses a call
@@ -368,7 +369,18 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — contract profiles, checkpoint, recover arms
+## Session (2026-09-24, latest) — ICNF hash and recorded graph
+
+New `compiler/icnf_print.zyl` (`icnf-text`) prints lowered ICNF as
+canonical s-expressions with each node's codegen kind. `drv-compile-file`
+now lowers (`compile-to-fns`), hashes that text for `icnf-hash`, then
+generates code, so the final hash covers spec 31.12's four inputs
+exactly (the assembly hash stays in `.buildinfo` for information). The
+buildinfo also records the resolved graph from the lock
+(`lk-graph-text`, `lock.zyl`), tested in `package-system.zyl`. That
+closes the last recorded hash-finalization deviation.
+
+## Session (2026-09-24, earlier) — contract profiles, checkpoint, recover arms
 
 Profiles (`expr_inner.zyl`, `contract-profile`): strict/debug panic, warn
 checks become `(if C 0 (zyl-contract-warn msg))` (stderr, continue),
