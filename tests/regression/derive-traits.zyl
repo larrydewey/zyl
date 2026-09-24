@@ -44,4 +44,19 @@
     (assert-equal (Ord.compare None (Some 1)) -1)
     (assert-equal (Ord.compare (Ok 1) (Err "e")) -1)))
 
+; A user type named like a prelude type parameter (T, E) does not shadow it.
+(deftype T (DtT Int))
+(deftype E (DtE String))
+(derive T Show Eq)
+
+; defstruct+ takes an inline (:derive [...]).
+(defstruct+ DtPoint (x Int) (y Int) (:derive [Eq Show]))
+
+(test "user-type-named-t-and-inline-derive"
+  (begin
+    (assert-true (Eq.eq (DtT 1) (DtT 1)))
+    (assert-true (str-eq (Show.show (Some 4)) "Some(4)"))
+    (assert-true (Eq.eq (make-DtPoint 1 2) (make-DtPoint 1 2)))
+    (assert-true (str-eq (Show.show (make-DtPoint 1 2)) "DtPoint { x: 1, y: 2 }"))))
+
 (run-tests)

@@ -417,10 +417,46 @@
 
 ;; Dot syntax, rewritten before qualification: `p.x.y` reads fields,
 ;; `(p.m args)` calls trait method m on p (resolved by type, type_annotate.zyl).
+;; An inline `(:derive [T ...])` on a defstruct/defstruct+ becomes a
+;; separate (derive Name T ...) here too.
 (defn dot-rewrite-forms (forms)
   (match forms
     (Nil Nil)
-    (Cons f rest (Cons (dot-rewrite f) (dot-rewrite-forms rest)))))
+    (Cons f rest
+      (match (inline-derive-of f)
+        (Some d (Cons (dot-rewrite (strip-inline-derive f)) (Cons d (dot-rewrite-forms rest))))
+        (None (Cons (dot-rewrite f) (dot-rewrite-forms rest)))))))
+
+(defn struct-head-p (h) (or (> (str-eq h "defstruct") 0) (> (str-eq h "defstruct+") 0)))
+
+(defn inline-derive-p (a) (> (str-eq (ast-head a) ":derive") 0))
+
+; (derive Name T ...) for a struct form whose last element is (:derive ...).
+(defn inline-derive-of (f)
+  (if (struct-head-p (ast-head f))
+    (match f
+      (AList xs
+        (let last (ast-list-last xs (AstInt 0))
+          (if (inline-derive-p last)
+            (Some (dot-spanned (AList (Cons (AstIdent "derive") (Cons (ast-arg1 f) (inline-derive-traits last)))) last))
+            None)))
+      (_ None))
+    None))
+
+(defn inline-derive-traits (d)
+  (match d
+    (AList xs (match xs (Cons _ t t) (Nil Nil)))
+    (_ Nil)))
+
+(defn strip-inline-derive (f)
+  (match f
+    (AList xs (dot-spanned (AList (strip-last-derive xs)) f))
+    (_ f)))
+
+(defn strip-last-derive (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (and (nil? t) (inline-derive-p h)) Nil (Cons h (strip-last-derive t))))))
 
 (defn dot-rewrite (a)
   (match a

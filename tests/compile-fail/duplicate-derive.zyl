@@ -1,0 +1,7 @@
+; Compile-fail: deriving a trait twice for one type is E_DUPLICATE_IMPL.
+
+(deftype _cf_Q (CfQ1 Int))
+(derive _cf_Q Show)
+(derive _cf_Q Show)
+
+(defn main () 0)

@@ -237,7 +237,7 @@ the method. The usual alternatives still apply:
 §5.6 and §5.7:
 
 ```lisp
-(defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline (not parsed yet)
+(defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline
 
 (derive Point Show)                             ; standalone; or (derive Point [Show Eq])
 ```

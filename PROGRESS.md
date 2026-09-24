@@ -367,7 +367,23 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — zyl doc
+## Session (2026-09-24, latest) — fixes from the skill review
+
+- A user type named `T` or `E` hid the prelude's type parameter of the
+  same spelling (short-name aliases in `ta-types`), so `Option`/`Result`
+  lost their genericity: aliases are now marked (`ta-put2`), never shadow a
+  type parameter, and a parameter in scope wins in `ta-conv-name`.
+- Two written impls, or two derives, of one trait for one type failed in
+  the assembler; they are `E_DUPLICATE_IMPL` (`dv-check-dup-impls`,
+  `dv-impl-count`).
+- `(defstruct+ Name ... (:derive [T ...]))` is split into the struct and a
+  `(derive Name T ...)` before qualification (`inline-derive-of`), so it
+  derives (and `impl-not` sees it).
+- `feature-gate` below top level is `E_PKG_FEATURE_NESTED`.
+Tests: `derive-traits.zyl`, `compile-fail/duplicate-{impl,derive}.zyl`,
+`packages-fail/feature-nested`.
+
+## Session (2026-09-24, earlier) — zyl doc
 
 `zyl doc [file.zyl | dir] [-o out.md]` (`drv-doc`, new `compiler/doc.zyl`)
 writes Markdown: the file's leading comment block as the module doc

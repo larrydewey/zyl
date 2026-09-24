@@ -12,6 +12,21 @@
 (use compiler/error_report)
 
 (defn dv-expand-program (exprs)
+  (let _ (dv-check-dup-impls exprs exprs)
+    (dv-expand-checked exprs)))
+
+; Two written impls of one trait for one type (E_DUPLICATE_IMPL).
+(defn dv-check-dup-impls (all forms)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EImplBlock tr ty _ (if (> (dv-impl-count all (dv-short tr) ty) 1) (dv-fail-dup e (dv-short tr) ty) 0))
+          (_ 0))
+        (dv-check-dup-impls all rest)))))
+
+(defn dv-expand-checked (exprs)
   (list-append exprs
     (list-append (dv-collect exprs exprs)
       (list-append (dv-fixed-texts exprs "Show" "show" exprs) (dv-fixed-texts exprs "Debug" "debug" exprs)))))
@@ -94,6 +109,34 @@
 
 (defn dv-derive-one (all site tname t dt)
   (let short (dv-short t)
+    (if (> (dv-impl-count all short tname) 1)
+      (dv-fail-dup site short tname)
+      (dv-derive-new all site tname t dt short))))
+
+; Impls of the trait named `label` for `ty`: written ones, plus each time a
+; derive names it.
+(defn dv-impl-count (forms label ty)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (+ (match (Expr.inner e)
+           (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr label 1000) 0) (dv-same t ty)) 1 0))
+           (EDerive t traits (if (dv-same t ty) (dv-count-in label traits) 0))
+           (_ 0))
+         (dv-impl-count rest label ty)))))
+
+(defn dv-count-in (label traits)
+  (match traits
+    (Nil 0)
+    (Cons t rest (+ (if (> (ffi-call "zyl_cstr_key_matches" t label 1000) 0) 1 0) (dv-count-in label rest)))))
+
+(defn dv-fail-dup (site short tname)
+  (ffi-call "zyl_panic"
+    (err-at "E_DUPLICATE_IMPL" (str-concat "`" (str-concat short (str-concat "` is implemented for `" (str-concat (dv-short tname) "` more than once"))))
+      (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000) "keep one impl or derive of it") 1000))
+
+(defn dv-derive-new (all site tname t dt short)
+  (begin
     (if (dv-text-trait short)
       (if (or (dv-secret-type tname) (dv-hidden-type short tname))
         Nil

@@ -343,10 +343,13 @@
       (match args
         (Cons a _ (ta-conv st a scope))
         (Nil (TaR (ta-fresh st) scope)))
-      (let td (ta-sget (ta-types st) n)
-        (if (= td 0)
-          (ta-conv-var st n scope)
-          (ta-conv-app st td args scope))))))
+      (match (ta-scope-get scope n)
+        (Some t (TaR t scope))
+        (None
+          (let td (ta-sget (ta-types st) n)
+            (if (or (= td 0) (ta-alias-only (ta-types st) n))
+              (ta-conv-var st n scope)
+              (ta-conv-app st td args scope))))))))
 
 (defn ta-conv-var (st n scope)
   (match (ta-scope-get scope n)
@@ -407,10 +410,15 @@
           (if (= d 58) (ta-last-colons n (+ i 2) i) (ta-last-colons n (+ i 1) found)))
         (ta-last-colons n (+ i 1) found)))))
 
+; A qualified name is also reachable by its short name; that alias is
+; marked, so it never hides a type parameter of the same spelling.
 (defn ta-put2 (m n x)
   (let _ (ta-sput m n x)
     (let s (ta-short n)
-      (if (ta-streq s n) 0 (ta-sput m s x)))))
+      (if (ta-streq s n) 0 (begin (ta-sput m s x) (ta-sput m (str-concat "!alias:" s) 1))))))
+
+(defn ta-alias-only (m n)
+  (and (> (ta-sget m (str-concat "!alias:" n)) 0) (ta-looks-param n)))
 
 (defn ta-collect-a (st exprs)
   (match exprs
@@ -545,7 +553,7 @@
 (defn ta-param-add (st n acc)
   (if (ta-builtin-type n)
     acc
-    (if (> (ta-sget (ta-types st) n) 0)
+    (if (and (> (ta-sget (ta-types st) n) 0) (not (ta-alias-only (ta-types st) n)))
       acc
       (if (ta-looks-param n)
         (if (ta-str-in n acc) acc (list-append acc (Cons n Nil)))

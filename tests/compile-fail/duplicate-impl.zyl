@@ -1,0 +1,8 @@
+; Compile-fail: two impls of one trait for one type used to fail in the
+; assembler; they are E_DUPLICATE_IMPL.
+
+(deftype _cf_Q (CfQ1 Int))
+(impl Show _cf_Q (defn show (self) "a"))
+(impl Show _cf_Q (defn show (self) "b"))
+
+(defn main () 0)
