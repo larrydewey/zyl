@@ -116,6 +116,7 @@
   (match e
     (IConst _ e)
     (IStr _ e)
+    (ISymAddr _ e)
     (IFlt _ e)
     (ILoad _ e)
     (IBinop op l r (opt-binop op (opt-expr l) (opt-expr r)))

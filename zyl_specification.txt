@@ -528,8 +528,17 @@ Rules:
 ================================================================================
 
 (ffi-call name args timeout)
+
 (ffi-pin Expr)
 (ffi-unpin Expr)
+
+Timeout:
+    name is a string literal; timeout is a positive integer literal in
+    milliseconds (Compile Error E_FFI_SYMBOL_REQUIRED / E_FFI_TIMEOUT_REQUIRED).
+    A foreign call that has not returned within timeout raises E_FFI_TIMEOUT.
+    The foreign code is abandoned, never interrupted: memory it was handed
+    stays valid for the rest of the process.
+    A timeout is an FFI result (§27): observable external input.
 
 FFI_Pinnable types:
     Int, Float, Bool, String, Vec<T> (where T is FFI_Pinnable),
@@ -874,6 +883,8 @@ Errors:
     E_MUT_CONFLICT              — aliasing violation
     E_ASSERT_FAIL               — assertion failure
     E_FFI_TIMEOUT               — FFI call exceeded timeout
+    E_FFI_TIMEOUT_REQUIRED      — ffi-call lacks a positive integer literal timeout
+    E_FFI_SYMBOL_REQUIRED       — ffi-call symbol is not a string literal
     E_REGION_ESCAPE             — region rule violation
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)

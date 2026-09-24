@@ -257,7 +257,8 @@ void process(int* data, size_t len);
 
 **No raw pointers in ordinary Zyl** — addresses appear only through
 `ffi-pin`, `bytebuf-ptr` and the allocator functions. The trailing
-timeout is required, though not yet enforced.
+timeout is a required integer literal in milliseconds; a call that
+overruns it raises `E_FFI_TIMEOUT`.
 
 ### Structs → Structs (Similar but Immutable)
 

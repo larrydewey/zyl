@@ -26,10 +26,9 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **168/168**
-  (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
-  integration 7, packages-fail 7, stress 4, scripts 7, packages 2,
-  packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
+- `./run_regression_tests.sh --full --no-boot` passes **188/188**
+  (updated 2026-09-24, FFI timeouts). Compile-fail tests may carry a
+  `; expect-error: CODE` line, which pins the failure to that code. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31, §31 being
@@ -260,13 +259,40 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] Bundle the VS Code extension; add a problem matcher.
 - [x] REPL: a definition entered at the prompt can use a `def` binding.
 
-### Deferred design work (not started unless noted)
+### Deferred design work (decided 2026-09-24)
 
-- **Byte-level primitives:** partly done. 8-bit `load`/`store` with
-  explicit endianness, `bytebuf`, `byteslice`/`byteslice-sub`, the atomic
-  family and `align-check` landed on 2026-09-19 (commits `44bb05f`,
-  `88ba6e4`). Still open: the wider widths, and views that provably
-  cannot outlive their backing buffer.
+Agreed order: FFI timeouts (done 2026-09-24), real regions, zero-copy
+views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
+
+- **FFI timeouts:** done 2026-09-24 (see the session log).
+- **Real regions:** today one global heap arena is never reclaimed and
+  region inference only stack-allocates matched-or-printed variants.
+  Plan: a region per function call, escape analysis over ICNF promoting
+  escaping values to the caller's region or the heap, region annotations
+  on ICNF values, `E_REGION_ESCAPE` raised for real, then the extension
+  registry below on top. Once an FFI call has been abandoned by a
+  timeout, region reclamation must stop (the call may still use what it
+  was handed), as the exit-time teardown already does.
+- **Deterministic concurrency (Kahn process networks):** single-sender
+  channels with linear endpoints replace multi-sender mailboxes (fan-in
+  is one channel per producer), receive blocks on one channel with no
+  select/try-receive/emptiness test, bounded buffers with blocking send,
+  only TCap data crosses actors, TAtomic crosses with commutative writes
+  only and is read after joining its writers, actor IO goes through an
+  ordered output channel that main drains, a dead sender yields a fixed
+  error. A deterministic single-thread scheduler ships as
+  `--sched=deterministic` and is the test oracle against a seeded chaos
+  mode (byte-identical output required). Breaking change to
+  `ActorRef`/`send`; the spec gains a concurrency-determinism section.
+- **Inline assembly: rejected.** Raw asm breaks determinism (rdtsc,
+  rdrand, cpuid, CPU-feature dependence, writes outside regions).
+  Deterministic typed intrinsics instead (popcnt, clz/ctz, bswap, rotl,
+  crc32, mul-hi; later SIMD with a baseline fallback); `ffi-call` stays
+  the escape hatch.
+- **Byte-level primitives:** 8-, 16-, 32- and 64-bit loads and stores,
+  `bytebuf`, `byteslice`/`byteslice-sub`, atomics and `align-check` are
+  done. Views that provably cannot outlive their buffer come with the
+  zero-copy views item, after real regions.
 - **Deterministic region extension:** a closed registry of additional
   audited region kinds (fixed growth, alignment, policy) that user code
   selects among, with no raw alloc/free function pointers; any kind that
@@ -277,8 +303,6 @@ by recent sessions. The completed roadmap items are kept, annotated, under
   read-only pages shared between actors. The `TCAtomic` and
   `TCAtomicByte` capability kinds and the atomic byte-buffer operations
   exist; the sharing model does not.
-- **Inline assembly:** a capability- and region-aware interface in which
-  pointer-carrying registers respect the type and region rules.
 - **Ergonomic zero-copy views:** short-lived region views over
   longer-lived data (parsing, substrings, array slices) without
   Rust-style lifetime parameters. `byteslice` is the only form so far.
@@ -363,7 +387,33 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — REPL definitions see prompt defs
+## Session (2026-09-24, latest) — FFI timeouts are real
+
+- `ffi-check-call` (`arity_check.zyl`, also run by `ic-ffi`): the symbol
+  must be a string literal (`E_FFI_SYMBOL_REQUIRED`), the last argument a
+  positive integer literal timeout (`E_FFI_TIMEOUT_REQUIRED`), at most 16
+  arguments. A forgotten timeout no longer drops the real last argument.
+  The compiler's own zero-argument runtime calls passed a timeout of 0;
+  they pass 1000 now.
+- `ic-ffi` lowers a foreign symbol (not `zyl_`) to
+  `IFfi "zyl_ffi_timed" (ISymAddr sym, IStr sym, ms, argc, args...)`.
+  `ISymAddr` is a new ICNF leaf, emitted as a GOT load.
+- Runtime `zyl_ffi_timed`: a per-thread worker runs the call, the caller
+  waits on `CLOCK_MONOTONIC`, and an overrun raises `E_FFI_TIMEOUT`
+  (catchable, `recover`-able). The call is abandoned, not killed; the
+  worker frees itself afterwards, and the exit-time arena teardown is
+  skipped once anything was abandoned. A callback into Zyl runs on the
+  worker with the caller's `actor-self`. The interpreter goes through
+  `zyl_ffi_timed_argv`.
+- `run_regression_tests.sh`: a compile-fail test's `; expect-error: CODE`
+  line must match. Tests: `regression/ffi-timeout`, compile-fail
+  `ffi-missing-timeout`, `ffi-zero-timeout`, `ffi-symbol-not-literal`.
+- Known limitation: `(ffi-call "f" 5)` still reads as a zero-argument call
+  with a 5 ms timeout; the positional syntax cannot tell them apart.
+- `lsp/protocol` fails when `ZYL_MAX_MEMORY` is capped at 1.6 GB (the
+  completion session needs more); it passes 99/99 uncapped.
+
+## Session (2026-09-24, earlier) — REPL definitions see prompt defs
 
 `eval-global-defs` (`repl/eval.zyl`) emits each prompt `def` into the
 session program as `(def k (if false SRC (zyl-repl-global "k")))`: the

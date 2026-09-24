@@ -2,7 +2,7 @@
 
 Complete reference for Zyl's Foreign Function Interface: `ffi-call`, pinning, FFI-pinnable types, how values are represented on the C side, linking C code, and which of the specification's safety rules the compiler enforces today.
 
-The normative text is spec v5.0 §16 (FFI model), §9.1 rules R4 and R8, §13.4 (Pin region), §31.9 (the `ffi` capability) and §31.10 (native dependencies). The implementation lives in `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/codegen.zyl` (the call itself), `stdlib/compiler/type_system.zyl` (`is-ffi-pinnable`), `stdlib/compiler/capability_check.zyl`, and `runtime/actor_runtime.c` (`ffi_pin`, `ffi_unpin`). This chapter describes both, and says plainly where they differ: the FFI is one of the areas where the implementation lags furthest behind the specification.
+The normative text is spec v5.0 §16 (FFI model), §9.1 rules R4 and R8, §13.4 (Pin region), §31.9 (the `ffi` capability) and §31.10 (native dependencies). The implementation lives in `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/codegen.zyl` (the call itself), `stdlib/compiler/type_system.zyl` (`is-ffi-pinnable`), `stdlib/compiler/capability_check.zyl`, `stdlib/compiler/arity_check.zyl` (`ffi-check-call`), and `runtime/actor_runtime.c` (`ffi_pin`, `ffi_unpin`, `zyl_ffi_timed`). This chapter describes both, and says plainly where they differ: the FFI is one of the areas where the implementation lags furthest behind the specification.
 
 ## 22.1 FFI Overview
 
@@ -14,9 +14,9 @@ The specification's model (§16, R4, R8) is:
 
 What the compiler does today:
 
-- `ffi-call` compiles to a direct System V `call` of the named C symbol, passing every argument as a 64-bit word in the integer registers.
+- `ffi-call` compiles to a System V call of the named C symbol, passing every argument as a 64-bit word in the integer registers. A foreign symbol is called on a worker thread through the runtime's timed bridge; the runtime's own `zyl_*` symbols are called directly.
 - `ffi-pin` copies one word into the Pin arena and returns the address of the copy.
-- The timeout argument is required by the syntax but **not enforced** (§22.7).
+- The timeout argument must be a positive integer literal, and it is **enforced**: a foreign call that overruns it raises `E_FFI_TIMEOUT` (§22.7).
 - Pinnability is checked for `ffi-pin` operands and for closures written inline as `ffi-call` arguments, not in general (§22.4).
 - In a package with a `zyl.pkg`, using `ffi-call`, `ffi-pin` or `ffi-unpin` requires the `ffi` capability (§22.11).
 
@@ -34,7 +34,7 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
 
 - `"c_function_name"`: the C symbol, which must be a string literal. Any byte outside `[A-Za-z0-9_]` is replaced with `_` before the name reaches the assembler, so a name cannot inject assembly.
 - `arg1 arg2 ...`: the arguments, evaluated left to right.
-- `timeout-ms`: the last argument, the timeout in milliseconds.
+- `timeout-ms`: the last argument, the timeout in milliseconds, which must be a positive integer literal.
 
 ```lisp
 (defn main ()
@@ -45,7 +45,18 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
     0))
 ```
 
-**The last argument is always treated as the timeout and discarded, whatever it is.** Nothing checks that it is present or that it is an integer. If you forget it, your real last argument is silently dropped: `(ffi-call "abs" -42)` calls `abs` with an uninitialised register and prints garbage. The compiler's own source passes 0 or 1000 by convention. Always write the timeout.
+**The last argument is always the timeout, and it is checked.** `ffi-check-call` (`arity_check.zyl`, also run by ICNF lowering) rejects a call whose symbol is not a string literal with `E_FFI_SYMBOL_REQUIRED`, and a call whose last argument is not a positive integer literal with `E_FFI_TIMEOUT_REQUIRED`. The literal requirement is what keeps a forgotten timeout from silently consuming the real last argument:
+
+```
+PANIC: error[E_FFI_TIMEOUT_REQUIRED]: the last argument of ffi-call must be a positive integer literal timeout
+  --> magnitude.zyl:1:21
+   |
+ 1 | (defn magnitude (n) (ffi-call "abs" n))
+   |                     ^
+   = help: end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument
+```
+
+`(ffi-call "abs" -42)` and `(ffi-call "abs" -42 0)` are rejected the same way, since neither ends with a positive timeout. The check cannot catch every omission: `(ffi-call "f" 5)` is accepted as a call with no arguments and a 5 ms timeout. A call with more than 16 arguments is `E_ARITY_MISMATCH`.
 
 The result is whatever the function left in `rax`, as a 64-bit word (§22.5).
 
@@ -156,7 +167,7 @@ The layouts of structs, ADTs and `Vec` are implementation details of the current
 - **System V AMD64**: the first six arguments go in `rdi`, `rsi`, `rdx`, `rcx`, `r8` and `r9`, and the rest go on the stack. Compiled code handles more than six arguments; an 8-argument C function works.
 - The stack is 16-byte aligned at the call.
 - `al` is not set for variadic functions. Calling `printf` with integer arguments happens to work; with floats it does not.
-- **The interpreter (`zyl eval`, the REPL)** looks symbols up with `dlsym` and supports at most six arguments. A symbol it cannot find there is `E_FFI_SYMBOL_NOT_FOUND`.
+- **The interpreter (`zyl eval`, the REPL)** looks symbols up with `dlsym` and makes the call through the same timed bridge as compiled code (`zyl_ffi_timed_argv`), so timeouts are enforced there too. A symbol it cannot find is `E_FFI_SYMBOL_NOT_FOUND`.
 
 ## 22.6 Complete FFI Example
 
@@ -249,9 +260,34 @@ HOME=/home/larry
 
 Spec §16 and §28 describe a timeout on every foreign call, with `E_FFI_TIMEOUT` raised when a call exceeds it.
 
-**The implementation does not enforce timeouts.** The argument is discarded at lowering (§22.2). The runtime has no alarm, signal or watchdog for foreign calls, and `E_FFI_TIMEOUT` is defined in the error catalogue but never emitted. `(ffi-call "sleep" 2 1)` blocks for two seconds and then returns normally. A foreign function that never returns hangs the calling thread.
+The implementation enforces it. ICNF lowering (`ic-ffi`) turns a call of a foreign symbol into a call of the runtime's bridge:
 
-Until enforcement exists, write the timeout you intend (it documents the call, and it keeps your code correct for when enforcement arrives), and bound blocking work on the C side.
+```
+IFfi "zyl_ffi_timed" (ISymAddr sym, IStr sym, IConst timeout-ms, IConst argc, arg...)
+```
+
+`zyl_ffi_timed` (`runtime/actor_runtime.c`) runs the C function on a worker thread that belongs to the calling thread. The worker is created on first use and kept, so thread-local C state such as `errno` stays consistent between calls. The caller waits on `CLOCK_MONOTONIC`; if the function has not returned by the deadline, the caller raises:
+
+```
+E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
+```
+
+This is an ordinary panic: `try`/`catch` catches it, and `recover` (or `zyl_err_is`) matches it by code.
+
+```lisp
+(defn slow-call () (ffi-call "usleep" 300000 50))   ; 300 ms against 50 ms
+
+(print (try (slow-call) (catch e 0)))               ; 0
+(print (ffi-call "abs" -9 1000))                    ; 9: the next call works normally
+```
+
+**The C function is abandoned, not killed.** Stopping a running C function safely is impossible in general (it may hold a lock or be halfway through a write), so its worker is left to finish on its own and then frees itself; the caller gets a fresh worker for its next call. Nothing the abandoned call was handed is reclaimed: Pin slots are never freed individually, and once any call has been abandoned, the arena teardown at process exit is skipped. A C function that never returns therefore leaks one thread, but no longer hangs the caller.
+
+**Determinism.** Whether a timeout fires depends on how long foreign code runs. Spec §27 treats FFI results as observable external input, and a timeout is one of them, just like a value the C function returns.
+
+**Trusted runtime symbols.** Symbols beginning with `zyl_` belong to the Zyl runtime. They are called directly, without a worker thread; their timeout must still be a positive literal but is not used.
+
+**Callbacks** from C into Zyl run on the worker thread (§22.9).
 
 ## 22.8 Memory Management Across the FFI
 
@@ -289,7 +325,9 @@ Pass the returned pointer itself to `free`, not `(ffi-pin p)`, which would pass 
 
 ## 22.9 Callbacks (C to Zyl)
 
-**Not supported.** There is no way to hand C a function pointer that calls back into Zyl, and closures are rejected as FFI arguments (§22.4). When C needs to deliver events, have Zyl poll a C function that returns an integer code:
+A top-level function named as an `ffi-call` argument is passed as its code address, so C can call it back with integer and pointer arguments: `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator (`tests/regression/c-abi.zyl`). The callback runs on the FFI worker thread that is running the foreign call (§22.7). It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process, since it cannot unwind into the caller, which is waiting on another thread. Closures are rejected as FFI arguments (§22.4).
+
+When C needs to deliver events without calling back, have Zyl poll a C function that returns an integer code:
 
 ```lisp
 (defn poll-loop (n)
@@ -340,7 +378,7 @@ A root package can forbid FFI for its whole graph with `(deny-capabilities ffi n
 | Only pinnable types cross the boundary | partial: inline closures and resolved non-pinnable types in `ffi-pin` are rejected (§22.4) |
 | Pinned memory does not move | holds: nothing in Zyl moves memory |
 | Pinned memory stays alive during the call | holds: pins are never freed before exit |
-| Calls are bounded by a timeout | **not implemented** (§22.7) |
+| Calls are bounded by a timeout | holds for foreign symbols: an overrunning call raises `E_FFI_TIMEOUT` and is abandoned (§22.7) |
 | C cannot corrupt Zyl memory (G5) | **not enforced**: C runs unrestricted in the process |
 | Symbol names cannot inject assembly | holds: names are sanitised |
 | FFI use is declared per package | holds for `defn`/`def` bodies in manifest-bearing packages (§22.11) |
@@ -354,15 +392,18 @@ A root package can forbid FFI for its whole graph with `(deny-capabilities ffi n
 | `E_FFI_PIN_REQUIRED` | a `Secret` passed to `ffi-call` without `ffi-pin` |
 | `E_PKG_CAPABILITY_VIOLATION` | FFI used in a package that does not declare `ffi`, or denied by the root |
 | `E_FFI_SYMBOL_NOT_FOUND` | interpreter only (`zyl eval`, the REPL): symbol not found by `dlsym` |
-| `E_FFI_TIMEOUT` | specified (§28); never raised by the current implementation |
+| `E_FFI_SYMBOL_REQUIRED` | the symbol is not a string literal |
+| `E_FFI_TIMEOUT_REQUIRED` | the last argument is missing or not a positive integer literal |
+| `E_ARITY_MISMATCH` | more than 16 arguments |
+| `E_FFI_TIMEOUT` | at run time: a foreign call did not return within its timeout |
 | linker `undefined reference` | compiled code calls a symbol that is not linked |
 
-Malformed calls are not diagnosed by the compiler. `(ffi-call)` fails at link time with ``undefined reference to `_'``, and an unquoted symbol name fails in the assembler.
+`(ffi-call)` and an unquoted symbol name are rejected with `E_FFI_SYMBOL_REQUIRED`.
 
 ## 22.14 Best Practices
 
 1. **Wrap every foreign function in one Zyl function**, so the raw word-level interface lives in one place.
-2. **Always write the timeout** as the last argument. Omitting it drops a real argument silently.
+2. **Write a realistic timeout** as the last argument, as a literal. A missing one is a compile error; a too-tight one abandons the C call with `E_FFI_TIMEOUT`.
 3. **Pass integers and strings directly.** Use `ffi-pin` only when C expects a pointer to a value.
 4. **Keep floating point on the Zyl side** until the FFI passes floats correctly.
 5. **Copy C-owned data into Zyl strings** with `str-concat` before freeing it.

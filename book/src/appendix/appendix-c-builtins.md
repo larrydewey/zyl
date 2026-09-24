@@ -270,7 +270,7 @@ shows `3.500000`.
 | `send` | `(send actor message)` | queued FIFO per sender; rejected on a `Secret` operand |
 | `receive` | `(receive)` | next data message of the running actor, blocking; queued closure messages run first |
 | `actor-self` | `(actor-self)` | the running actor's id; on `main`, opens its mailbox |
-| `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the trailing timeout, in milliseconds, is required but not yet enforced |
+| `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the symbol is a string literal and the trailing timeout a positive integer literal in milliseconds (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`); a foreign call that overruns it raises `E_FFI_TIMEOUT` |
 | `ffi-pin` | `(ffi-pin value)` | moves into the Pin region for the call |
 | `ffi-unpin` | `(ffi-unpin value)` | |
 

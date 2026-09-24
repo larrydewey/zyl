@@ -172,6 +172,19 @@ run_fail_test() {
         return
     fi
     
+    # A `; expect-error: CODE` line pins the failure to one diagnostic,
+    # so an unrelated failure (out of memory, a crash) cannot pass it.
+    local expected
+    expected=$(sed -n 's/^; expect-error: *\([A-Z_0-9]*\).*/\1/p' "$file" | head -1)
+    if [ -n "$expected" ] && ! echo "$output" | grep -q -- "$expected"; then
+        echo -e "  ${RED}✗${NC} ${name}: expected ${expected}, got a different failure"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $output"
+        fi
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
     echo -e "  ${GREEN}✓${NC} ${name}"
     PASS=$((PASS + 1))
 }

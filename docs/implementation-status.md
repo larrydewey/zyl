@@ -42,7 +42,7 @@ it compiles and runs correctly; the notes say where it stops.
 | Macros | `defmacro` expansion works in every form, with gensym hygiene, arity, duplicate and termination checks; parameters are plain names (no patterns) |
 | Modules and packages | Works: `use`, canonical keys, `pub` visibility, capabilities |
 | Actors | `spawn` (bodies may capture immutable values), `send`, `(receive)`, `(actor-self)`, `actor-wait`; structured messages and replies to `main` work |
-| FFI | `ffi-call` works. The trailing timeout argument is dropped by lowering and never enforced, and pinning is enforced only for `Secret` values (`E_FFI_PIN_REQUIRED`) |
+| FFI | `ffi-call` works. The trailing timeout must be a positive integer literal (`E_FFI_TIMEOUT_REQUIRED`) and is enforced: a foreign call runs on a worker thread and raises `E_FFI_TIMEOUT` when it overruns, the C function being abandoned rather than killed (`zyl_*` runtime symbols are called directly). Pinning is enforced only for `Secret` values (`E_FFI_PIN_REQUIRED`) |
 | Regions | Escape analysis puts a non-escaping variant on the stack; everything else is heap. Circular and Global regions are not inferred |
 | Capability types | `TCap`/`TMut` are enforced syntactically (`let` vs `let-mut`) by `mutability_check.zyl` |
 | `Secret` capability | Enforced by `secret_check.zyl` (branch, index, divide, print, escape, unpinned FFI) |

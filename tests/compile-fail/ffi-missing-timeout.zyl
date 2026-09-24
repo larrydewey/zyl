@@ -1,0 +1,8 @@
+; Compile-fail: an ffi-call whose last argument is not a timeout literal.
+; Before the check, the lowering dropped `n` as if it were the timeout
+; and called abs with no argument at all.
+; expect-error: E_FFI_TIMEOUT_REQUIRED
+
+(defn magnitude (n) (ffi-call "abs" n))
+
+(defn main () (begin (print (magnitude -5)) 0))

@@ -138,6 +138,52 @@
         (let text (err-at "E_ARITY_MISMATCH" msg fid off hint)
           (ffi-call "zyl_panic" text 1000))))))
 
+;; `(ffi-call "sym" arg... timeout)`: the symbol must be a string literal
+;; and the last argument a positive integer literal, the timeout in
+;; milliseconds. The literal requirement is what makes a forgotten
+;; timeout an error instead of silently dropping the real last argument.
+;; ICNF lowering (ic-ffi) runs this too, for calls this pass never walks.
+(defn ffi-max-args () 16)
+
+(defn ffi-literal-str (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AStr s s) (_ "")))
+    (_ "")))
+
+(defn ffi-literal-int (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AInt n n) (_ -1)))
+    (_ -1)))
+
+(defn ffi-last-expr (xs)
+  (match xs
+    (Cons h t (if (is-nil t) h (ffi-last-expr t)))
+    (Nil (Expr (EAtom (ANil))))))
+
+(defn ffi-fail (code msg help site)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (ffi-call "zyl_panic" (err-at code msg fid off help) 1000))))
+
+(defn ffi-check-call (args site)
+  (match args
+    (Nil (ffi-fail "E_FFI_SYMBOL_REQUIRED" "ffi-call has no symbol"
+                   "write (ffi-call \"symbol\" arg ... timeout-ms)" site))
+    (Cons sym tail
+      (if (= (str-length (ffi-literal-str sym)) 0)
+        (ffi-fail "E_FFI_SYMBOL_REQUIRED" "ffi-call needs its C symbol as a string literal"
+                  "write the symbol name in double quotes" site)
+        (if (is-nil tail)
+          (ffi-fail "E_FFI_TIMEOUT_REQUIRED" "ffi-call has no timeout"
+                    "end the call with a timeout in milliseconds, e.g. 1000" site)
+          (if (< (ffi-literal-int (ffi-last-expr tail)) 1)
+            (ffi-fail "E_FFI_TIMEOUT_REQUIRED" "the last argument of ffi-call must be a positive integer literal timeout"
+                      "end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument" site)
+            (if (> (list-length tail) (+ (ffi-max-args) 1))
+              (ffi-fail "E_ARITY_MISMATCH" "ffi-call passes more than 16 arguments"
+                        "pass a pointer to a struct or buffer instead" site)
+              0)))))))
+
 (defn ac-check-program (exprs)
   (let arities (ac-collect exprs)
     (ac-check-top exprs arities)))
@@ -198,6 +244,7 @@
         (ac-list args arities shadowed)))
     (EApply fname args
       (begin
+        (if (> (str-eq fname "ffi-call") 0) (ffi-check-call args e) 0)
         (ac-check-call-by-name fname args arities shadowed e)
         (ac-list args arities shadowed)))
     (EFfiCall _ args _ (ac-list args arities shadowed))

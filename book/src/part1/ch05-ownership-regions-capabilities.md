@@ -353,9 +353,10 @@ What the compiler enforces today:
 - **The Pin region** is not required for ordinary values: an `Int` or a
   `String` may be passed straight to `ffi-call`, as above. Only a
   `Secret` must go through `ffi-pin` (§5.9).
-- **The timeout** is dropped by the compiler and not enforced at run
-  time. It must still be written, because the last argument is always
-  taken as the timeout.
+- **The timeout** must be a positive integer literal, or the call is
+  rejected with `E_FFI_TIMEOUT_REQUIRED`. It is enforced at run time: a
+  foreign call that has not returned in time raises `E_FFI_TIMEOUT`,
+  and the C function is abandoned (Chapter 12, §12.7).
 
 `ffi-pin` copies a one-word value into the pin arena and returns a
 stable pointer to it; `ffi-unpin` checks that the pointer came from the

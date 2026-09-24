@@ -454,11 +454,14 @@ a timeout:
   (print (ffi-call "strlen" "hello" 1000)))     ; => 5
 ```
 
-The last argument is the timeout. Write it every time: the compiler
-treats the final argument as the timeout and drops it, so a call
-without one silently loses its real last argument. The timeout itself
-is not enforced yet, and `ffi-pin` is required only for `Secret`
-values.
+The last argument is the timeout, in milliseconds. It must be a
+positive integer literal, or the compiler rejects the call with
+`E_FFI_TIMEOUT_REQUIRED`; the symbol must be a string literal
+(`E_FFI_SYMBOL_REQUIRED`). A call to a C function outside the Zyl
+runtime runs on a worker thread, and if it has not returned when the
+timeout expires, the caller raises `E_FFI_TIMEOUT`, which `try` can
+catch. The C function is abandoned rather than killed. `ffi-pin` is
+required only for `Secret` values.
 
 This is the same mechanism the standard library itself is built on —
 `str-length`, `str-concat`, arena allocation, and file I/O are all thin

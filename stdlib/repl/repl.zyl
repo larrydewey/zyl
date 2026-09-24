@@ -39,7 +39,7 @@
 ; day costs the same as one that runs for a minute. Evaluation does not
 ; use it -- each entry compiles into an arena of its own (repl/eval).
 (defn repl-run (arena)
-  (repl-run-in arena (ffi-call "zyl_getcwd" 0)))
+  (repl-run-in arena (ffi-call "zyl_getcwd" 1000)))
 
 ; `dir` is the directory the user started in, which is not the working
 ; directory by the time this runs: the REPL compiles code, so it has
@@ -454,9 +454,9 @@
 (defn repl-do-time (sess text)
   (if (= (str-length text) 0)
     (repl-kept sess (repl-note ":time needs an expression"))
-    (let start (ffi-call "zyl_now_ms" 0)
+    (let start (ffi-call "zyl_now_ms" 1000)
       (let outcome (eval-entry sess text)
-        (let elapsed (- (ffi-call "zyl_now_ms" 0) start)
+        (let elapsed (- (ffi-call "zyl_now_ms" 1000) start)
           (begin
             (repl-report (EvalOutcome.result outcome))
             (repl-note (str-concat (repl-int elapsed) " ms"))
@@ -667,7 +667,7 @@
 ; Everything a session needs, from any entry point: `zyl repl`, the
 ; standalone binary, or a test harness.
 (defn repl-main (arena)
-  (let dir (ffi-call "zyl_getcwd" 0)
+  (let dir (ffi-call "zyl_getcwd" 1000)
     (let home (str-concat dir "")
       (begin
         (let argv0 (ffi-call "zyl_arg_str" 0 1000)

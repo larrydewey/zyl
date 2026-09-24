@@ -52,6 +52,8 @@ Compile-time errors abort compilation.
 | `E_USER_ERROR` | `(error msg)` | §12.10 |
 | `E_ASSERT_FAIL` | Assertion condition is false | §12.4 |
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
+| `E_FFI_TIMEOUT_REQUIRED` | `ffi-call` does not end with a positive integer literal timeout | §16 |
+| `E_FFI_SYMBOL_REQUIRED` | `ffi-call` symbol is not a string literal | §16 |
 | `E_UNINITIALIZED_USE` | Variable used before initialization | — |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
 | `E_OVERFLOW` | Integer overflow | §20.1 |
@@ -174,7 +176,7 @@ Raised by the compiler: `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`,
 `spec/01-lexing-and-tokens.md`).
 
 Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
-`E_FFI_TIMEOUT`, `E_REGION_ESCAPE`, `E_MACRO_NON_TERMINATION`,
+`E_REGION_ESCAPE`, `E_MACRO_NON_TERMINATION`,
 `E_UNINITIALIZED_USE`, `E_TRAIT_NOT_FOUND`, `E_DUPLICATE_IMPL`,
 `E_MACRO_ILLEGAL_ACCESS`, `E_CONTRACT_VIOLATION`, `E_OVERFLOW`,
 `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`, `E_TRAIT_NOT_DERIVABLE`,

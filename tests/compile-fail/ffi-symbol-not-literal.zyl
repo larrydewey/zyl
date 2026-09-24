@@ -1,0 +1,6 @@
+; Compile-fail: the C symbol of an ffi-call must be a string literal.
+; expect-error: E_FFI_SYMBOL_REQUIRED
+
+(defn call-it (sym) (ffi-call sym 3 1000))
+
+(defn main () (begin (print (call-it "abs")) 0))

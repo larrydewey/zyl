@@ -30,16 +30,16 @@
 ; terminal. The runtime restores the original settings on any exit path.
 ; Returns: Int
 (defn term-raw-on ()
-  (ffi-call "zyl_term_raw_on" 0))
+  (ffi-call "zyl_term_raw_on" 1000))
 
 (defn term-raw-off ()
-  (ffi-call "zyl_term_raw_off" 0))
+  (ffi-call "zyl_term_raw_off" 1000))
 
 (defn term-width ()
-  (ffi-call "zyl_term_width" 0))
+  (ffi-call "zyl_term_width" 1000))
 
 (defn term-height ()
-  (ffi-call "zyl_term_height" 0))
+  (ffi-call "zyl_term_height" 1000))
 
 ; Write with no trailing newline, bypassing stdio buffering.
 ; Returns: Int (bytes written)
@@ -47,7 +47,7 @@
   (ffi-call "zyl_term_write" s 1000))
 
 (defn term-flush ()
-  (ffi-call "zyl_term_flush" 0))
+  (ffi-call "zyl_term_flush" 1000))
 
 ; A one-byte string. Zyl has no character type, so a byte becomes a
 ; string before it can be concatenated onto anything.
@@ -119,7 +119,7 @@
 ; Blocking read of one key.
 ; Returns: Key
 (defn key-read ()
-  (key-of-byte (ffi-call "zyl_term_read_byte" 0)))
+  (key-of-byte (ffi-call "zyl_term_read_byte" 1000)))
 
 (defn key-of-byte (b)
   (if (= b -1) (KEOF)

@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §16, §23 (also §9.1 R4/R8, §31.9 `ffi`, §31.10 native dependencies)
 **Related:** `spec/07-region-memory-model.md`, `spec/06-capability-types.md`, `spec/16-package-system.md`
-**Implementation:** `stdlib/compiler/type_inference.zyl` (pinnability), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/actor_runtime.c` (pin arena); contracts: `stdlib/compiler/expr_inner.zyl`, `stdlib/compiler/contract_injection.zyl` (not wired in)
+**Implementation:** `stdlib/compiler/type_inference.zyl` (pinnability), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/actor_runtime.c` (pin arena, `zyl_ffi_timed`); contracts: `stdlib/compiler/expr_inner.zyl`, `stdlib/compiler/contract_injection.zyl` (not wired in)
 
 ---
 
@@ -34,7 +34,13 @@ The following types are FFI_Pinnable:
 
 - **R4:** FFI → Pin region
 - `ffi-call` requires Pin region AND FFI_Pinnable type
-- Timeout parameter is mandatory on every `ffi-call`
+- Timeout parameter is mandatory on every `ffi-call`: `name` is a string
+  literal and `timeout` a positive integer literal in milliseconds
+  (`E_FFI_SYMBOL_REQUIRED` / `E_FFI_TIMEOUT_REQUIRED`)
+- A foreign call that has not returned within `timeout` raises
+  `E_FFI_TIMEOUT`; the foreign code is abandoned, never interrupted, and
+  memory it was handed stays valid for the rest of the process
+- A timeout is an FFI result (§27): observable external input
 
 ---
 
@@ -109,8 +115,30 @@ Not normative.
   closure argument is rejected the same way by `mutability_check.zyl`.
   The result of `ffi-call` is typed `Int`. `E_FFI_TYPE_NOT_PINNABLE` is
   catalogued but not the code actually raised.
-- **The timeout is not enforced.** ICNF lowering drops the trailing
-  argument, and `E_FFI_TIMEOUT` is never raised.
+- The timeout is required and enforced. The last argument must be a
+  positive integer literal (milliseconds), and the symbol a string
+  literal; otherwise the call is rejected with `E_FFI_TIMEOUT_REQUIRED`
+  or `E_FFI_SYMBOL_REQUIRED` (`ffi-check-call`, `arity_check.zyl`, also
+  run by ICNF lowering). The literal requirement is what stops a
+  forgotten timeout from silently swallowing the real last argument.
+- A foreign symbol is called through the runtime's `zyl_ffi_timed`
+  bridge: the call runs on a worker thread owned by the calling thread
+  (kept between calls, so thread-local C state such as `errno` stays
+  consistent), and the caller waits on a monotonic clock. When the
+  timeout expires first the caller raises `E_FFI_TIMEOUT` (catchable
+  with `try`, matchable with `recover`). The C function cannot be
+  stopped safely, so it is abandoned: its worker finishes and frees
+  itself, and nothing it was handed is reclaimed (Pin slots are never
+  freed individually, and the exit-time arena teardown is skipped once
+  any call has been abandoned). Up to 16 arguments.
+- Whether a timeout fires depends on how long foreign code runs. Under
+  §27 FFI results are observable external input, and a timeout is one
+  of them; it does not make the program itself nondeterministic.
+- Symbols of this runtime (`zyl_` prefix) are part of the trusted
+  implementation: they are called directly and the timeout is unused.
+- A C callback into Zyl (for example a `qsort` comparator) runs on the
+  worker thread. It sees the caller's `actor-self`; a panic inside it
+  that no `try` in the callback catches ends the process.
 - **The Pin region is not required for ordinary arguments.** Only a
   `Secret` argument must go through `ffi-pin` (`E_FFI_PIN_REQUIRED`, from
   `secret_check.zyl`); any other pinnable value is passed directly.

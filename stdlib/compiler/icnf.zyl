@@ -23,6 +23,7 @@
 ; time otherwise.
 (use compiler/monomorphization)
 (use compiler/type_annotate)
+(use compiler/arity_check)
 
 ; --- Instruction tree -------------------------------------------------------
 
@@ -70,7 +71,11 @@
   ; the function (see ri-transform-expr/ri-name-safe-in). See
   ; cg-stack-variant: no runtime call at all, just fixed rbp-relative
   ; stores, reserved up front by icnf-slot-count like any other local.
-  (IStackVariant String Int (List Icnf)))
+  (IStackVariant String Int (List Icnf))
+  ; Address of the C symbol, verbatim (through the GOT). Only produced by
+  ; ic-ffi, which hands a foreign function to the runtime's timed call
+  ; bridge (zyl_ffi_timed) instead of calling it directly.
+  (ISymAddr String))
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
@@ -665,7 +670,7 @@
   ; `arena` is no longer needed; the parameter stays so that every call
   ; site reads the same.
   (let _ arena
-    (ffi-call "zyl_fresh_id" 0)))
+    (ffi-call "zyl_fresh_id" 1000)))
 
 (defn ic-digit-str (d)
   (if (= d 0) "0"
@@ -846,6 +851,7 @@
   (match e
     (IConst _ acc)
     (IStr _ acc)
+    (ISymAddr _ acc)
     (IFlt _ acc)
     (ILoad n (ic-lambda-add n bound vt acc))
     (IBinop _ l r (ic-lambda-free r bound vt (ic-lambda-free l bound vt acc)))
@@ -921,6 +927,7 @@
   (match node
     (IConst _ (HoistAcc node Nil))
     (IStr _ (HoistAcc node Nil))
+    (ISymAddr _ (HoistAcc node Nil))
     (IFlt _ (HoistAcc node Nil))
     (ILoad _ (HoistAcc node Nil))
     (IBinop op l r
@@ -1291,16 +1298,33 @@
       (ic-mark-kind (ICall (str-intern arena sh) (Cons (ic-expr arena a vt) Nil)) 1))))
 
 ; (ffi-call "sym" a b timeout): arrives here as EApply("ffi-call", args)
-; since expr_inner.zyl's dispatch has no dedicated ffi-call parser — drop
-; the trailing timeout literal, same as this lowering always has.
+; since expr_inner.zyl's dispatch has no dedicated ffi-call parser.
+; ffi-check-call (arity_check.zyl) guarantees a literal symbol and a
+; positive literal timeout. A symbol of this runtime (`zyl_` prefix) is
+; part of the trusted implementation and is called directly, timeout
+; unused. Any other symbol is foreign code: the call goes through
+; zyl_ffi_timed(address, name, timeout-ms, argc, args...), which runs it
+; on a worker thread and raises E_FFI_TIMEOUT when it overruns.
 (defn ic-ffi (arena args vt)
   (match args
     (Cons sym tail
-      ; tail = everything after the symbol: (arg* timeout).
-      (if (> (list-length tail) 1)
-        (IFfi (ic-ffi-sym sym) (ic-expr-list arena (butlast-expr tail Nil) vt))
-        (IFfi (ic-ffi-sym sym) Nil)))
-    (Nil (IFfi "?" Nil))))
+      (let _ (ffi-check-call args sym)
+        (let name (ic-ffi-sym sym)
+          (let real (butlast-expr tail Nil)
+            (if (> (ic-ffi-runtime-p name) 0)
+              (IFfi name (ic-expr-list arena real vt))
+              (IFfi "zyl_ffi_timed"
+                (Cons (ISymAddr name)
+                  (Cons (IStr name)
+                    (Cons (IConst (ffi-literal-int (ffi-last-expr tail)))
+                      (Cons (IConst (list-length real))
+                        (ic-expr-list arena real vt)))))))))))
+    (Nil (let _ (ffi-check-call args (Expr (EAtom (ANil)))) (IFfi "?" Nil)))))
+
+(defn ic-ffi-runtime-p (name)
+  (if (>= (str-length name) 4)
+    (ffi-call "zyl_cstr_eq" (str-substring name 0 4) "zyl_" 1000)
+    0))
 
 ; The ffi symbol is a string literal — extract via its Atom, NOT
 ; expr-ident-name (which only extracts identifiers).

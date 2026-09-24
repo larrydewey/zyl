@@ -68,8 +68,12 @@ prints their count.
   prints `test: NAME ... ok` or `FAIL` per test and a
   `test result: N passed, M failed, T total` line.
 - **Compile-fail tests** (`tests/compile-fail/`, `tests/packages-fail/`):
-  the compiler must exit non-zero. The runner does not check which code
-  was reported.
+  the compiler must exit non-zero. A test file that carries a
+  `; expect-error: CODE` line (for a package case, in `app/main.zyl`)
+  must also report that code: the runner requires `CODE` to appear in
+  the compiler's output, so an unrelated failure such as a crash or an
+  out-of-memory stop does not count as a pass. Without such a line the
+  runner does not check which code was reported.
 - **Package builds** (`tests/packages-build/`): `zyl build` in the
   case's `app/` directory must succeed, and the resulting binary must run
   without printing `FAIL`.

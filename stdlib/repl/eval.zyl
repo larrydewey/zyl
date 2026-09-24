@@ -569,7 +569,7 @@
 ; That is what keeps a long session flat: typing expressions costs no
 ; permanent memory, and binding a value costs exactly the value.
 (defn eval-session-heap ()
-  (ffi-call "zyl_session_arena" 0))
+  (ffi-call "zyl_session_arena" 1000))
 
 (defn eval-heap-swap (arena)
   (ffi-call "zyl_heap_swap" arena 1000))

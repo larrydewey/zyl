@@ -233,7 +233,9 @@ themselves.
 | `E_OVERFLOW` (§28) | numeric: integer overflow at S | catalog only |
 | `E_FFI_PIN_REQUIRED` | ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S | `secret_check.zyl` |
 | `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | catalog only (`type_inference.zyl` and `mutability_check.zyl` report a non-pinnable FFI argument as `E_INVALID_CAPABILITY`) |
-| `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | catalog only |
+| `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `actor_runtime.c` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
+| `E_FFI_TIMEOUT_REQUIRED` | ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S | `arity_check.zyl` (`ffi-check-call`, located, with a help line) |
+| `E_FFI_SYMBOL_REQUIRED` | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`) |
 | `E_MATCH_NONEXHAUSTIVE` (§28) | match: non-exhaustive pattern match at S - missing cases: M | `icnf.zyl` (unknown variant in an arm; residual non-exhaustive match), `expr_inner.zyl` (literal-pattern match without a final `_`), REPL interpreter |
 
 The main compile-time exhaustiveness check (`exhaustiveness_check.zyl`)

@@ -44,12 +44,12 @@
 - [x] VS Code extension 0.4.0: esbuild bundle (10-file `.vsix`) and a `$zyl` problem matcher used by the build tasks
 - [x] REPL: definitions entered at the prompt can use `def` bindings
 
-## Deferred Design Work
+## Deferred Design Work (order agreed 2026-09-24)
 - [x] Wider byte widths (16/32/64-bit)
-- [ ] Deterministic region extension registry (fixed growth, alignment, policy)
-- [ ] Capability-mediated sharing (TCap/atomic shared region, typed bounded channels)
-- [ ] Inline assembly with region/capability-aware register rules
-- [ ] Ergonomic zero-copy views beyond `byteslice` (parsing, substrings, array slices)
-
----
-*Items 22 (assert), 23 (unwrap), 5/6/11/26/27 (runtime), and type-name-matching fix complete as of commit f6ea129*
+- [x] FFI timeouts enforced: literal timeout required (`E_FFI_TIMEOUT_REQUIRED`), worker-thread bridge raises `E_FFI_TIMEOUT`
+- [ ] Real regions: per-call regions, escape analysis over ICNF, region annotations, `E_REGION_ESCAPE`; then the deterministic region extension registry (fixed growth, alignment, policy)
+- [ ] Ergonomic zero-copy views beyond `byteslice` (parsing, substrings, array slices), tied to their base by escape analysis
+- [ ] Leftovers: Vec/Map derive beyond Show; explicit `Show.show` without an impl hits runtime dispatch; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
+- [ ] Deterministic concurrency (Kahn): single-sender channels with linear endpoints, blocking receive, no select, bounded buffers, commutative TAtomic read after join, actor output channels drained by main, `--sched=deterministic` oracle vs seeded chaos mode
+- [x] ~~Inline assembly~~: rejected (breaks determinism)
+- [ ] Deterministic intrinsics instead of asm (popcnt, clz/ctz, bswap, rotl, crc32, mul-hi; later SIMD with fallback)

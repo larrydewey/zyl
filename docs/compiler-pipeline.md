@@ -239,11 +239,18 @@ to variables by name, and `ISet` mutates them. The node set is:
 
 ```
 IConst IStr IFlt ILoad IBinop ICall IFfi IPrint IIf IWhile ISet ILet
-ISeq IVariant IMatch IFn ICallClosure ITryCatch IStackVariant
+ISeq IVariant IMatch IFn ICallClosure ITryCatch IStackVariant ISymAddr
 ```
 
 - `for` lowers to `IWhile`; `spawn` and `send` lower to `IFfi` calls to
   `zyl_actor_spawn` and `zyl_actor_send`.
+- `ffi-call` is checked by `ffi-check-call` (literal symbol, positive
+  literal timeout). A `zyl_*` runtime symbol becomes a direct `IFfi`
+  with the timeout dropped; any other symbol becomes `IFfi
+  "zyl_ffi_timed"` whose leading arguments are `ISymAddr sym` (the C
+  symbol's address, through the GOT), the name, the timeout and the
+  argument count, so the runtime can run the call on a worker thread
+  and raise `E_FFI_TIMEOUT` when it overruns.
 - A lambda whose body is closed is hoisted to a top-level function. A
   capturing lambda becomes a `[tag, code, env]` value. Every call
   through a local is an indirect call that tells the two apart by the

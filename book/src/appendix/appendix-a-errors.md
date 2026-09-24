@@ -246,7 +246,9 @@ catch-all pattern; it may repeat, and it must be the last arm.
 |---|---|
 | `E_FFI_PIN_REQUIRED` | A `Secret` argument crossed the FFI boundary without `ffi-pin` |
 | `E_FFI_TYPE_NOT_PINNABLE` | A value whose type is not `FFI_Pinnable`. *Catalogued only; the type checker reports this as `E_INVALID_CAPABILITY`.* |
-| `E_FFI_TIMEOUT` | An FFI call exceeded its timeout. *Catalogued only: the timeout argument is required but not yet enforced.* |
+| `E_FFI_TIMEOUT` | A foreign call did not return within its timeout. Raised at run time; catchable with `try` and matchable with `recover` |
+| `E_FFI_TIMEOUT_REQUIRED` | An `ffi-call` does not end with a positive integer literal timeout in milliseconds |
+| `E_FFI_SYMBOL_REQUIRED` | An `ffi-call` does not name its C symbol with a string literal |
 
 ## A.15 Package Manifest, Lock and Registry (phase 19)
 
@@ -301,7 +303,7 @@ language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 39 of the catalog's 114 distinct
+**In the catalog, never raised.** 38 of the catalog's 116 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_UNEXPECTED_EOF`,
@@ -320,11 +322,10 @@ codes are not raised anywhere in the compiler, runtime or REPL:
   `E_BYTEBUF_INVALID`, `E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`.
 - Testing: `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`.
 - Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
-- Numerics and FFI: `E_OVERFLOW`, `E_FFI_TYPE_NOT_PINNABLE`,
-  `E_FFI_TIMEOUT`.
+- Numerics and FFI: `E_OVERFLOW`, `E_FFI_TYPE_NOT_PINNABLE`.
 
-Nine of these are codes spec §28 requires: `E_USER_ERROR`,
-`E_ASSERT_FAIL`, `E_FFI_TIMEOUT`, `E_REGION_ESCAPE`,
+Eight of these are codes spec §28 requires: `E_USER_ERROR`,
+`E_ASSERT_FAIL`, `E_REGION_ESCAPE`,
 `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
 `E_TEST_RUNNER_ERROR` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36

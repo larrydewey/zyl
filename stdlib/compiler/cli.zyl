@@ -576,7 +576,7 @@
 (defn cli-flag-value (flag) (cli-flag-from 2 flag))
 
 (defn cli-flag-from (i flag)
-  (if (>= (+ i 1) (ffi-call "zyl_argc" 0))
+  (if (>= (+ i 1) (ffi-call "zyl_argc" 1000))
     ""
     (if (> (str-eq (ffi-call "zyl_arg_str" i 1000) flag) 0)
       (ffi-call "zyl_arg_str" (+ i 1) 1000)

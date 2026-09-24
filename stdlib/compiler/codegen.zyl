@@ -277,6 +277,7 @@
   (match e
     (IConst 0)
     (IStr _ 1)
+    (ISymAddr _ 0)
     (IFlt _ 2)
     (ILoad n (env-kind-of env n))
     (IBinop op l r
@@ -332,6 +333,7 @@
        (let st3 (cg-emit-int st2 v)
          (cg-nl st3))))
     (IStr s (cg-string-const st s))
+    (ISymAddr s (cg-sym-addr st s))
     (IFlt t (cg-float-const st t))
     (ILoad n (cg-load-value st env n e))
     ; `=`/`!=` between two STRING-kind operands used to fall straight into
@@ -526,6 +528,13 @@
             (let hint (err-suggest-help n (cg-visible-names st env) "check the spelling, or bind it with `let` before this point")
               (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
                 (ffi-call "zyl_panic" text 1000)))))))))
+
+; A foreign symbol's address, loaded through the GOT so it resolves the
+; same way for a libc function and for a native-dependency object.
+(defn cg-sym-addr (st s)
+  (let st2 (cg-emit st "    mov rax, QWORD PTR [rip+")
+    (let st3 (cg-emit st2 s)
+      (cg-nl (cg-emit st3 "@GOTPCREL]")))))
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+")
@@ -1467,6 +1476,7 @@
   (match e
     (IConst _ 1)
     (IStr _ 1)
+    (ISymAddr _ 1)
     (IFlt _ 1)
     (ILoad _ 1)
     (IBinop _ l r (icnf-add3 3 (icnf-size l) (icnf-size r)))
@@ -1498,6 +1508,7 @@
   (match e
     (IConst _ 0)
     (IStr _ 0)
+    (ISymAddr _ 0)
     (IFlt _ 0)
     (ILoad _ 0)
     (IBinop _ l r (icnf-add2 (icnf-slot-count l) (icnf-slot-count r)))

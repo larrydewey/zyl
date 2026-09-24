@@ -50,6 +50,7 @@
   (match e
     (IConst _ 1)
     (IStr _ 1)
+    (ISymAddr _ 1)
     (IFlt _ 1)
     (ILoad n (if (> (str-eq n name) 0) 0 1))
     (IBinop _ l r (if (> (ri-name-safe-in l name) 0) (ri-name-safe-in r name) 0))
@@ -98,6 +99,7 @@
   (match e
     (IConst _ 0)
     (IStr _ 0)
+    (ISymAddr _ 0)
     (IFlt _ 0)
     (ILoad n (str-eq n name))
     (IBinop _ l r (if (> (ri-name-referenced l name) 0) 1 (ri-name-referenced r name)))
@@ -180,6 +182,7 @@
   (match e
     (IConst _ e)
     (IStr _ e)
+    (ISymAddr _ e)
     (IFlt _ e)
     (ILoad _ e)
     (IBinop op l r (IBinop op (ri-transform-expr l) (ri-transform-expr r)))

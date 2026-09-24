@@ -1,0 +1,27 @@
+; FFI timeouts (spec §16): a foreign call runs on a worker thread and
+; raises E_FFI_TIMEOUT when it overruns its timeout in milliseconds.
+
+(use core/core)
+
+; usleep takes microseconds: 300 ms against a 50 ms budget overruns.
+(defn slow-call () (ffi-call "usleep" 300000 50))
+
+(test "ffi-timeout-fires"
+  (assert-equal (try (slow-call) (catch e (str-eq e "E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms"))) 1))
+
+(test "ffi-timeout-recover-by-code"
+  (assert-equal (try (slow-call) (catch e (if (> (ffi-call "zyl_err_is" e "E_FFI_TIMEOUT" 1000) 0) 7 0))) 7))
+
+(test "ffi-call-after-timeout"
+  (let _ (try (slow-call) (catch e 0))
+    (assert-equal (ffi-call "abs" -9 1000) 9)))
+
+(test "ffi-within-timeout"
+  (assert-equal (ffi-call "usleep" 1000 1000) 0))
+
+(test "ffi-many-args"
+  (let buf (alloc-malloc 64)
+    (let _ (ffi-call "snprintf" buf 64 "%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld" 1 2 3 4 5 6 7 8 1000)
+      (assert-equal (str-concat "" buf) "1,2,3,4,5,6,7,8"))))
+
+(run-tests)

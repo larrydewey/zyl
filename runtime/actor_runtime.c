@@ -142,6 +142,8 @@ void zyl_ensure_arenas(void) {
 
 __attribute__((destructor))
 static void zyl_runtime_cleanup(void) {
+    /* An abandoned FFI call may still be using arena memory. */
+    if (zyl_ffi_abandoned()) return;
     if (g_pin_arena) {
         zyl_arena_destroy((long long)(size_t)g_pin_arena);
         g_pin_arena = NULL;
@@ -2708,7 +2710,7 @@ void zyl_panic(const char* msg) {
         f->msg = msg ? msg : "error";
         longjmp(f->buf, 1);
     }
-    if (g_in_test) {
+    if (g_in_test && !zyl_ffi_on_worker()) {
         /* Panic inside a test: unwind to the runner and mark it failed
          * instead of killing the whole process. */
         g_in_test = 0;
@@ -4164,7 +4166,7 @@ long long zyl_int_text(long long n) {
     X(zyl_f_cmp) X(zyl_f_div) X(zyl_f_error) \
     X(zyl_f_mul) X(zyl_f_of_int) X(zyl_f_parse) \
     X(zyl_f_rem) X(zyl_f_sub) X(zyl_f_text) \
-    X(zyl_f_to_int) X(zyl_ffi_lookup) X(zyl_file_close_c) \
+    X(zyl_f_to_int) X(zyl_ffi_lookup) X(zyl_ffi_timed) X(zyl_ffi_timed_argv) X(zyl_file_close_c) \
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
@@ -4276,6 +4278,203 @@ long long zyl_call_argv(long long fn, long long argc, long long argv) {
                     (long long)argc);
             return 0;
     }
+}
+
+/* ==========================================================================
+   Timed FFI calls — `(ffi-call "sym" args... timeout-ms)` on foreign code.
+
+   The compiler lowers every ffi-call to a symbol outside this runtime to
+   zyl_ffi_timed(address, name, timeout-ms, argc, args...). The call runs
+   on a worker thread that belongs to the calling thread (one per actor,
+   created on first use and kept, so thread-local state such as errno
+   stays consistent from one call to the next). The caller waits on a
+   monotonic clock; if the foreign function has not returned when the
+   timeout expires, the caller raises E_FFI_TIMEOUT.
+
+   A running C function cannot be stopped safely (it may hold a lock, be
+   halfway through a write, or own memory), so an overrunning call is
+   abandoned, not killed: its worker finishes on its own and then frees
+   itself, and the calling thread gets a fresh worker for its next call.
+   Because the abandoned call may still read or write anything it was
+   handed, nothing it could reach is reclaimed afterwards: Pin slots are
+   never freed individually anyway, and once any call has been abandoned
+   the exit-time arena teardown is skipped.
+
+   Determinism: whether a timeout fires depends on how long foreign code
+   runs, which the language cannot control. Spec §27 counts FFI results
+   as observable external input; a timeout is one such result, exactly
+   like a value the C function returns.
+   ========================================================================== */
+#include <stdarg.h>
+
+#define ZYL_FFI_MAX_ARGS 16
+
+typedef long long (*ZylFfiFn)(long long, long long, long long, long long,
+                              long long, long long, long long, long long,
+                              long long, long long, long long, long long,
+                              long long, long long, long long, long long);
+
+/* Call `fn` with exactly `argc` words. Each arm passes only the words the
+   callee takes: calling through a 16-parameter pointer with trailing
+   padding would work on SysV x86_64 but is not something to rely on. */
+static long long zyl_ffi_invoke(long long fn, long long argc, const long long* a) {
+    void* f = (void*)(size_t)fn;
+    typedef long long W;
+    switch (argc) {
+        case 0: return ((W(*)(void))f)();
+        case 1: return ((W(*)(W))f)(a[0]);
+        case 2: return ((W(*)(W,W))f)(a[0],a[1]);
+        case 3: return ((W(*)(W,W,W))f)(a[0],a[1],a[2]);
+        case 4: return ((W(*)(W,W,W,W))f)(a[0],a[1],a[2],a[3]);
+        case 5: return ((W(*)(W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4]);
+        case 6: return ((W(*)(W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5]);
+        case 7: return ((W(*)(W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6]);
+        case 8: return ((W(*)(W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7]);
+        case 9: return ((W(*)(W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8]);
+        case 10: return ((W(*)(W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9]);
+        case 11: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10]);
+        case 12: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11]);
+        case 13: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12]);
+        case 14: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13]);
+        case 15: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14]);
+        default: return ((ZylFfiFn)f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
+    }
+}
+
+typedef struct ZylFfiWorker {
+    pthread_mutex_t lock;
+    pthread_cond_t cond;   /* new request, and request done */
+    int state;             /* 0 idle, 1 request pending, 2 result ready */
+    int abandoned;         /* the caller gave up; the worker frees itself */
+    long long self_id;     /* the caller's actor id, for callbacks */
+    long long fn;
+    long long argc;
+    long long argv[ZYL_FFI_MAX_ARGS];
+    long long result;
+} ZylFfiWorker;
+
+static _Thread_local ZylFfiWorker* g_ffi_worker = 0;
+/* Set on a worker thread: a panic there cannot unwind into the caller's
+   test runner, which lives on another thread's stack. */
+static _Thread_local int g_ffi_on_worker = 0;
+static int g_ffi_any_abandoned = 0;
+
+int zyl_ffi_abandoned(void) {
+    return __atomic_load_n(&g_ffi_any_abandoned, __ATOMIC_ACQUIRE);
+}
+
+int zyl_ffi_on_worker(void) { return g_ffi_on_worker; }
+
+static void* zyl_ffi_worker_main(void* p) {
+    ZylFfiWorker* w = (ZylFfiWorker*)p;
+    g_self_id = w->self_id;
+    g_ffi_on_worker = 1;
+    pthread_mutex_lock(&w->lock);
+    for (;;) {
+        while (w->state != 1) pthread_cond_wait(&w->cond, &w->lock);
+        long long fn = w->fn;
+        long long argc = w->argc;
+        long long a[ZYL_FFI_MAX_ARGS];
+        memcpy(a, w->argv, sizeof a);
+        pthread_mutex_unlock(&w->lock);
+        long long r = zyl_ffi_invoke(fn, argc, a);
+        pthread_mutex_lock(&w->lock);
+        w->result = r;
+        w->state = 2;
+        if (w->abandoned) break;
+        pthread_cond_broadcast(&w->cond);
+    }
+    pthread_mutex_unlock(&w->lock);
+    pthread_cond_destroy(&w->cond);
+    pthread_mutex_destroy(&w->lock);
+    free(w);
+    return 0;
+}
+
+static ZylFfiWorker* zyl_ffi_worker_get(void) {
+    if (g_ffi_worker) return g_ffi_worker;
+    ZylFfiWorker* w = (ZylFfiWorker*)calloc(1, sizeof *w);
+    if (!w) zyl_panic("E_OUT_OF_MEMORY: no memory for an FFI worker");
+    pthread_mutex_init(&w->lock, NULL);
+    pthread_condattr_t ca;
+    pthread_condattr_init(&ca);
+    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
+    pthread_cond_init(&w->cond, &ca);
+    pthread_condattr_destroy(&ca);
+    w->self_id = g_self_id;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t t;
+    int rc = pthread_create(&t, &attr, zyl_ffi_worker_main, w);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) zyl_panic("E_FFI_TIMEOUT: could not start the FFI worker thread");
+    g_ffi_worker = w;
+    return w;
+}
+
+static long long zyl_ffi_timed_core(long long fn, long long name, long long ms,
+                                    long long argc, const long long* a) {
+    const char* sym = name ? (const char*)(size_t)name : "?";
+    if (fn < ZYL_MIN_CALL_ADDR) {
+        char* m = (char*)malloc(strlen(sym) + 64);
+        sprintf(m, "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: %s", sym);
+        zyl_panic(m);
+    }
+    if (argc < 0 || argc > ZYL_FFI_MAX_ARGS) {
+        zyl_panic("E_ARITY_MISMATCH: ffi-call passes more than 16 arguments");
+    }
+    if (ms < 1) ms = 1;
+    ZylFfiWorker* w = zyl_ffi_worker_get();
+    struct timespec deadline;
+    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    deadline.tv_sec += ms / 1000;
+    deadline.tv_nsec += (ms % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec += 1;
+        deadline.tv_nsec -= 1000000000L;
+    }
+    pthread_mutex_lock(&w->lock);
+    w->fn = fn;
+    w->argc = argc;
+    memset(w->argv, 0, sizeof w->argv);
+    for (long long i = 0; i < argc; i++) w->argv[i] = a[i];
+    w->state = 1;
+    pthread_cond_broadcast(&w->cond);
+    while (w->state != 2) {
+        int rc = pthread_cond_timedwait(&w->cond, &w->lock, &deadline);
+        if (rc == ETIMEDOUT && w->state != 2) {
+            w->abandoned = 1;
+            pthread_mutex_unlock(&w->lock);
+            g_ffi_worker = 0;
+            __atomic_store_n(&g_ffi_any_abandoned, 1, __ATOMIC_RELEASE);
+            char* m = (char*)malloc(strlen(sym) + 96);
+            sprintf(m, "E_FFI_TIMEOUT: ffi call `%s` exceeded its timeout of %lld ms", sym, ms);
+            zyl_panic(m);
+        }
+    }
+    long long r = w->result;
+    w->state = 0;
+    pthread_mutex_unlock(&w->lock);
+    return r;
+}
+
+long long zyl_ffi_timed(long long fn, long long name, long long ms, long long argc, ...) {
+    long long a[ZYL_FFI_MAX_ARGS] = {0};
+    va_list ap;
+    va_start(ap, argc);
+    for (long long i = 0; i < argc && i < ZYL_FFI_MAX_ARGS; i++) a[i] = va_arg(ap, long long);
+    va_end(ap);
+    return zyl_ffi_timed_core(fn, name, ms, argc, a);
+}
+
+/* The interpreter's entry: the same call with the arguments in an array. */
+long long zyl_ffi_timed_argv(long long fn, long long name, long long ms,
+                             long long argc, long long argv) {
+    const long long* a = (const long long*)(size_t)argv;
+    long long buf[ZYL_FFI_MAX_ARGS] = {0};
+    for (long long i = 0; i < argc && i < ZYL_FFI_MAX_ARGS; i++) buf[i] = a[i];
+    return zyl_ffi_timed_core(fn, name, ms, argc, buf);
 }
 
 /* Doubles, carried as their bit patterns. The interpreter stores every

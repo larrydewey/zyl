@@ -80,6 +80,7 @@
     (match e
       (IConst n (begin (ip-open buf "const ") (ip-int buf n)))
       (IStr s (begin (ip-open buf "str ") (ip-str buf s)))
+      (ISymAddr s (begin (ip-open buf "sym ") (ip-str buf s)))
       (IFlt t (begin (ip-open buf "flt ") (ip-str buf t)))
       (ILoad n (begin (ip-open buf "load ") (ip-str buf n)))
       (IBinop op l r (begin (ip-open buf "op ") (ip-int buf op) (ip-sp buf) (ip-node buf l) (ip-sp buf) (ip-node buf r)))

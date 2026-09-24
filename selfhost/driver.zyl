@@ -184,12 +184,12 @@
       argv0dir)))
 
 (defn cli-run (arena)
-  (let cwd (ffi-call "zyl_getcwd" 0)
+  (let cwd (ffi-call "zyl_getcwd" 1000)
     (let argv0 (ffi-call "zyl_arg_str" 0 1000)
       (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
         (let srcraw (ffi-call "zyl_arg_str" 1 1000)
           (let src (cli-resolve-path cwd srcraw)
-            (let argc (ffi-call "zyl_argc" 0)
+            (let argc (ffi-call "zyl_argc" 1000)
               (let opts (cli-parse-opts 2 argc (CliOpts "" 0))
                 (match opts
                   (CliOpts outraw emitflag
@@ -256,11 +256,11 @@
       1)))
 
 (defn drv-arg (i)
-  (let argc (ffi-call "zyl_argc" 0)
+  (let argc (ffi-call "zyl_argc" 1000)
     (if (< i argc) (ffi-call "zyl_arg_str" i 1000) "")))
 
 (defn drv-has-flag (i flag)
-  (if (>= i (ffi-call "zyl_argc" 0))
+  (if (>= i (ffi-call "zyl_argc" 1000))
     0
     (if (> (str-eq (drv-arg i) flag) 0) 1 (drv-has-flag (+ i 1) flag))))
 
@@ -575,7 +575,7 @@
 
 ; `-o path` after the target, or "".
 (defn drv-doc-out (i)
-  (if (>= i (ffi-call "zyl_argc" 0))
+  (if (>= i (ffi-call "zyl_argc" 1000))
     ""
     (if (> (str-eq (drv-arg i) "-o") 0) (drv-arg (+ i 1)) (drv-doc-out (+ i 1)))))
 
@@ -589,7 +589,7 @@
 
 (defn main ()
   (let arena (arena-create 1073741824)
-    (let argc (ffi-call "zyl_argc" 0)
+    (let argc (ffi-call "zyl_argc" 1000)
       (if (< argc 2)
         (boot-run-legacy arena)
         (begin
@@ -623,7 +623,7 @@
       (cli-run arena))))
 
 (defn drv-run-subcommand (arena a)
-  (let cwd (ffi-call "zyl_getcwd" 0)
+  (let cwd (ffi-call "zyl_getcwd" 1000)
     (let argv0 (ffi-call "zyl_arg_str" 0 1000)
       (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
         (let _ (ffi-call "zyl_chdir" bundledir 1000)

@@ -84,11 +84,14 @@ carries as `zyl_build_hash`).
 ### FFI Safety
 - FFI calls require Pin region + timeout parameter
 - FFI_Pinnable types: Int, Float, Bool, String, Vec<T>, composed types
-- Current enforcement: `(ffi-call "sym" args... timeout)` — ICNF lowering
-  drops the last argument as the timeout without checking it, so a
-  missing timeout silently drops a real argument, and the timeout is not
-  enforced at run time. `ffi-call`/`ffi-pin` need the `ffi` capability
-  in a package, and a `Secret` argument must be passed through `ffi-pin`
+- Current enforcement: `(ffi-call "sym" args... timeout)` — the symbol
+  must be a string literal (`E_FFI_SYMBOL_REQUIRED`) and the timeout a
+  positive integer literal in milliseconds (`E_FFI_TIMEOUT_REQUIRED`).
+  A foreign call runs on a per-thread worker through the runtime's
+  `zyl_ffi_timed`; overrunning raises `E_FFI_TIMEOUT` and the call is
+  abandoned, not killed. `zyl_*` runtime symbols are called directly.
+  `ffi-call`/`ffi-pin` need the `ffi` capability in a package, and a
+  `Secret` argument must be passed through `ffi-pin`
   (`E_FFI_PIN_REQUIRED`)
 
 ### Struct Immutability

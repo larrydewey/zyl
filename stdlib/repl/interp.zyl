@@ -209,7 +209,7 @@
 ; the same rule the walk follows.
 (defn in-index-fns (fns)
   (begin
-    (ffi-call "zyl_fnmap_reset" 0)
+    (ffi-call "zyl_fnmap_reset" 1000)
     (in-index-loop fns)))
 
 (defn in-index-loop (fns)
@@ -272,6 +272,7 @@
   (match e
     (IConst n (VInt n))
     (IStr s (VStr (in-word-of-str s)))
+    (ISymAddr s (VInt (ffi-call "zyl_ffi_lookup" s 1000)))
     (IFlt text (VFlt (ffi-call "zyl_f_parse" text 1000)))
     (ILoad name (in-load fns env name))
     (IBinop op l r (in-binop-eval fns env op l r))
@@ -749,7 +750,26 @@
       (if (= (in-actor-sym-p sym) 1)
         (VInt (in-fail "E_UNSUPPORTED_INTERPRETED"
                        "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."))
-        (in-ffi-call sym (in-args-eval fns env args))))))
+        (if (> (str-eq sym "zyl_ffi_timed") 0)
+          (in-ffi-timed (in-args-eval fns env args))
+          (in-ffi-call sym (in-args-eval fns env args)))))))
+
+; A foreign call, lowered by ic-ffi to (zyl_ffi_timed addr name ms argc
+; args...): the runtime runs it on a worker thread under its timeout, as
+; compiled code does. A symbol the loader cannot find has address 0,
+; reported by the runtime as E_FFI_SYMBOL_NOT_FOUND.
+(defn in-ffi-timed (vals)
+  (VInt (ffi-call "zyl_ffi_timed_argv"
+                  (val-word (in-nth-val vals 0)) (val-word (in-nth-val vals 1))
+                  (val-word (in-nth-val vals 2)) (val-word (in-nth-val vals 3))
+                  (in-argv-of (in-drop-vals vals 4)) 1000)))
+
+(defn in-drop-vals (vals n)
+  (if (<= n 0)
+    vals
+    (match vals
+      (Nil Nil)
+      (Cons _ t (in-drop-vals t (- n 1))))))
 
 ; Actor spawn hands the runtime the address of the actor's entry
 ; function. Under the interpreter there is no address, so the call is
@@ -774,11 +794,11 @@
 ; Run every registered test, catching the panic an assertion failure
 ; raises, exactly as the runtime's setjmp frame does.
 (defn in-run-tests (fns)
-  (let n (ffi-call "zyl_itest_count" 0)
+  (let n (ffi-call "zyl_itest_count" 1000)
     (let failed (in-run-test-loop fns 0 n 0)
       (begin
         (ffi-call "zyl_itest_summary" (- n failed) failed 1000)
-        (ffi-call "zyl_itest_reset" 0)
+        (ffi-call "zyl_itest_reset" 1000)
         (VInt (if (> failed 0) 1 0))))))
 
 (defn in-run-test-loop (fns i n failed)

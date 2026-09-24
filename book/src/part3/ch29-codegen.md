@@ -426,15 +426,19 @@ the test harness's pass/fail status.
 ## 29.10 FFI Call Sequence
 
 An `ffi-call` is an ordinary C call: arguments staged as in §29.3, the
-aligned `call`, the result in `rax`. There is no separate C stack, no
-register save area and no watchdog thread. Lowering treats the *last*
-argument of `(ffi-call "sym" arg... timeout)` as the timeout and drops
-it: it is not passed to the callee and not enforced at run time.
-Nothing checks that a timeout is actually there, so writing
-`(ffi-call "zyl_cstr_len" s)` without one silently drops `s` and calls
-the function with whatever `rdi` happens to hold. Always write the
-timeout. `ffi-pin`/`ffi-unpin` are calls to `ffi_pin`/`ffi_unpin` in
-the runtime.
+aligned `call`, the result in `rax`. Before lowering, `ffi-check-call`
+(`arity_check.zyl`) requires the symbol of `(ffi-call "sym" arg...
+timeout)` to be a string literal (`E_FFI_SYMBOL_REQUIRED`) and the last
+argument to be a positive integer literal (`E_FFI_TIMEOUT_REQUIRED`),
+so a forgotten timeout can no longer swallow a real argument. A symbol
+of the runtime (`zyl_` prefix) is called directly and its timeout is
+dropped. Any other symbol is called through the runtime's
+`zyl_ffi_timed`, which receives the symbol's address, its name, the
+timeout, the argument count and then the arguments; it runs the call on
+a worker thread and raises `E_FFI_TIMEOUT` when the timeout expires
+first. The address is an `ISymAddr` node, emitted as
+`mov rax, QWORD PTR [rip+sym@GOTPCREL]`. `ffi-pin`/`ffi-unpin` are
+calls to `ffi_pin`/`ffi_unpin` in the runtime.
 
 ## 29.11 Codegen Errors
 

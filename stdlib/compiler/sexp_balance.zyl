@@ -391,7 +391,7 @@
       (UnbalancedClose "file-open" 0 0))))
 
 (defn sb-standalone-run ()
-  (let argc (ffi-call "zyl_argc" 0)
+  (let argc (ffi-call "zyl_argc" 1000)
     (if (< argc 2)
       (begin
         (print "usage: sexp_balance <file.zyl>")

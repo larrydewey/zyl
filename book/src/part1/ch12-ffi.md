@@ -12,7 +12,7 @@ Zyl's Foreign Function Interface (FFI) calls C functions directly. The specifica
 
 - `"c_function_name"`: the C symbol, as a string literal
 - `arg ...`: the arguments, passed to C in order
-- `timeout-ms`: the maximum execution time in milliseconds; **always the last argument**
+- `timeout-ms`: the maximum execution time in milliseconds, as a positive integer literal; **always the last argument**
 
 Any C function linked into the program can be called: the C library (`libc` is always linked), the Zyl runtime's helpers, and your own C code (§12.4).
 
@@ -34,7 +34,15 @@ Hello from C!
 
 Arguments do not need to be pinned: an `Int` or `Bool` is passed as its value and a `String` as a pointer to its bytes. `ffi-call` always returns an `Int`: whatever the C function left in the return register.
 
-**The timeout is positional.** The compiler removes the last argument of every `ffi-call` and treats it as the timeout. If you forget it, your last real argument becomes the timeout and C receives one argument too few, with no diagnostic: `(ffi-call "abs" -5)` calls `abs` with an unspecified value.
+**The timeout is positional, and it must be a literal.** The compiler takes the last argument of every `ffi-call` as the timeout and requires it to be a positive integer literal. Anything else is rejected at compile time with `E_FFI_TIMEOUT_REQUIRED`, so a forgotten timeout cannot silently swallow your last real argument:
+
+```
+(defn magnitude (n) (ffi-call "abs" n))   ; E_FFI_TIMEOUT_REQUIRED: n is not a literal
+(ffi-call "abs" -5)                       ; E_FFI_TIMEOUT_REQUIRED: -5 is not positive
+(ffi-call "abs" -5 0)                     ; E_FFI_TIMEOUT_REQUIRED: 0 is not positive
+```
+
+The symbol must likewise be a string literal (`E_FFI_SYMBOL_REQUIRED`). One ambiguity remains: a call whose only argument is a positive literal, such as `(ffi-call "f" 5)`, is read as a call with no arguments and a 5 ms timeout.
 
 ### Pinning Values
 
@@ -233,13 +241,32 @@ A pointer returned by C is an `Int` in Zyl. If C allocated it with `malloc`, Zyl
 
 ## 12.6 Callbacks (C Calling Zyl)
 
-Not supported. There is no way to hand C a Zyl function to call back. (Actor mailboxes are no workaround: C has no Zyl function to post to one; see Chapter 9.)
+A top-level function named as an argument is passed to C as a function pointer, so C can call it back; `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator. Because the foreign call runs on its FFI worker thread (§12.7), the callback runs there too. It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process. Closures written inline are still rejected as arguments (§12.2).
 
 ## 12.7 Timeout and Safety
 
 ### Timeouts
 
-The specification says a call that exceeds its timeout fails with `E_FFI_TIMEOUT`. **The current compiler does not enforce timeouts**: the value is removed from the call and never used. `(ffi-call "sleep" 3 100)` sleeps for the full three seconds and returns normally. Write the timeout anyway, because the syntax requires it, and a future compiler will honor it.
+Timeouts are enforced. A call to a foreign symbol runs on a worker thread, and the calling thread waits for it on a monotonic clock. If the function has not returned when the timeout expires, the caller raises a panic:
+
+```
+E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
+```
+
+It is an ordinary error, catchable with `try`/`catch` and matchable by code with `recover`:
+
+```lisp
+(defn slow-call () (ffi-call "usleep" 300000 50))   ; 300 ms against a 50 ms budget
+
+(defn main ()
+  (print (try (slow-call) (catch e 0))))            ; 0
+```
+
+A running C function cannot be stopped safely, so an overrunning call is **abandoned, not killed**. Its worker thread finishes on its own and then frees itself, and the next call gets a fresh worker. Anything the abandoned call was handed stays valid for the rest of the process: Pin slots are never freed individually, and once any call has been abandoned, the arenas are not torn down at exit. A call that returns in time costs a thread handoff, and the worker is kept between calls, so thread-local C state such as `errno` stays consistent from one call to the next.
+
+Whether a timeout fires depends on how long the foreign code takes, which Zyl cannot control. Spec §27 treats FFI results as observable external input, and a timeout is one of those results.
+
+The Zyl runtime's own `zyl_*` symbols are part of the trusted implementation: they are called directly, and their timeout is checked at compile time but not used at run time. The interpreter (`zyl eval`, the REPL) enforces timeouts in the same way as compiled code.
 
 ### What the Runtime Checks
 
@@ -284,10 +311,10 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 
 | Pitfall | Solution |
 |---------|----------|
-| Forgetting the timeout | The last argument is always taken as the timeout; C silently gets one argument too few |
+| Forgetting the timeout | Compile error `E_FFI_TIMEOUT_REQUIRED`; end every call with a positive literal such as `1000` |
 | Passing a `Float` to a `double` parameter | Use an `int64_t` wrapper in C (§12.2) |
 | Printing a C string pointer | Wrap it: `(print (str-concat "" ptr))` |
-| Expecting the timeout to fire | Not enforced yet (§12.7) |
+| A timeout too tight for slow C code | The call raises `E_FFI_TIMEOUT` and the C function is abandoned (§12.7); budget generously |
 | Memory leaks | Free `malloc`ed results from C; prefer arenas for buffers |
 | Calling your own C from a package without `ffi` | Declare `(capabilities ffi native)` |
 
@@ -297,7 +324,13 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 
 ### FFI Call Sequence
 
-`(ffi-call "sym" a b timeout)` reaches ICNF lowering (`ic-ffi` in `stdlib/compiler/icnf.zyl`) as an application of `ffi-call`. Lowering drops the trailing timeout and produces an `IFfi "sym" (a b)` node. Code generation evaluates the arguments left to right, loads them into the System V integer argument registers, aligns the stack, and emits `call sym`. The result is read from `rax`. There is no stack switching and no wrapper thread.
+`(ffi-call "sym" a b timeout)` reaches ICNF lowering (`ic-ffi` in `stdlib/compiler/icnf.zyl`) as an application of `ffi-call`. Lowering first runs `ffi-check-call` (`stdlib/compiler/arity_check.zyl`), which rejects a non-literal symbol, a missing or non-positive timeout, and more than 16 arguments (`E_ARITY_MISMATCH`). A `zyl_*` runtime symbol becomes `IFfi "sym" (a b)`, a direct call. Any other symbol becomes a call of the runtime's timed bridge:
+
+```
+IFfi "zyl_ffi_timed" (ISymAddr "sym", IStr "sym", IConst timeout, IConst 2, a, b)
+```
+
+`ISymAddr` is the address of the C symbol, emitted as `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. Code generation evaluates the arguments left to right, loads them into the System V integer argument registers (the rest on the stack), aligns the stack, and emits the call. The result is read from `rax`.
 
 ### Pin Region Implementation
 
@@ -305,7 +338,7 @@ The runtime keeps one Pin arena (`g_pin_arena`), created alongside the heap aren
 
 ### Timeout Implementation
 
-None yet. The error code `E_FFI_TIMEOUT` is defined in `stdlib/compiler/error_codes.zyl` for when it lands.
+`zyl_ffi_timed` in `runtime/actor_runtime.c` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits with `pthread_cond_timedwait` against a `CLOCK_MONOTONIC` deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
 
 ---
 
