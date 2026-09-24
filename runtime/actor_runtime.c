@@ -1757,6 +1757,28 @@ long long zyl_smap_global(long long i) {
     return g_global_smaps[i];
 }
 
+/* Top-level `def` values, keyed by canonical key. A cell is set once, by
+   the def's getter on first use (the init function runs them in order). */
+static long long g_def_cells = 0;
+
+long long zyl_global_ready(long long key) {
+    return g_def_cells && zyl_smap_get(g_def_cells, key) ? 1 : 0;
+}
+
+long long zyl_global_get(long long key) {
+    long long* cell = (long long*)(size_t)(g_def_cells ? zyl_smap_get(g_def_cells, key) : 0);
+    return cell ? *cell : 0;
+}
+
+long long zyl_global_put(long long key, long long val) {
+    if (!g_def_cells) g_def_cells = zyl_smap_new();
+    long long* cell = (long long*)malloc(sizeof(long long));
+    if (!cell) return val;
+    *cell = val;
+    zyl_smap_put(g_def_cells, key, (long long)(size_t)cell);
+    return val;
+}
+
 /* Registers a source file and returns its id; re-registering the same path
  * returns the existing id so a module parsed twice keeps one entry. */
 long long zyl_source_register(long long path, long long text) {
@@ -3902,6 +3924,7 @@ long long zyl_int_text(long long n) {
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
+    X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \

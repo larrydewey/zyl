@@ -30,7 +30,7 @@ The specification assigns every value to one of five **regions**:
 |--------|----------------|-------|
 | **Stack** | Values that do not escape | Parameters and `let` locals live in the function's frame, and so does one kind of ADT value (§5.5) |
 | **Heap** | Escaped values, captured closure variables | Every other struct, ADT value and capturing closure, from one bump-allocated arena that lives until the program exits |
-| **Global** | Top-level immutable constants | Not implemented: a top-level `def` is not visible to functions (§5.9) |
+| **Global** | Top-level immutable constants | A top-level `def`: immutable, evaluated once, in source order, before `main` or the tests run |
 | **Circular** | Cyclic structures | Not implemented |
 | **Pin** | Non-moving memory for FFI | `ffi-pin` copies a value into a separate pin arena (§5.8) |
 

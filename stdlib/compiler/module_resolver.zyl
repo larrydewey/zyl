@@ -912,7 +912,7 @@
         (let qualified (qf-forms (QT itab ptab) Nil
                          (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))
           (let _ (mr-check-coherence qualified (mrp-name pkg))
-            (convert-top-forms qualified)))))))
+            qualified))))))
 
 ; ===========================================================================
 ; TRAIT COHERENCE (SS24.6)
@@ -1088,7 +1088,7 @@
                                    (Cons id Nil) pkg uses)
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
-            (MRR (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))
+            (MRR (convert-program (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil)))
                  (mr-grants-of (mrd-pkgs disc))
                  (mr-denied-of arena pkg))))))))
 
@@ -1099,4 +1099,4 @@
                                    (Cons id Nil) pkg uses)
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
-            (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))))))
+            (convert-program (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil)))))))))

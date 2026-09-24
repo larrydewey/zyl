@@ -194,23 +194,24 @@ is not a comment, and the compiler will misread everything after it.
 
 ### Top-Level Constants
 
-The specification has a top-level `(def name expr)` for constants. In
-a compiled program it does not work yet: the definition is accepted,
-but any use of the name is an `E_UNBOUND_VARIABLE` error. Use a
-function with no parameters instead — it costs a call and reads almost
-the same:
+A top-level `(def name expr)` defines an immutable global (spec R7).
+Every `def` is evaluated once, in source order, before `main` (or the
+tests) runs, and its name can be used anywhere, like a function's:
 
 ```lisp
-(defn max-size () 1000)
-(defn app-name () "MyApp")
+(def max-size 1000)
+(def app-name "MyApp")
 
 (defn main ()
-  (print (max-size))        ; 1000
-  (print (app-name)))       ; MyApp
+  (begin
+    (print max-size)        ; 1000
+    (print app-name)        ; MyApp
+    0))
 ```
 
-At the REPL prompt, `def` does work: `(def x 21)` binds `x` for every
-later entry.
+A `def` cannot be changed: `(set! max-size 5)` is `E_MUT_CONFLICT`.
+Mark it `(pub def ...)` to export it from a module. At the REPL prompt,
+`(def x 21)` binds `x` for every later entry.
 
 ### Local Immutable Bindings (`let`)
 
@@ -453,7 +454,7 @@ true / false    ; Bool
 "hello"         ; String
 
 ;; Bindings
-(defn name () expr)             ; Constant (top-level def is REPL-only)
+(def name expr)                 ; Constant (immutable global)
 (let name expr body...)         ; Local immutable
 (let (name expr) body)          ; The same, one body form only
 (let-mut name expr body...)     ; Local mutable (use set!)

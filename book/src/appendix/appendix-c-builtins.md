@@ -146,8 +146,7 @@ instead. `set!` rebinds a `let-mut` name and nothing else: field mutation,
 `fn` and `lambda` are the same form under two names: both take a
 parameter list and a body, and neither takes a name.
 
-A top-level `def` does **not** become a readable global: referring to
-one is `E_UNBOUND_VARIABLE`. Use a nullary `defn` for a constant. Spec
+A top-level `(def name expr)` is an immutable global, evaluated once, in source order, before `main` or the tests run. Spec
 §2 also lists `defun` as a synonym for `defn`; the compiler does not
 recognise it.
 

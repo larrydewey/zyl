@@ -64,7 +64,7 @@ Output:
 12
 ```
 
-Bind closures inside a function body. A top-level `(def name value)` is accepted by the REPL, but a compiled program cannot refer to a top-level `def` yet; use `defn` for named functions and `let` for closure values.
+Bind closures inside a function body. A top-level `(def name (fn ...))` also works; use `defn` for named functions.
 
 ## 8.3 Capture Inference
 

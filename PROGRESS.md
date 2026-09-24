@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **150/150**
-  (updated 2026-09-24): regression 60, interpreter 40, compile-fail 24,
+- `./run_regression_tests.sh --full --no-boot` passes **153/153**
+  (updated 2026-09-24): regression 61, interpreter 41, compile-fail 25,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -148,9 +148,6 @@ Compiler:
   but no earlier phase (type inference) reports it.
 - A capturing closure handed to `spawn` crashes: `zyl_actor_spawn` calls
   the closure block as code.
-- A top-level `(def name value)` in a compiled file does not create a
-  global; a use of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL
-  gives top-level `def` a meaning.
 - Diagnostics still reported as a bare `PANIC:` with no location:
   `secret_check`, `E_INVALID_CAPABILITY`, and the remaining errors in
   `expr_inner`. Warnings carry spans, parameter warnings included (qualification
@@ -262,7 +259,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [ ] `Secret`: zeroization on scope exit, `print` redaction, a `Secret`
       trait.
 - [ ] A `receive` form and a runnable structured-message actor example.
-- [ ] Top-level `def` in compiled programs.
+- [x] Top-level `def` in compiled programs (immutable globals, eager init).
 - [ ] Hash finalization that mixes the graph hash into the binary.
 
 ### P4: Tooling and packages
@@ -379,7 +376,22 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — contracts, even-arity try, trait return types
+## Session (2026-09-24, latest) — top-level def
+
+**Top-level `def` in compiled programs** (spec R7: immutable, eager).
+After qualification, `convert-program` (`expr_inner.zyl`, called by the
+module resolver over every unit at once) collects the `def` keys, turns
+each `(def k v)` into a getter `(defn k () ...)` that computes `v` once
+and caches it in a runtime cell keyed by the canonical key
+(`zyl_global_ready`/`get`/`put`), and rewrites every use of `k` into a
+call (a `set!` target is left alone, so `set!` on a def stays
+`E_MUT_CONFLICT`). A generated `zyl-init-globals` calls the getters in
+source order and ICNF lowering puts it first in `main`
+(`ic-init-in-main`), so tests see initialized defs too. Types flow
+through the getter, so `print` of a String, Float or ADT def works.
+Tests: `tests/regression/toplevel-def.zyl`, `compile-fail/def-set.zyl`.
+
+## Session (2026-09-24, earlier) — contracts, even-arity try, trait return types
 
 **Contracts are enforced.** `expr_inner.zyl` lowers them where forms are
 recognized (`contract-defn-body`, `contract-check`): `requires` and

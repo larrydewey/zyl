@@ -1,0 +1,6 @@
+; Compile-fail: a top-level def is immutable (spec R7); set! on it is
+; E_MUT_CONFLICT.
+
+(def _cf_limit 10)
+
+(defn main () (begin (set! _cf_limit 20) 0))

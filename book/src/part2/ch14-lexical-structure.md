@@ -219,7 +219,7 @@ post-processor actually does with each definition form.
 |------|--------|
 | `(defn name (Param*) body...)` | Recognized. |
 | `(defun ...)` | Not recognized (§2 lists it as a synonym). It is an ordinary call, so the function is never defined and calls to it fail at link time. |
-| `(def name expr)` | Parsed. A top-level `def` is currently not visible to the functions that follow it: referring to the name is `E_UNBOUND_VARIABLE`. |
+| `(def name expr)` | An immutable global, evaluated once, in source order, before `main` or the tests run. |
 | `(deftype Name Variant+)` | Recognized (Chapter 18). |
 | `(defstruct Name Field*)`, `(defstruct+ ...)` | Recognized. |
 | `(trait Name ...)` | Accepted with no effect (Chapter 20). |

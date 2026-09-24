@@ -19,7 +19,7 @@
 - [ ] 16-, 32-, 64-bit byte loads/stores; distinct byte-buffer handle type
 - [ ] `Secret`: zeroization on scope exit, `print` redaction, `Secret` trait
 - [ ] `receive` form and runnable structured-message actor example
-- [ ] Top-level `def` in compiled programs
+- [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
 - [ ] Hash finalization mixing graph hash into binary
 
 ## P4: Tooling & Packages

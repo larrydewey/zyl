@@ -373,6 +373,95 @@
         (contract-strip-list t)
         (Cons (contract-strip h) (contract-strip-list t))))))
 
+;; Top-level defs (spec R7: immutable, eager): each becomes a getter that
+;; caches its value by canonical key; uses become calls; main runs them first.
+(defn def-table () (ffi-call "zyl_smap_global" 2 1000))
+
+(defn def-key-p (n) (> (ffi-call "zyl_smap_get" (def-table) n 1000) 0))
+
+(defn convert-program (forms)
+  (let _ (ffi-call "zyl_smap_clear" (def-table) 1000)
+    (convert-program-defs forms)))
+
+(defn convert-program-defs (forms)
+  (if (= (def-collect forms 0) 0)
+    (convert-top-forms forms)
+    (list-append (convert-top-forms (def-rewrite-top forms))
+                 (Cons (convert-ast (def-init-fn forms)) Nil))))
+
+(defn def-name-of (f)
+  (if (> (str-eq (ast-head f) "def") 0)
+    (match (ast-arg1 f) (AstIdent k k) (_ ""))
+    ""))
+
+(defn def-collect (forms n)
+  (match forms
+    (Nil n)
+    (Cons f rest
+      (let k (def-name-of f)
+        (if (= (str-length k) 0)
+          (def-collect rest n)
+          (begin
+            (ffi-call "zyl_smap_put" (def-table) k 1 1000)
+            (def-collect rest (+ n 1))))))))
+
+(defn def-rewrite-top (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (let k (def-name-of f)
+        (Cons (if (= (str-length k) 0) (def-rewrite f) (def-getter f k)) (def-rewrite-top rest))))))
+
+; A use of a def key becomes a call; a set! target is left for the mutability check.
+(defn def-rewrite (a)
+  (match a
+    (AstIdent n
+      (if (def-key-p n)
+        (let r (AList (Cons a Nil)) (let _ (ffi-call "zyl_span_copy" r a 1000) r))
+        a))
+    (AList xs
+      (let r (AList (if (> (str-eq (ast-head a) "set!") 0) (def-rewrite-set xs) (def-rewrite-list xs)))
+        (let _ (ffi-call "zyl_span_copy" r a 1000) r)))
+    (_ a)))
+
+(defn def-rewrite-set (xs)
+  (match xs
+    (Cons h t (match t (Cons target vs (Cons h (Cons target (def-rewrite-list vs)))) (Nil xs)))
+    (Nil Nil)))
+
+(defn def-rewrite-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (def-rewrite h) (def-rewrite-list t)))))
+
+(defn ast-call1 (hd a) (AList (Cons (AstIdent hd) (Cons a Nil))))
+
+; (defn k () (if (ready "k") (get "k") (let _zyl_def v (begin (put "k" _zyl_def) _zyl_def))))
+(defn def-getter (f k)
+  (let key (AString k)
+    (let v (def-rewrite (match f (AList xs (ast-nth xs 2 (AstInt 0))) (_ (AstInt 0))))
+      (let store (AList (Cons (AstIdent "let") (Cons (AstIdent "_zyl_def") (Cons v
+                   (Cons (AList (Cons (AstIdent "begin")
+                     (Cons (ast-call2 "zyl-global-put" key (AstIdent "_zyl_def")) (Cons (AstIdent "_zyl_def") Nil)))) Nil)))))
+        (let body (AList (Cons (AstIdent "if") (Cons (ast-call1 "zyl-global-ready" key)
+                    (Cons (ast-call1 "zyl-global-get" key) (Cons store Nil)))))
+          (let g (AList (Cons (AstIdent "defn") (Cons (AstIdent k) (Cons (AList Nil) (Cons body Nil)))))
+            (let _ (ffi-call "zyl_span_copy" g f 1000) g)))))))
+
+; Runs every getter in source order; ICNF lowering calls it first thing in main.
+(defn def-init-fn (forms)
+  (AList (Cons (AstIdent "defn") (Cons (AstIdent "zyl-init-globals") (Cons (AList Nil)
+    (Cons (AList (Cons (AstIdent "begin") (list-append (def-init-calls forms) (Cons (AstInt 0) Nil)))) Nil))))))
+
+(defn def-init-calls (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (let k (def-name-of f)
+        (if (= (str-length k) 0)
+          (def-init-calls rest)
+          (Cons (AList (Cons (AstIdent k) Nil)) (def-init-calls rest)))))))
+
 ; Top-level forms; a bare (contracts off) strips contracts from the next form.
 (defn convert-top-forms (forms)
   (match forms

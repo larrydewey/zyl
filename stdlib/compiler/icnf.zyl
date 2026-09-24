@@ -227,6 +227,31 @@
 ; defines one explicitly — that combination doesn't occur in this
 ; codebase, so it's left unsupported rather than guessed at.
 (defn ic-finish-program (fns stmts)
+  (if (> (ic-has-fn fns "zyl-init-globals") 0)
+    (ic-init-in-main (ic-finish-main fns stmts))
+    (ic-finish-main fns stmts)))
+
+(defn ic-has-fn (fns nm)
+  (match fns
+    (Nil 0)
+    (Cons f rest
+      (match f
+        (IFn name _ _ (if (> (str-eq name nm) 0) 1 (ic-has-fn rest nm)))
+        (_ (ic-has-fn rest nm))))))
+
+; Top-level defs are initialized, in source order, before main's body.
+(defn ic-init-in-main (fns)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (match f
+        (IFn name ps body ks
+          (if (> (str-eq name "main") 0)
+            (Cons (IFn name ps (ISeq (Cons (ICall "zyl-init-globals" Nil) (Cons body Nil))) ks) rest)
+            (Cons f (ic-init-in-main rest))))
+        (_ (Cons f (ic-init-in-main rest)))))))
+
+(defn ic-finish-main (fns stmts)
   (match stmts
     (Nil fns)
     (Cons _ _
@@ -1138,6 +1163,18 @@
   "")))))
 
 (defn ic-call-or-variant (arena fname args vt)
+  (let gsym (ic-global-sym fname)
+    (if (> (str-length gsym) 0)
+      (IFfi gsym (ic-expr-list arena args vt))
+      (ic-call-or-variant-go arena fname args vt))))
+
+; Runtime cell ops that def getters (expr_inner.zyl's def-getter) call.
+(defn ic-global-sym (n)
+  (if (> (str-eq n "zyl-global-ready") 0) "zyl_global_ready"
+    (if (> (str-eq n "zyl-global-get") 0) "zyl_global_get"
+      (if (> (str-eq n "zyl-global-put") 0) "zyl_global_put" ""))))
+
+(defn ic-call-or-variant-go (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))
     (if (> tag -1)
       (IVariant (str-intern arena fname) tag (ic-expr-list arena args vt))

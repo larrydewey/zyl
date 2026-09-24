@@ -1,0 +1,41 @@
+; Top-level def Regression Tests — (def name expr) at top level is an
+; immutable global (spec R7), initialized once, in source order, before
+; main or the tests run.
+
+(use core/list)
+(use core/option)
+
+(def _td_greeting "hello")
+(def _td_answer (* 6 7))
+(def _td_pair (Some _td_answer))
+(def _td_ratio 2.5)
+(defn _td_twice (x) (* 2 x))
+(def _td_big (_td_twice _td_answer))
+(def _td_order (begin (print "init runs before tests") 1))
+(def _td_list (Cons 1 (Cons 2 Nil)))
+
+(defn _td_read () _td_big)
+
+(test "def-values"
+  (begin
+    (assert-true (str-eq _td_greeting "hello"))
+    (assert-equal _td_answer 42)
+    (assert-equal _td_pair (Some 42))
+    (assert-equal _td_big 84)
+    (assert-equal (_td_read) 84)
+    (assert-equal _td_list (Cons 1 (Cons 2 Nil)))))
+
+(test "def-print-by-type"
+  (begin
+    (print _td_greeting)
+    (print _td_ratio)
+    (print _td_pair)
+    0))
+
+(test "def-shadowed-by-local"
+  (assert-equal (let _td_answer 1 _td_answer) 1))
+
+(test "def-evaluated-once"
+  (assert-equal (+ _td_order _td_order) 2))
+
+(run-tests)

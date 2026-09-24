@@ -71,9 +71,6 @@ it compiles and runs correctly; the notes say where it stops.
   function, such as the unimplemented `(list ...)` literal or an
   implicit-lambda form `((x) body)`, is a located `E_UNBOUND_VARIABLE`
   from `cg-call-user`, but no earlier phase reports it.
-- **Top-level `def`** does not create a global in a compiled file; a use
-  of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL gives
-  top-level `def` a meaning.
 - **Contracts** (§23): no profiles (`strict`, `debug`, `warn`,
   `production`), no `checkpoint` rollback, and `recover` ignores its arms'
   error types (the first arm's fallback always applies).

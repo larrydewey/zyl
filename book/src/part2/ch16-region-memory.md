@@ -19,7 +19,7 @@ below separates the rule from what the compiler does today.
 |--------|---------------|----------------------|
 | **Stack** | automatic, scope-based allocation | Parameters and `let` locals live in the function's frame. One kind of ADT value is also stack-allocated (16.3). |
 | **Heap** | escaped values and captured closure variables | Every other ADT value, struct and capturing closure comes from `zyl_heap_alloc`, a bump allocator over one process-wide arena. |
-| **Global** | immutable constants only | Not implemented. A top-level `def` is currently not visible to later functions (Chapter 14). String literals are placed in read-only data. |
+| **Global** | immutable constants only | A top-level `def` is an immutable global, evaluated once, in source order, before `main` or the tests run (Chapter 14). String literals are placed in read-only data. |
 | **Circular** | detected cyclic structures | Not implemented. There is no cycle detection. |
 | **Pin** | FFI-safe memory (non-moving arena) | `ffi-pin` copies a one-word value into a separate pin arena and returns a stable pointer; `ffi-unpin` validates that pointer and reads the value back (16.6). |
 

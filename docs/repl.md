@@ -66,10 +66,8 @@ entry.
 
 ### `def` at the prompt
 
-Top-level `def` is not a compiled construct in this language — a
-`(def name value)` at file scope never becomes a readable global (see
-`cg-load-nonslot` in `stdlib/compiler/codegen.zyl`). At the prompt it is
-the natural way to name a value, so the REPL gives it that meaning: the
+In a file, a top-level `def` is an immutable global initialized before
+`main`. At the prompt the REPL gives it the matching meaning: the
 expression is evaluated once, now, and the value is bound for every
 later entry. It is an immutable binding, like any other in the language;
 `set!` on it is refused the same way it would be in a file.
