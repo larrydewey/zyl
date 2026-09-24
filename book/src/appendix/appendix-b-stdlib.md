@@ -137,7 +137,7 @@ arena created on the spot.
 ;(vec-set v (i Int) value)              ; a write past len extends it, up to cap
 ;(vec-push v value)                     ; reallocates when full
 ;(vec-pop v) (vec-last v)               ; vec-last is the word -1 when empty
-;(vec-free v)
+;(vec-free v)                           ; an empty Vec; storage returns at arena-reset
 ```
 
 A Vec prints as `[a, b, ...]` (`Show`).
@@ -155,7 +155,7 @@ There is no `vec-slice`, `vec-append` or `vec-clear`.
 ;(map-get (m Map) (k Int) (default Int))
 ;(map-has (m Map) (k Int)) (map-remove (m Map) (k Int))
 ;(map-find (m Map) (k Int) (i Int) (len Int))   ; index of k, searching from i
-;(map-free (m Map))
+;(map-free (m Map))                     ; an empty Map; storage returns at arena-reset
 ```
 
 `map-get` takes a default value. There are no `map-keys`, `map-values`

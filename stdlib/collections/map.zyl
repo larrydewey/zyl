@@ -135,8 +135,7 @@
 
 ; Free all arena-allocated storage. Map becomes empty.
 ; Returns: Unit
+; An empty Map in the same arena. The storage is the arena's (freeing it
+; with C free() was undefined behaviour); it returns at arena-reset.
 (defn map-free ((m Map))
-  (begin
-    (alloc-free (struct-get m "kptr"))
-    (alloc-free (struct-get m "vptr"))
-    (make-Map 0 0 0 0 (struct-get m "arena"))))
+  (make-Map 0 0 0 0 (struct-get m "arena")))

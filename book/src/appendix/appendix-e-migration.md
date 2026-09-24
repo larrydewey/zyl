@@ -240,7 +240,7 @@ free(arr);
 
 Ordinary code never calls `malloc` or `free`: values are placed by the
 compiler, and collections take their storage from an arena, released
-with `vec-free` or `arena-destroy`. `allocator/allocator` exposes
+with `arena-reset` or `arena-destroy` (`vec-free` only empties the value; the storage belongs to the arena). `allocator/allocator` exposes
 `alloc-malloc` and `alloc-free` for the rare code that needs them.
 
 ### Pointers → Capabilities + FFI

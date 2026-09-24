@@ -336,7 +336,7 @@ cd acme-greet && zyl key && zyl publish --index ~/my-index      # add a version
 ZYL_INDEX=~/my-index zyl fetch                                   # in a consumer
 ```
 
-`zyl publish --index DIR` copies the signed archive to `DIR/archives/`, adds the version to the package's entry (a published version is immutable: `E_PKG_VERSION_EXISTS`), and commits when `DIR` is a git repository. Each archive's url is `file://...`, or `--url-base URL` followed by the archive's name when the archives will be served over HTTPS. `file://` archives are copied, all others fetched over HTTPS only; either way the content hash and signature are verified. `tests/scripts/package-index.sh` runs this flow end to end. A `git` dependency is recognised, pinned by revision and resolvable from the store, but `zyl fetch` does not yet clone and install one.
+`zyl publish --index DIR` copies the signed archive to `DIR/archives/`, adds the version to the package's entry (a published version is immutable: `E_PKG_VERSION_EXISTS`), and commits when `DIR` is a git repository. Each archive's url is `file://...`, or `--url-base URL` followed by the archive's name when the archives will be served over HTTPS. `file://` archives are copied, all others fetched over HTTPS only; either way the content hash and signature are verified. `tests/scripts/package-index.sh` runs this flow end to end. A `git` dependency is cloned at its pinned revision, archived, locked and installed in the store by `zyl fetch`.
 
 ## 25.11 Capabilities
 

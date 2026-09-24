@@ -104,10 +104,10 @@
 
 ; Free the arena-allocated buffer. Vec becomes empty but arena handle remains.
 ; Returns: Vec
+; An empty Vec in the same arena. The storage is the arena's (freeing it
+; with C free() was undefined behaviour); it returns at arena-reset.
 (defn vec-free (v)
-  (begin
-    (alloc-free (vec-ptr v))
-    (vec-with v 0 0 0)))
+  (vec-with v 0 0 0))
 
 (impl Show Vec (defn show (self) (str-concat "[" (str-concat (vec-show-from self 0) "]"))))
 
