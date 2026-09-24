@@ -22,6 +22,7 @@
 ; pull it in - this was an undefined `f_str_drop` reference at link
 ; time otherwise.
 (use compiler/monomorphization)
+(use compiler/type_annotate)
 
 ; --- Instruction tree -------------------------------------------------------
 
@@ -406,6 +407,20 @@
 (defn ic-expr (arena expr vt)
   (let out (ic-expr-node arena expr vt)
     (let _ (ffi-call "zyl_span_copy" out expr 1000)
+      (ic-mark-kind out (ta-kind expr)))))
+
+; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.
+(defn ic-mark-kind (out k)
+  (if (> k 0)
+    (let _ (ffi-call "zyl_attr_set" 1 out k 1000)
+      out)
+    out))
+
+; A rebuilt node keeps its original's kind unless it already has one.
+(defn ic-keep-kind (out from)
+  (if (> (ffi-call "zyl_attr_get" 1 out 1000) 0)
+    out
+    (let _ (ffi-call "zyl_attr_copy" 1 out from 1000)
       out)))
 
 ; A pass that rebuilds a call node hands its position on with this, so
@@ -864,6 +879,10 @@
                            (list-append (hoist-fns hb) (hoista-fns hr))))))))))
 
 (defn ic-hoist (node)
+  (match (ic-hoist-node node)
+    (HoistAcc n fs (HoistAcc (ic-keep-kind n node) fs))))
+
+(defn ic-hoist-node (node)
   (match node
     (IConst _ (HoistAcc node Nil))
     (IStr _ (HoistAcc node Nil))

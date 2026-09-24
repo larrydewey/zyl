@@ -254,6 +254,18 @@
 ; cell, so `set!` writes through the environment rather than replacing
 ; it.
 (defn in-eval (fns env e)
+  (in-retag e (in-eval-node fns env e)))
+
+; A word whose static type is String or Float (attr table 1, from
+; compiler/type_annotate) is retagged, as codegen treats it.
+(defn in-retag (e v)
+  (match v
+    (VInt w
+      (let k (ffi-call "zyl_attr_get" 1 e 1000)
+        (if (= k 0) v (in-val-of-kind w k))))
+    (_ v)))
+
+(defn in-eval-node (fns env e)
   (match e
     (IConst n (VInt n))
     (IStr s (VStr (in-word-of-str s)))

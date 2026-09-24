@@ -1548,6 +1548,193 @@ long long zyl_span_copy(long long dst, long long src) {
     return zyl_span_set(dst, off, fid);
 }
 
+/* Node attribute tables, string maps and word vectors for compiler passes.
+   Keyed by address or content, probed only (never iterated); a miss reads 0. */
+
+#define ZYL_ATTR_TABLES 4
+typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
+static ZylAttrSlot* g_attrs[ZYL_ATTR_TABLES];
+static size_t g_attr_cap[ZYL_ATTR_TABLES];
+static size_t g_attr_len[ZYL_ATTR_TABLES];
+
+static void zyl_attr_grow(int t) {
+    size_t ncap = g_attr_cap[t] ? g_attr_cap[t] * 8 : 4096;
+    ZylAttrSlot* ns = (ZylAttrSlot*)calloc(ncap, sizeof(ZylAttrSlot));
+    if (!ns) return;
+    for (size_t i = 0; i < g_attr_cap[t]; i++) {
+        if (!g_attrs[t][i].key) continue;
+        size_t j = zyl_span_hash(g_attrs[t][i].key) & (ncap - 1);
+        while (ns[j].key) j = (j + 1) & (ncap - 1);
+        ns[j] = g_attrs[t][i];
+    }
+    free(g_attrs[t]);
+    g_attrs[t] = ns;
+    g_attr_cap[t] = ncap;
+}
+
+long long zyl_attr_set(long long t, long long node, long long val) {
+    if (!node || t < 0 || t >= ZYL_ATTR_TABLES) return 0;
+    if (g_attr_len[t] * 10 >= g_attr_cap[t] * 7) zyl_attr_grow((int)t);
+    if (!g_attr_cap[t]) return 0;
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t m = g_attr_cap[t] - 1;
+    size_t i = zyl_span_hash(k) & m;
+    while (g_attrs[t][i].key && g_attrs[t][i].key != k) i = (i + 1) & m;
+    if (!g_attrs[t][i].key) { g_attrs[t][i].key = k; g_attr_len[t]++; }
+    g_attrs[t][i].val = val;
+    return 0;
+}
+
+long long zyl_attr_get(long long t, long long node) {
+    if (!node || t < 0 || t >= ZYL_ATTR_TABLES || !g_attr_cap[t]) return 0;
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t m = g_attr_cap[t] - 1;
+    size_t i = zyl_span_hash(k) & m;
+    while (g_attrs[t][i].key) {
+        if (g_attrs[t][i].key == k) return g_attrs[t][i].val;
+        i = (i + 1) & m;
+    }
+    return 0;
+}
+
+long long zyl_attr_clear(long long t) {
+    if (t < 0 || t >= ZYL_ATTR_TABLES || !g_attr_cap[t]) return 0;
+    memset(g_attrs[t], 0, g_attr_cap[t] * sizeof(ZylAttrSlot));
+    g_attr_len[t] = 0;
+    return 0;
+}
+
+/* Give `dst` whatever `src` has in table `t`. */
+long long zyl_attr_copy(long long t, long long dst, long long src) {
+    long long v = zyl_attr_get(t, src);
+    if (v) zyl_attr_set(t, dst, v);
+    return 0;
+}
+
+typedef struct { const char* key; long long val; } ZylSmapSlot;
+typedef struct { ZylSmapSlot* slots; size_t cap; size_t len; } ZylSmap;
+
+static size_t zyl_smap_hash(const char* s) {
+    uint64_t h = 1469598103934665603ULL;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
+    return (size_t)h;
+}
+
+long long zyl_smap_new(void) {
+    ZylSmap* m = (ZylSmap*)calloc(1, sizeof(ZylSmap));
+    return (long long)(size_t)m;
+}
+
+static void zyl_smap_grow(ZylSmap* m) {
+    size_t ncap = m->cap ? m->cap * 4 : 1024;
+    ZylSmapSlot* ns = (ZylSmapSlot*)calloc(ncap, sizeof(ZylSmapSlot));
+    if (!ns) return;
+    for (size_t i = 0; i < m->cap; i++) {
+        if (!m->slots[i].key) continue;
+        size_t j = zyl_smap_hash(m->slots[i].key) & (ncap - 1);
+        while (ns[j].key) j = (j + 1) & (ncap - 1);
+        ns[j] = m->slots[i];
+    }
+    free(m->slots);
+    m->slots = ns;
+    m->cap = ncap;
+}
+
+/* The key is kept by reference: compiler strings outlive the map. */
+long long zyl_smap_put(long long mh, long long key, long long val) {
+    ZylSmap* m = (ZylSmap*)(size_t)mh;
+    const char* k = (const char*)(size_t)key;
+    if (!m || !k) return 0;
+    if (m->len * 10 >= m->cap * 7) zyl_smap_grow(m);
+    if (!m->cap) return 0;
+    size_t i = zyl_smap_hash(k) & (m->cap - 1);
+    while (m->slots[i].key && strcmp(m->slots[i].key, k) != 0) i = (i + 1) & (m->cap - 1);
+    if (!m->slots[i].key) { m->slots[i].key = k; m->len++; }
+    m->slots[i].val = val;
+    return 0;
+}
+
+long long zyl_smap_get(long long mh, long long key) {
+    ZylSmap* m = (ZylSmap*)(size_t)mh;
+    const char* k = (const char*)(size_t)key;
+    if (!m || !k || !m->cap) return 0;
+    size_t i = zyl_smap_hash(k) & (m->cap - 1);
+    while (m->slots[i].key) {
+        if (strcmp(m->slots[i].key, k) == 0) return m->slots[i].val;
+        i = (i + 1) & (m->cap - 1);
+    }
+    return 0;
+}
+
+typedef struct { long long* data; long long len; long long cap; } ZylWvec;
+
+long long zyl_wvec_new(void) {
+    ZylWvec* v = (ZylWvec*)calloc(1, sizeof(ZylWvec));
+    return (long long)(size_t)v;
+}
+
+/* Appends `x` and returns its index; -1 when memory runs out. */
+long long zyl_wvec_push(long long vh, long long x) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    if (!v) return -1;
+    if (v->len >= v->cap) {
+        long long ncap = v->cap ? v->cap * 2 : 4096;
+        long long* nd = (long long*)realloc(v->data, (size_t)ncap * sizeof(long long));
+        if (!nd) return -1;
+        v->data = nd;
+        v->cap = ncap;
+    }
+    v->data[v->len] = x;
+    return v->len++;
+}
+
+long long zyl_wvec_get(long long vh, long long i) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    if (!v || i < 0 || i >= v->len) return 0;
+    return v->data[i];
+}
+
+long long zyl_wvec_set(long long vh, long long i, long long x) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    if (!v || i < 0 || i >= v->len) return 0;
+    v->data[i] = x;
+    return 0;
+}
+
+long long zyl_wvec_len(long long vh) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    return v ? v->len : 0;
+}
+
+long long zyl_wvec_pop(long long vh) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    if (!v || v->len <= 0) return 0;
+    return v->data[--v->len];
+}
+
+long long zyl_wvec_truncate(long long vh, long long n) {
+    ZylWvec* v = (ZylWvec*)(size_t)vh;
+    if (v && n >= 0 && n < v->len) v->len = n;
+    return 0;
+}
+
+/* Process-wide instances, created on first use. */
+#define ZYL_GLOBAL_HANDLES 8
+static long long g_global_wvecs[ZYL_GLOBAL_HANDLES];
+static long long g_global_smaps[ZYL_GLOBAL_HANDLES];
+
+long long zyl_wvec_global(long long i) {
+    if (i < 0 || i >= ZYL_GLOBAL_HANDLES) return 0;
+    if (!g_global_wvecs[i]) g_global_wvecs[i] = zyl_wvec_new();
+    return g_global_wvecs[i];
+}
+
+long long zyl_smap_global(long long i) {
+    if (i < 0 || i >= ZYL_GLOBAL_HANDLES) return 0;
+    if (!g_global_smaps[i]) g_global_smaps[i] = zyl_smap_new();
+    return g_global_smaps[i];
+}
+
 /* Registers a source file and returns its id; re-registering the same path
  * returns the existing id so a module parsed twice keeps one entry. */
 long long zyl_source_register(long long path, long long text) {
@@ -3684,6 +3871,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
     X(zyl_diag_json_set) X(zyl_dirname_cstr) \
+    X(zyl_attr_clear) X(zyl_attr_copy) X(zyl_attr_get) X(zyl_attr_set) \
     X(zyl_ensure_arenas) X(zyl_exec_cmd) X(zyl_f_add) \
     X(zyl_f_cmp) X(zyl_f_div) X(zyl_f_error) \
     X(zyl_f_mul) X(zyl_f_of_int) X(zyl_f_parse) \
@@ -3703,7 +3891,8 @@ long long zyl_int_text(long long n) {
     X(zyl_panic) X(zyl_path_exists) X(zyl_pin_alloc) \
     X(zyl_print_float) X(zyl_print_int) X(zyl_print_str) \
     X(zyl_random_fill) X(zyl_random_words) X(zyl_run_bin) \
-    X(zyl_session_arena) X(zyl_source_path) X(zyl_source_register) \
+    X(zyl_session_arena) X(zyl_smap_get) X(zyl_smap_global) X(zyl_smap_new) X(zyl_smap_put) \
+    X(zyl_source_path) X(zyl_source_register) \
     X(zyl_span_col) X(zyl_span_copy) X(zyl_span_file) \
     X(zyl_span_line) X(zyl_span_line_text) X(zyl_span_off) \
     X(zyl_span_snippet) X(zyl_span_snippet_col) \
@@ -3716,7 +3905,8 @@ long long zyl_int_text(long long n) {
     X(zyl_try_last_msg) X(zyl_try_pop) X(zyl_try_push) \
     X(zyl_variant_cmp) X(zyl_variant_eq) X(zyl_variant_field) \
     X(zyl_warn_capture) X(zyl_warn_emit) X(zyl_warn_take) \
-    X(zyl_word_of_cstr) X(zyl_zeroize)
+    X(zyl_word_of_cstr) X(zyl_wvec_get) X(zyl_wvec_global) X(zyl_wvec_len) X(zyl_wvec_new) \
+    X(zyl_wvec_pop) X(zyl_wvec_push) X(zyl_wvec_set) X(zyl_wvec_truncate) X(zyl_zeroize)
 
 /* Forward declarations for the interpreter helpers named above. */
 long long zyl_f_parse(long long text);

@@ -268,7 +268,12 @@
 ; ICallClosure is deliberately NOT covered: `name` there is a local
 ; variable holding a closure value, not a top-level function name, and
 ; the CGS fn-kind table only knows about the latter.
+; Legacy kind first; else the type-annotation kind (attr table 1).
 (defn kind-of (st env e)
+  (let k (kind-of-base st env e)
+    (if (> k 0) k (ffi-call "zyl_attr_get" 1 e 1000))))
+
+(defn kind-of-base (st env e)
   (match e
     (IConst 0)
     (IStr _ 1)

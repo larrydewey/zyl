@@ -121,19 +121,19 @@ Compiler:
   builtin operator is never recognized by name. REPL `:type (+ 1 2)`
   answers *unresolved*. The fix is a type-inference change; see the
   header of `stdlib/lsp/compiler_bridge.zyl`.
-- Codegen binds every variant field as an Int and has no return-type
-  inference, so `print` of a struct or of a computed String prints an
-  address, and `==` on Strings built at runtime compares addresses in
-  compiled code. Derivable `Show` (spec §5.6) is not implemented.
+- Codegen kinds (String/Float) come from `compiler/type_annotate.zyl`, an
+  HM pass over the final Expr program, as well as from literals and
+  annotations. Values read from `Vec`, `Map`, ADT fields, struct fields,
+  generic returns and closure captures print and compare correctly.
+  Still a word: a value whose type is a type variable inside a shared
+  generic body (e.g. `(defn show (x) (print x))`), since bodies are not
+  specialized per type. `==` on inferred ADT values is still by address
+  unless the operand is a constructor expression; derivable `Show`
+  (spec §5.6) is not implemented.
 - Call targets are resolved only in codegen (`cg-call-user`): a call to
   an undefined function, including the unimplemented `(list ...)`
   literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
   but no earlier phase (type inference) reports it.
-- Codegen takes print/compare/arithmetic kinds from annotations and
-  literals only: an unannotated parameter, a captured variable and the
-  result of a call through a function value are Int there, so printing a
-  captured String prints its address and a captured Float is added as
-  an integer.
 - A capturing closure handed to `spawn` crashes: `zyl_actor_spawn` calls
   the closure block as code.
 - A top-level `(def name value)` in a compiled file does not create a
@@ -360,6 +360,36 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-24, later) — generic collections, type annotation pass
+
+**Warning sweep.** Parameter spans were lost in `qf-param` and
+`me-bind-params`; both now copy them. Every warning on the compiler's own
+source was fixed, so the self-build is warning-free.
+
+**Generic `Vec`/`Map` (spec §4.2, §6.3).** Storage was always one word
+per value, but codegen took print/compare/float kinds only from literals
+and annotations, so anything read back from a container printed as an
+address. New pieces:
+
+- `stdlib/compiler/type_annotate.zyl`: HM inference (union-find, SCCs by
+  Tarjan, let-polymorphism for top-level functions) run just before ICNF
+  lowering. It records each Expr's type in runtime attr table 0; a unify
+  conflict poisons the variables involved, so the pass fails open.
+  `ZYL_DEBUG_TYPES=1` prints every function's scheme.
+- Deftype/defstruct field type expressions are recorded at parse time
+  (`record-field-types`, keyed by variant name) since `ADTVariant` keeps
+  only field names.
+- ICNF lowering writes the kind to attr table 1 (`ic-mark-kind`);
+  `ic-hoist`, the optimizer and region inference carry it across
+  rebuilds (`ic-keep-kind`). Codegen's `kind-of` uses the legacy kind
+  first, then the table; the REPL interpreter retags words the same way.
+- Runtime: `zyl_attr_*` (node attribute tables), `zyl_smap_*` (string
+  maps), `zyl_wvec_*` (word vectors), with process-wide instances.
+- `collections/vec` is now a generic ADT `(Vec T)` with a phantom field;
+  `vec-get`/`vec-last` return `T`. `core/map` was already generic over V;
+  keys are compared with `str-eq`, so K must be String.
+- Test: `tests/regression/generic-collections.zyl`. 137/137 pass.
 
 ## Session (2026-09-24) — memory regression, module-built compiler, diagnostics
 

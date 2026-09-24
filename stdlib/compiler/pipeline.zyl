@@ -37,6 +37,7 @@
 (use compiler/trait_dispatch)
 (use compiler/closure_inline)
 (use compiler/assert_lowering)
+(use compiler/type_annotate)
 (use compiler/region_inference)
 (use compiler/optimization)
 (use compiler/codegen)
@@ -156,7 +157,7 @@
         (let al-exprs (al-expand-program ci-exprs)
           (begin
             (dbg-log "lower\n")
-            (let fns (ic-program arena al-exprs)
+            (let fns (ic-program arena (ta-annotate al-exprs))
               (begin
                 ; Real constant folding + dead-branch elimination:
                 ; optimization.zyl was rewritten against this pipeline's

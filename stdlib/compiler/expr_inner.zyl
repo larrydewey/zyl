@@ -1021,7 +1021,7 @@
           (Expr
             (EDeftype
               n
-              (Cons (AV n (parse-struct-fields (ast-list-nth-rest args 1))) Nil)
+              (Cons (record-field-types (AV n (parse-struct-fields (ast-list-nth-rest args 1))) (parse-struct-field-types (ast-list-nth-rest args 1))) Nil)
               Nil
               ; Marks this EDeftype as struct-sugar, not a real ADT — see
               ; icnf.zyl's ic-collect-vt, which gives ONLY structs a
@@ -1063,6 +1063,25 @@
   (match specs
     (Nil Nil)
     (Cons s rest (Cons (parse-struct-field-name s) (parse-struct-fields rest)))))
+
+; Field type Exprs keyed by variant name, for compiler/type_annotate.
+(defn record-field-types (av types)
+  (let _ (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 0 1000) (AV.name av) types 1000)
+    av))
+
+; An untyped struct field records `_` (unknown type).
+(defn parse-struct-field-types (specs)
+  (match specs
+    (Nil Nil)
+    (Cons s rest (Cons (parse-struct-field-type s) (parse-struct-field-types rest)))))
+
+(defn parse-struct-field-type (s)
+  (match s
+    (AList lst
+      (match lst
+        (Cons _ tl (match tl (Cons ty _ (convert-ast ty)) (Nil (Expr (EAtom (AIdent "_"))))))
+        (Nil (Expr (EAtom (AIdent "_"))))))
+    (_ (Expr (EAtom (AIdent "_"))))))
 
 ; A field spec is either a bare ident (untyped field) or `(name Type)`.
 (defn parse-struct-field-name (s)
@@ -1107,9 +1126,11 @@
     (AList lst
       (match lst
         (Cons name rest
-          (AV
-            (a-ident-to-str name)
-            (parse-field-names rest)))
+          (record-field-types
+            (AV
+              (a-ident-to-str name)
+              (parse-field-names rest))
+            (convert-ast-list rest)))
         (_ (AV "___" Nil))))
     (_ (AV "___" Nil))))
 
