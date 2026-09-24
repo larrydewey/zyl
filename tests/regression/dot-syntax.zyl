@@ -42,4 +42,13 @@
     (assert-equal (let p (make-DsPt 2 5) (p.area)) 10)
     (assert-equal ((DsSq 6).area) 36)))
 
+(defn ds-seg () (make-DsSeg (make-DsPt 1 2) (make-DsPt 3 4) "s"))
+
+(test "dot-field-of-expression"
+  (begin
+    (assert-equal (make-DsPt 5 6).x 5)
+    (assert-equal (ds-seg).b.y 4)
+    (assert-equal ((ds-seg).a.norm) 3)
+    (assert-equal (+ (ds-seg).a.x (ds-seg).b.x) 4)))
+
 (run-tests)

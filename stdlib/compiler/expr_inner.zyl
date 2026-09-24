@@ -411,8 +411,9 @@
       (match m
         (AstIdent s
           (if (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 46)
-            (dot-spanned (AList (Cons (AstIdent "zyl-method") (Cons (AString (str-substring s 1 (- (str-length s) 1)))
-              (Cons (dot-rewrite h) (dot-rewrite-list more))))) a)
+            (let segs (dot-split (str-substring s 1 (- (str-length s) 1)) 0 0)
+              (dot-spanned (AList (Cons (AstIdent "zyl-method") (Cons (AString (dot-last segs))
+                (Cons (dot-chain-from a (dot-rewrite h) (dot-butlast segs)) (dot-rewrite-list more))))) a))
             (dot-spanned (AList (dot-rewrite-list (Cons h t))) a)))
         (_ (dot-spanned (AList (dot-rewrite-list (Cons h t))) a))))
     (Nil (dot-spanned (AList (Cons (dot-rewrite h) Nil)) a))))
@@ -429,10 +430,27 @@
   (or (> (str-eq h "defn") 0) (or (> (str-eq h "def") 0) (or (> (str-eq h "defmacro") 0)
     (or (> (str-eq h "deftype") 0) (> (str-eq h "defstruct") 0))))))
 
+; An element followed by a `.f.g` token reads fields of that element: `(make-P 1).x`.
 (defn dot-rewrite-list (xs)
   (match xs
     (Nil Nil)
-    (Cons h t (Cons (dot-rewrite h) (dot-rewrite-list t)))))
+    (Cons h t
+      (match t
+        (Cons nx more
+          (if (dot-suffix-p nx)
+            (dot-rewrite-list (Cons (dot-chain-from nx (dot-rewrite h) (dot-split (dot-suffix-text nx) 0 0)) more))
+            (Cons (dot-rewrite h) (dot-rewrite-list t))))
+        (Nil (Cons (dot-rewrite h) Nil))))))
+
+(defn dot-suffix-p (a)
+  (match a
+    (AstIdent s (and (> (str-length s) 1) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 46)))
+    (_ false)))
+
+(defn dot-suffix-text (a)
+  (match a
+    (AstIdent s (str-substring s 1 (- (str-length s) 1)))
+    (_ "")))
 
 ; A local-looking name with dots: lowercase first (after any `_`), no '@' or ':', no empty segment.
 (defn dot-name-p (s)

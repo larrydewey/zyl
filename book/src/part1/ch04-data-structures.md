@@ -57,7 +57,8 @@ text.
 **Dot syntax** is the short form: `alice.name` means
 `(struct-get alice "name")`, and it chains: `seg.start.x`. It applies
 when the part before the first dot is a lowercase name (a local, a
-parameter or a `def`). Reading a field a known struct does not have is
+parameter or a `def`). After any expression, `.field` reads a field of
+its value: `(make-Point 3 4).x`, `(segment-of line).end.y`. Reading a field a known struct does not have is
 an error, `E_TYPE_MISMATCH: no field `z` on struct `Point``.
 
 ### Immutability by Default (Critical!)
