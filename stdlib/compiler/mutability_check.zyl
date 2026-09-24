@@ -19,10 +19,9 @@
 ; attempt, matching region_inference.zyl's own stated philosophy of
 ; undershooting rather than risking a false positive that breaks a
 ; legitimate program:
-;   - Cross-actor / cross-closure Send-capability (spec/07 R3) -- a
-;     closure body is walked with the SAME mutscope as its enclosing
-;     function, so `set!` on a captured outer let-mut var from inside a
-;     closure is still permitted here, not specifically re-checked.
+;   - Cross-actor Send-capability beyond the spawn/send shapes below
+;     (spec/07 R3). (A `set!` on a captured outer let-mut from inside a
+;     closure IS rejected -- see mc-fn-fence.)
 ;   - General pointer/alias tracking through the raw FFI/arena
 ;     primitives (alloc-*, atomic-*, ffi-pin/unpin) -- those bypass the
 ;     surface `let`/`let-mut` distinction entirely by design (see the
@@ -38,6 +37,7 @@
 
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 ; --- entry point ------------------------------------------------------------
 
@@ -61,6 +61,44 @@
   (match scope
     (Nil 0)
     (Cons h t (if (> (str-eq h name) 0) 1 (mc-in-scope name t)))))
+
+; A `fn`/`lambda` body is walked with this marker pushed onto the
+; enclosing mutscope: a let-mut found only BEHIND it belongs to an
+; enclosing scope, so the closure holds a by-value copy of it (spec
+; §7: capture is by value; icnf.zyl's ic-lambda-closure copies each
+; captured value into the environment). A `set!` on that copy would
+; silently change only the closure's private copy -- never the
+; binding the program named -- so it is rejected instead. The marker
+; contains a space, which no identifier can.
+(defn mc-fn-fence () "fn fence")
+
+; 0: not a let-mut in scope; 1: a let-mut of this function body;
+; 2: a let-mut of an enclosing scope, seen through a closure boundary.
+(defn mc-scope-status (name scope fenced)
+  (match scope
+    (Nil 0)
+    (Cons h t
+      (if (> (str-eq h name) 0)
+        (if (> fenced 0) 2 1)
+        (if (> (str-eq h (mc-fn-fence)) 0)
+          (mc-scope-status name t 1)
+          (mc-scope-status name t fenced))))))
+
+(defn mc-fail-captured-set (e name)
+  (let m1 (str-concat "set! target `" name)
+    (let msg (str-concat m1 "` is a let-mut of an enclosing scope, captured by value by this closure")
+      (let off (ffi-call "zyl_span_off" e 1000)
+        (let fid (ffi-call "zyl_span_file" e 1000)
+          (let hint "closures capture by value (spec 7); return the new value from the closure and set! it at the binding's own scope"
+            (ffi-call "zyl_panic" (err-at "E_MUT_CONFLICT" msg fid off hint) 1000)))))))
+
+(defn mc-check-set (e name mutscope)
+  (let status (mc-scope-status name mutscope 0)
+    (if (= status 2)
+      (mc-fail-captured-set e name)
+      (if (= status 0)
+        (ffi-call "zyl_panic" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
+        0))))
 
 (defn mc-list (xs mutscope)
   (match xs
@@ -133,9 +171,7 @@
   (match (Expr.inner e)
     (ESetBang name val
       (begin
-        (if (= (mc-in-scope name mutscope) 0)
-          (ffi-call "zyl_panic" (str-concat "E_MUT_CONFLICT: set! target `" (str-concat name "` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)")) 1000)
-          0)
+        (mc-check-set e name mutscope)
         (mc-expr val mutscope)))
     (ELet name val body
       (begin
@@ -160,8 +196,8 @@
           (mc-expr body (mc-append names mutscope)))))
     (ECond clauses (mc-cond-clauses clauses mutscope))
     (EBegin exprs (mc-list exprs mutscope))
-    (ELambda _ _ body (mc-expr body mutscope))
-    (EFn _ _ body (mc-expr body mutscope))
+    (ELambda _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope)))
+    (EFn _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope)))
     (ETryCatch tbody _ handler
       (begin (mc-expr tbody mutscope) (mc-expr handler mutscope)))
     (EMatch subj arms (begin (mc-expr subj mutscope) (mc-arms arms mutscope)))

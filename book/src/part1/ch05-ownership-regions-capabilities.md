@@ -256,24 +256,22 @@ that moment:
         0))))
 ```
 
-> **Compiler defect.** A closure that `set!`s a captured `let-mut`
-> variable is accepted but does not work. This compiles, then crashes or
-> hangs when run:
->
-> ```lisp
-> (defn main ()
->   (let-mut n 0
->     (let bump (fn () (set! n (+ n 1)))
->       (begin
->         (bump)
->         (print n)
->         0))))
-> ```
->
-> Keep mutable state in the function that owns it, and have closures
-> return new values instead. Chapter 3 (§3.3) describes the other
-> current closure limitation: a capturing closure cannot yet be passed to
-> another function and called there.
+Because the closure holds its own copy, a closure that `set!`s a
+captured `let-mut` variable is rejected at compile time with
+`E_MUT_CONFLICT`: the assignment could only ever change the copy.
+
+```lisp
+(defn main ()
+  (let-mut n 0
+    (let bump (fn () (set! n (+ n 1)))   ; error[E_MUT_CONFLICT]
+      (begin
+        (bump)
+        (print n)
+        0))))
+```
+
+Keep mutable state in the function that owns it, and have closures
+return new values instead.
 
 ## 5.7 Send Capability — Actor Safety
 
