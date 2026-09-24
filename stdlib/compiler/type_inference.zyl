@@ -18,6 +18,20 @@
 
 (use compiler/type_system)
 
+; Name matching helper: qualified name (pkg@ver::module::Name) vs unqualified (Name)
+(defn type-name-has-suffix (n suffix)
+  (let nl (str-length n)
+    (let sl (str-length suffix)
+      (if (> nl sl)
+        (let start (- nl sl)
+          (let sub (str-substring n start sl)
+            (> (str-eq sub suffix) 0))
+        0)))))
+
+(defn type-name-matches (n name)
+  (or (> (str-eq n name) 0)
+      (type-name-has-suffix n (str-concat "::" name))))
+
 (defn fresh-var (inferer)
     ; return current next-index and bump-by-1
     (let
@@ -66,7 +80,7 @@
         (match hd
                 (TB k v
                     (if
-                        (= k name)
+                        (type-name-matches k name)
                         (Some v)
                         (lookup-known-type-binds rest name)))))))
 
@@ -110,7 +124,7 @@
         (match hd
                 (FNS n params
                     (if
-                        (= n name)
+                        (type-name-matches n name)
                         params
                         (lookup-fn-sigs-binds rest name)))))))
 
@@ -154,7 +168,7 @@
         (match hd
                 (FR k v
                     (if
-                        (= k name)
+                        (type-name-matches k name)
                         (Some v)
                         (lookup-ret-binds rest name)))))))
 
@@ -198,7 +212,7 @@
         (match hd
                 (AD n variants
                     (if
-                        (= n name)
+                        (type-name-matches n name)
                         variants
                         (lookup-adt-binds rest name)))))))
 
@@ -1884,7 +1898,7 @@
         (match hd
                 (AV n fields
                     (if
-                        (= n variant-name)
+                        (type-name-matches n variant-name)
                         fields
                         (infer-find-variant-fields rest variant-name)))))))
 
@@ -1986,7 +2000,7 @@
         (Cons def rest
         (match def
                 (AD n _
-                    (if (= n name) true (infer-adt-exists rest name)))))))
+                    (if (type-name-matches n name) true (infer-adt-exists rest name)))))))
 
 ; ===========================================================================
 ; INFER-EXPR — call (raw Call form)
@@ -2174,7 +2188,7 @@
         (Cons v rest
         (match v
                 (AV n fields
-                    (if (= n variant-name)
+                    (if (type-name-matches n variant-name)
                         fields
                         (find-variant-fields rest variant-name)))
                 (_ (find-variant-fields rest variant-name))))))
