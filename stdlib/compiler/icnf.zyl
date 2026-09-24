@@ -615,10 +615,10 @@
     ; a small integer as a handle, found no magic, and every load
     ; returned 0 while every store silently did nothing. Bind in field
     ; order, emit in runtime order.
-    (ELoadByte endian buf offset (IFfi "zyl_load_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
-    (ELoadByteSigned endian buf offset (IFfi "zyl_load_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil)))))
-    (EStoreByte endian buf offset val (IFfi "zyl_store_byte" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
-    (EStoreByteSigned endian buf offset val (IFfi "zyl_store_byte_signed" (Cons (IConst (endian-to-int endian)) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil))))))
+    (ELoadByte endian buf offset (ic-byte-access arena "zyl_load_byte" "zyl_load_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil))))
+    (ELoadByteSigned endian buf offset (ic-byte-access arena "zyl_load_byte_signed" "zyl_load_n_signed" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil))))
+    (EStoreByte endian buf offset val (ic-byte-access arena "zyl_store_byte" "zyl_store_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil)))))
+    (EStoreByteSigned endian buf offset val (ic-byte-access arena "zyl_store_byte_signed" "zyl_store_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil)))))
     (EByteSlice buf start len (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     (EByteSliceSub buf start len (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     ; region is a bare `Region` ADT value (not an Expr -- see ExprInner's
@@ -1136,6 +1136,13 @@
   (match m
     (Some x (match (Expr.inner x) (EAtom a (match a (AStr t t) (_ "assert failed"))) (_ "assert failed")))
     (None "assert failed")))
+
+; A byte access: one byte through `sym1`, a 16/32/64-bit one through `symn` with its width first.
+(defn ic-byte-access (arena sym1 symn endian args)
+  (let e (IConst (endian-to-int endian))
+    (if (= (endian-width endian) 1)
+      (IFfi sym1 (Cons e args))
+      (IFfi symn (Cons (IConst (endian-width endian)) (Cons e args))))))
 
 (defn ic-starts-with-make (s)
   (if (>= (str-length s) 5)

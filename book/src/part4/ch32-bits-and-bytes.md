@@ -193,12 +193,26 @@ corrupts nothing.
     0))
 ```
 
-**Only the 8-bit widths are implemented.** `load-u16`, `load-u32`,
-`load-u64` and their signed and store counterparts are reserved names
-that the compiler rejects with `E_RESERVED_KEYWORD` rather than
-silently lowering to a call that cannot resolve. Build wider values
-from bytes with the shift operators, or use `math/bits`'s packing
-helpers.
+### Wider widths
+
+`load-u16`, `load-u32`, `load-u64`, their signed forms `load-i16`,
+`load-i32`, `load-i64`, and the matching `store-*` forms take the same
+arguments as the 8-bit ones. The selector now matters: `:le` puts the
+least significant byte first, `:be` the most significant.
+
+```lisp
+(let b (bytebuf Heap 8)
+  (begin
+    (store-u32 :le b 0 305419896)   ; bytes 78 56 34 12
+    (load-u32 :be b 0)              ; 2018915346 (0x78563412)
+    (load-i16 :le b 0)              ; 22136
+    (load-u32 :le b 6)))            ; 0 -- bytes 6..9 do not all fit
+```
+
+The bounds check covers the whole width: an access that would run past
+the end reads 0 or stores nothing (returning 0), exactly like an
+out-of-range byte. Signed loads sign-extend from the loaded width;
+`load-u64` returns the 64-bit pattern as an `Int`.
 
 ## 32.7 Slices
 
@@ -271,10 +285,10 @@ at different stages:
 | `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working; the region argument does not change allocation |
 | `byteslice`, `byteslice-sub`, `bytebuf-append` | Working |
 | `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working |
+| 16-, 32- and 64-bit loads and stores | Working, little- or big-endian |
 | The atomic family | Working, on 8-aligned offsets |
 | `align-check` | Working, as a 1/0 test |
 | Region rules (`E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`, `E_ATOMIC_ABA`) | **Not enforced** |
-| 16-, 32- and 64-bit loads and stores | **Reserved, not implemented** — rejected with `E_RESERVED_KEYWORD` |
 
 Two further caveats:
 
@@ -283,12 +297,12 @@ Two further caveats:
   (`math/words`) rather than as packed buffers — see Chapter 34 for why
   that tradeoff was made. The buffer family is there for programs that
   need packed representations; it is not yet load-bearing.
-- **A buffer handle is an integer.** Passing something that is not a
-  buffer where one is expected — an ordinary number, say — is not
-  currently a type error. Every entry point checks a magic word in the
-  handle's header and treats 0 as "no buffer", but to read that word it
-  has to dereference the handle, so a small integer such as 5 crashes
-  the program. Keep buffer handles in their own bindings.
+- **Buffers and slices have their own types**, `ByteBuf` and
+  `ByteSlice`, usable as annotations: `(defn fill ((b ByteBuf)) ...)`.
+  Passing an `Int`, `Float`, `Bool` or `String` where a handle is
+  expected is `E_TYPE_MISMATCH`. The byte operations accept either
+  handle type. A value whose type inference cannot determine is still
+  checked only at run time, by the magic word in the handle's header.
 
 ## Summary
 
@@ -302,5 +316,5 @@ Two further caveats:
   its rules are not enforced yet.
 - Write constants at or above 2^63 as negative `Int`s; an oversized
   literal currently becomes 0.
-- Only 8-bit loads and stores exist; the wider widths are reserved and
-  rejected rather than silently broken.
+- Loads and stores come in 8, 16, 32 and 64 bits, signed and unsigned,
+  with an explicit byte order; buffers are typed `ByteBuf`/`ByteSlice`.

@@ -290,10 +290,10 @@ shows `3.500000`.
 | `bytebuf-atomic-store` / `-add` / `-sub` / `-fetch-add` / `-max` / `-min` | `(bytebuf-atomic-add buf offset value)` | |
 | `bytebuf-atomic-cas` | `(bytebuf-atomic-cas buf offset expected desired)` | |
 
-The wider load and store widths — `load-u16`/`u32`/`u64`, their signed
-forms and their store counterparts — are **reserved names that are not
-implemented**. Using one is rejected with `E_RESERVED_KEYWORD` rather
-than silently lowered. Chapter 32 covers this family in full.
+The wider widths — `load-u16`/`u32`/`u64`, `load-i16`/`i32`/`i64` and
+the matching `store-*` forms — take the same arguments as the 8-bit ones
+and honour the `:le`/`:be` selector. Buffers are typed `ByteBuf`, slices
+`ByteSlice`. Chapter 32 covers this family in full.
 
 ## C.13 Contracts
 

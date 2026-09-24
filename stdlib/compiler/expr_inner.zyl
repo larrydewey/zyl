@@ -117,13 +117,21 @@
 
 ; Endianness selector for the load/store/atomic byte ops. Parsed from the
 ; `:le` / `:be` keyword in first argument position
-; (e.g. `(load-u8 :le buf off)`).
-(deftype Endian (ELe) (EBe))
+; (e.g. `(load-u8 :le buf off)`). EWide carries a 16/32/64-bit access:
+; the endian code (0 le, 1 be) and the width in bytes.
+(deftype Endian (ELe) (EBe) (EWide Int Int))
 
 (defn endian-to-int (e)
   (match e
     (ELe 0)
-    (EBe 1)))
+    (EBe 1)
+    (EWide c _ c)))
+
+(defn endian-width (e)
+  (match e
+    (ELe 1)
+    (EBe 1)
+    (EWide _ w w)))
 
 ; --- Supporting ADTs -------------------------------------------------------
 
@@ -918,7 +926,13 @@
     (AstIdent s0
       (let s (strip-leading-colon s0)
         (if (> (str-eq s "le") 0) (Some ELe)
-        (if (> (str-eq s "be") 0) (Some EBe) None))))
+        (if (> (str-eq s "be") 0) (Some EBe)
+        (if (> (str-eq s "le/2") 0) (Some (EWide 0 2))
+        (if (> (str-eq s "be/2") 0) (Some (EWide 1 2))
+        (if (> (str-eq s "le/4") 0) (Some (EWide 0 4))
+        (if (> (str-eq s "be/4") 0) (Some (EWide 1 4))
+        (if (> (str-eq s "le/8") 0) (Some (EWide 0 8))
+        (if (> (str-eq s "be/8") 0) (Some (EWide 1 8)) None))))))))))
     (_ None)))
 
 ; The reader keeps a keyword's ':' (parser.zyl's read-form-atom) so the
@@ -1076,21 +1090,30 @@
           (convert-ast (ast-nth args 3 (AstInt 0))))))
     (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bytebuf-atomic-cas requires buf off exp new" 1000)))
 
-; Names reserved by the plan with width variants (u16/u32/u64, i16/i32/i64)
-; that have NO ExprInner variant in §2 -- reject loudly rather than lower.
-(defn reserved-byte-name (n)
-  (if (> (str-eq n "load-u16") 0) 1
-  (if (> (str-eq n "load-u32") 0) 1
-  (if (> (str-eq n "load-u64") 0) 1
-  (if (> (str-eq n "load-i16") 0) 1
-  (if (> (str-eq n "load-i32") 0) 1
-  (if (> (str-eq n "load-i64") 0) 1
-  (if (> (str-eq n "store-u16") 0) 1
-  (if (> (str-eq n "store-u32") 0) 1
-  (if (> (str-eq n "store-u64") 0) 1
-  (if (> (str-eq n "store-i16") 0) 1
-  (if (> (str-eq n "store-i32") 0) 1
-  (if (> (str-eq n "store-i64") 0) 1 0)))))))))))))
+; Wide loads and stores: `load-u16`..`load-u64`, `load-i16`..`load-i64` and
+; the matching `store-*`; width in bytes, 0 for any other name.
+(defn wide-byte-width (n)
+  (if (or (> (str-eq n "load-u16") 0) (or (> (str-eq n "load-i16") 0) (or (> (str-eq n "store-u16") 0) (> (str-eq n "store-i16") 0)))) 2
+    (if (or (> (str-eq n "load-u32") 0) (or (> (str-eq n "load-i32") 0) (or (> (str-eq n "store-u32") 0) (> (str-eq n "store-i32") 0)))) 4
+      (if (or (> (str-eq n "load-u64") 0) (or (> (str-eq n "load-i64") 0) (or (> (str-eq n "store-u64") 0) (> (str-eq n "store-i64") 0)))) 8 0))))
+
+; The byte-width forms with an EWide endian: same shapes, same arity errors.
+(defn parse-wide-byte (n rest)
+  (let w (wide-byte-width n)
+    (let signed (if (= (ffi-call "zyl_cstr_byte_at" n (if (> (str-length n) 5) (if (= (ffi-call "zyl_cstr_byte_at" n 0 1000) 108) 5 6) 0) 1000) 105) 1 0)
+      (let wide (wide-args w rest)
+        (if (= (ffi-call "zyl_cstr_byte_at" n 0 1000) 108)
+          (match (parse-load-byte wide signed) (Some x x) (None (Expr (EUnknown n (convert-ast-list rest)))))
+          (match (parse-store-byte wide signed) (Some x x) (None (Expr (EUnknown n (convert-ast-list rest))))))))))
+
+; Replace the :le/:be selector with an EWide marker the byte parsers accept.
+(defn wide-args (w rest)
+  (match rest
+    (Cons sel more
+      (match (parse-endian-selector sel)
+        (Some e (Cons (AstIdent (str-concat (if (= (endian-to-int e) 0) "le" "be") (str-concat "/" (ffi-call "zyl_int_text" w 1000)))) more))
+        (None rest)))
+    (Nil rest)))
 
 ; Dispatch a head-symbol to the byte-form parse helpers, preserving the
 ; outer no-dispatch fallback for non-byte names.
@@ -1179,8 +1202,8 @@
     (match (parse-atomic-cas rest)
       (Some expr expr)
       (None (Expr (EUnknown "bytebuf-atomic-cas" (convert-ast-list rest)))))
-  (if (= (reserved-byte-name n) 1)
-    (ffi-call "zyl_panic" (str-concat "E_RESERVED_KEYWORD: " (str-concat n " is reserved but not yet supported (only byte-width load/store forms are implemented)")) 1000)
+  (if (> (wide-byte-width n) 0)
+    (parse-wide-byte n rest)
     (Expr (EApply n (convert-ast-list rest)))
   )))))))))))))))))))))))
 

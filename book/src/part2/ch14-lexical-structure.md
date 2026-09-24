@@ -281,9 +281,7 @@ enforce it. This program compiles and prints `3`:
       0)))
 ```
 
-The only place `E_RESERVED_KEYWORD` is raised today is for the byte-access
-widths that are reserved but not implemented (`load-u16`, `store-i64` and
-the like; see Chapter 32).
+`E_RESERVED_KEYWORD` is catalogued but not raised today.
 
 ## 14.7 Precedence and Associativity
 

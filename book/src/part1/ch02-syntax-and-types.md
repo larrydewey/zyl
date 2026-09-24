@@ -426,9 +426,8 @@ The compiler does not stop you from using one as a variable name —
 and some names (such as `when`) are also core library functions. Treat
 them as reserved.
 
-The error code `E_RESERVED_KEYWORD` exists for names that are reserved
-for future forms: the 16-, 32- and 64-bit byte loads and stores
-(`load-u16`, `store-u32` and so on) are rejected with it today.
+The error code `E_RESERVED_KEYWORD` is catalogued for reserved names but
+is not raised today.
 
 ## 2.10 Style Conventions
 

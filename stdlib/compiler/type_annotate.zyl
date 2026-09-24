@@ -308,7 +308,9 @@
   (if (ta-streq n "Float") true
   (if (ta-streq n "String") true
   (if (ta-streq n "Bool") true
-  (ta-streq n "Unit"))))))
+  (if (ta-streq n "ByteBuf") true
+  (if (ta-streq n "ByteSlice") true
+  (ta-streq n "Unit"))))))))
 
 (defn ta-scope-get (scope n)
   (match scope
@@ -614,6 +616,27 @@
     (Nil fb)
     (Cons h t (match t (Nil h) (_ (ta-last t fb))))))
 
+(defn ta-show-prim (n)
+  (or (ta-streq n "Int") (or (ta-streq n "Float") (or (ta-streq n "Bool") (ta-streq n "String")))))
+
+;; Byte buffers and slices are their own types; a scalar where one is expected is a clash.
+(defn ta-bytebuf () (TaC "ByteBuf" Nil))
+(defn ta-byteslice () (TaC "ByteSlice" Nil))
+
+(defn ta-bytes (st ctx env b)
+  (let t (ta-expr st ctx env b)
+    (match (ta-resolve st t)
+      (TaC n _
+        (if (or (ta-show-prim n) (ta-streq n "Unit"))
+          (ta-mismatch st b (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned")
+          t))
+      (_ t))))
+
+; Handle first, then the other operands; the result is an Int.
+(defn ta-bytes-op (st ctx env b rest)
+  (let _ (ta-bytes st ctx env b)
+    (ta-walk-int st ctx env rest)))
+
 (defn ta-walk-int (st ctx env es)
   (let _ (ta-list st ctx env es)
     (ta-int)))
@@ -666,26 +689,26 @@
     (ELambda _ params body (ta-lambda st ctx env params body))
     (EDefn _ params body (ta-lambda st ctx env params body))
     (EByteLit _ (ta-int))
-    (EByteBuf _ _ (ta-int))
-    (ELoadByte _ b o (ta-walk-int st ctx env (ta-l2 b o)))
-    (ELoadByteSigned _ b o (ta-walk-int st ctx env (ta-l2 b o)))
-    (EStoreByte _ b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EStoreByteSigned _ b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EByteSlice b s l (ta-walk-int st ctx env (ta-l3 b s l)))
-    (EByteSliceSub b s l (ta-walk-int st ctx env (ta-l3 b s l)))
-    (EByteBufAppend b v (ta-walk-int st ctx env (ta-l2 b v)))
-    (EByteBufLen b (ta-walk-int st ctx env (Cons b Nil)))
-    (EByteBufCap b (ta-walk-int st ctx env (Cons b Nil)))
-    (EByteBufPtr b (ta-walk-int st ctx env (Cons b Nil)))
+    (EByteBuf _ _ (ta-bytebuf))
+    (ELoadByte _ b o (ta-bytes-op st ctx env b (Cons o Nil)))
+    (ELoadByteSigned _ b o (ta-bytes-op st ctx env b (Cons o Nil)))
+    (EStoreByte _ b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EStoreByteSigned _ b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EByteSlice b s l (ta-seq (ta-bytes-op st ctx env b (ta-l2 s l)) (ta-byteslice)))
+    (EByteSliceSub b s l (ta-seq (ta-bytes-op st ctx env b (ta-l2 s l)) (ta-byteslice)))
+    (EByteBufAppend b v (ta-bytes-op st ctx env b (Cons v Nil)))
+    (EByteBufLen b (ta-bytes-op st ctx env b Nil))
+    (EByteBufCap b (ta-bytes-op st ctx env b Nil))
+    (EByteBufPtr b (ta-bytes-op st ctx env b Nil))
     (EAlignCheck x _ (ta-walk-int st ctx env (Cons x Nil)))
-    (EAtomicLoad b o (ta-walk-int st ctx env (ta-l2 b o)))
-    (EAtomicStore b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EAtomicAdd b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EAtomicSub b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EAtomicCAS b o x v (ta-walk-int st ctx env (ta-l4 b o x v)))
-    (EAtomicFetchAdd b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EAtomicMax b o v (ta-walk-int st ctx env (ta-l3 b o v)))
-    (EAtomicMin b o v (ta-walk-int st ctx env (ta-l3 b o v)))
+    (EAtomicLoad b o (ta-bytes-op st ctx env b (Cons o Nil)))
+    (EAtomicStore b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicSub b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicCAS b o x v (ta-bytes-op st ctx env b (ta-l3 o x v)))
+    (EAtomicFetchAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicMax b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicMin b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (_ (ta-fresh st))))
 
 (defn ta-atom (st ctx env a)
@@ -1879,7 +1902,7 @@
   (match (ta-resolve st t)
     (TaC n args
       (if (ta-prim n)
-        (if (ta-streq n "Unit") false true)
+        (ta-show-prim n)
         (let sd (ta-sget (ta-specs st) "!show")
           (if (= sd 0) false
             (if (< (ta-impl-fn st sd n) 0) false (ta-showable-list st args))))))

@@ -17,7 +17,7 @@
 - [x] Contract injection (spec §23): lowered in `expr_inner.zyl`; open: profiles, `checkpoint` rollback, typed `recover` arms
 - [x] `try` around an even-arity call segfaulted or hung (frame pointer overwritten)
 - [x] Trait method with a compound (or no) return type: `print` of the call printed an address
-- [ ] 16-, 32-, 64-bit byte loads/stores; distinct byte-buffer handle type
+- [x] 16-, 32-, 64-bit byte loads/stores; distinct `ByteBuf`/`ByteSlice` handle types
 - [ ] `Secret`: zeroization on scope exit, `print` redaction, `Secret` trait
 - [ ] `receive` form and runnable structured-message actor example
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
@@ -31,7 +31,7 @@
 - [ ] REPL: let definitions at prompt capture `def` bindings
 
 ## Deferred Design Work
-- [ ] Wider byte widths (16/32/64-bit) beyond `byteslice`
+- [x] Wider byte widths (16/32/64-bit)
 - [ ] Deterministic region extension registry (fixed growth, alignment, policy)
 - [ ] Capability-mediated sharing (TCap/atomic shared region, typed bounded channels)
 - [ ] Inline assembly with region/capability-aware register rules

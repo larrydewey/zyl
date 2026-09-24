@@ -1,0 +1,4 @@
+; Compile-fail: a byte load needs a ByteBuf or ByteSlice handle; an Int is
+; E_TYPE_MISMATCH.
+
+(defn main () (load-u16 :le 7 0))

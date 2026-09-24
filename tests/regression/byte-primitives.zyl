@@ -162,4 +162,38 @@
 (test "byte-literal"
   (assert-equal (byte 200) 200))
 
+;; 16/32/64-bit loads and stores: byte order, sign extension, whole-width bounds.
+(defn bp-wide ((b ByteBuf))
+  (begin
+    (store-u32 :le b 0 305419896)
+    (store-u16 :be b 4 4660)
+    (store-i64 :le b 8 -2)
+    b))
+
+(test "wide-little-and-big-endian"
+  (let b (bp-wide (bytebuf Heap 16))
+    (begin
+      (assert-equal (load-u32 :le b 0) 305419896)
+      (assert-equal (load-u8 :le b 0) 120)
+      (assert-equal (load-u32 :be b 0) 2018915346)
+      (assert-equal (load-u16 :be b 4) 4660)
+      (assert-equal (load-u16 :le b 4) 13330))))
+
+(test "wide-sign-extension"
+  (let b (bp-wide (bytebuf Heap 16))
+    (begin
+      (assert-equal (load-i64 :le b 8) -2)
+      (assert-equal (load-i16 :le b 8) -2)
+      (assert-equal (load-u16 :le b 8) 65534)
+      (assert-equal (load-i32 :le b 8) -2)
+      (assert-equal (load-u32 :le b 12) 4294967295))))
+
+(test "wide-bounds-cover-the-whole-width"
+  (let b (bytebuf Heap 16)
+    (begin
+      (assert-equal (store-u16 :le b 15 1) 0)
+      (assert-equal (store-u16 :le b 14 1) 1)
+      (assert-equal (load-u32 :le b 13) 0)
+      (assert-equal (load-u16 :le (byteslice b 14 2) 0) 1))))
+
 (run-tests)

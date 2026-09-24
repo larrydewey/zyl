@@ -903,6 +903,39 @@ long long zyl_store_byte_signed(long long endian, long long offset, long long bu
     return 1;
 }
 
+/* 2-, 4- and 8-byte accesses (load-u16 .. store-i64). The whole width must
+   fit, or a load returns 0 and a store does nothing and returns 0.
+   endian 0 is little-endian, 1 big-endian. */
+static int zyl_width_ok(long long w) { return w == 2 || w == 4 || w == 8; }
+
+long long zyl_load_n(long long width, long long endian, long long offset, long long buf) {
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!zyl_width_ok(width) || !v.valid || !zyl_bb_bounds_ok(offset, width, v.bound)) return 0;
+    unsigned long long r = 0;
+    for (long long i = 0; i < width; i++) {
+        unsigned long long b = v.data[offset + (endian ? i : width - 1 - i)];
+        r = (r << 8) | b;
+    }
+    return (long long)r;
+}
+
+long long zyl_load_n_signed(long long width, long long endian, long long offset, long long buf) {
+    unsigned long long r = (unsigned long long)zyl_load_n(width, endian, offset, buf);
+    if (width >= 8) return (long long)r;
+    unsigned long long sign = 1ULL << (width * 8 - 1);
+    return (long long)((r ^ sign) - sign);
+}
+
+long long zyl_store_n(long long width, long long endian, long long offset, long long buf, long long val) {
+    ZylBytesView v = zyl_bytes_view(buf);
+    if (!zyl_width_ok(width) || !v.valid || !zyl_bb_bounds_ok(offset, width, v.bound)) return 0;
+    unsigned long long u = (unsigned long long)val;
+    for (long long i = 0; i < width; i++) {
+        v.data[offset + (endian ? width - 1 - i : i)] = (unsigned char)(u >> (8 * i));
+    }
+    return 1;
+}
+
 /* Zero-copy view: `start..start+len` of a ByteBuf's data. Bounds-checked
    against the buf's fixed capacity. Returns a new ByteSlice handle (or 0
    on OOB / allocation failure) -- never copies the underlying bytes. */
@@ -3924,6 +3957,7 @@ long long zyl_int_text(long long n) {
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
+    X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \

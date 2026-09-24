@@ -27,9 +27,9 @@
 `stdlib/atomic/atomic.zyl`; lowering goes through `IFfi` rather than 19 new
 ICNF variants; the runtime header is a magic tag plus bounds checks, not the
 planned canary/version layout; wide-width forms (`load-u16` ... `store-i64`)
-are reserved and rejected with `E_RESERVED_KEYWORD`. The endian selector is
-parsed and passed to the runtime but ignored there, since every implemented
-load and store is one byte wide.
+were implemented on 2026-09-24 (`zyl_load_n`/`zyl_store_n`, the width in
+the `Endian` value), and the endian selector now matters for them; the
+active type pass types handles as `ByteBuf`/`ByteSlice`.
 
 **Not done:** no compile-time region enforcement of any kind (Pin-only
 `bytebuf-ptr`, Stack constant capacity, Stack-return promotion,
@@ -451,7 +451,7 @@ many times; the current committed seed contains all of this work.
 - [x] Documentation (book Chapter 32, §11)
 - [x] Load/store argument-order bug found and fixed (§15)
 - [ ] Property tests / fuzzing (§10)
-- [ ] Wide-width loads/stores (`load-u16` ... `store-i64`) — reserved only
+- [x] Wide-width loads/stores (`load-u16` ... `store-i64`) — implemented 2026-09-24
 - [ ] Error codes raised: the enforcement codes are defined but unused (§8)
 - [x] New seed committed (`build/boot/stage2.s`/`.bin`)
 

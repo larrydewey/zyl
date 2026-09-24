@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **158/158**
-  (updated 2026-09-24): regression 62, interpreter 42, compile-fail 28,
+- `./run_regression_tests.sh --full --no-boot` passes **159/159**
+  (updated 2026-09-24): regression 62, interpreter 42, compile-fail 29,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -159,10 +159,6 @@ Compiler:
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
   native-object and assembly hashes, but the graph hash is not mixed into
   the binary's own hash.
-- Only 8-bit byte loads and stores exist. The 16-, 32- and 64-bit forms
-  are reserved and rejected with `E_RESERVED_KEYWORD`. A byte-buffer
-  handle is an integer, so passing a non-buffer where one is expected is
-  not a type error.
 - `Secret`: no zeroization on scope exit, no `print` redaction, no
   `Secret` trait for user-defined types. Taint crosses a call boundary
   only where the callee's parameters are annotated.
@@ -254,8 +250,8 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 - [x] Contract injection (spec §23), lowered in `expr_inner.zyl`;
       open: profiles, `checkpoint` rollback, typed `recover` arms.
-- [ ] 16-, 32- and 64-bit byte loads and stores; a distinct type for
-      byte-buffer handles.
+- [x] 16-, 32- and 64-bit byte loads and stores; `ByteBuf`/`ByteSlice`
+      handle types.
 - [ ] `Secret`: zeroization on scope exit, `print` redaction, a `Secret`
       trait.
 - [ ] A `receive` form and a runnable structured-message actor example.
@@ -376,7 +372,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — dot syntax
+## Session (2026-09-24, latest) — wide byte access, handle types
+
+**`load-u16` .. `store-i64`.** The wide forms reuse the byte-form Expr
+nodes: the width rides in the `Endian` value (`EWide code width`), so no
+pass changed shape. ICNF lowers them to `zyl_load_n`/`zyl_load_n_signed`/
+`zyl_store_n`, which honour `:le`/`:be`, sign-extend signed loads and
+bounds-check the whole width (fail closed like the byte forms).
+**Handle types:** `bytebuf` is `ByteBuf`, `byteslice`/`byteslice-sub` are
+`ByteSlice` (both usable as annotations); an Int, Float, Bool, String or
+Unit where a handle is expected is `E_TYPE_MISMATCH` (`ta-bytes`).
+`E_RESERVED_KEYWORD` is no longer raised anywhere. Tests: three new tests
+in `byte-primitives.zyl`, `compile-fail/bytes-int-handle.zyl`.
+
+## Session (2026-09-24, earlier) — dot syntax
 
 **Fields and methods through dots.** `dot-rewrite-forms`
 (`expr_inner.zyl`, called by the module resolver before qualification)

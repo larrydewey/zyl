@@ -110,8 +110,6 @@ stream (it is treated as end of input).
 
 ### Reserved keywords (§1.3.1)
 
-Not enforced. `E_RESERVED_KEYWORD` is catalogued, but the only place the
-compiler raises it is for the reserved-but-unimplemented byte access
-widths (`load-u16`, `store-i64` and the like). Binding a §1.3 keyword as a
+Not enforced. `E_RESERVED_KEYWORD` is catalogued and not raised. Binding a §1.3 keyword as a
 name, for example `(let match 3 ...)`, compiles. The canonical §30 lists
 this enforcement under FUTURE.

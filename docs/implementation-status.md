@@ -46,7 +46,7 @@ it compiles and runs correctly; the notes say where it stops.
 | Regions | Escape analysis puts a non-escaping variant on the stack; everything else is heap. Circular and Global regions are not inferred |
 | Capability types | `TCap`/`TMut` are enforced syntactically (`let` vs `let-mut`) by `mutability_check.zyl` |
 | `Secret` capability | Enforced by `secret_check.zyl` (branch, index, divide, print, escape, unpinned FFI) |
-| Byte primitives | 8-bit loads and stores, byte buffers, slices, atomics and alignment work. The 16-, 32- and 64-bit widths are reserved and rejected with `E_RESERVED_KEYWORD` |
+| Byte primitives | 8-, 16-, 32- and 64-bit loads and stores (le/be), byte buffers (`ByteBuf`), slices (`ByteSlice`), atomics and alignment work |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
 | Type inference | Best-effort. It feeds monomorphization and codegen, and rejects only an argument to a top-level function or constructor that definitely clashes with its annotation (`E_TYPE_MISMATCH`): `(+ 1 "a")` compiles |
 | Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` falls back on error; `(contracts off ...)` strips them. No profiles; `checkpoint` does not roll back |
