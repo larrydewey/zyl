@@ -131,6 +131,7 @@
                                                           (Cons (EC "E_PKG_NATIVE_FLAG_DENIED" 19 1 "package: cflag F is outside the allowlist")
                                                           (Cons (EC "E_PKG_NATIVE_BUILD_FAILED" 19 1 "package: cc failed on native source P")
                                                           (Cons (EC "E_PKG_FEATURE_UNKNOWN" 19 1 "package: feature F is not declared by N")
+                                                          (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
                                                           (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
                                                           (Cons (EC "E_PKG_CYCLE" 9 1 "package: dependency graph is not a DAG: M")
                                                           (Cons (EC "E_MODULE_CYCLE" 9 1 "module: module graph within package N is not a DAG: M")
@@ -143,7 +144,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

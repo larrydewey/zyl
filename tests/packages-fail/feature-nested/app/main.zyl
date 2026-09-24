@@ -1,0 +1,4 @@
+(defn main ()
+  (begin
+    (feature-gate simd (defn fast () 1))
+    0))

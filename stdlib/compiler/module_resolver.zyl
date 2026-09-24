@@ -878,6 +878,29 @@
                   (list-append (mr-unwrap-gate feats f) (mr-strip-module-forms feats rest))
                   (Cons f (mr-strip-module-forms feats rest)))))))))))
 
+;; `feature-gate` is valid at top level only (spec 31.10): one left inside a
+;; form after the top-level ones were unwrapped is E_PKG_FEATURE_NESTED.
+(defn mr-no-nested-gates (forms)
+  (begin
+    (mr-gates-in-list forms)
+    forms))
+
+(defn mr-gates-in-list (xs)
+  (match xs
+    (Nil 0)
+    (Cons h t (begin (mr-gates-in h) (mr-gates-in-list t)))))
+
+(defn mr-gates-in (a)
+  (match a
+    (AList xs
+      (if (> (str-eq (mr-ast-head a) "feature-gate") 0)
+        (ffi-call "zyl_panic"
+          (err-at "E_PKG_FEATURE_NESTED" "`feature-gate` inside another form"
+            (ffi-call "zyl_span_file" a 1000) (ffi-call "zyl_span_off" a 1000)
+            "a feature gates a whole top-level definition; move it to the top level") 1000)
+        (mr-gates-in-list xs)))
+    (_ 0)))
+
 ; An inactive feature's definitions are not compiled at all — that is what
 ; makes an optional dependency optional (§31.10). An active one is
 ; unwrapped to the definition it guards.
@@ -911,7 +934,7 @@
     (let ptab (st-make arena (mr-unit-table-pairs units u (mrp-features pkg)))
       (let itab (st-make arena (mr-import-pairs disc units pkg (mru2-uses u)))
         (let qualified (qf-forms (QT itab ptab) Nil
-                         (dot-rewrite-forms (mr-strip-module-forms (mrp-features pkg) (mru2-forms u))))
+                         (dot-rewrite-forms (mr-no-nested-gates (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))))
           (let _ (mr-check-coherence qualified (mrp-name pkg))
             qualified))))))
 

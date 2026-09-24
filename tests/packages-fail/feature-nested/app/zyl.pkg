@@ -1,0 +1,4 @@
+; E_PKG_FEATURE_NESTED: feature-gate is valid at top level only (spec 31.10).
+(package
+  (name "app/feature-nested") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (features (feature simd)))
