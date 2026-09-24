@@ -263,7 +263,7 @@ assert lowering → ICNF generation → optimization → region inference
 - **Testing framework** — `(test "name" ...)` with `assert-equal` and friends, `zyl test` for packages
 - **REPL** — `zyl repl`, backed by an ICNF interpreter, with a line editor written in Zyl
 - **Language server** — `zyl-lsp`, written in Zyl, plus a VS Code extension
-- **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), `ensures` sees the return value as `result`, `recover` supplies a fallback, `(contracts off ...)` strips them; no profiles, and `checkpoint` does not roll back
+- **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), `ensures` sees the return value as `result`, `recover` supplies fallbacks by error code, `checkpoint` rolls back `let-mut` state, and the profile (`--contracts=strict|warn|off|...` or `(contracts P)`) decides whether a violation panics, warns or is compiled out
 
 ## Compilation Pipeline
 
@@ -280,7 +280,7 @@ assert lowering → ICNF generation → optimization → region inference
 | 9. Region Inference | ✅ | Escape analysis over ICNF: non-escaping variants move to the stack |
 | 10. Code Generation | ✅ | x86_64, System V AMD64 ABI |
 | 11. Linking | ✅ | cc + actor_runtime.c + pthread |
-| — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`); no profiles |
+| — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`), under a profile |
 
 The implementation's order differs from spec §22's (which puts region
 inference before monomorphization and contract injection after

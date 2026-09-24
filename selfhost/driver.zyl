@@ -119,7 +119,7 @@
     (let a (ffi-call "zyl_arg_str" i 1000)
       (if (> (str-eq a "--emit-asm") 0)
         (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
-      (if (> (str-eq a "--error-format=json") 0)
+      (if (or (> (str-eq a "--error-format=json") 0) (drv-contracts-flag-p a))
         (cli-parse-opts (+ i 1) argc acc)
         (if (> (str-eq a "-o") 0)
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
@@ -440,6 +440,7 @@
   (begin
     (print "zyl <file.zyl> [-o out] [--emit-asm]   compile one file")
     (print "  --error-format=json                    report diagnostics as JSON lines")
+    (print "  --contracts=strict|debug|warn|off|production   contract profile (default strict)")
     (print "zyl new <name>                         create a package")
     (print "zyl add <name> [version]               add a dependency")
     (print "zyl fetch                              resolve, verify and populate the store")
@@ -499,9 +500,17 @@
 (defn drv-scan-error-format (i argc)
   (if (>= i argc)
     0
-    (if (> (str-eq (ffi-call "zyl_arg_str" i 1000) "--error-format=json") 0)
-      (ffi-call "zyl_diag_json_set" 1 1000)
-      (drv-scan-error-format (+ i 1) argc))))
+    (let a (ffi-call "zyl_arg_str" i 1000)
+      (begin
+        (if (> (str-eq a "--error-format=json") 0) (ffi-call "zyl_diag_json_set" 1 1000) 0)
+        (if (drv-contracts-flag-p a)
+          (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 6 1000) "profile" (str-substring a 12 (- (str-length a) 12)) 1000)
+          0)
+        (drv-scan-error-format (+ i 1) argc)))))
+
+; `--contracts=P`: the build's contract profile (strict, debug, warn, off, production).
+(defn drv-contracts-flag-p (a)
+  (and (> (str-length a) 12) (> (ffi-call "zyl_cstr_eq" (str-substring a 0 12) "--contracts=" 1000) 0)))
 
 ; The bundle dir holds stdlib/ and actor_runtime.c; the compiler chdirs
 ; there so module resolution and linking find them. A subcommand needs

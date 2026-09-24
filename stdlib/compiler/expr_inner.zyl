@@ -319,12 +319,46 @@
 
 (defn ast-call2 (hd a b) (AList (Cons (AstIdent hd) (Cons a (Cons b Nil)))))
 
-; (assert-true C "E_CONTRACT_VIOLATION: <what> failed: C"), spanned at the clause.
+;; Profiles (spec 23): strict/debug panic, warn reports and continues,
+;; off/production strip. The build's profile is `--contracts=P` (map 6
+;; "profile"); a (contracts P) directive overrides it for the next form.
+(defn contract-tab () (ffi-call "zyl_smap_global" 6 1000))
+(defn contract-profile ()
+  (let l (ffi-call "zyl_smap_get" (contract-tab) "local" 1000)
+    (if (= l 0)
+      (let g (ffi-call "zyl_smap_get" (contract-tab) "profile" 1000)
+        (if (= g 0) "strict" g))
+      l)))
+
+(defn contract-profile-p (p)
+  (or (> (str-eq p "strict") 0) (or (> (str-eq p "debug") 0) (or (> (str-eq p "warn") 0)
+    (or (> (str-eq p "off") 0) (> (str-eq p "production") 0))))))
+
+(defn contract-stripping-p (p) (or (> (str-eq p "off") 0) (> (str-eq p "production") 0)))
+
+; (assert-true C "E_CONTRACT_VIOLATION: <what> failed: C") under strict/debug,
+; (if C 0 (zyl-contract-warn msg)) under warn, spanned at the clause.
 (defn contract-check (what clause c)
   (let msg (str-concat "E_CONTRACT_VIOLATION: " (str-concat what (str-concat " failed: " (ast-text c))))
-    (let chk (AList (Cons (AstIdent "assert-true") (Cons c (Cons (AString msg) Nil))))
+    (let chk (if (contract-stripping-p (contract-profile))
+               (AstInt 0)
+               (if (> (str-eq (contract-profile) "warn") 0)
+               (AList (Cons (AstIdent "if") (Cons c (Cons (AstInt 0)
+                 (Cons (AList (Cons (AstIdent "zyl-contract-warn") (Cons (AString msg) Nil))) Nil)))))
+               (AList (Cons (AstIdent "assert-true") (Cons c (Cons (AString msg) Nil))))))
       (let _ (ffi-call "zyl_span_copy" chk clause 1000)
         chk))))
+
+; Convert `f` under profile `p`.
+(defn convert-under-profile (p f)
+  (if (contract-stripping-p p)
+    (convert-ast (contract-strip f))
+    (begin
+      (ffi-call "zyl_smap_put" (contract-tab) "local" p 1000)
+      (let e (convert-ast f)
+        (begin
+          (ffi-call "zyl_smap_put" (contract-tab) "local" 0 1000)
+          e)))))
 
 ; Head name of a list form, or "".
 (defn ast-head (a)
@@ -361,8 +395,8 @@
 (defn parse-contracts-off (args)
   (match (ast-nth args 0 (AstInt 0))
     (AstIdent mode
-      (if (> (str-eq mode "off") 0)
-        (convert-ast (contract-strip (ast-nth args 1 (AstInt 0))))
+      (if (and (contract-profile-p mode) (ast-has-at-least args 2))
+        (convert-under-profile mode (ast-nth args 1 (AstInt 0)))
         (Expr (EUnknown "contracts" (convert-ast-list args)))))
     (_ (Expr (EUnknown "contracts" (convert-ast-list args))))))
 
@@ -600,15 +634,20 @@
       (if (contract-off-directive-p f)
         (match rest
           (Nil Nil)
-          (Cons g more (Cons (convert-ast (contract-strip g)) (convert-top-forms more))))
+          (Cons g more (Cons (convert-under-profile (contract-directive-mode f) g) (convert-top-forms more))))
         (Cons (convert-ast f) (convert-top-forms rest))))))
+
+(defn contract-directive-mode (f)
+  (match f
+    (AList xs (match (ast-nth xs 1 (AstInt 0)) (AstIdent m m) (_ "off")))
+    (_ "off")))
 
 (defn contract-off-directive-p (f)
   (match f
     (AList xs
       (if (= (list-length xs) 2)
         (if (> (str-eq (ast-head f) "contracts") 0)
-          (match (ast-nth xs 1 (AstInt 0)) (AstIdent m (> (str-eq m "off") 0)) (_ false))
+          (match (ast-nth xs 1 (AstInt 0)) (AstIdent m (contract-profile-p m)) (_ false))
           false)
         false))
     (_ false)))
@@ -662,20 +701,127 @@
         (contract-posts fname t)))))
 
 ; checkpoint: no rollback yet, the body's value.
+; (checkpoint E): if E raises, every outer let-mut it set! is restored,
+; then the error is raised again (heap and byte-buffer writes are not undone).
 (defn parse-checkpoint (args)
-  (convert-ast (ast-nth args 0 (AstInt 0))))
+  (let body (ast-nth args 0 (AstInt 0))
+    (let names (ast-set-targets body Nil (ast-bound-names body Nil))
+      (if (nil? names)
+        (convert-ast body)
+        (convert-ast (checkpoint-saves names 0 (checkpoint-try body names)))))))
 
-; (recover BODY ((Type) fallback) ...): try BODY, first arm's fallback on error.
+(defn checkpoint-var (i) (str-concat "_cp" (ffi-call "zyl_int_text" i 1000)))
+
+(defn checkpoint-saves (names i inner)
+  (match names
+    (Nil inner)
+    (Cons n rest (AList (Cons (AstIdent "let") (Cons (AstIdent (checkpoint-var i)) (Cons (AstIdent n)
+      (Cons (checkpoint-saves rest (+ i 1) inner) Nil))))))))
+
+(defn checkpoint-try (body names)
+  (AList (Cons (AstIdent "try") (Cons body (Cons (AList (Cons (AstIdent "catch") (Cons (AstIdent "_cp_err")
+    (Cons (AList (Cons (AstIdent "begin") (list-append (checkpoint-restores names 0)
+      (Cons (AList (Cons (AstIdent "zyl-reraise") (Cons (AstIdent "_cp_err") Nil))) Nil)))) Nil)))) Nil)))))
+
+(defn checkpoint-restores (names i)
+  (match names
+    (Nil Nil)
+    (Cons n rest (Cons (AList (Cons (AstIdent "set!") (Cons (AstIdent n) (Cons (AstIdent (checkpoint-var i)) Nil))))
+                       (checkpoint-restores rest (+ i 1))))))
+
+; Distinct `set!` targets in `a` that `a` does not bind itself.
+(defn ast-set-targets (a acc bound)
+  (match a
+    (AList xs
+      (if (> (str-eq (ast-head a) "set!") 0)
+        (match (ast-arg1 a)
+          (AstIdent n
+            (ast-set-targets-list xs (if (or (ast-str-in n acc) (ast-str-in n bound)) acc (list-append acc (Cons n Nil))) bound))
+          (_ (ast-set-targets-list xs acc bound)))
+        (ast-set-targets-list xs acc bound)))
+    (_ acc)))
+
+(defn ast-set-targets-list (xs acc bound)
+  (match xs
+    (Nil acc)
+    (Cons h t (ast-set-targets-list t (ast-set-targets h acc bound) bound))))
+
+; Names a let, let-mut, for or fn inside `a` binds.
+(defn ast-bound-names (a acc)
+  (match a
+    (AList xs
+      (let h (ast-head a)
+        (let acc2 (if (or (> (str-eq h "let") 0) (or (> (str-eq h "let-mut") 0) (> (str-eq h "for") 0)))
+                    (match (ast-arg1 a) (AstIdent n (Cons n acc)) (_ acc))
+                    (if (or (> (str-eq h "fn") 0) (> (str-eq h "lambda") 0))
+                      (list-append (ast-param-names (ast-arg1 a)) acc)
+                      acc))
+          (ast-bound-list xs acc2))))
+    (_ acc)))
+
+(defn ast-bound-list (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (ast-bound-list t (ast-bound-names h acc)))))
+
+(defn ast-param-names (ps)
+  (match ps
+    (AList xs (ast-param-names-list xs))
+    (_ Nil)))
+
+(defn ast-param-names-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (match h
+        (AstIdent n (Cons n (ast-param-names-list t)))
+        (AList ys (match ys (Cons y _ (match y (AstIdent n (Cons n (ast-param-names-list t))) (_ (ast-param-names-list t)))) (Nil (ast-param-names-list t))))
+        (_ (ast-param-names-list t))))))
+
+(defn ast-str-in (s xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (> (str-eq h s) 0) true (ast-str-in s t)))))
+
+; (recover BODY ((E_CODE) fb) ((String) fb) ...): try BODY; on an error, the
+; first arm whose code prefixes the message, a type-named arm (String, Error,
+; `_`) catching any error; with no match, the error is raised again.
 (defn parse-recover (args)
   (match args
     (Cons body arms
-      (match arms
-        (Cons arm _
-          (convert-ast (AList (Cons (AstIdent "try") (Cons body
-            (Cons (AList (Cons (AstIdent "catch") (Cons (AstIdent "_contract_err")
-              (Cons (ast-list-last (match arm (AList xs xs) (_ Nil)) (AstInt 0)) Nil)))) Nil))))))
-        (Nil (convert-ast body))))
+      (if (nil? arms)
+        (convert-ast body)
+        (convert-ast (AList (Cons (AstIdent "try") (Cons body
+          (Cons (AList (Cons (AstIdent "catch") (Cons (AstIdent "_rc_err") (Cons (recover-chain arms) Nil)))) Nil)))))))
     (Nil (Expr (EAtom ANil)))))
+
+(defn recover-chain (arms)
+  (match arms
+    (Nil (AList (Cons (AstIdent "zyl-reraise") (Cons (AstIdent "_rc_err") Nil))))
+    (Cons arm rest
+      (let code (recover-arm-code arm)
+        (let fb (ast-list-last (match arm (AList xs xs) (_ Nil)) (AstInt 0))
+          (if (> (str-length code) 0)
+            (AList (Cons (AstIdent "if") (Cons (ast-call2 "zyl-err-is" (AstIdent "_rc_err") (AString code))
+              (Cons fb (Cons (recover-chain rest) Nil)))))
+            fb))))))
+
+; "E_..." for an arm naming an error code, "" for a catch-all arm.
+(defn recover-arm-code (arm)
+  (let t (match arm (AList xs (match xs (Cons h _ h) (Nil (AstInt 0)))) (_ (AstInt 0)))
+    (let n (match t
+             (AstIdent s s)
+             (AList ys (match ys (Cons y _ (match y (AstIdent s s) (_ ""))) (Nil "")))
+             (_ ""))
+      (let p (recover-plain n)
+        (if (and (> (str-length p) 2) (> (ffi-call "zyl_cstr_eq" (str-substring p 0 2) "E_" 1000) 0)) p "")))))
+
+(defn recover-plain (n)
+  (let i (recover-last-colon n (- (str-length n) 1))
+    (if (< i 0) n (str-substring n (+ i 1) (- (str-length n) (+ i 1))))))
+
+(defn recover-last-colon (n i)
+  (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58) i (recover-last-colon n (- i 1)))))
 
 (defn dispatch-special (n rest)
   (if (> (str-eq n "contracts") 0)

@@ -150,10 +150,9 @@ Compiler:
   `E_INVALID_CAPABILITY` and the remaining errors in
   `expr_inner`. Warnings carry spans, parameter warnings included (qualification
   and macro expansion copy the parameter's span since 2026-09-24).
-- Contracts (spec §23) are lowered during parsing: `requires`, `ensures`
-  (with `result`) and `invariant` raise `E_CONTRACT_VIOLATION`; `recover`
-  uses its first arm's fallback; `(contracts off ...)` strips clauses. No
-  profiles, no `checkpoint` rollback, no typed `recover` arms.
+- Contracts (spec §23) are lowered during parsing under a profile
+  (`--contracts=P`, `(contracts P)`); `checkpoint` rolls back `let-mut`
+  state (not byte-buffer writes); `recover` arms match error codes.
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
   native-object and assembly hashes and their final hash, which the binary
   carries as `zyl_build_hash`.
@@ -369,7 +368,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — derivable traits
+## Session (2026-09-24, latest) — contract profiles, checkpoint, recover arms
+
+Profiles (`expr_inner.zyl`, `contract-profile`): strict/debug panic, warn
+checks become `(if C 0 (zyl-contract-warn msg))` (stderr, continue),
+off/production drop the clauses. `--contracts=P` sets the build's profile
+(global map 6, `driver.zyl`); `(contracts P FORM)` or a bare
+`(contracts P)` before a top-level form overrides it for that form.
+`checkpoint` saves the outer `let-mut` variables its body `set!`s and
+restores them before re-raising (`zyl-reraise` = `zyl_panic`). `recover`
+arms are tried in order: an `E_` code matches by message prefix
+(`zyl_err_is`), a type-named or `_` arm matches anything, no match
+re-raises. Tests added to `contracts.zyl`.
+
+## Session (2026-09-24, earlier) — derivable traits
 
 `derive.zyl` now derives all six traits of spec 5.6: Show, Debug (strings
 quoted), Eq (`==`), Ord (`compare`: variant order, then fields

@@ -1851,6 +1851,21 @@ long long zyl_smap_global(long long i) {
     return g_global_smaps[i];
 }
 
+/* Contracts under the `warn` profile report and continue. */
+long long zyl_contract_warn(long long msg) {
+    fprintf(stderr, "warning: %s\n", msg ? (const char*)(size_t)msg : "contract violated");
+    return 0;
+}
+
+/* A recover arm naming an error code matches a message that starts with it. */
+long long zyl_err_is(long long msg, long long code) {
+    const char* m = (const char*)(size_t)msg;
+    const char* c = (const char*)(size_t)code;
+    if (!m || !c) return 0;
+    size_t n = strlen(c);
+    return strncmp(m, c, n) == 0 && (m[n] == ':' || m[n] == 0) ? 1 : 0;
+}
+
 /* Top-level `def` values, keyed by canonical key. A cell is set once, by
    the def's getter on first use (the init function runs them in order). */
 static long long g_def_cells = 0;
@@ -4018,6 +4033,7 @@ long long zyl_int_text(long long n) {
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
+    X(zyl_contract_warn) X(zyl_err_is) \
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \

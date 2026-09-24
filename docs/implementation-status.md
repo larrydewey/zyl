@@ -49,7 +49,7 @@ it compiles and runs correctly; the notes say where it stops.
 | Byte primitives | 8-, 16-, 32- and 64-bit loads and stores (le/be), byte buffers (`ByteBuf`), slices (`ByteSlice`), atomics and alignment work |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
 | Type inference | Best-effort. It feeds monomorphization and codegen, and rejects only an argument to a top-level function or constructor that definitely clashes with its annotation (`E_TYPE_MISMATCH`): `(+ 1 "a")` compiles |
-| Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` falls back on error; `(contracts off ...)` strips them. No profiles; `checkpoint` does not roll back |
+| Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` arms match error codes; `checkpoint` rolls back `let-mut` state; profiles by `--contracts=P` or `(contracts P)` |
 
 ### Known gaps
 
@@ -71,9 +71,9 @@ it compiles and runs correctly; the notes say where it stops.
   function, such as the unimplemented `(list ...)` literal or an
   implicit-lambda form `((x) body)`, is a located `E_UNBOUND_VARIABLE`
   from `cg-call-user`, but no earlier phase reports it.
-- **Contracts** (§23): no profiles (`strict`, `debug`, `warn`,
-  `production`), no `checkpoint` rollback, and `recover` ignores its arms'
-  error types (the first arm's fallback always applies).
+- **Contracts** (§23): `checkpoint` rolls back `let-mut` variables only
+  (byte-buffer writes are not undone); errors carry no type beyond their
+  message, so `recover` arms match an error-code prefix.
 - **Hash finalization** (§31.12): `zyl build` and `zyl test` write
   `zyl.buildinfo` with the compiler, graph, native-object and assembly
   hashes and their final hash, which is embedded in the binary

@@ -304,12 +304,12 @@ and honour the `:le`/`:be` selector. Buffers are typed `ByteBuf`, slices
 | `requires` | `(requires condition)` | raises `E_CONTRACT_VIOLATION` when `condition` is false |
 | `ensures` | `(ensures condition)` | checked after the body; `result` is the return value |
 | `invariant` | `(invariant condition)` | checked where written, like `requires` |
-| `contracts` | `(contracts off form)`, `(contracts off)` | strips every clause in `form` (or the next top-level form) |
-| `checkpoint` | `(checkpoint expr)` | yields `expr`; no rollback |
-| `recover` | `(recover body ((Type) fallback) ...)` | `body`, or the first arm's `fallback` if `body` raises |
+| `contracts` | `(contracts P form)`, `(contracts P)` | compiles `form` (or the next top-level form) under profile P: strict, debug, warn, off, production |
+| `checkpoint` | `(checkpoint expr)` | `expr`; if it raises, outer `let-mut` variables it assigned are restored |
+| `recover` | `(recover body ((E_CODE) fallback) ((String) fallback) ...)` | `body`, or the first matching arm's `fallback` |
 
 Contracts are an optional overlay and never alter type inference,
-ownership, regions or scheduling. There are no profiles.
+ownership, regions or scheduling. `--contracts=P` sets the build's profile.
 
 ## C.14 Testing
 

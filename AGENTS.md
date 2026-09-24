@@ -52,8 +52,9 @@ optimization → region inference (escape analysis over ICNF) → codegen →
 `cc` link. Contracts are lowered where forms are recognized
 (`convert-ast`, `expr_inner.zyl`): `requires`/`ensures`/`invariant`
 become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
-`recover` is `try`/`catch`, `(contracts off ...)` strips clauses;
-profiles and `checkpoint` rollback are not implemented. Hash finalization exists only for
+`recover` is `try`/`catch` with arms by error code, `checkpoint` rolls
+back `let-mut` state, and the profile (`--contracts=P`, `(contracts P)`)
+picks panic, warn or strip. Hash finalization exists only for
 package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
 native-object and assembly hashes, plus their final hash, which the
 binary carries as `zyl_build_hash`; spec §31.12 asks for an ICNF hash,
@@ -102,7 +103,7 @@ which is a recorded deviation).
 
 ### Contracts
 - Contracts never alter core semantics (type inference, ownership, regions, concurrency)
-- Contracts are an optional overlay: enforced as runtime checks, stripped by `(contracts off ...)` (no profiles yet — see above)
+- Contracts are an optional overlay: runtime checks under a profile (strict/debug panic, warn reports, off/production strip — see above)
 
 ## Architecture Decisions (Do Not Reverse)
 

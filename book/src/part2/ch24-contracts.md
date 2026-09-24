@@ -4,7 +4,7 @@ Complete reference for Zyl's contract and recovery system: preconditions, postco
 
 The normative text is spec v5.0 §23, with §0 P8 (optional layers do not interfere) and §22 phase 10 (contract injection).
 
-**Implementation status, in one sentence: `requires`, `ensures` and `invariant` are checked at run time, `recover` supplies a fallback, and `(contracts off ...)` removes checks; profiles and `checkpoint` rollback do not exist.** A failed check raises `E_CONTRACT_VIOLATION`, which `try`/`catch` can intercept like any other error.
+**Implementation status, in one sentence: `requires`, `ensures` and `invariant` are checked at run time under the build's profile, `recover` supplies fallbacks by error code, and `checkpoint` rolls back `let-mut` state when its body fails.** A failed check raises `E_CONTRACT_VIOLATION`, which `try`/`catch` can intercept like any other error.
 
 ## 24.1 Contract System Overview
 
@@ -16,9 +16,15 @@ Spec §23: contracts are an **optional overlay** that never affects type inferen
 Profile ::= "strict" | "debug" | "warn" | "off" | "production"
 ```
 
-§23 names the five profiles but does not define their behaviour.
+§23 names the five profiles but does not define their behaviour. The implementation gives them this meaning:
 
-**Implemented:** only `off`, as a local override (§24.7). There is no global profile setting and no compiler flag; every other profile name is accepted and ignored.
+| Profile | A failed check |
+|---------|----------------|
+| `strict` (default), `debug` | raises `E_CONTRACT_VIOLATION` |
+| `warn` | prints `warning: E_CONTRACT_VIOLATION: ...` on stderr and continues |
+| `off`, `production` | is not compiled: the condition is never evaluated |
+
+The build's profile is `--contracts=P` on the command line; a directive overrides it for one form (§24.7).
 
 ### The forms
 
@@ -27,9 +33,9 @@ Profile ::= "strict" | "debug" | "warn" | "off" | "production"
 | `(requires C)` | §23.1 precondition | a check where it is written |
 | `(ensures C)` | §23.2 postcondition | a check after the function body, with `result` bound to its value |
 | `(invariant C)` | §23.3 invariant | a check where it is written |
-| `(recover BODY arms...)` | §23.4 recovery | `BODY`, or the first arm's fallback if `BODY` raises |
-| `(checkpoint E)` | §23.5 checkpoint | `E` (no rollback) |
-| `(contracts off FORM)` | §23.6 local override | `FORM` with its clauses removed |
+| `(recover BODY arms...)` | §23.4 recovery | `BODY`, or the fallback of the first arm matching the error |
+| `(checkpoint E)` | §23.5 checkpoint | `E`; if it raises, its `set!`s to outer `let-mut` variables are undone, then the error propagates |
+| `(contracts P FORM)` | §23.6 local override | `FORM` under profile `P` |
 
 ## 24.2 Preconditions: `requires`
 
@@ -104,11 +110,13 @@ RecoveryCase ::= "(" "(" ErrorType ")" Expression ")"
 
 Specified (§23.4): fallback values for errors of the named types.
 
-Implemented: `(recover BODY ((T) FALLBACK) ...)` is `(try BODY (catch _ FALLBACK))` with the **first** arm's fallback. Errors carry no type at run time, so the error type is not tested and later arms are never used:
+Implemented: `(recover BODY arm...)` runs `BODY`; if it raises, the arms are tried in order. An arm naming an error code, `((E_CONTRACT_VIOLATION) fallback)`, matches an error whose message starts with that code; an arm naming a type (`(String)`, `(Error)`) or `_` matches any error. With no matching arm the error propagates.
 
 ```lisp
-(defn div-or-zero (a b)
-  (recover (safe-div a b) ((String) 0)))   ; 0 when b <= 0
+(defn div-or-code (a b)
+  (recover (safe-div a b)
+    ((E_CONTRACT_VIOLATION) -1)    ; the precondition failed
+    ((String) -2)))                ; anything else
 ```
 
 `recover` catches `error` panics and contract violations, not `(Err ...)` values (Chapter 12).
@@ -121,7 +129,7 @@ checkpoint ::= "(" "checkpoint" Expression ")"
 
 Specified (§23.5, §28): runtime errors revert state when a checkpoint is active.
 
-Implemented: `(checkpoint E)` is `E`. Nothing is saved and nothing is rolled back:
+Implemented: if `E` raises, every `let-mut` variable bound outside `E` that `E` assigns with `set!` gets its value from before `E` back, and the error then propagates. Heap data is immutable, so there is nothing else to undo, except writes into byte buffers, which are not rolled back.
 
 ```lisp
 (let-mut x 10
@@ -129,7 +137,7 @@ Implemented: `(checkpoint E)` is `E`. Nothing is saved and nothing is rolled bac
     (try (checkpoint (begin (set! x 20) (error "fail")))
       (catch e 0))
     (print x)))
-;; prints 20
+;; prints 10
 ```
 
 ## 24.7 Local Overrides
@@ -142,9 +150,9 @@ Specified (§23.6): `(contracts off) (defun foo () ...)` switches contracts off 
 
 Implemented:
 
-- `(contracts off FORM)`, wrapping one form, compiles as `FORM` with every `requires`, `ensures` and `invariant` inside it removed.
-- A bare `(contracts off)` at top level does the same to the next top-level form.
-- Every other shape, including `(contracts strict)`, compiles to nothing.
+- `(contracts P FORM)` compiles `FORM` under profile `P`; with `off` or `production`, every `requires`, `ensures` and `invariant` inside it is removed.
+- A bare `(contracts P)` at top level does the same to the next top-level form.
+- Any other shape compiles to nothing.
 
 ```lisp
 (contracts off)
@@ -188,7 +196,7 @@ Implemented: contract forms are rewritten where every form is recognized, `conve
 1. **State preconditions with `requires` and postconditions with `ensures`.** They are checked, name the failing clause, and can be stripped with `(contracts off)` where a hot path needs it.
 2. **Keep conditions pure and cheap**: they run on every call.
 3. **Return `Result` for recoverable failures**; use `recover` or `try`/`catch` only for panics.
-4. **Do not rely on `checkpoint` rollback, profiles or typed `recover` arms.** They are not implemented.
+4. **Build releases with `--contracts=production`** only when the checks are measured to cost too much; `warn` is the middle ground.
 
 ## 24.12 Comparison with Other Systems
 
@@ -197,7 +205,7 @@ Implemented: contract forms are rewritten where every form is recognized, `conve
 | Preconditions | `require` | `Pre` | `requires` | checked at run time |
 | Postconditions | `ensure` | `Post` | `ensures` | checked, `result` bound |
 | Invariants | `invariant` | `Loop_Invariant` | `invariant` | checked where written |
-| Recovery | `rescue` | ❌ | `recover` | first arm's fallback |
-| Checkpoints | ❌ | ❌ | `checkpoint` | identity |
-| Profiles | assertion levels | ❌ | five named | `off` only, local |
+| Recovery | `rescue` | ❌ | `recover` | arms by error code |
+| Checkpoints | ❌ | ❌ | `checkpoint` | `let-mut` rollback |
+| Profiles | assertion levels | ❌ | five named | all five, flag or directive |
 | Enforced checks | ✅ | ✅ (static proof) | ✅ | ✅ (run time) |

@@ -130,11 +130,15 @@ The overlay is lowered while the parse tree is converted
   f`), catchable with `try`.
 - A `defn`'s `(ensures c)` clauses run after the body with its value bound
   to `result`; `postcondition of f failed: c` on failure.
-- `(recover body ((Type) fallback) ...)` is `try`/`catch` with the first
-  arm's fallback; the error type is not tested.
-- `(contracts off form)` and a bare `(contracts off)` before a top-level
-  form strip every clause in that form.
-- `(checkpoint e)` is `e`: no rollback. There are no profiles.
+- `(recover body ((Type) fallback) ...)` is `try`/`catch`; an arm naming an
+  error code (`E_...`) matches by message prefix, a type-named or `_` arm
+  matches anything, and an unmatched error propagates.
+- Profiles: strict/debug panic, warn prints and continues, off/production
+  compile the clauses out; the build's profile is `--contracts=P`, and
+  `(contracts P form)` or a bare `(contracts P)` before a top-level form
+  overrides it for that form.
+- `(checkpoint e)`: if `e` raises, the outer `let-mut` variables it
+  `set!`s are restored before the error propagates.
 
 A check is ordinary code: its condition is typed and evaluated like any
 other expression, so keep conditions pure (P8, G8).

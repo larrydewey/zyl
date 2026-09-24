@@ -1190,7 +1190,10 @@
     (if (> (str-eq n "zyl-global-get") 0) "zyl_global_get"
       (if (> (str-eq n "zyl-global-put") 0) "zyl_global_put"
         (if (> (str-eq n "receive") 0) "zyl_actor_receive"
-          (if (> (str-eq n "actor-self") 0) "zyl_actor_self" ""))))))
+          (if (> (str-eq n "actor-self") 0) "zyl_actor_self"
+            (if (> (str-eq n "zyl-contract-warn") 0) "zyl_contract_warn"
+              (if (> (str-eq n "zyl-err-is") 0) "zyl_err_is"
+                (if (> (str-eq n "zyl-reraise") 0) "zyl_panic" "")))))))))
 
 (defn ic-call-or-variant-go (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))

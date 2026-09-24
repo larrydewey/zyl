@@ -340,11 +340,14 @@ Contract forms are rewritten where every form is recognized,
   inside a `defn` body the message names the function.
 - `(ensures C)` clauses of a `defn` move after the body, which is bound
   to `result`: `(let result BODY (begin checks... result))`.
-- `(recover BODY ((Type) fallback) ...)` becomes `(try BODY (catch _ fallback))`
-  with the first arm's fallback; the error type is not tested.
-- `(contracts off FORM)`, and a bare `(contracts off)` before a top-level
-  form, drop every clause inside that form.
-- `(checkpoint E)` is `E`: there is no rollback, and there are no profiles.
+- `(recover BODY arm...)` becomes `(try BODY (catch _rc_err CHAIN))`, CHAIN
+  testing each arm's error code with `zyl_err_is` and re-raising if none matches.
+- `(contracts P FORM)`, and a bare `(contracts P)` before a top-level form,
+  convert that form under profile P (`off`/`production` drop every clause;
+  `warn` checks become `(if C 0 (zyl-contract-warn msg))`); the build's
+  profile comes from `--contracts=P` (global map 6).
+- `(checkpoint E)` saves the outer `let-mut` variables E `set!`s, and
+  restores them before re-raising if E raises.
 
 ## Phase 15: Hash finalization (package builds only)
 
