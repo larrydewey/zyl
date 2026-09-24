@@ -500,7 +500,7 @@ standard library provides impls for the primitives, `List`, `Option`,
 `Result`, `Vec` and `Map`. A value with no impl prints as a word (a
 struct or ADT value prints its address). The other derivable traits are
 accepted and generate nothing yet; `==` already compares structs and
-ADT values field by field, one level deep (Chapter 2, §2.6).
+ADT values field by field, by content (Chapter 2, §2.6).
 
 ## 4.10 Module Imports for Stdlib Types
 
@@ -533,8 +533,9 @@ value is a pointer to a block:
 - Every field is one 8-byte word — an Int, a Float's bit pattern, a Bool,
   or a pointer (a String, another struct, another variant)
 - The tag says which variant the block is; `match` dispatches on it
-- The header records the block's size, which `==` uses to compare two
-  values field by field
+- The header records the block's size, which the runtime's shallow
+  comparison uses when the value's type is unknown to inference
+  (otherwise `==` calls a generated per-type equality function)
 - A nullary variant is a block with no fields
 
 Because a field is always one word, a block's layout depends only on

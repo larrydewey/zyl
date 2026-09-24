@@ -49,10 +49,10 @@
     (A-Bool _ 0)) 198))
 
 ; Nested ADT construction
+(deftype _ad_Box (Boxed _ad_Atom))
+
 (test "adt-nested"
-  (assert-equal (match (A-Ident (A-Int 7))
-    (A-Ident (A-Int n) n)
-    (A-Int _ 0)
-    (A-Bool _ 0)) 7))
+  (assert-equal (match (Boxed (A-Int 7))
+    (Boxed (A-Int n) n)) 7))
 
 (run-tests)

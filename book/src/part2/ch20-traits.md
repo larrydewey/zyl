@@ -260,11 +260,14 @@ nothing, and an unknown trait name is accepted. What you get without
 them:
 
 - **Equality.** `==`, `!=` and `assert-equal` on two struct or ADT values
-  compare structurally: tag, then field words.
+  compare by content, recursing into nested ADT and string fields, through
+  an equality function the type-annotation pass generates per type
+  (Chapter 18, §18.8). A type with a `Secret` field, or a value of a type
+  inference cannot determine, gets the runtime's shallow comparison
+  instead: tag, then field words.
 - **Ordering.** `<`, `>`, `<=` and `>=` compare the fields
-  lexicographically.
-- **Shallow comparison.** Both compare a string or nested-ADT field by
-  address, not by content.
+  lexicographically, and are shallow: a string or nested-ADT field is
+  compared by address, not by content.
 - **`Debug`, `Clone` and `Hash`** have no generated functions to call.
 
 ## 20.7 Derivation Errors

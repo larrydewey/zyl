@@ -288,7 +288,7 @@
     (Nil Nil)
     (Cons p rest
       (let pname (match p (P n _ n))
-        (let pbounds (match (P.type p) (Some v (Cons v Nil)) (_ Nil))
+        (let pbounds (mono-param-bounds p)
           (if (is-uppercase-ident pname)
             (Cons (MP pname pbounds) (extract-mono-params rest))
             (extract-mono-params rest)))))))
@@ -444,8 +444,8 @@
     ((= t1 t2) true)
     ((= t1 (TVar 0 TUnit)) true)
     ((= t2 (TVar 0 TUnit)) true)
-    ((= t1 (TCap (TVar 0 TUnit))) true)
-    ((= t2 (TCap (TVar 0 TUnit))) true)
+    ((= t1 (TCap TCCap (TVar 0 TUnit))) true)
+    ((= t2 (TCap TCCap (TVar 0 TUnit))) true)
     ((= t1 TInt) (= t2 TFloat))
     ((= t1 TFloat) (= t2 TInt))
     (else false)))
@@ -543,8 +543,17 @@
   (if (is-uppercase-ident (P.name p))
     (if (kv-contains type-map (P.name p))
       (MP (P.name p) (Cons (type-to-string (kv-get type-map (P.name p) (TVar 0 TUnit))) Nil))
-      (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (_ Nil))))
-    (MP (P.name p) (match (P.type p) (Some v (Cons v Nil)) (_ Nil)))))
+      (MP (P.name p) (mono-param-bounds p)))
+    (MP (P.name p) (mono-param-bounds p))))
+
+; The bound a parameter's annotation names (`(T Show)`), if it is a name.
+(defn mono-param-bounds (p)
+  (match (P.type p)
+    (Some v
+      (match (Expr.inner v)
+        (EAtom a (match a (AIdent n (Cons n Nil)) (_ Nil)))
+        (_ Nil)))
+    (None Nil)))
 
 (defn build-instance-params (params type-map)
   (match params
@@ -742,7 +751,7 @@
     (Nil result)
     (Cons mono rest
       (monomorphize-push-instantiations
-        (list-push result (Expr (MI.body mono)))
+        (list-push result (MI.body mono))
         rest))))
 
 ; `bodies` is (List ImplBody), i.e. each element is (IB DefnNode), not

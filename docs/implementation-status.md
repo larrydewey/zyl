@@ -36,7 +36,7 @@ it compiles and runs correctly; the notes say where it stops.
 | ADTs and `match` | Works, including literal patterns, OR-patterns, range patterns and guards. A non-exhaustive ADT match is `E_NON_EXHAUSTIVE_MATCH`; a literal match needs a trailing `_` |
 | Generics | Works through monomorphization with sorted canonical names |
 | Traits and `impl` | Works: `(Trait.method recv ...)` dispatches on the receiver's runtime tag |
-| `derive` | `Eq`, `Ord` and `Debug` are accepted. `==` and `<` compare structs and ADTs structurally (in compiled code this happens with or without a `derive`). `Show` is not implemented, and printing a struct or ADT prints an address |
+| `derive` | `Eq`, `Ord` and `Debug` are accepted. `==` compares structs and ADTs by content, deeply, and `<` lexicographically over raw field words (with or without a `derive`). `Show` is not implemented, and printing a struct or ADT prints an address |
 | Closures | Works, including closures that capture and escape (heap `[tag, code, env]` values) |
 | `try`/`catch` | Works: `(try body (catch e handler))`; `error` and `zyl_panic` unwind to the nearest `try` |
 | Macros | `defmacro` expansion works in every form, with gensym hygiene, arity, duplicate and termination checks; parameters are plain names (no patterns) |
@@ -48,7 +48,7 @@ it compiles and runs correctly; the notes say where it stops.
 | `Secret` capability | Enforced by `secret_check.zyl` (branch, index, divide, print, escape, unpinned FFI) |
 | Byte primitives | 8-bit loads and stores, byte buffers, slices, atomics and alignment work. The 16-, 32- and 64-bit widths are reserved and rejected with `E_RESERVED_KEYWORD` |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
-| Type inference | Best-effort. It feeds monomorphization but does not reject type errors: `(+ 1 "a")` compiles |
+| Type inference | Best-effort. It feeds monomorphization and codegen, and rejects only an argument to a top-level function or constructor that definitely clashes with its annotation (`E_TYPE_MISMATCH`): `(+ 1 "a")` compiles |
 | Contracts | `requires`, `ensures`, `invariant`, `recover`, `checkpoint` parse and are not checked |
 
 ### Known gaps

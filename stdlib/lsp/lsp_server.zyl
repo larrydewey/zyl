@@ -483,20 +483,20 @@
 (defn lsp-capabilities-any ()
   (let m0 (map-new)
     (let m1 (map-insert m0 "textDocumentSync" (lsp-sync-options-any))
-      (let m2 (map-insert m1 "hoverProvider" (LSPBool 1))
-        (let m3 (map-insert m2 "definitionProvider" (LSPBool 1))
-          (let m4 (map-insert m3 "documentSymbolProvider" (LSPBool 1))
+      (let m2 (map-insert m1 "hoverProvider" (LSPBool true))
+        (let m3 (map-insert m2 "definitionProvider" (LSPBool true))
+          (let m4 (map-insert m3 "documentSymbolProvider" (LSPBool true))
             (let m5 (map-insert m4 "completionProvider" (lsp-completion-options-any))
               (let m6 (map-insert m5 "semanticTokensProvider" (lsp-semantic-legend-any))
-                (let m7 (map-insert m6 "codeActionProvider" (LSPBool 1))
-                  (let m8 (map-insert m7 "foldingRangeProvider" (LSPBool 1))
-                    (let m9 (map-insert m8 "selectionRangeProvider" (LSPBool 1))
-                      (let m10 (map-insert m9 "documentFormattingProvider" (LSPBool 1))
-                        (let m11 (map-insert m10 "renameProvider" (LSPObject (map-insert (map-new) "prepareProvider" (LSPBool 1))))
-                          (let m12 (map-insert m11 "workspaceSymbolProvider" (LSPBool 1))
+                (let m7 (map-insert m6 "codeActionProvider" (LSPBool true))
+                  (let m8 (map-insert m7 "foldingRangeProvider" (LSPBool true))
+                    (let m9 (map-insert m8 "selectionRangeProvider" (LSPBool true))
+                      (let m10 (map-insert m9 "documentFormattingProvider" (LSPBool true))
+                        (let m11 (map-insert m10 "renameProvider" (LSPObject (map-insert (map-new) "prepareProvider" (LSPBool true))))
+                          (let m12 (map-insert m11 "workspaceSymbolProvider" (LSPBool true))
                             (let m13 (map-insert m12 "executeCommandProvider" (LSPObject (map-insert (map-new) "commands" (LSPArray (Cons (LSPString "zyl.evalDocument") Nil)))))
-                              (let m14 (map-insert m13 "callHierarchyProvider" (LSPBool 1))
-                                (let m15 (map-insert m14 "inlayHintProvider" (LSPBool 1))
+                              (let m14 (map-insert m13 "callHierarchyProvider" (LSPBool true))
+                                (let m15 (map-insert m14 "inlayHintProvider" (LSPBool true))
                                   (LSPObject (lsp-capabilities-rest m15)))))))))))))))))))
 
 ; The second half of the advertisement, split off for the same reason
@@ -504,11 +504,11 @@
 ; past readable. Everything here was added alongside the handlers in
 ; lsp-handle-request-2.
 (defn lsp-capabilities-rest (m)
-  (let n1 (map-insert m "referencesProvider" (LSPBool 1))
-    (let n2 (map-insert n1 "documentHighlightProvider" (LSPBool 1))
-      (let n3 (map-insert n2 "typeDefinitionProvider" (LSPBool 1))
-        (let n4 (map-insert n3 "implementationProvider" (LSPBool 1))
-          (let n5 (map-insert n4 "documentRangeFormattingProvider" (LSPBool 1))
+  (let n1 (map-insert m "referencesProvider" (LSPBool true))
+    (let n2 (map-insert n1 "documentHighlightProvider" (LSPBool true))
+      (let n3 (map-insert n2 "typeDefinitionProvider" (LSPBool true))
+        (let n4 (map-insert n3 "implementationProvider" (LSPBool true))
+          (let n5 (map-insert n4 "documentRangeFormattingProvider" (LSPBool true))
             (map-insert n5 "signatureHelpProvider" (lsp-sighelp-options-any))))))))
 
 ; Open/close notifications wanted, incremental sync, and didSave with
@@ -518,9 +518,9 @@
   (LSPObject
     (map-insert
       (map-insert
-        (map-insert (map-new) "openClose" (LSPBool 1))
+        (map-insert (map-new) "openClose" (LSPBool true))
         "change" (LSPInt 2))
-      "save" (LSPObject (map-insert (map-new) "includeText" (LSPBool 1))))))
+      "save" (LSPObject (map-insert (map-new) "includeText" (LSPBool true))))))
 
 ; `(` starts a form and is where a completion list is most useful; `:`
 ; leads a keyword atom such as `:le`; `/` separates the segments of a
@@ -530,7 +530,7 @@
     (map-insert
       (map-insert (map-new) "triggerCharacters"
         (LSPArray (Cons (LSPString "(") (Cons (LSPString ":") (Cons (LSPString "/") Nil)))))
-      "resolveProvider" (LSPBool 0))))
+      "resolveProvider" (LSPBool false))))
 
 (defn lsp-sighelp-options-any ()
   (LSPObject
@@ -547,8 +547,8 @@
             (map-insert (map-new) "legend"
               (LSPObject (map-insert (map-insert (map-new) "tokenTypes" (LSPArray (lsp-str-list-any types)))
                                      "tokenModifiers" (LSPArray (lsp-str-list-any mods)))))
-            "full" (LSPBool 1))
-          "range" (LSPBool 1))))))
+            "full" (LSPBool true))
+          "range" (LSPBool true))))))
 
 (defn lsp-str-list-any (xs)
   (match xs (Nil Nil) (Cons h t (Cons (LSPString h) (lsp-str-list-any t)))))

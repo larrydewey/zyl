@@ -54,9 +54,11 @@ name as one in the prelude.
    (§6.5). A name that repeats is one parameter.
 3. **Recursive references** are allowed. Every field is one word, so a
    recursive field is simply a pointer.
-4. **Field types are not checked.** They name types and type parameters
-   for inference and monomorphization. Constructing `(Circle "x")`
-   compiles.
+4. **Field types are checked narrowly.** They name types and type
+   parameters for inference and monomorphization. A constructor argument
+   whose inferred type definitely clashes with the declared field type is
+   `E_TYPE_MISMATCH`: `(Circle "x")` is rejected. A type parameter or an
+   argument of unknown type never clashes (Chapter 15, §15.6).
 5. **Bounds.** §2's grammar shows an optional bound after the variants,
    but neither the specification nor the compiler defines one. Write
    bounds in Chapter 19's terms, not on the `deftype`.
@@ -80,8 +82,9 @@ None                ; or (None)
 
 - Arguments are evaluated left to right, then the variant is allocated
   (Chapter 16 says where).
-- Types are inferred from the arguments. Argument types are not checked
-  against the declared field types (rule 4 above).
+- Types are inferred from the arguments. An argument that definitely
+  clashes with its declared field type is `E_TYPE_MISMATCH` (rule 4
+  above).
 - A `defstruct` is a one-variant ADT named after the struct, so
   `(make-Point 1 2)` and `(Point 1 2)` build the same value.
 
@@ -336,11 +339,18 @@ its fields' `Show` text, `Circle(1.500000)`, and a struct as
 prints its address. The other traits are accepted and generate nothing;
 their behavior exists regardless:
 
-- `==` and `!=` on two ADT values compare structurally: the tag, then
-  each field word.
-- `<`, `>`, `<=` and `>=` compare the fields lexicographically.
-- Both comparisons are shallow. A field that holds a string or another
-  ADT value is compared by address, not by content.
+- `==` and `!=` on two ADT values compare by content: different
+  variants are unequal, and otherwise each field pair is compared with
+  `==`, so nested ADT values, strings and floats compare by value and
+  recursive types such as lists compare element by element. The
+  type-annotation pass generates this per type as a function `T.==`; a
+  generic ADT such as `(List T)` gets one instance per element type.
+  A type with a `Secret` field gets no such function, and a value whose
+  type inference cannot determine falls back to the runtime's shallow
+  comparison (tag, then each field word, pointers by address).
+- `<`, `>`, `<=` and `>=` compare the fields lexicographically. This
+  comparison is shallow: a field that holds a string or another ADT
+  value is compared by address, not by content.
 
 ## 18.9 Representation
 
@@ -360,7 +370,8 @@ A variant value is a pointer to a block of words:
   large as its own fields; blocks are not padded to the largest variant.
   A nullary variant is still a heap block, holding just the tag.
 - **The hidden size word** sits before the tag and records the block's
-  size in words. Structural `==` and `<` read it (Chapter 15).
+  size in words. The runtime's shallow `==` fallback and `<` read it
+  (Chapter 15).
 - **Tags** are 0-based in declaration order, per `deftype`:
 
   ```lisp
@@ -397,7 +408,7 @@ There is no jump table and no merging of arms.
 | `E_UNREACHABLE_MATCH_ARM` | arm after a catch-all | raised |
 | `E_DUPLICATE_VARIANT` | variant name repeated within one `deftype` | raised |
 | `E_MATCH_ARM_COMPLEX` | an arm body that combines a constant with several calls, a shape the code generator is known to miscompile | raised |
-| `E_TYPE_MISMATCH` | field or pattern type mismatch | catalogued; never raised |
+| `E_TYPE_MISMATCH` | constructor argument clashes with the declared field type | raised by `type_annotate` for definite clashes only; pattern types are not checked |
 
 ## 18.12 Comparison with Other Languages
 

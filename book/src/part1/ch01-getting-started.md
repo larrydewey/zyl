@@ -334,7 +334,7 @@ matter in a few places this book points out as they come up.
 | Homoiconicity | ✅ Code = data |
 | Macros | ✅ Template macros, innermost-first, hygienic (Chapter 10) |
 | `eval` at runtime | ❌ No `eval` function in compiled programs (the REPL and `zyl eval` interpret whole entries) |
-| Dynamic typing | ❌ Static Hindley-Milner inference + capabilities (type errors are not yet rejected; Chapter 15) |
+| Dynamic typing | ❌ Static Hindley-Milner inference + capabilities (only an argument that clashes with an annotation is rejected; Chapter 15) |
 | GC | ❌ Region-based |
 | REPL | ✅ `zyl repl` (see above) |
 | `cons`/`car`/`cdr` | Lists are an ADT: `(Cons head tail)` / `Nil`; `car` and `cdr` exist but return an `Option` |

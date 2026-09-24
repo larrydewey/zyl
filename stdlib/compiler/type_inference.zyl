@@ -2556,7 +2556,13 @@
         (infer-variant-record-instantiation inferer adt-name field-types)
         (TStruct
                 (str-concat adt-name (str-concat "_" variant-name))
-                field-types))))
+                (infer-unknown-types field-types)))))
+
+; The ADT defs record only field names: one unknown type per field.
+(defn infer-unknown-types (names)
+    (match names
+        (Nil Nil)
+        (Cons _ rest (Cons (TVar 0 TUnit) (infer-unknown-types rest)))))
 
 (defn infer-get-variant-fields (inferer adt-name variant-name)
     ; variant fields of the named variant from the real ADT defs, or Nil
@@ -2786,7 +2792,7 @@
                                                         (ti-subst inferer)
                                                         (ti-next inferer)
                                                         (ti-known-types inferer)
-                                                        resolved-params
+                                                        (Cons (FNS name resolved-params) (ti-known-fns inferer))
                                                         (ti-func-returns inferer)
                                                         (ti-adt-defs inferer)
                                                         (ti-variant-to-adt inferer)

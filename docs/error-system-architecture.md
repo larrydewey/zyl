@@ -61,9 +61,10 @@ The most incredible developer experience for a systems Lisp. Every error is acti
    colors its own prompt and results, not the diagnostics).
 7. **Single error**: the first error stops compilation, exit status 1.
 8. **No error recovery**: the compiler cannot continue past an error.
-9. **Many catalog codes are never raised**: type inference does not
-   reject ill-typed programs (`E_TYPE_MISMATCH` and
-   `E_RETURN_TYPE_MISMATCH` are catalog-only), and several runtime codes
+9. **Many catalog codes are never raised**: type inference rejects only
+   an argument that clashes with a parameter annotation or field type
+   (`E_TYPE_MISMATCH`; `E_RETURN_TYPE_MISMATCH` is catalog-only), and
+   several runtime codes
    (`E_ASSERT_FAIL`, `E_USER_ERROR`, `E_DIVISION_BY_ZERO` in compiled
    code) are not what a failing program prints. `docs/errors.md` has the
    list.

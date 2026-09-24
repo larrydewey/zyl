@@ -224,9 +224,10 @@ constructor patterns cannot be mixed in one `match`.
 
 `defstruct` is sugar: it lowers to a single-variant `deftype` whose
 variant is named after the type, so the ADT machinery builds and reads
-struct values with no separate field-offset system. **Field type
-annotations are dropped** in that lowering — they document intent and
-are not currently checked.
+struct values with no separate field-offset system. Field type
+annotations become the variant's field types: they constrain inference,
+and a `make-Name` argument that definitely clashes with one is
+`E_TYPE_MISMATCH` (Chapter 15, §15.6).
 
 A macro's template is the body with the parameters substituted:
 `(defmacro twice (x) (begin x x))`. There is no quasiquote or unquote

@@ -319,11 +319,14 @@ evaluates each of them to 0 instead of rejecting it.
 ```
 
 The ordering operators work on `Int` and `Float`. `==` and `!=` also
-compare structs and ADT values **structurally, one level deep**:
+compare structs and ADT values **structurally, by content**:
 `(== (Some 1) (Some 1))` is true, and two structs with equal field
-values are equal. A field that is itself a struct or ADT value is
-compared by address, so two separately built lists
-`(Cons 1 (Cons 2 Nil))` are *not* `==`. For strings, see §2.2.
+values are equal. Nested struct and ADT fields, and String fields, are
+compared by content too, so two separately built lists
+`(Cons 1 (Cons 2 Nil))` are `==`. Two exceptions compare only one level
+deep, with pointer fields by address: a value whose type inference
+cannot determine, and a type with a `Secret` field. For strings, see
+§2.2.
 
 ### Boolean Logic (short-circuiting)
 

@@ -56,7 +56,9 @@ to choose:
 - `print`'s format (`%lld`, `%s` or `%f`)
 - float arithmetic (`addsd`, `subsd`, `mulsd`, `divsd`, compared with `comisd`)
 - structural `=`/`!=` on Strings (`zyl_cstr_eq`) and on variants
-  (`zyl_variant_eq`; ordering comparisons use `zyl_variant_cmp`)
+  (`zyl_variant_eq`, a shallow fallback: an ADT comparison whose type is
+  known has already become a call to a generated `T.==` function in
+  `type_annotate.zyl`; ordering comparisons use `zyl_variant_cmp`)
 
 `kind-of` has no return-type inference. A function's result kind is
 read off its body when that body has a fixed shape; otherwise it
@@ -364,7 +366,8 @@ and the fields are popped into place:
 ```
 
 `zyl_heap_alloc` places a hidden header before the block, which is how
-`zyl_variant_eq` compares two separately allocated values structurally.
+`zyl_variant_eq` compares two separately allocated values field word by
+field word.
 An `IStackVariant` has the same layout written into consecutive slots
 of the current frame, with no allocation call.
 

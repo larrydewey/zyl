@@ -86,7 +86,7 @@
   (match (cg-label-new st1)
     (CGR st2 _ lb (CGP st2 la lb))))
 
-(defn no-fnnames () None)
+(defn no-fnnames () Nil)
 
 
 ; Codegen text buffer: 64MB, zero-initialized (buf-append appends at
@@ -125,7 +125,7 @@
 (defn fntail (xs)
   (match xs
     (Cons h d d)
-    (Nil None)))
+    (Nil Nil)))
 
 (defn cg-fn-check-head (h t nm)
   (match h

@@ -35,7 +35,8 @@ Functions are the core building blocks of Zyl programs. This chapter covers func
 Annotations are optional, and type inference works without them:
 `greet` would print `name` as text unannotated too, because every call
 passes a String. An annotation documents intent and constrains
-inference; it is not checked (Chapter 15).
+inference, and a call whose argument definitely clashes with it, such
+as `(add-ints 1.5 2)`, is `E_TYPE_MISMATCH` (Chapter 15).
 
 There is no return-type annotation. Anything after the parameter list
 is the body, so `(defn add ((a Int) (b Int)) Int (+ a b))` treats `Int`

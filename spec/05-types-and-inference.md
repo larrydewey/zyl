@@ -230,11 +230,20 @@ are not separate types; they are `CapKind`s inside `TCap` (see
 
 - Unification is Hindley–Milner style (`unify`, `unify-var`, with an
   occurs check). There is no let-generalisation.
-- Inference does not reject ill-typed programs: a failed unification
-  degrades to a fresh type variable rather than producing an error. The
-  only fatal diagnostic it raises is `E_INVALID_CAPABILITY` for a
-  non-pinnable FFI argument. `E_TYPE_MISMATCH` and
-  `E_RETURN_TYPE_MISMATCH` are catalogued but not raised.
+- Inference mostly does not reject ill-typed programs: a failed
+  unification degrades to a fresh type variable rather than producing an
+  error, so `(+ 1 "a")` and `(+ 1.5 2)` compile. `type_inference.zyl`
+  raises only `E_INVALID_CAPABILITY`, for a non-pinnable FFI argument.
+  The type-annotation pass (`type_annotate.zyl`, run just before ICNF
+  lowering) raises `E_TYPE_MISMATCH` when an argument's inferred type
+  definitely clashes, structurally, with the annotation of a top-level
+  function's parameter or with a constructor's declared field type
+  (`(add 1.5 2.0)` against `(defn add ((a Int) (b Int)) ...)`,
+  `(List String)` against `(List Int)`). A type variable or unknown part
+  on either side never clashes, nor does `Unit`; an unknown type name in
+  an annotation becomes a type variable. Lambda parameters and trait
+  method calls are not checked. `E_RETURN_TYPE_MISMATCH` is catalogued
+  but not raised.
 - `Int` and `Byte` unify with each other.
 - Parameter annotations are `(name Type)`; see
   `spec/02-syntax-and-forms.md`.
@@ -285,9 +294,17 @@ are not separate types; they are `CapKind`s inside `TCap` (see
 
 - `(derive Type Trait...)` is parsed, with the traits space-separated as in
   `tests/regression/derive.zyl`. `insert-derive` in `type_inference.zyl` is
-  a no-op, and `E_TRAIT_NOT_DERIVABLE` is never raised. Structural
-  equality of ADT and struct values in `assert-equal` goes through the
-  runtime's `zyl_variant_eq` (shallow: tag plus raw field words) whether or
-  not `Eq` was derived.
+  a no-op, and `E_TRAIT_NOT_DERIVABLE` is never raised. `==`, `=` and
+  `!=` on ADT and struct values compare by content whether or not `Eq`
+  was derived: `type_annotate.zyl` generates, for each compared type, a
+  function `T.==` that is false for different variants and otherwise
+  compares each field pair with `==`, so nested ADTs, Strings and Floats
+  compare by value. A generic ADT gets one instance per element type
+  through trait-generic specialisation. A type with a `Secret` field gets
+  no such function, and an operand of unknown type falls back to the
+  runtime's `zyl_variant_eq` (shallow: tag plus raw field words).
+  `assert-equal` on ADT or struct values lowers to `==`. Ordering (`<`
+  and the rest) is `zyl_variant_cmp`, lexicographic over raw field
+  words.
 - The monomorphizer treats `Eq`, `Ord`, `Debug`, `Clone` and `Hash` as
   auto-derived. §5.6 also lists `Show`.

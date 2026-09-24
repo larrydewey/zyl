@@ -317,10 +317,10 @@ and `Hash`, inline on `defstruct+` or with a standalone `derive`:
 ...)` option on `defstruct+` is not parsed, and the other traits are
 accepted and generate nothing; you get their behavior without them:
 
-- `==` and `!=` compare two struct or ADT values field by field;
-- `<`, `>`, `<=` and `>=` compare the fields lexicographically;
-- both are shallow: a string or nested-value field is compared by
-  address.
+- `==` and `!=` compare two struct or ADT values field by field, by
+  content: nested values and strings are compared recursively;
+- `<`, `>`, `<=` and `>=` compare the fields lexicographically, and are
+  shallow: a string or nested-value field is compared by address.
 
 ```lisp
 (defstruct Pt (x) (y))
@@ -404,9 +404,10 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 `stdlib/compiler/type_annotate.zyl` runs Hindley–Milner inference over
 the lowered program: top-level functions are inferred one strongly
 connected component of the call graph at a time and generalized, so each
-call instantiates a function's type afresh. Type errors are not reported
-(Chapter 15); the inferred types guide code generation and trait
-resolution. A function whose body depends on a type variable gets one
+call instantiates a function's type afresh. The only type error reported
+is an argument that clashes with a parameter or field annotation
+(Chapter 15); otherwise the inferred types guide code generation and
+trait resolution. A function whose body depends on a type variable gets one
 instance per concrete argument-type tuple, named `key~T1,T2`.
 
 ### Naming

@@ -104,11 +104,11 @@ in `docs/compiler-pipeline.md`.
 |---|---|
 | `type_system.zyl` | Type ADT, substitutions, environments, trait context, `TypeInferer` record |
 | `type_inference.zyl` | Older best-effort inferer; no longer run by the pipeline (the REPL and LSP use `type_annotate`) |
-| `type_annotate.zyl` | HM inference over the lowered program; kinds for codegen, static trait resolution, per-type instances |
+| `type_annotate.zyl` | HM inference over the lowered program; kinds for codegen, static trait resolution, per-type instances, generated structural `T.==`, the `E_TYPE_MISMATCH` annotation check |
 | `derive.zyl` | Expands `(derive T Show)` into an impl block |
 | `monomorphization.zyl` | Lifts impl bodies to `Trait.method_Type` (runs with an empty inferer) |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
-| `assert_lowering.zyl` | Rewrites `assert-equal` on ADT/struct values to a `zyl_variant_eq` call |
+| `assert_lowering.zyl` | Rewrites `assert-equal` on ADT/struct values to `(assert-true (== l r))` |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |
 | `optimization.zyl` | Integer constant folding and dead-branch elimination on `Icnf` |
 | `region_inference.zyl` | Escape analysis: a non-escaping variant becomes `IStackVariant` |

@@ -45,7 +45,9 @@ resolution → macro expansion → capability/duplicate/arity/mutability/
 exhaustiveness/unused/secret checks → derive expansion → type inference
 → monomorphization (impl lifting) → closure lifting → assert lowering →
 type annotation (HM, static trait resolution, per-type specialization,
-`type_annotate.zyl`) → ICNF lowering →
+generated structural `T.==`, `E_TYPE_MISMATCH` for an argument that
+clashes with a parameter or field annotation, `type_annotate.zyl`) →
+ICNF lowering →
 optimization → region inference (escape analysis over ICNF) → codegen →
 `cc` link. Contract injection (`contract_injection.zyl`) is not wired
 in: `requires`/`ensures`/`invariant`/`recover`/`checkpoint` are accepted

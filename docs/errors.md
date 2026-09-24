@@ -114,15 +114,18 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `icnf.zyl` (a variant name defined twice in one `deftype`) |
 | `E_RETURN_TYPE_MISMATCH` | type: return type mismatch in F - expected T, got U at S | catalog only |
-| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | catalog only |
+| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located: an argument that definitely clashes with a parameter annotation or declared field type) |
 | `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `codegen.zyl` (located), REPL interpreter |
 | `E_UNKNOWN_GENERIC_PARAM` | type: unknown generic parameter G at S | catalog only |
 | `E_UNKNOWN_TYPE` | type: unknown type T at S | catalog only |
 | `E_CANNOT_INFER` (§28, phase 5) | type: cannot infer concrete type for generic parameter G at S - no call-site evidence | catalog only (listed twice in the catalog) |
 
-Type inference does not currently reject ill-typed programs:
-`(+ 1 "a")` compiles without a diagnostic, and `E_TYPE_MISMATCH` /
-`E_RETURN_TYPE_MISMATCH` are never raised.
+Type inference otherwise does not reject ill-typed programs:
+`(+ 1 "a")` compiles without a diagnostic, and `E_RETURN_TYPE_MISMATCH`
+is never raised. `E_TYPE_MISMATCH` is raised only for a call to a
+top-level function or a constructor whose argument definitely clashes
+with the declared type; the message is
+``mismatched types: expected `T`, found `U` ``, not the catalog text.
 
 ### Region and ICNF (phases 6 and 7)
 

@@ -1060,14 +1060,19 @@
   (let tmp (str-intern arena (str-concat "_callee_" (ic-int-to-str (ic-fresh-id arena))))
     (ILet tmp (ic-expr arena op vt) (ic-keep-span (ICall tmp (ic-expr-list arena args vt)) op))))
 
-; A call the type pass resolved (trait impl or specialized instance).
+; A call the type pass resolved (trait impl, specialized instance, or an
+; ADT's equality function for `==`/`=`/`!=`, negated for `!=`).
 (defn ic-call-renamed (arena expr op args vt)
   (let nm (ta-renamed expr)
-    (if (= nm 0) (ic-call-expr arena op args vt) (ICall (str-intern arena nm) (ic-expr-list arena args vt)))))
+    (if (= nm 0) (ic-call-expr arena op args vt) (ic-renamed-call arena nm (expr-ident-name op "") args vt))))
 
 (defn ic-apply-renamed (arena expr fname args vt)
   (let nm (ta-renamed expr)
-    (if (= nm 0) (ic-apply arena fname args vt) (ICall (str-intern arena nm) (ic-expr-list arena args vt)))))
+    (if (= nm 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt))))
+
+(defn ic-renamed-call (arena nm fname args vt)
+  (let c (ICall (str-intern arena nm) (ic-expr-list arena args vt))
+    (if (> (ffi-call "zyl_cstr_eq" fname "!=" 1000) 0) (IBinop 9 c (IConst 0)) c)))
 
 ; Apply: operator, ffi-call, or call/variant routing by head-symbol name
 ; (no-dispatch arch: recognition happens here, never in the reader).

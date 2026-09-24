@@ -42,7 +42,7 @@
   (EFfiCall String (List Expr) Int)
   (EFfiPin Expr)
   (EFfiUnpin Expr)
-  (EAssert Expr (Option String))
+  (EAssert Expr (Option Expr))
   (EError String)
   (EUnwrap Expr)
   (EWhile Expr Expr)
@@ -129,7 +129,7 @@
 
 (deftype Atom (AInt Int) (AFloat String) (ABool Bool) (AStr String) (AIdent String) (ASymbol String) (AKeyword String) (ANil))
 
-(deftype Param (P String (Option String)))
+(deftype Param (P String (Option Expr)))
 
 (defn P.name (p) (match p (P n _ n)))
 (defn P.type (p) (match p (P _ t t)))

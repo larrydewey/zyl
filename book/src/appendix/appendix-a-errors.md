@@ -128,7 +128,7 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLI
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype` |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
-| `E_TYPE_MISMATCH` | Expected one type, found another. *Catalogued only: inference falls back to a fresh type variable on a mismatch rather than failing.* |
+| `E_TYPE_MISMATCH` | Expected one type, found another. *Raised by `type_annotate.zyl` only when an argument to a top-level function or a constructor definitely clashes with the parameter annotation or declared field type; any other mismatch falls back to a fresh type variable rather than failing.* |
 | `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
 | `E_UNKNOWN_TYPE` | A type name that does not resolve. *Catalogued only.* |
 | `E_UNKNOWN_GENERIC_PARAM` | A reference to an undeclared type parameter. *Catalogued only.* |
@@ -301,14 +301,14 @@ not reach your editor, because the language server does not run
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 45 of the catalog's 111 distinct
+**In the catalog, never raised.** 44 of the catalog's 111 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_INVALID_CHAR`, `E_UNEXPECTED_EOF`,
   `E_INTEGER_OVERFLOW`, `E_FLOAT_OVERFLOW`, `E_UNBALANCED_PARENS`,
   `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
   `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
-- Types: `E_TYPE_MISMATCH`, `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_TYPE`,
+- Types: `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_TYPE`,
   `E_UNKNOWN_GENERIC_PARAM`, `E_CANNOT_INFER`.
 - Regions and buffers: `E_REGION_ESCAPE`, `E_UNINITIALIZED_USE`,
   `E_ATOMIC_ABA`, `E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`,

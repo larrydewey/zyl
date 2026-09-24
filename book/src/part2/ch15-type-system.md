@@ -165,7 +165,7 @@ left to right before the call.
   trait dispatch relies on (Chapter 20).
 - §4.7 makes structs nominal. `==` compares a struct's tag as well as its
   fields, so values of two struct types with the same fields are never
-  equal. No type error is raised for mixing them, though (15.6).
+  equal. Comparing them raises no type error, though (15.6).
 - Generic structs are not supported (§6.5).
 
 ### ADTs
@@ -178,8 +178,9 @@ left to right before the call.
 §4.7 and §10 specify aliases as transparent and zero-cost. The
 post-processor does not recognize `alias`: `(alias UserId Int)` is
 accepted, has no effect, and does not introduce `UserId` as a name.
-Because parameter annotations are not checked against known types (15.6),
-writing `(id UserId)` in a parameter list is also accepted.
+An unknown name in an annotation becomes a type variable (15.6), so
+writing `(id UserId)` in a parameter list is also accepted, and the
+parameter is not checked.
 
 ## 15.6 Type Inference
 
@@ -209,24 +210,22 @@ program just before ICNF lowering.
 
 ### What it does not do
 
-- **It does not reject type errors.** A unification failure marks the
-  type variables involved as unknown, and code generation falls back to
-  what the literals and annotations say. All three of these compile
-  without a diagnostic:
+- **It rejects only annotation clashes.** A unification failure marks
+  the type variables involved as unknown, and code generation falls back
+  to what the literals and annotations say. The one exception is an
+  argument that definitely clashes with a declared type (see
+  Annotations). Both of these compile without a diagnostic:
 
   ```lisp
-  (defn add ((a Int) (b Int)) (+ a b))
-
   (defn main ()
     (begin
       (print (+ 1 "a"))       ; adds a string's address to 1
-      (print (add 1 "x"))     ; annotation not enforced
       (print (+ 1.5 2))       ; wrong: Int and Float mixed
       0))
   ```
 
-- **It does not check annotations against known types.** An unknown name
-  such as `(v Bogus)` is accepted.
+- **Unknown type names are accepted.** A name such as `(v Bogus)` that
+  is not a known type becomes a type variable, so it constrains nothing.
 - **Heterogeneous data loses its type.** A list holding a `Circle` and a
   `Rect` has no single element type; values read from it are treated as
   plain words (and trait calls on them use the runtime fallback).
@@ -247,16 +246,35 @@ name, or `Secret`/`(Secret Int)` (Chapter 17):
 ```
 
 Annotations are optional (§0 P7): inference usually finds the same
-type without them. They are not enforced. There is no return-type
-annotation and no annotation on `let`.
+type without them. They are enforced narrowly. A call to a top-level
+function whose argument's inferred type definitely clashes with the
+parameter's annotation is `E_TYPE_MISMATCH`, and so is a constructor
+call (`(Circle 1.5)`, `make-Point`) whose argument clashes with the
+declared field type. The comparison is structural, so `(List String)`
+against `(List Int)` is caught. A type variable or unknown part on either
+side never clashes, nor does `Unit`. Lambda parameters and trait method
+calls are not checked.
+
+```lisp
+(defn add ((a Int) (b Int)) (+ a b))
+
+(defn main ()
+  (begin
+    (print (add 1.5 2.0))   ; error[E_TYPE_MISMATCH]: mismatched types:
+    0))                     ;   expected `Int`, found `Float`
+```
+
+The diagnostic's label points at the parameter's declaration, and a help
+line gives the declared type. There is no return-type annotation and no
+annotation on `let`.
 
 ## 15.7 Type Errors
 
 | Code | Status |
 |------|--------|
-| `E_INVALID_CAPABILITY` | **Raised** by `mutability_check` (before inference) when a lambda is passed to `ffi-call`; a named top-level function may be passed, as a C callback. Type inference itself raises no errors. |
+| `E_INVALID_CAPABILITY` | **Raised** by `mutability_check` (before inference) when a lambda is passed to `ffi-call`; a named top-level function may be passed, as a C callback. |
 | `E_BYTE_VALUE_OOB` | **Raised** by the parser for `(byte N)` outside 0–255. |
-| `E_TYPE_MISMATCH` | Catalogued in `error_codes.zyl`; never raised. |
+| `E_TYPE_MISMATCH` | **Raised** by `type_annotate` when an argument to a top-level function or a constructor definitely clashes with the parameter annotation or declared field type (15.6). No other type error raises it. |
 | `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised. |
 | `E_UNKNOWN_TYPE` | Catalogued; never raised. |
 | `E_CANNOT_INFER` | In §28 and §6.7; never raised (Chapter 19). |
@@ -291,8 +309,11 @@ observable).
 | `ByteBuf`, `ByteSlice` | pointer to a runtime header holding the data pointer, length and capacity |
 | `Vec`, `Map` | ordinary ADT values (15.2) |
 
-The hidden size word is what lets `==`, `<` and `assert-equal` compare two
-separately allocated aggregates structurally (`zyl_variant_eq` and
-`zyl_variant_cmp` in `runtime/actor_runtime.c`). The comparison is
-shallow: fields that are pointers, including strings, are compared by
-address.
+`==`, `!=` and `assert-equal` on aggregates of a known type call a
+structural equality function that `type_annotate` generates per type
+(`T.==`), which compares fields by content and recurses into nested ADTs
+and Strings. The hidden size word is what lets the runtime compare two
+separately allocated aggregates when the type is unknown to inference or
+has a `Secret` field (`zyl_variant_eq`), and what `<` always uses (`zyl_variant_cmp`, in
+`runtime/actor_runtime.c`). Those comparisons are shallow: fields that
+are pointers, including strings, are compared by address.

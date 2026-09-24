@@ -94,8 +94,12 @@
 
 (defn st-empty () (ST 0 0))
 
-(defn st-name-at (t i) (w-get (st-base t) (* i 2)))
-(defn st-key-at (t i) (w-get (st-base t) (+ (* i 2) 1)))
+(defn st-name-at (t i) (st-word (st-base t) (* i 2)))
+(defn st-key-at (t i) (st-word (st-base t) (+ (* i 2) 1)))
+
+; The table's words hold Strings, so not math/words' Int-typed w-get/w-set.
+(defn st-word (base i) (ffi-call "zyl_mem_read" (+ base (* i 8)) 1000))
+(defn st-word-set (base i v) (ffi-call "zyl_mem_write" (+ base (* i 8)) v 1000))
 
 ; Sorted (by name) array built from `pairs`. Later pairs win over earlier
 ; ones for the same name, which is what makes an explicit import shadow a
@@ -114,8 +118,8 @@
     (Nil 0)
     (Cons h t
       (begin
-        (w-set base (* i 2) (qp-name h))
-        (w-set base (+ (* i 2) 1) (qp-key h))
+        (st-word-set base (* i 2) (qp-name h))
+        (st-word-set base (+ (* i 2) 1) (qp-key h))
         (st-fill base t (+ i 1))))))
 
 ; Merge sort: the table is rebuilt for every module, and an insertion

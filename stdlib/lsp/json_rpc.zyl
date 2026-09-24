@@ -271,8 +271,8 @@
         (123 (jr-parse-object s (+ c 1)))
         (91 (jr-parse-array s (+ c 1)))
         (34 (jr-parse-string s (+ c 1)))
-        (116 (if (jr-starts-with s c "true") (JV (JBool 1) (+ c 4)) (JV JNull (+ c 1))))
-        (102 (if (jr-starts-with s c "false") (JV (JBool 0) (+ c 5)) (JV JNull (+ c 1))))
+        (116 (if (jr-starts-with s c "true") (JV (JBool true) (+ c 4)) (JV JNull (+ c 1))))
+        (102 (if (jr-starts-with s c "false") (JV (JBool false) (+ c 5)) (JV JNull (+ c 1))))
         (110 (if (jr-starts-with s c "null") (JV JNull (+ c 4)) (JV JNull (+ c 1))))
         (_ (if (or (= ch 45) (and (>= ch 48) (<= ch 57))) (jr-parse-number s c) (JV JNull (+ c 1))))))))
 

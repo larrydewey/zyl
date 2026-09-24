@@ -26,10 +26,10 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **128/128**:
-  regression 52, interpreter 34, compile-fail 19, integration 7,
-  packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1,
-  unit_test 1. The interpreter category runs the regression and smoke
+- `./run_regression_tests.sh --full --no-boot` passes **147/147**
+  (updated 2026-09-24): regression 58, interpreter 39, compile-fail 24,
+  integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
+  packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31, §31 being
@@ -133,9 +133,15 @@ Compiler:
   (`core/show`) has impls for the primitives, `List`, `Option`,
   `Result`, `Vec` and `Map`; `(derive T Show)` writes one for an ADT or
   struct; `print` of a value with a Show impl prints its text.
-  Still open: `==` on inferred ADT values is by address unless an
-  operand is a constructor expression; `derive` of anything but `Show`
-  generates nothing; `(defstruct ... (:derive ...))` is not parsed.
+  `==`/`=`/`!=` on ADT and struct values compare by content, deeply,
+  through a generated per-type equality function (2026-09-24). An
+  argument that definitely clashes with a parameter annotation or a
+  declared constructor field type is `E_TYPE_MISMATCH`; every other
+  unification failure still fails open (`(+ 1 "a")` compiles).
+  Still open: `derive` of anything but `Show` generates nothing;
+  `(defstruct ... (:derive ...))` is not parsed; ADT `<`/`>` order by
+  raw field words (`zyl_variant_cmp`); constructor calls are not
+  arity-checked.
 - Call targets are resolved only in codegen (`cg-call-user`): a call to
   an undefined function, including the unimplemented `(list ...)`
   literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
@@ -366,6 +372,67 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-24, latest) — annotations enforced, structural ADT equality
+
+**`E_TYPE_MISMATCH` from annotations.** `type_annotate.zyl` checks each
+call to a top-level function (`ta-check-params`) and each constructor
+call (`ta-check-fields`): an argument whose inferred type definitely
+clashes with the parameter's annotation or the declared field type is a
+located `E_TYPE_MISMATCH`, labelled at the parameter. `ta-clash` compares
+structurally (`(List String)` against `(List Int)` is caught); a type
+variable, a poisoned variable or `Unit` never clashes, so the check only
+fires on a real conflict. `(add 1.5 2.0)` against `(defn add ((a Int)
+(b Int)) ...)` no longer compiles. Other unification failures still fail
+open, and return types are not checked (there is no return annotation).
+
+Turning it on found real mis-declarations in the tree, all fixed:
+- `(EC name String phase Int ...)`-style variants (`ErrorCode`,
+  `ErrorFind`, `ErrorLocation`, `ErrorSnippet`, `ErrLabel`) declared
+  twice as many fields as their constructors take (field names parse as
+  field types); now plain types with the names in a comment.
+- `Param`'s type slot and `EAssert`'s message hold Exprs, not Strings;
+  `TList` holds one `Type`; `TypeBind` keys are Strings; `TraitInfo`,
+  `AdtDef` and the inferer's ADT-instantiation slot declared the wrong
+  element types; `TaVd`'s fields were out of date.
+- Real code bugs in the legacy inferer/monomorphizer:
+  `subst-apply-type` returned a bare list for `TFun`;
+  `finalize-param-types-loop` put a parameter list in the known-functions
+  slot; `infer-expr-make-variant` built a `TStruct` from field names;
+  `monomorphize-push-instantiations` wrapped an `Expr` in `Expr`;
+  `unify-types` built a one-field `TCap`; parameter bounds were Exprs
+  where Strings were expected (`mono-param-bounds`).
+- `qualify.zyl` stored Strings through `math/words`' Int-typed `w-set`
+  (now `st-word`/`st-word-set`); codegen's `no-fnnames`/`fntail` returned
+  `None` for a List (same representation as `Nil`); the LSP passed `1`/`0`
+  for `Bool` fields (now `true`/`false`, `(Some (Left true))`).
+- `tests/regression/adts.zyl` nested an `A-Int` in the String field of
+  `A-Ident`; it now uses a `Boxed` wrapper type.
+
+**Structural ADT equality.** `==`, `=` and `!=` used to compare contents
+only when codegen saw a variant-kind operand (in practice a constructor
+written at the comparison), and then shallowly (`zyl_variant_eq`: tag
+plus raw field words, so a String or nested ADT field compared by
+address). Now the type pass notes every two-operand equality (special
+kind 5); when an operand's type is an ADT or struct, the node is renamed
+to `T.==`, generated on first use (`ta-eq-fn`, `ta-eq-defn`): a match on
+both operands that compares field pairs with `==`. Nested ADTs, Strings
+and Floats therefore compare by content, recursion works, and a generic
+type is specialized per element type like any trait-generic function
+(`List.==~List<String>,List<String>`). ICNF lowering turns the renamed
+node into a call, negated for `!=` (`ic-renamed-call`). A type with a
+`Secret` field gets no equality function. `assert_lowering.zyl` now
+rewrites an ADT `assert-equal` to `(assert-true (== l r))` instead of a
+direct `zyl_variant_eq` call. Where the type stays unknown, codegen's
+shallow `zyl_variant_eq` is still the fallback.
+
+Tests: `tests/regression/adt-equality.zyl` (compiled and interpreted),
+`tests/compile-fail/type-mismatch-{param,field,nested}.zyl`. 147/147 pass;
+the fixed point holds.
+
+Known limitation found on the way: REPL diagnostics show a stale source
+line (the snippet comes from an earlier `<repl>` text); this affects
+every located error in the REPL, not only the new one.
 
 ## Session (2026-09-24, later still) — Show, static traits, specialization
 

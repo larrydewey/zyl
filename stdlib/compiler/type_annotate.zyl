@@ -4,21 +4,24 @@
 ; Hindley-Milner inference over the final Expr program (just before ICNF
 ; lowering). Records each expression node's type in attr table 0 so
 ; lowering can hand codegen a print/compare/float kind (ta-kind).
-; Fails open: a conflict poisons the type variables involved to unknown.
+; Fails open: a conflict poisons the type variables involved to unknown,
+; except where an argument clashes with a parameter or field annotation,
+; which is E_TYPE_MISMATCH.
 
 (use core/list)
 (use core/option)
 (use compiler/type_system)
 (use compiler/expr_inner)
+(use compiler/error_report)
 
 ; Types. Negative TaV ids are template slots (see ta-inst).
 (deftype TaTy (TaV Int) (TaC String (List TaTy)) (TaF (List TaTy) TaTy))
 
 ; Per-type info: params (names), struct?
 (deftype TaTd (TaTd String (List String) Int Int))
-; Per-variant info: type name, slot count, field templates, result template,
-; field names (structs), struct?
-(deftype TaVd (TaVd String Int (List TaTy) TaTy (List String) Int))
+; Per-variant info: type name, slot count, constructor template, field
+; names, struct?, type parameter count.
+(deftype TaVd (TaVd String Int TaTy (List String) Int Int))
 ; Function scheme: slot count, template.
 (deftype TaSc (TaSc Int TaTy))
 ; Conversion result: type plus extended annotation scope.
@@ -469,7 +472,10 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDeftype name variants _ sm (ta-deftype st name variants sm))
+          (EDeftype name variants _ sm
+            (begin
+              (ta-deftype st name variants sm)
+              (ta-eq-register st name variants)))
           (ETraitDecl name methods _ (ta-add-trait st name methods))
           (_ 0))
         (ta-collect-c st rest)))))
@@ -797,14 +803,16 @@
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
       (if (> oc 0)
-        (ta-op st ctx env oc args)
+        (ta-op st ctx env e n oc args)
         (let bi (ta-builtin-sig st n)
           (if (= bi 0)
             (ta-call-named st ctx env e n args)
             (ta-apply-type st bi (ta-list st ctx env args))))))))
 
 ; Arithmetic or comparison on a type variable needs the instance type.
-(defn ta-op (st ctx env oc args)
+; An equality between two values is also noted: on an ADT it becomes a
+; call to the type's structural equality function (ta-eq-fn).
+(defn ta-op (st ctx env e n oc args)
   (let ts (ta-list st ctx env args)
     (if (= oc 3)
       (ta-seq (ta-unify-all st ts (ta-int)) (ta-int))
@@ -813,7 +821,11 @@
         (Cons h t
           (let _ (ta-unify-all st t h)
             (let _ (ta-note-op st ctx h)
-              (if (= oc 2) (ta-bool) h))))))))
+              (let _ (if (and (ta-eq-op n) (= (list-length ts) 2)) (ta-note st ctx e 5 "" (ta-sig2 h h (ta-bool)) -1) 0)
+                (if (= oc 2) (ta-bool) h)))))))))
+
+(defn ta-eq-op (n)
+  (if (ta-streq n "==") true (if (ta-streq n "=") true (ta-streq n "!="))))
 
 (defn ta-note-op (st ctx t)
   (match (ta-resolve st t)
@@ -857,7 +869,7 @@
 (defn ta-call-fn (st ctx env e fi args)
   (let tf (ta-fn-ref st ctx fi)
     (let ts (ta-list st ctx env args)
-      (let r (ta-fresh st)
+      (let r (ta-seq (ta-check-params st fi args ts) (ta-fresh st))
         (let ct (TaF ts r)
           (let _ (ta-unify st tf ct)
             (let s (ta-wget (ta-fnstate st) fi)
@@ -888,7 +900,10 @@
   (let vd (ta-ctor-lookup st n)
     (if (= vd 0)
       (ta-seq (ta-list st ctx env args) (ta-fresh st))
-      (ta-apply-type st (ta-ctor-inst st vd) (ta-list st ctx env args)))))
+      (let tc (ta-ctor-inst st vd)
+        (let ts (ta-list st ctx env args)
+          (let _ (ta-check-fields st n tc args ts)
+            (ta-apply-type st tc ts)))))))
 
 ; `Name` or `make-Name`.
 (defn ta-ctor-lookup (st n)
@@ -1174,6 +1189,189 @@
   (match xs
     (Nil 0)
     (Cons h t (ta-seq (ta-wpush pv h) (ta-repush pv t)))))
+
+; --- annotation checks --------------------------------------------------------
+; An argument whose inferred type clashes with the declared type of its
+; parameter or constructor field is E_TYPE_MISMATCH. Only a definite clash
+; counts: unknown parts on either side never do.
+
+(defn ta-check-params (st fi args ts)
+  (match (Expr.inner (ta-wget (ta-fnexp st) fi))
+    (EDefn name params _ (ta-check-param-list st name params args ts))
+    (_ 0)))
+
+(defn ta-check-param-list (st fname params args ts)
+  (match params
+    (Nil 0)
+    (Cons p prest
+      (match args
+        (Nil 0)
+        (Cons a arest
+          (match ts
+            (Nil 0)
+            (Cons t trest
+              (begin
+                (ta-check-param st fname p a t)
+                (ta-check-param-list st fname prest arest trest)))))))))
+
+(defn ta-check-param (st fname p a t)
+  (match (P.type p)
+    (None 0)
+    (Some te
+      (match (ta-conv st te Nil)
+        (TaR want _
+          (if (ta-clash st want t)
+            (let what (str-concat "parameter `" (str-concat (P.name p) (str-concat "` of `" (str-concat (err-name fname) "`"))))
+              (ta-mismatch st a want t
+                (Cons (err-label-at p (str-concat what " declared here")) Nil)
+                (str-concat what (str-concat " is declared `" (str-concat (ta-pretty st want) "`")))))
+            0))))))
+
+(defn ta-check-fields (st cname tc args ts)
+  (match tc
+    (TaF fts _ (ta-check-field-list st cname fts args ts 1))
+    (_ 0)))
+
+(defn ta-check-field-list (st cname fts args ts k)
+  (match fts
+    (Nil 0)
+    (Cons want frest
+      (match args
+        (Nil 0)
+        (Cons a arest
+          (match ts
+            (Nil 0)
+            (Cons t trest
+              (begin
+                (if (ta-clash st want t)
+                  (ta-mismatch st a want t Nil
+                    (str-concat "field " (str-concat (ffi-call "zyl_int_text" k 1000)
+                      (str-concat " of `" (str-concat (err-name cname) (str-concat "` is declared `" (str-concat (ta-pretty st want) "`")))))))
+                  0)
+                (ta-check-field-list st cname frest arest trest (+ k 1))))))))))
+
+(defn ta-mismatch (st node want got labels help)
+  (let m1 (str-concat "mismatched types: expected `" (ta-pretty st want))
+    (let msg (str-concat m1 (str-concat "`, found `" (str-concat (ta-pretty st got) "`")))
+      (let fid (ffi-call "zyl_span_file" node 1000)
+        (let off (ffi-call "zyl_span_off" node 1000)
+          (ffi-call "zyl_panic" (err-at-labels "E_TYPE_MISMATCH" msg fid off labels help) 1000))))))
+
+; True when `a` and `b` can never unify. A variable (known or poisoned) never
+; clashes, nor does Unit, which no expression is inferred to have.
+(defn ta-clash (st a b)
+  (match (ta-resolve st a)
+    (TaV _ false)
+    (TaC n1 a1
+      (match (ta-resolve st b)
+        (TaV _ false)
+        (TaC n2 a2
+          (if (ta-unit n1) false (if (ta-unit n2) false (if (ta-streq n1 n2) (ta-clash-list st a1 a2) true))))
+        (TaF _ _ (if (ta-unit n1) false true))))
+    (TaF p1 r1
+      (match (ta-resolve st b)
+        (TaV _ false)
+        (TaC n2 _ (if (ta-unit n2) false true))
+        (TaF p2 r2
+          (if (= (list-length p1) (list-length p2))
+            (if (ta-clash-list st p1 p2) true (ta-clash st r1 r2))
+            true))))))
+
+(defn ta-clash-list (st xs ys)
+  (match xs
+    (Nil false)
+    (Cons x xr
+      (match ys
+        (Nil false)
+        (Cons y yr (if (ta-clash st x y) true (ta-clash-list st xr yr)))))))
+
+(defn ta-unit (n) (ta-streq n "Unit"))
+
+; --- structural equality ------------------------------------------------------
+; `==`/`=`/`!=` on an ADT calls a generated `(defn T.== (a b) ...)` that
+; matches both sides and compares their fields with `==`, so nested ADTs,
+; Strings and Floats compare by content. A generic field makes it
+; trait-generic, specialized per type like any other function. A type with
+; a Secret field keeps identity comparison (no early-exit field compare).
+
+(defn ta-eq-register (st name variants)
+  (match variants
+    (Nil 0)
+    (Cons _ _
+      (if (ta-secret-variants st variants)
+        0
+        (ta-sput (ta-specs st) (str-concat "!eqv:" name) variants)))))
+
+(defn ta-secret-variants (st variants)
+  (match variants
+    (Nil false)
+    (Cons v rest (if (ta-secret-list (ta-field-exprs st (AV.name v))) true (ta-secret-variants st rest)))))
+
+(defn ta-secret-list (tes)
+  (match tes
+    (Nil false)
+    (Cons te rest (if (ta-secret-te te) true (ta-secret-list rest)))))
+
+(defn ta-secret-te (te)
+  (match (Expr.inner te)
+    (EAtom a (match a (AIdent n (ta-key-is n "Secret")) (_ false)))
+    (EApply head args (if (ta-key-is head "Secret") true (ta-secret-list args)))
+    (ECall op args (if (ta-secret-te op) true (ta-secret-list args)))
+    (_ false)))
+
+; Index of the equality function of ADT `n`, made and visited on first use;
+; -1 when `n` has none.
+(defn ta-eq-fn (st n)
+  (let got (ta-sget (ta-specs st) (str-concat "!eq:" n))
+    (if (> got 0)
+      (- got 1)
+      (let vs (ta-sget (ta-specs st) (str-concat "!eqv:" n))
+        (if (= vs 0)
+          -1
+          (let name (str-concat n ".==")
+            (let e (ta-eq-defn name vs)
+              (let fi (ta-add-fn st name e)
+                (begin
+                  (ta-sput (ta-specs st) (str-concat "!eq:" n) (+ fi 1))
+                  (ta-wpush (ta-extra st) e)
+                  (ta-visit st fi)
+                  fi)))))))))
+
+(defn ta-eq-status (st ct)
+  (match (ta-recv st ct)
+    (TaC n _
+      (let fi (ta-eq-fn st n)
+        (if (< fi 0) 0 (ta-impl-status st fi ct))))
+    (_ 0)))
+
+(defn ta-id (n) (Expr (EAtom (AIdent n))))
+(defn ta-blit (b) (Expr (EAtom (ABool b))))
+
+(defn ta-eq-defn (name variants)
+  (Expr (EDefn name (ta-l2 (P "_eqa" None) (P "_eqb" None))
+    (Expr (EMatch (ta-id "_eqa") (ta-eq-arms variants (list-length variants)))))))
+
+(defn ta-eq-arms (variants nv)
+  (match variants
+    (Nil Nil)
+    (Cons v rest
+      (let n (list-length (AV.fields v))
+        (let same (MA (AV.name v) (ta-eq-binds "_eqy" n 0) (ta-eq-chain n 0))
+          (let inner (if (> nv 1) (ta-l2 same (MA "_" Nil (ta-blit false))) (Cons same Nil))
+            (Cons (MA (AV.name v) (ta-eq-binds "_eqx" n 0) (Expr (EMatch (ta-id "_eqb") inner)))
+                  (ta-eq-arms rest nv))))))))
+
+(defn ta-eq-var (pre i) (str-concat pre (ffi-call "zyl_int_text" i 1000)))
+
+(defn ta-eq-binds (pre n i)
+  (if (>= i n) Nil (Cons (ta-id (ta-eq-var pre i)) (ta-eq-binds pre n (+ i 1)))))
+
+(defn ta-eq-chain (n i)
+  (if (>= i n)
+    (ta-blit true)
+    (Expr (EIf (Expr (EApply "==" (ta-l2 (ta-id (ta-eq-var "_eqx" i)) (ta-id (ta-eq-var "_eqy" i)))))
+               (ta-eq-chain n (+ i 1))
+               (ta-blit false)))))
 
 ; --- driver -------------------------------------------------------------------
 
@@ -1479,7 +1677,9 @@
           (ta-trait-status st name t)
           (if (= kind 4)
             (ta-open-var st (ta-resolve st t))
-            (ta-print-status st t)))))))
+            (if (= kind 5)
+              (ta-eq-status st t)
+              (ta-print-status st t))))))))
 
 ; Only the arguments decide an instance.
 (defn ta-args-of (t)
@@ -1573,12 +1773,16 @@
             (match r
               (TaC n _ (ta-set-name node 2 (ta-impl-target st members (ta-impl-fn st name n) t)))
               (_ 0)))
+          (if (= kind 5)
+            (match (ta-recv st t)
+              (TaC n _ (ta-set-name node 2 (ta-impl-target st members (ta-eq-fn st n) t)))
+              (_ 0))
           (let r (ta-resolve st t)
             (match r
               (TaC n _
                 (ta-set-name node 3
                   (ta-impl-target st members (ta-impl-fn st (ta-sget (ta-specs st) "!show") n) (ta-show-ct r))))
-              (_ 0))))))))
+              (_ 0)))))))))
 
 (defn ta-set-name (node tbl name)
   (ffi-call "zyl_attr_set" tbl node name 1000))

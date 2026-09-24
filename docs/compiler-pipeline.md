@@ -187,8 +187,8 @@ Trait calls are resolved later, in the type annotation pass (Phase 8b).
   pass (beta-reducing a lambda into its callers is not hygienic, and
   closures are real values now, see Phase 9).
 - **Assert lowering:** `(assert-equal l r)` where either side looks like
-  an ADT or struct value becomes a `zyl_variant_eq` call. That
-  comparison is shallow: tag plus each field as a raw word.
+  an ADT or struct value becomes `(assert-true (== l r))`, so it gets the
+  structural equality of Phase 8b.
 
 ## Phase 8b: Type annotation
 
@@ -197,7 +197,18 @@ Trait calls are resolved later, in the type annotation pass (Phase 8b).
 Hindley-Milner inference (union-find, Tarjan SCCs, let-polymorphism)
 over the final `ExprInner` program. Each node's type goes to runtime
 attr table 0; a unify conflict poisons the variables involved, so the
-pass fails open. At each SCC's close:
+pass fails open, with one exception:
+
+- An argument to a top-level function, or to a constructor
+  (`(Circle 1.5)`, `make-Point`), whose inferred type definitely clashes
+  with the parameter's annotation or the declared field type is
+  `E_TYPE_MISMATCH`, labelled at the parameter declaration and with a
+  help line. The check is structural (`(List String)` against
+  `(List Int)` clashes); a type variable or unknown part on either side
+  never clashes, nor does `Unit`. Lambda parameters and trait method
+  calls are not checked.
+
+At each SCC's close:
 
 - A trait call `(Trait.method recv ...)` whose receiver type is known
   is renamed to `Trait.method_Type` (attr table 2).
@@ -207,6 +218,13 @@ pass fails open. At each SCC's close:
   calls inside it resolve. Instances are appended to the program.
 - `print` of a value whose type has a `Show` impl prints `Show.show` of
   it (attr table 3).
+- `==`, `=` and `!=` on a known ADT or struct type become a call to a
+  generated `(defn T.== (a b) ...)` (negated for `!=`), which is false
+  for different variants and otherwise compares each field pair with
+  `==`, so nested ADTs, Strings and Floats compare by content and
+  recursive types work. A generic field makes it trait-generic, so
+  `(List T)` gets an instance per element type. A type with a `Secret`
+  field gets no equality function and keeps the shallow comparison.
 
 A trait call it cannot resolve is lowered to a match on the receiver's
 runtime tag. `ZYL_DEBUG_TYPES=1` prints every function's scheme.
@@ -285,7 +303,9 @@ and `E_REGION_ESCAPE` is defined but never raised.
   operand's kind.
 - **Heap values:** variants and structs are allocated with
   `zyl_heap_alloc`, which writes a hidden field-count header that
-  `zyl_variant_eq` reads.
+  `zyl_variant_eq` and `zyl_variant_cmp` read. `zyl_variant_eq` (tag plus
+  raw field words) is now only the fallback for `==` on a variant-kind
+  operand whose type Phase 8b left unknown.
 - **Symbols:** user functions get a `_ZYL_` prefix; canonical keys go
   through the runtime's `zyl_mangle_key`.
 - **Entry stub:** `main` calls `zyl_save_args` and

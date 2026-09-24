@@ -1,0 +1,9 @@
+; Compile-fail: a String for a constructor field declared Int is
+; E_TYPE_MISMATCH (compiler/type_annotate.zyl, ta-check-fields).
+
+(deftype _cf_Shape (_cf_Circle Int) (_cf_Rect Int Int))
+
+(defn main ()
+  (match (_cf_Circle "wide")
+    (_cf_Circle r r)
+    (_cf_Rect w _ w)))

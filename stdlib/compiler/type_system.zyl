@@ -23,7 +23,7 @@
   (TByteSlice Region)
   (TByteBuf Region)
   (TFun (List Type))
-  (TList (List Type))
+  (TList Type)
   (TArray Type Int)
   (TCap CapKind Type)
   (TStruct String (List Type))
@@ -128,7 +128,7 @@
 (deftype Subst (SBindings (List TypeBind)))
 (defn SBindings.binds (s) (match s (SBindings b b)))
 
-(deftype TypeBind (TB Int Type))
+(deftype TypeBind (TB String Type))
 
 ; ===========================================================================
 ; TYPEVAR GENERATOR
@@ -215,7 +215,7 @@
     (List String)          ; ti-inferring-fns
     (List BodyCache)       ; ti-body-cache
     (List (Pair String (List String))) ; ti-adt-param-order
-    (List AdtInstantiation)            ; ti-adt-instantiations
+    (List (Pair String (List AdtInstantiation))) ; ti-adt-instantiations
     (List (Pair String (List (List String)))) ; ti-arg-type-observations
     (List (Pair String Expr))           ; ti-function-bodies
     (List String)                    ; ti-skip-generic-def-names
@@ -318,7 +318,7 @@
 (deftype FnSig (FNS Name (List ParamType)))
 (deftype ParamType (PT Name Type))
 (deftype FnReturn (FR Name Type))
-(deftype AdtDef (AD Name (List Variant)))
+(deftype AdtDef (AD Name (List ADTVariant)))
 (deftype Variant (V Name (List Field)))
 (deftype Field (F Name Type))
 ; Key is a String built by make-site-key (type_inference.zyl) as
@@ -341,7 +341,7 @@
 ; ===========================================================================
 
 (deftype TraitInfo
-  (TI String (List (Pair String (List Type))) (List (Pair String Type)))) ; name, methods (name -> params), return_types
+  (TI String (List (Pair String (List Param))) (List (Pair String String)))) ; name, methods (name -> params), return_types
 
 (deftype ImplInfo
   (II String Type (List (Pair String (List Type))))) ; trait_name, impl_type, methods
@@ -511,7 +511,7 @@
     (TByte TByte)
     (TByteSlice r (TByteSlice r))
     (TByteBuf r (TByteBuf r))
-    (TFun args (subst-apply-type-list s args))
+    (TFun args (TFun (subst-apply-type-list s args)))
     (TList elem (TList (subst-apply-type s elem)))
     (TArray elem len (TArray (subst-apply-type s elem) len))
     (TCap kind inner (TCap kind (subst-apply-type s inner)))

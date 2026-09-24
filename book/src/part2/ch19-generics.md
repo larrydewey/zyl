@@ -252,7 +252,7 @@ function per `(Trait, Type)` pair.
 | Syntax | `fn foo<T: Trait>(x: T)` | `(defn foo ((T : Trait) x) ...)` | unannotated `(defn foo (x) ...)` |
 | Specialization | monomorphized | monomorphized | shared body; per-type instances where the body depends on the type |
 | Naming | mangled | `fn_Type1_Type2...`, sorted | `key~T1,T2`, then mangled (§31.2) |
-| Type checking | enforced | HM + trait resolution | HM + static trait resolution, not enforced |
+| Type checking | enforced | HM + trait resolution | HM + static trait resolution; only annotation clashes rejected |
 | Bounds | enforced | enforced | not expressible |
 | Higher-kinded types | no (GATs cover some uses) | no | no |
 | Const generics | yes | no | no |

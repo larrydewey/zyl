@@ -14,10 +14,12 @@
 ; ===========================================================================
 
 (deftype ErrorCode
-  (EC name String phase Int severity Int message String))
+  ; name, phase, severity, message
+  (EC String Int Int String))
 
 (deftype ErrorFind
-  (EFound found Int code ErrorCode))
+  ; found, code
+  (EFound Int ErrorCode))
 
 (deftype ECatalog
   (ECat list (List ErrorCode)))

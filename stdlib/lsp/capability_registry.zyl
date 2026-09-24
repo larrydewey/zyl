@@ -20,50 +20,50 @@
 
 (defn lsp-server-capabilities ()
   (SCaps
-    (Some (TDSO (Some (Right TDSKIncremental)) (Some 1) (Some 1) (Some (Right (SO (Some 1)))) (Some 1)))
-    (Some (COpt (Some 1)
+    (Some (TDSO (Some (Right TDSKIncremental)) (Some true) (Some true) (Some (Right (SO (Some true)))) (Some (Left true))))
+    (Some (COpt (Some true)
       (Some (Cons (CTC "(") (Cons (CTC ".") (Cons (CTC ":") (Cons (CTC "<") (Cons (CTC "\"") Nil))))))
       (Some (Cons (CTC "(") (Cons (CTC ".") (Cons (CTC ":") Nil))))
       (Some (CIKO (Some (Cons CIKFunction (Cons CIKMethod (Cons CIKVariable (Cons CIKStruct (Cons CIKInterface (Cons CIKEnum (Cons CIKKeyword (Cons CIKTypeParameter (Cons CIKCapability (Cons CIKRegion (Cons CIKVariant (Cons CIKTraitMethod (Cons CIKFFICall (Cons CIKActorSpawn Nil)))))))))))))))))
-      (Some 1)))
-    (Some (HOpt (Some 1)))
+      (Some true)))
+    (Some (HOpt (Some true)))
     (Some (SHOpt
       (Some (Cons "(" (Cons " " Nil)))
       (Some (Cons " " Nil))
-      (Some 1)))
+      (Some true)))
     None
-    (Some (DefOpt (Some 1)))
-    (Some (TDefOpt (Some 1)))
-    (Some (ImplOpt (Some 1)))
-    (Some (RefOpt (Some 1)))
-    (Some (DHOpt (Some 1)))
-    (Some (DSOpt (Some 1) (Some 1)))
+    (Some (DefOpt (Some true)))
+    (Some (TDefOpt (Some true)))
+    (Some (ImplOpt (Some true)))
+    (Some (RefOpt (Some true)))
+    (Some (DHOpt (Some true)))
+    (Some (DSOpt (Some true) (Some true)))
     (Some (CAOpt
       (Some (Cons (CAK "quickfix") (Cons (CAK "refactor") (Cons (CAK "refactor.extract") (Cons (CAK "source") (Cons (CAK "source.organizeImports") Nil))))))
-      (Some 1) (Some 1)))
+      (Some true) (Some true)))
     None
     None
     None
-    (Some (FROpt (Some 1)))
-    (Some (SROpt (Some 1)))
+    (Some (FROpt (Some true)))
+    (Some (SROpt (Some true)))
     None
     None
-    (Some (STOpt (Some (semantic-tokens-legend)) (Some 1) (Some (Right (STFOpt (Some 1)))) (Some 1) (Some 1)))
-    (Some (IHOpt (Some 1) (Some 1) (Some 1)))
+    (Some (STOpt (Some (semantic-tokens-legend)) (Some true) (Some (Right (STFOpt (Some true)))) (Some true) (Some true)))
+    (Some (IHOpt (Some true) (Some true) (Some true)))
     None
-    (Some (DiagOpt (Some (Right (DWCC (Some 1)))) (Some 1) (Some 1)))
+    (Some (DiagOpt (Some (Right (DWCC (Some true)))) (Some true) (Some true)))
     None
-    (Some (ROpt (Some 1) (Some 1) (Some 1)))
-    (Some (WSOpt (Some 1) (Some 1)))
+    (Some (ROpt (Some true) (Some true) (Some true)))
+    (Some (WSOpt (Some true) (Some true)))
     ; One command, the one lsp_server.zyl's execute-command handler
     ; actually implements. The four aspirational names that used to sit
     ; here advertised work the server would then answer with
     ; "unknown command".
-    (Some (ECOpt (Cons "zyl.evalDocument" Nil) (Some 1)))
-    (Some (WOpt (Some (WFSC (Some 1) (Some 1)))))
-    (Some (DFOpt (Some 1)))
+    (Some (ECOpt (Cons "zyl.evalDocument" Nil) (Some true)))
+    (Some (WOpt (Some (WFSC (Some true) (Some true)))))
+    (Some (DFOpt (Some true)))
     None
-    (Some 1)))
+    (Some true)))
 
 (defn lsp-initialize-result ()
   (InitR (lsp-server-capabilities) (Some (IRSI "Zyl Language Server" "0.1.0"))))

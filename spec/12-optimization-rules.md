@@ -95,7 +95,8 @@ These run on the program before ICNF lowering (see the pipeline in
   is only ever called directly (it does not escape and is not recursive),
   each call is beta-reduced in place. This is inlining, permitted by §26.
 - **`assert_lowering.zyl`:** rewrites `assert-equal` on ADT or struct
-  values to a comparison through the runtime's `zyl_variant_eq`.
+  values to `(assert-true (== l r))`, which type annotation then turns
+  into a call to the type's generated structural equality function.
 - **Region inference** (`ri-transform-fns`) runs after optimization; see
   `spec/07-region-memory-model.md`.
 

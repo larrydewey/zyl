@@ -21,10 +21,12 @@
 ; field is a String/pointer in the inline make-variant path. Ints first
 ; (like CheckState in sexp_balance) match correctly.
 (deftype ErrorLocation
-  (EL line Int col Int file-path String))
+  ; line, col, file-path
+  (EL Int Int String))
 
 (deftype ErrorSnippet
-  (ES pointer-col Int error-line String))
+  ; pointer-col, error-line
+  (ES Int String))
 
 ; ---------------------------------------------------------------------------
 ; INTEGER -> DECIMAL STRING (no ffi, no arena): digit chars pulled from a
@@ -156,7 +158,8 @@
 ; short message (the binding a `set!` targets, the definition a capability
 ; is used in). Int-first field order, as above.
 (deftype ErrLabel
-  (ELbl fid Int off Int text String))
+  ; fid, off, text
+  (ELbl Int Int String))
 
 (defn err-label (fid off text) (ELbl fid off text))
 

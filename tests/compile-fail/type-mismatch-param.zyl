@@ -1,0 +1,6 @@
+; Compile-fail: a Float argument for a parameter annotated Int is
+; E_TYPE_MISMATCH (compiler/type_annotate.zyl, ta-check-params).
+
+(defn _cf_add ((a Int) (b Int)) (+ a b))
+
+(defn main () (_cf_add 1.5 2.0))

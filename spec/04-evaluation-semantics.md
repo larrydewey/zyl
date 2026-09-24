@@ -318,8 +318,10 @@ and guarantee G11 are not met.
 `assert`, `assert-equal`, `assert-true` and `assert-false` abort through
 `zyl_panic` with a fixed message (`assert-equal failed` and so on) and no
 error code; `E_ASSERT_FAIL` is catalogued but not printed.
-`assert-equal` on ADT or struct values compares them with the runtime's
-shallow `zyl_variant_eq`. `assert-fail` evaluates its argument and checks
+`assert-equal` on ADT or struct values lowers to `(assert-true (== l r))`,
+so it gets the same content comparison as `==` (a generated per-type
+`T.==`; the runtime's shallow `zyl_variant_eq` when the type is
+unknown). `assert-fail` evaluates its argument and checks
 nothing.
 
 ### Testing framework

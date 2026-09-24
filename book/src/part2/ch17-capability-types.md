@@ -104,8 +104,9 @@ may never be upgraded to `TMut`.
 
 In the implementation, two capability types unify only if their kinds are
 equal, with one exception: `Secret` and `Cap` unify in either direction
-(17.8). Type errors are not reported in any case (Chapter 15), so neither
-rule has a dedicated check. In practice, reading a `let-mut` variable is
+(17.8). Apart from an argument that clashes with a parameter or field
+annotation, type errors are not reported (Chapter 15), so neither rule
+has a dedicated check. In practice, reading a `let-mut` variable is
 always allowed, and nothing can turn a `let` binding into a mutable one.
 
 There is no syntax for annotating a parameter with a capability. To write

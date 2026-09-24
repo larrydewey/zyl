@@ -1,0 +1,11 @@
+; Compile-fail: annotations are checked inside type arguments too — a
+; (List String) for a parameter annotated (List Int) is E_TYPE_MISMATCH.
+
+(use core/list)
+
+(defn _cf_sum ((xs (List Int)))
+  (match xs
+    (Nil 0)
+    (Cons h t (+ h (_cf_sum t)))))
+
+(defn main () (_cf_sum (Cons "a" Nil)))
