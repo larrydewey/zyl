@@ -146,10 +146,8 @@ Compiler:
   an undefined function, including the unimplemented `(list ...)`
   literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
   but no earlier phase (type inference) reports it.
-- A capturing closure handed to `spawn` crashes: `zyl_actor_spawn` calls
-  the closure block as code.
 - Diagnostics still reported as a bare `PANIC:` with no location:
-  `secret_check`, `E_INVALID_CAPABILITY`, and the remaining errors in
+  `E_INVALID_CAPABILITY` and the remaining errors in
   `expr_inner`. Warnings carry spans, parameter warnings included (qualification
   and macro expansion copy the parameter's span since 2026-09-24).
 - Contracts (spec §23) are lowered during parsing: `requires`, `ensures`
@@ -371,7 +369,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — hash finalization
+## Session (2026-09-24, latest) — open follow-ups from P1-P3
+
+- Lexer: a byte it cannot tokenize is `E_INVALID_CHAR` (`check-lexed-to-end`,
+  `parser.zyl`); an open string is `E_UNTERMINATED_STRING`. It used to end
+  the file silently.
+- A trait call on a concrete receiver type without an impl is a located
+  `E_TRAIT_NOT_FOUND` (`ta-check-no-impl`), not runtime-dispatch garbage.
+- A `let-mut` ever `set!` to a secret is secret for its whole scope
+  (`sc-sets-secret`, guarded to skip secret-free code).
+- `(expr).field` reads fields of any expression's value; `((expr).f.m)`
+  calls `m` on a field (`dot-rewrite-list`).
+- Secret-checker and impl-not flow diagnostics are located (`sc-fail-at`).
+
+## Session (2026-09-24, earlier) — hash finalization
 
 `zyl build`/`zyl test` (`drv-compile-file`, `driver.zyl`) now compute the
 §31.12 inputs in order (compiler, lock graph, native objects, assembly),

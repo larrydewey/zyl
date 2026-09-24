@@ -81,7 +81,7 @@ it compiles and runs correctly; the notes say where it stops.
   resolved graph is not recorded, and a single-file compile writes no
   buildinfo.
 - **Unlocated diagnostics:** `mutability_check`, `capability_check`,
-  `unused_check`, `secret_check` and the remaining errors in
+  `unused_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.
 - **Partial tail-call optimization:** a direct call to a top-level function in tail position (an `if` branch, a `let` body, the last form of a `begin`, a `match` arm body) with at most six arguments reuses the caller's frame and becomes a jump. Calls through a function value, calls with more than six arguments, and calls inside `try`/`catch` or `while` still push a frame. The REPL interpreter does none.
 - **Package system:** no index repository exists yet (the index URL in

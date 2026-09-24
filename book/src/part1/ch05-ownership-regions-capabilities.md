@@ -384,10 +384,12 @@ sending it to an actor, or passing it to C without `ffi-pin`.
 ```
 
 ```
-PANIC: in `local/main@0::leak::leak`: E_CT_VIOLATION: secret-dependent branch -- an `if` condition is derived from a Secret value; ...
+PANIC: error[E_CT_VIOLATION]: in `leak`: secret-dependent branch -- an `if` condition is derived from a Secret value; ...
+  --> leak.zyl:2:7
+   |
+ 2 |   (if (= k 0) 1 2))
+   |       ^
 ```
-
-(The qualified name in the message depends on your file name.)
 Chapter 17 (§17.8) is the reference for the Secret rules, and Chapter 33
 the tutorial.
 
