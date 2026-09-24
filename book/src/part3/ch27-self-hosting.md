@@ -20,10 +20,9 @@ stage2.bin (cc of stage2.s) ──compiles──▶ stage3.s
 The build uses nothing but `cc`. `./boot.sh` (default, no arguments)
 builds and verifies the whole compiler starting from the committed
 seed `build/boot/stage2.s`. The Rust bootstrap that produced the very
-first seed is archived at `archive/rust-bootstrap-2026/`, is not part
-of any normal build, and is kept only as a fallback for reseeding
-across a language change so large that the previous seed's compiler
-cannot even parse the new source (§27.9).
+first seed is archived at `archive/rust-bootstrap-2026/` for the
+record only: it can no longer lex the current source, so it is not a
+fallback for anything (§27.9).
 
 ## 27.2 Compiler Architecture
 
@@ -43,7 +42,7 @@ sequence); the table groups them by what they do.
 | Middle | `monomorphization.zyl`, `trait_dispatch.zyl`, `closure_inline.zyl`, `assert_lowering.zyl` |
 | ICNF and after | `icnf.zyl` (lowering), `optimization.zyl`, `region_inference.zyl` (escape analysis on ICNF), `codegen.zyl` (x86_64) |
 | Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl` |
-| Not wired in | `contract_injection.zyl` — its accessors do not match the current `ExprInner` shapes, so it is not part of the bundle and the pipeline passes programs through unchanged (see the comment above `lower-exprs` in `pipeline.zyl`) |
+| Not wired in | `contract_injection.zyl` — its accessors do not match the current `ExprInner` shapes, so nothing imports it and the pipeline passes programs through unchanged (see the comment above `lower-exprs` in `pipeline.zyl`) |
 
 ### Self-Host Driver (`selfhost/`)
 
@@ -51,14 +50,20 @@ sequence); the table groups them by what they do.
 |------|---------|
 | `driver.zyl` | The `zyl` command line: argument handling, the package subcommands, `repl`, `eval`, linking |
 | `lsp_main.zyl` | Entry point of the `zyl-lsp` language server (Chapter 35) |
-| `assemble.py` | Bundles the compiler, the stdlib modules it needs, the REPL and `driver.zyl` into one source file |
-| `zyl_selfhost_compiler.zyl` | That bundle: the file every boot stage compiles |
 
-`assemble.py` strips `(use ...)` lines, converts each file to a
-one-paren-per-line structural form so it can verify paren depth,
-removes every `main` except `driver.zyl`'s, drops duplicate `defn`s
-(first occurrence wins), and finally collapses all whitespace runs to a
-single space. The committed bundle is therefore a single ~680 KB line.
+The compiler is built like any other program: every boot stage compiles
+`selfhost/driver.zyl`, and module resolution (Chapter 25) follows its
+`(use ...)` tree through `stdlib/`. Each top-level name is qualified to
+its module (`zyl/std@5::compiler/lexer::lex-loop`), so two modules may
+define the same name, and each file is balance-checked and reported on
+its own.
+
+Until 2026-09-24 the boot stages compiled a single bundled file instead,
+produced by `selfhost/assemble.py`, which stripped every `use`,
+dropped duplicate `defn`s and collapsed the result onto one line. That
+flat namespace was the only reason for those workarounds, and the
+one-line file is what made a diagnostic snippet exhaust memory; both
+files are gone.
 
 ### Rust Bootstrap (archived: `archive/rust-bootstrap-2026/`)
 
@@ -71,29 +76,32 @@ Default flow — verifies the fixed point, no Rust anywhere:
 
 ```bash
 ./boot.sh
+# 0. copies stdlib/ and the runtime into build/boot/
 # 1. cc links the committed seed build/boot/stage2.s -> stage1.bin
-# 2. stage1 compiles selfhost/zyl_selfhost_compiler.zyl -> stage2_gen.s
+# 2. stage1 compiles selfhost/driver.zyl -> stage2_gen.s
 #    (must byte-match the committed seed); stage2.s is linked -> stage2.bin
 # 3. stage2 compiles the same source -> stage3.s
 # 4. stage3.s must be byte-identical to stage2.s (fixed point)
 # 5. smoke test: stage2 compiles, links and runs a small program
-# 6. copies stdlib/ and the runtime into build/boot/, writes the
-#    build/boot/zyl-self wrapper, and builds build/boot/zyl-lsp
+# 6. writes the build/boot/zyl-self wrapper and builds build/boot/zyl-lsp
 ```
 
 Each link is `cc -no-pie <asm> runtime/actor_runtime.c -o <bin> -lpthread`.
 The script exports `ZYL_HOME=build/boot` so the build resolves the
 standard library from this checkout rather than from an installed
-`~/.zyl`. Each stage runs under a timeout (`ZYL_STAGE_TIMEOUT`, default
-2400 seconds); the whole two-stage verification currently takes on the
-order of half a minute.
+`~/.zyl`; the copy in step 0 is what makes each stage compile this
+checkout's compiler source. Each stage runs under a timeout
+(`ZYL_STAGE_TIMEOUT`, default 2400 seconds) and an allocation ceiling
+(`ZYL_STAGE_MEMORY`, default 2 GB, passed on as `ZYL_MAX_MEMORY`). A
+self-compile needs about 1.4 GB, so a memory regression fails with
+`E_OUT_OF_MEMORY` instead of swapping the machine. The whole two-stage
+verification takes on the order of half a minute.
 
 Reseeding — needed only when a compiler source change moves the fixed
 point (`FIXED POINT BROKEN` or "reproduced asm differs from committed
 seed"):
 
 ```bash
-python3 selfhost/assemble.py     # re-bundle stdlib/compiler/*.zyl
 ./boot.sh --bootstrap-from-self  # reseed via the self-hosted compiler
 ./boot.sh                        # verify the new seed is clean
 git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
@@ -106,16 +114,17 @@ again — until two consecutive rounds agree, up to 10 rounds. This works
 because a compiler that just compiled a behavior change doesn't yet
 exhibit that behavior itself (it was built by logic that predates the
 change); the *next* round, compiled by a binary that has the change
-baked in, does. Starting from a seed many commits stale, it was
-verified to converge to the same fixed point the Rust bootstrap
-produced for the same source.
+baked in, does. It usually converges in two rounds. It fails only when
+the old seed cannot parse the new source at all (new syntax); land such
+a change in two steps: teach the compiler the syntax, reseed, then use
+it in the compiler's own source.
 
 ### Stages Explained
 
 | Stage | Compiler | Compiles | Output |
 |-------|----------|----------|--------|
 | 1 | `cc` links the committed seed | — | `stage1.bin` |
-| 2 | `stage1.bin` | `selfhost/zyl_selfhost_compiler.zyl` | `stage2_gen.s` (checked against the seed); `stage2.bin` |
+| 2 | `stage1.bin` | `selfhost/driver.zyl` and its `use` tree | `stage2_gen.s` (checked against the seed); `stage2.bin` |
 | 3 | `stage2.bin` | same source | `stage3.s` |
 
 **Fixed point**: `stage2.s == stage3.s` (byte-identical assembly)
@@ -144,17 +153,16 @@ miscompiles. The current list (the full, annotated version is
 ```
 1. Function arity > 6 works (lifted 2026-08-25: stack-passed args)
 2. match in value position works (lifted 2026-08-25)
-3. Parens must balance per top-level form -- and per FILE, since the
-   bundle concatenates files and a deficit in one can be masked by
-   another
+3. Parens must balance per top-level form (each file is checked on
+   its own before parsing)
 4. One deftype per name
 5. buf-append appends at strlen(dst); use fresh zeroed buffers
 6. Do not combine two calls directly in one binop, (+ (f x) (g y));
    bind each call with let first. In a match arm, the shape
    "constant plus several calls" is rejected with E_MATCH_ARM_COMPLEX
 7. A library module meant to be `use`d must not define `main`
-8. `use` every module whose types you construct, even when the bundle
-   happens to make them visible
+8. `use` every module you call or whose types you construct; nothing
+   is visible without it
 ```
 
 Two items that older lists carried no longer apply: `_` is now the
@@ -169,18 +177,16 @@ is cheap to keep.
 ## 27.6 Source Layout and Paren Balance
 
 Hand-written compiler source uses ordinary Lisp layout. Balance is
-enforced mechanically rather than visually, in two places:
+enforced mechanically rather than visually:
+`stdlib/compiler/sexp_balance.zyl` runs on every file before it is
+parsed and reports an unclosed opener, an unexpected closer, a
+mismatched bracket or an unterminated string with file, line, column
+and a fix-it hint. Because every module is its own file, a deficit in
+one file can no longer be cancelled out by a surplus in another.
 
-- `stdlib/compiler/sexp_balance.zyl` runs before parsing on every
-  compile and reports an unclosed opener, an unexpected closer, a
-  mismatched bracket or an unterminated string with file, line, column
-  and a fix-it hint.
-- `selfhost/assemble.py` re-renders every file in structural form
-  (each paren on its own line, indented by depth) and checks the depth
-  of the whole bundle before collapsing it back to one line.
-
-Neither catches a per-file deficit that another file in the bundle
-cancels out, which is why rule 3 above says "per file".
+A missing closer inside a file can still swallow the definitions after
+it into the unclosed form; the checker then reports the opener of that
+form, which is the one to inspect.
 
 ## 27.7 Boot Fixed Point History
 
@@ -193,9 +199,10 @@ cancels out, which is why rule 3 above says "per file".
 | P3.5 complete | 2026-09-10 | Zyl self-hosts all phases |
 | Fixed point solid, cargo-free `./boot.sh` | 2026-09-16 | `stage2.s == stage3.s`, no cargo in the default flow |
 | Full regression parity, Rust evicted | 2026-09-17 | 43/43 via self-hosted compiler; `src/` archived; reseeding self-hosted too (`--bootstrap-from-self`) |
-| Package system (spec v5.0 §31) in the bundle | 2026-09-23 | Bundle grows by half, including the Ed25519 stack index verification needs |
+| Package system (spec v5.0 §31) in the compiler | 2026-09-23 | Compiler source grows by half, including the Ed25519 stack index verification needs |
 | Type-inference exponential removed | 2026-09-23 | A boot stage drops from about ten minutes to seconds |
-| REPL and ICNF interpreter in the bundle | 2026-09-23 | `zyl repl`, `zyl eval`; C calls get an aligned stack (Chapter 29) |
+| REPL and ICNF interpreter in the compiler | 2026-09-23 | `zyl repl`, `zyl eval`; C calls get an aligned stack (Chapter 29) |
+| Built through module resolution | 2026-09-24 | `assemble.py` and the one-line bundle retired; per-stage memory ceiling |
 
 ## 27.8 Debugging the Bootstrap
 
@@ -203,11 +210,12 @@ cancels out, which is why rule 3 above says "per file".
 
 | Symptom | Likely Cause |
 |---------|--------------|
-| "reproduced asm differs from committed seed" | The compiler source changed its own output: reseed (§27.3). The script's message still suggests `--bootstrap-from-rust`; `--bootstrap-from-self` is the normal path |
+| "reproduced asm differs from committed seed" | The compiler source changed its own output: reseed with `--bootstrap-from-self` (§27.3) |
+| `E_OUT_OF_MEMORY` during a stage | A compiler change allocates far more than before; find it before raising `ZYL_STAGE_MEMORY` |
 | `FIXED POINT BROKEN` | Stage 2 and stage 3 disagree: non-determinism, or a behavior change that needs a reseed |
 | Stage 2 crashes | Miscompilation of the compiler by stage 1 |
-| A later file's definitions vanish | Paren imbalance in an earlier file (§27.6) |
-| Undefined `_ZYL_...` symbol only when a module is compiled standalone | A missing `use` hidden by the bundle (rule 8) |
+| A file's later definitions vanish | A missing closer earlier in that file (§27.6) |
+| `E_UNBOUND_VARIABLE` for a function another module defines | A missing `use` (rule 8) |
 
 ### Debugging Commands
 
@@ -216,7 +224,7 @@ cancels out, which is why rule 3 above says "per file".
 diff build/boot/stage2.s build/boot/stage3.s
 
 # Run stage2 on the compiler source again, outside the repo
-build/boot/stage2.bin selfhost/zyl_selfhost_compiler.zyl \
+ZYL_HOME=build/boot build/boot/stage2.bin selfhost/driver.zyl \
     -o /tmp/test-stage3.s --emit-asm
 diff build/boot/stage2.s /tmp/test-stage3.s
 
@@ -231,14 +239,19 @@ of `docs/rust-eviction-plan.md`'s latest survey, it's complete:
 
 1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
 2. ✅ Full regression suite passes through the self-hosted compiler
-   (43/43 at eviction; the suite has since grown to 121 tests)
+   (43/43 at eviction; the suite has since grown to 135 tests)
 3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
 4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
 5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/
    `Cargo.lock`/`target/` removed from the active tree
 
-The archived Rust bootstrap remains available as a fallback for the one
-case self-hosted reseeding can't solve on its own: a language change so
-large the previous seed's compiler can't even *parse* the new source
-(new syntax, not just new behavior). See
-`archive/rust-bootstrap-2026/README.md`.
+The archived Rust bootstrap is not a fallback. It cannot lex the current
+source (it rejects the `\e` string escape), and `./boot.sh
+--bootstrap-from-rust` now only exits with a pointer to
+`archive/rust-bootstrap-2026/README.md`. New syntax is landed in two
+steps instead (§27.3).
+
+Porting to another architecture does not need it either: add a back end
+to the Zyl compiler, build it on x86_64, have it cross-compile itself to
+the new target's assembly, and link that with the target's `cc`. The
+result is a native compiler with its own seed and its own fixed point.

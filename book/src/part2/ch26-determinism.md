@@ -223,32 +223,32 @@ Two environment variables affect compilation:
 
 ## 26.7 Bootstrapping and the Fixed Point
 
-The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zyl`, bundled by `selfhost/assemble.py` into `selfhost/zyl_selfhost_compiler.zyl`. No Rust is involved in the default build. The original Rust implementation is frozen in `archive/rust-bootstrap-2026/` as a reseed fallback only.
+The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zyl`, built like any program from the entry file `selfhost/driver.zyl` through module resolution. No Rust is involved in any build. The original Rust implementation is frozen in `archive/rust-bootstrap-2026/` for the record; it cannot lex the current source.
 
 ### What `./boot.sh` does
 
 ```
+0. copy stdlib/ and actor_runtime.c into build/boot/       (the source the stages resolve)
 1. cc links the committed seed build/boot/stage2.s        → stage1.bin
-2. stage1.bin compiles zyl_selfhost_compiler.zyl --emit-asm → stage2_gen.s
+2. stage1.bin compiles selfhost/driver.zyl --emit-asm      → stage2_gen.s
    cmp stage2_gen.s stage2.s     (else: "reproduced asm differs from committed seed")
 3. cc links stage2.s                                       → stage2.bin
 4. stage2.bin compiles the same source                     → stage3.s
    cmp stage2.s stage3.s         (else: "FIXED POINT BROKEN")
 5. smoke test: compile and run a small program
-6. install stdlib/, actor_runtime.c, the zyl-self wrapper and zyl-lsp into build/boot/
+6. write the zyl-self wrapper and build zyl-lsp in build/boot/
 ```
 
-The comparisons are byte comparisons (`cmp`) of assembly text, not of binaries. Short SHA-256 prefixes are printed for display only. Each stage has a timeout, `ZYL_STAGE_TIMEOUT`, which defaults to 2400 seconds.
+The comparisons are byte comparisons (`cmp`) of assembly text, not of binaries. Short SHA-256 prefixes are printed for display only. Each stage has a timeout, `ZYL_STAGE_TIMEOUT`, which defaults to 2400 seconds, and an allocation ceiling, `ZYL_STAGE_MEMORY`, which defaults to 2 GB. The resulting assembly does not depend on where the checkout lives or which directory `boot.sh` runs from.
 
 After a change to compiler source that alters the compiler's own output, re-seed:
 
 ```bash
-python3 selfhost/assemble.py      # re-bundle the compiler source
 ./boot.sh --bootstrap-from-self   # iterate stageN → stageN+1 until two outputs match (≤ 10 rounds)
 ./boot.sh                         # verify a clean fixed point on the new seed
 ```
 
-`./boot.sh --bootstrap-from-rust` rebuilds a seed through the archived Rust compiler. It is needed only when the old seed cannot parse the new source at all.
+Reseeding fails only when the old seed cannot parse the new source at all. Land new syntax in two steps: teach the compiler to accept it, reseed, then use it in the compiler's own source. (`--bootstrap-from-rust` is retired.)
 
 ### What the fixed point shows
 

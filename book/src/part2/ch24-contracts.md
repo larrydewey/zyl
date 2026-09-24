@@ -160,7 +160,7 @@ Implemented: the forms are handled in the parser only (`stdlib/compiler/expr_inn
 - `recover` becomes `try`/`catch`.
 - `checkpoint` passes its body through.
 
-That module is not bundled into the compiler, and nothing calls it. `tests/regression/contracts.zyl` pins down the current pass-through behaviour.
+No part of the compiler imports that module, and nothing calls it. `tests/regression/contracts.zyl` pins down the current pass-through behaviour.
 
 ## 24.10 Contract Errors
 

@@ -29,10 +29,49 @@ error[E_MALFORMED_PARAMETER]: `(struct-get ...)` is not a parameter
    = help: a missing `)` earlier on the line puts the body in the list
 ```
 
+A diagnostic can point at a second place with a labelled span. The
+mutability and capability checks use one for the binding or definition
+involved:
+
+```text
+error[E_MUT_CONFLICT]: set! target `x` is not a let-mut binding in scope
+  --> prog.zyl:3:5
+   |
+ 3 |     (set! x 2)
+   |     ^
+ 1 | (let x 1
+   | - bound here by `let`, which is immutable (TCap)
+   = help: only a let-mut binding is TMut and may be assigned; declare it with `let-mut`
+```
+
+A label in another file is introduced by a `::: file:line:col` line, and
+one without a recorded position prints as `= note:`. An unbound
+identifier or undefined function whose name is close to one in scope
+gets `= help: did you mean `count`?` instead of the generic hint. A very
+long source line is shown as a window of about 120 bytes around the
+column, with `...` where it is cut.
+
+Warnings use the same shape with `warning[CODE]`, and never stop a
+build.
+
 A check without a source position panics with the code at the front of
 the message, for example `PANIC: E_MATCH_ARM_COMPLEX: ...`. Either way
 the compiler stops at the first error: every check aborts on its first
 problem, so a file reports one error at a time.
+
+### Machine-readable output
+
+`zyl <file.zyl> --error-format=json` prints each diagnostic, warnings
+included, as one JSON object per line on stderr instead:
+
+```json
+{"severity":"error","code":"E_UNBOUND_VARIABLE","message":"unbound identifier `cont`","file":"prog.zyl","line":1,"column":45,"labels":[],"help":"did you mean `count`?"}
+```
+
+`labels` holds `{"message", "file", "line", "column"}` for each
+secondary span. An unknown position is `"file":""`, `"line":0`,
+`"column":0`; a panic that carries no location is wrapped the same way,
+with its code split off the front of the message.
 
 ## A.2 Lexing (phase 1)
 
@@ -325,7 +364,8 @@ and `E_NON_EXHAUSTIVE_MATCH`.
 - **Catalog**: `stdlib/compiler/error_codes.zyl` — name, phase, severity
   and default message for every code.
 - **Formatting**: `stdlib/compiler/error_report.zyl` — the
-  `error[CODE]`, `-->`, source-line, caret and `= help:` shape.
+  `error[CODE]`, `-->`, source-line, caret, label and `= help:` shape,
+  the JSON form, and the "did you mean" suggestions.
 - **Raised by**: the check that owns the rule —
   `sexp_balance.zyl`, `duplicate_check.zyl`, `arity_check.zyl`,
   `mutability_check.zyl`, `exhaustiveness_check.zyl`,

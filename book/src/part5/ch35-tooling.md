@@ -53,6 +53,7 @@ installed, is not removed.
 
 ```
 zyl <file.zyl> [-o out] [--emit-asm]   compile one file
+  --error-format=json                    report diagnostics as JSON lines
 zyl new <name>                         create a package
 zyl add <name> [version]               add a dependency
 zyl fetch                              resolve, verify and populate the store
@@ -78,7 +79,12 @@ Compiling a file:
 zyl hello.zyl               # writes hello.s, links ./hello
 zyl hello.zyl -o bin/hello  # writes bin/hello.s, links bin/hello
 zyl hello.zyl -o hello.s --emit-asm   # assembly only, no link
+zyl hello.zyl --error-format=json     # diagnostics as JSON, one per line
 ```
+
+`--error-format=json` is for tools: every error and warning goes to
+stderr as one JSON object per line (Appendix A, §A.1). A program the
+compiler builds is not affected; its own panics stay plain text.
 
 The compiler changes directory to its bundle (the directory holding
 `stdlib/` and `actor_runtime.c`: `$ZYL_HOME` or `~/.zyl` if it holds a

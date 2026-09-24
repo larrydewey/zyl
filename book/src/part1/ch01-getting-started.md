@@ -40,8 +40,9 @@ self-hosting fixed point (the compiler reproduces its own committed
 output, byte for byte, when compiling itself), and writes
 `build/boot/zyl-self` — a wrapper you invoke like a normal compiler
 binary from any directory. It also builds the language server,
-`build/boot/zyl-lsp`. It prints a good number of `W_UNUSED_PARAMETER`
-and `W_SHADOWED_BINDING` warnings along the way; they are not errors.
+`build/boot/zyl-lsp`. It prints a good number of `warning[W_UNUSED_PARAMETER]`
+and `warning[W_SHADOWED_BINDING]` lines along the way; they are not
+errors.
 
 ### Quick Test
 

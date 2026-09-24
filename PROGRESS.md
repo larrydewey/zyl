@@ -7,7 +7,7 @@ was true when it was written. Where a later session changed something an
 entry reports as open, the entry carries a short *Status (date)* note
 rather than a rewrite.
 
-## Current State (verified 2026-09-23, HEAD `3e65944`)
+## Current State (verified 2026-09-23, HEAD `3e65944`; build section updated 2026-09-24)
 
 Every claim in this section was checked against the source tree, the git
 history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
@@ -15,12 +15,14 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 ### Build and verification
 
 - The compiler is self-hosted: `stdlib/compiler/*.zyl` (37 modules) plus
-  `selfhost/` (`driver.zyl`, `lsp_main.zyl`, `assemble.py`, and the
-  assembled `zyl_selfhost_compiler.zyl`). `./boot.sh` builds with nothing
-  but `cc` and verifies the stage2 == stage3 fixed point;
+  `selfhost/` (`driver.zyl`, `lsp_main.zyl`). Every boot stage compiles
+  `selfhost/driver.zyl` through module resolution, like any program;
+  the single-file bundle and `assemble.py` were retired on 2026-09-24.
+  `./boot.sh` builds with nothing but `cc`, caps each stage at 2 GB
+  (`ZYL_STAGE_MEMORY`), and verifies the stage2 == stage3 fixed point;
   `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
-  frozen in `archive/rust-bootstrap-2026/` as a fallback for a syntax
-  change the current seed cannot parse.
+  frozen in `archive/rust-bootstrap-2026/` for the record only: it cannot
+  lex the current source, and `--bootstrap-from-rust` is retired.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. It still prints
   many non-fatal `W_UNUSED_PARAMETER` and `W_SHADOWED_BINDING` warnings.
@@ -138,10 +140,12 @@ Compiler:
   global; a use of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL
   gives top-level `def` a meaning.
 - Diagnostics still reported as a bare `PANIC:` with no location:
-  `mutability_check`, `capability_check`, `unused_check`, `secret_check`,
-  and the remaining errors in `expr_inner`.
+  `secret_check`, `E_INVALID_CAPABILITY`, and the remaining errors in
+  `expr_inner`. Warnings carry spans, but those raised while the compiler
+  builds itself still print without one (spans are lost for them
+  somewhere before `unused_check`).
 - Contract injection (spec §23) is not in the pipeline.
-  `contract_injection.zyl` is not in the bundle, and `requires`,
+  Nothing imports `contract_injection.zyl`, and `requires`,
   `ensures`, `invariant`, `recover` and `checkpoint` parse as no-op
   passthroughs.
 - Hash finalization: `zyl.buildinfo` records the compiler, graph,
@@ -154,11 +158,9 @@ Compiler:
 - `Secret`: no zeroization on scope exit, no `print` redaction, no
   `Secret` trait for user-defined types. Taint crosses a call boundary
   only where the callee's parameters are annotated.
-- `codegen.zyl` performs no tail-call optimization. `assemble.py` still
-  collapses whitespace in the bundle so that `lexer.zyl`'s mutually
-  recursive whitespace skip stays within the stack.
-- `assemble.py` checks the paren depth of the whole bundle, not of each
-  file.
+- `codegen.zyl` performs no tail-call optimization, so `lexer.zyl`'s
+  mutually recursive whitespace skip uses a frame per character; only a
+  very large single file is at risk now that there is no bundle.
 
 Package system:
 
@@ -172,7 +174,7 @@ Package system:
   space or a quote, for example) are refused rather than quoted.
 - A nested `feature-gate` is not rejected; it is treated as an ordinary
   form.
-- Ed25519 still ships inside the compiler bundle rather than the runtime.
+- Ed25519 still ships inside the compiler rather than the runtime.
   The boot cost that motivated moving it went away when the
   type-inference exponential was fixed (`./boot.sh` now takes about 23 s).
 
@@ -209,16 +211,20 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 ### P1: Diagnostics
 
 - [ ] Locate the remaining diagnostics (the checks listed above): thread
-      the offending node to the failure and call `err-at`.
+      the offending node to the failure and call `err-at`. Done
+      2026-09-24 for `mutability_check`, `capability_check` and
+      `unused_check`.
 - [x] Resolve call targets before linking, so an undefined function is a
       located error (codegen's `cg-call-user`, 2026-09-23; an earlier
       phase would be better still).
-- [ ] Fix the `=`-on-strings name comparisons in `type_inference.zyl`;
-      this is also the root of "cannot determine the type of this
-      match's scrutinee" and of REPL `:type` answering *unresolved*.
-- [ ] Labelled secondary spans (for capability and region errors),
-      "did you mean" suggestions (no edit-distance code exists yet), and
-      structured JSON output for tools. None of these is started.
+- [x] Fix the `=`-on-strings name comparisons in `type_inference.zyl`
+      (`f6ea129`; made allocation-free on 2026-09-24).
+- [x] Labelled secondary spans (`err-at-labels`) on `E_MUT_CONFLICT`,
+      `E_CAPABILITY_LEAK` and `E_PKG_CAPABILITY_VIOLATION`. No region
+      diagnostic exists yet to label (`E_REGION_ESCAPE` is never raised).
+- [x] "Did you mean" (edit distance over in-scope names) on unbound
+      identifiers and undefined functions.
+- [x] `--error-format=json`: one JSON object per diagnostic on stderr.
 - [ ] Sweep the warnings `./boot.sh` prints.
 
 ### P2: Code generation correctness
@@ -226,9 +232,9 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [ ] Field and return kinds in codegen, so compiled `print` and `==`
       agree with the interpreter; then derivable `Show`.
 - [ ] Tail-call optimization in `codegen.zyl`, or a self-tail-recursive
-      whitespace skip in `lexer.zyl`, so `assemble.py` no longer needs to
-      collapse whitespace.
-- [ ] A per-file paren-depth check in `assemble.py`.
+      whitespace skip in `lexer.zyl`.
+- [x] ~~A per-file paren-depth check in `assemble.py`~~: obsolete, every
+      module is compiled and balance-checked as its own file.
 
 ### P3: Language features
 
@@ -299,10 +305,9 @@ as recorded below.
 5. Prefer flat `begin` sequences and recursion over deep nesting.
 6. `buf-append` appends at `strlen(dst)` (true append); start from fresh
    buffers.
-7. Parens must balance per top-level form. The compiler now rejects
-   unbalanced source with a located error (`sexp_balance.zyl`), but
-   `assemble.py` checks only the whole bundle, so a per-file deficit that
-   another file cancels is still invisible there.
+7. Parens must balance per top-level form. The compiler rejects
+   unbalanced source with a located error (`sexp_balance.zyl`), and
+   since 2026-09-24 every compiler module is checked as its own file.
 8. Binops with two call operands: the skill file still says these compute
    0 in stage >= 2 binaries. On 2026-09-23 `(+ (f 1) (g 3))`,
    `(- (f a) (g b))` and an arm body `(+ (f r) (g r))` all computed the
@@ -351,10 +356,49 @@ as recorded below.
 | **Package system (spec §31)** | **2026-09-23** | MVS, lock, store, signed index, capabilities, `zyl` subcommands |
 | Located diagnostics; type-inference exponential fixed | 2026-09-23 | `./boot.sh` from about ten minutes per stage to 23 s total |
 | REPL with an ICNF interpreter | 2026-09-23 | live bindings, structural printing, per-project sessions; interpreter checked against codegen by the suite |
+| Compiler built through module resolution | 2026-09-24 | bundle and `assemble.py` retired; memory regression fixed; per-stage memory ceiling |
 
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-24) — memory regression, module-built compiler, diagnostics
+
+**Memory.** A self-compile had grown from about 0.6 GB to 2 GB, and a
+compile that printed located warnings on the bundle ran out of its 34 GB
+budget. Two causes:
+
+- `type-name-matches` (`f6ea129`) built two strings per comparison inside
+  every linear type-inference lookup, and the arena never frees. Replaced
+  with the allocation-free runtime helper `zyl_cstr_key_matches`.
+- `space-run` built padding one character at a time (quadratic in the
+  column), and every snippet copied its whole source line; the bundle was
+  one 700 KB line. `space-run` is now linear and snippets are a 120-byte
+  window (`zyl_span_snippet`, `zyl_span_snippet_col`).
+
+`f6ea129` had never been re-bundled, so `boot.sh` kept compiling the old
+bundle and passing. `boot.sh` now caps each stage at 2 GB
+(`ZYL_STAGE_MEMORY`, passed as `ZYL_MAX_MEMORY`); a self-compile needs
+about 1.4 GB, and the leaking build was confirmed to fail under the cap.
+
+**Module-built compiler.** Every boot stage compiles `selfhost/driver.zyl`
+through module resolution. Names are qualified per module (spec §31.2),
+so the bundle's flat-namespace workarounds (defn dedupe, library-`main`
+stripping, whitespace collapse, a whole-bundle depth check) are gone with
+`selfhost/assemble.py` and `selfhost/zyl_selfhost_compiler.zyl`.
+`driver.zyl` lost an unused `(use compiler/contract_injection)`, the only
+thing that stopped it compiling this way. The output does not depend on
+the checkout path or the working directory. `--bootstrap-from-rust` is
+retired.
+
+**Diagnostics.** `error_report.zyl` gained `err-at-labels` (secondary
+spans), `err-warn-at`, `err-suggest-help` (Levenshtein distance), and a
+JSON renderer selected by `--error-format=json`
+(`zyl_diag_json_set`). Warnings go through `zyl_warn_emit`, which a
+caller can capture (`zyl_warn_capture`, `zyl_warn_take`) for the LSP.
+`zyl_panic` wraps a bare `E_CODE: text` message as JSON in JSON mode.
+
+Tests: 135/135 (`--full --no-boot`); fixed point holds.
 
 ## Session (2026-09-23) — closures are values
 

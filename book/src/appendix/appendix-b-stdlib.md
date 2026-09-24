@@ -382,8 +382,9 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 37 modules of the self-hosted compiler. `selfhost/assemble.py`
-bundles them, with `selfhost/driver.zyl`, into the compiler source.
+The 37 modules of the self-hosted compiler. `selfhost/driver.zyl`
+reaches them through ordinary `(use compiler/...)` imports, and the
+compiler is built from that entry file like any program.
 
 | Module | Purpose |
 |--------|---------|

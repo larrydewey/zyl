@@ -314,9 +314,11 @@ What the specification infers, and how each rule is met today:
 | `E_ZEROIZE_MISSING` | warning: a Secret consumed without `zeroize` |
 | `E_REGION_ESCAPE` | in §28; never raised (Chapter 16) |
 
-The mutability and Secret diagnostics print as `PANIC:` lines naming the
-code, not yet in the located `error[CODE] --> file:line:col` form that
-other checks use.
+`E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` use the located
+`error[CODE] --> file:line:col` form, with a second label at the `let`
+or `let-mut` binding involved (Appendix A, §A.1). `E_INVALID_CAPABILITY`
+and the Secret diagnostics still print as `PANIC:` lines naming the
+code.
 
 ## 17.11 Comparison with Rust
 

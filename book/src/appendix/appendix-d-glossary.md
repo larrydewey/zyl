@@ -53,6 +53,8 @@ Appendix C lists them all.
 **Bundle directory**: The directory holding the compiler binary, its
 `stdlib/` and the C runtime — `build/boot/` in a build tree,
 `~/.zyl/` once installed. The compiler resolves stdlib modules there.
+(Not to be confused with the single-file compiler source that
+`selfhost/assemble.py` used to produce; that was retired on 2026-09-24.)
 
 **ByteBuf**: A fixed-capacity, zero-initialised block of bytes in a
 named region, allocated with `(bytebuf Region capacity)`.
@@ -133,8 +135,11 @@ binaries (§27). For a package build, "same source" means the same
 resolved graph.
 
 **Diagnostic**: A reported error or warning. A located diagnostic
-prints `error[CODE]: message`, a `--> file:line:col` line, the source
-line with a caret under the problem, and a `= help:` hint (Appendix A).
+prints `error[CODE]: message` (or `warning[CODE]`), a
+`--> file:line:col` line, the source line with a caret under the
+problem, any labelled secondary spans, and a `= help:` hint.
+`--error-format=json` prints the same content as one JSON object per
+line (Appendix A).
 
 **Discard**: `_`. As a parameter, binding or pattern it means "not
 used"; it may repeat, and any `_`-prefixed name is likewise exempt from

@@ -1,10 +1,10 @@
 # Remaining Work (after items 5,6,11,22,23,26,27 + type-name fix complete)
 
 ## P1: Diagnostics
-- [ ] Labelled secondary spans for capability/region errors
-- [ ] "Did you mean" suggestions (edit-distance over in-scope names)
-- [ ] Structured JSON error output for tools/LSP
-- [ ] Warning sweep (`W_UNUSED_PARAMETER`, `W_SHADOWED_BINDING` from `boot.sh`)
+- [x] Labelled secondary spans for capability errors (`E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`); no region diagnostic is raised yet
+- [x] "Did you mean" suggestions (edit-distance over in-scope names)
+- [x] Structured JSON error output (`--error-format=json`); the LSP does not consume it yet
+- [ ] Warning sweep (`W_UNUSED_PARAMETER`, `W_SHADOWED_BINDING` from `boot.sh`); self-build warnings still lack spans
 
 ## P2: Codegen Correctness
 - [ ] Field and return kinds so compiled `print`/`==` agree with interpreter

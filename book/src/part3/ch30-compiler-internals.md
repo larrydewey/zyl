@@ -54,7 +54,7 @@ Two things differ from the phase list in the specification. Region
 inference runs on ICNF, after optimization, because what it produces is
 an ICNF rewrite (Chapter 28, §28.5). And contract injection is not
 wired in: `contract_injection.zyl` does not match the current
-`ExprInner` shapes, so it is left out of the bundle.
+`ExprInner` shapes, so nothing imports it.
 
 ## 30.2 AST Representation
 
@@ -377,19 +377,19 @@ command.
 1. **Write the module** in `stdlib/compiler/`, with a `use` for every
    module whose functions or constructors it touches.
 2. **Call it from `stdlib/compiler/pipeline.zyl`** at the right point,
-   and add its `(use compiler/...)` line there.
-3. **Add it to `selfhost/assemble.py`'s file list**, before
-   `pipeline.zyl`, or the self-hosted bundle will not contain it.
-4. **Add tests**: a `tests/regression/*.zyl` file for behavior, a
+   and add its `(use compiler/...)` line there. That `use` is all it
+   takes for the compiler build to include it.
+3. **Add tests**: a `tests/regression/*.zyl` file for behavior, a
    `tests/compile-fail/*.zyl` file for each error it raises.
-5. **Rebuild and reseed**: `python3 selfhost/assemble.py`,
-   `./boot.sh --bootstrap-from-self`, then `./boot.sh` to confirm the
-   new fixed point, then `./run_regression_tests.sh --full`.
+4. **Rebuild and reseed**: `./boot.sh --bootstrap-from-self`, then
+   `./boot.sh` to confirm the new fixed point, then
+   `./run_regression_tests.sh --full`.
 
 A pass that rebuilds `Expr` nodes should copy spans (§30.2); a pass
 that runs in the LSP too must not write to stdout, which is the
-server's JSON-RPC channel (warnings go to stderr, as `unused_check`
-does).
+server's JSON-RPC channel. Report warnings with `err-warn-at`
+(`error_report.zyl`), which goes through the runtime's warning sink
+(`zyl_warn_emit`): stderr normally, a buffer when a caller captures it.
 
 ## 30.10 Common Patterns
 

@@ -44,9 +44,14 @@ The real script is `boot.sh` at the repo root. Its default flow,
 without the reporting, is:
 
 ```bash
-SRC="selfhost/zyl_selfhost_compiler.zyl"
+SRC="selfhost/driver.zyl"     # the entry file; its (use ...) tree is resolved
 OUT="build/boot"
 export ZYL_HOME="$OUT"        # resolve stdlib from this checkout, not ~/.zyl
+export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-2147483648}"   # per-stage ceiling
+
+# First: stdlib/ and the runtime are copied into build/boot/, so every
+# stage compiles this checkout's compiler source
+rm -rf "$OUT/stdlib"; cp -R stdlib "$OUT/stdlib"
 
 link_cc() { cc -no-pie "$1" runtime/actor_runtime.c -o "$2" -lpthread; }
 
@@ -70,14 +75,13 @@ else
     die "FIXED POINT BROKEN: stage2 and stage3 outputs differ"
 fi
 
-# Then: a smoke program compiled by stage2 must print 42 and 3;
-# stdlib/ and the runtime are copied into build/boot/; the
+# Then: a smoke program compiled by stage2 must print 42 and 3; the
 # build/boot/zyl-self wrapper is written; build/boot/zyl-lsp is built.
 ```
 
 `STAGE_TIMEOUT` defaults to 2400 seconds (`ZYL_STAGE_TIMEOUT`). The
-stage-2 failure message still recommends `--bootstrap-from-rust`; the
-normal remedy is `--bootstrap-from-self` (§31.10).
+memory ceiling defaults to 2 GB; a self-compile needs about 1.4 GB. The
+remedy for a stage-2 mismatch is `--bootstrap-from-self` (§31.10).
 
 ## 31.4 Why the Fixed Point Is Hard
 
@@ -192,10 +196,10 @@ Shrink the input until the difference is one construct, and add it to
 Code in `stdlib/compiler/` and `selfhost/` is compiled by the previous
 generation of itself. The current list is in Chapter 27, §27.5, and the
 annotated one in `rules/boot-lifted-constraints.md` in the separate zyl-skill repository. In short: balance parens per
-top-level form and per file; one `deftype` per name; fresh buffers for
+top-level form; one `deftype` per name; fresh buffers for
 `buf-append`; bind calls with `let` rather than combining two calls in
-one binop; no `main` in a library module; `use` every module whose
-types you construct. `_` is the discard everywhere, and wildcard arms
+one binop; no `main` in a library module; `use` every module you call
+or whose types you construct. `_` is the discard everywhere, and wildcard arms
 are fine.
 
 **A violation usually shows up as a miscompile in stage 2 or later, not
@@ -204,20 +208,14 @@ as an error.**
 ## 31.8 Paren Balance
 
 Balance is checked mechanically, not by formatting convention:
-`sexp_balance.zyl` runs before parsing on every compile and reports the
-unclosed or unexpected delimiter with its line and column, and
-`selfhost/assemble.py` verifies the depth of the whole bundle in a
-one-paren-per-line structural form before collapsing it to one line
-(Chapter 27, §27.6). Neither catches a per-file deficit that another
-file cancels out, so check a hand-edited compiler file on its own:
+`sexp_balance.zyl` runs on every file before it is parsed and reports
+the unclosed or unexpected delimiter with its file, line and column
+(Chapter 27, §27.6). Every compiler module is its own file, so a
+hand-edited module is checked on its own by any compile that reaches
+it, including `./boot.sh`. A balance error is reported before anything
+else runs.
 
-```bash
-build/boot/zyl-self stdlib/compiler/icnf.zyl -o /tmp/icnf.s --emit-asm
-```
-
-A balance error is reported before anything else runs.
-
-## 31.9 Current Status (2026-09-23)
+## 31.9 Current Status (2026-09-24)
 
 | Component | Language | Status |
 |-----------|----------|--------|
@@ -236,7 +234,8 @@ A balance error is reported before anything else runs.
 | Contract injection | Zyl | ❌ module exists, not wired into the pipeline |
 
 **Fixed point**: ✅ Holding
-**Rust bootstrap**: Archived (`archive/rust-bootstrap-2026/`) — no longer part of the build
+**Build input**: `selfhost/driver.zyl` through module resolution (the single-file bundle was retired on 2026-09-24)
+**Rust bootstrap**: Archived (`archive/rust-bootstrap-2026/`) — no longer part of the build, and unable to lex the current source
 
 ## 31.10 Rust Bootstrap: Archived
 
@@ -244,7 +243,7 @@ What was tracked here as future work is done:
 
 1. ✅ All Zyl passes verified through the fixed point, and through the
    full regression suite (43/43 via the self-hosted compiler at the
-   time of eviction — see `docs/rust-eviction-plan.md`; 121 tests now)
+   time of eviction — see `docs/rust-eviction-plan.md`; 135 tests now)
 2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained:
    its own `Cargo.toml`, kept buildable in place)
 3. ✅ `boot.sh` (default) starts from the committed Zyl-compiled seed
@@ -257,17 +256,17 @@ What was tracked here as future work is done:
 The full reseed sequence after a compiler change:
 
 ```bash
-python3 selfhost/assemble.py
 ./boot.sh --bootstrap-from-self
 ./boot.sh
 git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
 ```
 
-The archived Rust bootstrap is kept only as a fallback for the one
-case self-hosted reseeding can't solve: a language change so large the
-previous seed's compiler can't even *parse* the new source
-(`./boot.sh --bootstrap-from-rust`). See
-`archive/rust-bootstrap-2026/README.md`.
+Self-hosted reseeding cannot cross one kind of change: new syntax the
+previous seed cannot parse. The archived Rust bootstrap is no answer to
+that (it cannot lex the current source, and `--bootstrap-from-rust` now
+only prints a pointer to `archive/rust-bootstrap-2026/README.md`).
+Land new syntax in two steps: teach the compiler to accept it, reseed,
+then use it in the compiler's own source.
 
 ## 31.11 Lessons Learned
 
@@ -277,3 +276,4 @@ previous seed's compiler can't even *parse* the new source
 4. **Fail-soft defaults hide bugs** — a lowering that returns 0 for an unknown form compiles wrong programs quietly
 5. **Constraints are features** — the bootstrap constraints keep the compiler's own code within what it compiles reliably
 6. **Verification and testing complement each other** — the fixed point proves self-consistency; the regression suite and the interpreter comparison cover everything else
+7. **Verify the input you think you verify** — while the compiler was built from a committed bundle, a source change that was never re-bundled passed `boot.sh` unseen, and it tripled a self-compile's memory; building straight from the sources removed that gap

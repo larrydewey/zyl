@@ -404,8 +404,10 @@ the tutorial.
 | `E_INVALID_CAPABILITY` | A non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` | Pass primitives, strings or pinnable data |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Misuse of a `Secret` | See Chapter 17 |
 
-These diagnostics print as a single `PANIC:` line naming the code; they
-do not yet point at a line and column, as the match and arity errors do.
+`E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` are located: they point at the
+`set!`, `spawn` or `send`, and a second label points at the binding
+involved. `E_INVALID_CAPABILITY` and the Secret diagnostics still print
+as a single `PANIC:` line naming the code.
 
 ## 5.12 Mental Model: Regions + Capabilities
 
