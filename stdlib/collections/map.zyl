@@ -56,7 +56,7 @@
 ; Put a key-value pair. If key exists, overwrites value in-place.
 ; Returns: Map
 (defn map-put ((m Map) (k Int) (v Int))
-  (let existing (map-get-at m k 0)
+  (let existing (map-find m k 0 (map-len m))
     (if (> existing 0)
       (let idx (- existing 1)
         (begin
@@ -88,29 +88,26 @@
             (alloc-write-int (+ (struct-get m "vptr") (* len 8)) v)
             (make-Map new-kptr (struct-get m "vptr") (+ len 1) cap (struct-get m "arena"))))))))
 
-; Remove a key. Returns a new Map with the key removed (compacts array).
+; Remove a key. Compacts the arrays in place (like set-remove), so the
+; capacity stays the real size of the backing storage and later puts
+; reuse the freed slot.
 ; Returns: Map
 (defn map-remove ((m Map) (k Int))
   (let len (map-len m)
-    (if (<= len 0)
-      m
-      (let removed (map-find m k 0 len)
-        (if (<= removed 0)
-          m
-          (let new-len (- len 1)
-            (let new-kptr (arena-alloc (struct-get m "arena") (* new-len 8))
-              (let new-vptr (arena-alloc (struct-get m "arena") (* new-len 8))
-                (let-mut dst 0
-                  (begin
-                    (for (j 0) (< j len)
-                      (begin
-                        (if (not (== (+ j 1) removed))
-                          (begin
-                            (alloc-write-int (+ new-kptr (* dst 8)) (alloc-read-int (+ (struct-get m "kptr") (* j 8))))
-                            (alloc-write-int (+ new-vptr (* dst 8)) (alloc-read-int (+ (struct-get m "vptr") (* j 8))))
-                            (set! dst (+ dst 1))))
-                        (set! j (+ j 1))))
-                    (make-Map new-kptr new-vptr new-len (map-cap m) (struct-get m "arena"))))))))))))
+    (let removed (map-find m k 0 len)
+      (if (<= removed 0)
+        m
+        (let kptr (struct-get m "kptr")
+          (let vptr (struct-get m "vptr")
+            (begin
+              (for (j (- removed 1)) (< j (- len 1))
+                (begin
+                  (alloc-write-int (+ kptr (* j 8)) (alloc-read-int (+ kptr (* (+ j 1) 8))))
+                  (alloc-write-int (+ vptr (* j 8)) (alloc-read-int (+ vptr (* (+ j 1) 8))))
+                  (set! j (+ j 1))))
+              (make-Map kptr vptr (- len 1) (map-cap m) (struct-get m "arena")))))))))
+
+; Internal: 1-based index of key k in [i, len), or 0 if absent.
 (defn map-find ((m Map) (k Int) (i Int) (len Int))
   (if (>= i len)
     0

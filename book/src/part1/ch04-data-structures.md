@@ -340,10 +340,8 @@ for. Entries are kept in insertion order, so iteration is deterministic.
 `map-put` on an existing key overwrites the value in the shared buffer,
 so, as with a Vec, the old version sees the change too.
 
-> **Library defect.** `map-remove` allocates a buffer exactly as large as
-> the remaining entries but keeps the old capacity, so later `map-put`s
-> into that space overwrite other entries' values. After a
-> `map-remove`, build a fresh map if you still need to add keys.
+`map-remove` compacts the entries in the same shared buffer (as
+`set-remove` does), so the old version sees that too.
 
 ### Sets (`Set`) — `collections/set.zyl`
 

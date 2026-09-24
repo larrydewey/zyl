@@ -41,6 +41,34 @@
   (assert-false (map-has (map-create 0 10) 99)))
 (test "map-remove"
   (assert-equal (map-len (map-remove (map-put (map-create 0 10) 1 42) 1)) 0))
+; map-remove used to allocate new-len slots but keep the old cap, so the
+; puts that followed wrote past the new arrays and corrupted other keys.
+(test "map-remove-then-put"
+  (let m (map-put (map-put (map-put (map-remove (map-put (map-put (map-create 0 4) 1 10) 2 20) 2) 3 30) 4 40) 5 50)
+    (begin
+      (assert-equal (map-get m 1 0) 10)
+      (assert-equal (map-get m 3 0) 30)
+      (assert-equal (map-get m 4 0) 40)
+      (assert-equal (map-get m 5 0) 50)
+      (assert-false (map-has m 2))
+      (assert-equal (map-len m) 4))))
+(test "map-remove-to-empty-then-put"
+  (let m (map-put (map-put (map-remove (map-put (map-create 0 1) 7 70) 7) 8 80) 9 90)
+    (begin
+      (assert-equal (map-get m 8 0) 80)
+      (assert-equal (map-get m 9 0) 90)
+      (assert-equal (map-len m) 2))))
+; map-put used to look for an existing key only in slot 0, so overwriting
+; any other key appended a duplicate entry.
+(test "map-put-overwrite-not-first"
+  (let m (map-put (map-put (map-put (map-create 0 4) 1 10) 2 20) 2 99)
+    (begin
+      (assert-equal (map-len m) 2)
+      (assert-equal (map-get m 2 0) 99)
+      (assert-equal (map-len (map-remove m 2)) 1)
+      (assert-false (map-has (map-remove m 2) 2)))))
+(test "map-put-zero-key-empty"
+  (assert-equal (map-len (map-put (map-create 0 4) 0 5)) 1))
 
 ; Set basic operations
 (test "set-create"
