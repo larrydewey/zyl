@@ -19,11 +19,12 @@
 - [x] Trait method with a compound (or no) return type: `print` of the call printed an address
 - [x] 16-, 32-, 64-bit byte loads/stores; distinct `ByteBuf`/`ByteSlice` handle types
 - [x] `Secret`: frame zeroization on return, redaction (`<secret>`), `Secret` trait, Secret-field taint; `impl-not` with a flow rule (`E_IMPL_FORBIDDEN`); open: heap erasure explicit, `set!` into `let-mut` untracked
-- [ ] `receive` form and runnable structured-message actor example
+- [x] `receive` form, `actor-self`, and a runnable structured-message actor example (`book/examples/actor-counter/`)
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
 - [ ] Hash finalization mixing graph hash into binary
 
 ## P4: Tooling & Packages
+- [ ] Documentation: what arenas are, and which values the arena/capacity arguments of `vec-create` and similar constructors accept (0 = private default arena, handles from `arena-create`, ...)
 - [ ] `zyl doc` generator over `;|`/`;;` doc-comment convention
 - [ ] Real package index; content-hash build cache; reject nested `feature-gate`
 - [ ] LSP: return unused-binding warnings instead of printing them

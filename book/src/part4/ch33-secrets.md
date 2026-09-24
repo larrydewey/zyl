@@ -226,7 +226,7 @@ of that type is secret, a field of that type is a Secret field, and
 
 ```lisp
 (deftype Key (KeyW Int))
-(impl Secret Key (defn wipe (self) (zeroize-key self)))
+(impl Secret Key (defn wipe (self) 0))       ; erase any heap words the key owns here
 (defstruct Vault (label String) (k Key))
 (derive Vault Show)
 (print (make-Vault "main" (KeyW 7)))   ; Vault { label: main, k: <secret> }

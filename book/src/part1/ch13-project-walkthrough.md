@@ -339,7 +339,7 @@ Notes on the harness (Chapter 11 has the details):
 
 ## 13.10 A Concurrent Variation?
 
-The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. In the model's own terms that needs `receive`, which does not exist yet: messages sent with `send` are discarded, and a spawned closure may not capture values such as the file name (Chapter 9). The runtime's closure messages, sent through `ffi-call` (Chapter 21, §21.4), can hand a worker a file name, but reporting a result back needs a second round of closure messages and careful ordering of actor ids. What does work is spawning a zero-argument entry function and waiting for it. For example, a `(defn process-sample () (report (process-file "sample.log")))` passed as `(spawn (fn () (process-sample)))` and followed by `actor-wait` runs the whole job on another thread. That adds nothing over calling `report` directly, so the sequential version is the one to use today.
+The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. With `receive` and `actor-self` (Chapter 21, §21.3) that design works: main sends each worker a message carrying a file name and its own id, the worker parses the file and `send`s its `Stats` back, and main `receive`s one reply per worker. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
 
 ## 13.11 Key Zyl Features Demonstrated
 

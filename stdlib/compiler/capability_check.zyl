@@ -105,11 +105,12 @@
   (if (> (str-eq n "spawn") 0) "actor"
   (if (> (str-eq n "send") 0) "actor"
   (if (> (str-eq n "receive") 0) "actor"
+  (if (> (str-eq n "actor-self") 0) "actor"
   (if (> (str-eq n "file-open") 0) "io"
   (if (> (str-eq n "file-read") 0) "io"
   (if (> (str-eq n "file-write") 0) "io"
   (if (> (str-eq n "file-close") 0) "io"
-  (if (> (str-eq n "read-line") 0) "io" ""))))))))))))
+  (if (> (str-eq n "read-line") 0) "io" "")))))))))))))
 
 ; Module half of a canonical key `pkg@major::module::symbol`.
 (defn cc-module-of (n)

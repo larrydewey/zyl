@@ -48,6 +48,8 @@ typedef struct {
 void zyl_actor_init(void);
 uint32_t zyl_actor_spawn(void (*entry)(void*), void* state);
 void zyl_actor_send(uint32_t actor_id, void* msg);
+long long zyl_actor_self(void);
+long long zyl_actor_receive(void);
 void zyl_actor_send_data(uint32_t actor_id, void* data);
 void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
 void zyl_actor_wait_all(void);

@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **167/167**
-  (updated 2026-09-24): regression 63, interpreter 43, compile-fail 35,
+- `./run_regression_tests.sh --full --no-boot` passes **168/168**
+  (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -203,8 +203,6 @@ Tooling and library:
   problem matcher, although CLI diagnostics now carry `file:line:col`.
 - There is no `zyl doc` generator. The REPL's `:doc` covers only built-ins
   and special forms, from `stdlib/lsp/builtins.zyl`.
-- There is no `receive` form. `tests/integration/actor-message.zyl` checks
-  only that spawn, send and wait complete.
 - BLAKE3 uses the portable compression function (no SIMD). There is no
   ctgrind or valgrind instrumentation; `verify/timing.py` is the
   statistical substitute.
@@ -255,7 +253,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       handle types.
 - [x] `Secret`: frame zeroization on return, `print` redaction, a `Secret`
       trait, Secret-field taint, `impl-not`; heap erasure stays explicit.
-- [ ] A `receive` form and a runnable structured-message actor example.
+- [x] A `receive` form and a runnable structured-message actor example.
 - [x] Top-level `def` in compiled programs (immutable globals, eager init).
 - [ ] Hash finalization that mixes the graph hash into the binary.
 
@@ -373,7 +371,19 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — Secret fields/types, redaction, frame wipe, impl-not
+## Session (2026-09-24, latest) — receive and structured actor messages
+
+`(receive)` and `(actor-self)` lower (ICNF, `ic-global-sym`) to the new
+runtime `zyl_actor_receive` / `zyl_actor_self`. `receive` pops the next
+data message of the running actor (thread-local id), running closure
+messages queued ahead of it; waiting counts as parked for `wait_all`, and
+an actor stopped while waiting ends its thread there. `main` gets a
+thread-less mailbox slot on first use, which `wait_all` skips, so actors
+can reply to main. Example: `book/examples/actor-counter/counter.zyl`;
+test: `tests/regression/actor-receive.zyl` (skipped by the interpreter
+differential run). `actor-self` needs the `actor` capability.
+
+## Session (2026-09-24, earlier) — Secret fields/types, redaction, frame wipe, impl-not
 
 **Secret shapes** (`secret_check.zyl`, global map 4): a field declared
 `Secret`, or of a type implementing the new prelude trait `Secret`

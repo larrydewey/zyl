@@ -4,7 +4,7 @@ Complete reference for Zyl's actor system: the model the specification defines, 
 
 The normative text is spec v5.0 §15 (concurrency model), §7.4 (closures and concurrency), §9.1 rules R2 and R3, §27 (determinism) and §31.9 (the `actor` capability). The implementation is split across `stdlib/compiler/expr_inner.zyl` and `icnf.zyl` (parsing and lowering of `spawn` and `send`), `stdlib/compiler/mutability_check.zyl` (the send checks), `runtime/actor_runtime.c` (threads and mailboxes) and `stdlib/actor/actor.zyl` (library wrappers).
 
-**Implementation status.** Actors are the least complete part of the language. `spawn` starts a thread. A message sent with `send` is queued and then **discarded**, and there is no `receive`. The one working way to deliver a message is the runtime's closure-message primitive, `zyl_actor_send_closure`, called through `ffi-call` (§21.4). Actor output is not deterministic. This chapter documents what works, and marks what the specification promises but the implementation does not yet provide.
+**Implementation status.** `spawn` starts a thread; `send` queues a message; `(receive)` takes the next one from the running actor's mailbox, and `(actor-self)` is the running actor's id, so actors exchange structured messages (ADT values) and reply to each other or to `main`. Closure messages (§21.4) still work. Output from several actors printing at once is not deterministic. This chapter documents what works, and marks what the specification promises but the implementation does not yet provide.
 
 ## 21.1 Actor Model Overview
 
@@ -60,8 +60,7 @@ main done
 
 ### What does not work yet
 
-- **An entry function with a parameter** receives 0. It is not a message handler.
-- **`(receive)`** is not implemented. A `spawn` body that uses it compiles to an actor that does nothing.
+- **An entry function with a parameter** receives 0. It is not a message handler; loop on `(receive)` instead (§21.3).
 
 ### State
 
@@ -104,11 +103,51 @@ Specified: asynchronous, FIFO per actor, and the message must be Send-capable.
 Implemented:
 
 - `send` is asynchronous and returns immediately.
-- The message is passed as a single 64-bit word, either an `Int` or a pointer to a heap value. It is not copied.
-- **The runtime discards data messages** when it dequeues them. Nothing in Zyl can observe a message sent with `send`.
+- The message is passed as a single 64-bit word, either an `Int` or a pointer to an (immutable) heap value such as an ADT. It is not copied.
+- Messages are delivered in the order each sender sent them.
 - Sending to an id that does not name a live actor does nothing.
 
-Until `send` and `receive` are implemented, use closure messages (§21.4).
+### Receiving: `receive` and `actor-self`
+
+```lisp
+(receive)       ; the next data message in this actor's mailbox; blocks until one arrives
+(actor-self)    ; this actor's id
+```
+
+`receive` returns the message word. Match on it to handle structured
+messages; a closure message queued ahead of it runs first, so the
+mailbox stays FIFO. On the main thread, the first `actor-self` or
+`receive` opens a mailbox for `main`, so an actor can reply to it:
+
+```lisp
+(deftype CounterMsg (Add Int) (Get Int) (Stop Int))
+
+(defn counter-loop (total)
+  (match (receive)
+    (Add n (counter-loop (+ total n)))
+    (Get reply-to (begin (send reply-to total) (counter-loop total)))
+    (Stop reply-to (send reply-to total))))
+
+(defn main ()
+  (let me (actor-self)
+    (let c (spawn (fn () (counter-loop 0)))
+      (begin
+        (send c (Add 5))
+        (send c (Add 7))
+        (send c (Get me))
+        (print (receive))          ; 12
+        (send c (Stop me))
+        (print (receive))          ; 12
+        0))))
+```
+
+The loop is a tail call, so it runs in constant stack. An actor still
+blocked in `receive` when the program ends does not hold up the exit:
+it counts as idle, and the runtime stops it. `receive` on `main` with no
+message coming blocks forever, like any receive nobody answers.
+`book/examples/actor-counter/counter.zyl` is this program in full.
+`receive`, `send` and `actor-self` need the `actor` capability in a
+package.
 
 ### Send-capability checks
 
@@ -329,7 +368,7 @@ The runtime defines no error for sending to a stopped actor. A closure message t
 | Feature | Erlang/Elixir | Go | Rust (Actix) | Zyl (spec) | Zyl (implemented) |
 |---------|---------------|-----|--------------|------------|-------------------|
 | Unit | process | goroutine | actor | actor | pthread per actor |
-| Receive | `receive` | channel read | handler | `receive` | closure messages via `zyl_actor_send_closure` |
+| Receive | `receive` | channel read | handler | `receive` | `(receive)`, plus closure messages |
 | Scheduling | preemptive | runtime M:N | async executor | not observable (§27) | OS threads |
 | FIFO per actor | ✅ | per channel | ✅ | ✅ | ✅ (per sender) |
 | Shared memory | ❌ | yes | ❌ | ❌ | messages shared by pointer |

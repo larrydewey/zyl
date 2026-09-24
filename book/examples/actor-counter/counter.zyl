@@ -1,0 +1,32 @@
+; A counter actor driven by structured messages.
+;
+;   zyl book/examples/actor-counter/counter.zyl -o counter && ./counter
+;
+; Messages are ADT values. The actor loops on `receive`, one message per
+; call; `Get` carries the id of whoever asked, so the actor can reply with
+; `send`, and main reads the reply with its own `receive`.
+
+(deftype CounterMsg (Add Int) (Get Int) (Stop Int))
+
+(defn counter-loop (total)
+  (match (receive)
+    (Add n (counter-loop (+ total n)))
+    (Get reply-to (begin (send reply-to total) (counter-loop total)))
+    (Stop reply-to (send reply-to total))))
+
+(defn ask (c me)
+  (begin
+    (send c (Get me))
+    (receive)))
+
+(defn main ()
+  (let me (actor-self)
+    (let c (spawn (fn () (counter-loop 0)))
+      (begin
+        (send c (Add 5))
+        (send c (Add 7))
+        (print (str-concat "after two adds: " (ffi-call "zyl_int_text" (ask c me) 1000)))
+        (send c (Add 30))
+        (send c (Stop me))
+        (print (str-concat "final: " (ffi-call "zyl_int_text" (receive) 1000)))
+        0))))

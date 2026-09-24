@@ -293,9 +293,70 @@ void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state) {
     pthread_mutex_unlock(&actor->lock);
 }
 
+/* The running actor's id; -1 on a thread that is not an actor yet. */
+static _Thread_local long long g_self_id = -1;
+
+/* (actor-self): this actor's id. On the main thread the first call opens a
+   mailbox (a slot with no thread of its own), so actors can reply to main;
+   wait_all skips it because it has no thread. */
+long long zyl_actor_self(void) {
+    if (g_self_id >= 0) return g_self_id;
+    if (!g_system.initialized) zyl_actor_init();
+    uint32_t id = g_system.next_id;
+    if (id >= ZYL_MAX_ACTORS) return -1;
+    ZylActor* actor = &g_system.actors[id];
+    memset(actor, 0, sizeof *actor);
+    actor->alive = 1;
+    pthread_mutex_init(&actor->lock, NULL);
+    pthread_cond_init(&actor->cond, NULL);
+    g_system.next_id++;
+    g_self_id = id;
+    return id;
+}
+
+/* (receive): the next data message in this actor's mailbox, blocking until
+   one arrives. Closure messages queued ahead of it run first, so the
+   mailbox stays FIFO. Waiting counts as parked for wait_all; when the
+   process stops the actor, its thread ends here. */
+long long zyl_actor_receive(void) {
+    long long id = zyl_actor_self();
+    if (id < 0) return 0;
+    ZylActor* actor = &g_system.actors[id];
+    for (;;) {
+        pthread_mutex_lock(&actor->lock);
+        while (actor->alive && !actor->mailbox_head) {
+            actor->parked = 1;
+            pthread_cond_wait(&actor->cond, &actor->lock);
+        }
+        actor->parked = 0;
+        if (!actor->alive) {
+            int threaded = actor->thread != 0;
+            if (threaded) actor->running = 0;
+            pthread_mutex_unlock(&actor->lock);
+            if (threaded) pthread_exit(NULL);
+            return 0;
+        }
+        ZylMessage* m = actor->mailbox_head;
+        actor->mailbox_head = m->next;
+        if (!actor->mailbox_head) actor->mailbox_tail = NULL;
+        actor->mailbox_count--;
+        pthread_mutex_unlock(&actor->lock);
+        if (m->kind == ZYL_MSG_DATA) {
+            long long v = (long long)(size_t)m->data;
+            free(m);
+            return v;
+        }
+        ZylClosureMsg* closure = (ZylClosureMsg*)m->data;
+        if (closure && closure->fn) closure->fn(closure->state);
+        free(closure);
+        free(m);
+    }
+}
+
 void* zyl_actor_thread_entry(void* arg) {
     uint32_t id = (uint32_t)(size_t)arg;
     if (id >= ZYL_MAX_ACTORS) return NULL;
+    g_self_id = id;
 
     ZylActor* actor = &g_system.actors[id];
 

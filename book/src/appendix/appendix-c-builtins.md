@@ -267,7 +267,9 @@ shows `3.500000`.
 | Form | Syntax | Notes |
 |---|---|---|
 | `spawn` | `(spawn (fn () body))` | returns an `Int` handle; rejected on a `Secret` operand |
-| `send` | `(send actor message)` | queued, then discarded unread — there is no `receive`; rejected on a `Secret` operand |
+| `send` | `(send actor message)` | queued FIFO per sender; rejected on a `Secret` operand |
+| `receive` | `(receive)` | next data message of the running actor, blocking; queued closure messages run first |
+| `actor-self` | `(actor-self)` | the running actor's id; on `main`, opens its mailbox |
 | `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the trailing timeout, in milliseconds, is required but not yet enforced |
 | `ffi-pin` | `(ffi-pin value)` | moves into the Pin region for the call |
 | `ffi-unpin` | `(ffi-unpin value)` | |

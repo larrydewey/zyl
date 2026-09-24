@@ -41,7 +41,7 @@ it compiles and runs correctly; the notes say where it stops.
 | `try`/`catch` | Works: `(try body (catch e handler))`; `error` and `zyl_panic` unwind to the nearest `try` |
 | Macros | `defmacro` expansion works in every form, with gensym hygiene, arity, duplicate and termination checks; parameters are plain names (no patterns) |
 | Modules and packages | Works: `use`, canonical keys, `pub` visibility, capabilities |
-| Actors | `spawn`, `send`, `actor-wait` work for a spawn body that captures nothing. A spawn body that captures a variable hangs at run time |
+| Actors | `spawn` (bodies may capture immutable values), `send`, `(receive)`, `(actor-self)`, `actor-wait`; structured messages and replies to `main` work |
 | FFI | `ffi-call` works. The trailing timeout argument is dropped by lowering and never enforced, and pinning is enforced only for `Secret` values (`E_FFI_PIN_REQUIRED`) |
 | Regions | Escape analysis puts a non-escaping variant on the stack; everything else is heap. Circular and Global regions are not inferred |
 | Capability types | `TCap`/`TMut` are enforced syntactically (`let` vs `let-mut`) by `mutability_check.zyl` |

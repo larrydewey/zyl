@@ -1,0 +1,49 @@
+; Actor receive Regression Tests — `(receive)` takes the next data message
+; from the running actor's mailbox; `(actor-self)` is its id (main gets a
+; mailbox too), so actors can exchange structured messages and replies.
+
+(deftype ArMsg (ArAdd Int) (ArGet Int) (ArStop Int))
+
+(defn ar-counter (total)
+  (match (receive)
+    (ArAdd n (ar-counter (+ total n)))
+    (ArGet to (begin (send to total) (ar-counter total)))
+    (ArStop to (send to (- 0 total)))))
+
+(defn ar-echo ()
+  (let msg (receive)
+    (match msg
+      (ArGet to (begin (send to 99) (ar-echo)))
+      (_ (ar-echo)))))
+
+(test "request-reply"
+  (let me (actor-self)
+    (let c (spawn (fn () (ar-counter 0)))
+      (begin
+        (send c (ArAdd 5))
+        (send c (ArAdd 7))
+        (send c (ArGet me))
+        (assert-equal (receive) 12)
+        (send c (ArAdd 30))
+        (send c (ArStop me))
+        (assert-equal (receive) -42)))))
+
+(test "fifo-order-per-sender"
+  (let me (actor-self)
+    (let c (spawn (fn () (ar-counter 0)))
+      (begin
+        (send c (ArAdd 1))
+        (send c (ArGet me))
+        (send c (ArAdd 10))
+        (send c (ArGet me))
+        (assert-equal (receive) 1)
+        (assert-equal (receive) 11)))))
+
+(test "actor-left-waiting-does-not-block-exit"
+  (let me (actor-self)
+    (let e (spawn (fn () (ar-echo)))
+      (begin
+        (send e (ArGet me))
+        (assert-equal (receive) 99)))))
+
+(run-tests)
