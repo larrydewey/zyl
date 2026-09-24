@@ -279,8 +279,8 @@ Worth knowing before you rely on it:
   checker. Annotating them is the next step.
 - **Heap erasure is manual**: frames are wiped, heap blocks need
   `zeroize` or `wipe`.
-- **`set!` of a secret into an existing `let-mut` variable is not
-  tracked**: the variable stays untainted.
+- **A `let-mut` that is ever `set!` to a secret is secret for its whole
+  scope**, including before the `set!`: conservative, never laundering.
 - A trait call reached through a function value, or a `try` that unwinds
   past a function, skips that function's frame wipe.
 - **The checker is not a proof.** It rejects the operations it knows

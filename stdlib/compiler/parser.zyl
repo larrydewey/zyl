@@ -316,4 +316,27 @@
     (begin
       (check-balanced src fid)
       (let toks (zyl-lex arena src)
-        (parse-program arena toks fid)))))
+        (begin
+          (check-lexed-to-end toks src fid)
+          (parse-program arena toks fid))))))
+
+; The lexer stops at a byte it cannot tokenize; its final TkEof then sits
+; before the end of the source. Report that instead of dropping the rest.
+(defn check-lexed-to-end (toks src fid)
+  (let off (last-eof-offset toks)
+    (if (>= off (ffi-call "zyl_cstr_len" src 1000))
+      0
+      (let c (ffi-call "zyl_cstr_byte_at" src off 1000)
+        (if (= c 34)
+          (ffi-call "zyl_panic" (err-at "E_UNTERMINATED_STRING" "unterminated string literal" fid off "close it with a double quote") 1000)
+          (ffi-call "zyl_panic"
+            (err-at "E_INVALID_CHAR" (str-concat "unexpected character `" (str-concat (ffi-call "zyl_cstr_substr" src off 1 1000) "`"))
+              fid off "Zyl has no quote, quasiquote or comma syntax; `'`, `,`, `@`, `#`, `$`, `&`, `|`, `^` and `\\` may appear only in strings and comments") 1000))))))
+
+(defn last-eof-offset (toks)
+  (match toks
+    (Nil 0)
+    (Cons t rest
+      (match rest
+        (Nil (match t (TkEof o o) (_ 1000000000000)))
+        (_ (last-eof-offset rest))))))

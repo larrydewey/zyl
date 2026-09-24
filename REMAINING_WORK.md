@@ -23,6 +23,17 @@
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
 - [x] Hash finalization: final hash of compiler/graph/native/asm hashes embedded in the binary (`zyl_build_hash`) and recorded in `.buildinfo`
 
+## P3.5: Open follow-ups (from P1-P3)
+- [x] Lexer: an unrecognized character is `E_INVALID_CHAR` (located), an unterminated string `E_UNTERMINATED_STRING`
+- [x] A trait call on a known type with no impl is `E_TRAIT_NOT_FOUND` (located)
+- [x] Secret: a `let-mut` that is ever `set!` to a secret is secret for its whole scope
+- [ ] Dot syntax: `(expr).field` on an expression receiver
+- [ ] Secret checker / impl-not flow rule diagnostics are unlocated `PANIC:` lines; give them spans
+- [ ] Derivable traits other than `Show` (`Eq`, `Ord`, ...) generate nothing
+- [ ] Tail calls: indirect calls and calls with more than six arguments; interpreter TCO
+- [ ] Contracts: profiles, `checkpoint` rollback, typed `recover` arms
+- [ ] Hash finalization: a real ICNF hash (needs an ICNF printer) and the resolved graph recorded in `.buildinfo`
+
 ## P4: Tooling & Packages
 - [ ] Documentation: what arenas are, and which values the arena/capacity arguments of `vec-create` and similar constructors accept (0 = private default arena, handles from `arena-create`, ...)
 - [ ] `zyl doc` generator over `;|`/`;;` doc-comment convention

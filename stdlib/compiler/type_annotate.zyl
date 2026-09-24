@@ -1919,8 +1919,31 @@
     (Nil 0)
     (Cons sp rest
       (begin
-        (if (= (ta-sp-status st sp) 1) (ta-act st members sp) 0)
+        (let s (ta-sp-status st sp)
+          (if (= s 1) (ta-act st members sp) (if (= s 0) (ta-check-no-impl st sp) 0)))
         (ta-act-list st members rest)))))
+
+; A trait call on a concrete receiver type with no impl has no target.
+(defn ta-check-no-impl (st sp)
+  (match sp
+    (TaSp _ node kind name t _
+      (if (= kind 0)
+        (match (ta-recv st t)
+          (TaC n _
+            (if (< (ta-impl-fn st name n) 0)
+              (ta-method-fail node (str-concat "no impl of `" (str-concat (err-name name) (str-concat "` for type `" (str-concat (err-name n) "`"))))
+                (str-concat "add (impl " (str-concat (err-name (ta-trait-of name)) (str-concat " " (str-concat (err-name n) " ...)")))))
+              0))
+          (_ 0))
+        0))))
+
+; `Trait` of a dotted trait-method name `Trait.method`.
+(defn ta-trait-of (dotted)
+  (let i (ta-last-dot dotted (- (str-length dotted) 1))
+    (if (< i 0) dotted (str-substring dotted 0 i))))
+
+(defn ta-last-dot (s i)
+  (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 46) i (ta-last-dot s (- i 1)))))
 
 (defn ta-act (st members sp)
   (match sp

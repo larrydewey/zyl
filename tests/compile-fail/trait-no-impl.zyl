@@ -1,0 +1,6 @@
+; Compile-fail: a trait call on a known type with no impl used to fall into
+; the runtime dispatch and return garbage; it is E_TRAIT_NOT_FOUND.
+
+(defstruct _cf_P (x Int))
+
+(defn main () (begin (print (Show.show (make-_cf_P 1))) 0))

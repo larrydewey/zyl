@@ -1,0 +1,5 @@
+; Compile-fail: a stray `'` (no quote syntax) used to end the file silently;
+; it is E_INVALID_CHAR.
+
+(defn main ()
+  (begin (print 'x) 0))

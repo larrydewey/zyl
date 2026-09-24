@@ -173,27 +173,24 @@ Comment ::= ";" AnyByte* ( Newline | EndOfFile )
 - `;;` and `;;;` are conventions for heavier comments, not separate
   syntax.
 
-Any byte that is not whitespace, a delimiter, `"`, `:`, `~`, `;`, a digit
-or an identifier character ends the token stream. The lexer treats it as
-end of input. That includes `'`, `` ` ``, `,`, `@`, `#`, `$`, `&`, `|`,
-`^`, `\` and non-ASCII bytes outside strings and comments.
+Any byte that is not whitespace, a delimiter, `"`, `:`, `~`, `;`, a digit,
+an identifier character, or a `.` followed by a letter is an error:
+`'`, `` ` ``, `,`, `@`, `#`, `$`, `&`, `|`, `^`, `\` and non-ASCII bytes
+outside strings and comments are reported as `E_INVALID_CHAR` at their
+position.
 
-> **Compiler defect.** Nothing reports this. The rest of the file is
-> silently dropped, and if the parentheses before the stray character
-> still balance, the program compiles and runs without the dropped code:
->
-> ```lisp
-> (defn main ()
->   (begin
->     (print 1)
->     @
->     (print 2)
->     0))
-> ```
->
-> This compiles without a diagnostic and prints only `1`. Because commas
-> are unrecognized, never write `{ a, b }` in an import list: use
-> `{ a b }`.
+```
+PANIC: error[E_INVALID_CHAR]: unexpected character `'`
+  --> main.zyl:2:17
+   |
+ 2 |   (begin (print 'x) 0))
+   |                 ^
+```
+
+(Before 2026-09-24 the lexer stopped there silently and dropped the rest
+of the file.) Because commas are not accepted, write `{ a b }` in an
+import list, never `{ a, b }`. An unterminated string is
+`E_UNTERMINATED_STRING`.
 
 ## 14.4 Whitespace
 
