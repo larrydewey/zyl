@@ -1640,7 +1640,7 @@ static void zyl_smap_grow(ZylSmap* m) {
     m->cap = ncap;
 }
 
-/* The key is kept by reference: compiler strings outlive the map. */
+/* Keys are copied: a REPL entry's arena (and its strings) is released. */
 long long zyl_smap_put(long long mh, long long key, long long val) {
     ZylSmap* m = (ZylSmap*)(size_t)mh;
     const char* k = (const char*)(size_t)key;
@@ -1649,7 +1649,12 @@ long long zyl_smap_put(long long mh, long long key, long long val) {
     if (!m->cap) return 0;
     size_t i = zyl_smap_hash(k) & (m->cap - 1);
     while (m->slots[i].key && strcmp(m->slots[i].key, k) != 0) i = (i + 1) & (m->cap - 1);
-    if (!m->slots[i].key) { m->slots[i].key = k; m->len++; }
+    if (!m->slots[i].key) {
+        char* copy = strdup(k);
+        if (!copy) return 0;
+        m->slots[i].key = copy;
+        m->len++;
+    }
     m->slots[i].val = val;
     return 0;
 }
@@ -1663,6 +1668,15 @@ long long zyl_smap_get(long long mh, long long key) {
         if (strcmp(m->slots[i].key, k) == 0) return m->slots[i].val;
         i = (i + 1) & (m->cap - 1);
     }
+    return 0;
+}
+
+long long zyl_smap_clear(long long mh) {
+    ZylSmap* m = (ZylSmap*)(size_t)mh;
+    if (!m) return 0;
+    for (size_t i = 0; i < m->cap; i++) free((void*)m->slots[i].key);
+    if (m->cap) memset(m->slots, 0, m->cap * sizeof(ZylSmapSlot));
+    m->len = 0;
     return 0;
 }
 
@@ -3891,7 +3905,7 @@ long long zyl_int_text(long long n) {
     X(zyl_panic) X(zyl_path_exists) X(zyl_pin_alloc) \
     X(zyl_print_float) X(zyl_print_int) X(zyl_print_str) \
     X(zyl_random_fill) X(zyl_random_words) X(zyl_run_bin) \
-    X(zyl_session_arena) X(zyl_smap_get) X(zyl_smap_global) X(zyl_smap_new) X(zyl_smap_put) \
+    X(zyl_session_arena) X(zyl_smap_clear) X(zyl_smap_get) X(zyl_smap_global) X(zyl_smap_new) X(zyl_smap_put) \
     X(zyl_source_path) X(zyl_source_register) \
     X(zyl_span_col) X(zyl_span_copy) X(zyl_span_file) \
     X(zyl_span_line) X(zyl_span_line_text) X(zyl_span_off) \

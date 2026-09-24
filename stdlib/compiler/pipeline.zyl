@@ -69,6 +69,8 @@
 ; precede type inference. Returns the checked ExprInner program.
 (defn compile-to-exprs (arena srcbuf srcpath)
   (begin
+    ; Field types recorded by the parse (type_annotate); none survive a compile.
+    (ffi-call "zyl_smap_clear" (ffi-call "zyl_smap_global" 0 1000) 1000)
     (dbg-log "balance-check\n")
     (compile-check-balance srcbuf srcpath)
     (dbg-log "parse\n")

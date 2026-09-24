@@ -286644,6 +286644,25 @@ zy_zyl_x2Fstd_5__compiler_x2Fpipeline__compile_x2Dto_x2Dexprs:
     mov [rbp-16], rsi
     mov [rbp-24], rdx
     sub rsp, 8
+    sub rsp, 8
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_smap_global
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_smap_clear
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
     lea rax, [rip+.L11867]
     sub rsp, 8
     mov [rsp], rax
