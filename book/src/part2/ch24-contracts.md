@@ -70,7 +70,7 @@ ensures ::= "(" "ensures" Expression ")"
 
 Specified: a condition that must hold on return.
 
-Implemented: exactly like `requires`, the condition is evaluated where it is written and its result is discarded. There is **no binding for the return value**. `(ensures (>= (result) 0))` fails at link time with `undefined reference to _ZYL_result`, and `(ensures (>= result 0))` fails with `E_UNBOUND_VARIABLE`. A postcondition can therefore refer only to parameters and other bindings in scope.
+Implemented: exactly like `requires`, the condition is evaluated where it is written and its result is discarded. There is **no binding for the return value**. `(ensures (>= (result) 0))` fails with `E_UNBOUND_VARIABLE: call to undefined function `result``, and `(ensures (>= result 0))` fails with `E_UNBOUND_VARIABLE`. A postcondition can therefore refer only to parameters and other bindings in scope.
 
 ## 24.4 Invariants: `invariant`
 
@@ -80,7 +80,7 @@ invariant ::= "(" "invariant" Expression ")"
 
 Specified: a condition that must hold as an invariant.
 
-Implemented: `invariant` has no handling. Inside a function body, `(invariant (>= i 0))` is compiled as a call to a function named `invariant`, and the link fails with `undefined reference to _ZYL_invariant`. Do not use it.
+Implemented: `invariant` has no handling. Inside a function body, `(invariant (>= i 0))` is compiled as a call to a function named `invariant`, which is rejected with `E_UNBOUND_VARIABLE: call to undefined function `invariant``. Do not use it.
 
 ## 24.5 Recovery Blocks: `recover`
 

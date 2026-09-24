@@ -19,4 +19,91 @@
       (inner 10)))
     (assert-equal (outer 5) 15)))
 
+;; A capturing closure is a value like any other: passed, stored,
+;; returned, captured, and called from wherever it ends up.
+(defn clo-apply1 (f v) (f v))
+(defn clo-apply2 (f a b) (f a b))
+(defn clo-make-adder (n) (fn (x) (+ x n)))
+(defn clo-make-let (n) (let f (fn (x) (* x n)) f))
+(defn clo-id (f) f)
+(defn clo-twice (f) (fn (x) (f (f x))))
+(defn clo-inc (x) (+ x 1))
+(defn clo-dbl (x) (* x 2))
+
+(test "closure-capturing-passed-as-arg"
+  (let k 3
+    (assert-equal (clo-apply1 (fn (y) (+ y k)) 1) 4)))
+
+(test "closure-capturing-two-args"
+  (let k 5
+    (assert-equal (clo-apply2 (fn (a b) (+ a (* b k))) 1 2) 11)))
+
+(test "closure-calls-captured-closure"
+  (let f (fn (x) (+ x 1))
+    (let g (fn (x) (f (f x)))
+      (assert-equal (g 5) 7))))
+
+(test "closure-calls-captured-capturing-closure"
+  (let k 10
+    (let f (fn (x) (+ x k))
+      (let g (fn (x) (f (f x)))
+        (assert-equal (g 1) 21)))))
+
+(test "closure-returned-and-passed-on"
+  (let k 4
+    (assert-equal ((clo-twice (fn (x) (+ x k))) 1) 9)))
+
+(test "closure-escaping"
+  (let a (clo-make-adder 10)
+    (let b (clo-id (clo-make-let 3))
+      (begin
+        (assert-equal (a 5) 15)
+        (assert-equal (b 5) 15)))))
+
+(test "closure-called-through-computed-callee"
+  (assert-equal ((clo-make-adder 10) 5) 15))
+
+(test "closure-stored-in-variant"
+  (let k 3
+    (let o (Some (fn (x) (* x k)))
+      (assert-equal (match o (Some g (g 5)) (None 0)) 15))))
+
+(test "closure-body-with-match"
+  (let g (fn (o) (match o (Some v v) (None 0)))
+    (begin
+      (assert-equal (g (Some 7)) 7)
+      (assert-equal (g None) 0))))
+
+(test "closure-capturing-body-with-match"
+  (let d 9
+    (let g (fn (o) (match o (Some v (+ v d)) (None d)))
+      (begin
+        (assert-equal (g (Some 1)) 10)
+        (assert-equal (g None) 9)))))
+
+(test "closure-constructor-call-in-body"
+  (let f (fn (x) (Some x))
+    (assert-equal (match (clo-apply1 f 6) (Some v v) (None 0)) 6)))
+
+(test "closure-seven-params-capturing"
+  (let k 100
+    (let f7 (fn (a b c d e f g) (+ a b c d e f g k))
+      (assert-equal (f7 1 2 3 4 5 6 7) 128))))
+
+(test "closure-nested-captures"
+  (let a 1
+    (let b 2
+      (let f (fn (x) (let g (fn (y) (+ x y a)) (g b)))
+        (assert-equal (f 10) 13)))))
+
+(test "closure-captures-by-value"
+  (let-mut c 1
+    (let f (fn () c)
+      (begin
+        (set! c 50)
+        (assert-equal (f) 1)))))
+
+(test "closure-plain-function-as-value"
+  (assert-equal (clo-apply1 clo-dbl 21) 42))
+
 (run-tests)

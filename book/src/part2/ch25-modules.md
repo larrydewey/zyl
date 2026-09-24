@@ -65,7 +65,7 @@ Symbols in an import list are separated by whitespace, not commas.
 
 ### Implementation notes
 
-- **`*` does not check names.** With an explicit list, each name is checked when the import is resolved. With `*` or a bare path, a use of a private symbol is not diagnosed by the resolver. It survives as an unresolved reference and fails at link time (`undefined reference to _ZYL_helper`).
+- **`*` does not check names.** With an explicit list, each name is checked when the import is resolved. With `*` or a bare path, a use of a private symbol is not diagnosed by the resolver. It survives as an unresolved reference, reported by codegen as `E_UNBOUND_VARIABLE: call to undefined function`.
 - **`:unsafe` is parsed and ignored.** Spec §31.9 ties `:unsafe` imports to the `unsafe` capability but does not say what such an import permits. The implementation records the marker and does nothing with it: it does not bypass visibility, and a package without the `unsafe` capability can write it without error.
 - **The standard library is one surface.** The implicit standard library (§25) has no manifest and therefore no `pub` surface. A `use` of any standard-library module exposes every standard-library definition that has been loaded. For example, `testing/testing` pulls in the allocator's `str-eq`. A named list still adds its renames on top.
 - **`core/core` is implicit.** A program that loads none of `core/core`, `core/option` or `core/result` gets `core/core` anyway.

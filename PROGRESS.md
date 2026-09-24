@@ -123,10 +123,17 @@ Compiler:
   inference, so `print` of a struct or of a computed String prints an
   address, and `==` on Strings built at runtime compares addresses in
   compiled code. Derivable `Show` (spec §5.6) is not implemented.
-- No phase before linking resolves call targets. A call to an undefined
-  function, including the unimplemented `(list ...)` literal, fails as a
-  linker error (`undefined reference to _ZYL_list`), not as a located
-  diagnostic.
+- Call targets are resolved only in codegen (`cg-call-user`): a call to
+  an undefined function, including the unimplemented `(list ...)`
+  literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
+  but no earlier phase (type inference) reports it.
+- Codegen takes print/compare/arithmetic kinds from annotations and
+  literals only: an unannotated parameter, a captured variable and the
+  result of a call through a function value are Int there, so printing a
+  captured String prints its address and a captured Float is added as
+  an integer.
+- A capturing closure handed to `spawn` crashes: `zyl_actor_spawn` calls
+  the closure block as code.
 - A top-level `(def name value)` in a compiled file does not create a
   global; a use of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL
   gives top-level `def` a meaning.
@@ -203,8 +210,9 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 - [ ] Locate the remaining diagnostics (the checks listed above): thread
       the offending node to the failure and call `err-at`.
-- [ ] Resolve call targets before linking, so an undefined function is a
-      located error.
+- [x] Resolve call targets before linking, so an undefined function is a
+      located error (codegen's `cg-call-user`, 2026-09-23; an earlier
+      phase would be better still).
 - [ ] Fix the `=`-on-strings name comparisons in `type_inference.zyl`;
       this is also the root of "cannot determine the type of this
       match's scrutinee" and of REPL `:type` answering *unresolved*.
@@ -347,6 +355,40 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-23) — closures are values
+
+Closure conversion is rebuilt so a closure works wherever a function
+value can go.
+
+- `ic-lambda` (`icnf.zyl`) lowers the body first and reads free names
+  off the lowered ICNF (`ic-lambda-free`, every node shape). The
+  Expr-level `ic-safe-expr`/`ic-free-vars` gate is gone: it turned any
+  lambda using `match`, a constructor call (`(fn (x) (Some x))`) or a
+  captured callee (`compose`) into `IConst 0`, and capped capturing
+  lambdas at 5 parameters.
+- A closure is `[ic-closure-magic, code, env]`. Every call through a
+  local is `cg-call-indirect` (`codegen.zyl`): it tests the tag at run
+  time and always passes the env, or 0 for a plain function, as one
+  extra trailing argument. The `VTClosureFn`/`VTClosureReturn` marks and
+  `ICallClosure` are no longer produced; a closure passed as an argument,
+  stored in a variant, captured, or returned is called correctly, and
+  any arity works.
+- A call with a computed head, `((make-adder 10) 5)`, binds the head to a
+  fresh local and calls through it (it used to call the empty name).
+- A call to a name that is neither a local nor a function is a located
+  `E_UNBOUND_VARIABLE` (`cg-call-user`); `((x) (* x x))` now gets that
+  instead of an undefined `_ZYL_`. Call nodes keep their span through
+  `ic-hoist`, optimization and region inference (`ic-keep-span`).
+- `set!` on a captured `let-mut` is `E_MUT_CONFLICT`, located
+  (`mutability_check.zyl`, `mc-fn-fence`): capture is by value, so the
+  assignment could only change the closure's copy.
+- `closure_inline.zyl` is an identity pass; its beta reduction is not
+  hygienic and is no longer needed.
+- Tests: `tests/regression/closures.zyl` (15 new), new
+  `tests/regression/closures-core.zyl` (compose, option-flatmap,
+  result-and-then), `tests/compile-fail/closure-set-captured.zyl`,
+  `tests/compile-fail/lambda-shorthand.zyl`.
 
 ## Current Session (2026-09-23) — a first-class REPL, stages 3 and 4: values, types, and state that survives
 

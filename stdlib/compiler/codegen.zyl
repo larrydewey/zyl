@@ -347,8 +347,8 @@
          (if (> (if (and (> op 4) (< op 11)) (if (or (= (kind-of st env l) 3) (= (kind-of st env r) 3)) 1 0) 0) 0)
            (cg-variantbinop st env op l r)
            (cg-ibinop st env op l r)))))
-    (ICall name args (cg-call-args st env name args true 0))
-    (ICallClosure name args (cg-call-closure-args st env name args))
+    (ICall name args (cg-call-user st env name args e))
+    (ICallClosure name args (cg-call-user st env name args e))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
     (IIf c t eb (cg-if-dispatch st env c t eb))
@@ -366,6 +366,28 @@
     ; A bare function node is never emitted as a value expression; keep st.
     (IFn _ _ _ st)
     (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))))
+
+; A call by name: a local holding a function value (indirect), or a
+; top-level function. A name that is neither is reported here, at the
+; call, instead of as an undefined `_ZYL_<name>` from the linker. The
+; common way to write one by accident is the `((x) body)` lambda
+; shorthand, which spec 7.1 rejects: its `(x)` is a call to `x`.
+(defn cg-call-user (st env name args site)
+  (if (= (env-lookup env name) 0)
+    (if (= (cg-fn-known st name) 1)
+      (cg-call-args st env name args true 0)
+      (cg-fail-undefined-fn name site))
+    (cg-call-args st env name args true 0)))
+
+(defn cg-fail-undefined-fn (n site)
+  (let m1 "call to undefined function `"
+    (let m2 (str-concat m1 (err-name n))
+      (let msg (str-concat m2 "`")
+        (let off (ffi-call "zyl_span_off" site 1000)
+          (let fid (ffi-call "zyl_span_file" site 1000)
+            (let hint "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)"
+              (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
+                (ffi-call "zyl_panic" text 1000)))))))))
 
 ; Load a variable / function value into rax.
 ; `site` is the ILoad node itself, carried only so an unbound identifier
@@ -717,6 +739,13 @@
 ;   phase 4: call; cleanup removes pad + scratch + copy-pushes.
 ; `mangle` adds the _ZYL_ prefix for user functions.
 (defn cg-call-args (st env name args mangle i)
+  (if (> mangle 0)
+    (if (= (env-lookup env name) 0)
+      (cg-call-args-go st env name args mangle)
+      (cg-call-indirect st env name args))
+    (cg-call-args-go st env name args mangle)))
+
+(defn cg-call-args-go (st env name args mangle)
   (let n (list-length args)
     (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
                (cg-emit-line st "    sub rsp, 8")
@@ -836,10 +865,7 @@
 ; ── mangled (user fn) path: n args already pushed, rsp pre-aligned ──
 
 (defn cg-fire-user (st env name n)
-  ; If `name` is a local binding it holds a function value: indirect call.
-  (if (= (env-lookup env name) 0)
-    (cg-user-direct st env name n)
-    (cg-user-indirect st env name n)))
+  (cg-user-direct st env name n))
 
 (defn cg-call-cleanup (st n)
   ; Built through lets: no binop may directly combine two calls.
@@ -852,48 +878,67 @@
   (let st2 (cg-emit-line st (cg-call-user-str st env name))
     (cg-call-cleanup st2 n)))
 
-; Indirect (HOF): target address is in the local's stack slot. Load it
-; into r10 AFTER the register args are staged so nothing clobbers them.
-(defn cg-indirect-target (st off)
-  (let st2 (cg-emit st "    mov r10, [rbp")
-    (let st3 (cg-emit-int st2 off)
-      (let st4 (cg-emit st3 "]")
-        (let st5 (cg-nl st4)
-          (cg-emit-line st5 "    call r10"))))))
-
-(defn cg-user-indirect (st env name n)
-  (let st2 (cg-indirect-target st (env-lookup env name))
-    (cg-call-cleanup st2 n)))
-
-; ── closure call path (ICallClosure) ──
-; `name`'s own stack slot holds a heap [tag,code,env] triple (see
-; icnf.zyl's ic-lambda-closure), not a bare code pointer: real args are
-; staged into registers exactly like an ordinary call (mirrors
-; cg-call-args's phases 0-3), then this unpacks code/env from the
-; triple and passes env as one extra trailing register argument (index
-; n, right after the n real args) before calling through code. r11
-; (never used for arg staging) holds the triple pointer and then the
-; code pointer in turn, so it's never live across the env-register move.
-(defn cg-call-closure-args (st env name args)
+; ── indirect call: through a local holding a function value ──
+; The value is either a plain code address (a top-level function or a
+; non-capturing `fn`) or a closure: a pointer to a [tag, code, env]
+; triple whose tag word is ic-closure-magic (icnf.zyl's ic-lambda-closure).
+; The call always passes n+1 arguments: the n real ones, then the env
+; for a closure or 0 for a plain function, which just ignores it (the
+; SysV caller owns every argument register and stack slot, so an extra
+; one is harmless). Staging is cg-call-args's phases 0-3 with m = n+1,
+; the env computed last, as the final scratch slot, so left-to-right
+; argument evaluation is unchanged. The code address is picked by the
+; same tag test into r10 after the registers are loaded (r10/r11 are
+; never argument registers). A code address's first 8 bytes are this
+; compiler's own prologue (`push rbp` = 0x55 first), never the tag.
+(defn cg-call-indirect (st env name args)
   (let n (list-length args)
-    (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
-               (cg-emit-line st "    sub rsp, 8")
-               st)
-      (let st3 (cg-scratch-all st2 env args)
-        (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
-          (let st5 (cg-load-reg-args st4 n (- (cg-min-int n 6) 1))
-            (cg-closure-fire st5 env name n)))))))
+    (let m (+ n 1)
+      (let off (env-lookup env name)
+        (let st2 (if (= (% (+ m (cg-stack-count m)) 2) 1)
+                   (cg-emit-line st "    sub rsp, 8")
+                   st)
+          (let st3 (cg-scratch-all st2 env args)
+            (let st4 (cg-closure-env-scratch (cg-label-pair st3) off)
+              (let st5 (cg-copy-stack-args st4 m (- m 1) 0)
+                (let st6 (cg-load-reg-args st5 m (- (cg-min-int m 6) 1))
+                  (let st7 (cg-closure-target (cg-label-new st6) off)
+                    (cg-call-cleanup st7 m)))))))))))
 
-(defn cg-closure-fire (st env name n)
-  (let st2 (cg-emit st "    mov r11, [rbp")
-    (let st3 (cg-emit-int st2 (env-lookup env name))
-      (let st4 (cg-nl (cg-emit st3 "]"))
-        (let st5 (cg-emit st4 "    mov ")
-          (let st6 (cg-emit st5 (cg-reg-of n))
-            (let st7 (cg-nl (cg-emit st6 ", [r11+16]"))
-              (let st8 (cg-emit-line st7 "    mov r11, [r11+8]")
-                (let st9 (cg-emit-line st8 "    call r11")
-                  (cg-call-cleanup st9 n))))))))))
+(defn cg-closure-magic-cmp (st reg off)
+  (let st2 (cg-emit st "    mov ")
+    (let st3 (cg-emit st2 reg)
+      (let st4 (cg-emit st3 ", [rbp")
+        (let st5 (cg-emit-int st4 off)
+          (let st6 (cg-nl (cg-emit st5 "]"))
+            (let st7 (cg-emit st6 "    mov r11, ")
+              (let st8 (cg-nl (cg-emit-int st7 (ic-closure-magic)))
+                (let st9 (cg-emit st8 "    cmp qword ptr [")
+                  (cg-nl (cg-emit (cg-emit st9 reg) "], r11")))))))))))
+
+; rax = env of the closure in slot `off`, or 0; pushed as a scratch slot.
+(defn cg-closure-env-scratch (p off)
+  (match p
+    (CGP st la lb
+      (let st2 (cg-closure-magic-cmp st "rax" off)
+        (let st3 (cg-nl (cg-emit (cg-emit st2 "    jne ") la))
+          (let st4 (cg-emit-line st3 "    mov rax, [rax+16]")
+            (let st5 (cg-nl (cg-emit (cg-emit st4 "    jmp ") lb))
+              (let st6 (cg-label-def st5 la)
+                (let st7 (cg-emit-line st6 "    xor eax, eax")
+                  (let st8 (cg-label-def st7 lb)
+                    (let st9 (cg-emit-line st8 "    sub rsp, 8")
+                      (cg-emit-line st9 "    mov [rsp], rax"))))))))))))
+
+; r10 = code address of the value in slot `off`; then the call.
+(defn cg-closure-target (r off)
+  (match r
+    (CGR st _ lc
+      (let st2 (cg-closure-magic-cmp st "r10" off)
+        (let st3 (cg-nl (cg-emit (cg-emit st2 "    jne ") lc))
+          (let st4 (cg-emit-line st3 "    mov r10, [r10+8]")
+            (let st5 (cg-label-def st4 lc)
+              (cg-emit-line st5 "    call r10"))))))))
 
 ; ── ext (FFI) path ──
 

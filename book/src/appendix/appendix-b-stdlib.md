@@ -402,7 +402,7 @@ bundles them, with `selfhost/driver.zyl`, into the compiler source.
 | `region_inference.zyl` | Stack promotion of non-escaping variants |
 | `monomorphization.zyl` | Monomorphization |
 | `trait_dispatch.zyl` | Trait method dispatch |
-| `closure_inline.zyl` | Closure inlining |
+| `closure_inline.zyl` | Closure inlining (retired; identity pass) |
 | `assert_lowering.zyl` | Lowering of `assert-equal` |
 | `contract_injection.zyl` | Contract overlay |
 | `icnf.zyl` | ICNF lowering |

@@ -207,7 +207,7 @@ false `(assert ...)` in a compiled program currently does nothing.
 |------|-----------------|-----------|
 | `E_CAPABILITY_LEAK` (§28) | capability: TMut leaked across boundary at S | `mutability_check.zyl` |
 | `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (closure passed to `ffi-call`), `type_inference.zyl` (FFI value of a non-pinnable type) |
-| `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (`set!` on a non-`let-mut` binding), `expr_inner.zyl` |
+| `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (`set!` on a non-`let-mut` binding, or, located, on a `let-mut` captured by a closure), `expr_inner.zyl` |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` |
@@ -280,7 +280,7 @@ All raised by the package modules named; all are §28 codes.
 | `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
 | `W_UNUSED_VARIABLE` | warning | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |
 | `W_SHADOWED_BINDING` | warning | `unused_check.zyl` | a binding shadows an outer binding of the same name |
-| `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reaches the linker instead) |
+| `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from codegen's `cg-call-user`) |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
 | `E_UNSUPPORTED_INTERPRETED` | error | `stdlib/repl/interp.zyl` | spawning an actor, which needs a native entry point; compile the program instead |
 | `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `actor_runtime.c` | an `ffi-call` names a symbol the REPL process does not export |

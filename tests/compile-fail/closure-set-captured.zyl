@@ -1,0 +1,8 @@
+; Compile-fail: a closure that set!s a captured let-mut. Closures capture
+; by value (spec 7), so the set! would change only the closure's copy.
+; Must be rejected with E_MUT_CONFLICT (compiler/mutability_check.zyl).
+
+(defn main ()
+  (let-mut c 0
+    (let b (fn () (set! c (+ c 1)))
+      (begin (b) (print c)))))

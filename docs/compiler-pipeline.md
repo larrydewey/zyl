@@ -185,10 +185,9 @@ documents the problem.
 **Implementation:** `closure_inline.zyl` (`ci-expand-program`),
 `assert_lowering.zyl` (`al-expand-program`)
 
-- **Closure inlining:** `(let NAME (fn params body) LETBODY)` where
-  `NAME` is only ever called directly in `LETBODY` is replaced by
-  `LETBODY` with each call beta-reduced. A lambda that escapes is left
-  alone; ICNF lowering gives it a heap closure value instead.
+- **Closure inlining:** retired; `ci-expand-program` is an identity
+  pass (beta-reducing a lambda into its callers is not hygienic, and
+  closures are real values now, see Phase 9).
 - **Assert lowering:** `(assert-equal l r)` where either side looks like
   an ADT or struct value becomes a `zyl_variant_eq` call. That
   comparison is shallow: tag plus each field as a raw word.
@@ -209,8 +208,11 @@ ISeq IVariant IMatch IFn ICallClosure ITryCatch IStackVariant
 - `for` lowers to `IWhile`; `spawn` and `send` lower to `IFfi` calls to
   `zyl_actor_spawn` and `zyl_actor_send`.
 - A lambda whose body is closed is hoisted to a top-level function. A
-  capturing lambda becomes a heap `[tag, code, env]` value called
-  through `ICallClosure`.
+  capturing lambda becomes a `[tag, code, env]` value. Every call
+  through a local is an indirect call that tells the two apart by the
+  tag word and passes the env (or 0) as one extra trailing argument
+  (`cg-call-indirect`), so either kind can be passed, stored and
+  returned. `ICallClosure` is no longer produced.
 - `try`/`catch` lowers to `ITryCatch`, which uses the runtime's
   `zyl_try_push`/`zyl_try_pop` frames and `setjmp`; `zyl_panic` unwinds
   to the nearest one.

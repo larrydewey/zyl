@@ -173,7 +173,7 @@ frame, and everything else stays on the heap. No pass reports
 
 | Code | Cause |
 |---|---|
-| `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, or on anything other than a plain name — direct field mutation included |
+| `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included |
 | `E_CAPABILITY_LEAK` | A spawned closure or a sent message refers to a `let-mut` (`TMut`) variable of the enclosing scope |
 | `E_INVALID_CAPABILITY` | An `ffi-call` argument whose type is not `FFI_Pinnable`, a closure included |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |

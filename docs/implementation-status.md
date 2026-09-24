@@ -67,10 +67,10 @@ it compiles and runs correctly; the notes say where it stops.
   function computes at run time (for example, a generic function
   returning its String argument) can print an address, and `==` on
   Strings built at run time compares addresses in compiled code.
-- **Call targets are resolved only at link time.** A call to an
-  undefined function, such as the unimplemented `(list ...)` literal or
-  an implicit-lambda form `((x) body)`, fails as a linker error rather
-  than a located diagnostic.
+- **Call targets are resolved only in codegen.** A call to an undefined
+  function, such as the unimplemented `(list ...)` literal or an
+  implicit-lambda form `((x) body)`, is a located `E_UNBOUND_VARIABLE`
+  from `cg-call-user`, but no earlier phase reports it.
 - **Top-level `def`** does not create a global in a compiled file; a use
   of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL gives
   top-level `def` a meaning.
