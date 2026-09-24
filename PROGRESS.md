@@ -28,7 +28,7 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   prints no warnings (swept 2026-09-24).
 - `./run_regression_tests.sh --full --no-boot` passes **168/168**
   (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
-  integration 7, packages-fail 7, stress 4, scripts 4, packages 2,
+  integration 7, packages-fail 7, stress 4, scripts 5, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
@@ -169,9 +169,10 @@ Compiler:
 
 Package system:
 
-- The index URL `https://github.com/zyl-lang/index` is a placeholder; no
-  index repository exists, so the registry fetch path is tested through
-  its pure parts (entry parsing, signing, verification, sharding).
+- The default index URL `https://github.com/zyl-lang/index` is not hosted
+  yet. `ZYL_INDEX` selects any git index (URL or local path), and `zyl
+  publish --index DIR` adds signed versions to one;
+  `tests/scripts/package-index.sh` covers publish, fetch and build.
 - No build cache (§31.4): every build recompiles the whole graph.
 - `deny-capabilities` and the capability pass apply only to packages that
   have a manifest.
@@ -367,7 +368,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — fixes from the skill review
+## Session (2026-09-24, latest) — a working package index
+
+`ZYL_INDEX` (`idx-url`) selects the index: a git URL or a local path
+(cloned as `file://`). `zyl publish --index DIR [--url-base URL]`
+(`cli-publish-into`) copies the signed archive to `DIR/archives/`, merges
+the version into the sharded entry (`idx-publish`, `idx-entry-text`; a
+repeated version is `E_PKG_VERSION_EXISTS`, new code) and commits in a git
+index. `store-fetch-url` copies `file://` archives (HTTPS only otherwise);
+hashes and signatures are verified either way. End to end in
+`tests/scripts/package-index.sh`: publish, fetch, build, run, graph in
+`.buildinfo`, republish rejected. The default hosted index still has to
+be created.
+
+## Session (2026-09-24, earlier) — fixes from the skill review
 
 - A user type named `T` or `E` hid the prelude's type parameter of the
   same spelling (short-name aliases in `ta-types`), so `Option`/`Result`

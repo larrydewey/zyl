@@ -38,7 +38,8 @@
 - [x] Documentation: arenas and the `arena`/`cap` arguments of `vec-create`, `map-create`, `set-create` (book §4.3 "Arenas"); a negative `cap` now means 0 instead of a null write
 - [x] `zyl doc` generator (`compiler/doc.zyl`): module headers, item docs from the comment block above each definition, `;|` precedence, pub-only in packages
 - [x] Reject nested `feature-gate` (`E_PKG_FEATURE_NESTED`)
-- [ ] Real package index (configurable index location, publish into an index); content-hash build cache
+- [x] Package index: `ZYL_INDEX` (git URL or local path), `zyl publish --index DIR`, `file://` archives; tested end to end (open: hosting the default index repository)
+- [ ] Content-hash build cache (spec 31.4)
 - [ ] LSP: return unused-binding warnings instead of printing them
 - [ ] Bundle VS Code extension with problem matcher
 - [ ] REPL: let definitions at prompt capture `def` bindings

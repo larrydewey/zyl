@@ -177,7 +177,7 @@
     (cli-latest-version arena name)))
 
 (defn cli-latest-version (arena name)
-  (let root (idx-sync (idx-default-url))
+  (let root (idx-sync (idx-url))
     (let entry (idx-read arena root name)
       (match (idx-latest entry)
         (Some iv (iv-version iv))
@@ -280,7 +280,7 @@
 
 (defn cli-fetch (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
-    (let _ (idx-sync (idx-default-url))
+    (let _ (idx-sync (idx-url))
       (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
         (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
           (let _ (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
@@ -301,7 +301,7 @@
 (defn cli-update (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let before (cli-lock-closure arena dir)
-      (let _ (idx-sync (idx-default-url))
+      (let _ (idx-sync (idx-url))
         (let nodes (mvs-resolve-with-dev arena (cli-ctx-online arena dir m) m dir)
           (let closure (pk-caps-union (mf-capabilities m) (mvs-closure arena nodes Nil))
             (let _ (lk-write arena (cli-lock-path dir) (cli-lock-of arena m nodes closure))
@@ -540,6 +540,10 @@
         (let _ (file-close fd)
           (idx-trim s))))))
 
+; `zyl publish` archives, hashes and signs the package and prints its index
+; entry; with `--index DIR` it also copies the archive into DIR/archives,
+; adds the entry to that index (its url `file://...`, or `--url-base URL`
+; + the archive's name), and commits it when DIR is a git repository.
 (defn cli-publish (arena dir)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let tar (store-tmp-path (mf-name m) ".tar")
@@ -547,9 +551,36 @@
         (let hash (store-write-tar-excluding arena dir tar (mf-exclude m))
           (let _ (store-compress tar (str-concat tar ".zst"))
             (let sig (idx-sign-hash arena (cli-read-seed arena) hash)
+              (let index (cli-flag-value "--index")
+                (if (= (pk-len index) 0)
+                  (begin (cli-print-entry arena m hash sig) 0)
+                  (cli-publish-into arena m (str-concat tar ".zst") hash sig index))))))))))
+
+(defn cli-publish-into (arena m zst hash sig index)
+  (let file (str-concat (store-flat-name (mf-name m)) (str-concat "-" (str-concat (pv-str arena (mf-version m)) ".tar.zst")))
+    (let _ (store-mkdir (str-concat index "/archives"))
+      (let _ (store-copy-file zst (str-concat index (str-concat "/archives/" file)))
+        (let base (cli-flag-value "--url-base")
+          (let url (if (= (pk-len base) 0) (str-concat "file://" (str-concat index (str-concat "/archives/" file))) (str-concat base (str-concat "/" file)))
+            (let _ (idx-publish arena index (mf-name m)
+                     (IV (mf-version m) url hash (ITrust (idx-public-key arena (cli-read-seed arena)) sig) (IMeta (mf-zyl m) 0)))
               (begin
-                (cli-print-entry arena m hash sig)
+                (if (> (ffi-call "zyl_path_exists" (str-concat index "/.git") 1000) 0)
+                  (store-run (str-concat "git -C '" (str-concat index (str-concat "' add -A && git -C '" (str-concat index
+                    (str-concat "' commit -q -m 'publish " (str-concat (mf-name m) (str-concat " " (str-concat (pv-str arena (mf-version m)) "'")))))))))
+                  0)
+                (print (str-concat "published " (str-concat (mf-name m) (str-concat " " (str-concat (pv-str arena (mf-version m)) (str-concat " to " index))))))
                 0))))))))
+
+; The value after `flag` on the command line, or "".
+(defn cli-flag-value (flag) (cli-flag-from 2 flag))
+
+(defn cli-flag-from (i flag)
+  (if (>= (+ i 1) (ffi-call "zyl_argc" 0))
+    ""
+    (if (> (str-eq (ffi-call "zyl_arg_str" i 1000) flag) 0)
+      (ffi-call "zyl_arg_str" (+ i 1) 1000)
+      (cli-flag-from (+ i 1) flag))))
 
 (defn cli-print-entry (arena m hash sig)
   (begin

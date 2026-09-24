@@ -248,7 +248,22 @@
 (defn store-tmp-path (name suffix)
   (str-concat (store-home) (str-concat "/tmp/" (str-concat (store-flat-name name) suffix))))
 
+; `file://` archives (a local index) are copied; anything else is fetched
+; over HTTPS only. Either way the content hash is verified on install.
 (defn store-fetch-url (url out)
+  (if (and (> (pk-len url) 7) (> (str-eq (pk-sub url 0 7) "file://") 0))
+    (store-copy-file (pk-sub url 7 (- (pk-len url) 7)) out)
+    (store-fetch-https url out)))
+
+(defn store-copy-file (src out)
+  (let _ (store-safe src 1 "archive path")
+    (let _ (store-safe out 1 "download path")
+      (let _ (store-mkdir (str-concat (store-home) "/tmp"))
+        (if (= (store-run (str-concat "cp '" (str-concat src (str-concat "' '" (str-concat out "'"))))) 0)
+          out
+          (ffi-call "zyl_panic" (str-concat "E_PKG_FETCH_FAILED: package: cannot read " src) 1000))))))
+
+(defn store-fetch-https (url out)
   (let _ (store-safe url 2 "url")
     (let _ (store-safe out 1 "download path")
       (let _ (store-mkdir (str-concat (store-home) "/tmp"))

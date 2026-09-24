@@ -114,6 +114,7 @@
                                                           (Cons (EC "E_PKG_BAD_REQUIREMENT" 19 1 "package: requirement R uses a range operator - MVS takes bare minimum versions")
                                                           (Cons (EC "E_PKG_DUPLICATE_DEP" 19 1 "package: duplicate dep entry for N")
                                                           (Cons (EC "E_PKG_NOT_FOUND" 19 1 "package: N is not present in the index")
+                                                          (Cons (EC "E_PKG_VERSION_EXISTS" 19 1 "package: version V of N is already in the index")
                                                           (Cons (EC "E_PKG_VERSION_NOT_FOUND" 19 1 "package: version V of N is not present in the index")
                                                           (Cons (EC "E_PKG_NOT_IN_STORE" 19 1 "package: N V is not in the store - run zyl fetch")
                                                           (Cons (EC "E_PKG_HASH_MISMATCH" 19 1 "package: archive hash for N V differs from the lock")
@@ -144,7 +145,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

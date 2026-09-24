@@ -328,7 +328,15 @@ The index is a git repository of S-expression metadata, sharded by name (`ac/me/
 - **Trust on first use.** The first resolution pins the publisher key, both in `zyl.lock` and in `~/.zyl/keys/`. Every later fetch must verify against the pinned key and match the content hash. A key change is `E_PKG_KEY_CHANGED` and a hash change is `E_PKG_HASH_MISMATCH`. An unsigned entry is `E_PKG_UNSIGNED`, and a bad signature is `E_PKG_SIGNATURE_INVALID`.
 - **Yanks** are advisory. They affect new resolutions only (`E_PKG_YANKED`), never an existing lock. Published versions are immutable.
 
-**Status.** The default index URL, `https://github.com/zyl-lang/index`, is a placeholder: no index repository exists yet. `zyl fetch` and `zyl update` clone or pull `~/.zyl/index` before resolving, so today they need a local clone of some git repository there, even for a graph made only of path dependencies. Without one, they fail with `E_PKG_FETCH_FAILED`. The fetch path is covered by unit tests over its pure parts (entry parsing, sharding, signing, verification) rather than end to end. A `git` dependency is recognised, pinned by revision and resolvable from the store, but `zyl fetch` does not yet clone and install one.
+**Which index.** `zyl fetch` and `zyl update` clone or pull the index into `~/.zyl/index` before resolving. It is `$ZYL_INDEX` when set (a git URL, or the path of a local repository), else `https://github.com/zyl-lang/index`, which is not hosted yet. Any git repository with the sharded layout above is an index; to run one:
+
+```bash
+git init ~/my-index && git -C ~/my-index commit --allow-empty -m init
+cd acme-greet && zyl key && zyl publish --index ~/my-index      # add a version
+ZYL_INDEX=~/my-index zyl fetch                                   # in a consumer
+```
+
+`zyl publish --index DIR` copies the signed archive to `DIR/archives/`, adds the version to the package's entry (a published version is immutable: `E_PKG_VERSION_EXISTS`), and commits when `DIR` is a git repository. Each archive's url is `file://...`, or `--url-base URL` followed by the archive's name when the archives will be served over HTTPS. `file://` archives are copied, all others fetched over HTTPS only; either way the content hash and signature are verified. `tests/scripts/package-index.sh` runs this flow end to end. A `git` dependency is recognised, pinned by revision and resolvable from the store, but `zyl fetch` does not yet clone and install one.
 
 ## 25.11 Capabilities
 
@@ -478,7 +486,7 @@ A workspace root carries `zyl-workspace.zyl` (§31.11):
 | `zyl update` | re-resolve with a refreshed index, rewrite the lock, and report capability-closure growth |
 | `zyl vendor` | copy every resolved package into `./vendor` |
 | `zyl audit` | list the capabilities of each package, and the locked closure |
-| `zyl publish` | build the canonical archive, hash and sign it, and print the index entry |
+| `zyl publish [--index DIR [--url-base URL]]` | build the canonical archive, hash and sign it; print the index entry, or add it to the index at DIR |
 | `zyl key` | show the publisher key, creating `~/.zyl/keys/publisher.seed` if needed |
 | `zyl repl` / `zyl eval <file>` | interactive session / run without producing a binary |
 
@@ -497,9 +505,7 @@ Package subcommands find the package root by searching upward from the working d
 Notes on the current state:
 
 - `graph-hash` is empty until `zyl fetch` has written a lock.
-- The fourth field hashes the emitted assembly, not the ICNF, because the ICNF has no serialised form. Assembly is a deterministic function of the ICNF.
-- The graph hash is recorded but not yet mixed into the binary itself.
-- `zyl publish` leaves the archive in `~/.zyl/tmp/`, and its printed entry carries `(url "https://REPLACE-ME")` for you to fill in.
+- Without `--index`, `zyl publish` leaves the archive in `~/.zyl/tmp/` and prints the entry with `(url "https://REPLACE-ME")` for you to fill in.
 - Nothing reads `./vendor` yet: `zyl vendor` copies the graph, but builds still resolve from paths and the store.
 - There is no build cache: every build recompiles the whole graph.
 

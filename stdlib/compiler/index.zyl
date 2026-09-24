@@ -301,13 +301,61 @@
 
 (defn idx-default-url () "https://github.com/zyl-lang/index")
 
+; The index to use: $ZYL_INDEX (a git URL or a local repository path), or
+; the default.
+(defn idx-url ()
+  (let e (ffi-call "zyl_getenv" "ZYL_INDEX" 1000)
+    (if (> e 0) e (idx-default-url))))
+
+;; Writing entries (`zyl publish --index`): the canonical text idx-read
+;; parses back, one version per `v` form, in the order they were added.
+(defn idx-entry-text (arena e)
+  (str-concat "(index-entry (name " (str-concat (idx-quote (ie-name e))
+    (str-concat ")\n  (versions" (str-concat (idx-versions-text arena (ie-versions e)) "))\n")))))
+
+(defn idx-versions-text (arena vs)
+  (match vs
+    (Nil "")
+    (Cons v rest (str-concat (idx-version-text arena v) (idx-versions-text arena rest)))))
+
+(defn idx-version-text (arena v)
+  (str-concat "\n    (v " (str-concat (idx-quote (pv-str arena (iv-version v)))
+    (str-concat " (url " (str-concat (idx-quote (iv-url v))
+      (str-concat ") (hash " (str-concat (idx-quote (iv-hash v))
+        (str-concat ")\n       (key " (str-concat (idx-quote (iv-key v))
+          (str-concat ") (sig " (str-concat (idx-quote (iv-sig v))
+            (str-concat ")\n       (zyl " (str-concat (idx-quote (imeta-zyl (iv-meta v)))
+              (str-concat ") (yanked " (str-concat (if (> (iv-yanked v) 0) "true" "false") "))")))))))))))))))
+
+(defn idx-quote (s) (str-concat "\"" (str-concat s "\"")))
+
+; Add `v` to the entry for `name` in the index at `root` (creating it); a
+; version already published is immutable (E_PKG_VERSION_EXISTS).
+(defn idx-publish (arena root name v)
+  (let path (idx-entry-path root name)
+    (let old (if (> (ffi-call "zyl_path_exists" path 1000) 0) (ie-versions (idx-read arena root name)) Nil)
+      (match (idx-find-version-in old (iv-version v))
+        (Some _ (ffi-call "zyl_panic"
+                  (str-concat "E_PKG_VERSION_EXISTS: package: " (str-concat name (str-concat " "
+                    (str-concat (pv-str arena (iv-version v)) " is already in the index; publish a new version")))) 1000))
+        (None
+          (let _ (store-mkdir (ffi-call "zyl_dirname_cstr" path 1000))
+            (let f (file-open path "w")
+              (let _ (file-write f (idx-entry-text arena (IE name (list-append old (Cons v Nil)))))
+                (file-close f)))))))))
+
 (defn idx-sync (url)
   (let root (store-index-dir)
     (if (> (ffi-call "zyl_path_exists" (str-concat root "/.git") 1000) 0)
       (idx-pull root)
       (idx-clone url root))))
 
-(defn idx-clone (url root)
+; A local path is cloned as file://, so git honours --depth.
+(defn idx-clone (url0 root)
+  (let url (if (= (ffi-call "zyl_cstr_byte_at" url0 0 1000) 47) (str-concat "file://" url0) url0)
+   (idx-clone-url url root)))
+
+(defn idx-clone-url (url root)
   (let _ (store-safe url 2 "index url")
     (let _ (store-mkdir (store-home))
       (let rc (store-run (str-concat "git clone -q --depth 1 '"

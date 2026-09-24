@@ -81,8 +81,8 @@ it compiles and runs correctly; the notes say where it stops.
   `unused_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.
 - **Tail-call optimization:** a call in tail position (an `if` branch, a `let` body, the last form of a `begin`, a `match` arm body), direct or through a function value, is a jump, provided its stack arguments (beyond six) fit in the caller's own incoming ones. Calls inside `try`/`catch` or `while`, and in frame-wiping (secret) functions, still push a frame. The REPL interpreter runs tail calls in constant stack unless the result is a String or Float.
-- **Package system:** no index repository exists yet (the index URL in
-  the examples is a placeholder), there is no build cache (§31.4), and
+- **Package system:** the default index URL is not hosted yet (use
+  `ZYL_INDEX` and `zyl publish --index`), there is no build cache (§31.4), and
   capability enforcement applies only to packages with a manifest.
   `PROGRESS.md` has the full list, including the deliberate deviations.
 - **REPL:** actors are compile-only (the interpreter reports

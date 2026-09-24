@@ -662,7 +662,8 @@ and rewrites `zyl.pkg`; `zyl fetch` takes no flag and writes `zyl.lock`;
 rewrites `zyl.lock` and prints either `capability closure unchanged` or
 `capability closure grew to: ...`; `zyl audit` prints each package's
 capabilities and the closure, not key pins; `zyl publish` prints the
-index entry with a `(url "https://REPLACE-ME")` placeholder; `zyl key`
+index entry with a `(url "https://REPLACE-ME")` placeholder, or with
+`--index DIR [--url-base URL]` adds it to a local index and commits; `zyl key`
 has no subcommands and shows the publisher key, creating
 `~/.zyl/keys/publisher.seed` on first use.*
 
@@ -904,9 +905,9 @@ found by reading the modules.
   `-fno-omit-frame-pointer`; include directories come from
   `include-dirs`.
 - **No build cache**; every build recompiles the whole graph.
-- **The index URL** (`https://github.com/zyl-lang/index`) is a
-  placeholder; no index repository exists, so the registry path is
-  tested through its pure parts. A `git` dependency is cloned, archived,
+- **The default index URL** (`https://github.com/zyl-lang/index`) is not
+  hosted yet; `ZYL_INDEX` selects another, and the registry path is tested
+  end to end against a local git index (`tests/scripts/package-index.sh`). A `git` dependency is cloned, archived,
   locked and built (`mvs-git-fetch`), verified with a local `file://`
   repository.
 - **Paths and URLs** handed to `tar`, `zstd`, `git`, `curl` or `cc` must
