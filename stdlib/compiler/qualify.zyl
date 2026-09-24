@@ -452,8 +452,13 @@
     (Cons h t (Cons (qf-param tab locals h) (qf-param-list tab locals t)))))
 
 (defn qf-param (tab locals p)
+  (let out (qf-param-node tab locals p)
+    (let _ (ffi-call "zyl_span_copy" out p 1000)
+      out)))
+
+(defn qf-param-node (tab locals p)
   (match p
-    (AstIdent n (AstIdent n))
+    (AstIdent _ p)
     (AList xs
       (match xs
         (Cons nm tail

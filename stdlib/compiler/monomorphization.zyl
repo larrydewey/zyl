@@ -533,7 +533,7 @@
       (match pr
         (Pair k v (kv-set (pairs-to-kv rest) k v))))))
 
-(defn collect-instantiations (ctx name generics)
+(defn collect-instantiations (ctx _name generics)
   (let pairs (collect-instantiations-bounds ctx generics)
     (if (= (list-length pairs) 0)
       Nil

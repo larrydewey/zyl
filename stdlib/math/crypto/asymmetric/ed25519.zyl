@@ -598,7 +598,7 @@
           (ed-sign-emit arena ctx renc (ed-mul-add arena ctx k a r)))))))
 
 ; Returns: Int
-(defn ed-sign-emit ((arena Int) (ctx Int) (renc Int) (s Int))
+(defn ed-sign-emit ((arena Int) (_ctx Int) (renc Int) (s Int))
   (let sig (w-alloc arena 64)
     (begin
       (w-copy sig renc 32)

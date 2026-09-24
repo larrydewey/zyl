@@ -299,7 +299,7 @@
 
 ; Add one deftype's variants. `variants` is already a (List ADTVariant) —
 ; ExprInner parsed field structure once, upstream.
-(defn ic-vt-deftype (name variants vt gid)
+(defn ic-vt-deftype (_name variants vt gid)
   (vt-from-adtvariants variants vt 0 gid))
 
 ; True within-one-deftype duplicate check: does `nm` appear again among
@@ -594,7 +594,7 @@
     (EByteBufPtr buf (IFfi "zyl_bytebuf_ptr" (Cons (ic-expr arena buf vt) Nil)))
     ; align is likewise a bare Int literal (parse-align-check requires an
     ; AstInt), not an Expr.
-    (EAlignCheck expr align (IFfi "zyl_align_check" (Cons (ic-expr arena expr vt) (Cons (IConst align) Nil))))
+    (EAlignCheck checked align (IFfi "zyl_align_check" (Cons (ic-expr arena checked vt) (Cons (IConst align) Nil))))
     (EAtomicLoad buf offset (IFfi "zyl_bytebuf_atomic_load" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) Nil))))
     (EAtomicStore buf offset val (IFfi "zyl_bytebuf_atomic_store" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
     (EAtomicAdd buf offset val (IFfi "zyl_bytebuf_atomic_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
@@ -1305,7 +1305,7 @@
     (let tag (vt-tag-of vt iname)
       ; E_MATCH_ARM_COMPLEX guard: reject the confirmed-failing shape
       ; before lowering (see ic-arm-guard below).
-      (let armguard (ic-arm-guard arena (MA.body arm) vt)
+      (let _ (ic-arm-guard arena (MA.body arm) vt)
         (let pats (MA.patterns arm)
           (let binds (ic-arm-binds arena pats)
             (let nested (ic-arm-nested pats binds)

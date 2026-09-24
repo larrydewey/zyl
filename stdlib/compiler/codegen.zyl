@@ -414,7 +414,7 @@
     (cg-load-nonslot st env n site)
     (cg-load-slot st n (env-lookup env n))))
 
-(defn cg-load-slot (st n off)
+(defn cg-load-slot (st _n off)
   (let st2 (cg-emit st "    mov rax, [rbp")
     (let st3 (cg-emit-int st2 off)
       (cg-nl (cg-emit st3 "]")))))
@@ -755,7 +755,7 @@
 ;            offsets account for the copy-pushes)
 ;   phase 4: call; cleanup removes pad + scratch + copy-pushes.
 ; `mangle` adds the _ZYL_ prefix for user functions.
-(defn cg-call-args (st env name args mangle i)
+(defn cg-call-args (st env name args mangle _i)
   (if (> mangle 0)
     (if (= (env-lookup env name) 0)
       (cg-call-args-go st env name args mangle)
@@ -875,7 +875,7 @@
   (cg-cat2 arena (cg-cat2 arena a b) c))
 
 ; Build "call f_<sanitized>" as a single string.
-(defn cg-call-user-str (st env name)
+(defn cg-call-user-str (st _env name)
   (let sym (cg-sym-for (cg-arena-of st) name 1)
     (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)))
 
@@ -970,7 +970,7 @@
 ; text can only ever be a single `call <identifier>` line -- callable
 ; native symbol names are still unrestricted (per spec/09's arbitrary
 ; ffi-call-by-name model), only assembly-source injection is closed.
-(defn cg-fire-ext (st env name n)
+(defn cg-fire-ext (st _env name n)
   (let sym (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) name 1000)
     (let st2 (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)
       (let st3 (cg-ext-call-aligned st st2 n)
@@ -1803,7 +1803,7 @@
       (cg-functions-go st nm f rest))
     (_ (cg-functions st rest))))
 
-(defn cg-functions-go (st nm f rest)
+(defn cg-functions-go (st _nm f rest)
   (cg-functions (cg-function st f) rest))
 
 ; Emit one rodata entry.
@@ -1834,18 +1834,18 @@
         (cg-esc-newline arena s n i out)
         (cg-esc-one arena s n i out c)))))
 
-(defn cg-esc-one (arena s n i out c)
+(defn cg-esc-one (arena s n i out _c)
   (begin
     (buf-append out (sub-str arena s i 1))
     (cg-esc-loop arena s n (+ i 1) out)))
 
-(defn cg-esc-both (arena s n i out c)
+(defn cg-esc-both (arena s n i out _c)
   (begin
     (buf-append out (sub-str arena s i 1))
     (buf-append out (sub-str arena s i 1))
     (cg-esc-loop arena s n (+ i 1) out)))
 
-(defn cg-esc-quote (arena s n i out c)
+(defn cg-esc-quote (arena s n i out _c)
   (begin
     (buf-append out (str-intern arena "\\"))
     (buf-append out (sub-str arena s i 1))

@@ -4,7 +4,7 @@
 - [x] Labelled secondary spans for capability errors (`E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`); no region diagnostic is raised yet
 - [x] "Did you mean" suggestions (edit-distance over in-scope names)
 - [x] Structured JSON error output (`--error-format=json`); the LSP does not consume it yet
-- [ ] Warning sweep (`W_UNUSED_PARAMETER`, `W_SHADOWED_BINDING` from `boot.sh`); self-build warnings still lack spans
+- [x] Warning sweep: the self-build is warning-free, and parameter warnings carry spans (qualify and macro expansion now copy them)
 
 ## P2: Codegen Correctness
 - [ ] Field and return kinds so compiled `print`/`==` agree with interpreter

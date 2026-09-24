@@ -323,7 +323,14 @@
       (match p
         (P pname ty
           (match (me-bind site pname cx n)
-            (MeB nm cx2 n2 (me-bind-params-acc site rest cx2 n2 (Cons (P nm ty) acc)))))))))
+            (MeB nm cx2 n2 (me-bind-params-acc site rest cx2 n2 (Cons (me-param-at p nm ty) acc)))))))))
+
+; A rebuilt parameter keeps the original's span, so an unused-parameter
+; warning still points at it.
+(defn me-param-at (p nm ty)
+  (let out (P nm ty)
+    (let _ (ffi-call "zyl_span_copy" out p 1000)
+      out)))
 
 ; --- rewrite -------------------------------------------------------------------
 

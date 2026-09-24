@@ -361,7 +361,7 @@
 (defn tc-register-impl (tc impl-info)
   (TC (TC.traits tc) (Cons impl-info (TC.impls tc))))
 
-(defn tc-check-derivable (tc ty trait-name)
+(defn tc-check-derivable (_tc ty trait-name)
   ; Plan §1: TByte derives true (integrates with the auto-derive set for
   ; primitives); TByteBuf is false -- its Eq/Ord/Hash need content
   ; semantics that the generic derive harness would get wrong (it would
@@ -518,7 +518,7 @@
     (TStruct name fields (subst-apply-type-struct s name fields))
     (TVar m inner
      (match (subst-lookup s m)
-       (Some t (subst-apply-type s t))
+       (Some bound (subst-apply-type s bound))
        (None (TVar m (subst-apply-type s inner)))))
     (TMap k v (TMap (subst-apply-type s k) (subst-apply-type s v)))
     (TResult e h (TResult (subst-apply-type s e) (subst-apply-type s h))) ))
@@ -904,7 +904,7 @@
 (defn ICN.region (n) (match n (ICN _ r _ _ _ r)))
 (defn ICN.typ (n) (match n (ICN _ _ t _ _ t)))
 (defn ICN.is-branch (n) (match n (ICN _ _ _ b _ b)))
-(defn ICN.node (n) (match n (ICN _ _ _ _ n n)))
+(defn ICN.node (n) (match n (ICN _ _ _ _ node node)))
 
 ; ICNFFuncSig — function signature with SSA body
 (deftype ICNFFuncSig

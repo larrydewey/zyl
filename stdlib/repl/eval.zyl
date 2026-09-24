@@ -345,7 +345,7 @@
     (Err msg (Err (eval-copy-str msg)))
     (Ok text (Ok (eval-copy-str text)))))
 
-(defn eval-type-run (scratch sess text gs)
+(defn eval-type-run (_scratch sess text gs)
   (let arena (eval-entry-arena)
     (let out (try (Ok (eval-type-infer arena sess text gs)) (catch e (Err e)))
       (begin
@@ -501,7 +501,7 @@
     (let start (eval-def-body-start text name n)
       (str-substring text start (- (eval-def-body-end text n) start)))))
 
-(defn eval-def-body-start (text name n)
+(defn eval-def-body-start (text _name n)
   (let i (eval-skip-space text 0 n)
     (let after-head (eval-symbol-end text (eval-skip-space text (+ i 1) n) n)
       (eval-skip-space text (eval-symbol-end text (eval-skip-space text after-head n) n) n))))

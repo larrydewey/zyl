@@ -51,7 +51,7 @@
 ; A plain schoolbook multiply of two n-limb values into 2n limbs,
 ; reusing bignum's own routine.
 ; Returns: Int
-(defn barrett-mul-wide ((arena Int) (out Int) (a Int) (b Int) (n Int))
+(defn barrett-mul-wide ((_arena Int) (out Int) (a Int) (b Int) (n Int))
   (bn-mul out a b n))
 
 ; r = (x mod b^(k+1)) - (q3 * m mod b^(k+1)), corrected into [0, m).

@@ -84,7 +84,7 @@
 
 (defn cli-write-file (path content)
   (let out (file-open path "w")
-    (let n (file-write out content)
+    (let _ (file-write out content)
       (file-close out))))
 
 (defn cli-is-absolute (path)

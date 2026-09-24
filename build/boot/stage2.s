@@ -76941,6 +76941,51 @@ call zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam_x2Dlist
 zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     push rbp
     mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-136], rbx
+    mov [rbp-128], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam_x2Dnode
+    add rsp, 32
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_span_copy
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-40], rax
+    mov rax, [rbp-32]
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam_x2Dnode:
+    push rbp
+    mov rbp, rsp
     sub rsp, 168
     mov [rbp-168], rbx
     mov [rbp-160], r12
@@ -76955,19 +77000,7 @@ zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     jne .L3867
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-32], rax
-    mov rax, [rbp-32]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 16
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
+    mov rax, [rbp-24]
     mov [rsp], rax
     jmp .L3865
 .L3867:
@@ -76977,8 +77010,8 @@ zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     jne .L3868
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-40], rax
-    mov rax, [rbp-40]
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
@@ -76986,11 +77019,11 @@ zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     jne .L3871
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-48], rax
+    mov [rbp-40], rax
     mov rax, [rsp]
     mov rax, [rax+16]
-    mov [rbp-56], rax
-    mov rax, [rbp-56]
+    mov [rbp-48], rax
+    mov rax, [rbp-48]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
@@ -76998,10 +77031,10 @@ zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     jne .L3874
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-64], rax
+    mov [rbp-56], rax
     mov rax, [rsp]
     mov rax, [rax+16]
-    mov [rbp-72], rax
+    mov [rbp-64], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -77011,13 +77044,13 @@ zy_zyl_x2Fstd_5__compiler_x2Fqualify__qf_x2Dparam:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-48]
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-64]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-72]
     sub rsp, 8
     mov [rsp], rax
     mov r9, [rsp+0]
@@ -143126,22 +143159,21 @@ call zy_zyl_x2Fstd_5__compiler_x2Fmacro_5Fexpand__me_x2Dbind
     mov rax, [rbp-96]
     sub rsp, 8
     mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
     mov rax, [rbp-80]
-    push rax
+    sub rsp, 8
+    mov [rsp], rax
     mov rax, [rbp-72]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 24
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_zyl_x2Fstd_5__compiler_x2Fmacro_5Fexpand__me_x2Dparam_x2Dat
+    add rsp, 32
     push rax
     mov rax, [rbp-40]
     push rax
@@ -143186,6 +143218,52 @@ call zy_zyl_x2Fstd_5__compiler_x2Fmacro_5Fexpand__me_x2Dbind_x2Dparams_x2Dacc
     pop rax
     mov rbx, [rbp-200]
     mov r12, [rbp-192]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_zyl_x2Fstd_5__compiler_x2Fmacro_5Fexpand__me_x2Dparam_x2Dat:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-136], rbx
+    mov [rbp-128], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_span_copy
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-40], rax
+    mov rax, [rbp-32]
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
     mov rsp, rbp
     pop rbp
     ret

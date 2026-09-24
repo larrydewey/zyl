@@ -428,7 +428,7 @@
       (rd-search-draw arena query hit)
       (rd-search-key arena st prompt cprompt cands query from saved hit))))
 
-(defn rd-search-draw (arena query hit)
+(defn rd-search-draw (_arena query hit)
   (term-write (str-concat (ansi-clear-line)
                 (str-concat "(reverse-i-search)`"
                   (str-concat query (str-concat "': " (hl-colorize hit)))))))

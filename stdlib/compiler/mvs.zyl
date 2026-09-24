@@ -208,7 +208,7 @@
       (let _ (mvs-check-identity arena m dep root)
         m))))
 
-(defn mvs-check-identity (arena m dep root)
+(defn mvs-check-identity (_arena m dep root)
   (if (= (str-eq (mf-name m) (pd-name dep)) 0)
     (ffi-call "zyl_panic"
       (str-concat "E_MANIFEST_INVALID: package: " (str-concat root

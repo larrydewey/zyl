@@ -170,7 +170,7 @@
 
 ; Opening a bracket AT depth 0 is the start of a candidate top-level
 ; form; try to read a "(keyword name" header right after it.
-(defn si-scan-open (text i len line col depth acc ch)
+(defn si-scan-open (text i len line col depth acc _ch)
   (if (= depth 0)
     (match (si-try-header text (+ i 1) len line col)
       (Some form (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 (Cons form acc)))

@@ -243,7 +243,7 @@
 
 ; The hash of a store directory is the directory's own name (§31.7), so
 ; nothing is re-hashed here — the store's invariant already carries it.
-(defn cli-dir-hash (arena root)
+(defn cli-dir-hash (_arena root)
   (let base (cli-basename root)
     (if (= (pk-len base) 64) (str-concat "blake3:" base) "")))
 
@@ -262,7 +262,7 @@
     (Nil Nil)
     (Cons d t (Cons (pd-name d) (cli-dep-names t)))))
 
-(defn cli-lock-of (arena m nodes closure)
+(defn cli-lock-of (arena _m nodes closure)
   (LK (lk-format-version) (pk-compiler-version) (lk-compiler-self-hash arena)
       (cli-lock-entries arena nodes) closure ""))
 
@@ -431,7 +431,7 @@
 ; The argument vector is built in one fixed order — flags, include
 ; directories, source, output — and the flags are sorted, so two machines
 ; with the same manifest invoke cc identically (§31.10).
-(defn cli-native-object (arena dir n src)
+(defn cli-native-object (_arena dir n src)
   (let _ (cli-check-native-path src)
     (let _ (cli-check-flags (pn-cflags n))
       (let obj (str-concat dir (str-concat "/build/native/" (str-concat (store-flat-name src) ".o")))
@@ -523,7 +523,7 @@
           (let _ (file-write out (w-hex-bytes seed 32))
             (file-close out)))))))
 
-(defn cli-read-seed (arena)
+(defn cli-read-seed (_arena)
   (let fd (file-open (cli-key-path) "r")
     (if (< fd 1)
       (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no publisher key - run zyl key" 1000)

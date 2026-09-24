@@ -50,5 +50,5 @@
     (if (<= fd 0)
       ""
       (let output (file-read fd 1048576)
-        (let fh (file-close fd)
+        (let _ (file-close fd)
           output)))))

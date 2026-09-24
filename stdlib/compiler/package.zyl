@@ -593,7 +593,7 @@
     (if (< fd 1)
       (ffi-call "zyl_panic" (str-concat "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at " path) 1000)
       (let src (file-read fd 1048576)
-        (let dot1 (file-close fd)
+        (let _ (file-close fd)
           (pk-manifest-of-source arena src path))))))
 
 (defn pk-manifest-of-source (arena src path)
@@ -607,7 +607,7 @@
   (let name (pk-check-name (pk-required-str forms "name" path))
     (let version (pk-version-of (pk-required-str forms "version" path))
       (let deps (pk-parse-deps forms "deps")
-        (let dot1 (pk-check-dup-deps deps)
+        (let _ (pk-check-dup-deps deps)
           (MF (PM name version (pk-required-str forms "zyl" path)
                   (pk-required-str forms "edition" path))
               (PDoc (pk-field-str forms "description")

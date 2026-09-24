@@ -24,8 +24,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   frozen in `archive/rust-bootstrap-2026/` for the record only: it cannot
   lex the current source, and `--bootstrap-from-rust` is retired.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
-  zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. It still prints
-  many non-fatal `W_UNUSED_PARAMETER` and `W_SHADOWED_BINDING` warnings.
+  zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
+  prints no warnings (swept 2026-09-24).
 - `./run_regression_tests.sh --full --no-boot` passes **128/128**:
   regression 52, interpreter 34, compile-fail 19, integration 7,
   packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1,
@@ -141,9 +141,8 @@ Compiler:
   gives top-level `def` a meaning.
 - Diagnostics still reported as a bare `PANIC:` with no location:
   `secret_check`, `E_INVALID_CAPABILITY`, and the remaining errors in
-  `expr_inner`. Warnings carry spans, but those raised while the compiler
-  builds itself still print without one (spans are lost for them
-  somewhere before `unused_check`).
+  `expr_inner`. Warnings carry spans, parameter warnings included (qualification
+  and macro expansion copy the parameter's span since 2026-09-24).
 - Contract injection (spec §23) is not in the pipeline.
   Nothing imports `contract_injection.zyl`, and `requires`,
   `ensures`, `invariant`, `recover` and `checkpoint` parse as no-op

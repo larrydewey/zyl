@@ -103,13 +103,13 @@
 
 ; Advance past a character: append to current context line, bump column.
 ; `escape-next` falls back to False. All other flags are preserved.
-(defn sb-advance (c state)
+(defn sb-advance (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
 
 ; Advance and set escape-next so the following character is consumed raw.
-(defn sb-advance-escape (c state)
+(defn sb-advance-escape (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col in-string in-comment 1 err))))
@@ -122,25 +122,25 @@
 ; for the rest of the file was treated as "still escaped" and never dispatched
 ; through the bracket/quote/comment tracking, always landing on an unbalanced
 ; result for any real source containing more than one escape sequence.
-(defn sb-consume-escaped (c state)
+(defn sb-consume-escaped (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
 
 ; Enter string context on a quote.
-(defn sb-enter-string (c state)
+(defn sb-enter-string (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col 1 in-comment 0 err))))
 
 ; Leave string context on a closing quote.
-(defn sb-exit-string (c state)
+(defn sb-exit-string (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col 0 in-comment 0 err))))
 
 ; Enter line-comment context on a semicolon.
-(defn sb-enter-comment (c state)
+(defn sb-enter-comment (_c state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1) stack ctx-col in-string 1 0 err))))
@@ -153,7 +153,7 @@
       (CS (+ line 1) 1 stack 1 in-string 0 0 err))))
 
 ; Opening bracket: push expected closer with its position.
-(defn sb-open-bracket (c state closer)
+(defn sb-open-bracket (_c state closer)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (CS line (+ col 1)
@@ -161,7 +161,7 @@
           ctx-col in-string in-comment 0 err))))
 
 ; Closing bracket: verify against the stack head.
-(defn sb-close-bracket (c state closer)
+(defn sb-close-bracket (_c state closer)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
       (match stack

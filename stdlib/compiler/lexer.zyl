@@ -124,7 +124,7 @@
     i
     (scan-exp-b src len i j (byte-at src j))))
 
-(defn scan-exp-b (src len i j b)
+(defn scan-exp-b (src len _i j b)
   (scan-exp-digits src len
                    (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j)))
 

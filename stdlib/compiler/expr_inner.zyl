@@ -2035,7 +2035,7 @@
           None)))
     None))
 
-(defn parse-test-suite (args)
+(defn parse-test-suite (_args)
   (Some (Expr (ETestSuite "___" Nil None))))
 
 (defn parse-setup (args)
@@ -2113,10 +2113,10 @@
     None
     (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
-(defn parse-test-property (args)
+(defn parse-test-property (_args)
   (Some (Expr (ETestProperty "___" (GenInt) (Expr (EAtom ANil))))))
 
-(defn parse-test-compile (args)
+(defn parse-test-compile (_args)
   (Some (Expr (ETestCompile (Expr (EAtom ANil)) None))))
 
 ; ===========================================================================

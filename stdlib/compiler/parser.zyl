@@ -126,7 +126,7 @@
 
 ; Atoms and terminators: everything except openers.
 ; Returns: AstTok
-(defn read-form-atom (arena t rest fid)
+(defn read-form-atom (_arena t rest fid)
   (match t
     (TkInt v o (AstOf (ast-at fid o (AstInt v)) rest))
     (TkBool b o (AstOf (ast-at fid o (AstBool b)) rest))

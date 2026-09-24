@@ -304,7 +304,7 @@
 ; TRAIT / STRUCT / ALIAS HELPERS
 ; ===========================================================================
 
-(defn insert-trait-decl (inferer trait_name methods derives)
+(defn insert-trait-decl (inferer trait_name methods _derives)
     ; Register trait in trait context
     (let (trait_info (TI trait_name
         (method-params-from-methods methods)
@@ -351,7 +351,7 @@
                     (Pair name ret)
                     (method-rets-from-methods rest)))))))
 
-(defn insert-impl-block (inferer trait_name type_name bodies)
+(defn insert-impl-block (inferer trait_name type_name _bodies)
     ; Register impl in trait context
     (let (impl_info (II trait_name (TNominal type_name) Nil))
     (TypeInferer
@@ -415,7 +415,7 @@
                             (None None)))
                     (struct-fields-to-typed rest)))))))
 
-(defn insert-alias-decl (inferer name target)
+(defn insert-alias-decl (inferer _name _target)
     (TypeInferer
         (ti-env inferer)
         (ti-subst inferer)
@@ -438,7 +438,7 @@
         (ti-generics-in-scope inferer)
         (ti-var-type-map inferer)))
 
-(defn insert-derive (inferer type_name traits)
+(defn insert-derive (inferer _type_name _traits)
     ; For now just return inferer unchanged - derive is handled later
     inferer)
 
@@ -1382,11 +1382,11 @@
 ; INFER-EXPR — primitive return helpers
 ; ===========================================================================
 
-(defn inferer-return-int (inferer) TInt)
-(defn inferer-return-float (inferer) TFloat)
-(defn inferer-return-bool (inferer) TBool)
-(defn inferer-return-string (inferer) TString)
-(defn inferer-return-unit (inferer) TUnit)
+(defn inferer-return-int (_inferer) TInt)
+(defn inferer-return-float (_inferer) TFloat)
+(defn inferer-return-bool (_inferer) TBool)
+(defn inferer-return-string (_inferer) TString)
+(defn inferer-return-unit (_inferer) TUnit)
 
 (defn inferer-return-var (inferer)
     ; fresh TVar with default inner ref type Unit
@@ -1416,7 +1416,7 @@
         (Some typ (inferer-return-applied inferer typ))
         (None (infer-expr-ident-fallback inferer expr name)))))
 
-(defn infer-expr-ident-fallback (inferer expr name)
+(defn infer-expr-ident-fallback (inferer _expr name)
     ; unresolved identifier: primitive names are concrete, else fresh var
     (if (is-primitive-type-name name) (prim-type-from-name name) (inferer-return-var inferer)))
 
@@ -1427,7 +1427,7 @@
 ; INFER-EXPR — let
 ; ===========================================================================
 
-(defn infer-expr-let (inferer expr name val body)
+(defn infer-expr-let (inferer _expr name val body)
     ; infer value type, bind name, infer body in extended env
     (let
         (vt (infer-expr inferer val))
@@ -1461,7 +1461,7 @@
 ; INFER-EXPR — if
 ; ===========================================================================
 
-(defn infer-expr-if (inferer expr cond then- else-)
+(defn infer-expr-if (inferer _expr cond then- else-)
     ; unify cond with Bool; result type is then/else (skip-aware)
     (let
         (ct (infer-expr inferer cond))
@@ -1492,7 +1492,7 @@
 ; INFER-EXPR — begin
 ; ===========================================================================
 
-(defn infer-expr-begin (inferer expr stmts)
+(defn infer-expr-begin (inferer _expr stmts)
     ; sequence: value is last stmt; empty -> Unit; single -> that stmt
     (if
         (nil? stmts)
@@ -1539,7 +1539,7 @@
 ; INFER-EXPR — lambda/fn
 ; ===========================================================================
 
-(defn infer-expr-lambda (inferer expr params body)
+(defn infer-expr-lambda (inferer _expr params body)
     ; lambda: bind params to fresh vars, infer body, result TFun
     (let
         (new-inferer (inferer-bind-params inferer params))
@@ -1610,7 +1610,7 @@
 ; INFER-EXPR — while
 ; ===========================================================================
 
-(defn infer-expr-while (inferer expr cond body)
+(defn infer-expr-while (inferer _expr cond body)
     ; unify cond with Bool, infer body, result Unit
     ;
     ; Wrapped-form `let` — `(let (name val) body)` — takes exactly ONE
@@ -1633,7 +1633,7 @@
 ; INFER-EXPR — for
 ; ===========================================================================
 
-(defn infer-expr-for (inferer expr bindings cond body)
+(defn infer-expr-for (inferer _expr bindings cond body)
     ; bind loop vars, unify cond with Bool, infer body, result Unit
     ; (see infer-expr-while: wrapped-let takes exactly one body expr)
     (let
@@ -1714,7 +1714,7 @@
         Nil
         Nil===
 
-(defn infer-expr-cond (inferer expr clauses)
+(defn infer-expr-cond (inferer _expr clauses)
     ; infer each clause, unify pred with Bool; result is last body type
     (infer-expr-cond-loop inferer clauses TUnit))
 
@@ -1737,7 +1737,7 @@
 ; INFER-EXPR — try/catch
 ; ===========================================================================
 
-(defn infer-expr-try-catch (inferer expr eh cn handler)
+(defn infer-expr-try-catch (inferer _expr eh _cn handler)
     ; result is the try-body type
     (let
         (et (infer-expr inferer eh))
@@ -1749,7 +1749,7 @@
 ; INFER-EXPR — match
 ; ===========================================================================
 
-(defn infer-expr-match (inferer expr subject arms)
+(defn infer-expr-match (inferer _expr subject arms)
     ; unify all arm body types under a shared subject type
     (let
         (subject-type (infer-expr inferer subject))
@@ -2062,7 +2062,7 @@
                       (or (= name "is-none")
                         (or (= name "is-ok") (= name "is-err")))))))))))))
 
-(defn infer-expr-builtin-binop (inferer expr op-name args)
+(defn infer-expr-builtin-binop (inferer _expr _op-name args)
     ; infer arg types; result Float if any Float else Int (or var)
     (let
         (has-float false)
@@ -2097,7 +2097,7 @@
         (TVar _ _ nil)
         (_ nil)))
 
-(defn infer-expr-builtin-unop (inferer expr op-name args)
+(defn infer-expr-builtin-unop (inferer _expr _op-name args)
     ; unary ops: args must unify with Bool, result Bool
     (infer-args-bool-check inferer args)
     TBool)
@@ -2113,18 +2113,18 @@
                     (unify (ti-subst inferer) t TBool)
                     (infer-args-bool-check inferer rest))))))
 
-(defn infer-expr-builtin-compare (inferer expr op-name args)
+(defn infer-expr-builtin-compare (inferer _expr _op-name args)
     (infer-args inferer args)
     TBool)
 
-(defn infer-expr-builtin-conv (inferer expr op-name args)
+(defn infer-expr-builtin-conv (inferer _expr op-name args)
     (infer-args inferer args)
     (if (= op-name "int") TInt
         (if (= op-name "float") TFloat
         (if (= op-name "str") TString
                 (TVar 0 TUnit)))))
 
-(defn infer-expr-builtin-io (inferer expr op-name args)
+(defn infer-expr-builtin-io (inferer _expr op-name args)
     (infer-args inferer args)
     (if (= op-name "print") TInt
         (if (= op-name "read-line") TString
@@ -2149,7 +2149,7 @@
         ; Constructor call: unify fields, record instantiation, return monomorphized type
         (infer-expr-call-constructor inferer expr op-name args adt-name))))
 
-(defn infer-expr-call-constructor (inferer expr variant-name args adt-name)
+(defn infer-expr-call-constructor (inferer _expr variant-name args adt-name)
     ; Look up variant field types from ADT definition
     (let (variant-fields (lookup-variant-fields inferer adt-name variant-name))
         (let (infered (infer-constructor-args inferer args variant-fields))
@@ -2226,7 +2226,7 @@
                                     (UErr msg
                                         inferer))))))))))
 
-(defn record-constructor-instantiation (inferer adt-name variant-name args variant-fields)
+(defn record-constructor-instantiation (inferer adt-name _variant-name args variant-fields)
     ; Extract generic param -> concrete type mappings from args
     (let (mapping (extract_constructor_mapping inferer args variant-fields))
         (if (nil? mapping)
@@ -2234,7 +2234,7 @@
         (let (inst (AI mapping))
                 (insert-adt-instantiation inferer adt-name inst)))))
 
-(defn compute-mono-name (inferer adt-name variant-name args fields)
+(defn compute-mono-name (inferer adt-name _variant-name args fields)
     ; Use positional naming if adt_param_order is available
     (let (param-order (lookup-adt-param-order inferer adt-name))
         (if (nil? param-order)
@@ -2270,7 +2270,7 @@
                         (Some v)
                         (lookup-mapping rest key)))))))
 
-(defn infer-expr-call-fn-regular (inferer expr op-name args)
+(defn infer-expr-call-fn-regular (inferer _expr op-name args)
     ; Regular function call with per-call-site polymorphism
     ; 1. Record arg type observations
     ; 2. If function has untyped params and body, do per-site body inference
@@ -2352,7 +2352,7 @@
                                                     (match unified
                                                         (UOk final-subst
                                                             (let (final-ret (subst-apply final-subst inferred-ret))
-                                                                (let (with-cache (insert-body-cache inferer site-key final-ret))
+                                                                (let (_ (insert-body-cache inferer site-key final-ret))
                                                                     final-ret)))
                                                         (UErr msg
                                                             (inferer-return-var inferer))))))))))))
@@ -2473,7 +2473,7 @@
 ; this previously accepted any type at all, including closures/TMut/
 ; TAtomic, letting a caller pin and hand FFI code a value it has no
 ; business touching).
-(defn infer-expr-ffi-pin (inferer expr e)
+(defn infer-expr-ffi-pin (inferer _expr e)
   (let t (infer-expr inferer e)
     (if (is-ffi-pinnable t)
       (TCap TCPin t)
@@ -2488,7 +2488,7 @@
 ; INFER-EXPR — assert
 ; ===========================================================================
 
-(defn infer-expr-assert (inferer expr cond)
+(defn infer-expr-assert (inferer _expr cond)
     ; unify cond with Bool, result Unit
     (let
         (ct (infer-expr inferer cond))
@@ -2500,12 +2500,12 @@
 ; INFER-EXPR — set!
 ; ===========================================================================
 
-(defn infer-expr-set-bang (inferer expr target val)
+(defn infer-expr-set-bang (inferer _expr target val)
     ; target must be a TMut binding; result Unit. Was
     ; `(Some (TCap TCMut d23) TUnit)` — nested field position (same
     ; missing-desugaring issue fixed elsewhere this session).
     (let
-        (vt (infer-expr inferer val))
+        (_ (infer-expr inferer val))
         (match
         (env-get (ti-env inferer) target)
         (Some tv (infer-expr-set-bang-check inferer tv))
@@ -2524,7 +2524,7 @@
 ; INFER-EXPR — make-struct
 ; ===========================================================================
 
-(defn infer-expr-make-struct (inferer expr name fields)
+(defn infer-expr-make-struct (inferer _expr name fields)
     (infer-args inferer fields)
     (TStruct name Nil))
 
@@ -2532,14 +2532,14 @@
 ; INFER-EXPR — struct-get
 ; ===========================================================================
 
-(defn infer-expr-struct-get (inferer expr se field-name)
+(defn infer-expr-struct-get (inferer _expr se field-name)
     (let
         (st (infer-expr inferer se))
         (begin
         (infer-struct-field-type st field-name)
         (inferer-return-var inferer))))
 
-(defn infer-struct-field-type (struct-type field-name)
+(defn infer-struct-field-type (struct-type _field-name)
     (match struct-type
         (TStruct n _ nil)
         (_ nil)))
@@ -2548,7 +2548,7 @@
 ; INFER-EXPR — make-variant
 ; ===========================================================================
 
-(defn infer-expr-make-variant (inferer expr adt-name variant-name args)
+(defn infer-expr-make-variant (inferer _expr adt-name variant-name args)
     (let
         (field-types (infer-get-variant-fields inferer adt-name variant-name))
         (begin
@@ -2575,14 +2575,14 @@
 ; before expression-level inference ever runs, and this function's result
 ; was discarded by its only caller (infer-expr-make-variant) regardless, so
 ; there is nothing left for it to usefully do here.
-(defn infer-variant-record-instantiation (inferer adt-name field-types)
+(defn infer-variant-record-instantiation (inferer _adt-name _field-types)
     inferer)
 
 ; ===========================================================================
 ; INFER-EXPR — print
 ; ===========================================================================
 
-(defn infer-expr-print (inferer expr exprs)
+(defn infer-expr-print (inferer _expr exprs)
     (infer-args inferer exprs)
     TInt)
 
@@ -2590,7 +2590,7 @@
 ; INFER-EXPR — exit
 ; ===========================================================================
 
-(defn infer-expr-exit (inferer expr code)
+(defn infer-expr-exit (inferer _expr code)
     (infer-expr inferer code)
     TUnit)
 
@@ -2598,7 +2598,7 @@
 ; INFER-EXPR — spawn
 ; ===========================================================================
 
-(defn infer-expr-spawn (inferer expr closure)
+(defn infer-expr-spawn (inferer _expr closure)
     (infer-expr inferer closure)
     TInt)
 
@@ -2606,7 +2606,7 @@
 ; INFER-EXPR — send
 ; ===========================================================================
 
-(defn infer-expr-send (inferer expr msg)
+(defn infer-expr-send (inferer _expr msg)
     (infer-expr inferer msg)
     TInt)
 
@@ -2614,7 +2614,7 @@
 ; INFER-EXPR — with-resource
 ; ===========================================================================
 
-(defn infer-expr-with-resource (inferer expr init body)
+(defn infer-expr-with-resource (inferer _expr init body)
     (let
         (it (infer-expr inferer init))
         (begin
@@ -2712,8 +2712,8 @@
     ; infer body type and update inferer with function signature
     (let (param-bindings (zip-params params param-types))
         (let (inferred-type (infer-expr-body inferer body))
-        (let (new-inferer (insert-fn-ret inferer name inferred-type))
-                (let (new-inferer (insert-known-fn new-inferer name param-bindings))
+        (let (with-ret (insert-fn-ret inferer name inferred-type))
+                (let (new-inferer (insert-known-fn with-ret name param-bindings))
                     new-inferer)))))
 
 ; ETryCatch (`try`/`catch`) has no lowering anywhere past parsing in this
@@ -2806,7 +2806,7 @@
                                                     rest))
                                 new-inferer)))))))))
 
-(defn resolve-params-from-obs (inferer params site-observations)
+(defn resolve-params-from-obs (_inferer params site-observations)
     ; site-observations is a (List (List String)) - each inner list is arg types at one call site
     ; Return new params with type vars resolved if all sites agree
     (let (arity (list-length params))
@@ -2905,7 +2905,7 @@
                 (resolve-type-var inferer t ret-type)
                 (map-types inferer rest ret-type)))))
 
-(defn resolve-type-var (inferer type ret-type)
+(defn resolve-type-var (_inferer type ret-type)
     ; resolve a type variable using return type as evidence
     (match
         type

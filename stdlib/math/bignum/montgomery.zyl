@@ -98,7 +98,7 @@
 ; One outer iteration: accumulate a * b[i], then eliminate the bottom
 ; limb by adding the right multiple of m and shifting down one limb.
 ; Returns: Int
-(defn mont-mul-step ((arena Int) (t Int) (a Int) (b Int) (m Int) (n Int) (n0 Int) (i Int))
+(defn mont-mul-step ((_arena Int) (t Int) (a Int) (b Int) (m Int) (n Int) (n0 Int) (i Int))
   (begin
     (mont-accumulate t a n (w-get b i))
     (mont-reduce-limb t m n n0)
@@ -243,7 +243,7 @@
 ; Exchange a and b when `cond` is 1, leave them when it is 0. Both
 ; arrays are read and written either way.
 ; Returns: Int
-(defn mont-cswap ((arena Int) (a Int) (b Int) (n Int) (cond Int))
+(defn mont-cswap ((_arena Int) (a Int) (b Int) (n Int) (cond Int))
   (let mask (ct-mask cond)
     (begin
       (for (i 0) (< i n)
