@@ -334,9 +334,24 @@
       (session-save fresh)
       (repl-kept fresh (repl-note "session reset")))))
 
+; A path the user typed resolves against the directory they started in,
+; not against the working directory: the REPL moved to the bundle before
+; the first prompt, because compiling needs stdlib/ and actor_runtime.c
+; to be there. `:load lib.zyl` means the lib.zyl next to them.
+(defn repl-path (sess path)
+  (if (= (str-length path) 0)
+    path
+    (if (= (term-byte-at path 0) 47)
+      path
+      (str-concat (Session.dir sess) (str-concat "/" path)))))
+
 ; :load reads a file and adds its modules and definitions to the
 ; session, so a project's code can be brought in and poked at.
-(defn repl-do-load (sess path)
+(defn repl-do-load (sess raw)
+  (let path (repl-path sess raw)
+    (repl-load-file sess path)))
+
+(defn repl-load-file (sess path)
   (let fd (file-open path "r")
     (if (<= fd 0)
       (repl-kept sess (repl-note (str-concat "cannot read " path)))
@@ -416,16 +431,19 @@
     n
     (if (= (term-byte-at text i) 10) i (repl-line-end text (+ i 1) n))))
 
-(defn repl-do-save (sess path)
-  (if (= (str-length path) 0)
+(defn repl-do-save (sess raw)
+  (if (= (str-length raw) 0)
     (repl-note ":save needs a path")
-    (let fd (file-open path "w")
-      (if (<= fd 0)
-        (repl-note (str-concat "cannot write " path))
-        (begin
-          (file-write fd (Session.defs sess))
-          (file-close fd)
-          (repl-note (str-concat "saved to " path)))))))
+    (repl-save-file sess (repl-path sess raw))))
+
+(defn repl-save-file (sess path)
+  (let fd (file-open path "w")
+    (if (<= fd 0)
+      (repl-note (str-concat "cannot write " path))
+      (begin
+        (file-write fd (Session.defs sess))
+        (file-close fd)
+        (repl-note (str-concat "saved to " path))))))
 
 ; :doc answers from the same table the editor's hover uses, so the two
 ; never disagree.

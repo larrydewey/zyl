@@ -130,6 +130,11 @@ the file stays one entry per line.
 | `:time EXPR` | evaluate it and say how long it took |
 | `:load PATH` | read a file's modules and definitions into the session |
 | `:save PATH` | write the session's definitions to a file |
+
+A relative path in `:load` or `:save` resolves against the directory you
+started in, not the working directory — the REPL moved to the bundle
+before the first prompt, because compiling needs `stdlib/` and
+`actor_runtime.c` to be there.
 | `:reset` | forget everything, here and on disk, and start over |
 | `:clear` | clear the screen |
 
