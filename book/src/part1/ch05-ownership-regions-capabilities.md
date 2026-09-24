@@ -97,7 +97,14 @@ rejected.
 ```
 
 ```
-PANIC: E_MUT_CONFLICT: set! target `x` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)
+PANIC: error[E_MUT_CONFLICT]: set! target `x` is not a let-mut binding in scope
+  --> main.zyl:4:7
+   |
+ 4 |       (set! x 2)      ; compile error
+   |       ^
+ 2 |   (let x 1
+   |   - bound here by `let`, which is immutable (TCap)
+   = help: only a let-mut binding is TMut and may be assigned; declare it with `let-mut`
 ```
 
 The same error appears for a `set!` on a parameter. A function never
@@ -303,12 +310,13 @@ or a `send` message that refers to a `let-mut` variable in scope is
 ```
 
 ```
-PANIC: E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable
+PANIC: error[E_CAPABILITY_LEAK]: message sent to an actor references let-mut (TMut) variable `x` from the enclosing scope
 ```
 
-A `spawn` whose closure captures a `let-mut` variable gets the matching
-message, "spawned closure captures a let-mut (TMut) variable from the
-enclosing scope". To send the current value of a mutable variable, bind
+The error is located at the `send`, with a second label at the
+`let-mut`. A `spawn` whose closure captures a `let-mut` variable gets
+the matching message, "spawned closure captures let-mut (TMut)
+variable `x` from the enclosing scope". To send the current value of a mutable variable, bind
 it with `let` first: `(let snapshot x (send a snapshot))`.
 
 ## 5.8 FFI Safety — The Pin Region

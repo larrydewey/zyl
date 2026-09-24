@@ -176,7 +176,7 @@ The specification defines no other contract error codes.
 
 Until contracts are enforced:
 
-1. **Use `assert-true` for checks that must hold.** `(assert-true cond)` aborts with `PANIC: assert-true failed` and exit status 1 when `cond` is false. Plain `(assert cond)` (§12.4, `E_ASSERT_FAIL`) is parsed but currently not lowered to any check, so it does nothing.
+1. **Use `assert-true` for checks that must hold.** `(assert-true cond)` aborts with `PANIC: assert-true failed` and exit status 1 when `cond` is false. Plain `(assert cond)` (§12.4, `E_ASSERT_FAIL`) also aborts, but reports only `PANIC: assert failed`, without the code or a message.
 2. **Return `Result` for recoverable failures**, and handle them with `try`/`catch` or `match`, rather than relying on `recover`.
 3. **Write `requires` and `ensures` as documentation** if you like, but keep their conditions pure and cheap, since they are evaluated and their failures are ignored.
 4. **Do not use `invariant`, `(result)`, profiles or `checkpoint` rollback.** They are unimplemented, and the first two do not even compile.

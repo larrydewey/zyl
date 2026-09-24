@@ -328,7 +328,7 @@ Two ways to link your own C:
 In a package with a `zyl.pkg`, `ffi-call`, `ffi-pin`, `ffi-unpin`, and any call into `stdlib/ffi`, require the `ffi` capability (§31.9). Shipping C sources requires `native` as well:
 
 ```
-PANIC: E_PKG_CAPABILITY_VIOLATION: capability: package me/mathy uses ffi in me/mathy@0::mathy::my-abs without declaring it in zyl.pkg
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package me/mathy uses ffi in my-abs without declaring it in zyl.pkg
 ```
 
 A root package can forbid FFI for its whole graph with `(deny-capabilities ffi native)`. A lone file compiled without a manifest is not checked. The current pass also skips the bodies of `main` and of top-level `test` forms, so an `ffi-call` placed directly in `main` is not caught; see Chapter 25, §25.11.

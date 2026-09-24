@@ -353,7 +353,7 @@ A package declares the capabilities it may use. An absent `(capabilities ...)` f
 Enforcement (`capability_check.zyl`) runs after module resolution and before type inference, over the qualified program. The package half of each definition's canonical key says who owns it, so no side table of ownership is needed. A violation names both sides of the boundary:
 
 ```
-PANIC: E_PKG_CAPABILITY_VIOLATION: capability: package acme/hello uses ffi in acme/hello@0::hello::reach without declaring it in zyl.pkg
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package acme/hello uses ffi in reach without declaring it in zyl.pkg
 ```
 
 A declared set is a **ceiling on the declaring package**, not a grant along an edge. If `acme/greet` declares `ffi` and exports a function that calls C, a caller without `ffi` may still call that function. `zyl audit` lists what every package in the graph may do, together with the closure recorded in the lock:
@@ -372,7 +372,7 @@ A root package may forbid capabilities graph-wide:
 ```
 
 ```
-PANIC: E_PKG_CAPABILITY_VIOLATION: capability: acme/greet@0::greet::c-len uses ffi , which the root package forbids with deny-capabilities
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: c-len uses ffi, which the root package forbids with deny-capabilities
 ```
 
 `zyl update` reports growth in the capability closure ("capability closure grew to: ffi"). Under `zyl build --locked`, growth is `E_PKG_CAPABILITY_GROWTH`.

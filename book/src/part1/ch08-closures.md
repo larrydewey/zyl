@@ -126,7 +126,7 @@ A closure is a first-class value. Any lambda body the compiler accepts elsewhere
 | Call through a computed function value, `((make-adder 10) 5)` | Works |
 | Lambda that `set!`s a captured variable | Compile error, `E_MUT_CONFLICT` (§8.3) |
 | Recursive lambda | Not supported; use `defn` |
-| Capturing lambda handed to `spawn` | Crashes (§8.6) |
+| Capturing lambda handed to `spawn` | Works for immutable captures; a `let-mut` capture is `E_CAPABILITY_LEAK` (§8.6) |
 
 One code-generation gap remains, and it is not specific to closures: the code generator picks string or float handling for `print`, `=` and arithmetic from annotations and literals only. An unannotated parameter, a captured variable and the result of a call through a function value are all treated as integers there, so `(let s "hi" (let g (fn () (print s)) (g)))` prints the string's address, and a captured `Float` in arithmetic is added as an integer. Passing such values to functions (`str-concat`, a `defn` with a `String` parameter) works; print or compare them where their kind is known.
 
@@ -211,10 +211,10 @@ Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may captu
 ```
 
 ```
-PANIC: E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor
+PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
 ```
 
-In the current runtime a spawned closure should not capture anything at all: the actor entry point receives no environment, so even a read-only capture crashes. Have the spawned closure call a top-level function instead. Chapter 9 covers this in detail.
+The error is located at the `spawn`, with a second label at the `let-mut` (Appendix A, §A.1). Immutable captures are fine: the actor gets its own copies, as any closure does. Chapter 9 covers actors in detail.
 
 ## 8.7 Closure Types
 

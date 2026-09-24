@@ -75,7 +75,7 @@ both done
 
 Two rules for the closure passed to `spawn` in the current compiler:
 
-1. **Capture nothing.** The actor's entry point is given no environment, so a spawned closure that reads a variable from the enclosing scope crashes at run time. A closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (Chapter 8, §8.6). Put the work in a top-level function and have the closure call it, as above.
+1. **Capture only immutable values.** A spawned closure may read variables from the enclosing scope; like any closure it gets copies of them. A closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (Chapter 8, §8.6).
 2. **Take no parameters.** There is no message argument: an actor's body cannot read its mailbox (§9.3). A parameter, if declared, receives 0.
 
 ## 9.3 Sending Messages
@@ -132,12 +132,19 @@ The compiler currently enforces the `TMut` rows, for both a sent message and a s
 ```
 
 ```
-PANIC: E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable
+PANIC: error[E_CAPABILITY_LEAK]: message sent to an actor references let-mut (TMut) variable `x` from the enclosing scope
+  --> main.zyl:7:9
+   |
+ 7 |         (send a x)
+   |         ^
+ 4 |   (let-mut x 10
+   |   - declared `let-mut` here
+   = help: messages must be Send-capable; send a copy bound with plain `let`
 ```
 
 ## 9.4 Structuring Actor Code Today
 
-Because a spawned closure cannot capture values and `send` messages are never observed, everything an actor does has to be reachable from top-level functions. The practical pattern is:
+Because `send` messages are never observed, everything an actor does has to be set up when it is spawned or delivered as a closure message. The practical pattern is:
 
 1. Write the real logic as ordinary, pure functions (easy to test; see Chapter 11).
 2. Give each actor a small entry function that calls that logic and reports its result (for example, by printing it or writing a file).
@@ -162,7 +169,7 @@ The `actor/actor` module provides:
 
 `actor-wait` does not drain the mailbox: messages still queued when the actor is stopped are dropped. To let every actor finish its queued closure messages first, call the runtime directly with `(ffi-call "zyl_actor_wait_all" 1000)`, which waits until every mailbox is empty and then stops and joins every actor (Chapter 21, §21.5).
 
-There is no `wait_all` language form, and the compiler does not call `zyl_actor_wait_all` when `main` returns, so an actor that has not been waited on may be killed before it finishes. This program:
+There is no `wait_all` language form, but every compiled program runs `zyl_actor_wait_all` when it exits, so returning from `main` lets every actor finish its queued closure messages. This program:
 
 ```lisp
 (defn main ()
@@ -170,7 +177,7 @@ There is no `wait_all` language form, and the compiler does not call `zyl_actor_
     (print "main exits")))
 ```
 
-printed `hi from actor` in only 186 of 200 runs on the machine used for this book. Always wait for every actor you spawn.
+printed `hi from actor` in 200 of 200 runs. (Before 2026-09-24 the process did not wait, and the line appeared in only 186 of 200.) Wait explicitly where the order of output matters, as in §9.8.
 
 ## 9.7 Actor Lifecycle
 
@@ -191,7 +198,7 @@ actor-wait or actor-terminate
 actor-is-alive returns false
 ```
 
-An actor also ends when the process exits, whether or not it has finished. There is no built-in shutdown protocol beyond `actor-wait` and `actor-terminate`.
+At exit the process drains and stops every remaining actor. There is no other shutdown protocol beyond `actor-wait` and `actor-terminate`.
 
 ## 9.8 Determinism
 
@@ -279,7 +286,7 @@ test result: 2 passed, 0 failed, 2 total
 Inside a package (a directory with a `zyl.pkg`, Spec §31.9), `spawn`, `send`, and any use of the `actor/` modules require the `actor` capability. Declare it in the manifest with `(capabilities actor)`; without it, compilation stops with `E_PKG_CAPABILITY_VIOLATION`:
 
 ```
-PANIC: E_PKG_CAPABILITY_VIOLATION: capability: package book/actdemo uses actor in book/actdemo@0::actdemo::go without declaring it in zyl.pkg
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package book/actdemo uses actor in go without declaring it in zyl.pkg
 ```
 
 A single file compiled directly is not capability-checked. (The current checker also skips the body of the root package's `main`, so a `spawn` written directly in `main` goes unreported; declare the capability anyway.)
@@ -290,7 +297,7 @@ A single file compiled directly is not capability-checked. (The current checker 
 
 ### Runtime Implementation (`runtime/actor_runtime.c`)
 
-- **One POSIX thread per actor**, created by `zyl_actor_spawn`, which receives the spawned closure's code pointer and a state pointer. The compiler passes 0 for the state, which is why a spawned closure cannot capture anything.
+- **One POSIX thread per actor**, created by `zyl_actor_spawn`, which receives the spawned closure's code pointer and a state pointer. For a capturing closure it unpacks the closure block into its code and environment, so the environment arrives as that state pointer.
 - **Mailbox**: a singly linked FIFO list protected by a per-actor mutex, with a condition variable to wake the actor thread.
 - **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; discarded) or a *closure* message (`zyl_actor_send_closure`, which runs a function in the actor's thread). No language form produces a closure message yet; the runtime routine is reachable only through a raw `ffi-call`, which is the one way code can currently be delivered to an actor after it starts.
 

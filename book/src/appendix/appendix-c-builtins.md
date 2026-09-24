@@ -167,8 +167,8 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `begin` | `(begin expr ...)` | value is the last expression |
 | `try` | `(try body (catch e handler))` | catches a runtime panic, binding its message to `e` |
 | `with-resource` | `(with-resource (name init) body)` | binds `name` for `body`; no release step is run yet |
-| `assert` | `(assert expr)` or `(assert expr "message")` | **not lowered**: checks nothing |
-| `unwrap` | `(unwrap expr)` | **not lowered**: evaluates to 0 |
+| `assert` | `(assert expr)` or `(assert expr "message")` | a false `expr` panics with `assert failed`; the message is not printed |
+| `unwrap` | `(unwrap expr)` | the value of `Some`/`Ok`; `None` or `Err` panics with `unwrap on None` |
 | `error` | `(error "message")` | library function (`allocator/allocator`); panics with the message |
 | `when` | `(when cond body)` | library function (`core/core`); `body` is evaluated even when `cond` is false |
 
@@ -183,9 +183,10 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 §12.10 describes `error` as returning `(Err msg)`; the implementation
 panics instead, and the panic unwinds to the nearest `try`.
 
-Instead of `assert` and `unwrap`, use the test assertions (C.14) or an
-explicit `if`, and `result-unwrap`/`option-unwrap` with a default
-(Appendix B.1).
+Where the failure message matters, use the test assertions (C.14) or an
+explicit `if` with `error` instead of `assert`, and `result-expect`, or
+`result-unwrap`/`option-unwrap` with a default (Appendix B.1), instead
+of `unwrap`.
 
 ### Patterns
 

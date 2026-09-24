@@ -376,10 +376,9 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
   (print (list-sum (my-map double (Cons 1 (Cons 2 (Cons 3 Nil)))))))   ; 12
 ```
 
-`my-map` works for any element type. Pass it a named function or a
-`fn` that captures nothing; a capturing closure cannot yet be passed as
-an argument (Chapter 3, §3.3). The module `collections/collections` has
-a ready-made `list-map`.
+`my-map` works for any element type. Pass it a named function or any
+`fn`, capturing or not (Chapter 3, §3.3). The module
+`collections/collections` has a ready-made `list-map`.
 
 ## 7.10 Error Messages
 

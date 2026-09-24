@@ -208,7 +208,7 @@ zyl build
 Both capabilities are required, and both are checked:
 
 - `native` to ship C sources: without it, `E_PKG_CAPABILITY_VIOLATION: capability: package book/ffidemo ships native sources without declaring the native capability`
-- `ffi` to call into them: without it, `E_PKG_CAPABILITY_VIOLATION: capability: package book/ffidemo uses ffi in book/ffidemo@0::ffidemo::factorial without declaring it in zyl.pkg`
+- `ffi` to call into them: without it, `error[E_PKG_CAPABILITY_VIOLATION]: package book/ffidemo uses ffi in factorial without declaring it in zyl.pkg`, located at the `ffi-call` with a label at the definition
 
 `cflags` are limited to an allowlist (`-O*`, `-D*`, `-std=*`, and a fixed set of `-f` flags). Anything else, such as `-lfoo`, is `E_PKG_NATIVE_FLAG_DENIED`; libraries go in `(link-libs "m")` and include paths in `(include-dirs "c/include")`.
 

@@ -66,7 +66,8 @@ still prints. Use `if` when the body has an effect.
 ```
 
 `result-unwrap` also takes a default. Prefer these to the compiler's
-`unwrap` form, which is parsed but not yet lowered (Appendix C.7).
+`unwrap` form where the failure message matters: it panics with
+`unwrap on None` for any failure (Appendix C.7).
 
 ### `core/list` — Singly-Linked Lists
 

@@ -476,15 +476,18 @@ What `try` is and is not:
 
 The specification defines `(assert condition "message")`, which aborts
 with `E_ASSERT_FAIL` when the condition is false, and `(unwrap r)`, which
-extracts an `Ok`/`Some` value or aborts. Both parse, but neither is
-implemented by the current code generator:
+extracts an `Ok`/`Some` value or aborts. Both work today, with two
+differences from the specification:
 
-- `(assert c "msg")` does nothing, whatever `c` is.
-- `(unwrap x)` evaluates to 0.
+- A false `(assert c "msg")` panics with `assert failed`: the message is
+  not printed and no `E_ASSERT_FAIL` code is shown.
+- `(unwrap x)` of `None` or of an `Err` panics with `unwrap on None`
+  either way.
 
-Use an explicit check with `error` instead of `assert`, and
-`result-expect`/`option-expect` (or `result-unwrap`/`option-unwrap` with
-a default) instead of `unwrap`:
+Both unwind to the nearest `try`, and inside a `test` they fail that
+test. When the message matters, use an explicit check with `error`
+instead of `assert`, and `result-expect`/`option-expect` (or
+`result-unwrap`/`option-unwrap` with a default) instead of `unwrap`:
 
 ```lisp
 (defn checked-half (n)

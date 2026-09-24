@@ -105,8 +105,9 @@ let n = parse(s)?;
 helpers (`result-map`, `result-and-then`, `result-unwrap` with a
 default). `try`/`catch` catches a *panic* — what `(error "msg")` raises
 — rather than an `Err` value; it is the counterpart of
-`std::panic::catch_unwind`, not of `?`. The `unwrap` form is not yet
-lowered, so do not rely on it (Appendix C.7).
+`std::panic::catch_unwind`, not of `?`. The `unwrap` form panics on
+`None` or `Err`, like Rust's, but always with the message `unwrap on
+None` (Appendix C.7).
 
 ### Pattern Matching → Match (Similar)
 

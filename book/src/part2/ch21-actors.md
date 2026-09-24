@@ -31,7 +31,7 @@ spawn ::= "(" "spawn" Expression ")"
 (spawn entry)
 ```
 
-- `entry` is a named function, or a `fn` that captures nothing. It must take no parameters.
+- `entry` is a named function or a `fn`, which may capture immutable variables (by value, like any closure). It must take no parameters.
 - The runtime creates one pthread for the actor and calls `entry` once on it. When `entry` returns, the thread stays alive, waiting on its mailbox for closure messages (§21.4).
 - `spawn` returns the actor's id, an `Int` (0, 1, 2, …, never reused). There is no separate `ActorRef` type.
 - At most 1024 actors can exist in one process. Beyond that, `spawn` prints `zyl: actor limit reached` and returns an invalid id.
@@ -60,7 +60,6 @@ main done
 
 ### What does not work yet
 
-- **A `fn` that captures variables crashes.** `(let x 41 (spawn (fn () (print (+ x 1)))))` compiles, but the closure's environment block is passed as the code pointer and the actor segfaults. Pass state through closure messages instead.
 - **An entry function with a parameter** receives 0. It is not a message handler.
 - **`(receive)`** is not implemented. A `spawn` body that uses it compiles to an actor that does nothing.
 
@@ -107,7 +106,7 @@ Implemented:
 - `send` is asynchronous and returns immediately.
 - The message is passed as a single 64-bit word, either an `Int` or a pointer to a heap value. It is not copied.
 - **The runtime discards data messages** when it dequeues them. Nothing in Zyl can observe a message sent with `send`.
-- Sending to an id that does not name a live actor currently aborts the process (`free(): invalid pointer`).
+- Sending to an id that does not name a live actor does nothing.
 
 Until `send` and `receive` are implemented, use closure messages (§21.4).
 
@@ -125,16 +124,31 @@ Spec §9.1 R3 and §7.4 require every value that crosses into another actor to b
 ```
 
 ```
-PANIC: E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable
+PANIC: error[E_CAPABILITY_LEAK]: message sent to an actor references let-mut (TMut) variable `x` from the enclosing scope
+  --> main.zyl:6:14
+   |
+ 6 |       (begin (send a x) (actor-wait a) 0))))
+   |              ^
+ 5 |     (let-mut x 10
+   |     - declared `let-mut` here
+   = help: messages must be Send-capable; send a copy bound with plain `let`
 ```
 
 ```lisp
-(let-mut count 0
-  (spawn (fn () (set! count (+ count 1)))))
+(defn main ()
+  (let-mut count 0
+    (spawn (fn () (set! count (+ count 1))))))
 ```
 
 ```
-PANIC: E_CAPABILITY_LEAK: spawned closure captures a let-mut (TMut) variable from the enclosing scope -- only Send-capable (non-mut) captures may cross into another actor
+PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
+  --> main.zyl:3:5
+   |
+ 3 |     (spawn (fn () (set! count (+ count 1))))))
+   |     ^
+ 2 |   (let-mut count 0
+   |   - declared `let-mut` here
+   = help: only Send-capable (non-mut) captures may cross into another actor
 ```
 
 Limits of the check:
@@ -220,7 +234,7 @@ main done
 
 The message value is shared by pointer between threads, not copied. Nothing prevents two actors from reaching the same heap value, so keep messages immutable.
 
-This example depends on actor ids: it works because the server has the lower id. `zyl_actor_wait_all` stops actors in id order (§21.5), so if the client is spawned first, a reply can arrive after the client has been stopped and is then lost.
+`zyl_actor_wait_all` waits until every actor is idle on an empty mailbox before stopping any of them (§21.5), so the reply normally arrives whichever actor was spawned first. It is not yet airtight: over 200 runs of this example the reply was lost once with the server spawned first and six times with the client first. Spawn repliers first, and treat a reply produced during the final drain as best-effort until this is fixed.
 
 `zyl_actor_send_closure` is reached through `ffi-call`, so in a package it needs the `ffi` capability as well as `actor`.
 
@@ -230,12 +244,12 @@ There is no `wait_all` form; `(wait_all a)` is rejected with `E_UNBOUND_VARIABLE
 
 | Operation | Effect |
 |-----------|--------|
-| `(ffi-call "zyl_actor_wait_all" 1000)` | polls until every mailbox is empty, then stops and joins **every** actor, in id order |
+| `(ffi-call "zyl_actor_wait_all" 1000)` | polls until every mailbox is empty and every actor is idle, then stops and joins **every** actor; also runs automatically at exit |
 | `(actor-wait a)` (`actor/actor`) | marks `a` stopped and joins its thread; closure messages still queued are **discarded** |
 | `(actor-terminate a)` | marks `a` stopped |
 | `(actor-is-alive a)` | whether `a` is still running |
 
-The generated `main` does **not** wait for actors. When `main` returns, the process exits and any actor still working is killed. End `main` with `zyl_actor_wait_all` when actor work must finish.
+Every compiled program registers `zyl_actor_wait_all` to run at exit, so when `main` returns, remaining actors finish their queued closure messages before the process ends. Call it (or `actor-wait`) explicitly only where output order matters.
 
 `stdlib/actor/actor.zyl` also provides `actor-spawn` and `actor-send`, wrappers around `spawn` and `send`, and `actor-send-with-timeout`, which ignores its timeout.
 
@@ -258,7 +272,7 @@ To get deterministic output from an actor program today, have exactly one actor 
 spawn             → thread created; entry function runs once
 entry returns     → thread idles on its mailbox, running closure messages
 stopped by        → zyl_actor_wait_all, actor-wait, actor-terminate,
-                    or process exit (main returning)
+                    or the drain at process exit (main returning)
 ```
 
 An actor does not stop when its entry function returns. There is no `Shutdown` message convention in the runtime: stopping is an operation on the actor, not a message to it.

@@ -367,10 +367,11 @@ Things to know about the current implementation:
 ### `unwrap` and `assert`
 
 The specification defines `(unwrap r)` and `(assert condition "message")`.
-Both parse, but neither is implemented by the current code generator:
-`unwrap` evaluates to 0 and `assert` does nothing. Don't rely on them.
-Use `result-expect` / `option-expect` instead of `unwrap`, and an
-explicit check instead of `assert`:
+Both work, but both lose information when they fail: a false `assert`
+panics with `assert failed` (your message is not printed), and `unwrap`
+of `None` or of an `Err` panics with `unwrap on None`. Where the message
+matters, use `result-expect` / `option-expect` instead of `unwrap`, and
+an explicit check with `error` instead of `assert`:
 
 ```lisp
 (defn checked-sqrt-floor (x)

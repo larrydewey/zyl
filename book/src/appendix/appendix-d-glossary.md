@@ -20,8 +20,9 @@ fully interchangeable with its target (§4.7, §10).
 number of arguments is `E_ARITY_MISMATCH`.
 
 **Assertion**: A check that panics when it fails. The test assertions
-(`assert-equal`, `assert-true`, `assert-false`) work today; the
-general `assert` form is parsed but not yet lowered (Appendix C.7).
+(`assert-equal`, `assert-true`, `assert-false`) work today, and so does
+the general `assert` form, though it does not print its message
+(Appendix C.7).
 
 **Audit**: `zyl audit` — reports the capabilities each package in the
 graph declares and uses.

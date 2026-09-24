@@ -123,9 +123,10 @@ Special Forms   ::= (let Name Expr Body)
 `Keyword` is `:name` and `Symbol` is `~name`. The specification also
 lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
 `(unwrap Expr)`, `(error String)` and `(export Name)`. Of those, the
-compiler accepts the parenthesised `let`; parses `assert`, `unwrap`,
-`export` without lowering them; treats `error` as a library function
-that panics; and does not recognise `defun` (Appendix C).
+compiler accepts the parenthesised `let`; lowers `assert` and `unwrap`
+(both panic without the specified message); parses `export` without
+lowering it; treats `error` as a library function that panics; and does
+not recognise `defun` (Appendix C).
 
 ## F.3 Key Invariants and Guarantees (Normative)
 
