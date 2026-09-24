@@ -84,13 +84,13 @@
   (Cons (ZB "cond" "special-form" "(cond (test body) ... )"
           "Multi-way conditional, tested top to bottom.")
   (Cons (ZB "when" "special-form" "(when cond body)"
-          "One-armed conditional; the absent arm yields unit.")
+          "One-armed conditional; the absent arm yields unit. A core/core function, not a special form, so `body` is evaluated before the test. Written `(when cond)` before a match arm's body, it is a guard.")
   (Cons (ZB "while" "special-form" "(while cond body)"
           "Loop while `cond` holds.")
   (Cons (ZB "for" "special-form" "(for (i start) limit body)"
           "Counted loop. `(for (i 16) n body)` starts at 16 -- a bare `(for (i) ...)` starts at 0.")
   (Cons (ZB "match" "special-form" "(match subject (Variant binding ... body) ...)"
-          "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `dN` arm is the wildcard convention.")
+          "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `_` arm matches anything.")
   (Cons (ZB "begin" "special-form" "(begin expr ...)"
           "Sequence expressions left to right; the value is the last one.")
   (Cons (ZB "try" "special-form" "(try body (catch e handler))"
@@ -102,7 +102,7 @@
   (Cons (ZB "assert" "special-form" "(assert expr)"
           "Abort unless `expr` is true. Lowered by the assert-lowering pass, not a library call.")
   (Cons (ZB "range" "special-form" "(range start end)"
-          "Integer range, used by loop forms.")
+          "Match pattern for an integer range, inclusive at both ends: `((range 1 9) body)` as a match arm.")
   (Cons (ZB "with-resource" "special-form" "(with-resource name acquire body)"
           "Bind an acquired resource and release it when `body` ends, on every exit path.")
   Nil))))))))))))))
@@ -217,7 +217,7 @@
   (Cons (ZB "byte" "special-form" "(byte n)" "A single byte literal, 0..255.")
   (Cons (ZB "bytebuf" "special-form" "(bytebuf region capacity)"
           "Allocate a byte buffer in a region: Stack, Heap, Global, Circular or Pin.")
-  (Cons (ZB "bytebuf-append" "special-form" "(bytebuf-append buf byte)" "Append one byte, growing the length.")
+  (Cons (ZB "bytebuf-append" "special-form" "(bytebuf-append buf slice)" "Append a byte slice's contents, growing the length. Capacity is fixed: a slice that does not fit leaves the buffer unchanged.")
   (Cons (ZB "bytebuf-len" "special-form" "(bytebuf-len buf)" "Bytes currently in the buffer.")
   (Cons (ZB "bytebuf-cap" "special-form" "(bytebuf-cap buf)" "Allocated capacity of the buffer.")
   (Cons (ZB "bytebuf-ptr" "special-form" "(bytebuf-ptr buf)" "Raw address of the buffer's first byte, for FFI.")

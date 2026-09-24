@@ -1,275 +1,412 @@
 # Chapter 18: Algebraic Data Types and Exhaustive Matching
 
-Complete reference for ADTs: declaration, construction, pattern matching, exhaustiveness, and generic ADTs.
+This chapter is the reference for ADTs: declaration, construction,
+pattern matching, exhaustiveness and representation. The normative text
+is `zyl_specification.txt` §8 (ADTs), §12.3 (match) and §6.5 (generic
+ADTs). The implementation is `stdlib/compiler/expr_inner.zyl` (parsing,
+including literal patterns), `stdlib/compiler/exhaustiveness_check.zyl`,
+and `stdlib/compiler/icnf.zyl` and `codegen.zyl` (lowering).
 
 ## 18.1 ADT Declaration
 
 ```
-deftype ::= "deftype" Identifier "(" Variant+ ")" BoundClause?
-
-Variant ::= "(" Identifier TypeExpr* ")"
-
-BoundClause ::= ":" Identifier "[" Identifier* "]"
+deftype ::= "(" "deftype" Identifier Variant+ ")"
+Variant ::= "(" Identifier TypeExpr* ")"      ; variant with fields
+          | Identifier                         ; nullary variant, bare
 ```
 
-### Examples
+§8.1 writes a declaration as `(deftype Name (Variant1 TypeExpr*) ...)`. A
+nullary variant may be written `(Red)` or bare `Red`.
 
 ```lisp
-;; Simple enum-like
+;; Enum-like
 (deftype Color (Red) (Green) (Blue))
 
-;; With payloads
-(deftype Option (Some T) None)
+;; Payloads
+(deftype Shape (Circle Int) (Rect Int Int))
 
-;; Multiple payloads
-(deftype Result (Ok T) (Err E))
+;; Generic, one parameter (the same shape as the prelude's Option)
+(deftype Maybe (Just T) Nothing)
 
-;; Recursive
-(deftype List (Cons T (List T)) Nil)
-
-;; Generic with multiple params
+;; Generic, two parameters
 (deftype Either (Left L) (Right R))
 
-;; With trait bound
-(deftype Tree (Node T (Tree T) (Tree T)) Leaf : Ord [T])
+;; Recursive and generic
+(deftype Tree (Node T (Tree T) (Tree T)) (Leaf))
 ```
+
+The prelude (`core/core`, injected into every program) already defines
+`Option` (`Some`/`None`), `Result` (`Ok`/`Err`) and `List` (`Cons`/`Nil`),
+so those names are taken: declaring another type called `Option` is
+`E_DUPLICATE_DEFINITION`, as is a second top-level `defn` with the same
+name as one in the prelude.
 
 ### Rules
 
-1. **Variant names unique** across all ADTs in scope (or qualified via module)
-2. **Type parameters** = uppercase identifiers in variant fields
-3. **Duplicates merged** — same-type constraint:
-   ```lisp
-   (deftype Pair (Make T T))  ; Both fields same T
-   ```
-4. **Recursive references** allowed (direct or mutual)
-5. **Trait bounds** optional: `: Ord [T]` means T must implement Ord
+1. **Variant names.**
+   - A name used twice within one `deftype` is `E_DUPLICATE_VARIANT`.
+   - A variant name may be reused by a different `deftype` (type names may
+     not; see above). For construction, the declaration that comes later
+     in the program wins.
+   - The exhaustiveness check skips any `match` whose arms use a name
+     claimed by two types, rather than guess which type is meant.
+2. **Type parameters** are the uppercase names that appear as field types
+   (§6.5). A name that repeats is one parameter.
+3. **Recursive references** are allowed. Every field is one word, so a
+   recursive field is simply a pointer.
+4. **Field types are not checked.** They name types and type parameters
+   for inference and monomorphization. Constructing `(Circle "x")`
+   compiles.
+5. **Bounds.** §2's grammar shows an optional bound after the variants,
+   but neither the specification nor the compiler defines one. Write
+   bounds in Chapter 19's terms, not on the `deftype`.
 
 ## 18.2 Variant Construction
 
 ```
 Construction ::= "(" VariantName Arg* ")"
-             |  VariantName           ; Nullary variant
+               | VariantName            ; nullary only
 ```
 
 ```lisp
-(Some 42)           ; Option<Int>
-None                ; Option<T>
-(Ok "success")      ; Result<String, E>
-(Err "failed")      ; Result<T, String>
-(Cons 1 Nil)        ; List<Int>
-(Red)               ; Color
+(Some 42)
+None                ; or (None)
+(Ok "success")
+(Err "failed")
+(Cons 1 (Cons 2 Nil))
+(Red)
+(Rect 3 4)
 ```
 
-- Arguments evaluated left-to-right
-- Types inferred from argument types
-- Must match variant's declared field types
+- Arguments are evaluated left to right, then the variant is allocated
+  (Chapter 16 says where).
+- Types are inferred from the arguments. Argument types are not checked
+  against the declared field types (rule 4 above).
+- A `defstruct` is a one-variant ADT named after the struct, so
+  `(make-Point 1 2)` and `(Point 1 2)` build the same value.
 
-## 18.3 Pattern Matching
+## 18.3 Constructor Patterns
+
+§8.3:
 
 ```
-MatchExpr ::= "match" Expression "(" MatchArm+ ")"
-
-MatchArm ::= "(" VariantName Pattern* Expression ")"
-
-Pattern ::= Identifier           ; Bind variable
-          | "_"                  ; FORBIDDEN
-          | "d" Digit+           ; Named dummy (wildcard)
-          | "(" Pattern* ")"     ; Nested pattern
-          | Literal              ; Constant pattern
+MatchExpr ::= "(" "match" Expression Arm+ ")"
+Arm       ::= "(" VariantName FieldPat* Body ")"       ; flat
+            | "(" "(" VariantName FieldPat* ")" Body ")" ; grouped
+            | "(" "_" Body ")"                          ; catch-all
+FieldPat  ::= Identifier | "_"
 ```
 
-### Patterns
+Both arm shapes mean the same thing: `(Some x body)` and
+`((Some x) body)` are equivalent.
 
-| Pattern | Matches | Binds |
-|---------|---------|-------|
-| `Some x` | `Some` variant | `x` = inner value |
-| `None` | `None` variant | (nothing) |
-| `Cons x xs` | `Cons` variant | `x`=head, `xs`=tail |
-| `d1` | Any variant/value | `d1` = value (ignored) |
-| `42` | Exact Int value | (nothing) |
-| `"hi"` | Exact String | (nothing) |
-| `true` | Exact Bool | (nothing) |
+| Arm | Matches | Binds |
+|-----|---------|-------|
+| `(Some x ...)` | the `Some` variant | `x` to its field |
+| `(None ...)` | the `None` variant | nothing |
+| `(Cons h t ...)` | `Cons` | `h` and `t` |
+| `(Cons _ t ...)` | `Cons` | only `t`; `_` discards |
+| `(_ ...)` | anything | nothing |
 
-### Exhaustiveness (Mandatory)
-
-**All variants must be covered** — missing variant = compile error `E_MATCH_NONEXHAUSTIVE`.
+- **Field positions** hold a name or `_`, one per field. `_` may repeat
+  within an arm.
+- **Match as expression.** All arms produce the value of the `match`.
+  Arms are tried in source order (§12.3).
+- **Catch-all arms.** `_` is the catch-all. The compiler treats *any*
+  identifier that is not a known constructor as a catch-all, and such an
+  arm binds nothing. A misspelled constructor in the last arm is
+  therefore a silent catch-all. A misspelled one earlier is caught,
+  because a catch-all followed by more arms is `E_UNREACHABLE_MATCH_ARM`.
 
 ```lisp
-;; ✅ Exhaustive
-(match opt
-  (Some x (print x))
-  (None (print "none")))
-
-;; ❌ NON-EXHAUSTIVE — missing None
-(match opt
-  (Some x (print x)))
-
-;; ✅ Exhaustive with catch-all
-(match opt
-  (Some x (print x))
-  (d1 (print "other")))
-```
-
-### Match as Expression
-
-```lisp
-(defn option-to-result (opt)
+(defn to-result (opt)
   (match opt
     (Some x (Ok x))
     (None (Err "empty"))))
+
+(defn len (xs)
+  (match xs
+    (Cons _ t (+ 1 (len t)))
+    (Nil 0)))
+
+(defn main ()
+  (begin
+    (print (len (Cons 1 (Cons 2 (Cons 3 Nil)))))   ; 3
+    (print (match (to-result (Some 7))
+             (Ok v v)
+             (Err _ 0)))                          ; 7
+    0))
 ```
 
-- All arms must have **same type**
-- Returns value of matched arm
+### Nested patterns are not supported
 
-## 18.4 Nested Patterns
+§8.3 leaves the pattern grammar open, and the book's earlier editions
+showed nested constructor patterns such as `(Cons (Cons x _) rest ...)`.
+The compiler does not implement them.
+
+> **Compiler defect.** A nested pattern is accepted without a diagnostic,
+> but its inner constructor is never tested. Only the outer tag is
+> checked, and the inner names bind to garbage when the shape does not
+> match:
+>
+> ```lisp
+> (deftype L (N) (C Int L))
+>
+> (defn f (xs)
+>   (match xs
+>     (C a (C b _) (+ a b))
+>     (_ 77)))
+>
+> (defn main ()
+>   (begin
+>     (print (f (C 5 (N))))   ; expected 77; prints 0
+>     0))
+> ```
+>
+> Write the inner match explicitly:
+> `(C a rest (match rest (C b _ (+ a b)) (N 77)))`.
+
+## 18.4 Literal Patterns, OR-Patterns, Ranges and Guards
+
+These are an implementation extension; §8.3 covers constructor patterns
+only. A `match` becomes a literal match when any arm starts with a
+literal or a range.
+
+```
+LitArm  ::= "(" Alt+ Guard? Body ")"
+          | "(" "_" Body ")"                 ; required last arm
+Alt     ::= Integer | Float | String | Boolean
+          | "(" "range" Lo Hi ")"            ; inclusive at both ends
+Guard   ::= "(" "when" Expression ")"
+```
+
+- **Literals**: integer, float, string (compared by content) and boolean.
+- **OR-patterns**: several alternatives before the body. `(1 2 3 "small")`
+  matches any of them.
+- **Ranges**: `(range lo hi)` matches `lo <= x <= hi`.
+- **Guards**: `(when cond)` as the last element before the body. The arm
+  matches only when the pattern matches and `cond` is true; otherwise
+  matching continues with the next arm. Literal patterns bind nothing, so
+  a guard can only refer to names already in scope.
+- **Exhaustiveness**: a literal match must end with a `_` arm. Otherwise
+  it is `E_MATCH_NONEXHAUSTIVE`, which is raised when the match is parsed.
 
 ```lisp
-(match expr
-  (Cons (Cons x d1) (Cons y d2) (+ x y))  ; At least 2 elements
-  (Cons x d3 x)                            ; Exactly 1 element
-  (Nil 0))                                 ; Empty
+(defn classify (n verbose)
+  (match n
+    (0 (when verbose) "zero (verbose)")
+    (0 "zero")
+    (1 2 3 "small")
+    ((range 4 9) "medium")
+    (_ "large")))
+
+(defn command (s)
+  (match s
+    ("start" 1)
+    ("stop" 2)
+    (_ 0)))
+
+(defn main ()
+  (begin
+    (print (classify 0 true))    ; zero (verbose)
+    (print (classify 0 false))   ; zero
+    (print (classify 2 false))   ; small
+    (print (classify 7 false))   ; medium
+    (print (classify 99 false))  ; large
+    (print (command "stop"))     ; 2
+    0))
 ```
 
-- Patterns can be arbitrarily nested
-- Compiler flattens to decision tree
-- No pattern guards (use `if` in arm body)
+Limits:
 
-## 18.5 Generic ADTs
+- **No mixing.** One `match` cannot combine literal arms and constructor
+  arms. The two lower through different mechanisms: a literal match
+  becomes an `if` chain, while a constructor match tests tags.
+- **Guards on `_`.** A guard on the trailing `_` arm is ignored.
+- **Guards on constructor arms** are not supported. The `(when ...)` is
+  read as a field pattern, and the program crashes at runtime.
+- **Guards after ranges.** A guard following a `range` alternative
+  currently fails to compile (the guard is mistaken for a call to the
+  prelude's two-argument `when`, giving `E_ARITY_MISMATCH`). Guards after
+  plain literals work.
 
-### Type Parameters
+## 18.5 Exhaustiveness
 
-Collected from **uppercase identifiers** in variant fields:
+§8.3 and §26 require every `match` to be exhaustive, with missing cases a
+compile-time error. It matters for safety, not only style: a constructor
+match that no arm catches evaluates to 0.
+
+For constructor matches, `exhaustiveness_check.zyl` enforces:
+
+| Situation | Code |
+|-----------|------|
+| a variant of the scrutinee's type has no arm, and there is no catch-all | `E_NON_EXHAUSTIVE_MATCH` |
+| a catch-all arm is followed by more arms | `E_UNREACHABLE_MATCH_ARM` |
+
+```
+error[E_NON_EXHAUSTIVE_MATCH]: match over `Color` does not cover variant `Blue`
+  --> colors.zyl:2:13
+   |
+ 2 | (defn f (c) (match c (Red 1) (Green 2)))
+   |             ^
+   = help: add an arm for that variant, or a `_` catch-all
+```
+
+- **Spelling.** The specification spells the code `E_MATCH_NONEXHAUSTIVE`
+  (§8.3, §28). The constructor check prints `E_NON_EXHAUSTIVE_MATCH`,
+  while the literal-pattern check (18.4) prints `E_MATCH_NONEXHAUSTIVE`.
+- **How the type is found.** The check determines the scrutinee's type
+  from the constructors named in the arms, not from type inference. A
+  match whose arms name a constructor claimed by two types is skipped
+  (18.1, rule 1).
+- **Repeated arms.** The code has a check for an arm that repeats a
+  constructor already matched (reported as `E_UNREACHABLE_MATCH_ARM`),
+  but it never fires. The list of covered constructors it searches is
+  built from pairs, while the search compares plain names.
+  `(match c (Red 1) (Red 2) (Green 3) (Blue 4))` compiles, and the second
+  `Red` arm is dead.
+
+## 18.6 Generic ADTs
+
+Type parameters are collected from uppercase field names (§6.5):
 
 ```lisp
-(deftype Result (Ok T) (Err E))   ; Two params: T, E
-(deftype Pair (Make T T))         ; One param: T (duplicate merged)
-(deftype Triple (Make T U V))     ; Three params: T, U, V
+(deftype Outcome (Success T) (Failure E))   ; two parameters, T and E
+(deftype Pair (Make T T))                   ; one parameter, T
+(deftype Triple (Make3 T U V))              ; three parameters
 ```
 
-### Monomorphization
+- **Separate instantiations.** One generic ADT can be used at several
+  concrete types in the same program, and the instances do not interfere
+  (`tests/regression/generics-multi-type.zyl`).
+- **Same-type constraint.** §6.2 requires every use of one parameter to
+  have the same type, so `(Make 1 "x")` should be rejected. It compiles
+  (Chapter 15, 15.6).
 
-Each concrete instantiation → distinct type:
+Chapter 19 covers monomorphization and naming.
 
 ```lisp
-(Ok 42)          ; Result_Int_E
-(Ok "hi")        ; Result_String_E
-(Err "err")      ; Result_T_String
+(deftype Opt (Sm T) (Nn))
+
+(defn opt-or (o d)
+  (match o
+    (Sm x x)
+    (Nn d)))
+
+(defn main ()
+  (begin
+    (print-int (opt-or (Sm 4) 0))               ; 4
+    (print-string (opt-or (Sm "hi") "none"))    ; hi
+    (print-string (opt-or (Nn) "default"))      ; default
+    0))
 ```
 
-Canonical naming: `ADTName_Type1_Type2...` (alphabetical sort)
+The typed `print-int` and `print-string` are deliberate. Chapter 15
+explains why a plain `print` of a generic function's result can format a
+`String` as an `Int`.
 
-### Generic ADT Operations
+## 18.7 ADTs and Capabilities
+
+§7.4 and §15 require an actor message to be Send-capable. The spec-level
+rule for an ADT is that it is Send when all of its fields are.
+
+The type predicate that would decide this (`tc-is-send`) is not called.
+What is enforced is the syntactic rule from Chapter 17: a `send` whose
+message mentions a `let-mut` variable, or a `Secret`, is rejected.
 
 ```lisp
-;; Map over Option
-(defn option-map ((T) (U) f opt)
-  (match opt
-    (Some x (Some (f x)))
-    (None None)))
-
-;; Bind for Result
-(defn result-bind ((T) (U) (E) r f)
-  (match r
-    (Ok x (f x))
-    (Err e (Err e))))
+(defn main ()
+  (let a (spawn (fn () 0))
+    (begin
+      (send a (Some "hello"))      ; accepted
+      0)))
 ```
 
-## 18.6 ADTs and Capabilities
+## 18.8 Equality, Ordering and Derivation
 
-### Variant Capabilities
+§5.6 lets `Eq`, `Ord`, `Debug`, `Show`, `Clone` and `Hash` be derived:
 
 ```lisp
-;; ADT variants inherit capability from containing value
-(let opt (Some (make-Point 1 2)))  ; opt : Option<Point> @ Stack
+(derive Shape Eq Ord)
 ```
 
-### Send Capability
+`derive` is currently a no-op (Chapter 20). You get the same behavior
+whether or not you write it:
 
-ADT is Send if **all variant fields are Send**:
+- `==` and `!=` on two ADT values compare structurally: the tag, then
+  each field word.
+- `<`, `>`, `<=` and `>=` compare the fields lexicographically.
+- Both comparisons are shallow. A field that holds a string or another
+  ADT value is compared by address, not by content.
+- `print` of an ADT value prints its address. No `Show` or `Debug`
+  output is generated.
 
-```lisp
-(deftype Msg (Text String) (Data (Vec Int)) (Ping))
-;; All fields Send → Msg is Send
+## 18.9 Representation
 
-(deftype BadMsg (Mut (TMut Int)))  ; TMut not Send → BadMsg not Send
-```
-
-## 18.7 Deriving Traits on ADTs
-
-```lisp
-(derive Option [Eq Ord Show])
-(derive Result [Eq])
-```
-
-**Requirements:**
-- All type parameters must implement the trait
-- All variant fields must implement the trait
-- For `Eq`/`Ord`: structural comparison (tag first, then payloads)
-
-## 18.8 ADT Representation
-
-### Memory Layout
+A variant value is a pointer to a block of words:
 
 ```
-Nullary variant (None, Red):
-  [tag: 1 byte]
-
-Unary variant (Some Int):
-  [tag: 1 byte] [payload: 8 bytes]
-
-Multi-field variant (Cons Int (List Int)):
-  [tag: 1 byte] [field1: 8 bytes] [field2: 8 bytes]
-
-Recursive variant (Cons T (List T)):
-  [tag: 1 byte] [field1: 8 bytes] [field2: 8 bytes (TBox pointer)]
+            hidden        tag      field 0   field 1
+          ┌──────────┬─────────┬─────────┬─────────┐
+          │ size (n) │ variant │  word   │  word   │   ...
+          └──────────┴─────────┴─────────┴─────────┘
+                       ^ the value points here
 ```
 
-- Tag = variant index (0-based, declaration order)
-- Payload sized to largest variant
-- Recursive fields use `TBox` (heap pointer)
+- Every slot is 8 bytes. The tag is a whole word, and each field is one
+  word: an integer, a float's bits, a boolean, or a pointer.
+- **Blocks are sized per variant.** Each variant gets a block exactly as
+  large as its own fields; blocks are not padded to the largest variant.
+  A nullary variant is still a heap block, holding just the tag.
+- **The hidden size word** sits before the tag and records the block's
+  size in words. Structural `==` and `<` read it (Chapter 15).
+- **Tags** are 0-based in declaration order, per `deftype`:
 
-### Discriminant Values
+  ```lisp
+  (deftype Color (Red) (Green) (Blue))
+  ;; Red = 0, Green = 1, Blue = 2
+  ```
 
-```lisp
-(deftype Color (Red) (Green) (Blue))
-;; Red = 0, Green = 1, Blue = 2
+  Struct tags are allocated from a separate range (100000 upward) and are
+  unique across the program.
+- **Recursive fields** are ordinary pointer words. No box type is
+  involved.
 
-(deftype Option (Some T) None)
-;; Some = 0, None = 1
-```
+## 18.10 Match Compilation
 
-## 18.9 Match Compilation
+The implementation is simpler than a decision-tree compiler.
 
-1. **Pattern matrix**: Rows = arms, columns = pattern positions
-2. **Decision tree**: Compile to efficient jumps
-3. **Tag-based dispatch**: Load tag, jump table
-4. **Exhaustiveness check**: Verify matrix covers all constructors
+- **Constructor matches** evaluate the scrutinee once, then test its tag
+  against each arm in source order. The first arm whose tag matches binds
+  its fields and runs its body. A catch-all arm matches without a test.
+  If nothing matches, the result is 0, which is why exhaustiveness is
+  enforced (18.5).
+- **Literal matches** bind the scrutinee to a hidden variable and lower to
+  a nested `if` chain. Each arm's test is its alternatives joined by
+  "or", then combined with its guard by "and".
 
-### Optimization
+There is no jump table and no merging of arms.
 
-- Adjacent arms with same tag merged
-- Redundant tests eliminated
-- Fall-through for catch-all dummies
+## 18.11 Errors
 
-## 18.10 Errors
+| Code | Cause | Status |
+|------|-------|--------|
+| `E_NON_EXHAUSTIVE_MATCH` | constructor match misses a variant | raised (spec spelling `E_MATCH_NONEXHAUSTIVE`) |
+| `E_MATCH_NONEXHAUSTIVE` | literal match without a trailing `_` arm | raised |
+| `E_UNREACHABLE_MATCH_ARM` | arm after a catch-all | raised |
+| `E_DUPLICATE_VARIANT` | variant name repeated within one `deftype` | raised |
+| `E_MATCH_ARM_COMPLEX` | an arm body that combines a constant with several calls, a shape the code generator is known to miscompile | raised |
+| `E_TYPE_MISMATCH` | field or pattern type mismatch | catalogued; never raised |
 
-| Error | Cause |
-|-------|-------|
-| `E_MATCH_NONEXHAUSTIVE` | Missing variant coverage |
-| `E_DUPLICATE_VARIANT` | Variant name used in multiple ADTs |
-| `E_UNKNOWN_VARIANT` | Variant not in ADT |
-| `E_TYPE_MISMATCH` | Pattern field type doesn't match variant |
-| `E_WILDCARD_FORBIDDEN` | Bare `_` used as pattern |
-
-## 18.11 Comparison with Other Languages
+## 18.12 Comparison with Other Languages
 
 | Feature | Rust `enum` | Haskell `data` | Zyl `deftype` |
 |---------|-------------|----------------|---------------|
 | Syntax | `enum X { A, B(u32) }` | `data X = A \| B Int` | `(deftype X (A) (B Int))` |
-| Exhaustiveness | ✅ | ✅ | ✅ (mandatory) |
-| Pattern guards | `if` in arm | `|` guards | ❌ (use `if` in body) |
-| Wildcard `_` | ✅ | ✅ | ❌ (use `d1`) |
-| GADTs | ✅ | ✅ | ❌ |
-| Deriving | `#[derive(...)]` | `deriving` | `(derive ...)` |
+| Exhaustiveness | checked | warning | compile-time error |
+| Wildcard | `_` | `_` | `_` |
+| Literal / OR / range patterns | yes | yes | yes, not mixed with constructor arms |
+| Guards | `if` | `\|` | `(when ...)` on literal arms only |
+| Nested patterns | yes | yes | no |
+| GADTs | no | yes (extension) | no |
+| Deriving | `#[derive(...)]` | `deriving` | `(derive ...)`, currently a no-op |

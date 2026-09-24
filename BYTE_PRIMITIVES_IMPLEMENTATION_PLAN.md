@@ -1,9 +1,50 @@
 # Zyl Byte-Level Primitives — Implementation Plan
 
-**Status**: Core primitives (byte load/store, byte slices, byte buffers, atomics,
-align-check) implemented and verified through the self-hosted pipeline.
-Region-inference integration, dedicated codegen paths, and testing/docs are
-explicitly deferred — see each section below for what's real vs. TODO.
+## Current Status (verified against the code, 2026-09-23)
+
+**Implemented and in the shipping compiler:**
+
+- Types `TByte`, `TByteSlice Region`, `TByteBuf Region` and capability kinds
+  `TCByte`/`TCAtomicByte` — `stdlib/compiler/type_system.zyl`.
+- Surface forms `byte`, `load-u8`/`load-i8`, `store-u8`/`store-i8` (with a
+  `:le`/`:be` endian selector), `byteslice`, `byteslice-sub`, `bytebuf`,
+  `bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr`,
+  `align-check`, and the eight `bytebuf-atomic-*` forms —
+  `stdlib/compiler/expr_inner.zyl` (`byte-form-dispatch`).
+- Type rules — `stdlib/compiler/type_inference.zyl`.
+- Lowering to generic `IFfi` calls into the runtime —
+  `stdlib/compiler/icnf.zyl`. No dedicated ICNF nodes, no codegen changes.
+- Runtime functions (`zyl_load_byte`, `zyl_byte_slice`, `zyl_bytebuf_new`,
+  `zyl_bytebuf_atomic_*`, ...) — `runtime/actor_runtime.c`.
+- Regression test `tests/regression/byte-primitives.zyl` (29 tests,
+  round-trip assertions).
+- Book chapter `book/src/part4/ch32-bits-and-bytes.md`; forms listed in
+  `book/src/appendix/appendix-c-builtins.md`, codes in
+  `book/src/appendix/appendix-a-errors.md`.
+
+**Deviations from the original plan:** atomic forms are named
+`bytebuf-atomic-*` (not `atomic-*`) to avoid shadowing
+`stdlib/atomic/atomic.zyl`; lowering goes through `IFfi` rather than 19 new
+ICNF variants; the runtime header is a magic tag plus bounds checks, not the
+planned canary/version layout; wide-width forms (`load-u16` ... `store-i64`)
+are reserved and rejected with `E_RESERVED_KEYWORD`. The endian selector is
+parsed and passed to the runtime but ignored there, since every implemented
+load and store is one byte wide.
+
+**Not done:** no compile-time region enforcement of any kind (Pin-only
+`bytebuf-ptr`, Stack constant capacity, Stack-return promotion,
+Global immutability); the `region` argument to `bytebuf` is accepted and
+ignored at runtime. Several error codes for that enforcement
+(`E_BYTEBUF_NOT_PIN`, `E_ATOMIC_ABA`, `E_BYTEBUF_OVERLAP`,
+`E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`) are defined in
+`stdlib/compiler/error_codes.zyl` but never raised. No constant-time bounds
+checks, no property tests, no fuzzing harness, no wide-width loads/stores.
+
+The sections below are the original plan annotated with what was actually
+built. Historical statements (test counts, the seed-commit note) describe
+the state at the time each section was written.
+
+---
 
 This document was previously written as a prescriptive spec before
 implementation started, including a Phase 0 step that told the reader to add
@@ -124,14 +165,17 @@ form ends and the next begins.
 |------------|-------------|
 | `EByteLit n` | `TByte` |
 | `ELoadByte`/`ELoadByteSigned` | `TInt` |
-| `EStoreByte`/`EStoreByteSigned` | `TInt` (existing code; unchanged) |
+| `EStoreByte`/`EStoreByteSigned` | `TUnit` |
 | `EByteSlice`/`EByteSliceSub` | `(TByteSlice R)`, `R` taken from the source buffer/slice's own inferred region (falls back to `RHeap` if the source's type isn't a byte-region-carrying type) |
 | `EByteBuf region _cap` | `(TByteBuf region)` |
-| `EByteBufPtr` | `TInt` — no `Ptr` type exists in this ADT (see §1); Pin-region enforcement is deferred to the runtime, since this inference pass has no hard-error path (see below) |
-| `EByteBufAppend`/`EByteBufLen`/`EByteBufCap`/`EAlignCheck` | unchanged from initial commit, already correct |
+| `EByteBufPtr` | `TInt` — no `Ptr` type exists in this ADT (see §1). The Pin-region restriction is not enforced anywhere: a comment in `type_inference.zyl` says it is enforced at runtime, but `zyl_bytebuf_ptr` only checks the magic tag and `zyl_bytebuf_new` ignores its region argument |
+| `EByteBufAppend` | `TUnit` (the runtime returns 1/0 for success, but the type discards it) |
+| `EByteBufLen`/`EByteBufCap` | `TInt` |
+| `EAlignCheck` | `TBool` |
 | `EAtomicLoad`/`Add`/`Sub`/`FetchAdd`/`Max`/`Min` | `TInt` |
-| `EAtomicStore` | unit-shaped (`TInt`, matching this codebase's convention for statement-like FFI calls) |
-| `EAtomicCAS` | `TInt` (0/1 boolean-as-int, matching this codebase's convention — there is no dedicated `TBool`-returning path used elsewhere for CAS-like ops) |
+| `EAtomicStore` | `TUnit` |
+| `EAtomicCAS` | `TBool` |
+| anything else | a fresh type variable (`inferer-return-var`) |
 
 `type_inference.zyl` is a best-effort pass throughout this codebase, not a
 hard type-checker: many arms already collapse to a generic `TInt` for
@@ -249,7 +293,9 @@ existing threat model, consistent) level of hardening; every other
 handle-shaped value in this runtime (actors, arena blocks) uses the same
 magic-tag-after-dereference convention, not a stronger one.
 
-What's implemented and covered by a standalone C smoke test (bounds
+What's implemented (at the time, checked by a standalone C smoke test
+that was not committed to the repository; the committed coverage is
+`tests/regression/byte-primitives.zyl`, §10) — bounds
 rejection, embedded-null-byte safety, zero-copy slicing, cap-overflow
 rejection, self-aliasing `memmove`-safe append, magic-tag type-confusion
 rejection, atomic load/store/add/fetch_add/CAS/alignment/bounds):
@@ -279,15 +325,21 @@ custom `zyl_bytebuf_eq` (no equality primitive was requested or added),
 
 ---
 
-## 8. Error Codes (`stdlib/compiler/error_codes.zyl`) — Partially implemented
+## 8. Error Codes (`stdlib/compiler/error_codes.zyl`) — Defined, mostly unused
 
-Endian error variants (`ELe`/`EBe`) and the byte/atomic-primitive error
-codes were added in the initial commit. `E_BYTEBUF_NOT_PIN` is defined but
-currently unused — nothing enforces the Pin-only constraint it was meant for
-(see §5). The rest of the originally-planned codes
-(`E_ATOMIC_ABA`, `E_BYTEBUF_OVERLAP`, `E_STACK_BYTEBUF_RETURN`,
-`E_GLOBAL_BYTEBUF_MUT`) were not added — they describe enforcement that
-doesn't exist (§5, §7).
+The catalog defines `E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`,
+`E_BYTE_VALUE_OOB`, `E_BYTE_OOB`, `E_BYTEBUF_CAP_EXCEEDED`,
+`E_BYTEBUF_NOT_PIN`, `E_BYTEBUF_INVALID`, `E_BYTEBUF_OVERLAP`,
+`E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT` and `E_ATOMIC_ABA`.
+(An earlier version of this section said the last four were never added;
+they are in the catalog.) `E_BYTE_VALUE_OOB` is raised by `parse-byte` in `expr_inner.zyl` for a
+`byte` literal outside 0-255 or not an integer. None of the other
+compile-time codes is raised by any pass, because the enforcement they describe does not exist (§5). The runtime
+does not raise the runtime codes either: out-of-bounds accesses, capacity
+overflow and a bad magic tag fail closed by returning 0, not by reporting an
+error. The other diagnostics the byte forms produce are
+`E_ARITY_MISMATCH` (wrong argument count, from `expr_inner.zyl`) and
+`E_RESERVED_KEYWORD` (a wide-width form).
 
 ---
 
@@ -369,8 +421,8 @@ elsewhere in this codebase's smaller helper matches.
 
 `build/boot/stage2.s`/`stage2.bin` must be regenerated after any change
 here, via `./boot.sh --bootstrap-from-self` (not `--bootstrap-from-rust`),
-and committed once verified. Not done as part of this review — left for the
-user to commit deliberately.
+and committed once verified. The seed has since been re-cut and committed
+many times; the current committed seed contains all of this work.
 
 ---
 
@@ -389,7 +441,8 @@ user to commit deliberately.
 - [x] Manual end-to-end smoke test passes through the self-hosted pipeline
 - [x] Determinism verified (stage2 == stage3)
 - [x] Self-host fixed point holds
-- [x] `run_regression_tests.sh` passes (6/6)
+- [x] `run_regression_tests.sh` passes (6/6 at the time; the suite now has
+      121 tests, all passing)
 - [ ] Region inference enforcement (Pin-only, Stack-const-cap, etc.) — out
       of scope, no supporting machinery exists (§5)
 - [ ] Dedicated codegen path / constant-time bounds checks — not needed for
@@ -398,7 +451,9 @@ user to commit deliberately.
 - [x] Documentation (book Chapter 32, §11)
 - [x] Load/store argument-order bug found and fixed (§15)
 - [ ] Property tests / fuzzing (§10)
-- [ ] New seed committed (`build/boot/stage2.s`/`.bin`) — left for the user
+- [ ] Wide-width loads/stores (`load-u16` ... `store-i64`) — reserved only
+- [ ] Error codes raised: the enforcement codes are defined but unused (§8)
+- [x] New seed committed (`build/boot/stage2.s`/`.bin`)
 
 ---
 

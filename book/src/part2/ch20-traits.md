@@ -1,263 +1,332 @@
 # Chapter 20: Trait System and Derivation
 
-Complete reference for traits: declaration, implementation, coherence rules, resolution, and automatic derivation.
+This chapter is the reference for traits: declaration, implementation,
+coherence, resolution and derivation. The normative text is
+`zyl_specification.txt` §5 (trait system), §6.6 (generic derivation) and
+§24.6 (coherence across packages). The implementation is
+`stdlib/compiler/trait_dispatch.zyl` (call rewriting),
+`stdlib/compiler/monomorphization.zyl` (impl bodies) and
+`stdlib/compiler/module_resolver.zyl` (the orphan rule).
+
+In brief: `impl` blocks and qualified `Trait.method` calls work, and are
+dispatched on the receiver's runtime tag. `trait` declarations, coherence
+C1 and C3, bounds and `derive` are not enforced.
 
 ## 20.1 Trait Declaration
 
+§5.1:
+
 ```
-trait ::= "trait" Identifier "(" TraitMethod* ")" BoundClause?
-
-TraitMethod ::= "(" Identifier "(" Param* ")" TypeExpr ")"
-
-BoundClause ::= ":" Identifier "[" Identifier* "]"
+(trait Name (method1 (params1) ReturnType1) ...) [where TypeParam : OtherTrait]
 ```
-
-### Examples
 
 ```lisp
-;; Simple trait
-(trait Eq
-  (eq (a T) (b T) Bool))
+(trait Area
+  (area self))
 
-;; With supertrait bound
-(trait Ord
-  (lt (a T) (b T) Bool)
-  (gt (a T) (b T) Bool)
-  : Eq [T])
-
-;; Multiple methods
-(trait Show
-  (show (x T) String)
-  (show-debug (x T) String))
-
-;; With default? Not supported — all methods required
+(trait OutputStream                    ; stdlib/io/io.zyl
+  (write (self T) (chunk String) Int)
+  (flush (self T) Int))
 ```
 
-### Rules
+Rules from the specification: a trait lists method signatures, and §5.4
+supports recursive transitive bounds through `where`.
 
-1. **Trait name**: PascalCase convention
-2. **Type parameter**: Implicit `T` (the implementing type)
-3. **Methods**: First param is `self` (convention: `a`, `x`, `self`)
-4. **Supertraits**: `: Trait [T]` — implementing type must also implement supertrait
-5. **No default implementations** — all methods must be provided in `impl`
+In the implementation, the post-processor does not recognize `trait`.
+A declaration is accepted and has no effect:
+
+- the method list is not recorded;
+- there is no `where` clause;
+- an `impl` of a trait that was never declared compiles when the type
+  is local (a `defstruct` or `deftype` of this program); for a type the
+  program does not own, such as `Int`, the undeclared trait is not local
+  either, and the orphan rule rejects it with `E_PKG_ORPHAN_IMPL`
+  (§20.3) — declaring the trait makes that `impl` legal;
+- an `impl` that omits one of the declared methods compiles too.
+
+Declaring the trait still documents the interface, and it is the style
+used in the standard library.
+
+There are no default method bodies.
 
 ## 20.2 Trait Implementation
 
-```
-impl ::= "impl" TraitName TypeName "(" ImplBody* ")"
+§5.2:
 
-ImplBody ::= "defn" Identifier "(" Param* ")" Expression
 ```
-
-### Examples
+(impl TraitName TypeName (defn methodName (params) body) ...)
+```
 
 ```lisp
-(impl Eq Int
-  (defn eq (a b) (== a b)))
+(defstruct Rect (w) (h))
+(defstruct Circle (r))
 
-(impl Ord Int
-  (defn lt (a b) (< a b))
-  (defn gt (a b) (> a b)))
+(trait Area
+  (area self))
 
-(impl Show Int
-  (defn show (x) (int-to-string x))
-  (defn show-debug (x) (string-append "Int(" (int-to-string x) ")")))
+(impl Area Rect
+  (defn area (self) (* (struct-get self "w") (struct-get self "h"))))
+
+(impl Area Circle
+  (defn area (self) (* 3 (* (struct-get self "r") (struct-get self "r")))))
+
+(defn main ()
+  (begin
+    (print (Area.area (make-Rect 3 4)))    ; 12
+    (print (Area.area (make-Circle 2)))    ; 12
+    0))
 ```
 
-### Rules
+- **Methods are called by their qualified name**, `(Trait.method receiver
+  args...)`. The dot is part of the identifier (Chapter 14). A bare
+  `(area r)` does not find the method; it is an undefined function at
+  link time.
+- **The receiver is the first argument.** Naming it `self` is convention.
+- **Parameters are not checked** against the declaration. They are
+  whatever the `defn` inside the `impl` says.
+- **Each method body is lifted** to a top-level function named
+  `Trait.method_Type` (Chapter 19).
 
-1. **One impl per (Trait, Type) pair** — enforced globally
-2. **Orphan rule**: Valid only if trait OR type defined in current crate
-3. **All methods required** — no partial impls
-4. **Method signatures must match** trait declaration exactly
-
-## 20.3 Coherence Rules (Normative)
-
-### C1: One Impl Per Pair
+The standard library's one trait is `OutputStream` in `io/io`, with
+impls for `Stdout` and `StringBuffer`:
 
 ```lisp
-(impl Eq Int ...)   ; OK
-(impl Eq Int ...)   ; ERROR: E_DUPLICATE_IMPL
+(use io/io)
+
+(defn main ()
+  (let out (make-stdout)
+    (begin
+      (OutputStream.write out "hello\n")
+      (OutputStream.flush out)
+      0)))
 ```
 
-### C2: Orphan Rule
+### How dispatch works
 
-```lisp
-;; In crate A:
-(trait Foo (foo (x T) Unit))
-(defstruct MyType ...)
+§5.4 resolves traits statically, during Phase 3. The implementation
+resolves them at runtime instead. `trait_dispatch.zyl` runs after
+monomorphization and rewrites each `(Trait.method recv args...)` into a
+`match` on `recv`. The match has one arm per implementing type; each arm
+is named after the type and calls that type's `Trait.method_Type`.
 
-(impl Foo MyType ...)  ; OK: type defined here
+The arm name is treated like any other constructor pattern (Chapter 18),
+so dispatch is correct only when the type name identifies the receiver's
+runtime tag:
 
-;; In crate B:
-(impl Foo MyType ...)  ; ERROR: neither trait nor type defined in B
+- **Structs** always work. A struct is a one-variant ADT named after
+  itself, and its tag is unique in the program.
+- **A trait with exactly one impl** always works, whatever the type,
+  because a one-arm match has nothing to confuse.
+- **Several impls on multi-variant ADTs, or a mix of a primitive type and
+  other impls**, do not work. An ADT's name is not one of its variants,
+  so its arm behaves as a catch-all.
+
+> **Compiler defect.** With two ADT impls, the first impl's arm catches
+> every receiver:
+>
+> ```lisp
+> (deftype Shape (Circ Int) (Sq Int))
+> (deftype Tri (Tri Int))
+> (trait Area (area self))
+> (impl Area Shape (defn area (self) (match self (Circ r (* 3 (* r r))) (Sq s (* s s)))))
+> (impl Area Tri (defn area (self) (match self (Tri b b))))
+>
+> (defn main ()
+>   (begin
+>     (print (Area.area (Tri 9)))   ; expected 9; prints 243 (Shape's impl)
+>     0))
+> ```
+>
+> Likewise, `(impl Show Int ...)` next to `(impl Show Point ...)` sends a
+> `Point` receiver to the `Int` impl. Until dispatch uses static types,
+> implement traits for structs, or give an ADT-typed trait a single impl.
+
+## 20.3 Coherence Rules (Normative, §5.3)
+
+```
+C1. One impl per (Trait, Type) pair.
+C2. Orphan rule: impl valid only if trait or type defined in current crate.
+C3. No conflicting impls.
 ```
 
-Exception: If trait is `pub` and type is `pub`, impl allowed in third crate.
+### C1: One impl per pair
 
-### C3: No Conflicting Impls
+Not checked by a compiler pass. Two `(impl Area Rect ...)` blocks both
+define `Area.area_Rect`, and the build fails in the assembler with
+"symbol ... is already defined", not with `E_DUPLICATE_IMPL`.
 
-Overlapping impls forbidden even if technically disjoint:
+### C2: Orphan rule
 
-```lisp
-(trait Container (get (c T) Int))
+In v5.0 the orphan rule applies at the package boundary (§24.6): a
+package may implement a trait for a type only if it defines the trait or
+defines the type. The module resolver enforces this over the whole
+resolved graph and reports `E_PKG_ORPHAN_IMPL`. Within one package, any
+module may implement any of the package's traits for any of its types.
+There is no exception for `pub` items.
 
-(impl Container (Vec Int) ...)  ; OK
-(impl Container (Vec String) ...)  ; OK (different types)
+### C3: No conflicting impls
 
-;; But NOT:
-(impl Container (Vec T) ...)  ; Generic impl not allowed
-```
+The type in an `impl` is a single name, so generic impls such as
+`(impl Container (Vec T) ...)` cannot be written, and overlap between
+impls cannot arise except as a C1 duplicate.
 
 ## 20.4 Trait Resolution
 
-### Phase 3: Type Inference + Trait Resolution
+The specification resolves traits in Phase 3, with type inference (§5.4,
+§22):
 
-1. **Collect bounds** from function signatures and trait declarations
-2. **At call sites**: Substitute concrete types for type parameters
-3. **Lookup impl**: For each `T : Trait`, find `impl Trait ConcreteType`
-4. **Verify all bounds** satisfied
-5. **Substitute methods** with concrete implementations
+1. collect bounds from signatures and trait declarations;
+2. at each call site, substitute concrete types;
+3. find `impl Trait ConcreteType` for each bound;
+4. verify every bound;
+5. substitute the concrete method.
 
-### Recursive Bounds
+The implementation does none of this statically. Bounds cannot be
+declared (Chapter 19). Method selection is the runtime tag match of 20.2,
+inserted after monomorphization and before ICNF lowering. A call to a
+`Trait.method` that has no impl at all is left unchanged and fails at
+link time as an undefined symbol, not as `E_TRAIT_NOT_FOUND`.
 
-```lisp
-(trait Foo (bar () (Foo T)) : Bar)
+## 20.5 Trait Objects
 
-;; Resolution: T must have Foo, and Foo T requires Bar T
-```
-
-Resolver handles recursive bounds via fixed-point iteration.
-
-## 20.5 Trait Objects (Dynamic Dispatch)
-
-**Not supported in v4.2**. All trait usage is monomorphized (static dispatch).
+Not supported in v5.0: there is no `dyn` type and no vtable.
 
 ```lisp
 ;; NOT SUPPORTED:
 (defn process (items (Vec (dyn Drawable))) ...)
 ```
 
-Workarounds:
-1. **ADT wrapper**: `(deftype DrawableWrapper (WrapCircle Circle) (WrapRect Rect))`
-2. **Enum dispatch**: Match on ADT, call concrete impl
-3. **Function pointers**: Pass `fn` directly instead of trait
+The tag-based dispatch of 20.2 behaves like dynamic dispatch over a
+closed set of struct types, because the receiver's runtime tag selects
+the method. The usual alternatives still apply:
 
-## 20.6 Automatic Derivation
+1. **An ADT wrapper**, such as `(deftype Drawable (DCircle Circle) (DRect Rect))`,
+   with one function that matches on it.
+2. **Function values** passed directly instead of a trait.
 
-```lisp
-(defstruct+ Point
-  (x)
-  (y)
-  (:derive [Eq Ord Show Debug]))
+## 20.6 Derivation
 
-(derive Option [Eq])
-(derive Result [Eq Ord])
-```
-
-### Supported Derivable Traits
-
-| Trait | Purpose | Field Requirements |
-|-------|---------|-------------------|
-| `Eq` | Structural equality | All fields: `Eq` |
-| `Ord` | Ordering | All fields: `Ord` |
-| `Show` | Human-readable string | All fields: `Show` |
-| `Debug` | Debug representation | All fields: `Debug` |
-| `Clone` | Deep copy | All fields: `Clone` |
-| `Hash` | Hashable | All fields: `Hash` |
-
-### Derivation Algorithm
-
-For each trait:
-1. Check all fields implement trait (recursive for ADTs)
-2. Generate impl with:
-   - `Eq`: Compare tags, then fields structurally
-   - `Ord`: Compare tags, then fields lexicographically
-   - `Show`: Format as `VariantName(field1, field2, ...)`
-   - `Clone`: Recursively clone each field
-
-### Standalone Derive
+§5.6 and §5.7:
 
 ```lisp
-(derive MyType [Eq Ord])
+(defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline, on defstruct+
+
+(derive Point Eq Ord)                           ; standalone
 ```
 
-- Must be in same module as type
-- Useful for ADTs or types from other modules
-- Same requirements as inline derive
+- `derive` takes the type name followed by the trait names, separated by
+  spaces. The bracketed `[Eq Ord]` spelling of §5.7 also parses: brackets
+  read as a list (Chapter 14).
+- §5.7 requires a standalone derive to appear in the same module as its
+  type.
+
+### Derivable traits (§5.6)
+
+| Trait | Specified meaning | Field requirement |
+|-------|-------------------|-------------------|
+| `Eq` | structural equality | all fields `Eq` |
+| `Ord` | ordering | all fields `Ord` |
+| `Show` | readable text | all fields `Show` |
+| `Debug` | debug text | all fields `Debug` |
+| `Clone` | deep copy | all fields `Clone` |
+| `Hash` | hashing | all fields `Hash` |
+
+§6.6 extends this to generic ADTs: `(derive Result Eq)` requires every
+type parameter to implement `Eq`.
+
+### What the compiler does
+
+`derive` is parsed and then ignored (`insert-derive` in
+`type_inference.zyl` returns its input unchanged). No impl is generated,
+no field requirement is checked, and an unknown trait name is accepted.
+`E_TRAIT_NOT_DERIVABLE` is never raised. The behavior you get is the same
+with or without a derive:
+
+- **Equality.** `==`, `!=` and `assert-equal` on two struct or ADT values
+  compare structurally: tag, then field words.
+- **Ordering.** `<`, `>`, `<=` and `>=` compare the fields
+  lexicographically.
+- **Shallow comparison.** Both compare a string or nested-ADT field by
+  address, not by content.
+- **Output.** `print` of a struct prints its address. There is no derived
+  `Show` or `Debug` text.
+- **`Clone` and `Hash`** have no generated functions to call.
+
+```lisp
+(defstruct Pt (x) (y))
+(derive Pt Eq Ord)
+
+(defn main ()
+  (let a (make-Pt 1 2)
+    (let b (make-Pt 1 2)
+      (let c (make-Pt 2 0)
+        (begin
+          (print (== a b))    ; 1
+          (print (== a c))    ; 0
+          (print (< a c))     ; 1 (1 < 2 in the first field)
+          0)))))
+```
+
+The same program prints the same results with the `derive` line removed.
 
 ## 20.7 Derivation Errors
 
-| Error | Cause |
-|-------|-------|
-| `E_TRAIT_NOT_DERIVABLE` | Field lacks required trait |
-| `E_DERIVE_CONFLICT` | Manual impl conflicts with derived |
-| `E_DERIVE_CYCLE` | Recursive type without base case |
+| Code | Cause | Status |
+|------|-------|--------|
+| `E_TRAIT_NOT_DERIVABLE` | a field lacks the trait being derived (§5.6, §6.6) | catalogued; never raised |
 
-## 20.8 Traits with Capability Types
+The specification defines no other derive-specific codes.
 
-```lisp
-(trait Clone
-  (clone (x T) T))
+## 20.8 Traits and Capability Types
 
-(impl Clone (TCap T)
-  (defn clone (x) x))  ; Immutable = clone is identity
-
-(impl Clone (TMut T)
-  (defn clone (x) (deep-copy x)))  ; Mutable needs copy
-
-(impl Clone (TBox T)
-  (defn clone (x) (box-clone x)))  ; Box clone
-```
+The specification does not define impls on capability types, and
+capability types cannot be written in source (Chapter 17). An `impl`
+names a plain type: a struct, an ADT or a primitive.
 
 ## 20.9 Associated Types
 
-**Not supported in v4.2**. Use type parameters instead:
+Not supported. A trait has only methods. Where another language would use
+an associated type, have the method return a concrete ADT, as §21.10's
+`Iterator` does:
 
 ```lisp
-;; Instead of:
-(trait Iterator (next () (Option Item)) ...)
-
-;; Use:
-(trait Iterator (next (self T) (Option T)) ...)
-(defn collect ((I : Iterator) iter) ...)
+(trait Iterator
+  (next (self T) (Option T)))
 ```
+
+§21.10 says collections implement `Iterator` for `for` loops. No
+collection does today, and `for` is a condition loop (§12.6).
 
 ## 20.10 Trait Errors
 
-| Error | Cause |
-|-------|-------|
-| `E_TRAIT_NOT_FOUND` | No impl for required (Trait, Type) |
-| `E_DUPLICATE_IMPL` | Two impls for same (Trait, Type) |
-| `E_ORPHAN_IMPL` | Impl violates orphan rule |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | Concrete type lacks trait at call site |
-| `E_TRAIT_NOT_DERIVABLE` | Field constraint fails for derive |
+| Code | Cause (§28) | Status |
+|------|-------------|--------|
+| `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type belongs to the package (§24.6) | raised |
+| `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | catalogued; a missing impl fails at link time instead |
+| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | catalogued; a duplicate fails in the assembler instead |
+| `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type lacks a bound's trait (§6.7) | catalogued; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | catalogued; never raised |
 
-## 20.11 Standard Library Traits
+## 20.11 Traits in the Standard Library
 
-| Trait | Methods | Common Impls |
-|-------|---------|--------------|
-| `Eq` | `eq` | All primitives, structs, ADTs |
-| `Ord` | `lt`, `gt` | Int, Float, String, tuples |
-| `Show` | `show` | All (for user output) |
-| `Debug` | `show-debug` | All (for debugging) |
-| `Clone` | `clone` | Primitives, structs, ADTs |
-| `Hash` | `hash` | Int, String, tuples |
-| `Ord` | `lt`, `gt` | Int, Float, String |
-| `Add` | `add` | Int, Float |
-| `Mul` | `mul` | Int, Float |
-| `Iterator` | `next` | Collections |
+| Trait | Methods | Impls | Where |
+|-------|---------|-------|-------|
+| `OutputStream` | `write`, `flush` | `Stdout`, `StringBuffer` | `stdlib/io/io.zyl` |
+
+The derivable traits of §5.6 and `Iterator` (§21.10) are named in the
+specification but not defined as traits in the standard library.
 
 ## 20.12 Comparison with Rust
 
 | Feature | Rust | Zyl |
 |---------|------|-----|
-| Declaration | `trait Foo { fn bar(&self); }` | `(trait Foo (bar (self T) Unit))` |
-| Implementation | `impl Foo for Bar { ... }` | `(impl Foo Bar (defn bar ...))` |
-| Supertraits | `trait Foo: Bar` | `: Bar [T]` |
-| Default methods | ✅ | ❌ |
-| Trait objects | `dyn Trait` | ❌ |
-| Orphan rule | ✅ | ✅ |
-| Derive macros | `#[derive(...)]` | `(:derive [...])` / `(derive ...)` |
-| Associated types | ✅ | ❌ |
-| GATs | ✅ | ❌ |
+| Declaration | `trait Foo { fn bar(&self); }` | `(trait Foo (bar self))`: documentation only today |
+| Implementation | `impl Foo for Bar { ... }` | `(impl Foo Bar (defn bar (self) ...))` |
+| Call | `x.bar()` | `(Foo.bar x)` |
+| Dispatch | static, or `dyn` | runtime tag match |
+| Supertraits | `trait Foo: Bar` | not supported |
+| Default methods | yes | no |
+| Trait objects | `dyn Trait` | no |
+| Orphan rule | crate boundary | package boundary (`E_PKG_ORPHAN_IMPL`) |
+| Derive | `#[derive(...)]`, generates code | `(derive ...)`, currently a no-op |
+| Associated types | yes | no |

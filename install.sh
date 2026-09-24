@@ -76,10 +76,11 @@ ZYL_HOME="$TARGET" "$TARGET/bin/stage2.bin" "$SCRIPT_DIR/selfhost/lsp_main.zyl" 
 cat > "$TARGET/bin/zyl" <<WRAPPER
 #!/usr/bin/env bash
 # No arguments: start the REPL, same as \`python\`/\`node\` with no args --
-# this is purely a shell-level dispatch (the compiled zyl binary itself
-# has no notion of a REPL; tools/repl.zyl is an entirely separate
-# compiled program), so it costs nothing to change and touches neither
-# driver.zyl nor boot.sh's own direct stage1.bin/stage2.bin invocations.
+# this is purely a shell-level dispatch to zyl-repl-bin, the separately
+# compiled tools/repl.zyl. (The compiler binary has its own REPL too,
+# \`zyl repl\`, which this passes through like any other subcommand.)
+# It costs nothing to change and touches neither driver.zyl nor boot.sh's
+# own direct stage1.bin/stage2.bin invocations.
 set -euo pipefail
 if [ \$# -eq 0 ]; then
     exec "$TARGET/bin/zyl-repl-bin"

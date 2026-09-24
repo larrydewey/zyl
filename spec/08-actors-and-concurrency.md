@@ -1,8 +1,8 @@
 # Zyl Specification — Actors and Concurrency
 
-**Canonical authority:** `zyl_specification.txt` §15
+**Canonical authority:** `zyl_specification.txt` §15 (also §7.4, §9.1 R2/R3, §31.9 `actor`)
 **Related:** `spec/06-capability-types.md`, `spec/07-region-memory-model.md`
-**Implementation:** Type checking in `src/type_inference.rs`; runtime deferred
+**Implementation:** `stdlib/compiler/expr_inner.zyl` (`parse-spawn`, `parse-send`), `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/mutability_check.zyl` (capture checks), `runtime/actor_runtime.c` (runtime), `stdlib/actor/actor.zyl` (library)
 
 ---
 
@@ -28,12 +28,16 @@ An actor consists of:
 
 ### Region Rules for Actors
 
-- **R3:** Actor transfer → Heap region
-- Spawned closures must only capture Send-capable variables (TCap/TAtomic)
+- **R2:** A value sent to an actor escapes → Heap.
+- **R3:** spawn/send requires a Send-capable type.
+- Spawned closures must only capture Send-capable variables (TCap/TAtomic) (§7.4).
 
 ---
 
-## 15. Formal Model
+## Elaborated Model
+
+The canonical §15 states only the rules above. The model below is this
+document's elaboration of them.
 
 ### Actor State
 
@@ -64,7 +68,36 @@ send ActorRef Expr
 
 ---
 
-## Implementation Status
+## Implementation Notes
 
-Type checking for `spawn`/`send` is implemented.
-Runtime actor execution is deferred.
+Not normative.
+
+### What works
+
+- `(spawn (fn () body))` starts an actor and returns its id; `(send a msg)`
+  enqueues a message. They lower to the runtime calls `zyl_actor_spawn` and
+  `zyl_actor_send`.
+- Each actor is an OS thread (`pthread_create`) with its own mutex,
+  condition variable and linked-list mailbox; messages are delivered in
+  FIFO order per actor.
+- `stdlib/actor/actor.zyl` adds `actor-spawn`, `actor-send`,
+  `actor-send-with-timeout`, `actor-is-alive`, `actor-wait` and
+  `actor-terminate`.
+- `mutability_check.zyl` rejects a spawned closure or a sent message that
+  refers to an in-scope `let-mut` binding (`E_CAPABILITY_LEAK`), and
+  `secret_check.zyl` rejects a Secret reaching `spawn` or `send`
+  (`E_SECRET_ESCAPE`). In a package, `spawn`, `send` and `receive` need the
+  `actor` capability (§31.9).
+
+### Differences from §15
+
+- **There is no `receive`.** An actor cannot read the messages sent to it.
+  The runtime runs the actor's closure, then drains its mailbox: a message
+  carrying a closure is executed, and a plain data message is discarded.
+  `receive` appears only in the capability table.
+- **Scheduling is not deterministic.** Actors are scheduled by the
+  operating system; nothing orders the interleaving of output from two
+  actors. This is at odds with P1 and §27 for programs whose observable
+  output depends on that interleaving.
+- **Send-capability is checked syntactically** (the `let-mut` rule above),
+  not by type. `tc-is-send` in `type_system.zyl` is never called.

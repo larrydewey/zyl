@@ -1,5 +1,26 @@
 # Rust Eviction Plan (2026-09-12)
 
+> **Current status (verified 2026-09-23): DONE. This document is history.**
+> Rust was evicted on 2026-09-17. The compiler is `stdlib/compiler/*.zyl`
+> (37 modules) plus `selfhost/`; `./boot.sh` builds it from the committed
+> seed `build/boot/stage2.s` with nothing but `cc` and verifies the
+> stage2 == stage3 fixed point; `./boot.sh --bootstrap-from-self`
+> reseeds. The Rust implementation is frozen in
+> `archive/rust-bootstrap-2026/`, reachable only through
+> `./boot.sh --bootstrap-from-rust`, the fallback for a syntax change the
+> current seed cannot parse. The feature-parity survey below closed at
+> 43/43; the suite has since grown to 121 tests
+> (`./run_regression_tests.sh --full --no-boot`, see
+> `docs/regression-tests.md`). Phase C's REPL was later rebuilt from
+> scratch around an ICNF interpreter (`stdlib/repl/`, `docs/repl.md`);
+> the error system (Phase A.8) is described as it stands in
+> `docs/error-system-architecture.md`. The sections below are kept as
+> written, in the order they were written (newest survey first, the
+> original plan last), with dated status notes where a later change made
+> a statement stale. Commands in them that name `target/debug/zyl`,
+> `target/release/zyl` or `src/*.rs` refer to the Rust tree, which now
+> lives under the archive.
+
 ## Self-hosted compiler feature-parity survey (2026-09-16)
 
 Once `./boot.sh`'s fixed point actually held (see below), switching
@@ -348,6 +369,12 @@ before merging. Latent landmine: a real program `use`-ing both
 `collections/collections` and `compiler/monomorphization` would hit the
 same duplicate-symbol class of failure. No current test combination
 triggers it.
+
+*Status (2026-09-23): resolved by the package system. Every top-level
+definition now has a canonical key (`zyl/std@5::collections/collections::
+list-nth` and `zyl/std@5::compiler/monomorphization::list-nth` are
+distinct symbols), and a module's names resolve to what it imports, so
+the two copies no longer collide. See `docs/package-management-design.md`.*
 
 **Impact**: `integration/selfhost-codegen` link failure → 1/1 test
 passes. 36/43 → 37/43. More importantly, this was a systemic module-
@@ -776,8 +803,14 @@ Decisions locked (all "recommended" options):
    [-o out] [--emit-asm]`, real stderr diagnostics, links via `cc`.
 3. **Phase parity** — port E_MATCH_NONEXHAUSTIVE to `icnf.zyl`, wire
    region inference into the driver, write `optimization.zyl`.
+   *(Done. Exhaustiveness now lives in its own pass,
+   `exhaustiveness_check.zyl`, which reports `E_NON_EXHAUSTIVE_MATCH`;
+   the pipeline itself moved from `driver.zyl` to
+   `stdlib/compiler/pipeline.zyl`.)*
 4. **REPL** — write a Zyl REPL (file-backed loop using the self-hosted
-   compiler).
+   compiler). *(Done 2026-09-17 as a file-backed loop; replaced on
+   2026-09-23 by `stdlib/repl/`, which evaluates entries with an ICNF
+   interpreter in process. `tools/repl.zyl` is now only its `main`.)*
 5. **Archive** — move `src/` (Rust) to `archive/rust-bootstrap-2026/` with
    a README; remove `Cargo.toml`/`Cargo.lock`/`target/` from the build path.
 6. **Full sweep** — consolidate test runners onto the selfhost binary,
@@ -899,10 +932,15 @@ reseed to a new fixed point, regression suite stays 43/43.
    gitignore).
 7. Rewrite `boot.sh` (`--skip-rust` becomes the default/no option; cc from
    committed stage2.s; argv-based smoke; new `zyl-self` = `exec stage2.bin
-   "$@"`).
+   "$@"`). *(Done. `boot.sh` has no `--skip-rust` flag; its only options
+   are `--bootstrap-from-self` and `--bootstrap-from-rust`.)*
 8. **Error System (native Zyl)**: implement `stdlib/compiler/sexp_balance.zyl`,
    `error_codes.zyl`, `error_report.zyl`; integrate into driver pipeline;
    replace Python balance scripts; verify fixed point.
+
+*Status: Phase A done, including A.8 (`sexp_balance.zyl`,
+`error_codes.zyl`, `error_report.zyl`); see the 2026-09-16 status update
+above.*
 
 ### Phase B — Pipeline parity
 8. Wire region inference: fix link-broken `stdlib/compiler/region_inference.zyl`
@@ -910,6 +948,10 @@ reseed to a new fixed point, regression suite stays 43/43.
    add to driver pipeline; verify suite + fixed point.
 9. Write `stdlib/compiler/optimization.zyl` (safe constant-folding + DCE
    over ICNF); add to driver pipeline; verify.
+
+*Status: Phase B done 2026-09-17 (region inference produces
+`IStackVariant`; `optimization.zyl` folds constants and eliminates dead
+branches).*
 
 ### Phase C — REPL (BLOCKED by Phase A.8: Error System)
 10. `tools/repl.zyl` (or stdlib): read stdin, write snippet file, invoke
@@ -919,6 +961,13 @@ reseed to a new fixed point, regression suite stays 43/43.
 - Live S-expression balance feedback
 - Rich error reporting in interactive mode
 - "Did you mean?" suggestions for typo recovery
+
+*Status: done. The block was lifted when A.8 landed; the file-backed
+REPL ran on 2026-09-17 (see above), and the current REPL (`stdlib/repl/`,
+2026-09-23) replaced it. Of the three bullets, only rich error reporting
+exists: an entry that does not balance continues on a new line rather
+than getting live feedback, and there are no "did you mean?"
+suggestions.*
 
 ### Phase D — Eviction & docs — DONE (commits `cf00abb`, `ef9305d`, 2026-09-17)
 
@@ -964,9 +1013,21 @@ the new source.
     script except `boot.sh`'s own documented fallback path. REPL smoke
     not re-verified this pass — `tools/repl.zyl` was already known to
     be an unfinished skeleton (Phase C, still not started) before this
-    phase, unaffected by the archival itself.
+    phase, unaffected by the archival itself. *(That parenthesis was
+    already stale when written: the Phase C notes above record the REPL
+    running on 2026-09-17. It is in any case superseded by the 2026-09-23
+    REPL in `stdlib/repl/`.)*
 
 ## Risk register
+
+*Status (2026-09-23): the risks below are as written during the
+eviction. Current state: the reseed command is
+`./boot.sh --bootstrap-from-self` followed by `./boot.sh` (see
+`AGENTS.md`); exhaustiveness and region inference both landed; and the
+`setarch -R` requirement is gone — the runtime allocates the big stack
+itself with `mmap(MAP_NORESERVE)` instead of relying on ASLR being off
+(see the comment above `zyl_call_on_big_stack` in
+`runtime/actor_runtime.c`).*
 - **Fixed point fragility**: every compiler-source edit changes what
   self-compiled binaries look like. Must re-run assemble.py + boot.sh and
   see stage2==stage3 before committing each batch. As of 2026-09-16 this

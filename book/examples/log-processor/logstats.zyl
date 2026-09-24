@@ -1,0 +1,118 @@
+; === log-processor: the library half ===
+; Types, parsing and counting for the Chapter 13 walkthrough. Used by
+; log-processor.zyl (the program) and log-processor-tests.zyl (the
+; tests) through `(use logstats)`. A module meant to be `use`d must not
+; define `main`, so this file has none.
+
+(use core/list)
+
+(defstruct LogEntry (timestamp) (level) (service) (message))
+(defstruct Stats (total) (errors) (warnings) (infos) (skipped))
+
+(deftype ParseResult
+  (Parsed LogEntry)
+  (Unparsed String))
+
+; --- tokenizing -------------------------------------------------------------
+
+; Split `s` on the one-character separator `sep`. Walks the string with
+; an index pair and accumulates tokens in reverse; `tokenize` puts them
+; back in reading order.
+(defn tokenize-h (s n i start acc sep)
+  (if (>= i n)
+    (if (> i start)
+      (Cons (str-substring s start (- i start)) acc)
+      acc)
+    (if (> (str-eq (str-substring s i 1) sep) 0)
+      (tokenize-h s n (+ i 1) (+ i 1)
+        (Cons (str-substring s start (- i start)) acc) sep)
+      (tokenize-h s n (+ i 1) start acc sep))))
+
+(defn tokenize (s sep)
+  (list-reverse (tokenize-h s (str-length s) 0 0 Nil sep)))
+
+(defn list-nth (l k)
+  (match l
+    (Nil 0)
+    (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
+
+; --- parsing ----------------------------------------------------------------
+
+; A line is `<timestamp> <level> <service> <message...>`. Fewer than four
+; tokens is not a log line.
+(defn parse-line (line)
+  (let toks (tokenize line " ")
+    (if (< (list-length toks) 4)
+      (Unparsed line)
+      (make-entry line toks))))
+
+; The message is everything after the third space, so it keeps its own
+; spaces instead of being cut down to one token.
+(defn make-entry (line toks)
+  (let ts (list-nth toks 0)
+    (let lvl (list-nth toks 1)
+      (let svc (list-nth toks 2)
+        (let off (message-offset ts lvl svc)
+          (Parsed (make-LogEntry ts lvl svc
+                    (str-substring line off (- (str-length line) off)))))))))
+
+(defn message-offset (ts lvl svc)
+  (let a (str-length ts)
+    (let b (str-length lvl)
+      (let c (str-length svc)
+        (+ a b c 3)))))
+
+; --- counting ---------------------------------------------------------------
+
+(defn empty-stats () (make-Stats 0 0 0 0 0))
+
+(defn level-is (e lvl)
+  (if (> (str-eq (struct-get e "level") lvl) 0) 1 0))
+
+(defn count-entry (st e)
+  (make-Stats (+ (struct-get st "total") 1)
+              (+ (struct-get st "errors") (level-is e "[ERROR]"))
+              (+ (struct-get st "warnings") (level-is e "[WARN]"))
+              (+ (struct-get st "infos") (level-is e "[INFO]"))
+              (struct-get st "skipped")))
+
+(defn count-skipped (st)
+  (make-Stats (struct-get st "total")
+              (struct-get st "errors")
+              (struct-get st "warnings")
+              (struct-get st "infos")
+              (+ (struct-get st "skipped") 1)))
+
+(defn count-line (st line)
+  (match (parse-line line)
+    (Parsed e (count-entry st e))
+    (Unparsed _ (count-skipped st))))
+
+; --- scanning a whole file --------------------------------------------------
+
+; Cut `s` on newlines and fold every non-empty line into `st`.
+(defn scan (st s n i start)
+  (if (>= i n)
+    (finish-line st s start i)
+    (if (> (str-eq (str-substring s i 1) "\n") 0)
+      (scan (finish-line st s start i) s n (+ i 1) (+ i 1))
+      (scan st s n (+ i 1) start))))
+
+(defn finish-line (st s start end)
+  (if (> end start)
+    (count-line st (str-substring s start (- end start)))
+    st))
+
+(defn scan-text (s)
+  (scan (empty-stats) s (str-length s) 0 0))
+
+; A file that cannot be opened reads as an empty log, after saying so.
+(defn process-file (path)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      (begin
+        (print "log-processor: cannot open the log file")
+        (empty-stats))
+      (let content (file-read fd 1000000)
+        (let _ (file-close fd)
+          (scan-text content))))))

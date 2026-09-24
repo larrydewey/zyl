@@ -107,9 +107,10 @@ reads better with the name and value grouped: `(let (name value) body)`.
 ```
 
 Arithmetic: `+ - * / %`. Comparisons: `< > <= >= == !=` (`=` also works
-as `==`). All of these work on structs and ADTs too, comparing by
-structural equality/ordering rather than pointer identity — see
-[Traits and derive](#11-traits-and-derive).
+as `==`). The comparisons also work on structs and ADTs, comparing by
+structural equality and ordering rather than pointer identity; see
+[Traits and derive](#11-traits-and-derive). Integers also have
+`bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`, `shr` and `ashr`.
 
 ## 4. Control flow
 
@@ -122,30 +123,30 @@ structural equality/ordering rather than pointer identity — see
       1)))
 ```
 
-`cond` for multi-way branches, with `else` as the fallback:
+`cond` for multi-way branches: each clause is a `(test value)` pair,
+with `else` as the fallback:
 
 ```zyl
 (defn sign2 (n)
   (cond
-    (< n 0) -1
-    (== n 0) 0
+    ((< n 0) -1)
+    ((== n 0) 0)
     (else 1)))
 ```
 
-> **Note:** prefer returning ints/bools (as above) over strings from a
-> function whose result you're about to `print` directly — the current
-> self-hosted compiler can't always see a function call's return kind
-> at the print call site, and a string coming back from an `if`/`cond`
-> branch through a plain function call can print as a raw number
-> instead of its text. Printing a string *literal*, or one already
-> bound to a variable in the same scope, works fine; it's specifically
-> "print the string a function just handed back" that's affected. If
-> you hit this, compare with `assert-equal`/`assert-true` in a
-> [`test`](#13-testing) instead of `print`ing the result — those don't
-> go through the same path.
+> **Note:** the code generator has no general return-type inference,
+> so `print` can't always tell that a value is a String. Printing a
+> string literal, a String-typed variable, or the result of an ordinary
+> function that returns a String works. A String that reaches `print`
+> through a generic function (`(defn id (x) x)` called with a String)
+> or out of an ADT field can print as a raw number instead of its text.
+> If you hit this, compare with `assert-equal`/`assert-true` in a
+> [`test`](#13-testing) instead of `print`ing the result.
 
-`while` and `for` loops. `for` supports single or multi-variable
-bindings:
+`while` and `for` loops. `for` takes a binding section, a condition
+and a body, and you update the loop variables yourself with `set!`.
+The binding section is either one binding, `(i 0)`, or a list of them,
+`((i 0) (j 10))`:
 
 ```zyl
 (defn sum-to (n)
@@ -220,7 +221,21 @@ recursively:
   (print (sum (Cons 1 (Cons 2 (Cons 3 Nil))))))   ; => 6
 ```
 
-A match must be exhaustive — every variant needs an arm.
+A match must be exhaustive: every variant needs an arm, or the match
+needs a `_` catch-all. A missing variant is the compile-time error
+`E_NON_EXHAUSTIVE_MATCH`.
+
+`match` also takes literal patterns. A literal match must end with a
+`_` arm; an arm can list several literals, and `(range lo hi)` matches
+an inclusive range:
+
+```zyl
+(defn classify (n)
+  (match n
+    (1 2 "low")
+    ((range 3 9) "mid")
+    (_ "other")))
+```
 
 ## 7. Generic ADTs
 
@@ -266,14 +281,15 @@ declare your own for the common case:
 ```
 
 Useful combinators: `option-map`, `option-unwrap-or`, `option-and`,
-`option-or`, `result-map`, `result-and-then`, `result-unwrap-or`,
-`result-to-option`, `option-to-result`. `assert-true`/`assert-equal`
+`option-or`, `result-map`, `result-and-then`, `result-unwrap-or`, and,
+from `core/core`, `result-to-option` and `option-to-result`. `assert-true`/`assert-equal`
 pair naturally with `result-is-ok`/`result-is-err` in tests.
 
 ## 9. Closures and higher-order functions
 
 `fn` creates an anonymous function value. Closures can be passed
-around, returned, and nested:
+around, returned, and nested, and a closure can capture variables from
+the scope it was created in:
 
 ```zyl
 (defn main ()
@@ -287,6 +303,18 @@ around, returned, and nested:
     (let inner (fn (y) (+ x y))
       (inner 10)))
     (print (outer 5))))                  ; => 15
+```
+
+A closure that captures a variable can also outlive the function that
+made it:
+
+```zyl
+(defn make-adder (x)
+  (fn (y) (+ x y)))
+
+(defn main ()
+  (let add5 (make-adder 5)
+    (print (add5 10))))                  ; => 15
 ```
 
 ## 10. Collections
@@ -308,8 +336,10 @@ around, returned, and nested:
     (print (set-contains s 42))))        ; => 1
 ```
 
-`Vec`/`Map`/`Set` are created with an initial length and capacity
-(`vec-create 0 10` = length 0, capacity 10) and grow as needed. For
+`vec-create`, `map-create` and `set-create` take an arena and an
+initial capacity: `(vec-create 0 10)` means "a private arena of its
+own" (an arena argument of 0) with room for 10 elements. `Vec` and
+`Map` double their capacity when they fill up. For
 simple linked lists, the built-in `Cons`/`Nil` ADT (section 6) plus
 `core/list`'s helpers (`list-length`, `list-append`, `list-map`, ...)
 are usually simpler than reaching for `Vec`.
@@ -327,29 +357,29 @@ are usually simpler than reaching for `Vec`.
       (print (< a b)))))                 ; => 0
 ```
 
-`derive` on a struct or ADT gives you `==`/`!=` (`Eq`) and ordering
-comparisons (`Ord`) without writing them by hand. `derive ... Debug`
-is also accepted, but printing a derived-Debug value directly is
-affected by the same print-dispatch limitation noted in
-[Control flow](#4-control-flow) — safest for now to compare its fields
-individually via `struct-get` if you need to check its contents.
+`derive` declares `Eq` (`==`/`!=`) and `Ord` (ordering) for a struct
+or ADT. `derive ... Debug` is also accepted, but there is no derived
+`Show` yet: `print` of a struct or ADT value prints its address, so
+compare its fields individually via `struct-get` if you need to check
+its contents.
 
-`trait`/`impl` declare and implement a shared interface:
+`trait`/`impl` declare and implement a shared interface, and a call
+written `(Trait.method receiver args...)` dispatches to the impl for
+the receiver's type:
 
 ```zyl
-(trait Printable
+(trait Describe
   (describe self))
 
-(impl Printable Int
-  (defn describe (self) (print self)))
+(impl Describe Int
+  (defn describe (self) (* self 10)))
+
+(defn main ()
+  (print (Describe.describe 4)))         ; => 40
 ```
 
-At the time of writing, trait *dispatch* (actually calling `describe`
-through the trait rather than a concrete type's function directly) is
-still a work in progress in the self-hosted compiler — declaring and
-implementing traits works, but see `tests/regression/traits.zyl`'s own
-header comment for the current state before relying on dynamic
-dispatch in real code.
+The dispatch is chosen at run time from the receiver's tag, so it
+works for any type with an `impl`.
 
 ## 12. Modules
 
@@ -367,6 +397,11 @@ dispatch in real code.
 
 Within a single file, everything after the imports is just ordinary
 top-level code — `use` only controls what names are in scope.
+
+A directory with a `zyl.pkg` manifest is a package. `zyl new <name>`
+creates one, `zyl add` adds a dependency, and `zyl build` and
+`zyl test` compile it; see `docs/package-management-design.md` and
+spec §31.
 
 ## 13. Testing
 
@@ -386,8 +421,8 @@ and `run-tests` executes everything registered so far.
 ```
 
 `assert-equal`, `assert-true`, and `assert-false` are the workhorses;
-a failing assertion reports the test as failed without stopping the
-rest of the suite.
+a failing assertion reports the test as `FAIL` without stopping the
+rest of the suite, and `run-tests` prints a pass/fail summary.
 
 ## 14. Actors
 
@@ -404,9 +439,10 @@ blocks until it finishes.
     (actor-wait a)))
 ```
 
-Actors don't share mutable state with each other or the spawning code
-— everything they touch is either captured by value or communicated
-through messages.
+Actors don't share mutable state with each other or the spawning code;
+they communicate through messages. At the time of writing, a `spawn`
+body that captures a variable from the enclosing scope hangs at run
+time, so pass data with `send` instead.
 
 ## 15. FFI
 
@@ -417,6 +453,12 @@ a timeout:
 (defn main ()
   (print (ffi-call "strlen" "hello" 1000)))     ; => 5
 ```
+
+The last argument is the timeout. Write it every time: the compiler
+treats the final argument as the timeout and drops it, so a call
+without one silently loses its real last argument. The timeout itself
+is not enforced yet, and `ffi-pin` is required only for `Secret`
+values.
 
 This is the same mechanism the standard library itself is built on —
 `str-length`, `str-concat`, arena allocation, and file I/O are all thin
@@ -433,7 +475,9 @@ This guide covers the everyday 80%. For the rest:
 - **`tests/regression/*.zyl`** — real, compiling examples of nearly
   every language feature, including the ones this guide only touched
   on (`with-resource`, `contracts`/`requires`/`ensures`, aliasing,
-  region annotations).
-- **`docs/rust-eviction-plan.md`** — current state of the self-hosted
-  compiler, including any features with known gaps at the time you're
-  reading this.
+  region annotations). Contracts parse but are not checked yet.
+- **`docs/implementation-status.md`** — what works today and the known
+  gaps.
+- **`docs/repl.md`** — `zyl repl` and `zyl eval`.
+- **`docs/rust-eviction-plan.md`** — the self-hosting story and the
+  fixed-point invariant.

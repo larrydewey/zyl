@@ -1,15 +1,27 @@
 # Self-Hosting Phase 1: Compiler IR in Zyl
 
-**Status:** Design RFC
+**Status:** Design RFC (historical; superseded)
 **Date:** 2026-08-04
-> **STATUS (2026-08-25): HISTORICAL.** This document describes the original
-> pool-based IR design for Phase 1 of self-hosting. That design was replaced
-> by the clean-room recursive-ADT rewrite (`stdlib/compiler/{ast,lexer,
-> parser,icnf,codegen}.zyl` + `selfhost/driver.zyl`). The full bootstrap is
-> now COMPLETE and deterministic: stage1 -> stage2 -> stage3 with
-> byte-identical output at the fixed point. See `PROGRESS.md`
-> ("SELF-HOSTING COMPLETE") for the current architecture and the bug sweep
-> that got it working.
+
+> **STATUS (2026-09-23): HISTORICAL — NOT IMPLEMENTED AS WRITTEN.** This
+> document describes the original pool-based, ID-addressed IR design for
+> Phase 1 of self-hosting. It was written when Zyl could not express
+> recursive `deftype`s; that limitation was lifted, and the design was
+> replaced by the clean-room recursive-ADT rewrite (commit `d3e9f69`,
+> "replace pool IR with recursive deftype AST"). `stdlib/compiler/ir.zyl`
+> and `test_ir.zyl`, named in §5 and §8, were removed in that change and
+> do not exist.
+>
+> What exists instead: the compiler is fully self-hosted.
+> `stdlib/compiler/*.zyl` (37 modules, recursive ADTs throughout: `ast.zyl`,
+> `expr_inner.zyl`, `icnf.zyl`, ...) plus `selfhost/driver.zyl` are the
+> active implementation; `./boot.sh` builds it with only `cc` and verifies
+> the stage2 == stage3 fixed point (first reached 2026-08-25). The Rust
+> implementation referred to below (`src/ast.rs`, `src/icnf.rs`) is frozen
+> in `archive/rust-bootstrap-2026/`. See `docs/rust-eviction-plan.md` and
+> the Current State section of `PROGRESS.md` for the present architecture.
+> The constraints in §2 and the limitations in §6 describe the language as
+> it was on 2026-08-04, not as it is now.
 
 
 ## 1. Goal

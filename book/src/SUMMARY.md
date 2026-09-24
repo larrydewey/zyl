@@ -16,7 +16,7 @@
 - [Chapter 8: Closures and Higher-Order Functions](part1/ch08-closures.md)
 - [Chapter 9: Concurrency with Actors](part1/ch09-actors.md)
 - [Chapter 10: Macros and Metaprogramming](part1/ch10-macros.md)
-- [Chapter 11: Testing and Property-Based Testing](part1/ch11-testing.md)
+- [Chapter 11: Testing](part1/ch11-testing.md)
 - [Chapter 12: FFI and Systems Programming](part1/ch12-ffi.md)
 - [Chapter 13: A Complete Project Walkthrough](part1/ch13-project-walkthrough.md)
 
@@ -60,7 +60,7 @@
 
 ## Part V: Tooling
 
-- [Chapter 35: Editors and the Language Server](part5/ch35-tooling.md)
+- [Chapter 35: Tooling — the Command Line, the REPL and the Editor](part5/ch35-tooling.md)
 
 ---
 

@@ -1,118 +1,169 @@
 # Appendix F: Language Specification Quick Reference
 
-Condensed reference mapping Zyl Specification (v4.2) sections to language features.
+A condensed map of `zyl_specification.txt` — the Zyl Formal
+Specification, **v5.0** — from section numbers to language features,
+with pointers to where this book covers each one. The specification is
+normative for the language; where the implementation differs, the
+source code is the authority for what a program does today, and
+Appendices A–C record the differences.
 
 ## F.1 Specification Structure
 
-| Section | Topic | Key Points |
-|---------|-------|------------|
-| 0 | Core Design Principles | P1-P9 (Determinism, Safety, Explicit Effects, Regions, Strict Eval, Phase Isolation, Inference, Optional Layers, Testability) |
-| 1 | Lexical Structure | UTF-8, tokens, keywords, comments, whitespace |
-| 2 | Abstract Syntax | Complete AST grammar |
-| 3 | Value Model | Primitives, tuples, closures, actors, addresses, structs, Result, Unit |
-| 4 | Type System | Primitives, composites, capabilities, functions, traits, inference |
-| 5 | Trait System | Declaration, implementation, coherence, resolution, derive |
-| 6 | Generics | Function/type params, bounds, monomorphization, ADTs, errors |
-| 7 | Closures | Explicit syntax, capture inference, concurrency, effects |
-| 8 | ADTs | Declaration, construction, pattern matching, exhaustiveness |
-| 9 | Region System | Stack/Heap/Global/Circular/Pin, 8 region rules |
-| 10 | Mutability & Aliasing | TCap/TMut invariant, struct immutability, alias transparency |
-| 11 | Evaluation Semantics | Big-step, strict left-to-right, function/closure application |
-| 12 | Control Flow | If, try/catch, match, assert, while, for, cond, begin, with-resource, error |
-| 13 | Memory Operations | Stack, Heap, Circular, Pin, Global |
-| 14 | Stack Safety | TCO guarantee |
-| 15 | Concurrency | Actors: spawn, send, isolation, determinism |
-| 16 | FFI | ffi-call, ffi-pin, ffi-unpin, FFI_Pinnable types |
-| 17 | Monomorphization | Canonical naming, deterministic |
-| 18 | ICNF | SSA IR with region annotations |
-| 19 | Macros | Defmacro, hygiene, innermost-first, constraints |
-| 20 | Numeric Model | Int64, Float64, division by zero, determinism |
-| 20.5 | Testing | test-suite, test, assertions, fixtures, property-based, compile-time |
-| 20.6 | Package Mgmt | v5.0 roadmap |
-| 21 | Built-in Operations | Arithmetic, comparison, boolean, predicates, collections, mutation, I/O, errors |
-| 22 | Compilation Pipeline | 11 phases, strict order |
-| 23 | Contracts | Profiles, requires/ensures/invariant/recover/checkpoint |
-| 24 | Modules | Declaration, import/export, visibility, resolution |
-| 25 | Stdlib | Core modules |
-| 26 | Implementation Contract | Must/May/Must Not |
-| 27 | Determinism Contract | Observable vs non-observable |
-| 28 | Error Model | 49 error codes, compile vs runtime |
-| 29 | Formal Guarantees | G1-G11 |
-| 30 | Version Roadmap | v4.0, v4.1, v4.2, v5.0 |
+| § | Title | Key points | Book |
+|---|---|---|---|
+| 0 | Core Design Principles | P1–P9: Determinism, Safety, Explicit Effects, Region-Based Memory, Strict Evaluation, Phase Isolation, Inference Over Annotation, Optional Layers Do Not Interfere, Testability | Ch. 1, 26 |
+| 1 | Lexical Structure | UTF-8; tokens; keywords (§1.3); reserved keywords as identifiers (§1.3.1); `;` comments | Ch. 14 |
+| 2 | Abstract Syntax (AST) | The expression grammar, from `def` to `test-compile` | Ch. 14, F.2 |
+| 3 | Value Model | Int64, UInt64, Float64, Bool, String, Tuple, Closure, ActorRef, Address, StructValue, ResultValue, Unit | Ch. 2 |
+| 4 | Type System | Primitives, composites (Vec, Map, Result, Struct, Alias), capability types (§4.3), function types, bounds, HM inference, type equality | Ch. 15, 17 |
+| 5 | Trait System | Declaration, implementation, coherence C1–C3, resolution, bounds, derive, standalone derive | Ch. 20 |
+| 6 | Generics | Declaration, type-parameter semantics, collections, monomorphization and canonical naming (§6.4), generic ADTs, derivation, error cases | Ch. 7, 19 |
+| 7 | Closures (Explicit Syntax Only) | `fn`/`lambda`, capture inference, concurrency, effects | Ch. 8 |
+| 8 | Algebraic Data Types (ADTs) | Declaration, construction, pattern matching and exhaustiveness (§8.3) | Ch. 18 |
+| 9 | Region System (Core Memory Model) | Stack, Heap, Global, Circular, Pin; rules R1–R8 (§9.1) | Ch. 16 |
+| 10 | Mutability and Aliasing | The TMut/TCap invariant, struct immutability, alias transparency | Ch. 5, 17 |
+| 11 | Evaluation Semantics (Big-Step) | Strict left-to-right; function and closure application; test execution | Ch. 26 |
+| 12 | Control Flow | if, try/catch, match, assert, while, for, cond, begin, with-resource, error (§12.1–§12.10) | Ch. 3, 6 |
+| 13 | Memory Operations | Stack, Heap, Circular, Pin, Global | Ch. 16 |
+| 14 | Stack Safety Guarantee | Deep recursion never overflows | Ch. 29 |
+| 15 | Concurrency Model (Actors) | Private state, FIFO mailbox, spawn/send, isolation | Ch. 9, 21 |
+| 16 | FFI Model | `ffi-call`, `ffi-pin`, `ffi-unpin`; FFI_Pinnable types; pin semantics | Ch. 12, 22 |
+| 17 | Monomorphization | Alphabetical canonical specialization names | Ch. 19 |
+| 18 | ICNF (Intermediate Canonical Normal Form) | SSA IR with region annotations | Ch. 28 |
+| 19 | Macro System (Full Formalization) | `defmacro`, gensym hygiene, innermost-first expansion, constraints, registration | Ch. 10, 23 |
+| 20 | Numeric Model | Int64 (checked, wrapping, saturating), IEEE-754 Float64, division by zero, bit-level determinism | Ch. 2, 32 |
+| 20.5 | Testing Framework (Core Language Built-in) | Registration, assertions, fixtures, property-based tests, runner, compile-time tests | Ch. 11 |
+| 20.6 | Package Management | Summary; normative text in §31 | Ch. 25 |
+| 21 | Built-in Operations (Semantics) | Arithmetic, comparison, boolean, type predicates, collections, mutation, I/O, error signaling, sequencing, Iterator trait, struct and alias accessors (§21.1–§21.12) | App. C |
+| 22 | Compilation Pipeline | 11 phases, strict order | Ch. 26, F.4 |
+| 23 | Contract and Recovery System (Optional Overlay) | Profiles; requires, ensures, invariant, recover, checkpoint, local overrides | Ch. 24 |
+| 24 | Module System | Declaration, importing (`use` with `{ symbol }`, `=>`, `:unsafe`, `*`), `pub` exports, two-level visibility, DAG resolution, the package-boundary orphan rule (§24.1–§24.6) | Ch. 25 |
+| 25 | Standard Library (Abstract) | Core modules; the stdlib is implicit, versioned with the compiler | App. B |
+| 26 | Implementation Contract | What the compiler MUST, MAY and MUST NOT do | Ch. 26 |
+| 27 | Determinism Contract | Observable versus non-observable behavior; package builds | Ch. 26 |
+| 28 | Error Model | 20 core codes plus 36 package codes, all compile errors except the runtime ones | App. A |
+| 29 | Formal Guarantees | G1–G13 | F.3 |
+| 30 | Version Roadmap | v4.0, v4.1, v4.2, v5.0 (current), FUTURE | — |
+| 31 | Package System | Identity, symbol keys and mangling, manifest, compilation model, MVS, lock, content store, index and trust, capabilities, features and native dependencies, workspaces and editions, determinism (§31.1–§31.12) | Ch. 25 |
+
+In the text of the specification, §20.5 and §20.6 are headed "TESTING
+FRAMEWORK" and "PACKAGE MANAGEMENT" without the numbers; they sit
+between §20 and §21.
+
+### §31 at a glance
+
+| § | Title | Key points |
+|---|---|---|
+| 31.1 | Package Identity | Scoped name (`acme/json`, `acme/json/v2` for major ≥ 2); strict SemVer |
+| 31.2 | Symbol Identity and Mangling | Canonical key `<package>@<major>::<module>::<symbol>`; injective mangling |
+| 31.3 | Manifest — `zyl.pkg` | Required `name`, `version`, `zyl`, `edition`; bare-version requirements |
+| 31.4 | Compilation Model | Whole-program; packages ship source |
+| 31.5 | Version Resolution — Minimal Version Selection | Greatest minimum within a major; overrides at the root |
+| 31.6 | Lock File — `zyl.lock` | Hashes, pinned keys, signatures, capability closure, graph hash |
+| 31.7 | Content Store and Canonical Archive | `~/.zyl/store/blake3/<hash>/`; only `zyl fetch` uses the network |
+| 31.8 | Index and Trust | Git-hosted index; mandatory Ed25519; trust on first use; yanks |
+| 31.9 | Capabilities | `io`, `ffi`, `actor`, `secret`, `native`, `unsafe`; deny by default |
+| 31.10 | Features and Native Dependencies | Additive, unified features; declarative C sources; no build scripts |
+| 31.11 | Workspaces, Editions, Tooling | `zyl-workspace.zyl`; edition `2026`; the `zyl` subcommands |
+| 31.12 | Determinism | Hash finalization inputs; `zyl.buildinfo` |
 
 ## F.2 Quick Syntax Reference
+
+Condensed from §2, §24 and §31.10, in the spellings the compiler
+accepts.
 
 ```
 Program         ::= TopLevelForm*
 TopLevelForm    ::= Definition | Expression
 
 Definition      ::= (def Name Expr)
-                | (defn Name (Params...) Body)
-                | (defmacro Name (Patterns...) Template)
-                | (defstruct Name (Fields...) Derive?)
-                | (deftype Name (Variants...) Bound?)
-                | (trait Name (Methods...) Bound?)
-                | (impl Trait Type (ImplBody...))
-                | (alias Name Type)
-                | (derive Type [Traits...])
-                | (use Module ImportSpec)
-                | (export Name)
-                | (module Name)
+                  | (defn Name (Param*) Body)
+                  | (defmacro Name (Name*) Template)
+                  | (defstruct Name (Field*))
+                  | (deftype Name (Variant*))
+                  | (trait Name (TraitMethod*))
+                  | (impl Trait Type (ImplBody*))
+                  | (alias Name Type)
+                  | (derive Type Trait*)
+                  | (pub defn Name (Param*) Body)      ; also pub deftype, defstruct, ...
+                  | (feature-gate Feature Definition)
+                  | (use ModulePath ImportSpec?)
+                  | (module Name)
+
+ImportSpec      ::= { Symbol* } | { Symbol => Alias } | :unsafe { Symbol* } | *
+Param           ::= Name | (Name Type)
+Field           ::= (Name Type)
 
 Expression      ::= Atom | List
-Atom            ::= Int | Float | Bool | String | Symbol | Keyword | Identifier
+Atom            ::= Int | Float | Bool | String | Keyword | Symbol | Identifier
 List            ::= (Expression*)
 
-Special Forms   ::= (let (Name Expr) Body)
-                | (let-mut (Name Expr) Body)
-                | (if Expr Expr Expr)
-                | (try Expr (catch Name Expr))
-                | (match Expr (Variant Pattern Expr)*)
-                | (spawn Expr)
-                | (send Expr Expr)
-                | (ffi-call String Expr* Int)
-                | (ffi-pin Expr)
-                | (ffi-unpin Expr)
-                | (assert Expr String)
-                | (while Expr Expr)
-                | (for (Bindings) Expr Expr)
-                | (cond (Expr Expr)* (else Expr)?)
-                | (begin Expr+)
-                | (error String)
-                | (unwrap Expr)
-                | (fn (Params...) Body)
-                | (lambda (Params...) Body)
+Special Forms   ::= (let Name Expr Body)
+                  | (let-mut Name Expr Body)
+                  | (set! Name Expr)
+                  | (if Expr Expr Expr)
+                  | (cond (Expr Expr)* (else Expr)?)
+                  | (while Expr Expr)
+                  | (for (Name Expr) Expr Expr)
+                  | (begin Expr+)
+                  | (match Expr Arm*)
+                  | (try Expr (catch Name Expr))
+                  | (with-resource (Name Expr) Body)
+                  | (fn (Param*) Body)
+                  | (lambda (Param*) Body)
+                  | (spawn Expr)
+                  | (send Expr Expr)
+                  | (ffi-call String Expr* Int)
+                  | (ffi-pin Expr)
+                  | (ffi-unpin Expr)
+                  | (struct-get Expr String)
+                  | (make-Name Expr*)
 ```
 
-## F.3 Key Invariants (Normative)
+`Keyword` is `:name` and `Symbol` is `~name`. The specification also
+lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
+`(unwrap Expr)`, `(error String)` and `(export Name)`. Of those, the
+compiler accepts the parenthesised `let`; parses `assert`, `unwrap`,
+`export` without lowering them; treats `error` as a library function
+that panics; and does not recognise `defun` (Appendix C).
+
+## F.3 Key Invariants and Guarantees (Normative)
 
 | # | Invariant | Section |
 |---|-----------|---------|
-| 1 | Same source + inputs → identical outputs/bins | P1, §27 |
+| 1 | Same source + inputs → identical outputs and binaries | P1, §27, G4 |
 | 2 | No undefined behavior | P2, G1 |
-| 3 | No use-after-free, data races, nulls | P2, G2, G3 |
+| 3 | No use-after-free, double free, invalid aliasing, data races | G2, G3 |
 | 4 | All effects statically trackable | P3 |
 | 5 | Region inference assigns Stack/Heap/Global/Circular/Pin | P4, §9 |
 | 6 | Strict left-to-right evaluation | P5, §11 |
-| 7 | Phases strictly ordered (1→11) | P6, §22 |
+| 7 | Phases strictly ordered (1 → 11) | P6, §22 |
 | 8 | Inference over annotation | P7, §4.6 |
-| 9 | Contracts never alter core semantics | P8, §23 |
-| 10 | Testing is built-in | P9, §20.5 |
+| 9 | Contracts never alter core semantics | P8, §23, G8 |
+| 10 | Testing is built in | P9, §20.5 |
 | 11 | TCap/TMut aliasing invariant | §10 |
-| 12 | Struct fields immutable (rebind only) | §10 |
+| 12 | Struct fields immutable (rebind only) | §10, G9 |
 | 13 | Match exhaustiveness mandatory | §8.3 |
-| 14 | FFI requires Pin + timeout | §16 |
-| 15 | Deterministic iteration (Map) | §4.2, §15 |
+| 14 | FFI requires Pin + timeout; external code cannot corrupt Zyl memory | §16, G5 |
+| 15 | Deterministic iteration (Map) | §4.2 |
 | 16 | Canonical monomorphization naming | §6.4, §17 |
+| 17 | Trait coherence: no conflicting impls | §5.3, G6 |
+| 18 | Closure captures correctly region-assigned | §7.2, G7 |
+| 19 | Aliases are zero-cost | §10, G10 |
+| 20 | `with-resource` cleans up before an error propagates | §12.9, G11 |
+| 21 | A package cannot exercise a capability it does not declare | §31.9, G12 |
+| 22 | A locked build is reproducible from pinned hashes and keys | §31.8, §31.12, G13 |
 
 ## F.4 Phase Dependencies (Must Not Violate)
 
+From §22: no phase may depend on a later one.
+
 ```
 1. Parsing
-   ↓ (no later phase deps)
+   ↓
 2. Macro Expansion
    ↓
-3. Type Inference + Trait Resolution
+3. Type Inference + Trait Resolution   (includes derive validation)
    ↓
 4. Region Inference + Capture Analysis
    ↓
@@ -120,83 +171,111 @@ Special Forms   ::= (let (Name Expr) Body)
    ↓
 6. ICNF Generation
    ↓
-7. Optimization
+7. Optimization                        (safe only)
    ↓
 8. Code Generation
    ↓
 9. Linking
    ↓
-10. Contract Injection
+10. Contract Injection                 (optional)
    ↓
 11. Hash Finalization
 ```
 
-## F.5 Error Code Categories
+§31.9 places package capability enforcement after module resolution and
+before type inference.
 
-| Range | Category | Examples |
-|-------|----------|----------|
-| E_USER_ERROR | User `error` | — |
-| E_MUT_CONFLICT | Capability | TMut/TCap alias |
-| E_ASSERT_FAIL | Runtime | `assert`, `unwrap` |
-| E_FFI_TIMEOUT | FFI | C function hang |
-| E_REGION_ESCAPE | Region | Value escapes |
-| E_MACRO_NON_TERMINATION | Macro | Expansion loop |
-| E_MATCH_NONEXHAUSTIVE | Match | Missing variant |
-| E_UNINITIALIZED_USE | Type | Use before init |
-| E_CAPABILITY_LEAK | Capability | TMut to actor |
-| E_TRAIT_NOT_FOUND | Trait | Missing impl |
-| E_DUPLICATE_IMPL | Trait | Conflicting impls |
-| E_MACRO_ILLEGAL_ACCESS | Macro | Runtime access |
-| E_CONTRACT_VIOLATION | Contract | Pre/post fail |
-| E_OVERFLOW | Numeric | Int overflow |
-| E_DIVISION_BY_ZERO | Numeric | Int div by 0 |
-| E_TEST_FAILURE | Test | Assertion failed |
-| E_TEST_RUNNER_ERROR | Test | Harness bug |
-| E_TRAIT_NOT_DERIVABLE | Derive | Field lacks trait |
-| E_RESERVED_KEYWORD | Lexical | Keyword as ident |
-| E_CANNOT_INFER | Generic | Param unconstrained |
+## F.5 Error Codes in §28
+
+The core codes. All are compile errors unless the description names a
+runtime event.
+
+| Code | Meaning |
+|-------|---------|
+| `E_USER_ERROR` | `(error msg)` |
+| `E_MUT_CONFLICT` | Aliasing violation |
+| `E_ASSERT_FAIL` | Assertion failure |
+| `E_FFI_TIMEOUT` | FFI call exceeded its timeout |
+| `E_REGION_ESCAPE` | Region rule violation |
+| `E_MACRO_NON_TERMINATION` | Macro expansion loop |
+| `E_MATCH_NONEXHAUSTIVE` | Missing match case |
+| `E_UNINITIALIZED_USE` | Variable used before initialisation |
+| `E_CAPABILITY_LEAK` | TMut leaked |
+| `E_TRAIT_NOT_FOUND` | Missing impl |
+| `E_DUPLICATE_IMPL` | Conflicting impls |
+| `E_MACRO_ILLEGAL_ACCESS` | Macro accessed a runtime value |
+| `E_CONTRACT_VIOLATION` | Contract failed |
+| `E_OVERFLOW` | Integer overflow |
+| `E_DIVISION_BY_ZERO` | Division by zero |
+| `E_TEST_FAILURE` | Test assertion failed |
+| `E_TEST_RUNNER_ERROR` | Test harness error |
+| `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
+| `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
+| `E_CANNOT_INFER` | Generic parameter with no call-site evidence |
+
+The 36 package codes are grouped by phase: manifest, lock and registry
+(25 codes, `E_MANIFEST_*` and most `E_PKG_*`); module and package
+resolution (`E_PKG_CYCLE`, `E_MODULE_CYCLE`, `E_PKG_VERSION_CONFLICT`,
+`E_PKG_PRIVATE_SYMBOL`, `E_PKG_UNKNOWN_SYMBOL`, `E_PKG_UNKNOWN_MODULE`,
+`E_PKG_UNDECLARED_DEP`, `E_PKG_RESERVED_MODULE`); traits
+(`E_PKG_ORPHAN_IMPL`); and capabilities (`E_PKG_CAPABILITY_VIOLATION`,
+`E_PKG_CAPABILITY_GROWTH`). Appendix A lists every one, together with
+the codes the compiler adds beyond §28 and the §28 codes it does not yet
+raise.
 
 ## F.6 Standard Library Quick Index
 
-| Module | Key Exports |
+| Module | Key exports |
 |--------|-------------|
-| `core` | + - * / %, == != < >, and or not, print, read-line, int? float? bool? string?, struct-get, len, begin, if, let, let-mut, try, match, error, unwrap, assert |
-| `option` | Option, Some, None, option-is-some, option-unwrap, option-map, option-flatmap |
-| `result` | Result, Ok, Err, result-is-ok, result-unwrap, result-map, result-ok, result-err |
-| `collections/vec` | vec-create, vec-push, vec-pop, vec-get, vec-set, vec-len, vec-cap, vec-last |
-| `collections/map` | map-create, map-put, map-get, map-len, map-has, map-remove |
-| `collections/set` | set-create, set-add, set-remove, set-len, set-contains |
-| `actor` | spawn, send (special forms); actor-spawn, actor-send, actor-wait, actor-is-alive |
-| `ffi` | ffi-call, ffi-pin, ffi-unpin (special forms); ffi-safe-call |
-| `io` | file-open, file-read, file-write, file-close, read-line (special forms) |
-| `allocator` | alloc-malloc, alloc-free, arena-create, arena-alloc, str-concat, buf-append |
-| `testing` | test-suite, test, assert-equal, run-tests (special forms) |
+| `core/core` | `identity`, `compose`, `abs`, `min`, `max`, `clamp`, `when`, `unless`, `is-even`, `print-int`, `print-string` |
+| `core/option` | `Option`, `Some`, `None`, `option-is-some`, `option-unwrap`, `option-map`, `option-flatmap` |
+| `core/result` | `Result`, `Ok`, `Err`, `result-is-ok`, `result-unwrap`, `result-map`, `result-and-then` |
+| `core/list` | `List`, `Cons`, `Nil`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
+| `core/map` | `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove`, `map-entries` |
+| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get`, `vec-set`, `vec-len`, `vec-cap`, `vec-last` |
+| `collections/map` | `map-create`, `map-put`, `map-get`, `map-len`, `map-has`, `map-remove` |
+| `collections/set` | `set-create`, `set-add`, `set-remove`, `set-len`, `set-contains` |
+| `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
+| `actor/actor` | `actor-spawn`, `actor-send`, `actor-wait`, `actor-is-alive`, `actor-terminate` |
+| `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
+| `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |
+| `io/io` | `io-file-open-read`, `io-file-write`, `io-read-line`, `make-string-buffer`, `OutputStream` |
+| `allocator/allocator` | `arena-create`, `arena-alloc`, `alloc-malloc`, `str-eq`, `str-intern`, `buf-append`, `error` |
+| `testing/testing` | `test-run`, `assert-equal-values`, `property-int` |
+| `math/...` | hashes, AEADs, curves, RSA, KDFs, bignums, RNGs, `math/secret/secret` |
 
-## F.7 Compiler Flags Summary
+Special forms such as `spawn`, `send`, `ffi-call`, `file-open`,
+`test` and `run-tests` belong to the compiler, not to a module.
+Appendix B has the full listing.
 
-> **Status**: `-o` is implemented today; the `--emit-*`, `--test`, and
-> `--filter` flags are roadmap items (see Appendix C.13).
+## F.7 Command-Line Summary
 
-| Flag | Phase Output |
+| Command | Purpose |
 |------|-------------|
-| `--emit-ast` | 1 |
-| `--emit-expanded` | 2 |
-| `--emit-typed` | 3 |
-| `--emit-regions` | 4 |
-| `--emit-mono` | 5 |
-| `--emit-icnf` | 6 |
-| `--emit-opt` | 7 |
-| `--emit-asm` | 8 |
-| `-o <file>` | 9 (executable) |
+| `zyl <file.zyl> -o <out>` | Compile and link one file |
+| `zyl <file.zyl> --emit-asm -o <out.s>` | Stop after code generation (phase 8) |
+| `zyl new`, `add`, `fetch`, `build [--locked]`, `test`, `update`, `vendor`, `audit`, `publish`, `key` | The package subcommands of §31.11 |
+| `zyl repl` | Interactive session |
+| `zyl eval <file.zyl>` | Run a program without building a binary |
+
+No other phase dumps (`--emit-ast`, `--emit-icnf` and the like) are
+implemented. Appendix C.16 has the details.
 
 ## F.8 REPL Commands
 
 | Command | Action |
 |---------|--------|
-| `:help` | Show help |
-| `:quit` | Exit |
-| `:type <expr>` | Show type |
-| `:ast <expr>` | Show AST |
-| `:icnf <expr>` | Show ICNF |
-| `:macroexpand <expr>` | Show expansion |
-| `:macroexpand-all <expr>` | Full expansion |
+| `:help` | List commands and editing keys |
+| `:quit` | Leave the session |
+| `:history` | Entries from this and earlier sessions |
+| `:defs` | Definitions in scope |
+| `:doc NAME` | Documentation for a built-in or special form |
+| `:type EXPR` | The type of an expression, without running it |
+| `:time EXPR` | Evaluate it and report how long it took |
+| `:load PATH` | Read a file's definitions into the session |
+| `:save PATH` | Write the session's definitions to a file |
+| `:reset` | Forget every definition |
+| `:clear` | Clear the screen |
+
+The specification does not define the REPL; these are the commands
+`stdlib/repl/repl.zyl` implements.

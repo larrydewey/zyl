@@ -6,8 +6,9 @@ a cipher, a wire-format parser or a lock-free counter is actually made
 of.
 
 They divide cleanly. The bitwise operators are complete, tested and
-used throughout `stdlib/math`. The byte-buffer family is younger, and
-§32.9 is explicit about which parts of it are ready.
+used throughout `stdlib/math`. The byte-buffer family is younger: it
+works, but several of the region rules the design calls for are not
+enforced yet, and §32.9 is explicit about which parts are ready.
 
 ## 32.1 Bitwise Operators
 
@@ -34,8 +35,11 @@ n-ary and left-associative, like the arithmetic operators:
 (bit-and 15 12 10)   ; 8
 ```
 
-Each lowers to a single machine instruction, which is what makes them
-the entire vocabulary of constant-time code (Chapter 33).
+`bit-and`, `bit-or` and `bit-xor` each lower to a single machine
+instruction, and `bit-not` is an XOR with -1. The shifts are a short
+fixed sequence (§32.3). None of them branches, and none of their
+instruction streams depends on the operand values, which is what makes
+them the vocabulary of constant-time code (Chapter 33).
 
 ## 32.2 Two Right Shifts, on Purpose
 
@@ -66,16 +70,19 @@ and shifting by 65 is a shift by 1. Zyl does not expose that:
 ```
 
 Logical shifts by 64 or more give zero; `ashr` saturates. A negative
-count behaves the same way. This costs a compare and a conditional move
-per shift, and it buys a language where `(shl x n)` means the same
-thing for every `n` — including the `n` your loop reached that you did
-not think about.
+count behaves the same way (it compares as a huge unsigned count). This
+costs three extra branchless instructions per logical shift (a compare,
+a subtract-with-borrow that builds a mask, and an AND) and a compare and
+conditional move per `ashr`, and it buys a language where `(shl x n)`
+means the same thing for every `n` — including the `n` your loop
+reached that you did not think about.
 
-One consequence worth knowing: constant folding deliberately does not
-cover the bitwise operators. Folding a `bit-and` inside the compiler
-would require the compiler's own source to use `bit-and`, which the
-previous-generation seed cannot compile. The operators are one
-instruction each, so nothing is lost.
+One consequence worth knowing: constant folding does not cover the
+bitwise operators. The reason recorded in `optimization.zyl` is
+historical — folding a `bit-and` inside the compiler requires the
+compiler's own source to use `bit-and`, which the seed of the day could
+not compile. The operators are a few instructions each, so little is
+lost.
 
 ## 32.4 A Worked Example
 
@@ -88,17 +95,27 @@ function:
 (defn rotl64 (x n)
   (bit-or (shl x n) (shr x (- 64 n))))
 
+;; 0xFF51AFD7ED558CCD, written as the signed Int it is
 (defn mix (x)
   (let a (bit-xor x (shr x 33))
-    (let b (* a 18397679294719823053)
+    (let b (* a -49064778989728563)
       (bit-xor b (shr b 29)))))
 
 (defn main ()
-  (print (rotl64 1 8)))
+  (print (rotl64 1 8)))     ; 256
 ```
 
 Note `shr`, not `ashr`, in both places: these are bit patterns, not
-magnitudes. And note that `rotl64` is correct only for `n` in 1..63 —
+magnitudes.
+
+Note also how the multiplier is written. `Int` is a signed 64-bit
+integer, so a constant at or above 2^63 has to be written as its value
+minus 2^64 — the bit pattern is identical, and `+`, `*`, `bit-xor` and
+the shifts do not care about the sign. `stdlib/math/hash/sha512.zyl`
+writes all of its round constants this way. Do not write the unsigned
+spelling: an integer literal too large for `Int`, decimal
+(`18397679294719823053`) or hexadecimal (`0xFF51AFD7ED558CCD`),
+currently compiles *silently to 0* rather than being rejected. And note that `rotl64` is correct only for `n` in 1..63 —
 at `n` of 0 the second shift is by 64, which is defined here to be
 zero, so the rotation degrades to `(bit-or x 0)`, which happens to be
 right. That is the kind of edge the defined-shift rule quietly removes.
@@ -123,17 +140,27 @@ reading a byte you have not written is well defined and gives 0.
 ```lisp
 (bytebuf-cap buf)      ; capacity, fixed at allocation
 (bytebuf-len buf)      ; bytes appended so far
-(bytebuf-ptr buf)      ; raw address -- Pin region only
+(bytebuf-ptr buf)      ; raw address of the data
 ```
 
 `bytebuf-ptr` is the FFI hatch: it gives a stable address good for
-exactly `bytebuf-cap` bytes, and it is rejected outside the Pin region
-with `E_BYTEBUF_NOT_PIN`, because an address into a region that may
-move is not an address at all.
+exactly `bytebuf-cap` bytes. By design it belongs to the Pin region,
+because an address into a region that may move is not an address at
+all.
 
-The region rules are enforced, not advisory: a Stack `ByteBuf` may not
-be returned from its scope (`E_STACK_BYTEBUF_RETURN`), and a Global one
-may not be mutated (`E_GLOBAL_BYTEBUF_MUT`).
+**The region is currently recorded, not enforced.** The runtime gives
+every region the same stable, zero-initialized heap allocation, so
+nothing is unsound — but the rules the design specifies are not checked
+yet:
+
+| Rule | Designated error | Today |
+|---|---|---|
+| `bytebuf-ptr` only in the Pin region | `E_BYTEBUF_NOT_PIN` | Not checked; works on any buffer |
+| A Stack buffer may not escape its scope | `E_STACK_BYTEBUF_RETURN` | Not checked |
+| A Global buffer may not be mutated | `E_GLOBAL_BYTEBUF_MUT` | Not checked |
+
+Write `Pin` when you mean to take an address, so the program stays
+correct when the check arrives.
 
 ## 32.6 Loads and Stores
 
@@ -148,11 +175,23 @@ The leading `:le` or `:be` selects endianness. For a single byte it
 makes no difference, and it is required anyway so that the wider widths
 — when they arrive — read the same way.
 
-Every access is bounds-checked against the buffer's capacity. An
-out-of-range offset is not undefined behaviour and not a crash: a load
-returns 0 and a store does nothing. That is the same fail-closed
-posture the rest of the runtime takes, and it means a bug in offset
-arithmetic corrupts nothing.
+Every access is bounds-checked against the buffer's capacity (or a
+slice's length). An out-of-range offset is not undefined behaviour and
+not a crash: a load returns 0 and a store does nothing and returns 0 (a
+successful store returns 1). That is the same fail-closed posture the
+rest of the runtime takes, and it means a bug in offset arithmetic
+corrupts nothing.
+
+```lisp
+(let buf (bytebuf Heap 64)
+  (begin
+    (store-u8 :le buf 0 200)
+    (load-u8 :le buf 0)       ; 200
+    (load-i8 :le buf 0)       ; -56
+    (load-u8 :le buf 64)      ; 0 -- out of range
+    (store-u8 :le buf 100 1)  ; 0 -- ignored
+    0))
+```
 
 **Only the 8-bit widths are implemented.** `load-u16`, `load-u32`,
 `load-u64` and their signed and store counterparts are reserved names
@@ -195,14 +234,31 @@ destination's fixed capacity, and it uses `memmove` rather than
 (bytebuf-atomic-min   buf offset value)
 ```
 
-These operate on real memory at real offsets and are the building
-blocks for a shared counter or a lock-free structure. A compare-and-swap
-outside the Pin region is rejected with `E_ATOMIC_ABA`: a CAS on memory
-that may move underneath it is exactly the ABA hazard the error is
-named for.
+These operate on real memory at real offsets, sequentially
+consistent, and are the building blocks for a shared counter or a
+lock-free structure. Each works on an 8-byte word: the offset must be a
+multiple of 8 and the word must fit inside the capacity, or the
+operation does nothing and returns 0 (an unaligned atomic is not
+lock-free on x86_64, so it is refused rather than allowed to tear).
 
-`(align-check ptr alignment)` asserts a pointer's alignment before a
-wide access, failing with `E_ALIGNMENT_FAILED` if it does not hold.
+`bytebuf-atomic-add`, `-sub`, `-max` and `-min` return the *new* value;
+`bytebuf-atomic-fetch-add` returns the *old* one; `bytebuf-atomic-cas`
+returns 1 if it swapped and 0 if not; `bytebuf-atomic-store` returns 1.
+
+```lisp
+(bytebuf-atomic-store buf 8 41)      ; 1
+(bytebuf-atomic-add buf 8 1)         ; 42
+(bytebuf-atomic-cas buf 8 42 7)      ; 1, and the word is now 7
+(bytebuf-atomic-load buf 3)          ; 0 -- offset not 8-aligned
+```
+
+The design reserves `E_ATOMIC_ABA` for a compare-and-swap outside the
+Pin region — a CAS on memory that may move underneath it is the ABA
+hazard the name refers to — but that check is not implemented yet.
+
+`(align-check ptr alignment)` tests a pointer's alignment before a wide
+access. It *returns* 1 when `ptr` is a multiple of `alignment` and 0
+otherwise; it does not raise `E_ALIGNMENT_FAILED`, so act on the result.
 
 ## 32.9 What Is Ready
 
@@ -212,11 +268,12 @@ at different stages:
 | Feature | State |
 |---|---|
 | `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`, `shr`, `ashr` | Complete. Covered by `tests/regression/bitwise.zyl` and used throughout `stdlib/math` |
-| `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working |
+| `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working; the region argument does not change allocation |
 | `byteslice`, `byteslice-sub`, `bytebuf-append` | Working |
 | `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working |
-| The atomic family | Working |
-| `align-check` | Working |
+| The atomic family | Working, on 8-aligned offsets |
+| `align-check` | Working, as a 1/0 test |
+| Region rules (`E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`, `E_ATOMIC_ABA`) | **Not enforced** |
 | 16-, 32- and 64-bit loads and stores | **Reserved, not implemented** — rejected with `E_RESERVED_KEYWORD` |
 
 Two further caveats:
@@ -228,8 +285,10 @@ Two further caveats:
   need packed representations; it is not yet load-bearing.
 - **A buffer handle is an integer.** Passing something that is not a
   buffer where one is expected — an ordinary number, say — is not
-  currently a type error, and the runtime will dereference it. Keep
-  buffer handles in their own bindings.
+  currently a type error. Every entry point checks a magic word in the
+  handle's header and treats 0 as "no buffer", but to read that word it
+  has to dereference the handle, so a small integer such as 5 crashes
+  the program. Keep buffer handles in their own bindings.
 
 ## Summary
 
@@ -238,7 +297,10 @@ Two further caveats:
   behaviours do.
 - Out-of-range shift counts are defined: logical shifts give 0, `ashr`
   saturates to the sign bit.
-- `bytebuf` allocates a fixed-capacity, zero-initialised block in a
-  named region; every access is bounds-checked and fails closed.
+- `bytebuf` allocates a fixed-capacity, zero-initialised block; every
+  access is bounds-checked and fails closed. The region is recorded but
+  its rules are not enforced yet.
+- Write constants at or above 2^63 as negative `Int`s; an oversized
+  literal currently becomes 0.
 - Only 8-bit loads and stores exist; the wider widths are reserved and
   rejected rather than silently broken.

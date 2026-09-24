@@ -1,6 +1,8 @@
 ; Traits Regression Tests — trait definitions, implementations.
 ; Spec §12: traits with static dispatch via monomorphization.
-; Trait dispatch mechanism not yet implemented — tests only verify syntax.
+; These tests only verify that trait/impl definitions compile; they make
+; no dispatch calls. Dispatch itself (`(Trait.method receiver ...)`) is
+; implemented by stdlib/compiler/trait_dispatch.zyl.
 
 (use core/core)
 

@@ -10,60 +10,98 @@ Building Zyl needs `cc` and `pthread` and nothing else.
 
 | | |
 |---|---|
-| Compiler | ~15,500 lines of Zyl across 27 files in `stdlib/compiler/` |
-| Standard library | `core`, `collections`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing` |
-| Cryptography | `stdlib/math/`, ~7,500 lines of Zyl |
-| Language server | `stdlib/lsp/`, ~3,000 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
+| Specification | `zyl_specification.txt` v5.0 (§0–§31) |
+| Compiler | ~21,200 lines of Zyl across 37 files in `stdlib/compiler/` |
+| Standard library | `core`, `collections`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing`, `math` |
+| Cryptography | `stdlib/math/`, ~7,600 lines of Zyl |
+| REPL | `stdlib/repl/`, ~4,000 lines of Zyl, with an ICNF interpreter; `zyl repl` and `zyl eval` |
+| Language server | `stdlib/lsp/`, ~5,400 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
+| Package system | Spec §31, implemented (see below) |
 | Runtime | `runtime/actor_runtime.c` |
-| Tests | 77/77 passing on `./run_regression_tests.sh --full`, including the fixed-point check and the LSP protocol suite |
+| Tests | 121/121 passing on `./run_regression_tests.sh --full` (regression 52, interpreter 34, compile-fail 12, integration 7, packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1, unit test 1) |
 
 ### Language features
 
-Complete and tested: S-expression syntax; Hindley–Milner inference with
-trait resolution; ADTs with compile-time exhaustiveness; structs
-(immutable, rebinding only); generics with monomorphization; traits and
-derivation; closures; actors with deterministic mailboxes; FFI with
-mandatory pinning and timeouts; hygienic macros; regions with escape
-analysis; capability types (`TCap`, `TMut`); float64; try/catch;
-bitwise operators; and the `Secret` capability with its constant-time
-checker.
+Status as of this writing, checked against the compiler. "Works" means
+it compiles and runs correctly; the notes say where it stops.
 
-Byte-level primitives (buffers, slices, 8-bit loads and stores,
-atomics, alignment) work; the 16-, 32- and 64-bit load and store widths
-are reserved names that the compiler rejects rather than implements.
+| Feature | Status |
+|---|---|
+| S-expression syntax, dispatch-free reader | Works |
+| `let`, `let-mut`/`set!`, `if`, `cond`, `while`, `for`, `begin` | Works. `set!` on a plain `let` binding or on a field is `E_MUT_CONFLICT` |
+| Functions, recursion | Works. Direct calls with the wrong argument count are `E_ARITY_MISMATCH` |
+| Integers, 64-bit | Works, including bitwise `bit-and`/`bit-or`/`bit-xor`/`shl`/`shr`/`ashr` |
+| Float64 | Works: literals, arithmetic, comparisons, printing |
+| Structs | Works: `defstruct`, `make-<Name>`, `struct-get`, rebinding with `let-mut` |
+| ADTs and `match` | Works, including literal patterns, OR-patterns, range patterns and guards. A non-exhaustive ADT match is `E_NON_EXHAUSTIVE_MATCH`; a literal match needs a trailing `_` |
+| Generics | Works through monomorphization with sorted canonical names |
+| Traits and `impl` | Works: `(Trait.method recv ...)` dispatches on the receiver's runtime tag |
+| `derive` | `Eq`, `Ord` and `Debug` are accepted. `==` and `<` compare structs and ADTs structurally (in compiled code this happens with or without a `derive`). `Show` is not implemented, and printing a struct or ADT prints an address |
+| Closures | Works, including closures that capture and escape (heap `[tag, code, env]` values) |
+| `try`/`catch` | Works: `(try body (catch e handler))`; `error` and `zyl_panic` unwind to the nearest `try` |
+| Macros | `defmacro` expansion works; macros are **not hygienic** (a name the macro body binds can capture the caller's variable) |
+| Modules and packages | Works: `use`, canonical keys, `pub` visibility, capabilities |
+| Actors | `spawn`, `send`, `actor-wait` work for a spawn body that captures nothing. A spawn body that captures a variable hangs at run time |
+| FFI | `ffi-call` works. The trailing timeout argument is dropped by lowering and never enforced, and pinning is enforced only for `Secret` values (`E_FFI_PIN_REQUIRED`) |
+| Regions | Escape analysis puts a non-escaping variant on the stack; everything else is heap. Circular and Global regions are not inferred |
+| Capability types | `TCap`/`TMut` are enforced syntactically (`let` vs `let-mut`) by `mutability_check.zyl` |
+| `Secret` capability | Enforced by `secret_check.zyl` (branch, index, divide, print, escape, unpinned FFI) |
+| Byte primitives | 8-bit loads and stores, byte buffers, slices, atomics and alignment work. The 16-, 32- and 64-bit widths are reserved and rejected with `E_RESERVED_KEYWORD` |
+| Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
+| Type inference | Best-effort. It feeds monomorphization but does not reject type errors: `(+ 1 "a")` compiles |
+| Contracts | `requires`, `ensures`, `invariant`, `recover`, `checkpoint` parse and are not checked |
 
 ### Known gaps
 
-- `contract_injection.zyl` is written but not wired into the driver —
-  its accessors do not match the real `DefnNode`/`TestDecl` shapes. See
-  the comment in `selfhost/driver.zyl`.
-- A top-level `def` does not become a readable global; references to one
-  compile to 0.
-- The REPL (`zyl repl`, `stdlib/repl/*`) is a full interactive session:
-  line editing, history, completion, multi-line entries, and an ICNF
-  interpreter that keeps definitions and values alive between entries.
-  See `docs/repl.md`.
-- The v5.0 package system (§31) is implemented — manifests, canonical
-  symbol keys and injective mangling, two-level visibility, Minimal
-  Version Selection, the lock, the content store, the index with
-  mandatory Ed25519 verification, capabilities, features, native
-  dependencies, workspaces and the `zyl` subcommands. What remains open
-  there is narrower: `zyl fetch` does not yet clone-and-install a `git`
-  dependency (it is resolvable from the store and the lock, and the
-  clone path exists), no index repository exists to fetch from, and
-  hash finalization records §31.12's inputs in `zyl.buildinfo` without
-  mixing the graph hash into the binary's own hash. `PROGRESS.md` has
-  the full list, including the deliberate deviations.
-- `type_inference.zyl` compares names with `=`, which lowers to a
-  pointer comparison when the operand kinds are not known to be String.
-  Those comparisons are therefore always false, and the per-call-site
-  body-inference path behind them has never run. The module system works
-  around it by copying each qualified name per occurrence (see
-  `qualify.zyl`'s `qf-ident`); fixing the comparisons themselves is
-  future work, and the dormant path dereferences a null parameter list
-  the moment they start returning true.
+- **Type inference compares names with `=`.** In `type_inference.zyl`
+  that lowers to a pointer comparison when the operand kinds are not
+  known to be String, so those comparisons are always false and a
+  builtin operator is never recognized by name (REPL `:type (+ 1 2)`
+  answers *unresolved*). The module system works around it by copying
+  each qualified name per occurrence (`qualify.zyl`'s `qf-ident`); the
+  dormant path behind those comparisons dereferences a null parameter
+  list the moment they start returning true. Fixing it is a
+  type-inference change; see the header of
+  `stdlib/lsp/compiler_bridge.zyl`.
+- **No return-type inference in codegen.** `print` of a String a
+  function computes at run time (for example, a generic function
+  returning its String argument) can print an address, and `==` on
+  Strings built at run time compares addresses in compiled code.
+- **Call targets are resolved only at link time.** A call to an
+  undefined function, such as the unimplemented `(list ...)` literal or
+  an implicit-lambda form `((x) body)`, fails as a linker error rather
+  than a located diagnostic.
+- **Top-level `def`** does not create a global in a compiled file; a use
+  of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL gives
+  top-level `def` a meaning.
+- **Macro hygiene** is not implemented, and a macro call nested inside a
+  `match` arm or another form the expander does not walk is left
+  unexpanded.
+- **Contract injection** (§23): `contract_injection.zyl` is written but
+  is not in the bundle and not called; its accessors do not match the
+  real `ExprInner` shapes. See the comment above `lower-exprs` in
+  `stdlib/compiler/pipeline.zyl`.
+- **Hash finalization** (§31.12): `zyl build` and `zyl test` write
+  `zyl.buildinfo` with the compiler, graph, native-object and assembly
+  hashes, but the graph hash is not mixed into the binary's own hash,
+  and a single-file compile writes no buildinfo.
+- **Unlocated diagnostics:** `mutability_check`, `capability_check`,
+  `unused_check`, `secret_check` and the remaining errors in
+  `expr_inner` still print a bare `PANIC:` message with no location.
+- **C calls of arity 7 or more** do not get the stack realignment every
+  C call of arity 6 or less gets.
+- **No tail-call optimization.**
+- **Package system:** no index repository exists yet (the index URL in
+  the examples is a placeholder), there is no build cache (§31.4), and
+  capability enforcement applies only to packages with a manifest.
+  `PROGRESS.md` has the full list, including the deliberate deviations.
+- **REPL:** actors are compile-only (the interpreter reports
+  `E_UNSUPPORTED_INTERPRETED`), and a definition entered at the prompt
+  cannot refer to a `def` binding. See `docs/repl.md`.
+- **Language server:** does not run `unused_check` or type inference and
+  reports one diagnostic at a time.
 
-Design, rationale and the original phased plan:
+Design, rationale and the original phased plan for the package system:
 `docs/package-management-design.md`.
 
 ### Where to look
@@ -72,343 +110,17 @@ Design, rationale and the original phased plan:
 - `docs/rust-eviction-plan.md` — the self-hosting story and the
   fixed-point invariant.
 - `docs/codebase-map.md` — where things live.
+- `docs/compiler-pipeline.md` — the phase order as the code runs it.
 - `book/` — the language book, including the standard library and
   tooling.
 
 ---
 
-## Historical phase detail
-
-Everything below was written against the Rust bootstrap and is kept as
-a record of how each phase was built. File names in it refer to
-`archive/rust-bootstrap-2026/src/`, not to the active compiler.
-
----
-
-## Phase 1: Parsing (Lexer + Parser → AST) ✅ COMPLETE
-
-**Status:** All features implemented and tested.
-
-**Completed features:**
-- Full error model (all E_* variants from spec §28 defined in `error.rs`)
-- AST nodes (complete Expr enum covering all language constructs per spec §2)
-- Lexer (`src/lexer.rs`, ~457 lines) — token types: IDENTIFIER, INTEGER, FLOAT, STRING, BOOLEAN, SYMBOL, KEYWORD, brackets
-- Comment stripping and location tracking
-- Recursive descent parser (`src/parser.rs`, ~1860 lines) with ~40 special form handlers
-- No-dispatch parsing (all S-expressions → raw Call/Apply → PostProcessor)
-- Reserved keyword enforcement (E_RESERVED_KEYWORD) — 47 reserved keywords
-
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/main.rs` | 374 | Pipeline orchestration, CLI, phase output |
-| `src/error.rs` | 170 | Full error model with Location/Span tracking |
-| `src/ast.rs` | 2005 | AST definitions + pretty printing + PostProcessor |
-| `src/lexer.rs` | 457 | Tokenizer with comment stripping, location tracking |
-| `src/parser.rs` | 1860 | Recursive descent parser, no-dispatch mode |
-| `src/repl.rs` | 4 | REPL stub |
-
----
-
-## Phase 2: Post-Processing ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- PostProcessor in `ast.rs`: Converts raw Call/Apply special forms to specialized ExprInner variants
-- Handles all special forms including fn, lambda, spawn, send, ffi-call, try/catch, match, for
-
----
-
-## Phase 3: Macro Expansion ✅ COMPLETE
-
-**Status:** Implemented and tested.
-
-**Completed features:**
-- Complete macro system (`src/macro_expander.rs`, ~1449 lines)
-- GensymRegistry for hygiene
-- Pattern matching engine
-- Template substitution with gensym hygiene
-- Innermost-first post-order expansion
-- Variadic patterns (`&` prefix)
-- Built-in operator exclusion list
-- `___skip_` placeholder for omitted if branches → Unit type
-
----
-
-## Phase 4: Region Inference + Capture Analysis ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- Complete region system (`src/region_inference.rs`, ~1158 lines)
-- Region enum: Stack | Heap | Global | Circular | Pin
-- CaptureInfo for closure capture tracking
-- RegionEnv with scoped environment
-- Escape analysis with region promotion (Stack → Heap)
-- Two-pass algorithm with region lattice
-- Rules R1–R8 implemented
-- Closure capture analysis (TCap read-only, TMut mutated, Heap escape)
-
----
-
-## Phase 5: Type Inference + Trait Resolution ✅ COMPLETE
-
-**Status:** Implemented and tested.
-
-**Completed features:**
-- Complete type system (`src/type_system.rs`, ~612 lines)
-- Type enum with primitives (Int, Float, Bool, String, Unit), capabilities (TCap/TMut), functions, generics, collections
-- Subst (substitution map), TypeVarGen, TypeEnv, TraitContext
-- HM-style inference engine (`src/type_inference.rs`, ~2156 lines)
-- Two-pass: collect_definitions → infer_expr
-- Handles all special forms (including raw Call/Apply from no-dispatch)
-- Built-in operator typing
-- Trait resolution with transitive bound checking
-- Derive validation (Eq, Ord, Debug, Clone, Hash)
-- Unification with occurs check
-- Struct field type inference from struct_defs
-- Capability type inference (TCap/TMut)
-- FFI call type inference
-
----
-
-## Phase 6: Monomorphization ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- Complete monomorphization engine (`src/monomorphization.rs`, ~1549 lines)
-- Generic function detection via uppercase parameter convention
-- Canonical naming (alphabetically sorted types)
-- Trait bound verification
-- Generic ADT instantiation
-
----
-
-## Phase 7: ICNF Generation (SSA IR with Region Annotations) ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- Complete SSA IR generation (`src/icnf.rs`, ~2941 lines)
-- ICNFNode with unique SSA ID, Region annotation, ICNFInner operation
-- ICNFFuncSig for function signatures
-- ICNFProgram container
-- SSA conversion with proper ID assignment and deduplication
-- Embedded branch bodies for If/While/For
-- push_mode flag for non-pushing conversion in control flow
-- Closure body support (closure_bodies HashMap)
-- Spawn/Send/SendClosure IR nodes
-- Match IR node (discriminant-based dispatch)
-- FFI IR node
-
-**Key fixes applied:**
-- Phi node join point: `mov rax, rax` (not `mov eax, rax`)
-- Operand ID tracking: Intermediate values not duplicated
-- Let statement ordering: Value → Assign → Load → dependent statements
-
----
-
-## Phase 8: Optimization (Safe Only) ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- Safe-only ICNF optimizations (`src/optimization.rs`, ~529 lines)
-- Constant Folding: Folds BinOp/UnOp with compile-time constants (fixed-point iteration)
-- Dead Code Elimination: BFS-based transitive dependency collection from function returns
-- Control flow structures (If/While/For/Match) preserved in DCE
-- Spawn/Send/ReadLine exempt from reordering
-
----
-
-## Phase 9: Code Generation → x86_64 ✅ COMPLETE
-
-**Status:** Implemented and tested.
-
-**Completed features:**
-- Complete x86_64 assembly generator (`src/codegen.rs`, ~5254 lines)
-- Intel syntax (`.intel_syntax noprefix`)
-- Linear-scan register allocator with caller-saved registers
-- 32-bit and 64-bit register allocation
-- System V AMD64 ABI compliance
-- Function calls: edi, esi, edx, ecx, r8d, r9d
-- String literals in .rodata, hexbuf in .bss
-- SSE register handling for float arguments (XMM0–XMM5)
-- Float constants in rodata
-- Struct construction: malloc + field store with offset mapping
-- Struct field access: load from struct pointer + offset
-- Integer-to-string conversion (division-by-10 loop with hexbuf)
-- ADT variant construction with discriminant
-- Match code generation (discriminant comparison + branch selection)
-- Closure invocation with env struct
-- Spawn wrapper function emission (anonymous closures as standalone functions)
-- Send/SendClosure code generation with actor runtime calls
-- FFI code generation with Pin region
-- TryCatch code generation
-- ReadLine I/O (sys_read, 64-bit pointer storage)
-- Print with string detection for ReadLine results
-
-**Instructions emitted:**
-- `mov` (64-bit and 32-bit)
-- `add`, `sub`, `imul`, `idiv`
-- `cmp` + `setcc` for comparisons
-- `jmp`, `jl`, `jg`, `je`, `jne` etc.
-- `call`, `ret`
-- `malloc` for struct allocation
-- `printf` for output
-- `sys_read` for read-line
-
----
-
-## Phase 10: Linking ✅ COMPLETE
-
-**Status:** Implemented.
-
-**Completed features:**
-- External toolchain: `cc -no-pie -lpthread -o <bin> <asm> actor_runtime.c`
-- Actor runtime C file compiled and linked alongside assembly
-- `zyl_actor_init()` called before main
-- `zyl_actor_wait_all()` called at end of main
-
----
-
-## Language Features — Detailed Status
-
-### Float Support ✅ COMPLETE
-
-**Features:**
-- Float64 literals via `f64::from_bits` in lexer
-- All BinOp (add, sub, mul, div) and UnOp (negation) for Float
-- Comparison operators on Float64
-- Float printing via SSE code generation
-- Nested conditionals with float conditions
-- Type inference: mixed Int/Float arithmetic unification
-
-### Struct System ✅ COMPLETE
-
-**Features:**
-- `defstruct Name (field1 type1) (field2 type2)` — Define immutable struct
-- `defstruct+` — Variant alias
-- `make-StructName val1 val2 ...` — Construct struct on Heap
-- `struct-get struct "field"` — Access field by name
-- Field types: Optional type annotations (Int, String, etc.)
-- Nested structs: Struct field values used to construct other structs
-
-**Test coverage (`stdlib_test.zyl`):**
-- Basic construction and field access
-- Field access in arithmetic operations
-- Multiple field access from same struct
-- Structs with 2, 3, 4 fields
-- Structs with field type annotations
-- Nested struct-get (3+ levels deep)
-- Struct construction from function results
-- Struct passed through function calls
-- Struct in control flow (if/while/cond)
-- `defstruct+` variant
-- Structs with boolean fields
-- Multiple struct types interleaved
-- Struct field in recursive function
-- Large struct with same value in multiple fields
-- Struct construction with arithmetic in constructor
-- Struct rebinding via let-mut + set!
-- Structs with all-zero fields
-- Single-field struct
-- Interleaved struct types in let
-
-### ADT System ✅ COMPLETE
-
-**Features:**
-- `deftype Name (Variant1 Field1 ...) (Variant2 ...)` — Define tagged unions
-- `(VariantName field1 field2 ...)` — Construct variants (auto-detected via uppercase heuristic)
-- `(match scrutinee (Variant p1 p2) body ...)` — Match on ADT with discriminant-based dispatch
-- Multiple ADT types supported
-- Multiple fields per variant supported
-- Pattern variables properly bound in arm bodies
-- Exhaustiveness checking at compile time
-
-### Closure System ✅ COMPLETE
-
-**Features:**
-- `(fn (param*) body)` and `(lambda (param*) body)` syntax
-- Capture analysis (TCap read-only, TMuT mutated, Heap escape)
-- Environment struct allocation for captured variables
-- Wrapper function generation for closure invocation
-- Closure metadata tracking in ICNF → CodeGen pipeline
-- Captured vars read from env struct via `rdi`
-
-### Actor Concurrency ✅ COMPLETE
-
-**Features:**
-- `(spawn <closure>)` — Spawn actor with closure body
-- `(send <actor> <message>)` — Send message to actor mailbox
-- `(send-closure <actor> <handler> <msg>)` — Send handler invocation with captured message to actor mailbox
-- `zyl_actor_wait_all()` at end of main
-- C runtime with pthread-based actors
-- Mailbox queue with message dispatch loop
-- Closure message dispatch in mailbox processing loop
-- Handler type inference: `send-closure` unifies handler params with captured message types (e.g. String message → String param)
-- Drain loop waits for messages until `wait_all` stops actors (no send-after-spawn race)
-- Send-capability enforcement in type inference
-
-**C Runtime:**
-- `src/runtime/actor_runtime.c` (~410 lines) — full actor system + arena allocator
-- `src/runtime/actor_runtime.h` (80 lines) — API header
-- Functions: `zyl_actor_init`, `zyl_actor_spawn`, `zyl_actor_send`, `zyl_actor_send_closure`, `zyl_actor_wait_all`
-- Per-actor `pthread_mutex_t` + `pthread_cond_t`: sends enqueue under lock and `cond_signal`; the mailbox loop waits on the condvar (no busy-wait polling); `alive` guarded by the lock
-- Idempotent join: `joined` flag prevents re-joining an already-joined thread (`wait_all`/terminate/wait safe to call repeatedly)
-- Verified race-free under `-fsanitize=thread`; FIFO per-actor ordering preserved
-
-### FFI ✅ COMPLETE
-
-**Features:**
-- `(ffi-call "func" (ffi-pin <expr> timeout) args...)` — Call external function
-- `(ffi-pin <expr>)` — Pin value for FFI access
-- `(ffi-unpin <expr>)` — Unpin value after FFI access
-- Timeout enforcement
-- Pin region assignment
-- Type checking for FFI calls
-
-### Try/Catch ✅ COMPLETE
-
-**Features:**
-- `(try body catch (e) handler)` — Error handling
-- Catch variable binding in handler scope
-- Handler body type inference
-
-### I/O ✅ COMPLETE
-
-**Features:**
-- `(read-line)` — Read line from stdin via sys_read syscall
-- 64-bit pointer storage for buffer
-- String output with ReadLine result detection
-
-### For Loop ✅ COMPLETE
-
-**Status:** Completed (2026-07-15).
-
-**Syntax:** `(for (init-bindings) condition body)` (3-arg)
-
-Where init-bindings is a list of `(name [value])` pairs:
-- `(i)` — use existing variable (while-like)
-- `(i 0)` — new binding with initial value
-- `(i 0 j 10)` — multiple variables
-- `()` — empty, pure while loop
-
----
-
-## Remaining Work
-
-### Low Priority
-- [ ] ~160 compiler warnings (mostly unused variables, dead code, naming)
-- [ ] Self-hosting (not yet targeting Zyl source code generation)
-- [ ] Contract injection (Phase 10 of spec — optional overlay)
-- [ ] Hash finalization (Phase 11 of spec — SHA-256 binary fingerprinting)
-- [x] Full REPL (`zyl repl`; see docs/repl.md)
-
----
-
-## Historical Note
-
-This file contains the current implementation state. Historical phase-by-phase details, debugging notes, and exhaustive fix documentation have been preserved in the version control history and the `specifications/` directory.
+## Historical note
+
+Earlier versions of this file recorded the phase-by-phase build-out of
+the Rust bootstrap (lexer, parser, PostProcessor, region inference,
+SSA-form ICNF, a register-allocating code generator). That
+implementation is frozen in `archive/rust-bootstrap-2026/` and none of
+it describes the active compiler; the detail is preserved in version
+control history and in `specifications/`.

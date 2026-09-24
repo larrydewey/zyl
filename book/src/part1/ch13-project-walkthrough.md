@@ -1,8 +1,8 @@
 # Chapter 13: A Complete Project Walkthrough
 
-Let's build a small **log processor** — a realistic Zyl program that reads a log file line by line, extracts a level token from each line, and produces a summary. It is deliberately kept to **one file** and runs **sequentially**, because determinism and ease of reasoning matter more here than throughput. A concurrent (actor-based) variation is sketched at the end of the chapter.
+Let's build a small **log processor**: a Zyl program that reads a log file, parses each line into a structured entry, and prints a summary. It is split into a library module, a program, and a test file, and it runs **sequentially**, because determinism and ease of reasoning matter more here than throughput. §13.9 explains why a concurrent version is not practical yet.
 
-The finished, runnable program is available in `book/examples/log-processor/`. Every code block in this chapter was compiled and executed against the actual compiler before being printed here — what you see is what the compiler produces.
+The finished program is in `book/examples/log-processor/`. Every code block in this chapter is taken from those files, which were compiled and run with the current self-hosted compiler; the output shown is what they print.
 
 ## 13.1 Project Overview
 
@@ -13,6 +13,7 @@ The finished, runnable program is available in `book/examples/log-processor/`. E
 2024-01-15 [ERROR] auth failed login
 2024-01-15 [WARN] db slow query
 2024-01-15 [ERROR] db timeout
+corrupted entry
 ```
 
 into this summary:
@@ -26,101 +27,90 @@ Warn:
 1
 Info:
 1
+Skipped:
+1
 ```
+
+The last line of the sample is deliberately malformed: it has too few fields, so it is counted as skipped rather than as an entry.
 
 **Zyl features we'll use:**
 
+- a user module, imported with `(use logstats)`
 - `defstruct` for structured data (`LogEntry`, `Stats`)
-- `deftype` for an ADT that tags a line as parsed / unparsed (`ParseResult`)
-- plain recursion and `match` instead of loops and mutation — the Zyl idiom
-- arena-based strings (`str-intern`) so tokens outlive the scratch buffers they are read from
-- the built-in `file-open` / `file-read` / `file-close` I/O forms
+- `deftype` for an ADT that carries a parsed entry or the unparsable line (`ParseResult`)
+- recursion and exhaustive `match` instead of loops and mutation
+- the built-in `file-open` / `file-read` / `file-close` forms
 - the built-in test harness (`test` / `assert-equal` / `run-tests`)
 
 ## 13.2 Project Structure
 
-Multi-file programs are on the roadmap (user modules outside `stdlib/` are not resolved yet), so the project is a single file plus a test file plus a data file:
-
 ```text
 log-processor/
-├── log-processor.zyl        # the program
-├── log-processor-tests.zyl  # the test-suite variant
+├── logstats.zyl             # the library: types, parsing, counting
+├── log-processor.zyl        # the program: (use logstats) + main
+├── log-processor-tests.zyl  # the tests: (use logstats) + tests
 └── sample.log               # input data
 ```
 
-To **build**, run `zyl` from the directory that contains `stdlib/` (the compiler resolves `(use …)` modules relative to its own working directory). To **run** the produced binary, change into the project directory so the relative path `"sample.log"` resolves:
+`(use logstats)` finds `logstats.zyl` next to the file being compiled; a subdirectory works the same way (`(use util/strings)` loads `util/strings.zyl`). Two rules for a module you `use`:
+
+- **It must not define `main`.** A `use`d file's top-level forms are spliced into the program that uses it, so its `main` would collide with the program's own. It would also make every test file that uses it fail with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`, because a file may not contain both tests and a `main`. That is why the program and the tests are separate files that share one library.
+- **It must `use` what it constructs.** `logstats.zyl` builds `Cons`/`Nil` lists, so it starts with `(use core/list)`. Without that line, `Nil` is not known as a constructor inside the module, and `match` reports `E_UNREACHABLE_MATCH_ARM` for the arms that follow it.
+
+To build and run, from the project directory:
 
 ```bash
-zyl log-processor/log-processor.zyl -o log-processor/log-processor
-cd log-processor
-./log-processor.bin
+cd book/examples/log-processor
+zyl log-processor.zyl -o log-processor
+./log-processor
 ```
 
-`-o <name>` makes the compiler emit `<name>.s` next to `<name>.bin`. (With no `-o`, defaults are `a.out.s` / `a.out.bin`.)
+`-o log-processor` writes the executable `log-processor` and its assembly `log-processor.s`. (With no `-o`, the executable is named after the source file.) Run the program from the project directory so the relative path `"sample.log"` resolves.
 
-> **Bootstrap snapshot.** This walkthrough targets the current stage-1 (Rust) compiler. A few behaviors you should expect right now: struct fields are untyped (they hold 64-bit words — string pointers or integers); `str-eq` returns an `Int` `0`/`1`, not a `Bool`; `print` writes *each argument on its own line*; and when a `(run-tests)` is present, the tests run and `main` is not reached. Each of these is called out where it matters below, and the chapter's code works with them rather than against them.
+> **Things to know about the current compiler.** `print` writes *each argument on its own line*; `str-eq` returns an `Int`, `1` for equal and `0` for different; and struct fields declared without a type (as here) hold one 64-bit word, a string pointer or an integer. The chapter's code works with these, and each is pointed out where it matters.
 
 ## 13.3 Step 1: Data Types
 
-The file starts by importing the two modules we rely on — the arena allocator and the `Cons`/`Nil` list helpers (see Chapter 2 and Appendix B on `use`):
+`logstats.zyl` starts with its import and its types:
 
 ```lisp
-(use allocator/allocator)
 (use core/list)
 
 (defstruct LogEntry (timestamp) (level) (service) (message))
-(defstruct Stats (total) (errors) (warnings) (infos))
+(defstruct Stats (total) (errors) (warnings) (infos) (skipped))
 
 (deftype ParseResult
-  (Parsed)
+  (Parsed LogEntry)
   (Unparsed String))
 ```
 
-- `LogEntry` models one parsed line. Fields are untyped, so they may hold either an inverted string pointer or an integer.
-- `Stats` holds the aggregates we accumulate.
-- `ParseResult` tags the outcome of parsing a line. `Parsed` deliberately carries no payload: extracting a struct out of an ADT payload is not type-stable in the current compiler, so we keep the ADT as a pure discriminator and read the tokens directly.
+- `LogEntry` models one parsed line.
+- `Stats` holds the counts we accumulate, including lines we could not parse.
+- `ParseResult` is the outcome of parsing one line: either a `Parsed` entry or the `Unparsed` line itself.
 
-Structs are immutable by default — you rebind rather than mutate. Field access uses `struct-get`:
+Structs are immutable: you build a new one instead of changing fields. `make-LogEntry` is the generated constructor and `struct-get` reads a field by name:
 
 ```lisp
-(defn new-entry (line)
-  (let toks (tokenize line " ")
-    (make-LogEntry (list-nth toks 0)
-                   (list-nth toks 1)
-                   (list-nth toks 2)
-                   (list-nth toks 3))))
+(struct-get entry "level")     ; "[ERROR]"
 ```
 
-Bind the struct to a local before reading its fields:
+## 13.4 Step 2: A Tokenizer
+
+The workhorse splits a string on a one-character separator and returns a list of tokens:
 
 ```lisp
-(let e (new-entry "2024-01-15 [ERROR] auth squawk")
-  (str-eq (struct-get e "level") "[ERROR]"))   ; → 1
-```
-
-## 13.4 Step 2: A Persistent Tokenizer
-
-The workhorse is `tokenize`, which splits a string on a separator and returns a list of token pointers:
-
-```lisp
-(defn tokenize-h (arena s n i start acc sep)
+(defn tokenize-h (s n i start acc sep)
   (if (>= i n)
-    (if (>= i start)
-      (Cons (str-intern arena (str-substring s start (- i start))) acc)
+    (if (> i start)
+      (Cons (str-substring s start (- i start)) acc)
       acc)
-    (if (str-eq (str-substring s i 1) sep)
-      (tokenize-h arena s n (+ i 1) (+ i 1)
-        (Cons (str-intern arena (str-substring s start (- i start))) acc) sep)
-      (tokenize-h arena s n (+ i 1) start acc sep))))
-
-(defn rev (l acc)
-  (match l
-    (Nil acc)
-    (Cons h t (rev t (Cons h acc)))))
+    (if (> (str-eq (str-substring s i 1) sep) 0)
+      (tokenize-h s n (+ i 1) (+ i 1)
+        (Cons (str-substring s start (- i start)) acc) sep)
+      (tokenize-h s n (+ i 1) start acc sep))))
 
 (defn tokenize (s sep)
-  (let a (arena-create 4096)
-    (rev (tokenize-h a s (str-length s) 0 0 Nil sep) Nil)))
+  (list-reverse (tokenize-h s (str-length s) 0 0 Nil sep)))
 
 (defn list-nth (l k)
   (match l
@@ -128,72 +118,135 @@ The workhorse is `tokenize`, which splits a string on a separator and returns a 
     (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
 ```
 
-Two details matter:
+- `tokenize-h` walks the string with an index pair (`start`, `i`) and **accumulates into `acc`**; `tokenize` then reverses the list with `core/list`'s `list-reverse` so the tokens come back in reading order. Recursion with an accumulator is the idiomatic Zyl replacement for a loop that pushes into a growing vector.
+- `str-substring` returns a fresh heap copy of the slice, so each token stays valid after the call.
+- `str-eq` compares contents and returns `1` or `0`, so it is used as `(> (str-eq a b) 0)` in a condition.
+- `list-nth` returns `0` past the end of the list, which is enough for this program.
 
-- `str-substring` returns a pointer into a scratch buffer that is *reused*; those pointers do not survive. `str-intern` copies each token into an arena we create per `tokenize` call, so the returned tokens are stable. Getting into the habit of "persist what you split" saves you a whole class of hard-to-see bugs.
-- `tokenize-h` walks the string with an explicit `start`/`i` index pair and **accumulates into `acc`**. It then reverses so the tokens come back in reading order. This recursion-with-accumulator is the idiomatic Zyl replacement for a `while` loop that pushes into a `Vec`.
+## 13.5 Step 3: Parse One Line
 
-Note `str-eq` compares contents and returns `1` (match) or `0` (mismatch) as an `Int` — use it in `if`/`>` conditions, exactly as in `tokenize-h` and `add-line` below.
-
-## 13.5 Step 3: Count One Line
-
-Lines look like `2024-01-15 [INFO] auth login ok`. The **level** is token 1 (0-based); we compare it against the bracketed literals. `add-line` takes the running totals and returns the new totals, packed as a four-element `Cons` chain (the `list` literal and tuples are not implemented yet):
+A line is `<timestamp> <level> <service> <message...>`. A line with fewer than four tokens is not a log line:
 
 ```lisp
-(defn add-line (line t e w i0)
+(defn parse-line (line)
   (let toks (tokenize line " ")
-  (let lvl (list-nth toks 1)
-    (if (= lvl 0)
-      (Cons t (Cons e (Cons w (Cons i0 Nil))))
-      (Cons (+ t 1)
-            (Cons (+ e (if (> (str-eq lvl "[ERROR]") 0) 1 0))
-                  (Cons (+ w (if (> (str-eq lvl "[WARN]") 0) 1 0))
-                        (Cons (+ i0 (if (> (str-eq lvl "[INFO]") 0) 1 0))
-                              Nil))))))))
+    (if (< (list-length toks) 4)
+      (Unparsed line)
+      (make-entry line toks))))
+
+(defn make-entry (line toks)
+  (let ts (list-nth toks 0)
+    (let lvl (list-nth toks 1)
+      (let svc (list-nth toks 2)
+        (let off (message-offset ts lvl svc)
+          (Parsed (make-LogEntry ts lvl svc
+                    (str-substring line off (- (str-length line) off)))))))))
+
+(defn message-offset (ts lvl svc)
+  (let a (str-length ts)
+    (let b (str-length lvl)
+      (let c (str-length svc)
+        (+ a b c 3)))))
 ```
 
-If the line has fewer than two tokens (`lvl` is `0`), it is left out of the count. This replaces the original project sketch's `string-split` + `vec-slice` + `string-join` helpers, none of which exist in the standard library yet.
+The message is not a single token: it is everything after the third space, so `"slow query"` stays whole. `message-offset` adds up the three field lengths plus one space after each.
 
-## 13.6 Step 4: Scan the Whole File
+Note the style of `message-offset`: each call is bound with `let` before the results are combined. Arithmetic over several calls, such as `(+ (str-length ts) (str-length lvl) ...)`, is legal Zyl, but inside a `match` arm the current compiler rejects an arm that mixes a constant with several calls (`E_MATCH_ARM_COMPLEX`), and short `let` chains keep every function clear of that rule.
 
-`scan` walks the file content, cutting it on newlines and folding each line through `add-line`. The counts are threaded as **four separate integer arguments** — not as a struct — because integer arguments survive recursion reliably in the current compiler, while passing a struct through several stacked function frames does not. Only at the very end do we assemble the `Stats` struct out of the four bound integers:
+## 13.6 Step 4: Count Lines
+
+Counting takes the running `Stats` and returns a new one:
 
 ```lisp
-(defn scan (s n i start t e w i0)
+(defn empty-stats () (make-Stats 0 0 0 0 0))
+
+(defn level-is (e lvl)
+  (if (> (str-eq (struct-get e "level") lvl) 0) 1 0))
+
+(defn count-entry (st e)
+  (make-Stats (+ (struct-get st "total") 1)
+              (+ (struct-get st "errors") (level-is e "[ERROR]"))
+              (+ (struct-get st "warnings") (level-is e "[WARN]"))
+              (+ (struct-get st "infos") (level-is e "[INFO]"))
+              (struct-get st "skipped")))
+
+(defn count-skipped (st)
+  (make-Stats (struct-get st "total")
+              (struct-get st "errors")
+              (struct-get st "warnings")
+              (struct-get st "infos")
+              (+ (struct-get st "skipped") 1)))
+
+(defn count-line (st line)
+  (match (parse-line line)
+    (Parsed e (count-entry st e))
+    (Unparsed _ (count-skipped st))))
+```
+
+`count-line` is where the ADT pays off: the `match` must handle both outcomes (a missing arm is a compile-time `E_NON_EXHAUSTIVE_MATCH`), and the `Parsed` arm receives the whole `LogEntry`. `_` discards the unparsed line, which only the count needs.
+
+## 13.7 Step 5: Scan the Whole File
+
+`scan` cuts the file's contents on newlines and folds each non-empty line into the `Stats`, threading the struct through the recursion:
+
+```lisp
+(defn scan (st s n i start)
   (if (>= i n)
-    (if (>= i start)
-      (let r (add-line (str-substring s start (- i start)) t e w i0)
-        (make-Stats (list-nth r 0) (list-nth r 1) (list-nth r 2) (list-nth r 3)))
-      (make-Stats t e w i0))
-    (if (str-eq (str-substring s i 1) "\n")
-      (let r (add-line (str-substring s start (- i start)) t e w i0)
-        (scan s n (+ i 1) (+ i 1)
-          (list-nth r 0) (list-nth r 1) (list-nth r 2) (list-nth r 3)))
-      (scan s n (+ i 1) start t e w i0))))
+    (finish-line st s start i)
+    (if (> (str-eq (str-substring s i 1) "\n") 0)
+      (scan (finish-line st s start i) s n (+ i 1) (+ i 1))
+      (scan st s n (+ i 1) start))))
 
+(defn finish-line (st s start end)
+  (if (> end start)
+    (count-line st (str-substring s start (- end start)))
+    st))
+
+(defn scan-text (s)
+  (scan (empty-stats) s (str-length s) 0 0))
+
+; A file that cannot be opened reads as an empty log, after saying so.
 (defn process-file (path)
-  (let content (file-read (file-open path "r") 1000000)
-    (scan content (str-length content) 0 0 0 0 0 0)))
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      (begin
+        (print "log-processor: cannot open the log file")
+        (empty-stats))
+      (let content (file-read fd 1000000)
+        (let _ (file-close fd)
+          (scan-text content))))))
 ```
 
-The `file-open` / `file-read` / `file-close` forms are built in (Powering the `IO` module). `file-read` returns the whole file as a string; `1000000` is the maximum number of bytes to read.
+- `finish-line` skips empty lines, so the file's trailing newline does not produce a skipped entry.
+- `scan-text` works on any string, which makes the counting testable without a file (§13.9).
+- `file-open` returns a file descriptor, or a negative number when the file cannot be opened. `file-read` returns up to the given number of bytes as a string; `1000000` is the maximum read here.
 
-## 13.7 Step 5: `main`
+## 13.8 Step 6: `main`
+
+`log-processor.zyl` is short:
 
 ```lisp
+(use logstats)
+
+(defn report (st)
+  (begin
+    (print "Total:" (struct-get st "total"))
+    (print "Error:" (struct-get st "errors"))
+    (print "Warn:" (struct-get st "warnings"))
+    (print "Info:" (struct-get st "infos"))
+    (print "Skipped:" (struct-get st "skipped"))))
+
 (defn main ()
-  (let st (process-file "sample.log")
-    (begin
-      (print "Total:" (struct-get st "total"))
-      (print "Error:" (struct-get st "errors"))
-      (print "Warn:" (struct-get st "warnings"))
-      (print "Info:" (struct-get st "infos")))))
+  (begin
+    (report (process-file "sample.log"))
+    0))
 ```
 
-Building and running from the project directory gives:
+`main`'s value is the process exit status, so it ends with an explicit `0`. Building and running from the project directory gives:
 
 ```bash
-$ cd log-processor && ./log-processor.bin
+$ zyl log-processor.zyl -o log-processor
+$ ./log-processor
 Total:
 4
 Error:
@@ -202,152 +255,138 @@ Warn:
 1
 Info:
 1
+Skipped:
+1
 ```
 
-Remember, the current bootstrap prints each argument of `print` **on its own line** — which is exactly why the output looks like this. (In a future stage the plan is to bind print formatting more closely to the type system, e.g., string-typed arguments printed inline.)
+Each label and its value are on separate lines because `print` writes every argument on a line of its own. Run it from another directory and it reports `log-processor: cannot open the log file` followed by zero counts.
 
-## 13.8 Step 6: Tests
+## 13.9 Step 7: Tests
 
-The test file `log-processor-tests.zyl` reuses the same functions (no `use` import is needed for the harness — `test`, `assert-equal`, `assert-true`, `run-tests` are recognized forms) and replaces `main` with a `(run-tests)` line:
+`log-processor-tests.zyl` uses the same library. `test`, `assert-equal`, and `run-tests` are built-in forms, so no import is needed for the harness:
 
 ```lisp
-(use allocator/allocator)
-(use core/list)
+(use logstats)
 
-(defstruct LogEntry (timestamp) (level) (service) (message))
-(defstruct Stats (total) (errors) (warnings) (infos))
+; Helpers keep each test body to a single comparison.
+(defn level-of (line)
+  (match (parse-line line)
+    (Parsed e (struct-get e "level"))
+    (Unparsed _ "")))
 
-(defn tokenize-h (arena s n i start acc sep)
-  (if (>= i n)
-    (if (>= i start)
-      (Cons (str-intern arena (str-substring s start (- i start))) acc)
-      acc)
-    (if (str-eq (str-substring s i 1) sep)
-      (tokenize-h arena s n (+ i 1) (+ i 1)
-        (Cons (str-intern arena (str-substring s start (- i start))) acc) sep)
-      (tokenize-h arena s n (+ i 1) start acc sep))))
+(defn message-of (line)
+  (match (parse-line line)
+    (Parsed e (struct-get e "message"))
+    (Unparsed _ "")))
 
-(defn rev (l acc)
-  (match l
-    (Nil acc)
-    (Cons h t (rev t (Cons h acc)))))
+(defn is-unparsed (line)
+  (match (parse-line line)
+    (Parsed _ 0)
+    (Unparsed _ 1)))
 
-(defn tokenize (s sep)
-  (let a (arena-create 4096)
-    (rev (tokenize-h a s (str-length s) 0 0 Nil sep) Nil)))
+(test "tokenize-counts-tokens"
+  (assert-equal (list-length (tokenize "a bbb ccc" " ")) 3))
 
-(defn list-nth (l k)
-  (match l
-    (Nil 0)
-    (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
+(test "tokenize-keeps-order"
+  (assert-equal (str-eq (list-nth (tokenize "a bbb ccc" " ") 1) "bbb") 1))
 
-(defn add-line (line t e w i0)
-  (let toks (tokenize line " ")
-  (let lvl (list-nth toks 1)
-    (if (= lvl 0)
-      (Cons t (Cons e (Cons w (Cons i0 Nil))))
-      (Cons (+ t 1)
-            (Cons (+ e (if (> (str-eq lvl "[ERROR]") 0) 1 0))
-                  (Cons (+ w (if (> (str-eq lvl "[WARN]") 0) 1 0))
-                        (Cons (+ i0 (if (> (str-eq lvl "[INFO]") 0) 1 0))
-                              Nil))))))))
+(test "parse-reads-level"
+  (assert-equal (str-eq (level-of "2024-01-15 [WARN] db slow query") "[WARN]") 1))
 
-(test "eq-lit" (assert-equal 1 (str-eq "[INFO]" "[INFO]")))
-(test "short" (assert-equal 0 (list-nth (add-line "x" 0 0 0 0) 0)))
-(test "nth1" (assert-equal 3 (str-length (list-nth (tokenize "a bbb ccc" " ") 1))))
-(test "nth2" (assert-equal 3 (str-length (list-nth (tokenize "a bbb ccc" " ") 2))))
+(test "parse-keeps-whole-message"
+  (assert-equal (str-eq (message-of "2024-01-15 [WARN] db slow query") "slow query") 1))
+
+(test "short-line-is-unparsed"
+  (assert-equal (is-unparsed "garbage") 1))
+
+(test "scan-counts-levels"
+  (let st (scan-text "d [ERROR] a x\nd [INFO] b y\nd [ERROR] c z\n")
+    (begin
+      (assert-equal (struct-get st "total") 3)
+      (assert-equal (struct-get st "errors") 2)
+      (assert-equal (struct-get st "infos") 1))))
+
+(test "scan-skips-malformed-lines"
+  (let st (scan-text "d [INFO] a x\ntruncated line\n")
+    (begin
+      (assert-equal (struct-get st "total") 1)
+      (assert-equal (struct-get st "skipped") 1))))
+
 (run-tests)
 ```
 
 Build and run the tests the same way:
 
 ```bash
-zyl log-processor/log-processor-tests.zyl -o log-processor/log-processor-tests
-cd log-processor && ./log-processor-tests.bin
+$ zyl log-processor-tests.zyl -o log-processor-tests
+$ ./log-processor-tests
+test: tokenize-counts-tokens ... ok
+test: tokenize-keeps-order ... ok
+test: parse-reads-level ... ok
+test: parse-keeps-whole-message ... ok
+test: short-line-is-unparsed ... ok
+test: scan-counts-levels ... ok
+test: scan-skips-malformed-lines ... ok
+
+test result: 7 passed, 0 failed, 7 total
 ```
 
-```text
-test: eq-lit ... ok
-test: short ... ok
-test: nth1 ... ok
-test: nth2 ... ok
+Notes on the harness (Chapter 11 has the details):
 
-test result: 4 passed, 0 failed, 4 total
-```
+- The file has no `main`; the compiler generates one. A file with both tests and its own `main` is rejected with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
+- Only flat top-level `(test "name" body)` forms run. `test-suite`, `setup`/`teardown`, `test-property`, and keyword options such as `:filter` are accepted but do nothing yet.
+- Read the summary line: the program's exit status is 0 even when a test fails.
 
-Two notes on the harness in the current bootstrap:
+## 13.10 A Concurrent Variation?
 
-- `test-suite`, `setup`/`teardown`, `test-property`, and the `:parallel` / `:filter` keyword arguments are parsed but are not executed yet — flat top-level `(test "name" body)` forms are the supported path today (see Chapter 11).
-- When the file contains `(run-tests)`, the tests run and `main` is **not** reached. Keep the demo (`main`) and the suite in separate files, as we did here.
+The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. In the model's own terms that needs `receive`, which does not exist yet: messages sent with `send` are discarded, and a spawned closure may not capture values such as the file name (Chapter 9). The runtime's closure messages, sent through `ffi-call` (Chapter 21, §21.4), can hand a worker a file name, but reporting a result back needs a second round of closure messages and careful ordering of actor ids. What does work is spawning a zero-argument entry function and waiting for it. For example, a `(defn process-sample () (report (process-file "sample.log")))` passed as `(spawn (fn () (process-sample)))` and followed by `actor-wait` runs the whole job on another thread. That adds nothing over calling `report` directly, so the sequential version is the one to use today.
 
-## 13.9 Step 7: A Concurrent Variation (Design Sketch)
-
-Actors are part of the language design (`spawn` takes a closure, `send` posts a message; the runtime joins all actors at the end of `main`). The *intended* shape of a concurrent log processor is:
-
-```lisp
-;; design sketch — message staging is under re-verification in the current stage-1 compiler
-(defn main ()
-  (let worker (spawn (fn (msg)
-    (match msg
-      (ProcessFile path (send (reply-of worker) (process-file path)))
-      (Shutdown unit))))
-    (send worker (ProcessFile "sample.log"))
-    (send worker (Shutdown))))
-```
-
-Treat this as the target design, not as runnable example code: sending structured messages and receiving replies (`receive`, reply channels) are not yet stable in the stage-1 compiler. The sequential version above is the verified, deterministic path. Chapter 9 covers the actor model in depth; Part III covers the runtime machinery.
-
-## 13.10 Key Zyl Features Demonstrated
+## 13.11 Key Zyl Features Demonstrated
 
 | Feature | Where Used |
 |---------|------------|
-| `defstruct` | `LogEntry`, `Stats` — immutable records |
-| `deftype` | `ParseResult` — an ADT as a discriminator |
-| `match` | `rev`, `list-nth` — exhaustive `Cons`/`Nil` patterns |
-| `Cons`/`Nil` lists | Tokens and per-line totals (no `list` literal yet) |
-| Recursion + accumulators | `tokenize-h`, `rev`, `scan` — instead of mutation |
-| Arena strings | `str-intern` to persist `str-substring` tokens |
-| Built-in I/O | `file-open`, `file-read` |
-| Strings as pointers | `str-eq`, `str-length` comparisons |
+| User modules | `(use logstats)` in the program and the tests |
+| `defstruct` | `LogEntry`, `Stats`: immutable records, rebuilt instead of mutated |
+| `deftype` | `ParseResult`: an ADT that carries data |
+| Exhaustive `match` | `count-line`, `list-nth`, the test helpers |
+| `Cons`/`Nil` lists | Tokens, reversed with `list-reverse` |
+| Recursion + accumulators | `tokenize-h`, `scan` |
+| Strings | `str-substring`, `str-length`, `str-eq` |
+| Built-in I/O | `file-open`, `file-read`, `file-close` |
 | Test harness | `test`, `assert-equal`, `run-tests` |
 
-## 13.11 Extending the Project
+## 13.12 Extending the Project
 
 Ideas to stretch the example:
 
-1. **Per-service counts** — keep a second `Stats`-like accumulator keyed by the `service` token, threading a small association list through `scan` instead of a `Map` (collection modules are growing, but a hand-rolled list is both simpler and deterministic today).
-2. **Skipping malformed lines** — change `ParseResult` so `Unparsed` carries the offending line, and count them as their own field.
-3. **Contracts** — add a `(requires …)` on `add-line` that the totals never decrease (Chapter 25).
-4. **A macro** — write a `defn-rec`-style macro to generate the `rev`-pattern for other "walk left, rebuild right" traversals (Chapter 10).
-5. **Move the parser to an actor** once message staging stabilizes, per the §13.9 sketch.
+1. **Per-service counts**: keep an association list of `(service, count)` pairs in `Stats`, or use `core/map`'s `map-insert` / `map-get-or`.
+2. **Report the skipped lines**: `Unparsed` already carries the line; collect those lines in a list instead of only counting them.
+3. **Contracts**: add a `requires` clause to `count-entry` (Chapter 24). Contracts are an optional overlay and do not change what the program computes.
+4. **A macro**: write a `defmacro` that expands to one of the `count-*` field updates (Chapter 10). Keep the macro call out of `match` arms, where the current expander does not look.
+5. **A package**: add a `zyl.pkg` with `(capabilities io)` (the program opens files) and build it with `zyl build` (Chapter 25).
 
 ---
 
 ## Summary: What You've Learned
 
-This book covered:
+This part of the book covered:
 
 **Part I: Tutorial (Chapters 1-13)**
-1. Getting Started — installation, first program, compilation pipeline
-2. Syntax & Types — atoms, lists, bindings, core types
-3. Functions & Control Flow — `defn`, recursion, `if`/`cond`/`while`/`for`, `try`/`catch`
-4. Data Structures — structs, ADTs, collections, `Option`/`Result`
-5. Ownership, Regions, Capabilities — memory safety without GC
-6. Pattern Matching & Error Handling — exhaustive `match`, `Result` patterns
-7. Generics & Traits — parametric + ad-hoc polymorphism
-8. Closures — explicit syntax, capture inference, HOFs
-9. Actors — concurrent message passing
-10. Macros — hygienic, innermost-first metaprogramming
-11. Testing — built-in framework, property-based testing
-12. FFI — safe C interop with pinning
-13. Project Walkthrough — complete application
+1. Getting Started: installation, first program, compilation pipeline
+2. Syntax & Types: atoms, lists, bindings, core types
+3. Functions & Control Flow: `defn`, recursion, `if`/`cond`/`while`/`for`, `try`/`catch`
+4. Data Structures: structs, ADTs, collections, `Option`/`Result`
+5. Ownership, Regions, Capabilities: memory safety without GC
+6. Pattern Matching & Error Handling: exhaustive `match`, `Result` patterns
+7. Generics & Traits: parametric and ad-hoc polymorphism
+8. Closures: explicit syntax, capture by value, higher-order functions
+9. Actors: spawning, sending, and waiting
+10. Macros: template macros, expansion order, current limits
+11. Testing: the built-in framework and assertions
+12. FFI: calling C, pinning, native package dependencies
+13. Project Walkthrough: a complete multi-file application
 
 **Next Steps:**
 - Read **Part II: Reference** for deep dives on each topic
 - Explore **Part III: Advanced Topics** for compiler internals
-- Check `tests/regression/` for more examples
-- Join the Zyl community!
-
----
-
-*Happy coding in Zyl!* 🎉
+- Browse `tests/regression/` for more examples, every one of which compiles and runs

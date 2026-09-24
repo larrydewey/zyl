@@ -1,252 +1,194 @@
 # Chapter 24: Contracts and Recovery
 
-Complete reference for Zyl's optional contract system: preconditions, postconditions, invariants, recovery, and checkpoints.
+Complete reference for Zyl's contract and recovery system: preconditions, postconditions, invariants, recovery blocks, checkpoints and profiles. It covers what the specification defines and what the compiler does with each form today.
+
+The normative text is spec v5.0 §23, with §0 P8 (optional layers do not interfere) and §22 phase 10 (contract injection).
+
+**Implementation status, in one sentence: contracts are parsed, and not enforced.** The forms are accepted by the parser and lowered to plain expressions. No check is ever injected, no profile exists, and `E_CONTRACT_VIOLATION` is never raised. A contract-injection pass exists in `stdlib/compiler/contract_injection.zyl`, but it is not part of the compiler. `pipeline.zyl` explains why: its accessors do not match the real AST, and it clashed with a name in `closure_inline.zyl`. Everything below states the specified meaning first and the implemented behaviour second.
 
 ## 24.1 Contract System Overview
 
-Contracts are an **optional overlay** (Phase 10) that never affect core semantics (Spec §23, P8).
+Spec §23: contracts are an **optional overlay** that never affects type inference, ownership, regions or the concurrency model (P8, G8). They are applied at phase 10, after code generation and linking in the §22 ordering.
 
-### Profiles
+### Profiles (specified)
 
 ```
 Profile ::= "strict" | "debug" | "warn" | "off" | "production"
 ```
 
-- **strict**: All contracts enforced, abort on violation
-- **debug**: Enabled in development, may log
-- **warn**: Log violations, continue execution
-- **off**: Contracts completely removed (zero overhead)
-- **production**: Optimized subset (invariants only)
+§23 names the five profiles but does not define their behaviour.
 
-### Contract Placement
+**Implemented:** none. There is no profile setting, no compiler flag and no directive that selects one. `(contracts strict)` is accepted and ignored (§24.7).
 
-```lisp
-;; Function preconditions
-(defn sqrt (x)
-  (requires (>= x 0))
-  ...)
+### The forms
 
-;; Function postconditions
-(defn sqrt (x)
-  (ensures (>= (result) 0))
-  ...)
-
-;; Loop invariants
-(while condition
-  (invariant (>= i 0))
-  body)
-
-;; Module-level
-(contracts strict)
-(defn foo () ...)
-```
+| Form | Spec | Implemented as |
+|------|------|----------------|
+| `(requires C)` | §23.1 precondition | `C`, evaluated for its side effects; the result is discarded |
+| `(ensures C)` | §23.2 postcondition | same as `requires` |
+| `(invariant C)` | §23.3 invariant | **not recognised**: an ordinary call to an undefined function `invariant` |
+| `(recover BODY arms...)` | §23.4 recovery | `BODY`; the arms are discarded |
+| `(checkpoint E)` | §23.5 checkpoint | `E` |
+| `(contracts off FORM)` | §23.6 local override | `FORM` |
 
 ## 24.2 Preconditions: `requires`
 
 ```
-requires ::= "requires" Expression
+requires ::= "(" "requires" Expression ")"
 ```
+
+Specified: a condition that must hold on entry to a function.
+
+A `requires` form may be written as an extra leading form in a `defn` body or inside a `begin`; both parse:
 
 ```lisp
-(defn divide (a b)
-  (requires (!= b 0))
+(defn safe-div (a b)
+  (requires (> b 0))
   (/ a b))
 
-(defn sqrt (x)
-  (requires (>= x 0))
-  ...)
+(defn main ()
+  (begin
+    (print (safe-div 10 2))
+    (print (safe-div 10 -1))
+    0))
 ```
 
-- Checked **before** function body executes
-- Violation → `E_CONTRACT_VIOLATION` (or log/warn per profile)
-- Can reference parameters only
+Output:
+
+```
+5
+-10
+```
+
+The violated precondition is not reported. The condition **is evaluated**, so a condition with side effects (a `print`, a call) runs every time. Contracts are therefore not zero-cost: keep conditions pure and cheap.
 
 ## 24.3 Postconditions: `ensures`
 
 ```
-ensures ::= "ensures" Expression
+ensures ::= "(" "ensures" Expression ")"
 ```
 
-```lisp
-(defn sqrt (x)
-  (requires (>= x 0))
-  (ensures (>= (result) 0))
-  (ensures (<= (abs (- (* (result) (result)) x)) 0.0001))
-  ...)
-```
+Specified: a condition that must hold on return.
 
-- `result` binds to return value
-- Checked **after** function body, before return
-- Can reference parameters and `result`
+Implemented: exactly like `requires`, the condition is evaluated where it is written and its result is discarded. There is **no binding for the return value**. `(ensures (>= (result) 0))` fails at link time with `undefined reference to _ZYL_result`, and `(ensures (>= result 0))` fails with `E_UNBOUND_VARIABLE`. A postcondition can therefore refer only to parameters and other bindings in scope.
 
 ## 24.4 Invariants: `invariant`
 
 ```
-invariant ::= "invariant" Expression
+invariant ::= "(" "invariant" Expression ")"
 ```
 
-```lisp
-(while (< i n)
-  (invariant (<= 0 i n))
-  (invariant (== (sum 0 i) (fold + 0 (slice arr 0 i))))
-  body)
-```
+Specified: a condition that must hold as an invariant.
 
-- Checked **at loop entry** and **after each iteration**
-- Can reference loop variables and outer scope
-- Must hold initially and be preserved
+Implemented: `invariant` has no handling. Inside a function body, `(invariant (>= i 0))` is compiled as a call to a function named `invariant`, and the link fails with `undefined reference to _ZYL_invariant`. Do not use it.
 
 ## 24.5 Recovery Blocks: `recover`
 
 ```
-recover ::= "recover" "(" RecoveryCase* ")"
-
-RecoveryCase ::= "(" ErrorType Expression ")"
+recover ::= "(" "recover" Expression RecoveryCase* ")"
+RecoveryCase ::= "(" "(" ErrorType ")" Expression ")"
 ```
+
+Specified (§23.4): fallback values for errors of the named types.
+
+Implemented: `recover` evaluates its first operand and ignores the recovery cases:
 
 ```lisp
-(defn read-config (path)
-  (recover
-    ((FileNotFound) (default-config))
-    ((ParseError msg) (log-error msg) (default-config))
-    ((IOError) (retry-read path)))
-  (read-file path))
+(result-is-ok (recover (result-err "boom") ((String) (result-ok 1))))
+;; → 0: the fallback is never used
 ```
 
-- Catches specific error types from `try`/`Result`
-- First matching handler executes
-- If no match, error propagates
+Handle errors explicitly with `try`/`catch` (§12.2) or `match` on the `Result` instead:
+
+```lisp
+(try (read-config path)
+  (catch e (default-config)))
+```
 
 ## 24.6 Checkpoint Scopes: `checkpoint`
 
 ```
-checkpoint ::= "checkpoint" Expression
+checkpoint ::= "(" "checkpoint" Expression ")"
 ```
+
+Specified (§23.5, §28): runtime errors revert state when a checkpoint is active.
+
+Implemented: `(checkpoint E)` is `E`. Nothing is saved and nothing is rolled back:
 
 ```lisp
-(defn transactional-update (db key value)
-  (checkpoint
-    (begin
-      (db-begin-transaction db)
-      (db-set db key value)
-      (db-commit db))))
+(let-mut x 10
+  (begin
+    (try (checkpoint (begin (set! x 20) (result-err "fail")))
+      (catch e 0))
+    (print x)))
+;; prints 20
 ```
-
-- **On error**: Reverts state to checkpoint entry
-- **On success**: Commits changes
-- Works with: memory, actor state, FFI resources (if registered)
 
 ## 24.7 Local Overrides
 
 ```
-contracts ::= "contracts" Profile
+contracts ::= "(" "contracts" Profile Form? ")"
 ```
 
-```lisp
-(contracts off)
-(defn fast-path (x) ...)  ; No contracts
+Specified (§23.6): `(contracts off) (defun foo () ...)` switches contracts off for the definition that follows.
 
-(contracts strict)
-(defn safe-path (x) ...)  ; Full contracts
+Implemented:
+
+- `(contracts off FORM)`, wrapping one form, compiles as `FORM`.
+- Every other shape, including a bare `(contracts off)` directive before a definition and `(contracts strict)`, compiles to nothing and is ignored silently.
+
+```lisp
+(print (contracts off (* 4 3)))   ; 12
 ```
 
 ## 24.8 Contract Non-Interference (Normative)
 
-> **Contracts NEVER affect:**
-> - Type inference
-> - Ownership / regions
-> - Concurrency model
-> - Monomorphization
-> - Code generation (except check insertion)
+> **Contracts NEVER affect:** type inference, ownership, regions, or the concurrency model. (§23, P8, G8)
 
-This is **guaranteed by phase isolation** — contracts run in Phase 10, after all core phases.
+Because no checks are injected, contracts cannot alter program semantics beyond what their conditions do when evaluated. Two consequences follow from the parse-only implementation:
+
+- **Conditions are type-checked and executed** like any other expression. A condition that fails to type-check, or that performs I/O, affects the program.
+- **A condition is not isolated from ownership and capability checks**: it is ordinary code in the function body, subject to every static check.
 
 ## 24.9 Implementation
 
-### Phase 10: Contract Injection
+Specified pipeline (§22): contract injection is phase 10, an optional pass over the linked program.
 
-1. **Parse contracts** from AST (after macro expansion)
-2. **Generate check code** for each contract
-3. **Inject** at appropriate points:
-   - `requires`: Function entry
-   - `ensures`: Before return
-   - `invariant`: Loop header + after body
-   - `recover`: Wrap `try` expression
-   - `checkpoint`: Save/restore state
-4. **Profile filtering**: Omit checks per profile
+Implemented: the forms are handled in the parser only (`stdlib/compiler/expr_inner.zyl`, the special-form dispatch), as the table in §24.1 shows. `stdlib/compiler/contract_injection.zyl` sketches the intended lowering:
 
-### Code Generation Example
+- `requires`/`ensures` become `(if cond Unit (error "precondition failed"))`.
+- `recover` becomes `try`/`catch`.
+- `checkpoint` passes its body through.
 
-```lisp
-;; Source:
-(defn sqrt (x)
-  (requires (>= x 0))
-  (ensures (>= (result) 0))
-  ...)
+That module is not bundled into the compiler, and nothing calls it. `tests/regression/contracts.zyl` pins down the current pass-through behaviour.
 
-;; Injected (simplified):
-(defn sqrt (x)
-  (if (not (>= x 0)) (contract-violation "precondition"))
-  (let result (...)
-    (if (not (>= result 0)) (contract-violation "postcondition"))
-    result))
-```
+## 24.10 Contract Errors
 
-## 24.10 Recovery and Checkpoints Implementation
+| Error | Status |
+|-------|--------|
+| `E_CONTRACT_VIOLATION` | specified in §28; defined in the error catalogue; never raised |
+| `E_UNBOUND_VARIABLE` | what `result` in an `ensures` produces |
+| link-time `undefined reference` | what `(result)` or `(invariant ...)` produces |
 
-### Recovery
+The specification defines no other contract error codes.
 
-```lisp
-;; Source:
-(recover ((FileNotFound) default) (read-file path))
+## 24.11 Best Practices
 
-;; Compiles to:
-(try (read-file path)
-  (catch err
-    (match err
-      (FileNotFound default)
-      (d1 (error err)))))
-```
+Until contracts are enforced:
 
-### Checkpoint
+1. **Use `assert-true` for checks that must hold.** `(assert-true cond)` aborts with `PANIC: assert-true failed` and exit status 1 when `cond` is false. Plain `(assert cond)` (§12.4, `E_ASSERT_FAIL`) is parsed but currently not lowered to any check, so it does nothing.
+2. **Return `Result` for recoverable failures**, and handle them with `try`/`catch` or `match`, rather than relying on `recover`.
+3. **Write `requires` and `ensures` as documentation** if you like, but keep their conditions pure and cheap, since they are evaluated and their failures are ignored.
+4. **Do not use `invariant`, `(result)`, profiles or `checkpoint` rollback.** They are unimplemented, and the first two do not even compile.
 
-```lisp
-;; Source:
-(checkpoint (transactional-work))
+## 24.12 Comparison with Other Systems
 
-;; Compiles to:
-(let snapshot (save-state)
-  (try (transactional-work)
-    (catch err
-      (restore-state snapshot)
-      (error err))))
-```
-
-## 24.11 Contract Errors
-
-| Error | Cause |
-|-------|-------|
-| `E_CONTRACT_VIOLATION` | Pre/post/invariant failed |
-| `E_RECOVERY_EXHAUSTED` | No matching recovery handler |
-| `E_CHECKPOINT_FAILED` | State save/restore failed |
-
-## 24.12 Best Practices
-
-1. **Use `requires`** for input validation (public APIs)
-2. **Use `ensures`** for documenting return guarantees
-3. **Use `invariant`** for complex loop correctness
-4. **Use `recover`** for expected error categories
-5. **Use `checkpoint`** for multi-step operations needing atomicity
-6. **Profile appropriately** — `strict` for testing, `production` for release
-
-## 24.13 Comparison with Other Systems
-
-| Feature | Eiffel | SPARK | Rust (contracts) | Zyl |
-|---------|--------|-------|------------------|-----|
-| Preconditions | `require` | `Pre` | `requires!` macro | `requires` |
-| Postconditions | `ensure` | `Post` | `ensures!` macro | `ensures` |
-| Invariants | `invariant` | `Loop_Invariant` | ❌ | `invariant` |
-| Recovery | `rescue` | ❌ | `catch_unwind` | `recover` |
-| Checkpoints | ❌ | ❌ | ❌ | `checkpoint` |
-| Profiles | ❌ | ❌ | ❌ | `strict`/`debug`/etc. |
-| Non-interference | ❌ | ✅ | ❌ | ✅ (phase isolation) |
+| Feature | Eiffel | SPARK | Zyl (spec) | Zyl (implemented) |
+|---------|--------|-------|------------|-------------------|
+| Preconditions | `require` | `Pre` | `requires` | parsed; condition evaluated, not checked |
+| Postconditions | `ensure` | `Post` | `ensures` | parsed; no result binding |
+| Invariants | `invariant` | `Loop_Invariant` | `invariant` | not recognised |
+| Recovery | `rescue` | ❌ | `recover` | first operand only |
+| Checkpoints | ❌ | ❌ | `checkpoint` | identity |
+| Profiles | assertion levels | ❌ | five named | none |
+| Enforced checks | ✅ | ✅ (static proof) | ✅ | ❌ (use `assert-true`) |

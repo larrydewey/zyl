@@ -7,10 +7,13 @@
 ;
 ; Deliberately does NOT use compiler/type_inference's TypeInferer/
 ; collect-definitions:
-;  1. Position tracking: nothing in this compiler's real Ast/Expr/Token
-;     carries a source position (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), so
-;     a full Hindley-Milner pass buys hover/goto-def nothing beyond what a
-;     plain signature-text listing already gives by NAME.
+;  1. Position tracking: tokens carry byte offsets and the compiler keeps
+;     a runtime span table keyed by node (zyl_span_set/zyl_span_off in
+;     runtime/actor_runtime.c, read by compiler/error_report.zyl), but
+;     nothing in this LSP reads it -- hover/goto-def locate names by
+;     scanning the document text (lsp/source_index). A full
+;     Hindley-Milner pass therefore buys them nothing beyond what a plain
+;     signature-text listing already gives by NAME.
 ;  2. Safety/cost: collect-definitions calls infer-defn-body on every
 ;     function -- real, recursive, non-tail-call HM inference over the
 ;     WHOLE program on every keystroke. Confirmed by direct testing this
@@ -79,10 +82,11 @@
         (Diag rng (Some DSError) None (Some (Left code)) None (Some "zyl") message None
               (Some (LSPObject (map-insert (map-new) "fixIt" (LSPString hint)))))))))
 
-; A caught compiler panic (see lsp/document_manager) carries no
-; location: every checker in stdlib/compiler/ reports by calling
-; `zyl_panic` with a formatted message, and the Expr tree it walked has
-; no position to report from (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
+; A caught compiler panic (see lsp/document_manager) reaches this server
+; only as its message text: every checker in stdlib/compiler/ reports by
+; calling `zyl_panic` with a formatted message. Some messages are located
+; diagnostics (compiler/error_report.zyl's err-at, with a `-->
+; file:line:col` line), but nothing here parses that location out.
 ;
 ; The messages are not shapeless, though. Every one of them is
 ;   E_SOME_CODE: ...`offending-name`...

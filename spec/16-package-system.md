@@ -1,6 +1,6 @@
 # Zyl Specification — Package System
 
-**Canonical authority:** `zyl_specification.txt` §31 (also §20.6, §24, §27, §28)
+**Canonical authority:** `zyl_specification.txt` §31 (also §20.6, §24, §25, §27, §28, §29 G12–G13)
 **Related:** `docs/package-management-design.md` (rationale, alternatives, plan)
 **Implementation:** implemented. See `PROGRESS.md` for what landed, the deliberate deviations and the remaining gaps.
 
@@ -14,12 +14,39 @@ capability_check,module_resolver}.zyl`, plus `zyl_mangle_key` and BLAKE3 in
 the runtime. Every definition carries a canonical key, visibility and
 capabilities are enforced, and `zyl` has the subcommands of §31.11.
 
-Three things here still describe intent rather than behaviour: `zyl fetch`
-does not yet clone-and-install a `git` dependency, no index repository
-exists to fetch from, and hash finalization records §31.12's four inputs
-in `zyl.buildinfo` without mixing the graph hash into the binary's own
-hash. The standard library stays implicit per §25 — package `zyl/std`,
-no manifest, fully visible, never capability-enforced.
+Deliberate deviations (recorded in `PROGRESS.md`):
+
+- **The standard library stays implicit** per §25: package `zyl/std` at the
+  compiler's major (the compiler reports version `5.0.0`), no manifest,
+  fully visible, never capability-enforced, and not a workspace member.
+  Importing any stdlib module exposes the whole loaded stdlib surface.
+- **A lone file is package `local/main` at major 0.** It has declared no
+  capabilities, so no capability ceiling is enforced against it;
+  `deny-capabilities` and the capability pass apply only to packages with
+  a `zyl.pkg`.
+- **Module layout:** module path `M` of package `P` is the file
+  `<root of P>/M.zyl`; a package's root module, which `(use acme/json)`
+  names, is the module spelled by the name's last segment.
+- **`zyl.buildinfo`'s fourth input is the assembly hash**, not the ICNF
+  hash, because the ICNF has no serialised form.
+
+Known gaps:
+
+- `zyl fetch` downloads registry archives over HTTPS, but does not yet
+  clone, archive and install a `git` dependency.
+- No index repository exists; the index URL in the examples is a
+  placeholder, so the fetch path is tested through its pure parts only.
+- Hash finalization records its inputs in `zyl.buildinfo` but does not mix
+  the graph hash into the binary. The `native-objects` field is always
+  empty, and the native object hash is not recorded in the lock as
+  §31.10 requires. The resolved graph is not written into
+  `zyl.buildinfo`.
+- There is no build cache (§31.4); every build recompiles the whole graph.
+- Paths and URLs handed to `tar`, `zstd`, `git`, `curl` or `cc` must match a
+  strict character set; a package root containing a space or quote is
+  refused rather than escaped.
+- A nested `feature-gate` is not rejected; it is simply not seen by the
+  resolver's top-level scan.
 
 ---
 
@@ -75,10 +102,12 @@ Over 200 bytes, truncate the prefix to 184 and append 16 hex digits of
 BLAKE3 over the full key.
 
 > **Lossy sanitizing is forbidden here.** `zyl_cstr_sanitize`
-> (`runtime/actor_runtime.c:984`) maps every byte outside `[A-Za-z0-9_]` to
+> (`runtime/actor_runtime.c`) maps every byte outside `[A-Za-z0-9_]` to
 > `_`, so `acme/json`, `acme.json` and `acme-json` all collapse to
 > `acme_json`. Using it on the label path would silently merge distinct
-> functions.
+> functions. The code generator applies `zyl_mangle_key` to every
+> canonical key and keeps `zyl_cstr_sanitize` only for the fixed set of
+> names that carry no key (and for `ffi-call` target names).
 
 Monomorphized instances carry fully-qualified type arguments:
 
@@ -97,6 +126,7 @@ S-expression, read by the language's own lexer and parser. No TOML.
 (package
   (name "acme/json") (version "1.4.0")
   (zyl "5.0") (edition "2026")
+  (description "...") (license "...") (repository "...")
   (capabilities io)
   (deps
     (dep "core/bytes" "2.1.0")
@@ -132,9 +162,23 @@ the same thing — two spellings of one fact.
 (use acme/ffi:raw :unsafe { poke })            ; unsafe import
 ```
 
+A module declares itself with `(module module-name)` (§24.1).
+
 Colon present → package on the left, module path on the right. Colon absent →
-a module in the current package. A package name always contains `/`, so the
-forms never collide.
+a module in the current package, or a dependency's root module when the
+path is a package name. A package name always contains `/`, so the forms
+never collide. Naming a package absent from the manifest is
+`E_PKG_UNDECLARED_DEP`.
+
+The implementation resolves a colon-less path in a fixed order: a module of
+the importing package, then a module of the implicit standard library
+(which is how `(use core/list)` finds `stdlib/core/list.zyl`), then a
+declared dependency's root module.
+
+Modules within a package must form a DAG (`E_MODULE_CYCLE`), and packages
+must form a DAG (`E_PKG_CYCLE`) (§24.5). Coherence is checked over the whole
+resolved graph; a package may implement a trait for a type only if it
+defines the trait or the type (`E_PKG_ORPHAN_IMPL`, §24.6).
 
 `unsafe` is a reserved module name (`E_PKG_RESERVED_MODULE`): the lexer drops
 whitespace, so `pkg :unsafe` and `pkg:unsafe` are one token stream.
@@ -170,8 +214,14 @@ major. No solver, no backtracking.
 | Monotone in removal | Removing a dep never silently downgrades another |
 
 Upgrades are explicit acts that rewrite a requirement. A root package or
-workspace may override graph-wide; overrides never propagate from a
-dependency.
+workspace may override graph-wide:
+
+```lisp
+(overrides (override "acme/json" "1.9.2")
+           (override "acme/bad" (path "../fork")))
+```
+
+Overrides never propagate from a dependency, and are recorded in the lock.
 
 ---
 
@@ -184,20 +234,67 @@ dependency.
 | Index (git repo) | Name+version → URL, hash, publisher key, signature |
 
 Deleting the lock does not change which versions are selected — only which
-hashes, keys and capabilities are pinned.
+hashes, keys and capabilities are pinned. The lock is committed for
+applications and libraries alike; a library's lock constrains its own CI,
+never its consumers.
+
+```lisp
+(lock
+  (version 1)
+  (compiler "5.0.0" (hash "blake3:..."))
+  (pkg "acme/json" "1.4.0"
+    (source (registry "https://github.com/zyl-lang/index"))
+    (hash "blake3:...") (key "ed25519:...") (sig "ed25519:...")
+    (features utf16) (capabilities io)
+    (deps "core/bytes" "acme/utf8"))
+  (capability-closure io ffi)
+  (graph-hash "blake3:..."))
+```
+
+| Field | Meaning |
+|-------|---------|
+| `hash` | BLAKE3 over the canonical uncompressed archive |
+| `key` | Publisher key, pinned on first use |
+| `capability-closure` | Union of every capability granted in the graph |
+| `graph-hash` | BLAKE3 over the canonical serialisation of the above |
 
 `zyl fetch` is the sole command permitted to access the network; `zyl build`
 reads the store and fails with `E_PKG_NOT_IN_STORE` rather than fetching.
 
-The canonical archive fixes tar ordering, modes, timestamps and ownership so
-content hashes agree across producers; the recorded hash is over the
-*uncompressed* tar.
+The canonical archive (`.tar.zst`) makes content hashes agree across
+producers:
+
+- paths relative to the package root, sorted bytewise
+- regular files and directories only; no symlinks, no devices
+- mode normalised to 0644 (files) and 0755 (directories)
+- all timestamps, uid and gid zero; user and group names empty
+- excluded: `build/`, `.git/`, `zyl.lock`, and any `(exclude ...)` patterns
+- zstd level 19, long-distance matching off
+
+The recorded hash is over the *uncompressed* tar, so it does not depend on
+the compressor.
+
+The index is a git repository of S-expression metadata, sharded by name
+(`ac/me/acme/json.zyl`), with no server component:
+
+```lisp
+(index-entry (name "acme/json")
+  (versions (v "1.4.0" (url "https://...tar.zst") (hash "blake3:...")
+               (key "ed25519:...") (sig "ed25519:...")
+               (zyl "5.0") (yanked false))))
+```
+
+The publisher signs the BLAKE3 hash of the canonical archive with an
+Ed25519 key.
 
 Signing is mandatory with no opt-out. Trust on first use, per package: the
-publisher key is pinned into the lock on first resolution, and thereafter a
-key change is `E_PKG_KEY_CHANGED` and a content change is
-`E_PKG_HASH_MISMATCH`. Published versions are immutable; a yank is advisory
-and affects new resolutions only.
+publisher key is pinned into the lock on first resolution, and every later
+fetch must verify the signature against the pinned key and match the
+content hash. A key change is `E_PKG_KEY_CHANGED` and a content change is
+`E_PKG_HASH_MISMATCH`; both halt the build until accepted explicitly,
+producing a lock diff. Published versions are immutable; a yank is
+advisory and affects new resolutions only (`E_PKG_YANKED`), never an
+existing lock.
 
 ---
 
@@ -225,6 +322,15 @@ add `(deny-capabilities ffi native unsafe)`.
 This underwrites guarantee **G12**: a package cannot exercise a capability it
 does not declare.
 
+In the implementation, `capability_check.zyl` recognises the constructs
+directly (`ffi-call`, `ffi-pin`, `ffi-unpin`, `spawn`, `send`, `receive`,
+`file-open`, `file-read`, `file-write`, `file-close`, `read-line`) and
+classifies a call into the standard library by its module path: `io/…`
+and `core/io` need `io`, `actor/…` needs `actor`, `ffi/…` needs `ffi`, and
+`math/secret/…` needs `secret`. §25 says each stdlib module declares the
+capability it provides; the implementation keeps that mapping in the
+checker instead. A `Secret` annotation by itself needs no grant.
+
 ---
 
 ## Features and Native Dependencies
@@ -239,6 +345,11 @@ Top level only. Gated forms are separate definitions, so no feature can alter
 an existing signature — which is what makes unification safe here.
 Base/gated collision is `E_PKG_FEATURE_COLLISION`.
 
+Features are unified: the union of all requests across the graph is
+computed, the package is compiled once with that union, and the union is
+recorded in the lock. Optional dependencies enter the graph only when their
+feature is in the union.
+
 Native dependencies are declarative; **build scripts are forbidden in any
 form**, since build-time code would forfeit §27.
 
@@ -247,37 +358,57 @@ form**, since build-time code would forfeit §27.
         (include-dirs "c/include"))
 ```
 
-`cflags` are allowlisted (`-O*`, `-D*`, `-std=*`, a fixed `-f` subset). Raw
-`-I`, `-L`, `-l` and any `-Wl,` are rejected; includes go through
-`include-dirs`, linking through `link-libs`.
+- Requires the `native` capability; using the symbols requires `ffi`.
+- Paths are package-relative (`E_PKG_NATIVE_PATH_ESCAPE`).
+- `cflags` are allowlisted (`-O*`, `-D*`, `-std=*`, a fixed `-f` subset).
+  Raw `-I`, `-L`, `-l` and any `-Wl,` are rejected
+  (`E_PKG_NATIVE_FLAG_DENIED`); includes go through `include-dirs`,
+  linking through `link-libs`. The implemented `-f` subset is `-fPIC`,
+  `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong` and
+  `-fno-omit-frame-pointer`.
+- The toolchain invokes `cc` with a canonical sorted argument vector and
+  records the object hash in the lock. The sorted invocation is
+  implemented; recording the object hash is not (see Status).
 
 ---
 
 ## Workspaces, Editions, Tooling
 
 ```lisp
-(workspace (members "stdlib" "selfhost" "tools/lsp"))
+(workspace (members "stdlib" "selfhost" "tools/lsp") (overrides ...))
 ```
+
+The workspace file is `zyl-workspace.zyl` at the workspace root. The member
+list above is the canonical example; this repository is not itself
+converted into a workspace, and the standard library is not a member.
 
 One root `zyl.lock`, one shared cache and store, path deps between members
 that still carry a version so each stays publishable. Under MVS a single root
 lock cannot skew between members.
 
-`(zyl "5.0")` is a minimum compiler version; `(edition "2026")` names the
-syntax era. Editions coexist in one graph — each package is parsed under its
-own edition's rules and all converge on one ICNF. v5.0 defines one edition.
+`(zyl "5.0")` is a minimum compiler version (`E_PKG_COMPILER_TOO_OLD`);
+`(edition "2026")` names the syntax era. Editions coexist in one graph —
+each package is parsed under its own edition's rules and all converge on one
+ICNF. An unknown edition is `E_PKG_UNKNOWN_EDITION`. v5.0 defines exactly
+one edition, `2026`.
 
 ```
 zyl new | add | fetch | build | test | update | vendor | audit | publish | key
 ```
 
+The binary also accepts `zyl <file.zyl> [-o out] [--emit-asm]` for a single
+file, `zyl repl` and `zyl eval <file.zyl>`; these are not part of §31.
+
 ---
 
 ## Determinism
 
-Hash finalization takes, in order: the compiler hash, `graph-hash` from the
-lock, the canonical native-object hashes, and the ICNF hash. `zyl build`
-writes `zyl.buildinfo` recording all four plus the resolved graph.
+Hash finalization (pipeline step 11) takes, in order: the compiler hash,
+`graph-hash` from the lock, the canonical native-object hashes, and the ICNF
+hash. `zyl build` writes `zyl.buildinfo` beside the binary recording all four
+plus the resolved graph in canonical form, so a third party can verify that
+a binary was produced from a claimed set of inputs. The implemented
+`zyl.buildinfo` is described in `spec/14-determinism-and-hashing.md`.
 
 - Same `zyl.pkg` + same `zyl.lock` + same compiler → identical binaries.
 - An index compromise cannot alter a locked build (**G13**).

@@ -1,237 +1,257 @@
 # Chapter 19: Generic Programming and Monomorphization
 
-Complete reference for generics: generic functions, generic ADTs, monomorphization algorithm, canonical naming, and type parameter constraints.
+This chapter is the reference for generics: generic functions, generic
+ADTs, type-parameter constraints and monomorphization. The normative text
+is `zyl_specification.txt` §6 (generics) and §17 (monomorphization),
+formalized in v4.2 (§30). The implementation is
+`stdlib/compiler/type_inference.zyl` (per-call-site inference) and
+`stdlib/compiler/monomorphization.zyl`.
+
+The specification and the compiler diverge further here than anywhere
+else in Part II:
+
+- **Generic ADTs** work and are tested.
+- **Explicit generic-function syntax** (§6.1) does not work.
+- **Polymorphic functions** exist all the same, because an unannotated
+  parameter accepts a value of any type.
 
 ## 19.1 Generic Functions
 
-### Declaration Syntax
+### Specified syntax (§6.1)
 
 ```
-(defn name ((TypeParam Bound?) ... (param Type?) ...) body)
-```
-
-```lisp
-;; Unbounded type parameter
-(defn identity ((T) x) x)
-
-;; Bounded type parameter
-(defn min ((T : Ord) a b) (if (lt a b) a b))
-
-;; Multiple type parameters
-(defn pair ((T) (U) x y) (tuple x y))
-
-;; Mixed with value parameters
-(defn const ((T) x _) x)
-
-;; Multiple bounds
-(defn print-sorted ((T : Ord Show) xs) ...)
-```
-
-### Type Parameter Rules
-
-1. **Uppercase identifiers**: `T`, `U`, `V`, `Element`, `Key`, `Value`
-2. **Scoped to function**: `T` in one function ≠ `T` in another
-3. **Positional but canonicalized**: Monomorphization sorts alphabetically
-4. **Same-type constraint**: Multiple occurrences of same param = same concrete type
-5. **Type positions only**: variant fields, param types, return types, collections
-6. **Not runtime values**: Cannot pattern match on type params
-
-### Type Parameter Bounds
-
-```
-Bound ::= ":" TraitName ("," TraitName)*
+(defn name ((TypeParam : TraitBound*) ... (param Type) ...) body)
 ```
 
 ```lisp
-(T : Ord)           ; T must implement Ord
-(T : Ord, Show)     ; T must implement both Ord and Show
+(defn identity ((T) x) x)                      ; one type parameter
+(defn min ((T : Ord) a b) (if (< a b) a b))    ; bounded
+(defn pair ((T) (U) x y) ...)                  ; two type parameters
+(defn show-sorted ((T : Ord Show) xs) ...)     ; two bounds
 ```
 
-- Bounds checked at each call site after type inference
-- Recursive bounds supported: `(trait Foo (bar () (Foo T)) : Bar)`
+Rules from §6.1 and §6.2:
+
+1. Type parameters are uppercase identifiers, by convention.
+2. A type parameter is scoped to its own `defn`, and shadowing it in a
+   nested `defn` is an error.
+3. Parameters are positional, but specialization names do not depend on
+   their order (§6.4).
+4. Every occurrence of one parameter must be the same concrete type.
+5. Type parameters appear only in type positions, never as runtime
+   values.
+
+### What the compiler does with it
+
+None of these declarations compile as intended:
+
+| Written | Read as | Result |
+|---------|---------|--------|
+| `((T) x)` | a one-element list in parameter position | `E_MALFORMED_PARAMETER` |
+| `((T : Ord) a b)` | the lexer merges `: Ord` into the keyword `:Ord`, so this is `(T :Ord)` | an ordinary *value* parameter named `T`. The function takes one more argument than intended, and `(min 3 5)` is `E_ARITY_MISMATCH`. |
+
+**Do not write type-parameter groups.**
+
+### What works: unannotated parameters
+
+Every Zyl value is one 64-bit word (Chapter 15), so a function whose
+parameters are unannotated already accepts arguments of any type. Type
+inference re-infers such a function at each call site (19.4).
+
+```lisp
+(defn first-of (a _) a)
+
+(defn smaller (a b)
+  (if (< a b) a b))
+
+(defn main ()
+  (begin
+    (print-int (first-of 5 "s"))       ; 5
+    (print-string (first-of "a" 2))    ; a
+    (print-int (smaller 3 5))          ; 3
+    0))
+```
+
+Two caveats:
+
+- **Printing polymorphic results.** Types do not flow back out of a
+  polymorphic call into `print`. `(print (first-of "a" 2))` formats the
+  string as an integer (Chapter 15, 15.6). The typed `print-int`,
+  `print-string` and `print-float` avoid this.
+- **Operators are not overloaded.** `<` compares machine words, and
+  structural comparison applies only to values the code generator knows
+  are ADTs (Chapter 18). Calling `smaller` on two strings compares their
+  addresses.
 
 ## 19.2 Generic ADTs
 
-### Declaration
-
-Type parameters collected from uppercase field names:
-
-```lisp
-(deftype Option (Some T) None)           ; T from Some
-(deftype Result (Ok T) (Err E))          ; T, E from Ok, Err
-(deftype List (Cons T (List T)) Nil)     ; T from Cons
-(deftype Tree (Node T (Tree T) (Tree T)) Leaf)
-```
-
-### Same-Type Constraint
-
-Duplicate type params merged:
+Generic ADTs (§6.5) are the supported, tested case
+(`tests/regression/generics.zyl`, `generics-multi-type.zyl`).
 
 ```lisp
-(deftype Pair (Make T T))      ; One param T (both fields same)
-(Pair 1 2)     ; OK: Pair<Int>
-(Pair 1 "hi") ; ERROR: Int vs String
+(deftype Maybe (Just T) (Nothing))             ; T from Just
+(deftype Outcome (Success T) (Failure E))      ; T and E
+(deftype Seq (Item T (Seq T)) (End))           ; recursive
+(deftype Tree (Node T (Tree T) (Tree T)) (Leaf))
 ```
 
-### Generic ADT Monomorphization
+The prelude's `Option`, `Result` and `List` are declared the same way
+(Chapter 15).
 
-Each concrete instantiation → distinct type:
+- **Parameters** are the uppercase field names. A name that repeats is
+  one parameter, which §6.2 constrains to one type.
+- **Separate instances.** `Maybe<Int>` and `Maybe<String>` are distinct
+  instances (§6.5). One ADT may be used at several types in one program
+  without the instances interfering; this is the regression
+  `generics-multi-type.zyl` guards.
+- **Same-type constraint.** Not enforced: `(Make 1 "hi")` for
+  `(deftype Pair (Make T T))` compiles.
+- **Generic structs** are not supported (§6.5).
 
-```lisp
-(Ok 42)       → Result_Int_E
-(Ok "hi")     → Result_String_E
-(None)        → Option_Int (if context demands)
-```
+## 19.3 Monomorphization
 
-## 19.3 Monomorphization Algorithm
-
-### Phase 5: Monomorphization
+### Specified algorithm (§6.4, §17)
 
 For each call site of a generic function:
 
-1. **Infer concrete types** for ALL type parameters from argument types
-2. **Verify trait bounds** satisfied by concrete types
-3. **Generate canonical name**: `fn_Type1_Type2...` (types sorted alphabetically)
-4. **Cache** for reuse at other call sites with identical types
+1. Infer concrete types for all type parameters from the arguments. A
+   parameter with no evidence at any call site is `E_CANNOT_INFER`,
+   unless a trait bound selects a finite set.
+2. Verify the trait bounds (`E_TRAIT_BOUND_NOT_SATISFIED`).
+3. Generate a specialization named `functionName_Type1_Type2_...`, with
+   the types sorted alphabetically, so `f<Int, String>` and
+   `f<String, Int>` share one name, and distinct type maps get distinct
+   names.
+4. Cache the specialization for other sites with the same types.
 
-### Canonical Naming
-
-```python
-def canonical_name(base_name, type_map):
-    # type_map: {T: Int, U: String}
-    types = sorted(type_map.values(), key=lambda t: t.name)
-    return f"{base_name}_{'_'.join(t.name for t in types)}"
+```
+(min 3 5)       → min_Int
+(min "a" "b")   → min_String
+(pair 1 "hi")   → pair_Int_String
+(pair 1.0 2.0)  → pair_Float
 ```
 
-Examples:
+### Implementation
+
+`monomorphization.zyl` runs after type inference (§22 Phase 5).
+
+- **Which functions it specializes.** It treats a parameter whose name
+  starts with an uppercase letter as a type parameter. Since
+  type-parameter groups do not parse (19.1), ordinary user functions are
+  compiled once, and every call site shares that one body. That is
+  correct because of the uniform one-word representation.
+- **Impl methods.** An impl method body is lifted to a top-level function
+  named `Trait.method_Type` (Chapter 20).
+- **Generic ADTs** have their concrete instantiations recorded for
+  constructors and matches.
+- **Naming.** `canonical-name-from-type-map` builds the base name, `_`,
+  then the concrete type names deduplicated, sorted and joined with `_`.
+  This meets "order-independent" but not "distinct maps give distinct
+  names":
+  - `f<Int, Int>` and `f<Int>` get the same name;
+  - a compound type is named only by its outer constructor (`List`,
+    `Fn`), so `f<List<Int>>` and `f<List<String>>` collide.
+- **Bounded parameters.** A bounded type parameter gets one instantiation:
+  the first type that satisfies the bound.
+
+The name the linker sees is then mangled from the canonical symbol key
+(§31.2), for example
+`zy_local_x2Fmain_0__prog__Area_x2Earea_5F...Point` for `Area.area_Point`
+in a program `prog.zyl`. The exact spelling is an implementation detail.
+
+## 19.4 Per-Call-Site Inference
+
+For a function with unannotated parameters, inference does not generalize
+a type scheme. It infers the body again at each call site with that
+site's argument types, and caches the result under the key
+`name::ArgType1,ArgType2,...`. That is how one ADT can be used at `Int`
+and `String` in the same program.
+
+A recursive generic function works the same way. The recursive call has
+the same argument types, so it reuses the cached result:
+
 ```lisp
-(pair 1 "hi")        → pair_Int_String
-(pair "hi" 1)        → pair_Int_String  (same! alphabetical)
-(min 3 5)            → min_Int
-(min "a" "b")        → min_String
-```
-
-**Determinism**: Same source → identical canonical names regardless of call order.
-
-### Monomorphization of Generic ADTs
-
-Each ADT instantiation gets canonical name:
-
-```lisp
-(Option_Int)
-(Option_String)
-(Result_Int_String)
-(List_Int)
-```
-
-Constructors and match patterns also monomorphized.
-
-## 19.4 Per-Call-Site Polymorphism
-
-For functions with **untyped parameters** (no type annotations), Zyl uses per-call-site inference:
-
-```lisp
-(defn process ((T) xs) ...)  ; T unbounded
-
-(process (Cons 1 Nil))    ; T = Int at this call site
-(process (Cons "a" Nil))  ; T = String at this call site
-```
-
-Each call site gets its own monomorphized version.
-
-### Recursion Guard
-
-For recursive generic functions:
-
-```lisp
-(defn map ((T) (U) f xs)
+(defn count-items (xs)
   (match xs
-    Nil Nil
-    (Cons x rest (Cons (f x) (map f rest)))))
+    (Nil 0)
+    (Cons _ rest (+ 1 (count-items rest)))))
+
+(defn main ()
+  (begin
+    (print (count-items (Cons 1 (Cons 2 Nil))))    ; 2
+    (print (count-items (Cons "a" Nil)))           ; 1
+    0))
 ```
 
-- `map` calls itself with same type params
-- Monomorphization detects recursion, reuses same specialization
+## 19.5 Trait Bounds
 
-## 19.5 Trait Bounds and Monomorphization
+§6.4 requires each call site's concrete types to satisfy the declared
+bounds. With no way to declare a bound (19.1), nothing is checked.
 
-### Bound Satisfaction
+The monomorphizer's own bound check (`check-trait-bound`) accepts every
+primitive type for every trait. For other types it looks for a matching
+`impl`, but no source construct reaches it.
 
-At each call site:
-1. Infer concrete types for type params
-2. Look up `impl Trait ConcreteType`
-3. If not found → `E_TRAIT_BOUND_NOT_SATISFIED`
+`derive` on generic ADTs (§6.6) is covered in Chapter 20, and is
+currently a no-op.
 
-```lisp
-(trait Ord (lt (a T) (b T) Bool))
+## 19.6 Constraints from Usage
 
-(impl Ord Int (defn lt (a b) (< a b)))
+What the compiler derives from the body instead of from a declaration:
 
-(min 3 5)      ; OK: Int has Ord
-(min "a" "b")  ; ERROR: String lacks Ord
-```
-
-### Derived Traits on Generic ADTs
-
-```lisp
-(derive Option [Eq])   ; Requires T: Eq
-```
-
-Monomorphized `Eq` impl generated for each `Option_T` where `T: Eq`.
-
-## 19.6 Type Parameter Constraints
-
-### Explicit Constraints
-
-```lisp
-(defn sort ((T : Ord) xs) ...)  ; T must have Ord
-```
-
-### Implicit Constraints (from usage)
-
-```lisp
-(defn process (xs)
-  (map (fn (x) (+ x 1)) xs))   ; xs must be List<Int> or similar
-```
-
-Constraints propagated through unification.
+- Type inference unifies the uses of a parameter. A body that adds 1 to
+  `x` gives `x` the type `Int` at that site.
+- A failed unification is not an error (Chapter 15). It leaves a type
+  variable.
+- Usage therefore guides code generation, such as print formats and float
+  arithmetic, but it constrains nothing.
 
 ## 19.7 Errors
 
-| Error | Cause |
-|-------|-------|
-| `E_CANNOT_INFER` | Generic param unconstrained at all call sites |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | Concrete type lacks required trait |
-| `E_UNKNOWN_GENERIC_PARAM` | Reference to undeclared type param |
-| `E_DUPLICATE_TYPE_PARAM` | Same type param declared twice |
-| `E_TYPE_PARAM_SHADOW` | Nested function shadows outer type param |
+| Code | Condition (§6.7) | Status |
+|------|------------------|--------|
+| `E_CANNOT_INFER` | a generic parameter with no call-site evidence | catalogued; never raised |
+| `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type violates a bound | catalogued; never raised |
+| `E_UNKNOWN_GENERIC_PARAM` | reference to an undeclared type parameter | catalogued; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | catalogued; never raised |
+| `E_MALFORMED_PARAMETER` | `((T) x)`: not a name or `(name Type)` | raised |
+| `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
 
-## 19.8 Advanced: Higher-Kinded Types
+§6.1 makes shadowing a type parameter in a nested `defn` an error, but it
+assigns no code.
 
-**Not supported in v4.2**. Type parameters are only proper types (`*`), not type constructors (`* → *`).
+## 19.8 Higher-Kinded Types
+
+Not supported in v5.0. Type parameters range over proper types, not type
+constructors:
 
 ```lisp
 ;; NOT SUPPORTED:
-(defn lift ((F : Functor) (T) ft) ...)  ; F is * → *
+(defn lift ((F : Functor) (T) ft) ...)   ; F would be * -> *
 ```
 
-Workaround: Use traits with associated types.
+There are no associated types either (Chapter 20). Write the operation
+for each concrete container, or pass the operations in as function
+arguments.
 
-## 19.9 Monomorphization and Code Size
+## 19.9 Code Size
 
-- Each unique type combination → new function
-- Can cause code bloat with many type combinations
-- Compiler deduplicates identical specializations
-- Dead code elimination (Phase 7) removes unused
+In the specification, each distinct combination of types produces a new
+function, which can grow code size; dead-code elimination (Phase 7) and
+the cache of step 4 limit that.
+
+In the current compiler, a polymorphic user function is compiled exactly
+once, so generics add no code. The per-type copies that do exist are impl
+methods, one per `(Trait, Type)` pair.
 
 ## 19.10 Comparison with Rust
 
-| Feature | Rust | Zyl |
-|---------|------|-----|
-| Syntax | `fn foo<T: Trait>(x: T)` | `(defn foo ((T : Trait) x) ...)` |
-| Monomorphization | ✅ | ✅ |
-| Canonical naming | Mangled | `fn_Type1_Type2...` (alphabetical) |
-| Type inference | Local + global | Full HM + trait resolution |
-| Higher-kinded | ✅ (GATs) | ❌ |
-| Const generics | ✅ | ❌ |
-| Specialization | ✅ (unstable) | ❌ |
+| Feature | Rust | Zyl (specification) | Zyl (today) |
+|---------|------|---------------------|-------------|
+| Syntax | `fn foo<T: Trait>(x: T)` | `(defn foo ((T : Trait) x) ...)` | unannotated `(defn foo (x) ...)` |
+| Specialization | monomorphized | monomorphized | one shared body; per-site type inference |
+| Naming | mangled | `fn_Type1_Type2...`, sorted | canonical symbol key, then mangled (§31.2) |
+| Type checking | enforced | HM + trait resolution | inferred, not enforced |
+| Bounds | enforced | enforced | not expressible |
+| Higher-kinded types | no (GATs cover some uses) | no | no |
+| Const generics | yes | no | no |

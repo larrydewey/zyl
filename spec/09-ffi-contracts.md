@@ -1,8 +1,8 @@
 # Zyl Specification — FFI and Contracts
 
-**Canonical authority:** `zyl_specification.txt` §16, §23
-**Related:** `spec/07-region-memory-model.md`, `spec/06-capability-types.md`
-**Implementation:** `src/type_inference.rs` (type checking); code generation deferred
+**Canonical authority:** `zyl_specification.txt` §16, §23 (also §9.1 R4/R8, §31.9 `ffi`, §31.10 native dependencies)
+**Related:** `spec/07-region-memory-model.md`, `spec/06-capability-types.md`, `spec/16-package-system.md`
+**Implementation:** `stdlib/compiler/type_inference.zyl` (pinnability), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/actor_runtime.c` (pin arena); contracts: `stdlib/compiler/expr_inner.zyl`, `stdlib/compiler/contract_injection.zyl` (not wired in)
 
 ---
 
@@ -93,8 +93,48 @@ Contracts NEVER affect:
 
 ---
 
-## Implementation Status
+## Implementation Notes
 
-- FFI type checking: implemented
-- FFI code generation: deferred
-- Contract system: defined in spec but not implemented
+Not normative.
+
+### FFI
+
+- `(ffi-call "symbol" arg... timeout)` calls any C symbol by name. The
+  symbol must be a string literal; it is passed through
+  `zyl_cstr_sanitize` before it reaches the assembly, so a crafted name
+  cannot inject assembly text. A C call with up to six arguments is
+  made with the stack realigned to 16 bytes.
+- Type inference requires every argument to be FFI_Pinnable
+  (`is-ffi-pinnable`) and raises `E_INVALID_CAPABILITY` otherwise; a
+  closure argument is rejected the same way by `mutability_check.zyl`.
+  The result of `ffi-call` is typed `Int`. `E_FFI_TYPE_NOT_PINNABLE` is
+  catalogued but not the code actually raised.
+- **The timeout is not enforced.** ICNF lowering drops the trailing
+  argument, and `E_FFI_TIMEOUT` is never raised.
+- **The Pin region is not required for ordinary arguments.** Only a
+  `Secret` argument must go through `ffi-pin` (`E_FFI_PIN_REQUIRED`, from
+  `secret_check.zyl`); any other pinnable value is passed directly.
+- `ffi-pin` copies an 8-byte value into the pin arena and returns its
+  address, typed `TCap TCPin T`; `ffi-unpin` checks that the pointer came
+  from the pin arena.
+- In a package, `ffi-call`, `ffi-pin` and `ffi-unpin` need the `ffi`
+  capability (§31.9).
+
+### Contracts
+
+The contract overlay of §23 is not implemented.
+
+- `(requires c)` and `(ensures c)` are parsed to `c` itself: the condition
+  is evaluated for its value and never checked.
+- `(checkpoint e)` is `e`; `(recover body ...)` is `body` with the
+  fallback discarded; `(contracts off e)` is `e`.
+- `invariant` has no parser entry.
+- There are no profiles and no flag to enable contracts.
+  `E_CONTRACT_VIOLATION` is never raised.
+- `contract_injection.zyl` contains a lowering (requires/ensures/invariant
+  to a checked `if`, recover to try/catch) but it is not called: its
+  constructors do not match the post-processor's node shapes. See the
+  comment in `stdlib/compiler/pipeline.zyl`.
+
+Because the forms are parsed as pass-throughs, the non-interference rule
+(P8, G8) holds trivially.

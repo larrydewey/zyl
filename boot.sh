@@ -32,9 +32,11 @@
 #                                    behavior) -- archive/rust-bootstrap-2026's
 #                                    README covers that fallback.
 #   ./boot.sh --bootstrap-from-rust  the old path, via the archived Rust
-#                                    bootstrap (see archive/rust-bootstrap-2026)
-#                                    -- kept only as a fallback for the case
-#                                    above; not part of the normal workflow.
+#                                    bootstrap (see archive/rust-bootstrap-2026).
+#                                    No longer usable: the archived compiler
+#                                    cannot lex the current selfhost source
+#                                    (see that directory's README). Kept only
+#                                    for the record.
 #
 # Artifacts land in build/boot/. Exit 0 only if the fixed point holds.
 set -euo pipefail
@@ -55,12 +57,13 @@ BOOTSTRAP_SELF=0
 [ "${1:-}" = "--bootstrap-from-rust" ] && BOOTSTRAP=1
 [ "${1:-}" = "--bootstrap-from-self" ] && BOOTSTRAP_SELF=1
 
-# One stage compiles the whole self-hosted compiler, and the source grew
-# by half when the package system landed (spec v5.0 SS31 brought in the
-# Ed25519 stack that SS31.8's mandatory signature verification needs). A
-# stage takes about ten minutes on this machine, which is exactly where
-# the old 600-second cap sat -- the reseed failed on the timeout rather
-# than on anything about the code. Leave headroom.
+# One stage compiles the whole self-hosted compiler. When the package
+# system landed (spec v5.0 SS31, which brought in the Ed25519 stack that
+# SS31.8's mandatory signature verification needs) a stage took about ten
+# minutes, right at the old 600-second cap, and the reseed failed on the
+# timeout rather than on anything about the code. The type-inference
+# exponential fixed since then brought a stage down to about ten seconds;
+# the generous cap stays as headroom for a slow machine.
 STAGE_TIMEOUT="${ZYL_STAGE_TIMEOUT:-2400}"
 
 mkdir -p "$OUT"
@@ -78,7 +81,7 @@ link_cc() { # link_cc <asm> <out-bin>
 MAX_SELF_ROUNDS=10
 if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     step "Bootstrap: reseeding from the self-hosted compiler (no Rust)"
-    [ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — need a first seed via --bootstrap-from-rust (see archive/rust-bootstrap-2026)"
+    [ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — restore it with: git checkout -- build/boot/stage2.s"
     link_cc "${OUT}/stage2.s" "${OUT}/stage1.bin"
     PREV_S="${OUT}/stage2.s"
     PREV_BIN="${OUT}/stage1.bin"
@@ -105,7 +108,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
         i=$((i + 1))
     done
     rm -f "${OUT}"/reseed_round*.s "${OUT}"/reseed_round*.bin
-    die "did not converge after ${MAX_SELF_ROUNDS} rounds — likely a genuinely new language construct the old seed can't parse at all (not just new behavior); fall back to --bootstrap-from-rust (see archive/rust-bootstrap-2026)"
+    die "did not converge after ${MAX_SELF_ROUNDS} rounds — likely a genuinely new language construct the old seed can't parse at all (not just new behavior); land the syntax in two steps (teach the parser first, reseed, then use it) -- the archived Rust bootstrap can no longer parse the current source (see archive/rust-bootstrap-2026/README.md)"
 fi
 
 # ── Re-seed path: Rust bootstrap -> fresh stage2 (fallback only — see
@@ -139,7 +142,7 @@ fi
 
 # ── 1. stage1 from committed seed ────────────────────────────────────────
 step "stage1: cc from committed stage2.s"
-[ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — run ./boot.sh --bootstrap-from-rust first"
+[ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — restore it with: git checkout -- build/boot/stage2.s"
 link_cc "${OUT}/stage2.s" "${OUT}/stage1.bin"
 ok "stage1 linked"
 
@@ -151,7 +154,7 @@ if cmp -s "${OUT}/stage2_gen.s" "${OUT}/stage2.s"; then
     HASH=$(sha256sum "${OUT}/stage2.s" | cut -c1-16)
     ok "reproduced committed seed exactly (sha256 ${HASH})"
 else
-    die "reproduced asm differs from committed seed — compiler source changed; re-seed with --bootstrap-from-rust and commit the new seed"
+    die "reproduced asm differs from committed seed — compiler source changed; reseed with: python3 selfhost/assemble.py && ./boot.sh --bootstrap-from-self, then commit the new seed"
 fi
 link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
 ok "stage2 linked"

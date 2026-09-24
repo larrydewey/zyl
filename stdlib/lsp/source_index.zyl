@@ -2,8 +2,9 @@
 ; Module: lsp/source_index
 ;
 ; Position tracking that lives entirely OUTSIDE the real compiler
-; pipeline: nothing in the real Token/Ast/Expr carries a source
-; position (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), so hover/goto-
+; pipeline. The compiler does track positions now (every Token carries a
+; byte offset, and a runtime span table maps nodes to offsets for
+; compiler/error_report.zyl), but the LSP does not read them: hover/goto-
 ; definition/document-symbols/semantic-tokens are built here instead, by
 ; scanning the raw document TEXT directly -- the same technique
 ; compiler/sexp_balance.zyl already uses for its own line/col tracking,

@@ -98,7 +98,7 @@ Expr :=
   ;; Control & Flow
   | (assert Expr String)
   | (while Expr Expr)
-   | (for (Name [Expr]*) Expr Expr)
+  | (for (Name [Expr]*) Expr Expr)
   | (cond Clause*)
   | (begin Expr+)
   | (error String)
@@ -219,7 +219,8 @@ ResultValue:
 
 5.3 Coherence Rules:
     C1. One impl per (Trait, Type) pair.
-    C2. Orphan rule: impl valid only if trait or type defined in current crate.
+    C2. Orphan rule: impl valid only if trait or type defined in current crate
+        (the package, in v5.0; see §24.6).
     C3. No conflicting impls.
 
 5.4 Trait Resolution:
@@ -243,7 +244,7 @@ ResultValue:
 
 6.1 Generic Function Declaration:
     (defn name ((TypeParam : TraitBound*) (param Type) ...) body)
-    (defun is a synonym. TypeParam is an uppercase identifier (convention).
+    (defun is a synonym.) TypeParam is an uppercase identifier (convention).
     TraitBound is optional; if absent, the type parameter is unbounded.
     Multiple bounds: ((T : Ord Eq)) requires T to implement both Ord and Eq.
 
@@ -449,7 +450,7 @@ Test execution:
     (while condition body)
     Strict left-to-right. No termination detection (Halting Problem).
 
- 12.6 FOR:
+12.6 FOR:
     (for (init-bindings) condition body)
     
     init-bindings: list of (name [value]) pairs, written as S-expressions:
@@ -459,7 +460,7 @@ Test execution:
     - () — empty, pure while loop
     
     Examples:
-    (for () (counter < 5) (begin (print counter) (set! counter (+ counter 1))))
+    (for () (< counter 5) (begin (print counter) (set! counter (+ counter 1))))
     (for (i 0) (< i 5) (begin (print i) (set! i (+ i 1))))
     (for (i 0 j 10) (< i 5) (begin (print i j) (set! i (+ i 1)) (set! j (+ j 1))))
     
@@ -890,7 +891,9 @@ Errors:
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
     E_CANNOT_INFER              — generic param has no call-site evidence (Compile Error)
 
-Package system errors (§31). All are Compile Errors.
+Package system errors (§31). All are Compile Errors. The phase numbers
+below are the phase categories of the error catalog
+(stdlib/compiler/error_codes.zyl), not the pipeline steps of §22.
 
   Manifest, lock and registry (phase 19):
     E_MANIFEST_INVALID          — zyl.pkg malformed or missing a required field
@@ -968,7 +971,7 @@ G13. Supply-Chain Integrity: a locked build is reproducible from pinned
 v4.0 (PREVIOUS):
     - Explicit closures, macros, testing as core.
 
-v4.1 (CURRENT):
+v4.1 (PREVIOUS):
     - alias, defstruct, defstruct+, derive, with-resource.
     - Immutable structs (rebinding only).
     - Result-based error handling (no exceptions).
@@ -997,9 +1000,11 @@ v5.0 (CURRENT):
     - Declarative native C dependencies; no build scripts (§31.10).
     - Editions (§31.11). v5.0 defines exactly one: `2026`.
 
-    Implementation status: designed, not yet implemented. See
-    docs/package-management-design.md §14 for the phased plan and
-    docs/implementation-status.md for current state.
+    Implementation status: implemented in stdlib/compiler/{package,
+    qualify,store,workspace,lock,index,mvs,cli,capability_check,
+    module_resolver}.zyl. PROGRESS.md records the deliberate deviations
+    and the remaining gaps; docs/package-management-design.md holds the
+    rationale and the phased plan (§14 of that document).
 
 FUTURE:
     - Reserved keyword enforcement in definition forms (§1.3.1).

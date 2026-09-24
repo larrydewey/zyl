@@ -1,26 +1,25 @@
-# Chapter 11: Testing and Property-Based Testing
+# Chapter 11: Testing
 
-Testing is a **core language built-in** in Zyl (Spec §20.5). The testing framework
-is part of the language, not an external library, and the same framework powers
-Zyl's own regression suite.
+Testing is a **core language built-in** in Zyl (Spec §20.5). The test forms are recognized by the compiler and executed by a harness in the runtime, not by an external library, and the same framework runs Zyl's own regression suite. Every example in this chapter was compiled with `zyl` and run; the output shown is what the binary prints.
 
 ## 11.1 The Simplest Test
 
-A test is a top-level expression that pairs a name with a body:
+A test is a top-level form that pairs a name with a body:
 
 ```lisp
 (test "factorial-of-five"
   (assert-equal (factorial 5) 120))
 ```
 
-When the compiled program runs, every top-level `test` is registered with the
-runtime harness. To execute all registered tests, end your file with:
+When the compiled program starts, every top-level `test` is registered with the runtime harness. To run the registered tests, end the file with:
 
 ```lisp
 (run-tests)
 ```
 
-That's the whole framework. Writing the code above and running it prints:
+A file with tests needs no `main`: the compiler generates one that registers the tests and then evaluates the file's top-level forms, including `(run-tests)`. Leave out `(run-tests)` and the program registers its tests and exits without running any. A file may not have both tests and its own `main`. Top-level `test`/`run-tests` forms next to an explicit `(defn main ...)` are rejected with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`, so keep a program and its tests in separate files (Chapter 13 does this).
+
+With `factorial` defined, the example above prints:
 
 ```
 test: factorial-of-five ... ok
@@ -28,7 +27,7 @@ test: factorial-of-five ... ok
 test result: 1 passed, 0 failed, 1 total
 ```
 
-You can define any number of tests; each one is just another top-level form:
+You can define any number of tests; each one is another top-level form:
 
 ```lisp
 (test "addition"
@@ -40,63 +39,61 @@ You can define any number of tests; each one is just another top-level form:
 (run-tests)
 ```
 
-> **Note on `test-suite` (Spec §20.5):** the specification describes grouping
-> tests with `test-suite "name" (test ...) ...`. The form parses, but the
-> runtime only runs bare top-level `test` forms today — nested suite tests are
-> not yet wired into the harness. Prefer flat top-level `test` forms until
-> suite support lands.
+> **Note on `test-suite` (Spec §20.5.1):** the specification groups tests with `(test-suite "name" (test ...) ...)`. The form compiles, but the tests nested inside it are silently dropped: they are neither registered nor run. Use flat top-level `test` forms.
 
 ## 11.2 Assertions
 
-Every test body uses the built-in assertions:
-
 | Assertion | Purpose |
 |-----------|---------|
-| `(assert-equal expr1 expr2)` | Fail if the two values differ |
-| `(assert-true expr "msg")` | Fail if `expr` is false |
-| `(assert-false expr "msg")` | Fail if `expr` is true |
+| `(assert-equal a b)` | Fail if the two values differ |
+| `(assert-true expr)` or `(assert-true expr "msg")` | Fail if `expr` is false |
+| `(assert-false expr)` or `(assert-false expr "msg")` | Fail if `expr` is true |
 
-`assert-equal` uses **structural equality**, so it works on primitives, tuples,
-structs, ADTs, and collections.
+The optional message is accepted but not printed; a failing test is reported only as `FAIL`.
+
+A test body may contain several forms, evaluated in order (wrapping them in `begin` is equivalent). The first failing assertion ends the test:
 
 ```lisp
+(defstruct Point x y)
+
 (test "equality"
-  (assert-equal (+ 1 2) 3)
-  (assert-equal (struct-get (make-Point 1 2) "x") 1))
+  (begin
+    (assert-equal (+ 1 2) 3)
+    (assert-equal (struct-get (make-Point 1 2) "x") 1)))
 
 (test "booleans"
-  (assert-true (> 5 3))
-  (assert-false (< 5 3)))
+  (begin
+    (assert-true (> 5 3))
+    (assert-false (< 5 3))))
+
+(run-tests)
 ```
 
-> **Equality scope**: `==` compares primitives structurally. For structs and
-> ADTs it compares identity, so assert on individual fields rather than whole
-> structures (see Appendix C.2).
+### What `assert-equal` Compares
 
-> **`assert-fail`** is parsed by the compiler but does not yet enforce that an
-> expression raises an error; it simply evaluates the expression. Avoid it
-> until the runtime check lands.
+- **Ints, Bools, and Floats** compare by value. Floats compare with a tolerance of `1e-5`.
+- **Strings** compare by content: `(assert-equal "ab" (str-concat "a" "b"))` passes.
+- **Structs and ADT values** compare **shallowly**: the variant tag and each field as a raw 64-bit word. `(assert-equal (Some 1) (Some 1))` and two `make-Point 1 2` values are equal, but a field that is itself a struct, ADT, or list is compared by address. `(assert-equal (Cons 1 Nil) (Cons 1 Nil))` and `(assert-equal (Some (Some 1)) (Some (Some 1)))` **fail**.
+
+For nested data, assert on the individual fields, or on a count or sum computed from the structure.
+
+> **`assert` and `assert-fail`:** both are parsed but not enforced yet. `(assert expr "msg")` does nothing, even when `expr` is false, and `assert-fail` evaluates its expression and always passes. Use `assert-true` for a boolean condition, and avoid `assert-fail` until the runtime check lands.
 
 ## 11.3 Running Tests
 
-Compile your file, then run the produced binary. `-o <name>` makes the
-compiler emit `<name>.s` (assembly) and `<name>.bin` (the executable); without
-`-o` it uses the defaults `a.out.s` / `a.out.bin`:
+Compile the file, then run the program it produces. `-o <name>` makes the compiler write the executable `<name>` and its assembly `<name>.s`; without `-o`, the executable is named after the source file with `.zyl` removed:
 
 ```bash
-# Build (produces test-file.s and test-file.bin)
+# Build (produces ./test-file and test-file.s)
 zyl test-file.zyl -o test-file
 
 # Run the tests
-./test-file.bin
+./test-file
 ```
 
-Run `zyl` from the directory that contains `stdlib/` — module resolution is
-relative to the compiler's working directory (see Chapter 13).
+`zyl` works from any directory: it finds the standard library in `~/.zyl` (or `$ZYL_HOME`) after `./install.sh`, and otherwise next to the compiler binary. `(use name)` also finds your own modules next to the file being compiled (Chapter 13).
 
-There is no `--filter` command-line flag yet; tests always run in source order.
-A failing test doesn't stop the others — the harness reports a summary at the
-end:
+There is no command-line filter; tests always run in source order. A failing test does not stop the others, and the harness prints a summary at the end:
 
 ```
 test: addition ... ok
@@ -105,8 +102,13 @@ test: multiplication ... FAIL
 test result: 1 passed, 1 failed, 2 total
 ```
 
-A failure is a runtime panics (e.g. an `assert-equal` mismatch or an `assert`
-inside the test body) that the harness catches and attributes to that test.
+A failure is a runtime panic inside the test body (a failed `assert-equal`, `assert-true` or `assert-false`, or an `error` call) that the harness catches and attributes to that test. **Check the summary line, not the exit status:** a test program currently exits with status 0 even when tests fail. Zyl's own `run_regression_tests.sh` looks for `FAIL` in the output for that reason.
+
+The harness holds at most 256 tests per program, and test names are truncated to 127 characters.
+
+### Packages: `zyl test`
+
+Inside a package (a directory with a `zyl.pkg`, Spec §31), `zyl test` resolves the package's dependencies, including `dev-deps`, compiles the package's root module, and runs the result. Put the package's tests in that module, or in a test file you compile directly.
 
 ## 11.4 Example: A Complete Test File
 
@@ -130,67 +132,66 @@ inside the test body) that the harness catches and attributes to that test.
 (run-tests)
 ```
 
+```
+test: factorial ... ok
+test: edge-case-zero ... ok
+test: vector-push ... ok
+
+test result: 3 passed, 0 failed, 3 total
+```
+
 ## 11.5 On the Roadmap (Spec §20.5)
 
-The following are part of the specification's testing design and **parsed by
-the compiler today, but not yet executed by the harness**:
+The following parts of the specification's testing design **compile today but are not executed**:
 
-- **`test-suite` grouping** — see the note in §11.1.
-- **`setup` / `teardown` fixtures** — run before/after each test once wired up.
-- **Property-based testing** — `(test-property "name" generator property-fn)`
-  with `gen-int`/`gen-bool`/`gen-string`/`gen-float` generators, plus
-  `test-compile` for compile-time checks.
-- **Test options** — `:parallel`, `:filter`, and `:verbose` keyword arguments
-  on `test` and `run-tests` are parsed but have no effect yet.
+- **`test-suite` grouping**: nested tests are dropped (§11.1).
+- **`setup` / `teardown` fixtures**: accepted at top level, never run.
+- **Property-based testing**: `(test-property "name" generator property-fn)` with `gen-int`/`gen-bool`/`gen-string`/`gen-float` generators compiles and is never run. The wrappers in `stdlib/testing/testing.zyl` (`property-int` and friends) only forward to it.
+- **`test-compile`** compile-time tests: accepted, no effect.
+- **Keyword options**: `:parallel`, `:filter`, `:verbose` and similar keywords on `test` and `run-tests` are accepted and ignored. The `run-tests-filtered`, `run-tests-parallel`, and `run-tests-with-timeout` helpers in `stdlib/testing/testing.zyl` are placeholders that raise an error.
 
-Treat these as reserved for future use; build your suites with flat `test`
-forms today (which is exactly how Zyl's own `tests/regression/*.zyl` files
-work).
+Build suites from flat `test` forms today, which is exactly how Zyl's own `tests/regression/*.zyl` files work.
 
 ## 11.6 Testing Actors
 
-Actors process messages asynchronously, and Zyl has no `receive` primitive yet
-— a spawned actor cannot reply back to the caller synchronously. The runtime
-does ensure that when `main` returns, all spawned actors have drained their
-mailboxes (the compiler emits `zyl_actor_wait_all` at the end of `main`).
-
-Deterministic assertions on actor-produced state are therefore a current
-limitation. A useful pattern while that matures is to have the actor format its
-result and hand it to a captured sink:
+Actors cannot yet receive messages or report results back to their parent (Chapter 9), and the program does not wait for running actors when `main` returns. What a test can check deterministically is an actor's lifecycle, after an explicit `actor-wait`:
 
 ```lisp
-(test "counter"
-  (let-mut (seen Nil)
-    (def sink (fn (value) (set! seen value)))
-    (spawn (fn (msg) (send sink (process msg))))
-    ;; ... send messages, then rely on the end-of-main wait ...
-    (assert-true true)))
+(use actor/actor)
+
+(defn work () (+ 1 2 3))
+
+(test "actor-finishes"
+  (let a (spawn (fn () (work)))
+    (begin
+      (actor-wait a)
+      (assert-false (actor-is-alive a)))))
+
+(run-tests)
 ```
 
-For fully deterministic concurrency tests, prefer decomposing the pure logic
-into ordinary functions and testing those — leaving a thin, manually-verified
-actor wrapper on top.
+For the logic itself, keep it in ordinary functions (like `work` above) and test those directly, leaving a thin actor wrapper on top.
 
 ## 11.7 Testing Best Practices
 
-1. **One assertion per test** — easier to diagnose failures.
-2. **Descriptive names** — `"add-two-positive-ints"`, not `"add"`.
-3. **Test edge cases** — zero, negatives, empty collections, extreme values.
-4. **Keep tests independent** — no shared mutable state between tests.
+1. **One behavior per test**: failures report only the test name, so a narrow test is easier to diagnose.
+2. **Descriptive names**: `"add-two-positive-ints"`, not `"add"`.
+3. **Test edge cases**: zero, negatives, empty collections, extreme values.
+4. **Keep tests independent**: tests run in sequence in one process, so do not rely on state left by an earlier test.
 5. **Extract pure logic** and test it directly rather than through actors.
+6. **Read the summary line**: the exit status does not reflect failures yet (§11.3).
 
 ## 11.8 Zyl's Own Regression Suite
 
-Zyl's test suite is written with this very framework:
+Zyl's test suite is written with this framework:
 
 ```bash
-./run_regression_tests.sh --quick   # Smoke tests
+./run_regression_tests.sh --quick   # Smoke tests plus the unit test
 ./run_regression_tests.sh --full    # All tests
-./run_regression_tests.sh --filter structs  # Struct regression tests only
+./run_regression_tests.sh --filter structs  # Only tests whose name contains "structs"
 ```
 
-The harness lives in `stdlib/testing/testing.zyl` and the tests in
-`tests/regression/`.
+The tests live under `tests/` (`tests/regression/` for the `test`-based files). The harness itself is part of the compiler (the lowering of `test` and `run-tests`) and the runtime (`runtime/actor_runtime.c`). `stdlib/testing/testing.zyl` holds only thin helper wrappers around the built-in forms.
 
 ---
 
@@ -198,31 +199,21 @@ The harness lives in `stdlib/testing/testing.zyl` and the tests in
 
 ### Test Execution Model
 
-1. **Registration**: the compiler lowers each top-level `test` into a named
-   `_test_<name>` function plus a `zyl_register_test(name, fn)` call in the
-   runtime test registry.
-2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call that runs
-   tests sequentially in registration order and returns the count of failures
-   as the process exit code.
-3. **Panic containment**: each test runs inside a `setjmp`/`longjmp` guard, so
-   an assertion failure inside a test marks that test as failed instead of
-   killing the process.
-4. **Deterministic**: no parallelism, no shared state — output order is
-   compile-determined.
+1. **Registration**: the compiler lowers each top-level `test` into a named test function plus a `zyl_register_test(name, fn)` call, made from the generated `main` before anything else runs.
+2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call, which runs the tests sequentially in registration order and prints `ok` or `FAIL` for each, then the summary. It returns 1 if any test failed, but that value does not currently become the process exit status.
+3. **Panic containment**: each test runs under a `setjmp` guard. `zyl_panic`, which every failed assertion calls, `longjmp`s back to the harness, so a failure marks that test as failed instead of ending the process. Outside a test, the same failure prints `PANIC: assert-equal failed` and exits with status 1.
+4. **Deterministic**: there is no parallelism, and output order is fixed by the source.
 
 ### Isolation
 
 - A panic inside a test unwinds to the harness; the process survives.
-- There is no `try` boundary between assertions in the same test — the first
-  failure aborts the remaining body of that test.
+- There is no `try` boundary between assertions in the same test: the first failure abandons the rest of that test's body.
+- Tests share one process and one heap; there is no fresh environment per test yet (Spec §11 calls for one).
 
 ### Why Suites Are Pending
 
-The harness (`zyl_run_tests`) iterates the flat registry; implementing
-`test-suite`/fixtures/property testing means either lowering suites to flat
-registrations at compile time or teaching `zyl_run_tests` to understand
-grouping — a compile-time flattening is the likely first step.
+`zyl_run_tests` iterates a flat registry. Supporting `test-suite`, fixtures, and property tests means either flattening suites into ordinary registrations at compile time or teaching the runtime about grouping. Compile-time flattening is the likely first step.
 
 ---
 
-**Next:** [Chapter 12: FFI and Systems Programming](ch12-ffi.md) — foreign function interface, pinning, and low-level systems programming.
+**Next:** [Chapter 12: FFI and Systems Programming](ch12-ffi.md) covers the foreign function interface, pinning, and calling C.

@@ -2,11 +2,11 @@
 
 ## Project Identity
 
-**Zyl** is a deterministic Lisp systems language with region-based memory, Hindley-Milner type inference with capability types, actor concurrency, SSA IR (ICNF), FFI safety via pinning/timeout enforcement, hygienic macros, and full determinism. S-expression syntax targeting x86_64 native code. Ultimate goal: self-hosting.
+**Zyl** is a deterministic Lisp systems language with region-based memory, Hindley-Milner type inference with capability types, actor concurrency, SSA IR (ICNF), FFI safety via pinning/timeout enforcement, hygienic macros, and full determinism. S-expression syntax targeting x86_64 native code. The compiler is self-hosting: it is written in Zyl and reproduces itself byte for byte (`./boot.sh`).
 
 ## Authoritative Sources (in order)
 
-1. **`zyl_specification.txt`** — Canonical language specification (v4.2)
+1. **`zyl_specification.txt`** — Canonical language specification (v5.0; §31 is the package system)
 2. **`spec/`/** — Structured reference copy of specification, organized by semantic domain
 3. **`docs/rust-eviction-plan.md`** — Self-hosting status, the fixed-point invariant, and the survey of self-hosted-compiler gaps (mostly closed as of this writing — see the doc for current state)
 4. **`PROGRESS.md`** — Current implementation state and next priorities
@@ -25,9 +25,10 @@
 ## Compilation Pipeline (Strict Phase Order)
 
 No phase may depend on a later phase. Determinism is required at every step.
+This is spec §22's order:
 
 1. Parsing → AST
-2. Macro Expansion (innermost-first, gensym hygiene)
+2. Macro Expansion (innermost-first, gensym hygiene — hygiene not yet implemented)
 3. Type Inference + Trait Resolution (+ derive validation)
 4. Region Inference + Capture Analysis
 5. Monomorphization (alphabetical canonical naming)
@@ -38,11 +39,24 @@ No phase may depend on a later phase. Determinism is required at every step.
 10. Contract Injection (optional overlay)
 11. Hash Finalization
 
+The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
+and differs from the list above: balance check → parse → module
+resolution → macro expansion → capability/duplicate/arity/mutability/
+exhaustiveness/unused/secret checks → type inference → monomorphization
+→ trait dispatch → closure lifting → assert lowering → ICNF lowering →
+optimization → region inference (escape analysis over ICNF) → codegen →
+`cc` link. Contract injection (`contract_injection.zyl`) is not wired
+in: `requires`/`ensures`/`invariant`/`recover`/`checkpoint` are accepted
+and currently have no effect. Hash finalization exists only for
+package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
+native-object and assembly hashes; spec §31.12 asks for an ICNF hash,
+which is a recorded deviation).
+
 ## Non-Negotiable Constraints
 
 ### Determinism
 - Same source + same inputs → identical binaries and observable outputs
-- All data structures use ordered iteration (indexmap, hashbrown sorted keys)
+- Every iterated collection has a defined order (association lists, insertion-ordered arrays); a hash table, such as the runtime's source-span table, may only be probed by key, never iterated
 - No randomness, no timestamps, no scheduling-dependent behavior
 
 ### Evaluation Order
@@ -62,24 +76,32 @@ No phase may depend on a later phase. Determinism is required at every step.
 ### FFI Safety
 - FFI calls require Pin region + timeout parameter
 - FFI_Pinnable types: Int, Float, Bool, String, Vec<T>, composed types
+- Current enforcement: `(ffi-call "sym" args... timeout)` — ICNF lowering
+  drops the last argument as the timeout without checking it, so a
+  missing timeout silently drops a real argument, and the timeout is not
+  enforced at run time. `ffi-call`/`ffi-pin` need the `ffi` capability
+  in a package, and a `Secret` argument must be passed through `ffi-pin`
+  (`E_FFI_PIN_REQUIRED`)
 
 ### Struct Immutability
 - Struct fields are immutable by default
-- Mutation via `let-mut` rebinding only
-- Direct field mutation (`set! (struct-get p "x") 5`) is forbidden
+- Mutation via `let-mut` rebinding only; `set!` on anything else is `E_MUT_CONFLICT`
+- Direct field mutation (`set! (struct-get p "x") 5`) is forbidden (`E_MUT_CONFLICT`)
 
 ### Match Exhaustiveness
-- Exhaustiveness is a compile-time error if not satisfied
+- Exhaustiveness is a compile-time error if not satisfied (`E_NON_EXHAUSTIVE_MATCH`); an arm after a catch-all is `E_UNREACHABLE_MATCH_ARM`
+- `_` is the discard in patterns, parameters and bindings; `_`-prefixed names are exempt from unused-binding warnings. Do not introduce `d1`-style dummy names
+- An arm head that is not a known constructor is a catch-all binding, so a misspelled constructor in the LAST arm silently matches everything
 
 ### Contracts
 - Contracts never alter core semantics (type inference, ownership, regions, concurrency)
-- Contracts are an optional overlay
+- Contracts are an optional overlay (currently parsed but not enforced — see above)
 
 ## Architecture Decisions (Do Not Reverse)
 
-- **No-dispatch parsing:** All S-expressions → raw Call/Apply → PostProcessor
-- **Innermost-first macro expansion** with gensym hygiene
-- **ICNF as custom SSA IR** (not LLVM) for region annotation flow
+- **No-dispatch parsing:** the reader produces generic S-expression nodes; form recognition happens afterwards in one place (`convert-ast` in `stdlib/compiler/expr_inner.zyl`)
+- **Innermost-first macro expansion** with gensym hygiene (the hygiene half is specified, not yet implemented)
+- **ICNF as custom SSA IR** (not LLVM) for region annotation flow (today ICNF is a tree IR, not yet SSA and without region annotations)
 - **Region-based memory** (not GC) for deterministic reclamation
 - **Capability types** (TCap/TMut) for compile-time aliasing control
 - **Structs immutable by default** (rebinding only)
@@ -110,29 +132,56 @@ git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
 
 `--bootstrap-from-self` fails only when a change is so large the old
 seed can't even parse the new source (new syntax, not just new
-behavior) — see `archive/rust-bootstrap-2026/README.md` for that
-fallback, and `docs/rust-eviction-plan.md` for the full story.
+behavior). The archived Rust compiler can no longer lex the current
+source (it rejects the `\e` string escape), so it is not a working
+fallback: introduce new syntax in two steps instead — teach the
+compiler to accept it, reseed, and only then use it in the compiler's
+own source. See `archive/rust-bootstrap-2026/README.md` and
+`docs/rust-eviction-plan.md` for the history.
+
+`./boot.sh` also builds `build/boot/zyl-lsp`. It does not build the
+REPL binary; `zyl-self repl` runs the REPL, and `./install.sh` builds a
+standalone `zyl-repl` from `tools/repl.zyl`. Stage timeouts default to
+2400 s (`ZYL_STAGE_TIMEOUT`); a full verification takes well under a
+minute.
+
+The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
+[--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
+`update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`.
 
 ## Regression Tests
 
 ```bash
-./run_regression_tests.sh --quick   # Smoke tests + unit test
-./run_regression_tests.sh --full    # All tests
-./run_regression_tests.sh --filter structs  # Struct regression tests only
+./run_regression_tests.sh --quick   # unit_test + tests/smoke (the default mode)
+./run_regression_tests.sh --full    # ./boot.sh, then every category
+./run_regression_tests.sh --full --no-boot   # every category, skip the fixed-point check
+./run_regression_tests.sh --full --no-boot --filter structs  # struct tests only
 ```
+
+`--filter` is a case-insensitive substring of the test name and applies
+*within* the selected mode — `--filter structs` alone runs in quick mode
+and selects nothing. `--full` runs `./boot.sh` first unless `--no-boot`
+is given. Other flags: `--verbose`, `--timeout N`, `--depth N`,
+`--boot`, `--dry-run` (which lists the mode's tests but ignores
+`--filter`). Categories in `--full`: regression, interpreter
+(differential REPL-interpreter-vs-codegen runs), compile-fail,
+integration, stress, packages, packages-fail, packages-build, lsp, and
+the unit test.
 
 **Trigger before modifying struct-related code** (`ast.zyl`, `codegen.zyl`, `icnf.zyl`, `type_inference.zyl`, `parser.zyl`, `region_inference.zyl` under `stdlib/compiler/`):
 ```bash
-./run_regression_tests.sh --filter structs
+./run_regression_tests.sh --full --no-boot --filter structs
 ```
 
 Full test infrastructure documented in `docs/regression-tests.md`. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
-**S-expression balance** is critical — always run `--filter balanced-parens` after modifying parser/lexer.
+**S-expression balance** is critical — always run `./run_regression_tests.sh --full --no-boot --filter balanced-parens` after modifying parser/lexer (the delimiter compile-fail tests are `unclosed-opener`, `unexpected-close` and `mismatched-bracket`).
 
 ## Architecture Notes
 
-- Entry point: `selfhost/driver.zyl` (assembled into `selfhost/zyl_selfhost_compiler.zyl` by `selfhost/assemble.py`, compiled to `build/boot/stage2.bin`/`zyl-self`). `tools/repl.zyl` is a REPL but is an unfinished skeleton — treat it as such, not a working tool.
+- Entry point: `selfhost/driver.zyl` (assembled into `selfhost/zyl_selfhost_compiler.zyl` by `selfhost/assemble.py`, compiled to `build/boot/stage2.bin`/`zyl-self`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
+- Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.3.0). Protocol tests: `tests/lsp/lsp_protocol_test.py`.
+- REPL: `stdlib/repl/` (reader, line editor, highlighting, history, ICNF interpreter `interp.zyl`, session `eval.zyl`/`repl.zyl`), reached through `zyl repl`; `tools/repl.zyl` is only the standalone `main`. It is a working tool — see `docs/repl.md`.
 - Single binary — no workspace, no crates, no Cargo anywhere in the active path
 - The package system (spec v5.0 §31) IS implemented: manifests, canonical
   symbol keys, visibility, MVS, the lock, the content store, the index with

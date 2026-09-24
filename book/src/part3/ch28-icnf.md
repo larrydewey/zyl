@@ -1,215 +1,301 @@
 # Chapter 28: ICNF — The Intermediate Representation
 
-ICNF (Intermediate Canonical Normal Form) is Zyl's custom SSA-based IR with region annotations. This chapter documents its structure, instructions, and lowering.
+ICNF (Intermediate Canonical Normal Form) is Zyl's own intermediate
+representation: the output of lowering, the input of optimization,
+region inference, code generation and the REPL's interpreter. This
+chapter documents what ICNF actually is in the self-hosted compiler
+(`stdlib/compiler/icnf.zyl`), how the typed expression tree is lowered
+into it, and what the passes that run on it do.
 
 ## 28.1 ICNF Overview
 
-- **SSA form**: Each value assigned exactly once
-- **Region annotations**: Every value carries region (Stack/Heap/Pin/...)
-- **Explicit control flow**: Basic blocks with explicit jumps
-- **Typed**: Every value has a type
-- **Phase 6 output**: Consumed by optimizer (Phase 7) and codegen (Phase 8)
+The specification describes ICNF as an SSA IR with region annotations
+on every value. The implementation is simpler than that, and it is
+worth being exact about the difference:
+
+- **A tree, not SSA.** ICNF is an ordinary recursive ADT, `Icnf`. There
+  are no SSA ids, no basic blocks, no phi nodes and no terminators;
+  control flow is structured (`IIf`, `IWhile`, `IMatch`, `ITryCatch`)
+  and values are named by `ILet` bindings.
+- **Untyped.** Types are gone by the time ICNF exists. What survives is
+  a small *representation kind* per function parameter (0 for a machine
+  word, 1 for a String, 2 for a Float), because those three are emitted
+  differently.
+- **Regions are a rewrite, not an annotation.** Nothing carries a region
+  field. Region inference runs on ICNF and records its one decision —
+  "this variant does not escape its frame" — by replacing an `IVariant`
+  node with an `IStackVariant` node (§28.5).
+- **Phase position.** ICNF is produced after monomorphization, trait
+  dispatch, closure inlining and assert lowering, and consumed by the
+  optimizer, region inference and codegen, in that order (§28.6).
+- **No textual form.** ICNF has no printer. A package build's
+  `zyl.buildinfo` records the hash of the emitted assembly in the field
+  meant for the ICNF hash, for exactly that reason.
 
 ## 28.2 ICNF Structure
 
-### Module
+The whole representation is two ADTs:
 
 ```lisp
-Module ::= (module
-  (functions Function*)
-  (globals Global*)
-  (types TypeDef*))
+(deftype Icnf
+  (IConst Int)                          ; integer (also Bool, byte literals)
+  (IStr String)                         ; string literal
+  (IFlt String)                         ; float literal, as its source text
+  (ILoad String)                        ; read a local, parameter or function
+  (IBinop Int Icnf Icnf)                ; opcode, left, right
+  (ICall String (List Icnf))            ; call a Zyl function by name
+  (IFfi String (List Icnf))             ; call a C symbol by name
+  (IPrint Icnf)
+  (IIf Icnf Icnf Icnf)
+  (IWhile Icnf Icnf)
+  (ISet String Icnf)                    ; set! of a local
+  (ILet String Icnf Icnf)               ; name, value, body
+  (ISeq (List Icnf))                    ; begin
+  (IVariant String Int (List Icnf))     ; constructor name, tag, fields
+  (IMatch Icnf (List IArm))
+  (IFn String (List String) Icnf (List Int))  ; name, params, body, param kinds
+  (ICallClosure String (List Icnf))     ; call a local holding a closure
+  (ITryCatch Icnf String Icnf)          ; try body, catch variable, handler
+  (IStackVariant String Int (List Icnf)))
+
+(deftype IArm (IArm String Int (List String) Icnf))  ; variant, tag, binds, body
 ```
 
-### Function
+A program is a `(List Icnf)` of `IFn` nodes, one per function,
+including every lambda lifted out of a body and every synthesized test
+function.
 
-```lisp
-Function ::= (function
-  name: String
-  params: (Param*)
-  return_type: Type
-  region: Region
-  blocks: (Block*))
-```
+### Binary opcodes
 
-### Block
+`IBinop`'s first field is a number, not a node kind:
 
-```lisp
-Block ::= (block
-  label: Label
-  instructions: (Instruction*)
-  terminator: Terminator)
-```
+| Code | Op | Code | Op |
+|------|----|------|----|
+| 0 | `+` | 9 | `=` / `==` |
+| 1 | `-` | 10 | `!=` |
+| 2 | `*` | 11 | `bit-and` |
+| 3 | `/` | 12 | `bit-or` |
+| 4 | `%` | 13 | `bit-xor` |
+| 5 | `<` | 14 | `shl` |
+| 6 | `>` | 15 | `shr` (logical) |
+| 7 | `<=` | 16 | `ashr` |
+| 8 | `>=` | | |
 
-### Instruction (Value Definition)
+`bit-not` has no two-operand form: `(bit-not x)` lowers to
+`(IBinop 13 x (IConst -1))`. N-ary arithmetic folds left-associatively,
+so `(+ a b c)` becomes `(IBinop 0 (IBinop 0 a b) c)`.
 
-```lisp
-Instruction ::= (let (ssa_id Type Region) Value)
-```
+## 28.3 What Lowers to What
 
-Every instruction defines a new SSA value.
+| Source form | ICNF |
+|-------------|------|
+| integer, `true`/`false`, byte literal | `IConst` |
+| string / float literal | `IStr` / `IFlt` |
+| variable reference | `ILoad name` |
+| `let`, `let-mut`, `with-resource` | `ILet` (mutability is gone below source level) |
+| `set!` | `ISet` |
+| `begin` | `ISeq` |
+| `if`, `while` | `IIf`, `IWhile` |
+| `for` | nested `ILet`s around an `IWhile` |
+| call of a known function | `ICall` |
+| `ffi-call` | `IFfi`; the last argument is taken to be the timeout and dropped (Chapter 29, §29.10) |
+| string builtins, file I/O, byte buffers, atomics, `spawn`, `send`, `ffi-pin` | `IFfi` to a named runtime function (`zyl_cstr_concat`, `zyl_file_open_c`, `zyl_bytebuf_new`, `zyl_actor_spawn`, ...) |
+| constructor application, struct construction | `IVariant` with the constructor's tag |
+| `match` | `IMatch` of `IArm`s |
+| `struct-get` | an `IMatch` with one arm per struct type that has the field |
+| `try` / `catch` | `ITryCatch` |
+| `fn` | an `IFn` lifted to the top level, referenced by `ILoad`; or, when it captures, a closure value (§28.4) |
+| `assert-equal`, `assert-true`, `assert-false` | an `IIf` that calls `zyl_panic` on failure |
+| a top-level `(test "name" body)` | a function `_test_<name>` plus a `zyl_register_test` call in an implicit `main` |
 
-## 28.3 Value Kinds
+A form the lowering does not recognize becomes `(IConst 0)`. That is a
+deliberate fail-soft default, and it has hidden real bugs in the past
+(`for`, `spawn` and `with-resource` all silently lowered to 0 at one
+point), so a new special form must be given its own case in
+`ic-expr-node`.
 
-| Kind | Syntax | Description |
-|------|--------|-------------|
-| Constant | `(const Int 42)` | Integer constant |
-| | `(const Float 3.14)` | Float constant |
-| | `(const Bool true)` | Boolean |
-| | `(const String "hi")` | String constant |
-| | `(const Unit)` | Unit |
-| Variable | `(var ssa_id)` | Reference to SSA value |
-| Function | `(fn_ref "name")` | Function pointer |
-| Closure | `(closure "name" (captured_ssa*))` | Closure creation |
-| BinOp | `(binop Op Value Value)` | Arithmetic/comparison |
-| Call | `(call "fn_name" (args...))` | Direct function call |
-| CallIndirect | `(call_indirect fn_ssa (args...))` | Indirect (closure) call |
-| MakeStruct | `(make_struct "StructName" (fields...))` | Struct construction |
-| StructGet | `(struct_get struct_ssa "field")` | Field access |
-| MakeVariant | `(make_variant "ADT" "Variant" (args...))` | ADT construction |
-| Match | `(match scrutinee_ssa (arms...))` | Pattern match |
-| Phi | `(phi (pred_ssa*) (labels*))` | SSA phi node |
-| Alloc | `(alloc Type Region)` | Heap allocation |
-| FFI | `(ffi "symbol" (args...) timeout)` | FFI call |
+### Tags
 
-## 28.4 Terminators
+Variant tags come from a variant table (`VTable`, `ast.zyl`) built by a
+walk over the program's `deftype` forms. A regular ADT numbers its
+variants from 0 in declaration order. Every struct is a single-variant
+type, and structs draw their tags from a separate global counter, so
+two unrelated structs never share a tag — `struct-get` depends on that,
+because it has no static type to tell it which struct it is looking at.
+A later `deftype` that reuses a variant name shadows the earlier one.
 
-```lisp
-Terminator ::= (ret Value)           ; Return
-             | (jmp Label)           ; Unconditional jump
-             | (br Cond Label Label) ; Conditional branch
-             | (switch Value (cases...)) ; Switch on tag
-             | (unreachable)         ; Unreachable
-```
+## 28.4 Lambdas and Closures
+
+A `(fn ...)` becomes an `IFn` embedded in the expression, and a pass
+called `ic-hoist` then walks the finished tree, moves every embedded
+`IFn` to the top-level function list, and leaves an `ILoad` of its
+generated name behind. Lifted names come from `zyl_fresh_id`, a
+process-lifetime counter: deterministic for a fresh process compiling
+a fixed source (so the fixed point holds), and never repeated within a
+REPL session.
+
+A lambda whose body references only its own parameters, literals and
+known top-level names lifts to a plain function. One that captures
+names from an enclosing scope becomes a closure value: a heap block
+`[tag, code, env]`, where `env` is a second block holding one captured
+value per field, captured by value when the closure is built. The
+lifted function takes the environment as one extra trailing parameter
+(`_clos_env`) and reads each capture back with `zyl_variant_field`. A
+call through a name known to hold such a value is an `ICallClosure`.
+Closure lambdas are limited to five declared parameters, because the
+environment needs its own argument register.
+
+Before lowering, `closure_inline.zyl` handles the commonest capturing
+case without any closure at all: a `(let name (fn ...) body)` where
+`name` is only ever called directly inside `body` is beta-reduced in
+place.
 
 ## 28.5 Regions in ICNF
 
-Every value annotated with region:
+There is one region decision in the whole pipeline, made by
+`region_inference.zyl`'s `ri-transform-fns` after optimization:
 
 ```lisp
-(let (v1 Int Stack) (const Int 42))
-(let (v2 (TCap Point) Heap) (make_struct "Point" ...))
-(let (v3 (TMut Int) Stack) (var v1))  ; Promoted?
+;; Before
+(ILet "p" (IVariant "Point" 7 (list (IConst 1) (IConst 2)))
+  (IMatch (ILoad "p") arms))
+
+;; After: p is only ever matched or printed, so it cannot outlive the frame
+(ILet "p" (IStackVariant "Point" 7 (list (IConst 1) (IConst 2)))
+  (IMatch (ILoad "p") arms))
 ```
 
-Region lattice: `Stack ≤ Heap ≤ Circular`, `Pin` and `Global` incomparable.
+A let-bound variant is moved to the stack only when every use of the
+name is the scrutinee of a `match` or the argument of `print`, and the
+name is not referenced inside a nested `fn`. Any other use — passed to
+a call, stored in another variant, captured — leaves it on the heap.
+The pass is conservative on purpose: undershooting costs an allocation,
+overshooting would be silent memory corruption.
 
-## 28.6 Lowering from ExprInner (Phase 6)
+The general region machinery the specification describes (the full
+Stack/Heap/Global/Circular/Pin lattice with rules R1–R8 and
+`E_REGION_ESCAPE`) is not implemented. The `Region` ADT survives in
+`type_system.zyl` only as the parameter of the byte-buffer types.
 
-Key lowering rules:
+## 28.6 Lowering and the Passes Around It
 
-### Let Binding
+`stdlib/compiler/pipeline.zyl`'s middle section is the exact order:
 
-```lisp
-;; ExprInner: (Let (name expr) body)
-;; ICNF:
-(let (v1 Type Region) expr_lowered)
-...body_lowered with name → v1...
+```
+type inference (collect-definitions)
+  → monomorphization
+  → trait dispatch        (td-expand-program)
+  → closure inlining      (ci-expand-program)
+  → assert lowering       (al-expand-program)
+  → ICNF lowering         (ic-program)
+  → optimization          (opt-optimize-fns)
+  → region inference      (ri-transform-fns)
 ```
 
-### Function Call
+`compile-to-fns` returns the result of the last step. The compiler hands
+it to codegen; the REPL and `zyl eval` hand it to the interpreter in
+`stdlib/repl/interp.zyl`, which evaluates the same `IFn` list directly.
+
+### Let binding
 
 ```lisp
-;; Direct call
-(let (v1 RetType Region) (call "fn_name" (args...)))
+;; Source
+(defn f (x) (let y (+ x 1) (if (> y 2) y 0)))
 
-;; Indirect call (closure)
-(let (v1 RetType Region) (call_indirect fn_ssa (args...)))
+;; ICNF (the function name is its canonical key in practice)
+(IFn "f" ("x")
+  (ILet "y" (IBinop 0 (ILoad "x") (IConst 1))
+    (IIf (IBinop 6 (ILoad "y") (IConst 2))
+         (ILoad "y")
+         (IConst 0)))
+  (0))
 ```
 
 ### Match
 
 ```lisp
-;; ExprInner: (Match scrutinee (Variant pattern body)...)
-;; ICNF:
-(let (scrut_ssa Type Region) scrutinee_lowered)
-(switch scrut_ssa
-  (0 Label_None)      ; None tag
-  (1 Label_Some))     ; Some tag
+;; Source
+(match opt
+  (Some v (+ v 1))
+  (None 0))
 
-Label_Some:
-  (let (v1 Type Region) (struct_get scrut_ssa "field"))
-  ...body_lowered...
-  (jmp Join)
-
-Label_None:
-  ...body_lowered...
-  (jmp Join)
-
-Join:
-  (phi (v_some v_none) (Label_Some Label_None))
+;; ICNF: one arm per constructor, carrying its tag and field names
+(IMatch (ILoad "opt")
+  ((IArm "Some" 0 ("v") (IBinop 0 (ILoad "v") (IConst 1)))
+   (IArm "None" 1 () (IConst 0))))
 ```
 
-### Closure
+A wildcard arm carries tag -1 and matches unconditionally. A nested
+constructor pattern in field position is bound to a fresh name and the
+arm body is wrapped in an inner `IMatch` on it. Exhaustiveness has
+already been checked by `exhaustiveness_check.zyl`, and lowering checks
+it again.
+
+## 28.7 ICNF Optimizations
+
+`optimization.zyl` is two passes in one bottom-up walk. Nothing else
+is done: there is no dead-code elimination of unused lets, no copy
+propagation and no common-subexpression elimination.
+
+### Constant folding
 
 ```lisp
-;; ExprInner: (Closure (params) body captures)
-;; ICNF:
-(let (closure_ssa (TFun(...) Ret) Heap)
-  (closure "fn_name" (captured_ssa*)))
+;; Before
+(IBinop 0 (IBinop 2 (IConst 2) (IConst 3)) (IConst 4))
+;; After
+(IConst 10)
 ```
 
-## 28.7 ICNF Optimizations (Phase 7)
+Only integer arithmetic and comparisons (opcodes 0–10) fold. Division
+or remainder by a constant zero is left alone so it still fails at run
+time. Float literals are not folded (an `IFlt` is source text, not a
+value), and neither are the bitwise opcodes.
 
-### Constant Folding
+### Dead-branch elimination
 
 ```lisp
-;; Before:
-(let (v1 Int Stack) (const Int 1))
-(let (v2 Int Stack) (const Int 2))
-(let (v3 Int Stack) (binop Add (var v1) (var v2)))
+;; An if whose condition folded to a constant keeps one branch
+(IIf (IConst 1) a b)   ; → a
+(IIf (IConst 0) a b)   ; → b
 
-;; After:
-(let (v3 Int Stack) (const Int 3))
+;; A while whose condition is constant false evaluates to 0
+(IWhile (IConst 0) body)   ; → (IConst 0)
 ```
 
-### Dead Code Elimination
-
-```lisp
-;; Unused let removed
-(let (v1 Int Stack) (const Int 42))
-;; If v1 never used → removed
-```
-
-### Copy Propagation
-
-```lisp
-;; Before:
-(let (v1 Int Stack) (const Int 42))
-(let (v2 Int Stack) (var v1))
-... (var v2) ...
-
-;; After:
-... (var v1) ...  (v2 removed)
-```
+A constant-true `while` is left alone: an infinite loop is a legitimate
+program. Neither pass can discard a side effect, because the only thing
+that ever folds to an `IConst` is arithmetic on literals.
 
 ## 28.8 ICNF Verification
 
-Validator checks:
-- **SSA form**: Each SSA ID defined once, used after definition
-- **Region consistency**: Value region compatible with uses
-- **Type consistency**: Operations match operand types
-- **Control flow**: All blocks reachable, phi nodes correct
-- **Terminator**: Every block ends with terminator
+There is no separate ICNF validator. The guarantees come from the
+checks that run before lowering (balance, arity, duplicates,
+mutability, exhaustiveness, Secret) and from type inference, plus a
+few checks lowering and codegen make as they go:
+
+- `E_MATCH_ARM_COMPLEX` — a match-arm body combining a constant with
+  two or more calls (a shape older stage binaries miscompiled)
+- `E_ARITY_MISMATCH` — for example `bit-not` with other than one argument
+- `E_UNBOUND_VARIABLE` — raised by codegen when an `ILoad` names nothing
+  in scope, located at the identifier through the span table
+- `E_UNDEFINED_FUNCTION` — raised by the interpreter for a call to a
+  name that no function defines (compiled code finds this at link time)
 
 ## 28.9 ICNF Errors
 
-| Error | Cause |
-|-------|-------|
-| `E_ICNF_SSA_VIOLATION` | SSA ID used before defined or defined twice |
-| `E_ICNF_REGION_MISMATCH` | Value used in incompatible region |
-| `E_ICNF_TYPE_MISMATCH` | Operation operand types incompatible |
-| `E_ICNF_UNREACHABLE_BLOCK` | Block not reachable from entry |
-| `E_ICNF_MISSING_PHI` | Join point missing phi for live value |
+The `E_ICNF_*` codes that earlier drafts of this chapter listed do not
+exist. The errors above are the ones the lowering side of the pipeline
+can raise; Appendix A has the full catalogue.
 
 ## 28.10 Comparison with LLVM IR
 
-| Feature | LLVM IR | ICNF |
+| Feature | LLVM IR | ICNF (as implemented) |
 |---------|---------|------|
-| SSA | ✅ | ✅ |
-| Regions | ❌ (metadata) | ✅ (first-class) |
-| Capabilities | ❌ | ✅ (on types) |
+| Form | SSA, basic blocks | Structured expression tree |
+| Types | On every value | Erased; three representation kinds on parameters |
+| Regions | ❌ | One decision: `IStackVariant` for a non-escaping variant |
+| Capabilities | ❌ | Checked before lowering, not represented |
 | Target | Multi-arch | x86_64 only |
-| Optimizations | Many | Safe only (const fold, DCE) |
-| Verification | ✅ | ✅ |
+| Optimizations | Many | Integer constant folding, dead-branch elimination |
+| Consumers | Backends | Codegen, and the REPL's interpreter |
 | Determinism | Configurable | Mandatory |

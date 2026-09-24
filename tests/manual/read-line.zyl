@@ -1,6 +1,9 @@
 ; Manual Test: read-line
 ; This test requires stdin input and cannot be automated.
-; Run manually: echo 'hello world' | ./target/debug/zyl tests/manual/read-line.zyl t.bin && ./t.bin
+; Run manually: build/boot/zyl-self tests/manual/read-line.zyl -o t.bin && echo 'hello world' | ./t.bin
+; Currently fails to link (undefined reference to `_ZYL_main`): the file
+; is a bare top-level `let` with no `(defn main ...)`, and a top-level
+; expression does not become an implicit main.
 ; Expected: got: hello world
 
 (let input (read-line)

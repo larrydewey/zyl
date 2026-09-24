@@ -19,7 +19,12 @@ zyl> (double x)
 
 There are two entry points and one implementation: `zyl repl`, and the
 standalone binary built from `tools/repl.zyl`. Both run the modules
-under `stdlib/repl/`.
+under `stdlib/repl/`. `install.sh` compiles `tools/repl.zyl` into
+`~/.zyl/bin/zyl-repl-bin` and installs a `zyl-repl` wrapper for it; the
+installed `zyl` wrapper starts it when given no arguments. `./boot.sh`
+does not build the standalone binary (any `build/boot/zyl-repl` is a
+leftover of an older build); from a checkout, use
+`build/boot/zyl-self repl`.
 
 ## How an entry is evaluated
 
@@ -74,12 +79,26 @@ later entry. It is an immutable binding, like any other in the language;
 `defn`, `deftype`, `defstruct`, `defmacro`, `trait` and `impl` entries
 are added to the session's text and checked by compiling the session
 with them. Nothing runs — a definition has no effect until something
-calls it. A redefinition shadows the earlier one.
+calls it. A name can be defined only once per session: entering a second
+`(defn f ...)` is rejected with `E_DUPLICATE_DEFINITION` (the duplicate
+check sees the whole session as one program), and the first definition
+stays in force. `:reset` clears the session so a name can be defined
+afresh. The caret of that diagnostic currently points into the REPL's
+generated wrapper (`<repl>:N:1`) rather than at the entry you typed.
+
+A definition cannot yet refer to a `def` binding: after `(def k 5)`,
+`(defn f (x) (+ x k))` is accepted, but `(f 1)` fails with
+`E_UNBOUND_VARIABLE`, because a global reaches only the entry that
+mentions it (as a parameter of that entry's wrapper), not the functions
+that entry calls. Pass the value as an argument instead.
 
 ### Modules
 
-`(use module/name)` extends the session's module set, and is rejected if
-the module does not resolve or collides with a name already in scope. A
+`(use module/name)` extends the session's module set (the REPL answers
+`using module/name`), and is rejected if the module does not resolve or
+collides with a name already in scope; a module path naming a package
+the session has no manifest entry for is reported as
+`E_PKG_UNDECLARED_DEP`. A
 new session starts with `core/core`, `core/list`, `core/option`,
 `core/result` and `allocator/allocator`.
 
@@ -93,50 +112,68 @@ an unbuffered write). No readline, no libedit, no external dependency.
 |---|---|
 | `Enter` | evaluate, or continue an unfinished form on a new indented line |
 | `Up` / `Down` | move between the lines of an entry; from the first or last line, walk history |
-| `Left` / `Right` | move by character |
+| `PageUp` / `PageDown` | walk history directly |
+| `Left` / `Right`, `Ctrl-B` / `Ctrl-F` | move by character |
 | `Ctrl-Left` / `Ctrl-Right`, `Alt-b` / `Alt-f` | move by word |
 | `Home` / `End`, `Ctrl-A` / `Ctrl-E` | start and end of the current line |
 | `Alt-<` / `Alt->` | start and end of the whole entry |
 | `Ctrl-K` / `Ctrl-U` | kill to end / to start of line |
-| `Ctrl-W`, `Alt-d` | kill the word behind / ahead |
+| `Ctrl-W`, `Alt-Backspace` / `Alt-d` | kill the word behind / ahead |
+| `Backspace`, `Ctrl-H` / `Delete` | delete the character behind / under the cursor |
 | `Ctrl-Y` | yank what was last killed |
 | `Ctrl-T` | transpose the two characters at the cursor |
 | `Ctrl-R` | search history backwards; `Ctrl-R` again for the next match, `Enter` to run it, `Esc` to edit it, `Ctrl-G` to forget it |
 | `Tab` | complete a name; at the start of a token, indent |
 | `Ctrl-L` | clear the screen, keeping the entry |
-| `Ctrl-C` | abandon this entry | 
+| `Ctrl-C` | abandon this entry |
 | `Ctrl-D` | delete forward, or leave the session on an empty entry |
-| `Ctrl-J`, `Alt-Enter` | insert a newline without evaluating |
+| `Alt-Enter` | insert an indented newline without evaluating |
+| `Ctrl-O` | submit the entry as it stands, even if it is not a complete form |
+
+`Ctrl-J` sends the same byte as a newline, which the terminal decoder
+(`stdlib/repl/terminal.zyl`) reads as `Enter`; the reader's separate
+`Ctrl-J` binding is therefore never reached, and `Ctrl-J` behaves like
+`Enter`.
+
+The entry is syntax-highlighted as it is typed (`stdlib/repl/highlight.zyl`:
+comments, strings, numbers, keywords, type names and parentheses, colored
+lexically on every keystroke).
 
 An entry that is not a complete S-expression continues on the next line,
 indented two columns per open paren. Pasted text arrives through
 bracketed paste, so a pasted newline inserts a line instead of
 submitting.
 
-History lives in `~/.zyl/repl_history` (or `$ZYL_REPL_HISTORY`), written
+History lives in `~/.zyl/repl_history` (or `$ZYL_REPL_HISTORY`; the
+`~/.zyl` state directory itself can be moved with `$ZYL_STATE_DIR`, which
+is deliberately separate from `$ZYL_HOME`, the compiler bundle), written
 as each entry is submitted rather than at exit, with newlines escaped so
 the file stays one entry per line.
 
 ## Meta commands
 
-| command | |
-|---|---|
-| `:help` | the key map and this list |
-| `:quit`, `:q` | leave |
-| `:history` | entries from this and earlier sessions |
-| `:defs` | the modules, bindings and definitions in scope |
-| `:doc NAME` | documentation for a built-in or special form |
-| `:type EXPR` | the type of an expression, without evaluating it |
-| `:time EXPR` | evaluate it and say how long it took |
-| `:load PATH` | read a file's modules and definitions into the session |
-| `:save PATH` | write the session's definitions to a file |
+| command | short form | |
+|---|---|---|
+| `:help` | `:h` | the commands and the main keys |
+| `:quit` | `:q` | leave |
+| `:history` | `:hist` | entries from this and earlier sessions |
+| `:defs` | `:browse` | the modules, bindings and definitions in scope |
+| `:doc NAME` | `:d` | documentation for a built-in or special form |
+| `:type EXPR` | `:t` | the type of an expression, without evaluating it |
+| `:time EXPR` | `:tm` | evaluate it and say how long it took |
+| `:load PATH` | `:l` | read a file's modules and definitions into the session |
+| `:save PATH` | `:s` | write the session's definitions (not its modules or bindings) to a file |
+| `:reset` | `:r` | forget everything, here and on disk, and start over |
+| `:clear` | `:cls` | clear the screen |
+
+An unknown command is answered with `unknown command :NAME — :help lists
+them`. Tab completion offers the long forms of the commands except
+`:type` and `:time`.
 
 A relative path in `:load` or `:save` resolves against the directory you
 started in, not the working directory — the REPL moved to the bundle
 before the first prompt, because compiling needs `stdlib/` and
 `actor_runtime.c` to be there.
-| `:reset` | forget everything, here and on disk, and start over |
-| `:clear` | clear the screen |
 
 The same commands work when input is piped, so a script can end with
 `:defs` or start with `:load`.
@@ -170,8 +207,11 @@ off. Because restoring replays the entries, a `def` whose expression had
 an effect has that effect again; `:reset` clears the session and the
 file, and deleting the file says the same thing.
 
-A piped session does not restore anything: a script should do the same
-thing on every machine, whatever happens to be saved next to it.
+A piped session (standard input is not a terminal) does none of this:
+it reads no `replrc`, restores no `.zyl-session` and writes none, loads
+no history and prints no banner. A script should do the same thing on
+every machine, whatever happens to be saved next to it. Results are
+still written with the same ANSI colors as at a terminal.
 
 History is separate and global (`~/.zyl/repl_history`): what you typed
 is worth keeping across projects, what you defined is not.
@@ -239,10 +279,11 @@ them. Where they knowingly differ:
   block, so destructuring `(Some "hello")` gives a `String` back;
   `cg-bind-fields` binds every field as an `Int`.
 - **`==` on two `String`s compares their bytes** (spec §7.4, structural
-  equality). Compiled code compares them by address, which agrees
-  whenever both sides are the same literal — codegen gives identical
-  literals one rodata entry — and disagrees for strings built at
-  runtime.
+  equality). Compiled code does the same through `zyl_cstr_eq` whenever
+  codegen knows either operand is a string (`codegen.zyl` routes
+  string-kind equality and inequality there), including strings built at
+  runtime; where it knows neither kind — a `String` coming out of a generic
+  function or an ADT field — it falls back to comparing addresses.
 - **`IStackVariant` allocates on the heap.** Region inference chose the
   stack for a value that provably does not escape; allocating it on the
   heap instead is sound, just less tidy.

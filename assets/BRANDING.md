@@ -1,6 +1,6 @@
 # Zyl Branding Guidelines
 
-**Version 1.0** — Last updated: July 2026
+**Version 1.0** — Last updated: September 2026
 
 ## Core Identity
 - **Name**: Zyl
@@ -9,9 +9,9 @@
 - **Mascot**: **Parry the Owl** — A simple, friendly cartoon owl representing wisdom, precision, and Lisp parentheses.
 
 ## Logo
-- **Primary Logo**: Stylized "Z" incorporating balanced Lisp parentheses `()`.
-- **Color Version**: Teal gradient (#00B4A6 to darker blue).
-- **Monotone / B&W**: High-contrast black version for dark/light modes or print.
+- **Primary Logo**: Stylized "Z" between balanced Lisp parentheses `()`, with the "Zyl" wordmark below.
+- **Color Version**: Teal-green to blue gradient on the "Z" (roughly #41E5B7 to #22B8CC in the artwork), with dark teal-to-navy parentheses and dark outlines.
+- **Monotone / B&W**: A high-contrast black version for print is intended, but not yet among the assets.
 - **Minimum Size**: 100px wide for digital use.
 - **Clear Space**: Maintain padding equal to 1/4 the logo height around all sides.
 
@@ -43,6 +43,9 @@
 - **Neutral Dark**: RGB(15, 23, 42) | Hex #0F172A
 - **White/Off-white** for text on dark backgrounds.
 
+The palette above is the guideline for new material; the logo artwork
+predates it and uses its own gradient values (see Logo).
+
 ## Typography
 - **Headings**: Bold sans-serif (e.g., Inter or system sans).
 - **Body/Code**: Monospace (e.g., JetBrains Mono).
@@ -50,7 +53,12 @@
 ## Acceptable Use
 This branding is for promoting the Zyl programming language. Commercial use (e.g., merchandise) is allowed with attribution. Contact the maintainer for high-res assets or custom approvals.
 
-See `assets/` folder for logo, mascot, and SVG/PNG files.
+The `assets/` folder holds:
+
+- `logo.svg` — the mark with the wordmark (vector)
+- `logo.png` — the same, 559×641 raster; used as the README header
+- `logo-only.svg` — the mark without the wordmark (vector)
+- `parry.svg` — Parry the Owl (vector)
 
 ---
 

@@ -2,13 +2,14 @@
 ; Module: lsp/document_manager
 ;
 ; Per-document analysis cache. See lsp/compiler_bridge's header comment
-; for why this stops at macro expansion + mutability check + a flat
-; SymTable pass, rather than running compiler/type_inference's
+; for why this stops at macro expansion + the pre-inference checks + a
+; flat SymTable pass, rather than running compiler/type_inference's
 ; collect-definitions.
 ;
-; The checks that run here are the same ones selfhost/driver.zyl runs,
-; in the same order: duplicate definitions, call arity, mutability and
-; capability rules, match exhaustiveness, and the Secret capability's
+; The checks that run here are the ones compiler/pipeline.zyl's
+; compile-run-checks runs (the same front end selfhost/driver.zyl uses),
+; in the same order, minus two: duplicate definitions, call arity,
+; mutability rules, match exhaustiveness, and the Secret capability's
 ; constant-time obligations. Each reports failure by calling
 ; `zyl_panic`, which is `exit(1)` if uncaught -- fine for a one-shot CLI
 ; compile, fatal for a server that must keep running across many edits
@@ -16,13 +17,16 @@
 ; runs inside `try`/`catch`; a panic becomes one Diagnostic instead of
 ; killing the process.
 ;
-; Two passes from the driver are deliberately NOT run:
+; Passes from the compiler's pipeline that are deliberately NOT run:
 ;
-;   - unused_check, because it reports by PRINTING warnings to stdout,
-;     which is this server's JSON-RPC channel. A single W_UNUSED_
-;     PARAMETER line written there desynchronises the framing and the
-;     client drops the connection. Surfacing those warnings needs the
-;     check to return them rather than print them.
+;   - capability_check (cc-check-program), the package capability rules
+;     of spec v5.0 §31.9. It needs the grants and denials that
+;     mr-resolve-program-full returns; dm-frontend calls the plain
+;     mr-resolve-program, which returns only the resolved forms.
+;   - unused_check, because it reports by writing warnings to stderr
+;     rather than returning them, so an editor would never see them.
+;     Surfacing those warnings as diagnostics needs the check to return
+;     them rather than print them.
 ;   - type_inference's collect-definitions, for the reasons set out at
 ;     length in lsp/compiler_bridge.zyl's header.
 ;
@@ -30,7 +34,8 @@
 ; one diagnostic at a time -- fix it, save, see the next. That matches
 ; the compiler's own behavior exactly, which is the point: the editor
 ; should never claim a program is fine that `zyl` would reject, nor the
-; reverse.
+; reverse. The passes left out above are the known exceptions: a
+; capability violation, for one, shows up only when `zyl` compiles it.
 
 (use allocator/allocator)
 (use core/core)
@@ -162,8 +167,8 @@
         (Ok _ (DS doc (Document.version doc) tbl Nil))
         (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) Nil)))))))
 
-; The same checks selfhost/driver.zyl runs, in the same order. See this
-; file's header for the two it leaves out and why.
+; The checks compiler/pipeline.zyl's compile-run-checks runs, in the same
+; order. See this file's header for the ones it leaves out and why.
 (defn dm-run-checks (exprs)
   (let _ (dc-check-program exprs)
     (let _ (ac-check-program exprs)

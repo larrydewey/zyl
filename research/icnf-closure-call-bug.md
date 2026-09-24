@@ -1,5 +1,17 @@
 # Research: ICNF Closure Call Bug
 
+> **Status (2026-09-23): historical, fixed.** This note describes a bug
+> in the Rust bootstrap compiler, which now lives, frozen, in
+> `archive/rust-bootstrap-2026/` — every `src/...` path below is
+> relative to that directory. It was fixed there (a `closure_ssa_ids`
+> set so that only values known to be closures are called indirectly;
+> see `PROGRESS.md`). The active, self-hosted compiler
+> (`stdlib/compiler/icnf.zyl`, `ICallClosure`) handles the pattern: a
+> lambda bound with `let` and then called, including one that recurses
+> through its enclosing function, compiles and runs correctly. The
+> workaround below is no longer needed. See "Current state" at the end
+> for a different closure bug that is still open.
+
 ## Summary
 
 When a lambda is stored in a `let` binding inside a function, the ICNF generator
@@ -13,7 +25,10 @@ closure value, causing undefined reference linker errors.
 Error: Code generation failed: /usr/bin/ld: ... undefined reference to `_ZYL_f'
 ```
 
-Example reproducer:
+Example reproducer, in the binding-list `let` syntax the Rust compiler
+accepted (the self-hosted compiler's `let` is `(let name value body)`;
+it does not accept this form — the program below compiles there, but
+its test fails):
 ```lisp
 (defn fact (n)
   (let ((f (lambda (x)
@@ -28,7 +43,7 @@ Actual: direct call `call _ZYL_f` emitted.
 
 ## Root Cause
 
-**File:** `src/icnf.rs`, line ~2612
+**File:** `src/icnf.rs` (archived), line ~2612 at the time
 
 The Call handler for `ExprInner::Call` always emits a direct call:
 ```rust
@@ -97,21 +112,21 @@ Example fix:
 
 ## Verification
 
-After fix, the reproducer should compile and run correctly:
+With the self-hosted compiler, the same program in current `let`
+syntax prints `120`:
 ```bash
-cat > /tmp/test.zyl << 'EOF'
+cat > fact.zyl << 'EOF'
 (defn fact (n)
-  (let ((f (lambda (x)
-    (if (= x 0)
-      1
-      (* x (fact (- x 1)))))))
+  (let f (lambda (x) (if (= x 0) 1 (* x (fact (- x 1)))))
     (f n)))
-(test "fact"
-  (assert-equal (fact 5) 120))
+(defn main () (print (fact 5)))
 EOF
-./target/debug/zyl /tmp/test.zyl
-./a.out.bin  # should print 120
+build/boot/zyl-self fact.zyl -o fact
+./fact   # 120
 ```
+
+(The original instructions ran `./target/debug/zyl` from the Rust
+crate, which no longer exists at the repository root.)
 
 ## Related
 
@@ -119,3 +134,22 @@ EOF
   supports direct calls. An `ICNFInner::CallIndirect(usize, Vec<usize>)`
   node might be cleaner for the indirect call path.
 - Codegen indirect call path already exists at line ~3643-3778 of `codegen.rs`.
+
+## Current state: a capturing closure passed to a named function
+
+Checked against `build/boot/zyl-self` on 2026-09-23. A closure that
+captures a variable works when it is called where it was bound, and a
+non-capturing closure works when passed to a top-level function. A
+*capturing* closure passed as an argument to a top-level `defn` and
+called there compiles, but the resulting binary hangs:
+
+```lisp
+(defn app (g v) (g v))
+(defn main () (let k 3 (print (app (fn (y) (+ y k)) 1))))   ; hangs; expected 4
+```
+
+The same happens when the closure is bound with `let` first and then
+passed, and when the captured variable is a parameter of the enclosing
+function. `tests/regression/closures.zyl` only passes closures to
+`let`-bound `fn`s, which is why the suite does not catch this. Not
+investigated further here.

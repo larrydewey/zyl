@@ -1,8 +1,14 @@
 # Zyl Package Management — Design (spec v5.0)
 
-Status: IMPLEMENTED (see `PROGRESS.md` for what landed, the deliberate
-deviations from the phase plan below, and the remaining gaps). Supersedes
-the roadmap sketch in `zyl_specification.txt` §20.6.
+Status: IMPLEMENTED on 2026-09-23 (modules
+`stdlib/compiler/{package,qualify,store,workspace,lock,index,mvs,cli,
+capability_check,module_resolver}.zyl`, driver in `selfhost/driver.zyl`).
+The normative text is now `zyl_specification.txt` §31 (v5.0), with
+`spec/16-package-system.md` as its structured copy; this document is the
+design as written before implementation, kept for its rationale. Where
+the implementation differs from it, §16 below says so, and `PROGRESS.md`
+(the §31 implementation session) records the deliberate deviations and
+the remaining gaps. Supersedes the roadmap sketch in the old §20.6.
 
 Two things in §14's phase plan were not done as written, because the
 specification says otherwise: the standard library stays implicit
@@ -11,11 +17,11 @@ this repository was not converted into a workspace — workspace support
 exists (`stdlib/compiler/workspace.zyl`) and is exercised by the lock's
 placement rule, but the compiler's own tree still builds as it did.
 
-This document is the normative design for the v5.0 package system. It
+This document was the normative design for the v5.0 package system. It
 records sixteen decisions, the grammars, the algorithms, the new error
-codes, and a five-phase implementation plan. Where it contradicts the
-v4.2 specification text, the specification is to be amended; each such
-point is marked **[amends spec]**.
+codes, and a five-phase implementation plan. Where it contradicted the
+v4.2 specification text, the specification was to be amended; each such
+point is marked **[amends spec]**, and all of them have been made (§15).
 
 ---
 
@@ -73,7 +79,8 @@ acme/json/v3
 This is deliberate: under a single name a diamond requiring both 1.x and
 2.x would be unresolvable, and under an `@`-suffix syntax the lexer would
 need a new identifier character. The `/vN` suffix costs nothing — `/` is
-already an identifier-continue character (`lexer.zyl:47`).
+already an identifier character (`chr-ident-start-p` /
+`chr-ident-cont-p` in `lexer.zyl`).
 
 Versions are strict SemVer `MAJOR.MINOR.PATCH`, optionally followed by
 `-` and a pre-release identifier. Ordering is the usual SemVer ordering.
@@ -108,7 +115,7 @@ total order regardless of which packages enter the graph.
 ### Mangling
 
 Assembly labels must be injective functions of the canonical key.
-`zyl_cstr_sanitize` (`runtime/actor_runtime.c:984`) is **not** usable for
+`zyl_cstr_sanitize` (`runtime/actor_runtime.c`) is **not** usable for
 this: it maps every byte outside `[A-Za-z0-9_]` to `_`, so `acme/json`,
 `acme.json` and `acme-json` all collapse to `acme_json`. A lossy encoder
 at this point would silently merge distinct functions.
@@ -134,8 +141,12 @@ acme/json@1::json/parser::parse
 
 The escape is injective, so the mangle is. When the result exceeds 200
 bytes the readable prefix is truncated to 184 bytes and 16 hex digits of
-BLAKE3 over the full canonical key are appended; BLAKE3 is already
-self-hosted in `stdlib/math/hash/blake3.zyl`, so this needs no new C.
+BLAKE3 over the full canonical key are appended. *Implemented as
+`zyl_mangle_key` / `zyl_sym_escape` in `runtime/actor_runtime.c`, with a
+C BLAKE3 (`zyl_blake3_hex`) beside it, rather than reusing
+`stdlib/math/hash/blake3.zyl` as planned: the runtime copy is the one
+implementation on the build path (mangling and the archive, lock and
+graph hashes), and the two agree on test vectors.*
 
 Monomorphized instances carry fully-qualified type arguments, or generics
 from different packages would re-collide:
@@ -237,10 +248,12 @@ a `/` and is always a declared dependency.
 
 The lexer already produces exactly the tokens needed — `:` is not an
 identifier-continue character, so `acme/json:parser` is `TkIdent
-"acme/json"` followed by `TkKeyword "parser"`. `EUseModule (List String)
-(Option (List String)) Bool` (`expr_inner.zyl:58`) already carries the
-symbol list and unsafe flag; only the parser arm at `expr_inner.zyl:1889`
-and the resolver need work.
+"acme/json"` followed by `TkKeyword "parser"`. *As implemented, `use`
+forms are read by `module_resolver.zyl` from the raw parse tree
+(`mr-use-*`: the colon part, `*`, `:unsafe`, and `{ a b => c }` brace
+lists), before conversion to ExprInner; the `EUseModule` arm in
+`expr_inner.zyl` still passes `None` and `false`, and nothing downstream
+needs it to do otherwise.*
 
 One wrinkle: the lexer discards whitespace, so `(use acme/json :unsafe)`
 and `(use acme/json:unsafe)` produce identical token streams. `unsafe` is
@@ -278,11 +291,14 @@ Module resolution stays DAG-based (spec §24.5) and now applies at two
 levels: modules within a package must form a DAG, and packages must
 form a DAG. Cycles are `E_PKG_CYCLE` and `E_MODULE_CYCLE` respectively.
 
-The current resolver (`module_resolver.zyl`) splices every dependency's
-whole body and does no symbol filtering. Under this design it gains a
+The pre-5.0 resolver (`module_resolver.zyl`) spliced every dependency's
+whole body and did no symbol filtering. Under this design it gains a
 real import table per compilation unit: a map from the local name a file
 uses to a canonical key. Name lookup consults that table, not a global
-namespace.
+namespace. *As implemented (`qualify.zyl` with `module_resolver.zyl`),
+a module's table is built weakest-first: the rest of its package, then
+the modules it explicitly `use`s, then its own definitions, so only a
+name nobody disambiguated falls back to last-one-wins.*
 
 ---
 
@@ -387,7 +403,7 @@ The runtime has no sockets. It has `zyl_exec_cmd` and `zyl_system_cmd`
 operation outside the deterministic path.
 
 ```
-zyl fetch    git/curl  ->  ~/.zyl/store/blake3/<hash>/
+zyl fetch    git/curl  ->  ~/.zyl/store/blake3/<hash>/   ($ZYL_HOME/store when set)
 zyl build    reads the store only; never touches the network
 ```
 
@@ -453,7 +469,9 @@ Verification is **mandatory** and cannot be disabled by a flag. The trust
 model is trust on first use, per package:
 
 1. On first resolution of a package, its publisher key is pinned into
-   `zyl.lock`.
+   `zyl.lock`. *As implemented, the pin also lives beside the store, one
+   file per package under `~/.zyl/keys/`, and `idx-check-key` compares
+   against that file.*
 2. On every later fetch, the signature must verify against the pinned
    key and the content hash must match the lock.
 3. A key change is `E_PKG_KEY_CHANGED`, a hash change is
@@ -490,8 +508,9 @@ The capability set is:
 | `unsafe` | `:unsafe` imports |
 
 Enforcement runs as a dedicated pass after module resolution and before
-type inference. Every top-level form is tagged with its owning package by
-the resolver, and the pass rejects:
+type inference (`capability_check.zyl`). Every top-level form is tagged
+with its owning package by the resolver — as implemented, the tag is the
+package half of the form's canonical key — and the pass rejects:
 
 - use of a capability-bearing construct (`ffi-call`, `spawn`, a `:unsafe`
   import) from a package lacking the grant;
@@ -499,7 +518,8 @@ the resolver, and the pass rejects:
   the grant — each stdlib module declares which capability it provides,
   so this is a table lookup rather than a dataflow analysis.
 
-All violations are `E_PKG_CAPABILITY_VIOLATION`.
+All violations are `E_PKG_CAPABILITY_VIOLATION`. *As implemented, see
+§16 for which constructs each capability actually guards.*
 
 A declared set is a ceiling on the package itself. It is not a grant a
 consumer must repeat — per-edge re-granting is noise that people learn to
@@ -573,7 +593,9 @@ time would forfeit the determinism contract (spec §27) outright.
   flags, and any `-Wl,` are rejected; linking is expressed through
   `link-libs`.
 - `zyl` invokes `cc` itself with a canonical, sorted argument vector, and
-  the object hash is recorded in the lock.
+  the object hash is recorded in the lock. *Not implemented: the lock has
+  no object-hash field, and `zyl.buildinfo`'s `native-objects` list is
+  always empty (§16).*
 
 Packages that need autoconf-style probing are out of scope for 5.0. The
 supported answer is to vendor a pre-configured C source set.
@@ -633,6 +655,17 @@ zyl publish                 build the canonical archive, sign, emit index entry
 zyl key new|show            manage publisher keys
 ```
 
+*As implemented (`zyl` with no arguments prints the list): `zyl add
+<name> [version]` takes the index's latest version when none is given
+and rewrites `zyl.pkg`; `zyl fetch` takes no flag and writes `zyl.lock`;
+`zyl update` takes no package argument, re-resolves the whole graph,
+rewrites `zyl.lock` and prints either `capability closure unchanged` or
+`capability closure grew to: ...`; `zyl audit` prints each package's
+capabilities and the closure, not key pins; `zyl publish` prints the
+index entry with a `(url "https://REPLACE-ME")` placeholder; `zyl key`
+has no subcommands and shows the publisher key, creating
+`~/.zyl/keys/publisher.seed` on first use.*
+
 `zyl fetch` is the sole command permitted to touch the network. Every
 other command fails closed if something is missing from the store.
 
@@ -652,7 +685,11 @@ finalization (pipeline step 11) takes as input, in this canonical order:
 
 `zyl build` writes `zyl.buildinfo` next to the binary, recording all four
 plus the resolved graph in canonical form, so a third party can verify a
-binary was produced from a claimed set of inputs.
+binary was produced from a claimed set of inputs. *As implemented it is
+written as `<binary>.buildinfo` with `compiler-hash`, `graph-hash`
+(empty when there is no lock), an always-empty `native-objects` and
+`asm-hash` in place of an ICNF hash; the resolved graph is not written,
+and none of it is mixed into the binary's own hash yet (§16).*
 
 Consequences worth stating explicitly:
 
@@ -670,8 +707,9 @@ Consequences worth stating explicitly:
 Per spec §28, every code must be defined and used consistently. These are
 added to `stdlib/compiler/error_codes.zyl`. Phase 9 is the existing
 `module` phase; a new phase **19 = package** covers manifest, lock,
-index, fetch and signature errors, and the phase legend in that file's
-header needs the new entry.
+index, fetch and signature errors. *Done: all 36 are in the catalog and
+in spec §28, the phase legend has the entry, and every one has at least
+one raising site (`docs/errors.md` lists them).*
 
 | Code | Phase | Meaning |
 |------|-------|---------|
@@ -721,6 +759,14 @@ Every phase changes the compiler's own source, so every phase ends with
 `./boot.sh`, and a committed seed, per `AGENTS.md`. Each phase is
 independently useful and independently fixed-point-verified.
 
+*Status (2026-09-23): all five phases landed in one implementation
+session, not five. Phase 2's conversion of this repository into a
+workspace was deliberately not done (see the top of this document); the
+other deviations are in §16. File names below are the plan's; the
+manifest reader is `package.zyl`, name lookup is `qualify.zyl` and
+`module_resolver.zyl`, and the orphan rule is checked in
+`module_resolver.zyl` rather than `trait_dispatch.zyl`.*
+
 ### Phase 1 — Namespacing and visibility
 
 The language changes, with no distribution machinery at all.
@@ -728,7 +774,7 @@ The language changes, with no distribution machinery at all.
 - `zyl.pkg` reader: a new `stdlib/compiler/manifest.zyl` on top of the
   existing parser.
 - Parser: populate the symbol list and unsafe flag in `EUseModule`
-  (`expr_inner.zyl:1889`); parse the colon form.
+  (`expr_inner.zyl`); parse the colon form.
 - Injective mangler, replacing `zyl_cstr_sanitize` on the label path.
   This is the one change that must land before anything else can be
   trusted, since the current sanitiser silently merges distinct names.
@@ -791,6 +837,8 @@ reproducibly on two machines, and `zyl.buildinfo` matches.
 
 ## 15. Specification amendments
 
+*Status: made. `zyl_specification.txt` is v5.0 and carries §31.*
+
 - §20.6 — replace the roadmap with a pointer to this design; correct
   "highest compatible version" to MVS.
 - §24.2 — add the colon form and the renaming import.
@@ -806,3 +854,66 @@ reproducibly on two machines, and `zyl.buildinfo` matches.
 A new spec section, §31 Package System, carries the normative form of
 §§2–12 of this document, with `spec/16-package-system.md` as its
 structured copy.
+
+---
+
+## 16. Implementation notes (2026-09-23)
+
+Where the implementation differs from the design above. The first five
+are the deliberate deviations `PROGRESS.md` records; the rest are gaps
+found by reading the modules.
+
+- **The standard library stays implicit.** It is package `zyl/std` at the
+  compiler's major, with no manifest: fully visible, never
+  capability-enforced, not a workspace member (§25 wins over the Phase 2
+  sketch).
+- **A lone file is `local/main`@0.** Compiling a file directly needs a
+  package name for its keys, but no capability ceiling is enforced
+  against a file that declared nothing.
+- **Module layout.** A module path `M` in package `P` is
+  `<root of P>/M.zyl`; a package's root module, what `(use acme/json)`
+  names, is the module spelled by the name's last segment
+  (`json.zyl`).
+- **`zyl.buildinfo` hashes the assembly, not the ICNF**, which has no
+  serialised form.
+- **Qualified names are copied per occurrence**, because
+  `type_inference.zyl` compares names with `=` (a pointer comparison) and
+  a shared key pointer woke a dormant, broken code path.
+- **Capabilities, as enforced.** `ffi` guards `ffi-call`, `ffi-pin`,
+  `ffi-unpin` and `use` of `ffi/*`; `actor` guards `spawn`, `send`,
+  `receive` and `actor/*`; `io` guards `file-open`, `file-read`,
+  `file-write`, `file-close`, `read-line`, `core/io` and `io/*`;
+  `secret` guards `use` of `math/secret/*` (not the `Secret` annotation
+  itself); `native` is checked by `zyl build` when a manifest has a
+  `native` block. The `unsafe` capability is accepted in manifests and
+  `:unsafe` is parsed in `use`, but nothing checks one against the other.
+  Pin-region allocation outside `ffi-pin` is not guarded. Only packages
+  with a manifest are checked, and `deny-capabilities` applies only
+  there.
+- **Native objects are not hashed.** The lock has no object-hash field
+  and `buildinfo`'s `native-objects` is always `()`.
+- **Hash finalization** records its inputs in `buildinfo` but does not
+  mix the graph hash into the binary's hash; `buildinfo` does not carry
+  the resolved graph.
+- **Tooling surface** differs from §11's list as described there: no
+  `zyl update <pkg>` and no `--accept-key` (a key change is a hard stop
+  with no accept path in the tool), no `zyl fetch --locked`, no
+  `zyl key new|show`, and `zyl audit` does not print key pins.
+- **cflag allowlist** is exactly: `-O*`, `-D*`, `-std=*`, `-fPIC`,
+  `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong`,
+  `-fno-omit-frame-pointer`; include directories come from
+  `include-dirs`.
+- **No build cache**; every build recompiles the whole graph.
+- **The index URL** (`https://github.com/zyl-lang/index`) is a
+  placeholder; no index repository exists, so the registry path is
+  tested through its pure parts. A `git` dependency is cloned, archived,
+  locked and built (`mvs-git-fetch`), verified with a local `file://`
+  repository.
+- **Paths and URLs** handed to `tar`, `zstd`, `git`, `curl` or `cc` must
+  pass `store-safe`'s character set; a space or quote is refused rather
+  than quoted.
+- **A nested `feature-gate`** is not rejected; it is treated as an
+  ordinary form.
+- **Ed25519 ships inside the compiler bundle** (in Zyl), because
+  verification is mandatory; moving it into the runtime was considered
+  and not done.

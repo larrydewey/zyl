@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Zyl Regression Test Runner
 # Usage: ./run_regression_tests.sh [OPTIONS]
-#   --quick      Run smoke tests only (~30s)
-#   --full       Run all tests (~1min via the self-hosted compiler; was
-#                ~5min+ under target/debug/zyl, and integration/
-#                selfhost-codegen never finished at all within any
-#                practical timeout there -- a Rust-bootstrap
-#                compile-speed issue, not a test problem, see
-#                docs/rust-eviction-plan.md)
-#   --dry-run    List tests without running
-#   --filter N   Run test file N (basename, e.g. "structs")
+#   --quick      Run the unit test and the smoke tests (default)
+#   --full       Run every suite (~45s via the self-hosted compiler),
+#                then the self-hosting fixed-point check (./boot.sh)
+#                unless --no-boot is given
+#   --dry-run    List tests without running (approximate: ignores
+#                --filter and does not list every --full suite)
+#   --filter N   Only run tests whose name contains N (case-insensitive
+#                substring), within the chosen mode -- regression and
+#                stress tests only run in --full, so e.g.
+#                `--full --no-boot --filter structs`
 #   --verbose    Print compiler output
-#   --depth N    Set nesting depth for stress tests (default: 100)
+#   --depth N    Accepted but currently unused
 #   --timeout N  Per-test timeout in seconds (default: 10)
 #   --boot       Force the self-hosting fixed-point verification
 #                (./boot.sh) in any mode

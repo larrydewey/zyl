@@ -1,6 +1,6 @@
 # Chapter 34: The Cryptography Library
 
-`stdlib/math` is about 7,500 lines of Zyl implementing the primitives a
+`stdlib/math` is about 7,600 lines of Zyl implementing the primitives a
 real protocol needs: hashes, AEADs, elliptic curves, RSA, key
 derivation, big-number arithmetic and a random number generator. All of
 it is pure Zyl except two things that cannot be: AES, which uses the
@@ -52,8 +52,9 @@ mebibytes cannot afford an eightfold expansion.
 | `math/bignum/montgomery` | Montgomery multiplication, constant-time `mont-exp` |
 | `math/bignum/barrett` | reduction of a wide value by a fixed modulus |
 | `math/bignum/modular` | modular add/sub, Fermat inverse, Miller–Rabin |
-| `math/rand/crypto` | `getrandom(2)` entropy, fork-safe by construction |
-| `math/rand/deterministic` | seeded ChaCha20 generator for tests and simulations |
+| `math/rand/rand` | helpers shared by the generators (`rand-u64-from-bytes`, `rand-below`); "Rng" is a naming convention (`<name>-fill`, `<name>-next-u64`), not yet a trait |
+| `math/rand/crypto` | `getrandom(2)` entropy (`sysrng-fill`, `sysrng-bytes`, `sysrng-key32`), fork-safe by construction |
+| `math/rand/deterministic` | seeded ChaCha20 generator (`chacharng-new`, ...) for tests and simulations — never for key material |
 | `math/hash/sha2` | SHA-256 |
 | `math/hash/sha512` | SHA-512 |
 | `math/hash/sha3` | SHA3-256, SHA3-512, SHAKE128, SHAKE256 |
@@ -118,9 +119,10 @@ length and reduces the result to one public bit. That single bit *is*
 the declassification — see Chapter 33 — and it reveals only the verdict
 the caller is about to act on.
 
-AES-GCM is there too, but it refuses to run without AES-NI:
-`aes-available` reports 0 and the functions decline. That is
-deliberate, and §34.6 explains why.
+AES-GCM is there too (`gcm-encrypt` and `gcm-decrypt`, which take the
+key length as an extra argument and also return an `Option`), but it
+refuses to run without AES-NI: `aes-available` reports 0 and the
+functions return `None`. That is deliberate, and §34.6 explains why.
 
 ## 34.5 Key Agreement and Derivation
 
@@ -177,6 +179,9 @@ is declassified explicitly. Every such site in the tree:
 | Site | Why the value is public |
 |---|---|
 | `chacha20poly` / `aesgcm` tag check | the AEAD verdict itself (via `ct-eq-words-bool`) |
+| `poly1305-verify`, `hmac-sha256-verify` | the MAC verdict (via `ct-eq-words-bool`) |
+| `ed25519` verification equation | the signature verdict (via `ct-eq-words-bool`) |
+| `rsa` PSS verification | the signature verdict (via `ct-eq-words-bool`) |
 | `modular`'s Miller–Rabin rounds | a composite candidate is rejected and redrawn |
 | `ecdsa` r/s zero tests, RFC 6979 rejection | RFC 6979 §3.2's own retry loop |
 | `ecdsa` verification | runs entirely on public inputs |
@@ -197,14 +202,26 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
 
 - `tests/regression/math-*.zyl` hold published NIST, FIPS and RFC test
   vectors, embedded as S-expressions.
-- `verify/crypto.py` cross-checks *randomised* inputs against Python's
-  `hashlib` and `cryptography` — 414 SHA digests over lengths 0 to 1000,
-  plus AEAD, curve and KDF cases. This is the layer that catches the
-  block-boundary and carry bugs a fixed vector list walks straight past.
-- `verify/timing.py` is a dudect-style statistical leakage harness. It
-  carries a deliberately leaky comparison as a **positive control** and
-  fails if it cannot detect it, so a clean result means the measurement
-  itself worked.
+- `verify/sha2.py` compares 414 digests — SHA-256 and SHA-512 of 207
+  messages, every length 0 to 200 plus 255, 256, 257, 511, 512 and
+  1000 — against `hashlib`.
+- `verify/crypto.py` cross-checks *randomised* inputs (from a fixed
+  seed, so a failure reproduces) against `hashlib` and pyca
+  `cryptography`: SHA3-256/512, SHAKE256 and BLAKE2b digests,
+  ChaCha20-Poly1305 and AES-GCM seals, X25519 agreement, Ed25519 keys
+  and signatures, and HKDF, PBKDF2 and Argon2id outputs. BLAKE3 has no
+  Python reference there and is covered by the published vectors. This
+  is the layer that catches the block-boundary and carry bugs a fixed
+  vector list walks straight past. It needs the `cryptography` package
+  installed.
+- `verify/timing.py` is a dudect-style statistical leakage harness
+  (Welch's t-test over two input classes, per-process wall-clock timing
+  of a loop). It carries a deliberately leaky comparison as a
+  **positive control** and fails if it cannot detect it, so a clean
+  result means the measurement itself worked. It detects gross
+  data-dependence — an early exit, a secret-dependent branch — not a
+  few cycles of cache effect. The regression runner includes it only
+  when asked (`--filter timing`, which runs it with `--quick`).
 
 Every algorithm was first mirrored in Python against its reference —
 CIOS Montgomery, Keccak's index conventions, the RCB complete addition

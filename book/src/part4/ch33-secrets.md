@@ -35,8 +35,29 @@ secret; an arithmetic result with a secret operand is secret; a
 constructor holding a secret produces a secret. A function whose body
 is secret under its own `Secret` parameters is itself
 *secret-returning*, so its callers are tainted too. That set is
-computed by a fixed-point pass before any checking begins, so the
-analysis is linear and terminates whatever the call graph looks like.
+computed by a fixed-point pass before any checking begins, capped at
+eight rounds, so the analysis terminates whatever the call graph looks
+like.
+
+Being secret-returning is a property of the function, not of a
+particular call: a call to one is tainted even when every argument is
+public. Every function in `math/secret/secret` is secret-returning, so
+this is rejected with `E_SECRET_DEBUG`:
+
+```lisp
+(use math/secret/secret)
+
+(defn main ()
+  (begin
+    (print (ct-select 1 10 20))    ; rejected: the result is secret
+    0))
+```
+
+and this is the way to say you mean it:
+
+```lisp
+(print (declassify (ct-select 1 10 20)))   ; 10
+```
 
 A program with no `Secret` annotation anywhere is completely
 unaffected: the seed set is empty, the fixpoint settles in one round,
@@ -56,8 +77,10 @@ And one obligation: a secret reaches C only through `ffi-pin`, in the
 Pin region, or the compiler reports `E_FFI_PIN_REQUIRED`.
 
 `Secret` is deliberately **not** `Send`. A secret crossing into another
-actor is exactly the escape the capability is for, so the type system
-refuses it before the checker even has to look.
+actor is exactly the escape the capability is for. The type layer
+records this (`tc-is-send` answers no for a `TCSecret` type), but
+nothing in type inference consults it yet; what actually refuses a
+secret at `spawn` or `send` is the checker's `E_SECRET_ESCAPE`.
 
 ## 33.3 Writing Branchless Code
 
@@ -164,9 +187,18 @@ way a `memset` before a `free` silently disappears at `-O2`.
 
 Erasure is **explicit**. Zyl does not yet zeroize secret-typed values
 automatically at scope exit; that needs a codegen epilogue hook which
-does not exist. What the compiler does do is notice when you forget: a
-function with a `Secret` parameter that never calls `zeroize` or
-`zeroize-bytes` gets an `E_ZEROIZE_MISSING` warning.
+does not exist. What the compiler does do is notice when you may have
+forgotten: a function that takes a `Secret` parameter, returns a
+*public* result, is not one of the declassifying functions, and never
+mentions `zeroize` or `zeroize-bytes` gets a warning on stderr:
+
+```
+E_ZEROIZE_MISSING: warning: `local/main@0::app::check` consumes a Secret parameter into a public result but never calls zeroize/zeroize-bytes on it
+```
+
+It is a warning, despite the `E_` prefix: the compile continues. A
+function that returns a secret is not warned about, because the secret
+is still live in its caller.
 
 ## 33.6 Why the Check Is Syntactic
 

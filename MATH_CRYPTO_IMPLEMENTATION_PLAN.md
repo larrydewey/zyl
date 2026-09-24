@@ -1,23 +1,55 @@
 # Zyl Math/Crypto Libraries — Implementation Plan
 
-**Status (2026-09-22): implemented, including Phase 0's enforcement
-half; Phase 0's codegen half is still open.**
+## Current Status (verified against the code, 2026-09-23)
 
-`stdlib/math/` now holds the hashes, symmetric and asymmetric
-primitives, KDFs, big-number arithmetic and RNGs described below, with
-published test vectors in `tests/regression/math-*.zyl` and randomized
-cross-verification against Python references in `verify/`. See
-`docs/math-crypto.md` for the delivered library and `PROGRESS.md` for
-the session that built it.
+**Phases 1-5 are implemented; Phase 0's enforcement half is implemented;
+Phase 0's codegen half (zeroize on scope exit, debug redaction) is not.**
+The plan below is kept as the original design; where the built library
+differs, this section is authoritative. The user-facing description of the
+library is `docs/math-crypto.md`.
 
-**Phase 0 landed on 2026-09-22**: `TCSecret` is a real `CapKind`
-(`stdlib/compiler/type_system.zyl` — not Send, FFI_Pinnable through its
-inner type, unifies with `TCCap`), and `stdlib/compiler/secret_check.zyl`
-is a new pipeline pass (driver stage, after `unused-check`) that
-enforces the obligations. A parameter annotated `Secret` — `(k Secret)`
-or `(k (Secret Int))` — seeds a taint that propagates through lets,
-calls, arithmetic and constructors, interprocedurally via a
-secret-returning-function fixpoint. It rejects:
+### What exists
+
+| Area | Files | Notes |
+|------|-------|-------|
+| Word/bit helpers | `stdlib/math/bits.zyl`, `stdlib/math/words.zyl` | Not in the plan. Byte strings are one byte per 8-byte word in arena-backed arrays |
+| Secrets | `stdlib/math/secret/secret.zyl` | `ct-eq`/`ct-ne`/`ct-eq-words`/`ct-ne-words`, `ct-select`, `ct-mask`, `ct-eq-bool`, `ct-eq-words-bool`, `declassify`, `zeroize`, `zeroize-bytes`. Plan put this at `stdlib/secret/secret.zyl` |
+| Bignum | `stdlib/math/bignum/{bignum,montgomery,barrett,modular}.zyl` | Fixed-width naturals in 24-bit limbs, not the planned `[U64; N]`/`Vec<U64>` `Nat`. `barrett.zyl` is extra |
+| RNG | `stdlib/math/rand/{rand,deterministic,crypto}.zyl` | `SystemRng` is `getrandom(2)` with a `/dev/urandom` fallback, stateless and so fork-safe. No Windows path. `ChaCha20Rng` in `deterministic.zyl` |
+| Hashes | `stdlib/math/hash/{sha2,sha512,sha3,blake2b,blake3,hmac}.zyl` | SHA-256 and SHA-512 are split into two files; BLAKE2b and HMAC-SHA256 are extra. No `hash.zyl` trait module. BLAKE3 uses the portable compression function |
+| Symmetric | `stdlib/math/crypto/symmetric/{chacha20,poly1305,chacha20poly,aesgcm}.zyl` | AES-128/256-GCM, AES-NI only (refuses without it). No `aead.zyl` trait module |
+| Asymmetric | `stdlib/math/crypto/asymmetric/{x25519,ed25519,ecdsa,rsa}.zyl` | Curve25519 field arithmetic is pure Zyl, no C helper. ECDSA on P-256, secp256k1, P-384 with RFC 6979 nonces only. RSA-PSS and RSA-OAEP only, keys loaded from components |
+| KDFs | `stdlib/math/crypto/kdf/{hkdf,pbkdf2,argon2}.zyl` | HKDF and PBKDF2 are fixed to SHA-256 (`hkdf`, `pbkdf2-sha256`), not parameterized by hash function. Argon2id blocks are real 64-bit words |
+| Parent module | `stdlib/math/math.zyl` | `(use math/math)` imports the whole tree |
+| C helpers | `runtime/actor_runtime.c` | `zyl_cpuid_features`, `zyl_aesni_available`, `zyl_aes_encrypt_block` (AES-NI via `__attribute__((target))`), `zyl_random_words`/`zyl_random_fill`, `zyl_pin_alloc` (best-effort `mlock`), `zyl_mlock`. No separate `runtime/crypto_*.c` files |
+| Secret checker | `stdlib/compiler/secret_check.zyl`, `TCSecret` in `stdlib/compiler/type_system.zyl` | Runs in `compile-run-checks` (`stdlib/compiler/pipeline.zyl`) after `unused-check`; the LSP runs it too (`stdlib/lsp/document_manager.zyl`) |
+| Tests | `tests/regression/math-*.zyl` (16 files), `tests/regression/secret-capability.zyl`, `tests/compile-fail/secret-*.zyl` (7 files), `tests/integration/math-protocol.zyl` | `--filter math` selects the math files; the interpreter-vs-codegen diff run skips `math-*` for speed |
+| Cross-checks | `verify/sha2.py`, `verify/crypto.py`, `verify/timing.py` | Python references only (no C/OpenSSL references). `timing.py` is dudect-style with a positive control, run by `./run_regression_tests.sh --filter timing` |
+
+### Phase status
+
+| Phase | Status |
+|-------|--------|
+| 0 — `TCSecret`, secret checker, error codes | Done |
+| 0 — CT effect in the type system | Not done: the checker is a syntactic taint walk, not a type-level effect |
+| 0 — zeroize on scope exit, `print`/panic redaction | Not done: needs codegen hooks. `print` of a secret is rejected (`E_SECRET_DEBUG`) instead |
+| 0 — ctgrind/valgrind on compiled output | Not done: `verify/timing.py` is the substitute |
+| 1.1 Bignum | Done (different representation, see above) |
+| 1.2 RNG | Done for Linux; no Windows `BCryptGenRandom`; no TestU01/PractRand run |
+| 1.3 Hash | Done except BLAKE3 SIMD |
+| 2 Symmetric | Done |
+| 3 Asymmetric | Done except RSA key generation |
+| 4 KDF | Done, SHA-256 only for HKDF/PBKDF2 |
+| 5 Parent module and integration | Done: `math.zyl` plus `tests/integration/math-protocol.zyl`; there is no `math_tests.zyl` or `tests/math/` |
+| Trait layer (`Rng`, `CryptoRng`, `Hash`, `Aead`, `RsaKey`, `Secret`) | Not done: every module exposes plain functions. The compiler has trait dispatch (`stdlib/compiler/trait_dispatch.zyl`, which picks an impl by the receiver's runtime tag), but the library was not built around it |
+| `CryptoError` ADT | Not done: failures are reported per function (e.g. `-1`, `None`, `0`) |
+
+### How the secret checker behaves
+
+A parameter annotated `Secret` — `(k Secret)` or `(k (Secret Int))` —
+seeds a taint that propagates through lets, calls, arithmetic and
+constructors, interprocedurally via a secret-returning-function fixpoint.
+It rejects:
 
 | Shape | Code |
 |-------|------|
@@ -29,53 +61,40 @@ secret-returning-function fixpoint. It rejects:
 | Secret passed to `ffi-call` without `ffi-pin` | `E_FFI_PIN_REQUIRED` |
 | Secret consumed into a public result with no `zeroize` (warning) | `E_ZEROIZE_MISSING` |
 
-`declassify` (new, in `math/secret/secret`) is the one explicit way
-out, along with `ct-eq-bool`/`ct-eq-words-bool`, which are recognised
-as declassifying by name so an AEAD can act on its own tag verdict. The
-primitives in `math/secret/secret` now carry `Secret` annotations, so
-the rules apply to every caller of `ct-eq`/`ct-select`/`zeroize`.
-Tests: `tests/regression/secret-capability.zyl` (accepting side) and
-`tests/compile-fail/secret-*.zyl` (one per rejection).
+`declassify` is the one explicit way out, along with
+`ct-eq-bool`/`ct-eq-words-bool`, which are recognised as declassifying by
+name so an AEAD can act on its own tag verdict.
 
-What this plan describes and the implementation does NOT do:
+**Main limitation:** only `stdlib/math/secret/secret.zyl` carries `Secret`
+annotations. Taint crosses a call boundary only where the callee's own
+parameters are annotated, so the AEAD, KDF, signature and bignum entry
+points are not yet under the checker, and an unannotated helper launders a
+secret.
 
-- **Zeroization on scope exit and debug redaction in codegen.** Erasure
-  is still explicit (`zeroize`), with `E_ZEROIZE_MISSING` warning when a
-  terminal consumer forgets it; `print` REJECTS a secret rather than
-  redacting it to `<secret>`. Both of those need a codegen epilogue /
-  print-path hook that does not exist yet.
-- **A type-level CT effect.** The checker is a syntactic taint walk over
-  the pre-lowering Expr tree, not an effect in the unifier: param type
-  annotations in this pipeline are Exprs that type inference consults
-  only loosely, and a real effect would need constraint machinery this
-  inferer does not have. The practical limit is that taint crosses a
-  call boundary only where the callee's own parameters are annotated
-  `Secret`; an unannotated helper laundered a secret. `zyl_pin_alloc`
-  does mlock what it returns.
-- **Separate `runtime/crypto_*.c` files.** The C helpers live in
-  `runtime/actor_runtime.c` under marked sections instead: the link
-  command is hardcoded in three places (boot.sh, `cli-link` in
-  driver.zyl, `zyl_cc_compile`), and adding files to all of them for
-  four functions would have touched the self-hosting path for no gain.
-  AES-NI uses per-function `__attribute__((target(...)))` rather than
-  per-file compiler flags.
-- **BLAKE3 SIMD via FFI.** The portable compression function is used;
-  the reference tree structure and XOF are complete.
-- **ctgrind/valgrind.** `verify/timing.py` is a dudect-style
-  statistical harness with a positive control, wired into
-  `run_regression_tests.sh --filter timing`.
-- **RSA key generation** and the `RsaKey` trait. Keys are loaded from
-  their components; generation needs thousands of exponentiations at
-  this arithmetic's speed. Trait dispatch is also not yet wired in the
-  compiler, so every module here exposes plain functions.
-- **`Secret` trait / user-defined secret types** — same reason.
+### Why the C helpers live in `actor_runtime.c`
 
-Four compiler bugs had to be fixed before any of this could run: no
-bitwise operators at all, `for` ignoring a non-zero initializer,
-`print` truncating Ints to 32 bits, and the AES-NI FFI boundary needing
-stack realignment. Those are described in `PROGRESS.md`.
+The link command is built in several places (`boot.sh`, `cli-link` in
+`selfhost/driver.zyl`, `zyl_cc_compile` in the runtime), and adding
+per-primitive C files to all of them would have touched the self-hosting
+path for a handful of functions. AES-NI uses per-function
+`__attribute__((target(...)))` instead of per-file compiler flags. (The
+runtime also has its own C BLAKE3, `zyl_blake3_hex`, used by the package
+system for content hashes; it is separate from `stdlib/math/hash/blake3.zyl`
+and agrees with it on test vectors.)
+
+Four compiler bugs had to be fixed before the library could run: no
+bitwise operators at all, `for` ignoring a non-zero initializer, `print`
+truncating Ints to 32 bits, and the AES-NI FFI boundary needing stack
+realignment. Those are described in `PROGRESS.md`.
 
 ---
+
+# Original Plan
+
+The rest of this document is the plan as written before implementation.
+File names, the trait layer, the C helper files and the FFI catalog below
+describe the intended design, not the built library; see the status tables
+above.
 
 ## Overview
 
@@ -392,12 +411,14 @@ the order it is worth doing:
    into an unnecessary one.
 3. **Debug redaction** — `print` of a secret emitting `<secret>` rather
    than being rejected, and the same in panic/crash dumps.
-4. **RSA key generation** and trait dispatch (`RsaKey`, `Secret` trait
-   for user-defined secret types), both blocked on trait dispatch in
-   the compiler rather than on anything in this plan.
+4. **RSA key generation**, and the trait layer (`RsaKey`, a `Secret`
+   trait for user-defined secret types, `Rng`/`Hash`/`Aead`). The
+   compiler's trait dispatch (`stdlib/compiler/trait_dispatch.zyl`)
+   dispatches on a receiver's runtime tag; whether that is sufficient for
+   these traits has not been evaluated.
 5. **BLAKE3 SIMD via FFI**, the one primitive still on its portable
    compression function.
 
 ---
 
-*Generated: 2026-09-20 (Security audit patch applied)*
+*Plan generated 2026-09-20; status section updated 2026-09-23.*

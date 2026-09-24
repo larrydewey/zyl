@@ -61,7 +61,8 @@ that builds your program, so the editor and `zyl` never disagree):
 | Folding / selection | Per top-level form; selection expands from the identifier to the enclosing form |
 | Call hierarchy | Incoming and outgoing calls within the document |
 | Inlay hints | Parameter names at call sites |
-| Formatting | Re-indent by parenthesis depth |
+| Code actions | A quick fix for each unbalanced-delimiter diagnostic, inserting the compiler's own fix-it text |
+| Formatting | Re-indent by parenthesis depth, for the whole document or a range |
 
 **From the extension itself:** a TextMate grammar covering every special
 form, bitwise and byte operation, atomic, region, capability and
@@ -97,10 +98,13 @@ compiler can currently report:
   problem, exactly as a command-line build does.
 - **Unused-binding warnings do not appear.** That check reports by
   printing to stdout, which is the server's JSON-RPC channel.
-- **Completion does not offer local variables.** Nothing in the
-  compiler's AST carries a source position, so there is no scope to
-  read at a cursor; every other feature here is built from a text scan
-  plus the real macro-expanded program.
+- **Completion does not offer local variables.** The compiler's AST
+  carries no position-aware scopes (diagnostics are located through a
+  separate table of byte offsets, which gives a position but not a
+  scope), so there is nothing to read at a cursor; every other feature
+  here is built from a text scan plus the real macro-expanded program.
+- **No type hints.** Inlay hints are parameter names only, and hover
+  shows declared signatures rather than inferred types.
 - **Navigation is per-document.** A workspace symbol search covers every
   file you have open, not files you have not opened.
 - **Renaming is textual**, and would rename a local binding that shadows

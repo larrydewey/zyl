@@ -1,6 +1,11 @@
 # Chapter 5: Ownership, Regions, and Capability Types
 
-This chapter explains Zyl's unique memory model — the heart of what makes Zyl both safe and fast. If you understand this chapter, you understand Zyl.
+This chapter explains Zyl's memory model: where values live (regions)
+and who may change them (capabilities). The specification describes a
+complete static system for both. The current compiler implements a
+small, safe part of it, so this chapter shows the rules you write code
+against and, alongside them, what the compiler actually checks today.
+Chapters 16 and 17 are the full reference.
 
 ## 5.1 The Problem Zyl Solves
 
@@ -9,25 +14,27 @@ Every systems language must answer: **who owns this memory, and when is it freed
 | Language | Approach |
 |----------|----------|
 | C/C++ | Manual `malloc`/`free` — programmer responsible, errors common |
-| Rust | Ownership + borrow checker — compile-time, but complex annotations |
+| Rust | Ownership + borrow checker — compile-time, with lifetime annotations |
 | Go/Java/Python | Garbage collector — runtime overhead, non-deterministic pauses |
 | Zyl | **Region inference + capability types** — compile-time, inferred, deterministic |
 
-Zyl's approach: **the compiler proves where every value lives and who can access it**. You rarely write annotations — the compiler infers them.
+Zyl's design goal is that the compiler proves where every value lives
+and who can modify it, without annotations in your source. You never
+write a region or a capability; the compiler infers them.
 
 ## 5.2 Regions — Where Values Live
 
-Every value in Zyl is assigned to exactly one **region** at compile time:
+The specification assigns every value to one of five **regions**:
 
-| Region | Purpose | Lifetime |
-|--------|---------|----------|
-| **Stack** | Local variables, function parameters | Freed when function returns |
-| **Heap** | Escaped values, captured closures, collections | Freed when owning scope ends |
-| **Global** | Top-level `def` constants | Program lifetime (eager init) |
-| **Circular** | Cyclic data structures | Freed by cycle detector |
-| **Pin** | FFI-pinned memory (non-moving) | Manual via `ffi-unpin` |
+| Region | Purpose (spec) | Today |
+|--------|----------------|-------|
+| **Stack** | Values that do not escape | Parameters and `let` locals live in the function's frame, and so does one kind of ADT value (§5.5) |
+| **Heap** | Escaped values, captured closure variables | Every other struct, ADT value and capturing closure, from one bump-allocated arena that lives until the program exits |
+| **Global** | Top-level immutable constants | Not implemented: a top-level `def` is not visible to functions (§5.9) |
+| **Circular** | Cyclic structures | Not implemented |
+| **Pin** | Non-moving memory for FFI | `ffi-pin` copies a value into a separate pin arena (§5.8) |
 
-### Region Rules (from Spec §9.1)
+### Region Rules (Spec §9.1)
 
 ```
 R1. Local stack allocation: If variable does not escape → Stack.
@@ -40,346 +47,430 @@ R7. Global Region: Immutable constants only. Eager initialization. No mutation a
 R8. Pin Region: Non-moving arena. Values physically copied here for FFI. Never compacted.
 ```
 
-### Visual: Region Assignment Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  let x = 42                                                 │
-│       │                                                     │
-│       ▼                                                     │
-│  ┌─────────┐    Does x escape?    ┌─────────┐              │
-│  │ Stack   │ ────── No ──────────► │ Stack   │  (freed on return)
-│  └─────────┘                      └─────────┘              │
-│       │ Yes                                                       
-│       ▼                                                     │
-│  ┌─────────┐    Captured by       ┌─────────┐              │
-│  │ Heap    │ ──── escaping closure? ─► │ Heap   │             
-│  └─────────┘                      └─────────┘             
-│       │ Yes                                                       
-│       ▼                                                     │
-│  ┌─────────┐    Sent to actor?    ┌─────────┐             
-│  │ Heap    │ ────── Yes ────────► │ Heap    │ (Send check)
-│  └─────────┘                      └─────────┘             
-│       │ No                                                        
-│       ▼                                                    
-│  ┌─────────┐    FFI arg?         ┌─────────┐             
-│  │ Pin     │ ────── Yes ────────► │ Pin     │ (via ffi-pin)
-│  └─────────┘                      └─────────┘             
-└─────────────────────────────────────────────────────────────┘
-```
+The compiler meets R1, R2 and R5 conservatively: anything it cannot
+prove stays local goes to the heap, which is always safe. R3 and R4 are
+checked in the specific forms described in §5.7 and §5.8. R6 and R7 are
+not implemented.
 
 ## 5.3 Capability Types — Who Can Access
 
-Regions say *where*; capabilities say *how*. Two fundamental capabilities:
+Regions say *where*; capabilities say *how*. The two fundamental
+capabilities are:
 
 | Capability | Notation | Meaning | Aliasing |
 |------------|----------|---------|----------|
-| **Shared Immutable** | `TCap<T>` | Read-only, any number of references | ✅ Unlimited |
-| **Exclusive Mutable** | `TMut<T>` | Read-write, exactly one reference | ❌ None |
+| **Shared immutable** | `TCap<T>` | Read-only | Any number of references |
+| **Exclusive mutable** | `TMut<T>` | Read-write | Exactly one reference |
 
-**The Invariant (Spec §10):**
+**The invariant (spec §10):**
 > For any memory location: either exactly one `TMut` reference OR any number of `TCap` references. Never both.
 
-Violation → **compile error `E_MUT_CONFLICT`**.
+A violation is the compile-time error `E_MUT_CONFLICT`.
 
-### Additional Capabilities
+The specification also defines `TAtomic<T>` (atomic shared mutation),
+`TBox<T>` (heap ownership) and `TPin<T>` (FFI-pinned). No source
+construct produces `TAtomic` or `TBox` today; `TPin` is the type of an
+`ffi-pin` result.
 
-| Capability | Notation | Use Case |
-|------------|----------|----------|
-| Atomic | `TAtomic<T>` | Thread-safe mutation (actors) |
-| Boxed | `TBox<T>` | Heap allocation with ownership |
-| Pinned | `TPin<T>` | FFI — non-moving memory |
+### How Capabilities Are Decided
 
-### Capability Inference (You Don't Write These)
+You never write a capability. The compiler decides it from the binding
+form:
+
+| You write | Capability | `set!` allowed? |
+|-----------|------------|-----------------|
+| `(let x 42 body)` | `TCap` | No |
+| `(let-mut y 10 body)` | `TMut` | Yes |
+| a function parameter | `TCap` | No |
+| a `for` loop variable | `TMut` | Yes |
+
+`set!` is the only way to mutate anything, and it is checked by name: a
+`set!` whose target is not a `let-mut` (or `for`) variable in scope is
+rejected.
 
 ```lisp
-;; You write:
-(let (x 42) x)
-
-;; Compiler infers:
-;; x : TCap<Int>  (read-only, stack-allocated)
-
-;; You write:
-(let-mut (y 10) (set! y 20) y)
-
-;; Compiler infers:
-;; y : TMut<Int>  (mutable, stack-allocated)
-
-;; You write:
-(defn make-adder (n) (fn (x) (+ x n)))
-
-;; Compiler infers for closure:
-;; n : TCap<Int>  (read-only capture)
-;; closure : TCap<TFun([Int], Int)>  (if non-escaping)
-;; closure : TBox<TFun([Int], Int)>  (if escaping → Heap)
+(defn main ()
+  (let x 1
+    (begin
+      (set! x 2)      ; compile error
+      0)))
 ```
+
+```
+PANIC: E_MUT_CONFLICT: set! target `x` is not a let-mut binding in scope (aliasing invariant: only one TMut reference may exist, and only a let-mut binding is TMut)
+```
+
+The same error appears for a `set!` on a parameter. A function never
+changes its caller's variables; it returns a new value, and the caller
+rebinds:
+
+```lisp
+(use collections/vec)
+
+(defn add-two (v)
+  (vec-push (vec-push v 1) 2))
+
+(defn total (v)
+  (let-mut sum 0
+    (begin
+      (for (i 0) (< i (vec-len v))
+        (begin
+          (set! sum (+ sum (vec-get v i)))
+          (set! i (+ i 1))))
+      sum)))
+
+(defn main ()
+  (let-mut v (vec-create 0 4)
+    (begin
+      (set! v (add-two v))
+      (set! v (add-two v))
+      (print (vec-len v))     ; 4
+      (print (total v))       ; 6
+      0)))
+```
+
+Every value is one machine word, and `let` copies that word. Binding a
+second name to a `let-mut` variable therefore gives an independent
+copy, not an alias:
+
+```lisp
+(defn main ()
+  (let-mut x 1
+    (let y x
+      (begin
+        (set! x 2)
+        (print y)     ; 1
+        (print x)     ; 2
+        0))))
+```
+
+The word for a struct, ADT value or collection is a pointer, so two
+names can refer to the same block. That is safe for structs and ADT
+values because their fields can never change (§5.4). The collections of
+Chapter 4 do write into shared buffers, which is why you should treat
+an old version of a Vec or Map as used up once you have derived a new
+one from it.
 
 ## 5.4 Struct Mutability: Rebind, Don't Mutate
 
-This is a **key difference from Rust/C++**:
+This is a **key difference from Rust and C++**:
 
 ```lisp
 (defstruct Point (x) (y))
 
-;; ❌ FORBIDDEN — direct field mutation
-(set! (struct-get p "x") 10)
-
-;; ✅ ALLOWED — rebind entire struct
-(let-mut (p (make-Point 0 0))
-  (set! p (make-Point 10 20)))
+(defn main ()
+  (let-mut p (make-Point 1 2)
+    (begin
+      (set! p (make-Point 3 4))        ; rebind the whole struct: allowed
+      (print (struct-get p "x"))       ; 3
+      0)))
 ```
 
-**Why?** If `p` is `TCap<Point>` (shared), you can't mutate any field. If `p` is `TMut<Point>` (exclusive), you *could* mutate a field — but then you'd need field-level capabilities. Zyl chooses simplicity: **whole-value rebinding only**.
+```lisp
+(set! (struct-get p "x") 5)            ; compile error
+```
+
+```
+PANIC: E_MUT_CONFLICT: set! target must be a plain variable name bound via let-mut -- direct field/expression mutation is forbidden, rebind the whole variable instead
+```
+
+**Why?** A capability belongs to a binding, not to each field. Allowing
+field mutation would need field-level capabilities and field-level
+aliasing rules. Zyl chooses simplicity: **whole-value rebinding only**.
 
 This means:
 - `let-mut` + `set!` replaces the entire struct
-- Old struct becomes unreachable → region system reclaims it
-- No partial mutation, no field-level aliasing complexity
+- the old struct is simply no longer referenced by that name
+- no partial mutation, and no field-level aliasing to reason about
 
 ## 5.5 Escape Analysis — When Stack Becomes Heap
 
-A value **escapes** if:
-1. **Returned** from function
-2. **Captured** by a closure that escapes
-3. **Sent** to an actor via `send`
-4. **Passed to FFI** via `ffi-pin`
+In the specification, a value **escapes** if it is:
+1. **returned** from its function,
+2. **captured** by a closure that escapes,
+3. **sent** to an actor, or
+4. **passed to FFI** (which requires the Pin region instead).
+
+The current compiler proves non-escape for exactly one shape: a
+`(let x (Variant ...) body)` where every use of `x` in `body` is the
+subject of a `match` or an argument to `print`. That construction is
+placed in the function's stack frame. Every other struct or ADT value is
+heap-allocated.
 
 ```lisp
-;; Stack-allocated (doesn't escape)
-(defn add (a b) (+ a b))
+(deftype Shape (Circle Int) (Square Int))
 
-;; Heap-allocated (returned)
-(defn make-point (x y)
-  (make-Point x y))   ; Point escapes → Heap
+(defn area (s)
+  (match s
+    (Circle r (* 3 (* r r)))
+    (Square n (* n n))))
 
-;; Heap-allocated (captured by escaping closure)
-(defn make-counter ()
-  (let-mut (count 0)
-    (fn () (set! count (+ count 1)) count)))  ; count escapes → Heap
+;; Stack: `s` is only ever the subject of a match.
+(defn local-area ()
+  (let s (Square 4)
+    (match s
+      (Circle r r)
+      (Square n (* n n)))))
 
-;; Heap-allocated (sent to actor)
-(spawn (fn (msg) (send other-actor msg)))  ; msg escapes → Heap
+;; Heap: `s` is passed to a function.
+(defn passed-area ()
+  (let s (Square 4)
+    (area s)))
+
+(defn main ()
+  (begin
+    (print (local-area))     ; 16
+    (print (passed-area))    ; 16
+    0))
 ```
 
-**Stack → Heap promotion** is automatic and safe. The compiler inserts the allocation.
+Both functions print the same thing; only the allocation differs. You
+can see it in the output of `--emit-asm`: `local-area` makes no call to
+`zyl_heap_alloc`. A missed case costs one allocation, never a dangling
+pointer.
 
-## 5.6 Send Capability — Actor Safety
+Heap values are not reclaimed while the program runs; the arena is
+released when the process exits. A long-running program that allocates
+without bound should manage its own arena from `allocator/allocator`
+(`arena-create`, `arena-alloc`), as the compiler itself does.
 
-Actors communicate by message passing. To send a value, it must be **Send-capable**:
+## 5.6 Closure Capture
 
-| Type | Send? | Why |
-|------|-------|-----|
-| `TCap<T>` | ✅ | Immutable, safe to share |
-| `TAtomic<T>` | ✅ | Thread-safe by design |
-| `TMut<T>` | ❌ | Exclusive — can't share across actors |
-| `TBox<T>` | ❌ | Owned — would violate exclusivity |
-| `TPin<T>` | ❌ | FFI-pinned — not for actor transfer |
+The specification makes a read-only capture `TCap`, a mutated capture
+`TMut`, and promotes an escaping closure's captures to the heap.
 
-```lisp
-;; ✅ OK — immutable data
-(spawn (fn (data) ...) (Some "hello"))
-
-;; ❌ COMPILE ERROR — TMut not Send
-(let-mut (x 10)
-  (spawn (fn () x)))  ; Error: E_CAPABILITY_LEAK
-```
-
-## 5.7 FFI Safety — Pin Region
-
-Foreign function calls require **Pin region** + **timeout**:
+In the implementation, a closure copies the values it captures into a
+heap block when it is created. It sees the value each variable had at
+that moment:
 
 ```lisp
-(ffi-call "c_function" (ffi-pin my-int) 1000)  ; timeout in ms
-```
-
-**FFI_Pinnable types** (Spec §16):
-- `Int`, `Float`, `Bool`, `String`
-- `Vec<T>` where T is FFI_Pinnable
-- Structs/ADTs composed solely of FFI_Pinnable types
-
-```lisp
-;; Pin copies value to non-moving arena
-;; Returns stable pointer for C call
-;; Lifetime tied to FFI call scope unless manually managed
-(ffi-pin 42)           ; Pin<Int>
-(ffi-unpin pinned-val) ; Explicit free
-```
-
-## 5.8 Circular Region — Cyclic Data
-
-```lisp
-;; Creating a cycle requires heap allocation + mutation
-(let-mut (a (make-Node 1))
-  (let-mut (b (make-Node 2))
-    (set! a (make-Node 1 b))  ; a.next = b
-    (set! b (make-Node 2 a)))) ; b.next = a
-```
-
-The compiler detects cycles during region inference and assigns **Circular region**. Reclamation uses a cycle detector (not reference counting).
-
-## 5.9 Global Region — Constants Only
-
-```lisp
-(def PI 3.14159)           ; Global region
-(def CONFIG (make-Config ...))  ; Global region (immutable)
-
-;; ❌ FORBIDDEN: mutation of global
-(set! PI 3.0)   ; Error: Global region immutable
-```
-
-## 5.10 Practical Examples
-
-### Example 1: Function Parameters
-
-```lisp
-(defn process (data)      ; data : TCap<Vec<Int>> (read-only)
-  (vec-len data))
-
-(defn modify (data)       ; data : TMut<Vec<Int>> (exclusive)
-  (vec-push data 42))
-```
-
-Caller must have appropriate capability:
-```lisp
-(let-mut (v (vec-create 0 10))
-  (modify v))    ; OK — v is TMut
-
-(let (v (vec-create 0 10))
-  (process v))   ; OK — v is TCap (implicit coercion TMut → TCap for read)
-```
-
-### Example 2: Closure Capture
-
-```lisp
-;; Non-escaping closure: captures by reference (Stack)
-(defn apply-twice (f x)
-  (f (f x)))    ; f doesn't escape
-
-;; Escaping closure: captures promoted to Heap
 (defn make-adder (n)
-  (fn (x) (+ x n)))   ; n captured, closure returned → n : Heap, closure : TBox
+  (fn (x) (+ x n)))            ; n captured read-only
+
+(defn main ()
+  (let-mut n 5
+    (let add (make-adder n)
+      (begin
+        (set! n 100)
+        (print (add 1))        ; 6: the closure holds its own copy of n
+        0))))
 ```
 
-### Example 3: Actor Communication
+> **Compiler defect.** A closure that `set!`s a captured `let-mut`
+> variable is accepted but does not work. This compiles, then crashes or
+> hangs when run:
+>
+> ```lisp
+> (defn main ()
+>   (let-mut n 0
+>     (let bump (fn () (set! n (+ n 1)))
+>       (begin
+>         (bump)
+>         (print n)
+>         0))))
+> ```
+>
+> Keep mutable state in the function that owns it, and have closures
+> return new values instead. Chapter 3 (§3.3) describes the other
+> current closure limitation: a capturing closure cannot yet be passed to
+> another function and called there.
+
+## 5.7 Send Capability — Actor Safety
+
+Actors communicate by message passing (Chapter 9). The specification
+requires everything that crosses an actor boundary to be
+**Send-capable**:
+
+| Capability | Send? | Why |
+|------------|-------|-----|
+| `TCap<T>` | Yes | Immutable, safe to share |
+| `TAtomic<T>` | Yes | Thread-safe by design |
+| `TMut<T>` | No | Exclusive — cannot be shared across actors |
+| `TBox<T>` | No | Owned — would violate exclusivity |
+| `TPin<T>` | No | FFI-pinned — not for actor transfer |
+
+The compiler checks the case you can actually write: a `spawn` closure
+or a `send` message that refers to a `let-mut` variable in scope is
+`E_CAPABILITY_LEAK`.
 
 ```lisp
-;; Actor state must be TCap or TAtomic
-(spawn
-  (fn (mailbox)
-    (let-mut (state 0)
-      (loop
-        (match (receive mailbox)
-          (Inc (set! state (+ state 1)))
-          (Get (send reply-to state)))))))
-
-;; Message must be Send-capable
-(send actor (Inc))      ; OK — Inc is TCap (no payload)
-(send actor (Set 42))   ; OK — Int is TCap
+(defn main ()
+  (let a (spawn (fn () 0))
+    (let-mut x 10
+      (begin
+        (send a 42)            ; OK
+        (send a (Some "hi"))   ; OK
+        (send a x)             ; compile error: x is let-mut
+        0))))
 ```
 
-## 5.11 Common Patterns
+```
+PANIC: E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable
+```
 
-### Pattern: Thread-Local Mutable State
+A `spawn` whose closure captures a `let-mut` variable gets the matching
+message, "spawned closure captures a let-mut (TMut) variable from the
+enclosing scope". To send the current value of a mutable variable, bind
+it with `let` first: `(let snapshot x (send a snapshot))`.
+
+## 5.8 FFI Safety — The Pin Region
+
+A foreign call takes the C function's name, its arguments, and a timeout
+in milliseconds as the last argument:
 
 ```lisp
-;; Use let-mut at top level of function
-(defn process-items (items)
-  (let-mut (count 0)
-    (for (item items) ...)
-    count))
+(defn main ()
+  (begin
+    (print (ffi-call "abs" -5 1000))   ; 5
+    0))
 ```
 
-### Pattern: Builder with Mutation
+The specification requires FFI arguments to be **FFI_Pinnable** and to
+live in the Pin region. FFI_Pinnable types (spec §16) are:
+- `Int`, `Float`, `Bool`, `String`
+- `Vec<T>` where `T` is FFI_Pinnable
+- structs and ADTs composed solely of FFI_Pinnable types
+
+What the compiler enforces today:
+
+- **Pinnability** is checked on every `ffi-call` argument and on
+  `ffi-pin`. A function value, for example, is rejected:
+
+  ```lisp
+  (ffi-pin (fn (x) x))
+  ```
+
+  ```
+  PANIC: E_INVALID_CAPABILITY: FFI value has type Fn which is not FFI_Pinnable
+  ```
+
+- **The Pin region** is not required for ordinary values: an `Int` or a
+  `String` may be passed straight to `ffi-call`, as above. Only a
+  `Secret` must go through `ffi-pin` (§5.9).
+- **The timeout** is dropped by the compiler and not enforced at run
+  time. It must still be written, because the last argument is always
+  taken as the timeout.
+
+`ffi-pin` copies a one-word value into the pin arena and returns a
+stable pointer to it; `ffi-unpin` checks that the pointer came from the
+pin arena and returns the value:
 
 ```lisp
-(defn build-config ()
-  (let-mut (cfg (make-Config defaults))
-    (set! cfg (make-Config ... cfg ...))  ; Rebind with changes
-    cfg))
+(defn main ()
+  (let p (ffi-pin 42)
+    (begin
+      (print (ffi-unpin p))    ; 42
+      0)))
 ```
 
-### Pattern: Shared Read-Only Data
+Chapter 12 covers FFI in practice.
+
+## 5.9 Secrets
+
+One more capability protects key material. A parameter annotated
+`Secret` is tracked through the function, and the compiler rejects uses
+that could leak it: branching on it, indexing with it, printing it,
+sending it to an actor, or passing it to C without `ffi-pin`.
 
 ```lisp
-(def CONFIG (load-config))  ; Global, immutable, TCap
-
-(defn worker (id)
-  (print "Worker " id " using " CONFIG))
+(defn leak ((k Secret))
+  (if (= k 0) 1 2))
 ```
 
-## 5.12 Error Messages You'll See
+```
+PANIC: in `local/main@0::leak::leak`: E_CT_VIOLATION: secret-dependent branch -- an `if` condition is derived from a Secret value; ...
+```
+
+(The qualified name in the message depends on your file name.)
+Chapter 17 (§17.8) is the reference for the Secret rules, and Chapter 33
+the tutorial.
+
+## 5.10 What Is Not Implemented
+
+- **Global region.** A top-level `(def PI 3)` compiles, but a function
+  that refers to `PI` is `E_UNBOUND_VARIABLE`. Use a zero-argument
+  function instead: `(defn pi () 3)`. (At the REPL, `def` does bind a
+  value.)
+- **Circular region.** There is no cycle detection. With immutable
+  fields a program cannot build a cycle out of structs and ADT values
+  anyway: a constructor can only point at values that already exist.
+- **`E_REGION_ESCAPE`** is listed in the specification but never raised,
+  because nothing is ever placed in a region it could escape from.
+
+## 5.11 Error Messages You'll See
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `E_MUT_CONFLICT` | `TMut` and `TCap` alias same memory | Restructure: don't share mutable data |
-| `E_REGION_ESCAPE` | Value escapes its region | Let compiler promote (usually automatic) |
-| `E_CAPABILITY_LEAK` | `TMut` sent to actor / stored in shared struct | Use `TCap`/`TAtomic` for shared data |
-| `E_FFI_PIN_TYPE` | Non-pinnable type passed to `ffi-call` | Wrap in pinnable struct or use primitives |
+| `E_MUT_CONFLICT` | `set!` on a `let` binding, a parameter or a struct field | Use `let-mut`, or rebind the whole value |
+| `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `send` message | Send a `let`-bound copy |
+| `E_INVALID_CAPABILITY` | A non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` | Pass primitives, strings or pinnable data |
+| `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Misuse of a `Secret` | See Chapter 17 |
 
-## 5.13 Mental Model: Regions + Capabilities = Safety
+These diagnostics print as a single `PANIC:` line naming the code; they
+do not yet point at a line and column, as the match and arity errors do.
 
-Think of it as two independent dimensions:
+## 5.12 Mental Model: Regions + Capabilities
+
+Think of it as two independent questions the compiler answers for every
+value:
 
 ```
                     CAPABILITY
               ┌─────────────┬─────────────┐
               │   TCap      │   TMut      │
-              │ (shared)    │ (exclusive) │
+              │ (let, param)│ (let-mut)   │
 REGION  ┌─────┼─────────────┼─────────────┤
-Stack   │     │  ✅ Safe    │  ✅ Safe    │
-        │     │  (read-only)│  (owner)    │
+Stack   │     │  read-only  │  owner may  │
+        │     │             │  set!       │
         ├─────┼─────────────┼─────────────┤
-Heap    │     │  ✅ Safe    │  ⚠️ Single  │
-        │     │  (shared)   │  owner only │
+Heap    │     │  shared,    │  single     │
+        │     │  may be sent│  owner only │
         ├─────┼─────────────┼─────────────┤
-Pin     │     │  ✅ FFI     │  ❌ No      │
-        │     │  (read-only)│             │
+Pin     │     │  via ffi-pin│  no         │
         └─────┴─────────────┴─────────────┘
 ```
 
-**The compiler ensures every (region, capability) combination is valid.**
+In today's compiler the capability column is enforced by name
+(`let` versus `let-mut`), and the region row is chosen conservatively
+(heap unless proven local). The checks are designed to reject only what
+they are sure about, so some violations of the full specification go
+unreported (Chapter 17, §17.11).
 
 ---
 
 ## For Experts: Under the Hood
 
-### Region Inference Algorithm (Two-Pass)
+### Region Inference
 
-**Pass 1: Bottom-up (collect constraints)**
-- Traverse AST from leaves to root
-- Each variable gets a region variable `ρ`
-- Constraints: `ρ₁ ≤ ρ₂` (region subsumption)
+The specification places region inference in Phase 4, before
+monomorphization, but prescribes no algorithm. An earlier general
+two-pass design that assigned a region to every value was removed,
+because nothing downstream used its result. What remains is
+`ri-transform-fns` in `stdlib/compiler/region_inference.zyl`. It runs on
+ICNF after optimization, just before code generation, and rewrites a
+qualifying `let`-bound variant construction (§5.5) into a stack
+allocation. See Chapter 16.
 
-**Pass 2: Top-down (solve + promote)**
-- Solve constraints with Stack ≤ Heap ≤ Circular
-- Promote Stack → Heap where escape detected
-- Assign final regions
+### Capability Checking
 
-### Capability Inference
+`stdlib/compiler/mutability_check.zyl` runs before lowering. It walks the
+program tracking which names are in-scope `let-mut` bindings, rejects a
+`set!` of anything else (`E_MUT_CONFLICT`), and rejects a `spawn` or
+`send` that mentions one (`E_CAPABILITY_LEAK`). The field-mutation form
+`(set! (struct-get ...) ...)` is rejected earlier, by the parser.
+Pinnability (`E_INVALID_CAPABILITY`) is checked during type inference,
+and the Secret rules by `stdlib/compiler/secret_check.zyl`.
 
-- Every binding gets capability variable `κ`
-- Constraints from usage:
-  - Read → `κ = TCap`
-  - Write (`set!`) → `κ = TMut`
-  - Capture by escaping closure → `κ = TCap` + promote to Heap
-  - Send to actor → `κ = TCap` or `TAtomic`
-
-### Aliasing Check (Compile-Time)
-
-At each program point, for each memory location:
-- Count `TMut` references: must be ≤ 1
-- Count `TCap` references: any number
-- If both > 0 → `E_MUT_CONFLICT`
-
-This is a **flow-sensitive** analysis — capabilities can change along control flow paths.
+In the type system, a capability is a `CapKind` inside one type
+constructor, `TCap CapKind Type`; `type_system.zyl` also defines a Send
+predicate, but no pass calls it yet.
 
 ### Determinism
 
-Region and capability assignment is **fully deterministic**:
-- Ordered constraint solving (FNV-1a hashed maps)
-- No heuristics, no randomness
-- Same source → identical region/capability assignment
+Region and capability decisions are pure functions of the program: no
+hashing, heuristics or randomness. The self-hosting fixed point
+(Chapter 31) checks this on the compiler's own source on every build.
 
 ---
 
-**Next:** [Chapter 6: Pattern Matching and Error Handling](ch06-pattern-matching-error-handling.md) — exhaustive `match`, `try/catch` as syntactic sugar, and the `Result`/`Option` patterns.
+**Next:** [Chapter 6: Pattern Matching and Error Handling](ch06-pattern-matching-error-handling.md) — exhaustive `match`, literal and range patterns, `Result`, `Option`, and `error`/`try`.

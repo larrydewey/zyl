@@ -15,9 +15,9 @@
 ; There are no numeric node-kind tags, no projection/downcast accessors,
 ; no raw arena record layouts, and no index-based node tables anywhere.
 ;
-; Bootstrap constraint note: pattern wildcards must be named dummies
-; (`d1`, `d2`, ...) because the Rust bootstrap miscompiles bare `_`
-; patterns. This is spelled `dN` uniformly across stdlib/compiler.
+; Pattern wildcards are written `_` throughout stdlib/compiler, and `_`
+; may repeat within one pattern. (Named dummies `d1`, `d2`, ... were used
+; while the Rust bootstrap, now archived, miscompiled bare `_`.)
 
 (use allocator/allocator)
 

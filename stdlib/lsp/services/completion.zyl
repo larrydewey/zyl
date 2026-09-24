@@ -16,7 +16,7 @@
 ; itself without a second round trip.
 ;
 ; There is still no "local variables in scope" source: that needs real
-; position-aware scoping this compiler's Ast/Expr cannot provide
+; position-aware scoping, which this LSP does not build
 ; (LSP_ARCHITECTURE_PLAN.md's "Wall 1"). Omitted rather than guessed at.
 
 (use core/core)

@@ -4,29 +4,83 @@
 
 The most incredible developer experience for a systems Lisp. Every error is actionable, every location is precise, every suggestion is correct. No Python scripts, no guesswork, no "figure it out yourself."
 
-## Current State (as of 2026-09-13)
+## Current State (as of 2026-09-23)
 
 ### What Works
-- 60+ error codes defined in `docs/errors.md` (from `ZylError` enum in Rust bootstrap)
-- Location format: `Error: match: non-exhaustive pattern match at 9:3-9:4`
-- Compile-fail tests validate error emission
-- Fixed point verified (stage2 == stage3)
+- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 111 distinct codes
+  (phase, severity, default message), covering spec §28 and the §31
+  package codes; `docs/errors.md` lists every one, which module raises
+  it, and which are catalog-only. The catalog is data: checkers write the
+  code into their own message, and nothing looks it up at raise time.
+- **Located diagnostics**: `err-at` in `stdlib/compiler/error_report.zyl`
+  renders `error[CODE]: message`, a `--> path:line:col` line, the source
+  line, a caret under the node's column and a `= help:` fix-it line.
+  Spans come from the runtime's source/span table (`zyl_source_register`,
+  `zyl_span_line`, `zyl_span_col`, `zyl_span_line_text`). A node with no
+  recorded span degrades to the header plus help line. Canonical symbol
+  keys are shortened to the name the user wrote (`err-name`). Used today
+  by the balance check, `duplicate_check.zyl`, `arity_check.zyl`,
+  `exhaustiveness_check.zyl`, `expr_inner.zyl` (`E_MALFORMED_PARAMETER`)
+  and `codegen.zyl` (`E_UNBOUND_VARIABLE`).
+- **Native balance validator**: `sexp_balance.zyl`, a stack-based,
+  string- and comment-aware scan over bracket type, run on the source
+  text before parsing (`compile-check-balance` in `pipeline.zyl`,
+  `check-balanced` in `parser.zyl`), with its own fix-it text
+  (`sb-hint`).
+- **Warnings**: `unused_check.zyl` reports `W_UNUSED_FUNCTION`,
+  `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and `W_SHADOWED_BINDING` on
+  stderr without failing the compile; `secret_check.zyl` reports
+  `E_ZEROIZE_MISSING` at severity 2.
+- **LSP diagnostics**: `stdlib/lsp/compiler_bridge.zyl` turns a balance
+  result or a compiler panic message into an LSP `Diagnostic` with the
+  code, a range (from the first backticked name in the message) and
+  source `zyl`; `lsp_server.zyl` publishes them with
+  `textDocument/publishDiagnostics`, and `services/code_action.zyl`
+  offers a quick fix when a diagnostic carries `fixIt` data (today only
+  balance diagnostics do, with the `sb-hint` text).
+- **REPL**: diagnostics print as the compiler formats them, and an error
+  leaves the session standing (`docs/repl.md`).
+- Compile-fail tests (`tests/compile-fail/`, `tests/packages-fail/`)
+  check that rejected programs are rejected; fixed point verified.
 
 ### What's Broken / Missing
 1. ~~**Paren balance**: no location, no context, no help~~ FIXED
    (2026-09-19): native stack-based validator reports exact line/column
    and a fix-it hint (see Phase 1 below).
-2. **Location precision**: "at 9:3-9:4" is technically precise but clunky to reason about
-3. **No source snippets**: User sees column numbers but not the actual code
-4. **No "did you mean?"**: Typos in variant names, field names, function names go undetected
-5. **No fix-it hints**: No suggested code changes
-6. **No color output**: All stderr is monochrome
-7. **Single error**: First error stops compilation
-8. **No error recovery**: Can't continue past errors
-9. **No LSP structured errors**: IDE integration missing
-10. ~~**No native balance validator**: Currently requires Python script~~
+2. **Coverage of located diagnostics**: only the checks listed above use
+   `err-at`. Every other check raises a plain `PANIC: CODE: message`
+   through `zyl_panic`, with no location.
+3. ~~**No source snippets**~~ PARTLY FIXED: located diagnostics show the
+   offending line with a caret. There is no multi-line context and no
+   underline spanning a whole expression.
+4. **No "did you mean?"**: typos in variant names, field names and
+   function names get no suggestion.
+5. **Fix-it hints** are fixed per check (`= help:` text), not computed
+   suggested edits.
+6. **No color output**: compiler diagnostics are monochrome (the REPL
+   colors its own prompt and results, not the diagnostics).
+7. **Single error**: the first error stops compilation, exit status 1.
+8. **No error recovery**: the compiler cannot continue past an error.
+9. **Many catalog codes are never raised**: type inference does not
+   reject ill-typed programs (`E_TYPE_MISMATCH` and
+   `E_RETURN_TYPE_MISMATCH` are catalog-only), and several runtime codes
+   (`E_ASSERT_FAIL`, `E_USER_ERROR`, `E_DIVISION_BY_ZERO` in compiled
+   code) are not what a failing program prints. `docs/errors.md` has the
+   list.
+10. **Name drift**: `exhaustiveness_check.zyl` raises
+    `E_NON_EXHAUSTIVE_MATCH` for a missing variant, while spec §28 and
+    the catalog name that `E_MATCH_NONEXHAUSTIVE`. The catalog also has
+    duplicate entries (`E_CANNOT_INFER` twice, `E_OUT_OF_MEMORY` twice
+    with different messages, `E_ALIGNMENT_FAILED` and
+    `E_ALIGN_CHECK_FAILED` with the same message).
+11. ~~**No native balance validator**: Currently requires Python script~~
     FIXED (2026-09-19): `sexp_balance.zyl`, wired into the real compile
     path.
+
+The rest of this document is the design target. Sections 2 to 6 below
+describe output and data structures that are **not** implemented unless
+the phase plan marks them done; the actual types are listed under
+"Data Structures".
 
 ## Target State: Incredible Error Experience
 
@@ -95,7 +149,9 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 
 ### 3. Error Code Catalog (Complete)
 
-**Current**: 60 codes in `docs/errors.md`  
+**Current**: 111 codes in `stdlib/compiler/error_codes.zyl`, listed with
+their raising module in `docs/errors.md`, plus the warnings and
+REPL-interpreter codes the catalog does not contain  
 **Target**: All codes with:
 - Full description
 - Common causes
@@ -150,17 +206,33 @@ error[E0382]: use of moved value at foo.zyl:20:8
 
 ```
 stdlib/compiler/
-├── sexp_balance.zyl        # Native balance validator (NEW)
-├── error_codes.zyl         # Error code enum + metadata
-├── error_report.zyl        # Rich error formatting
-├── error_suggest.zyl       # "Did you mean?" engine
-├── error_fixit.zyl         # Fix-it hint generator
-├── error_recovery.zyl      # Error recovery & continuation
-├── error_lsp.zyl           # LSP structured error format
-└── driver.zyl              # Orchestrate error pipeline
+├── sexp_balance.zyl        # Native balance validator            (exists)
+├── error_codes.zyl         # Error code catalog + metadata       (exists)
+├── error_report.zyl        # Located formatting: err-at, snippet (exists)
+├── error_suggest.zyl       # "Did you mean?" engine              (planned)
+├── error_fixit.zyl         # Fix-it hint generator               (planned)
+├── error_recovery.zyl      # Error recovery & continuation       (planned)
+└── error_lsp.zyl           # LSP structured error format         (planned; today
+                            #   stdlib/lsp/compiler_bridge.zyl does this job)
+selfhost/driver.zyl         # CLI entry point; the pipeline itself is
+                            #   stdlib/compiler/pipeline.zyl
 ```
 
 ### Data Structures
+
+What `error_report.zyl` actually defines today (Int fields first, a
+layout rule inherited from the Rust bootstrap):
+
+```zyl
+(deftype ErrorLocation
+  (EL line Int col Int file-path String))
+
+(deftype ErrorSnippet
+  (ES pointer-col Int error-line String))
+```
+
+`err-at` itself takes `(code msg fid off help)` and returns the rendered
+String; there is no `ErrorInfo` record. The design target was:
 
 ```zyl
 (deftype ErrorLocation
@@ -197,6 +269,9 @@ stdlib/compiler/
 
 ### Pipeline Integration
 
+Target (only step 1 exists; it scans the raw source text, before the
+lexer, rather than the token stream):
+
 1. **Lexer**: `sexp_balance.zyl` validates token stream balance
 2. **Parser**: Collects structural errors, continues on error
 3. **Type Inference**: Emits `ErrorInfo` with suggestions
@@ -224,15 +299,17 @@ stdlib/compiler/
       silently swallowing every defn after it into the wrong nesting
       level — never caught because nothing called into this module yet)
       *(2026-09-19)*
-- [ ] `error_report.zyl` - colorized output + source snippets (location +
-      `err-header` formatting exist and are wired into the balance-error
-      path; no colorization or multi-line snippet rendering yet)
-- [x] Integrate into driver pipeline - `compile-to-asm` (selfhost/driver.zyl)
-      and `zyl-parse` (stdlib/compiler/parser.zyl) both call
+- [ ] `error_report.zyl` - colorized output + source snippets. Partly
+      done: `err-at` renders the header, `path:line:col`, the source line,
+      a caret and a help line for the checks listed under "What Works";
+      no colorization, no multi-line context.
+- [x] Integrate into the pipeline - `compile-check-balance`
+      (`stdlib/compiler/pipeline.zyl`, called from `compile-to-exprs`)
+      and `zyl-parse-file` (`stdlib/compiler/parser.zyl`) both call
       `sb-check-string` and report through `report-unbalanced`, which
-      reads its fix-it hint from `sb-hint` (sexp_balance.zyl) — one
-      mechanism feeds both the fatal-error path and any future hint
-      consumer (LSP, REPL) *(2026-09-19)*
+      reads its fix-it hint from `sb-hint` (sexp_balance.zyl); the LSP's
+      `diagnostic-from-balance` reads the same hint *(2026-09-19;
+      pipeline split out of the driver since)*
 
 ### Phase 2: Intelligence
 - [ ] `error_suggest.zyl` - "did you mean?" engine
@@ -241,19 +318,23 @@ stdlib/compiler/
 - [ ] Multiple error aggregation
 
 ### Phase 3: Polish
-- [ ] LSP structured error format
-- [ ] Complete error catalog (all 60+ codes documented)
+- [ ] LSP structured error format (partly: the LSP publishes code, range
+      and message per diagnostic, see "What Works"; no related
+      information or computed suggestions)
+- [ ] Complete error catalog (every code has an entry and a raising
+      module in `docs/errors.md`; per-code causes, examples and fixes are
+      not written)
 - [ ] Color-blind safe mode
 - [ ] CLI flags: `--color`, `--error-format`, `--max-errors`
 
 ## Integration with Rust Eviction
 
-**BLOCKS**: Phase C (REPL) - REPL requires rich error feedback for interactive use
-
-**Rust Eviction Plan Update** (docs/rust-eviction-plan.md):
-- Add Phase A.8: Implement native error system
-- REPL (Phase C) depends on Phase A.8 completion
-- `sexp_balance.zyl` replaces Python balance scripts
+Historical: this plan was written as Phase A.8 of
+`docs/rust-eviction-plan.md`, as a prerequisite for the REPL (Phase C).
+The Rust bootstrap has since been evicted (`archive/rust-bootstrap-2026/`
+is frozen), `sexp_balance.zyl` replaced the Python balance scripts, and
+the REPL shipped (`docs/repl.md`) with the located diagnostics above
+rather than waiting for the rest of this plan.
 
 ## Testing Requirements
 
@@ -265,16 +346,21 @@ stdlib/compiler/
 
 ## Success Criteria
 
-- [ ] Zero Python scripts in build/test path
+- [ ] Zero Python scripts in build/test path (the build still uses
+      `selfhost/assemble.py` for reseeding; the LSP and timing tests are
+      Python)
 - [ ] Every error has location + snippet + suggestion + fix-it
 - [ ] First-time user can fix any error without docs
 - [ ] Color output works in all terminals
-- [ ] REPL shows live balance + errors
-- [ ] LSP integration works in VS Code/Cursor
+- [ ] REPL shows live balance + errors (the REPL continues an unbalanced
+      entry on a new line and reports errors after submission; no live
+      diagnostics while typing)
+- [ ] LSP integration works in VS Code/Cursor (diagnostics are published
+      to the VS Code extension today; the structured format above is not)
 - [ ] Fixed point preserved through all changes
 
 ---
 
-**Status**: Phase 1 (sexp_balance + error_codes + error_report) blocks REPL development.  
+**Status**: Phase 1 done except colorization; Phases 2 and 3 not started.  
 **Owner**: Native Zyl implementation only - no Rust code.  
-**Fixed Point**: Every change must pass `./boot.sh --skip-rust` before commit.
+**Fixed Point**: Every change must pass `./boot.sh` (which uses no Rust) before commit.

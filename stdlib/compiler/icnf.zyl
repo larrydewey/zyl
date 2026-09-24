@@ -541,25 +541,24 @@
     ; state is always a hardcoded 0/null; (ic-expr body) for an EFn
     ; already goes through ic-lambda/ic-hoist exactly like a plain `fn`
     ; value would (see EFn below), no separate spawn-specific closure-
-    ; conversion needed. A CAPTURING spawn body would still just hoist
-    ; to IConst 0 via ic-lambda's existing safety check and crash the
-    ; same way a captured plain `fn` value does — not attempted here,
-    ; matching the closures KNOWN LIMITATION elsewhere in this file.
+    ; conversion needed. A CAPTURING spawn body is not supported:
+    ; ic-lambda lowers it to a closure value (function plus captured
+    ; environment, via ic-lambda-closure), not a bare function pointer,
+    ; and zyl_actor_spawn calls whatever it is handed as code -- such a
+    ; program segfaults at run time.
     (ESpawn body (IFfi "zyl_actor_spawn" (Cons (ic-expr arena body vt) (Cons (IConst 0) Nil))))
-    ; (send actor msg): same gap, no lowering at all. Mirrors the Rust
-    ; bootstrap exactly — msg is passed straight through as an opaque
+    ; (send actor msg): same gap, no lowering at all. Mirrors the archived
+    ; Rust bootstrap — msg is passed straight through as an opaque
     ; value, never boxed/heap-allocated, since none of this corpus's
     ; send calls need to survive being freed on an error path.
     (ESend actor msg (IFfi "zyl_actor_send" (Cons (ic-expr arena actor vt) (Cons (ic-expr arena msg vt) Nil))))
-    ; KNOWN LIMITATION: this just runs the try-body, unconditionally
-    ; discarding the catch clause — a real `try` needs the runtime's
-    ; setjmp/longjmp panic-frame mechanism (zyl_try_push/zyl_try_pop,
-    ; used by zyl_panic to unwind to the nearest try instead of killing
-    ; the process) already exists in the runtime (added for the test
-    ; harness's own panic recovery) -- cg-trycatch below is the first
-    ; thing to actually call it from generated code. `error` (allocator
-    ; .zyl) now calls zyl_panic instead of the always-exits zyl_f_error,
-    ; so it unwinds to the nearest try when one is active.
+    ; (try body (catch e handler)): lowers to ITryCatch, which codegen's
+    ; cg-trycatch turns into the runtime's setjmp/longjmp panic-frame
+    ; mechanism (zyl_try_push/zyl_try_pop, used by zyl_panic to unwind to
+    ; the nearest try instead of killing the process; first added for the
+    ; test harness's own panic recovery). `error` (allocator.zyl) calls
+    ; zyl_panic instead of the always-exits zyl_f_error, so it unwinds to
+    ; the nearest try when one is active.
     (ETryCatch tbody cvar cbody
       (ITryCatch (ic-expr arena tbody vt) (str-intern arena cvar) (ic-expr arena cbody vt)))
     ; (fn (params...) body): lowers to an embedded IFn value — legal
@@ -570,10 +569,12 @@
     ; same "load a known function's address" path cg-load-fnref already
     ; uses for passing a plain named function as a value, which is what
     ; makes calling through it via a local variable work at all (see
-    ; cg-fire-user's indirect-call branch). No free-variable capture: a
-    ; `fn` referencing a name bound in an ENCLOSING scope (not its own
-    ; params) reads as unbound in the lifted function, same as any other
-    ; out-of-scope reference.
+    ; cg-fire-user's indirect-call branch). A `fn` that references names
+    ; bound in an ENCLOSING scope captures them: ic-lambda collects its
+    ; free variables and ic-lambda-closure builds a closure value holding
+    ; the lifted function plus an environment of those values. (It falls
+    ; back to IConst 0 when ic-safe-expr rejects the body, or when a
+    ; capturing `fn` has 6 or more parameters.)
     (EFn _ params body (ic-lambda arena params body vt))
     (EByteLit n (IConst n))
     ; endian is a bare `Endian` ADT value (ELe/EBe), not an Expr -- same

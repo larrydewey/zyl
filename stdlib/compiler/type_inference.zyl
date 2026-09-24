@@ -1320,10 +1320,13 @@
         ; compiler (arena addresses, FFI results, closures' env blocks)
         ; is already represented as a plain TInt, so bytebuf-ptr matches
         ; that existing convention. The Pin-region restriction the plan
-        ; wants (E_BYTEBUF_NOT_PIN) is enforced at runtime instead, since
-        ; this file's inference generally degrades to a fresh type var on
-        ; a mismatch rather than hard-erroring (see e.g. infer-expr-if's
-        ; UErr branch) -- there's no hard-error path here to hook into.
+        ; wants (E_BYTEBUF_NOT_PIN) is NOT enforced anywhere: the code is
+        ; defined in error_codes.zyl but nothing raises it, and the
+        ; runtime's zyl_bytebuf_ptr checks only the buffer's magic tag,
+        ; not its region. It isn't done here because this file's
+        ; inference generally degrades to a fresh type var on a mismatch
+        ; rather than hard-erroring (see e.g. infer-expr-if's UErr
+        ; branch) -- there's no hard-error path here to hook into.
         (inferer-return-int inferer))
         (EAlignCheck
         _expr _align

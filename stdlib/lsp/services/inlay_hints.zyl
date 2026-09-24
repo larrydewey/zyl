@@ -3,14 +3,13 @@
 ;
 ; TYPE inlay hints (the original architecture plan's "let x = ...: T")
 ; are NOT what this file produces -- that needs a type inferred at a
-; specific source position, and nothing in this compiler tracks a
-; position anywhere in Ast/Expr (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
+; specific source position, and this LSP does not run type inference
+; or read the compiler's span table (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
 ; PARAMETER NAME hints ("(add {a:} 1 {b:} 2)") need no type information
-; at all, only call-site argument positions -- which also aren't
-; tracked anywhere (Wall 1 again, but for position generally, not just
-; types), so this file gets them the same way source_index.zyl gets
-; top-level-form positions: a dedicated raw-text scan, independent of
-; the real compiler pipeline.
+; at all, only call-site argument positions -- which the LSP does not
+; take from the compiler either, so this file gets them the same way
+; source_index.zyl gets top-level-form positions: a dedicated raw-text
+; scan, independent of the real compiler pipeline.
 ;
 ; Unlike source_index's flat, depth-counting scan (good enough for
 ; "top-level forms only"), a parameter hint can sit at ANY nesting

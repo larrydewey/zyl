@@ -2,7 +2,7 @@
 ; Module: lsp/services/hover
 ;
 ; Resolve the identifier under the cursor via lsp/source_index (a text
-; scan -- no real position tracking exists in the compiler, see
+; scan -- the LSP does not use the compiler's own positions, see
 ; compiler_bridge.zyl's header), then look the NAME up: first among the
 ; document's own definitions, then among the language's built-in forms
 ; and operators (lsp/builtins). Hovering `shl`, `Secret` or `ffi-pin`

@@ -1,392 +1,438 @@
 # Chapter 7: Generics and Traits
 
-Zyl supports parametric polymorphism (generics) and ad-hoc polymorphism (traits) with full type inference. This chapter covers both.
+Zyl's specification has parametric polymorphism (generics) and ad-hoc
+polymorphism (traits), both resolved at compile time with full type
+inference. The current compiler supports a practical subset: generic
+ADTs, polymorphic functions written without annotations, and trait
+`impl` blocks called through qualified names. This chapter shows what
+works, and what the specified syntax does today. Chapters 19 and 20 are
+the full reference.
 
 ## 7.1 Generic Functions
 
-Type parameters are **uppercase identifiers** in parameter position:
+### Polymorphic Functions: Leave Parameters Unannotated
+
+Every Zyl value is one 64-bit word, so a function whose parameters carry
+no type annotation already accepts arguments of any type. Type
+inference analyzes such a function separately at each call site, with
+that site's argument types.
 
 ```lisp
-(defn identity ((T) x) x)
+(defn first-of (a _) a)
 
-(defn pair ((T) (U) x y)
-  (tuple x y))
+(defn choose (c t f)
+  (if c t f))
 
-(defn first ((T) (U) p)
-  (match p (Tuple a b a)))
+(defn smaller (a b)
+  (if (< a b) a b))
+
+(defn main ()
+  (begin
+    (print-int (first-of 5 "s"))             ; 5
+    (print-string (first-of "a" 2))          ; a
+    (print-string (choose true "yes" "no"))  ; yes
+    (print-int (smaller 3 5))                ; 3
+    0))
 ```
 
-### Syntax
+Two things to know:
+
+- **Print polymorphic results with a typed printer.** The type of a
+  polymorphic call's result does not flow back into `print`, so
+  `(print (first-of "a" 2))` prints the string's address. `print-int`,
+  `print-string` and `print-float` say what to print.
+- **Operators are not overloaded.** `<` compares machine words. On two
+  strings, `smaller` compares their addresses. (On two struct or ADT
+  values the comparison operators do compare fields — Chapter 4, §4.9.)
+
+The core library already defines `identity`, `min`, `max`, `abs`,
+`compose` and a few others. Defining a function with one of those names
+is `E_DUPLICATE_DEFINITION`, so pick another name (as `smaller` does
+here).
+
+### The Specified Syntax
+
+The specification (§6.1) declares type parameters explicitly, each in
+its own parentheses and optionally with trait bounds:
 
 ```lisp
-(defn name ((TypeParam1) (TypeParam2) ... (param1 Type1) (param2 Type2) ...) body)
+(defn identity ((T) x) x)                       ; one type parameter
+(defn smallest ((T : Ord) a b) (if (< a b) a b)) ; with a bound
 ```
 
-- Type params: `(T)`, `(U)`, etc. — uppercase, in their own parens
-- Value params: `(name)` or `(name Type)` — optional type annotation
-- Multiple type params: separate parens `(T) (U)`
-- Type params can be interleaved with value params
+**Do not write these today.** The compiler does not implement them:
 
-```lisp
-;; Two type params, two value params
-(defn choose ((T) (U) cond t f)
-  (if cond t f))
+| Written | What happens |
+|---------|--------------|
+| `((T) x)` | `E_MALFORMED_PARAMETER`: `(T ...)` is not a parameter |
+| `((T : Ord) a b)` | The lexer reads `: Ord` as the keyword `:Ord`, so `(T :Ord)` becomes an ordinary *value* parameter named `T`. The function then takes three arguments, and `(smallest 3 5)` is `E_ARITY_MISMATCH`. |
 
-;; Type param with trait bound
-(defn sort ((T : Ord) xs) ...)
-
-;; Multiple bounds
-(defn print-sorted ((T : Ord Show) xs) ...)
+```
+PANIC: error[E_MALFORMED_PARAMETER]: `(T ...)` is not a parameter - write a name, or (name Type)
 ```
 
-### Type Parameter Rules
-
-1. **Scoped to function** — `T` in one function ≠ `T` in another
-2. **Positional but canonicalized** — monomorphization names are alphabetical (see §7.4)
-3. **Same-type constraint** — if `T` appears twice, both must be same concrete type
-4. **Only in type positions** — variant fields, param types, collection types, return types
-4. **Not runtime values** — no `if (int? T) ...`
-
-```lisp
-;; Same-type constraint
-(deftype Pair (Make T T))  ; Both fields same type
-(Pair 1 2)      ; OK: Pair<Int>
-(Pair 1 "hi")  ; ERROR: Int vs String
-```
-
-### Calling Generic Functions
-
-Type arguments are **inferred from call site**:
-
-```lisp
-(identity 42)           ; T = Int
-(identity "hello")      ; T = String
-(pair 1 "hi")           ; T = Int, U = String
-(choose true 10 20)     ; T = Int (from 10 and 20)
-```
-
-**Every type parameter must have evidence** at some call site, or it's a compile error `E_CANNOT_INFER` (unless bounded by a trait with finite instances).
+The specification's rules for type parameters — scoped to one function,
+the same concrete type for every occurrence, only in type positions —
+describe the intended design; since the syntax is not accepted, none of
+them is checked yet.
 
 ## 7.2 Generic ADTs
 
-Type parameters collected from uppercase variant fields:
+Generic ADTs work and are tested. A field type that is an uppercase
+name that is not a known type is a type parameter:
 
 ```lisp
-(deftype Option
-  (Some T)
-  None)
-
-(deftype Result
-  (Ok T)
-  (Err E))
-
-(deftype List
-  (Cons T (List T))
-  Nil)
-
-(deftype Tree
-  (Node T (Tree T) (Tree T))
-  Leaf)
+(deftype Maybe (Just T) (Nothing))            ; one parameter, T
+(deftype Outcome (Success T) (Failure E))     ; two parameters, T and E
+(deftype Pair (Make T T))                     ; T twice: one parameter
+(deftype Tree (Node T (Tree T) (Tree T)) (Leaf))
 ```
 
-**Duplicates merged** — same-type constraint applies:
+The core library's `Option`, `Result` and `List` are declared the same
+way. One generic ADT can be used at several types in the same program:
 
 ```lisp
-(deftype Result (Ok T) (Err T))  ; Both T → same type for Ok and Err
-(Result (Ok 1) (Err "x"))  ; ERROR: Int vs String
+(deftype Maybe (Just T) (Nothing))
+
+(defn maybe-or (m d)
+  (match m
+    (Just x x)
+    (Nothing d)))
+
+(defn count-items (xs)
+  (match xs
+    (Nil 0)
+    (Cons _ rest (+ 1 (count-items rest)))))
+
+(defn main ()
+  (begin
+    (print-int (maybe-or (Just 4) 0))                ; 4
+    (print-string (maybe-or (Just "hi") "none"))     ; hi
+    (print-string (maybe-or (Nothing) "default"))    ; default
+    (print (count-items (Cons 1 (Cons 2 Nil))))      ; 2
+    (print (count-items (Cons "a" Nil)))             ; 1
+    0))
 ```
 
-### Constructing Generic ADTs
-
-```lisp
-(Some 42)           ; Option<Int>
-(Some "hi")        ; Option<String>
-(Ok 1)             ; Result<Int, E>
-(Err "x")          ; Result<T, String>
-(Cons 1 Nil)       ; List<Int>
-```
-
-Type inferred from field values.
+The type arguments are inferred from the field values; you never write
+them. The specification's same-type constraint — `(Make 1 "hi")` should
+be rejected because both fields are `T` — is not enforced: it compiles.
+Generic *structs* are not supported (§6.5 of the specification).
 
 ## 7.3 Traits — Ad-Hoc Polymorphism
 
-Traits define shared behavior across types. Like Rust traits, Haskell typeclasses.
+A trait names a set of methods that several types can implement.
 
 ### Declaration
 
 ```lisp
-(trait Eq
-  (eq (a T) (b T) Bool))
-
-(trait Ord
-  (lt (a T) (b T) Bool)
-  (gt (a T) (b T) Bool))
-
-(trait Show
-  (show (x T) String))
-
-(trait Add
-  (add (a T) (b T) T))
+(trait Area
+  (area self))
 ```
 
-- Methods are functions with `self` as first param (convention: `a`, `x`, `self`)
-- Type parameter `T` is the implementing type
-- Can have multiple methods
-- Can have supertrait bounds: `(trait Ord (lt ...) (gt ...) : Eq)`
+A declaration lists the method names and their parameters. In the
+current compiler it serves mainly as documentation: the method list is
+not recorded, and an `impl` is not checked against it. It does matter
+in one case, the orphan rule (§7.4).
 
-### Implementation
+### Implementation and Calls
 
 ```lisp
-(impl Eq Int
-  (defn eq (a b) (== a b)))
+(defstruct Rect (w) (h))
+(defstruct Circle (r))
 
-(impl Eq String
-  (defn eq (a b) (== a b)))
+(trait Area
+  (area self))
 
-(impl Ord Int
-  (defn lt (a b) (< a b))
-  (defn gt (a b) (> a b)))
+(impl Area Rect
+  (defn area (self) (* (struct-get self "w") (struct-get self "h"))))
 
-(impl Show Int
-  (defn show (x) (int-to-string x)))
+(impl Area Circle
+  (defn area (self) (* 3 (* (struct-get self "r") (struct-get self "r")))))
+
+(defn total-area (a b)
+  (+ (Area.area a) (Area.area b)))
+
+(defn main ()
+  (begin
+    (print (Area.area (make-Rect 3 4)))                    ; 12
+    (print (Area.area (make-Circle 2)))                    ; 12
+    (print (total-area (make-Rect 1 2) (make-Circle 1)))   ; 5
+    0))
 ```
 
-### Coherence Rules (Enforced at Compile Time)
+- **Call a method by its qualified name**, `(Trait.method receiver
+  args...)`. A bare `(area r)` does not find it: it fails at link time
+  with an undefined reference.
+- **The receiver is the first argument.** Calling it `self` is
+  convention. Further parameters follow it as usual:
+  `(defn scale (self k) ...)`, called as `(Scale.scale r 3)`.
+- The method's parameters are whatever the `defn` inside the `impl`
+  says; there are no default method bodies.
 
-1. **One impl per (Trait, Type) pair** — no overlapping impls
-2. **Orphan rule** — impl valid only if trait OR type defined in current crate
-3. **No conflicting impls** — enforced globally
+### How a Call Finds Its Method
 
-Violation → `E_DUPLICATE_IMPL` or `E_TRAIT_NOT_FOUND`.
-
-### Trait Bounds in Generics
-
-```lisp
-;; T must implement Ord
-(defn min ((T : Ord) a b)
-  (if (lt a b) a b))
-
-;; Multiple bounds
-(defn print-min ((T : Ord Show) a b)
-  (print (show (min a b))))
-```
-
-### Trait Resolution
-
-Done in **Phase 3 (Type Inference)**:
-1. Collect all trait bounds from function signatures
-2. At each call site, resolve concrete types
-3. Look up impl for each (Trait, ConcreteType)
-4. Verify all bounds satisfied
-5. Substitute trait methods with concrete impls
-
-Recursive bounds supported: `(trait Foo (bar () (Foo T)) : Bar)`.
-
-## 7.4 Monomorphization — How Generics Become Concrete
-
-For each call site of a generic function, the compiler:
-
-1. **Infers concrete types** for ALL type parameters from argument types
-2. **Verifies trait bounds** are satisfied by concrete types
-3. **Generates specialized function** with canonical name:
-   ```
-   functionName_Type1_Type2_...
-   ```
-   Types sorted **alphabetically** for determinism:
-   - `pair<Int, String>` and `pair<String, Int>` → both become `pair_Int_String`
-4. **Caches** for reuse at other call sites with identical types
-
-### Examples
+The specification resolves trait calls statically, from types. The
+current compiler instead turns each `(Trait.method recv ...)` into a
+`match` on the receiver's runtime tag, with one arm per implementing
+type. That works well for structs, because each struct has its own tag:
 
 ```lisp
-(min 3 5)       → min_Int
-(min "a" "b")   → min_String
-(pair 1 "hi")   → pair_Int_String
-(pair 1.0 2.0)  → pair_Float
-```
-
-### Deterministic Naming
-
-Canonical name = `fn_` + sorted type names joined by `_`:
-- `fn<Int, String>` → `fn_Int_String`
-- `fn<String, Int>` → `fn_Int_String` (same!)
-- `fn<Int, Int>` → `fn_Int_Int`
-
-This guarantees **same source → identical binary** regardless of call order.
-
-## 7.5 Generic ADT Monomorphization
-
-Each concrete instantiation gets a unique type:
-
-```lisp
-(deftype Option (Some T) None)
-
-(Some 42)        ; Instantiates Option<Int> → Option_Int
-(Some "hi")      ; Instantiates Option<String> → Option_String
-```
-
-Monomorphization applies to:
-- ADT constructors: `Some_Int`, `Some_String`
-- Pattern matching: match on `Option_Int` vs `Option_String`
-- Derived trait impls: `Eq` for `Option_Int` ≠ `Eq` for `Option_String`
-
-## 7.6 Deriving Traits Automatically
-
-```lisp
-(defstruct+ Point
-  (x)
-  (y)
-  (:derive [Eq Ord Show]))
-
-(derive Option [Eq])      ; Requires T: Eq
-(derive Result [Eq])      ; Requires T: Eq, E: Eq
-```
-
-**Constraints:**
-- All fields must implement the trait
-- For generic ADTs: all type parameters must implement the trait
-- Error if constraint fails: `E_TRAIT_NOT_DERIVABLE`
-
-### Supported Derivable Traits
-
-| Trait | Purpose | Required by Fields |
-|-------|---------|-------------------|
-| `Eq` | Structural equality | `Eq` |
-| `Ord` | Ordering | `Ord` |
-| `Show` | Human-readable string | `Show` |
-| `Debug` | Debug representation | `Debug` |
-| `Clone` | Deep copy | `Clone` |
-| `Hash` | Hashable | `Hash` |
-
-### Standalone Derive
-
-```lisp
-(derive MyType [Eq Ord])
-```
-
-Must appear in same module as type. Useful for types from other modules or ADTs.
-
-## 7.7 Traits with Capability Types
-
-Traits work with capability types:
-
-```lisp
-(trait Clone
-  (clone (x T) T))  ; Returns owned T
-
-(impl Clone (TCap T)
-  (defn clone (x) x))  ; TCap is immutable — clone = identity
-
-(impl Clone (TMut T)
-  (defn clone (x) (deep-copy x)))  ; TMut needs actual copy
-```
-
-### Trait Objects? Not Yet
-
-Zyl does **not** yet support trait objects (`dyn Trait`). All trait usage is monomorphized (static dispatch). Dynamic dispatch is planned.
-
-## 7.8 Practical Examples
-
-### Example: Generic Map Function
-
-```lisp
-(defn map ((T) (U) f xs)
-  (match xs
-    Nil Nil
-    (Cons x rest (Cons (f x) (map f rest)))))
-
-;; Usage:
-(map (fn (x) (* x 2)) (Cons 1 (Cons 2 Nil)))
-;; Infers: T=Int, U=Int
-;; Monomorphizes: map_Int_Int
-```
-
-### Example: Trait-Bounded Sort
-
-```lisp
-(trait Ord
-  (lt (a T) (b T) Bool))
-
-(defn quicksort ((T : Ord) xs)
-  (match xs
-    Nil Nil
-    (Cons pivot rest
-      (let (less (filter (fn (x) (lt x pivot)) rest))
-        (let (greater (filter (fn (x) (not (lt x pivot))) rest))
-          (append (quicksort less) (Cons pivot (quicksort greater))))))))
-```
-
-### Example: Heterogeneous Collections via Traits
-
-```lisp
-(trait Drawable
-  (draw (self T) Unit))
-
 (defstruct Circle (r))
 (defstruct Rect (w) (h))
 
-(impl Drawable Circle
-  (defn draw (self) (print "Circle " (struct-get self "r"))))
+(trait Describe (describe self))
 
-(impl Drawable Rect
-  (defn draw (self) (print "Rect " (struct-get self "w") "x" (struct-get self "h"))))
+(impl Describe Circle
+  (defn describe (self) (begin (print-string "circle") (struct-get self "r"))))
 
-;; Can't put in Vec directly (different types)
-;; Use ADT wrapper:
-(deftype Shape (CircleShape Circle) (RectShape Rect))
+(impl Describe Rect
+  (defn describe (self) (begin (print-string "rect") (* (struct-get self "w") (struct-get self "h")))))
 
-(impl Drawable Shape
-  (defn draw (self)
-    (match self
-      (CircleShape c (draw c))
-      (RectShape r (draw r)))))
+(defn describe-all (xs)
+  (match xs
+    (Nil 0)
+    (Cons x rest (+ (Describe.describe x) (describe-all rest)))))
+
+(defn main ()
+  (print (describe-all (Cons (make-Circle 2) (Cons (make-Rect 3 4) Nil)))))
+;; circle
+;; rect
+;; 14
 ```
 
-## 7.9 Error Messages
+A list of different struct types, each dispatched to its own impl,
+behaves like dynamic dispatch over a closed set of types.
 
-| Error | Cause |
-|-------|-------|
-| `E_CANNOT_INFER` | Generic param has no call-site evidence |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | Concrete type doesn't implement required trait |
-| `E_UNKNOWN_GENERIC_PARAM` | Reference to undeclared type parameter |
-| `E_TRAIT_NOT_DERIVABLE` | Field doesn't implement derivable trait |
-| `E_DUPLICATE_IMPL` | Two impls for same (Trait, Type) |
-| `E_TRAIT_NOT_FOUND` | No impl for required trait |
+It does not work for every combination:
+
+- **A trait with exactly one impl** always works, whatever the type:
+  a struct, an ADT or a primitive such as `Int`.
+- **Several impls where one is for a multi-variant ADT or a primitive
+  type** dispatch wrongly. An ADT's name is not one of its variants, so
+  its arm catches every receiver. With `(impl Show Int ...)` next to
+  `(impl Show Point ...)`, a `Point` receiver runs the `Int` impl.
+
+> **Compiler defect.** A trait call written directly as the first
+> argument of `struct-get` is not rewritten, and the program fails to
+> link:
+>
+> ```lisp
+> (struct-get (Scale.scale r 3) "h")     ; undefined reference to `_ZYL_Scale_scale'
+> ```
+>
+> Bind the result first: `(let r2 (Scale.scale r 3) (struct-get r2 "h"))`.
+
+Until dispatch uses static types, implement traits for structs, or give
+a trait over an ADT or primitive type a single impl.
+
+### The Standard Library's Trait
+
+The standard library defines one trait, `OutputStream` in `io/io`, with
+impls for `Stdout` and `StringBuffer`:
+
+```lisp
+(use io/io)
+
+(defn main ()
+  (let out (make-stdout)
+    (begin
+      (OutputStream.write out "hello\n")
+      (OutputStream.flush out)
+      0)))
+```
+
+## 7.4 Coherence Rules
+
+The specification (§5.3) has three coherence rules:
+
+```
+C1. One impl per (Trait, Type) pair.
+C2. Orphan rule: impl valid only if trait or type defined in current crate.
+C3. No conflicting impls.
+```
+
+- **C1** is not checked by a compiler pass. Two `(impl Area Rect ...)`
+  blocks both define the same function, and the build fails in the
+  assembler with "symbol ... is already defined", not with
+  `E_DUPLICATE_IMPL`.
+- **C2** applies at the package boundary (spec §24.6) and is enforced:
+  an impl is allowed only if your package defines the trait or the
+  type. Otherwise it is `E_PKG_ORPHAN_IMPL`. This is where a `trait`
+  declaration matters: `(impl Describe Int ...)` with no
+  `(trait Describe ...)` in your program is rejected, because neither
+  the trait nor `Int` is yours.
+
+  ```
+  PANIC: E_PKG_ORPHAN_IMPL: trait: impl of Describe for Int where neither the trait nor the type is local to local/main
+  ```
+
+- **C3** cannot arise except as a C1 duplicate: an `impl` names a single
+  type, so generic impls such as `(impl Container (Vec T) ...)` cannot
+  be written.
+
+## 7.5 Trait Bounds and Resolution
+
+In the specification, a bound such as `(T : Ord)` requires every call
+site's concrete type to implement the trait, and trait resolution
+happens during type inference: collect the bounds, substitute the
+concrete types at each call, find the impl, verify the bound. Since
+bounds cannot be written (§7.1), none of this is checked, and a
+`Trait.method` call with no impl at all fails at link time rather than
+with `E_TRAIT_NOT_FOUND`.
+
+## 7.6 Monomorphization
+
+The specification generates a specialized copy of a generic function for
+each distinct combination of concrete types, named
+`functionName_Type1_Type2...` with the type names sorted alphabetically
+so the name does not depend on parameter order:
+
+```
+(smallest 3 5)       → smallest_Int
+(smallest "a" "b")   → smallest_String
+(pair 1 "hi")        → pair_Int_String
+```
+
+The current compiler does not need these copies. Because every value is
+one word, a polymorphic function is compiled once, and every call site
+shares that body; only type inference is repeated per call site. The
+per-type functions that do exist are impl methods: each method body
+becomes a function named `Trait.method_Type`, such as `Area.area_Rect`.
+Chapter 19 describes the naming and its limits.
+
+## 7.7 Deriving Traits
+
+The specification lets you derive `Eq`, `Ord`, `Show`, `Debug`, `Clone`
+and `Hash`, inline on `defstruct+` or with a standalone `derive`:
+
+```lisp
+(defstruct+ Pt (x) (y) (:derive [Eq Ord]))
+(derive Pt Eq Ord)
+```
+
+Both forms are accepted and currently do nothing: no impl is generated,
+no field requirement is checked, and even an unknown trait name is
+accepted. You get the same behavior with or without them:
+
+- `==` and `!=` compare two struct or ADT values field by field;
+- `<`, `>`, `<=` and `>=` compare the fields lexicographically;
+- both are shallow: a string or nested-value field is compared by
+  address;
+- `print` of a struct prints its address — there is no derived `Show`.
+
+```lisp
+(defstruct Pt (x) (y))
+
+(defn main ()
+  (let a (make-Pt 1 2)
+    (let b (make-Pt 1 2)
+      (let c (make-Pt 2 0)
+        (begin
+          (print (== a b))    ; 1
+          (print (== a c))    ; 0
+          (print (< a c))     ; 1 (1 < 2 in the first field)
+          0)))))
+```
+
+## 7.8 Traits and Capability Types
+
+The specification does not define impls on capability types, and
+capability types cannot be written in source (Chapter 5). An `impl`
+names a plain type: a struct, an ADT or a primitive.
+
+There are no trait objects (`dyn Trait`) either. Where you would use
+one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
+
+```lisp
+(defstruct Circle (r))
+(defstruct Rect (w) (h))
+
+(deftype Shape (CircleShape Circle) (RectShape Rect))
+
+(defn shape-area (s)
+  (match s
+    (CircleShape c (* 3 (* (struct-get c "r") (struct-get c "r"))))
+    (RectShape r (* (struct-get r "w") (struct-get r "h")))))
+
+(defn main ()
+  (begin
+    (print (shape-area (CircleShape (make-Circle 1))))   ; 3
+    (print (shape-area (RectShape (make-Rect 2 5))))     ; 10
+    0))
+```
+
+## 7.9 Practical Example: A Generic Map
+
+```lisp
+(defn my-map (f xs)
+  (match xs
+    (Nil Nil)
+    (Cons x rest (Cons (f x) (my-map f rest)))))
+
+(defn double (x) (* x 2))
+
+(defn main ()
+  (print (list-sum (my-map double (Cons 1 (Cons 2 (Cons 3 Nil)))))))   ; 12
+```
+
+`my-map` works for any element type. Pass it a named function or a
+`fn` that captures nothing; a capturing closure cannot yet be passed as
+an argument (Chapter 3, §3.3). The module `collections/collections` has
+a ready-made `list-map`.
+
+## 7.10 Error Messages
+
+| Error | Cause | Status |
+|-------|-------|--------|
+| `E_MALFORMED_PARAMETER` | `((T) x)`: a type-parameter group | raised |
+| `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
+| `E_DUPLICATE_DEFINITION` | a function with the same name as one in the core library | raised |
+| `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type is yours | raised |
+| `E_CANNOT_INFER` | generic parameter with no call-site evidence | in the specification; never raised |
+| `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type lacks a bound's trait | in the specification; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait | in the specification; never raised |
+| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | in the specification; fails in the assembler instead |
+| `E_TRAIT_NOT_FOUND` | no impl for a required trait | in the specification; fails at link time instead |
 
 ---
 
 ## For Experts: Under the Hood
 
-### Type Inference with Traits
+### Per-Call-Site Inference
 
-1. **Unification** generates type variables with trait constraints
-2. **Constraint solving** collects all `T : Trait` requirements
-3. **Trait resolution** at call sites: substitute concrete types, lookup impls
-4. **Monomorphization** generates specialized code
+For a function with unannotated parameters, type inference does not
+generalize a type scheme. It infers the body again at each call site
+with that site's argument types, and caches the result under a key built
+from the function name and the argument types. A recursive call with the
+same argument types reuses the cached result. Type errors found this way
+are not reported (Chapter 15); the inferred types guide code generation
+(print formats, float arithmetic) but do not reject programs.
 
-### Canonical Naming Algorithm
+### Canonical Naming
 
-```python
-def canonical_name(base_name, type_map):
-    # type_map: {T: Int, U: String}
-    types = sorted(type_map.values(), key=lambda t: t.name)
-    return f"{base_name}_{'_'.join(types)}"
-```
+`canonical-name-from-type-map` in `stdlib/compiler/monomorphization.zyl`
+builds a name from the base name and the concrete type names,
+deduplicated, sorted and joined with `_`. The name the linker finally
+sees is mangled from the canonical symbol key of the package system
+(spec §31.2); for `Area.area_Rect` in a program `shapes.zyl` it is along
+the lines of `zy_local_x2Fmain_0__shapes__Area_x2Earea_...Rect`.
 
-This runs in Phase 5 (Monomorphization), after type inference.
+### Trait Dispatch
 
-### Trait Method Dispatch
+`stdlib/compiler/trait_dispatch.zyl` runs after monomorphization. It
+rewrites each qualified call into a `match` on the receiver whose arms
+are named after the implementing types. Each arm calls that type's
+lifted method. The arm names are ordinary constructor patterns, which is
+why a struct (a one-variant ADT named after itself) dispatches correctly
+and a multi-variant ADT's name acts as a catch-all.
 
-- **Static dispatch**: Trait methods inlined or direct-called in monomorphized code
-- **No vtables**, no dynamic dispatch (yet)
-- **Zero overhead** compared to hand-written specialized functions
+### Representation
 
-### Generic ADT Representation
-
-Each monomorphized ADT is a distinct type:
-- `Option_Int` = tag + Int
-- `Option_String` = tag + String pointer
-- Different sizes, different layout
+Every generic ADT instance has the same layout — a tag word followed by
+one word per field — so `Option` of `Int` and `Option` of `String` share
+constructors and `match` code. The specification's distinct per-instance
+types (`Option_Int`, `Option_String`) exist only in type inference.
 
 ---
 

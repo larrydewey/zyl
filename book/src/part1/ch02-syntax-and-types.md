@@ -2,6 +2,8 @@
 
 Zyl's syntax is built on **S-expressions** (symbolic expressions) — parenthesized lists where the first element is an operator and the rest are operands. If you know Lisp, Scheme, or Clojure, this will feel familiar. If not, don't worry — we'll start from the ground up.
 
+Every code block in this chapter that has a `main` is a complete program: save it as a `.zyl` file, compile it with `zyl file.zyl -o file`, and run it. Fragments without a `main` can be pasted into the REPL.
+
 ## 2.1 The Two Kinds of Expressions
 
 Every Zyl expression is either an **atom** (a single value) or a **list** (a parenthesized sequence of expressions).
@@ -14,7 +16,7 @@ true            ; atom (boolean)
 (defn f (x) x)  ; list: defn, name f, params (x), body x
 ```
 
-**Key rule**: *Code is data, data is code.* This is called **homoiconicity** — it enables macros (Chapter 10).
+**Key rule**: *Code is data, data is code.* This is called **homoiconicity** — it is what makes macros (Chapter 10) possible.
 
 ## 2.2 Atoms — The Basic Values
 
@@ -26,11 +28,14 @@ true            ; atom (boolean)
 42
 -17
 0
+0xff                   ; hexadecimal literal: 255
 9223372036854775807    ; maximum Int
 -9223372036854775808   ; minimum Int
 ```
 
-**No suffixes, no octal/hex** — decimal only. For bit manipulation, use FFI.
+Integer literals are decimal or hexadecimal (`0x` prefix). There are no
+suffixes and no octal literals. The bitwise operators (`bit-and`,
+`shl` and the rest) are built in; see §2.6 and Chapter 32.
 
 ### Floats (`Float`)
 
@@ -43,11 +48,35 @@ IEEE-754 binary64 (double precision). ~15-17 decimal digits of precision.
 -0.0        ; negative zero (distinct from +0.0 in IEEE-754)
 ```
 
-**No implicit conversion between Int and Float.** Use explicit coercion:
-```lisp
-(float 42)      ; → 42.0
-(int 3.14)      ; → 3 (truncates toward zero)
-```
+`print` writes a Float with six decimal places: `(print 3.14)` prints
+`3.140000`.
+
+**Keep Int and Float apart.** There is no implicit conversion between
+them, and there are no conversion built-ins yet. The compiler does not
+currently reject an expression that mixes the two, such as
+`(+ 1 2.5)` — it computes a wrong answer instead — so treat mixing
+them as an error you have to catch yourself.
+
+Two more things are worth knowing now, because they affect what
+`print` shows:
+
+- The code generator decides how to print a value from what it can see.
+  A Float that arrives through an **unannotated** parameter is handled
+  as an Int. Annotate the parameter as `(x Float)` and arithmetic and
+  printing both work:
+
+  ```lisp
+  (defn half ((x Float))
+    (/ x 2.0))
+
+  (defn main ()
+    (print (half 5.0)))    ; 2.500000
+  ```
+
+- When `print` cannot tell a value is a Float (for example, a Float
+  returned through a pattern match), use `print-float`, which takes an
+  annotated Float parameter. It is in the core library that every
+  program gets automatically.
 
 ### Booleans (`Bool`)
 
@@ -56,64 +85,82 @@ true
 false
 ```
 
+At runtime a Bool is the integer 1 or 0, and `print` shows it that way:
+`(print true)` prints `1`.
+
 ### Strings (`String`)
 
-UTF-8 encoded, immutable, reference-counted (Global region for constants, Heap for runtime).
+A string is an immutable sequence of UTF-8 bytes. String literals live
+in the program's read-only data; strings built at runtime (by
+`str-concat`, for example) are allocated by the runtime.
 
 ```lisp
 "hello"
-"line 1\nline 2"          ; escape sequences: \n \t \\ \" 
+"line 1\nline 2"          ; escape sequences: \n \t \\ \"
 "quoted \"string\""       ; escaped quote
-"Unicode: 你好 🌍"        ; full Unicode support
+"Unicode: 你好 🌍"        ; any UTF-8 text
 ```
 
-**String concatenation**: Use `buf-append` (requires mutable buffer) or build via FFI. No `+` operator for strings.
+The string built-ins:
 
-### Symbols
+| Form | Result |
+|------|--------|
+| `(str-concat a b)` | A new string, `a` followed by `b` |
+| `(str-length s)` | Length in **bytes** (`(str-length "你好")` is 6) |
+| `(str-substring s start len)` | `len` bytes starting at byte `start` |
+| `(str-eq a b)` | 1 if the two strings have the same contents, else 0 |
 
-Symbols are identifiers used *as data* (not evaluated as variables):
+There is no `+` for strings. `==` compares the contents of literals and
+of `str-concat` results, but on strings the compiler cannot see the
+origin of — a parameter, a struct field — it compares addresses. Use
+`str-eq` whenever you mean "same text".
+
+The same visibility rule applies to printing. A string in an
+unannotated parameter prints as a number (its address); annotate the
+parameter `(s String)`, or print it with `print-string`:
 
 ```lisp
-'foo          ; quoted symbol
-'some-name
-'+            ; the symbol +, not the function
+(defn shout ((s String))
+  (print (str-concat s "!")))
+
+(defn main ()
+  (shout "hello")                         ; hello!
+  (print (str-length "hello"))            ; 5
+  (print (str-substring "hello" 1 3))     ; ell
+  (print (str-eq "abc" "abc")))           ; 1
 ```
 
-Used for: variant names in ADTs, field names in some contexts, macro metaprogramming.
+### Symbols and Keywords
 
-### Keywords
+Identifiers such as `x`, `factorial` or `list-length` name variables
+and functions. Names may contain `-`, `?`, `!` and similar punctuation:
+`even?` and `set!` are ordinary identifiers.
 
-Self-evaluating, colon-prefixed identifiers:
+A colon-prefixed word such as `:le` is a **keyword**. Keywords are not
+general values in the current compiler — a bare `:foo` in an expression
+is an `E_UNBOUND_VARIABLE` error. They appear inside particular forms,
+such as the endianness selector of the byte loads in Chapter 32.
 
-```lisp
-:parallel
-:filter
-:expect-error
-```
+Quoted data (`'foo`, `'(+ 1 2)`) is part of the specification but is
+not supported as a runtime value in compiled programs yet. Don't use it
+in ordinary code.
 
-Used for: test options, contract profiles, module import modifiers.
+### "No Value"
 
-### The Unit Value (`Unit`)
-
-```lisp
-unit
-```
-
-Represents "no meaningful value" — like `()` in Rust, `void` in C, `None` in Python. Returned by side-effecting operations like `print`.
-
-```lisp
-(print "hello")   ; returns unit
-```
+There is no `unit` literal. Forms evaluated only for their effect
+produce a meaningless value: `print` and a two-armed `if` whose
+condition is false evaluate to 0, and a loop leaves whatever its body
+last produced. Don't use those values. The type system calls this type
+`Unit`.
 
 ## 2.3 Lists — The Universal Structure
 
 A list is zero or more expressions enclosed in parentheses:
 
 ```lisp
-()                          ; empty list
 (+ 1 2 3)                   ; function call
 (defn square (x) (* x x))   ; function definition
-(let (x 10) x)              ; local binding
+(let x 10 x)                ; local binding
 ```
 
 **Everything is a list.** This uniformity is what makes macros possible.
@@ -130,11 +177,17 @@ A list is zero or more expressions enclosed in parentheses:
 > 5. Apply the function to the arguments
 
 ```lisp
-(print (begin (print "first") 1) (begin (print "second") 2))
+(defn noisy ((label String) v)
+  (begin
+    (print label)
+    v))
+
+(defn main ()
+  (print (+ (noisy "first" 1) (noisy "second" 2))))
 ;; Output:
 ;; first
 ;; second
-;; 1 2
+;; 3
 ```
 
 **No operator precedence.** Parentheses are never optional — they *are* the grouping.
@@ -147,49 +200,89 @@ A list is zero or more expressions enclosed in parentheses:
   42)
 ```
 
-Only line comments (`;`) exist. No block comments (`/* */` or `#| |#`).
+Only line comments (`;`) exist. There are no block comments — `#| ... |#`
+is not a comment, and the compiler will misread everything after it.
 
 ## 2.5 Variables and Bindings
 
-### Top-Level Constants (`def`)
+### Top-Level Constants
+
+The specification has a top-level `(def name expr)` for constants. In
+a compiled program it does not work yet: the definition is accepted,
+but any use of the name is an `E_UNBOUND_VARIABLE` error. Use a
+function with no parameters instead — it costs a call and reads almost
+the same:
 
 ```lisp
-(def pi 3.14159)           ; Global region, immutable
-(def app-name "MyApp")     ; String constant
-(def max-size 1000)        ; Int constant
+(defn max-size () 1000)
+(defn app-name () "MyApp")
+
+(defn main ()
+  (print (max-size))        ; 1000
+  (print (app-name)))       ; MyApp
 ```
 
-- Evaluated once at program startup
-- Stored in **Global region** (immutable, eagerly initialized)
-- Cannot be mutated — no `set!` on `def` bindings
+At the REPL prompt, `def` does work: `(def x 21)` binds `x` for every
+later entry.
 
 ### Local Immutable Bindings (`let`)
 
 ```lisp
-(let (x 10)                ; Creates new binding x = 10 (Stack region)
-  (print x))               ; x is immutable within this scope
-
-;; Shadowing is allowed (new binding hides outer one)
-(let (x 10)
-  (let (x 20)              ; New x, shadows outer x
-    (print x))             ; prints 20
-  (print x))               ; prints 10 (outer x unchanged)
+(let x 10          ; binds x = 10 for the body
+  (print x))       ; x is immutable within this scope
 ```
 
-- Scope: from the `let` to the end of its body
-- Value evaluated once, bound to name
-- **Immutable** — cannot use `set!` on `let` bindings
+- Scope: the body of the `let`
+- Value evaluated once, bound to the name
+- **Immutable** — a `set!` on a `let` binding is a compile error
+  (`E_MUT_CONFLICT`)
+
+Two spellings are accepted:
+
+```lisp
+(let x 10 (+ x 1))          ; bare name and value
+(let (x 10) (+ x 1))        ; binding list
+```
+
+The bare form is what the standard library and the compiler's own
+source use throughout, and it is what the rest of this book uses. It
+takes any number of body forms. **The binding-list form takes exactly
+one body form** — anything after the first is silently dropped — so if
+you use it, wrap a longer body in `begin`.
+
+### Shadowing
+
+A nested `let` may reuse a name; inside it, the new binding hides the
+outer one:
+
+```lisp
+(defn main ()
+  (let x 10
+    (begin
+      (let x 20
+        (print x))         ; prints 20
+      (print x))))         ; prints 10 (outer x unchanged)
+```
+
+Note the `begin`. In the current compiler, a `let` that appears as one
+of several forms in a function body (or in a `let` body) without an
+enclosing `begin` stays in scope for the forms after it — here, the
+second `print` would see 20. Grouping the forms with `begin`, as above,
+gives the scoping the language defines. It is good practice anyway:
+Chapter 3 recommends `begin` for every multi-form body.
 
 ### Local Mutable Bindings (`let-mut`)
 
 ```lisp
-(let-mut (counter 0)       ; Creates mutable binding
-  (set! counter (+ counter 1))  ; Rebinding (not in-place mutation!)
-  (print counter))         ; prints 1
+(defn main ()
+  (let-mut counter 0
+    (begin
+      (set! counter (+ counter 1))   ; rebinding, not in-place mutation
+      (print counter))))             ; prints 1
 ```
 
 - `set!` **rebinds** the name to a new value — it does *not* mutate the old value in place
-- The old value becomes unreachable (region system reclaims it)
+- Only a `let-mut` binding can be the target of `set!`; anything else is `E_MUT_CONFLICT`
 - Use sparingly — prefer immutable `let` and recursion
 
 ### Multiple Bindings
@@ -198,21 +291,10 @@ Only line comments (`;`) exist. No block comments (`/* */` or `#| |#`).
 nested — and each one can refer to the ones outside it:
 
 ```lisp
-(let (x 10)
-  (let (y (+ x 5))
+(let x 10
+  (let y (+ x 5)
     (+ x y)))               ; 25
 ```
-
-Both spellings of a single binding are accepted, and they mean the same
-thing:
-
-```lisp
-(let (x 10) (+ x 1))        ; binding list
-(let x 10 (+ x 1))          ; bare name and value
-```
-
-The second is what the standard library and the compiler's own source
-use throughout, and it is what you will see in the rest of this book.
 
 There is no parallel or multi-binding form: `(let (x 10 y 20) ...)`
 binds `x` and stops, and the reference to `y` is then an
@@ -228,21 +310,20 @@ surprise.
 (- 10 3 2)         ; 5      (10 - 3 - 2)
 (* 2 3 4)          ; 24     (2 * 3 * 4)
 (/ 20 2 2)         ; 5      (20 / 2 / 2)
-(% 17 5)           ; 2      (remainder, sign follows dividend)
+(/ 7 2)            ; 3      (Int division truncates)
+(% 17 5)           ; 2      (remainder, sign follows dividend: (% -17 5) is -2)
 ```
 
-**Unary forms** (single argument):
-```lisp
-(+ 5)       ; 5   (identity)
-(- 5)       ; -5  (negation)
-(* 5)       ; 5   (identity)
-(/ 5)       ; Error — division requires at least 2 args
-```
+The same operators work on Floats: `(/ 7.0 2.0)` is `3.500000`.
 
-### Comparison (return `Bool`)
+**One-argument forms**: only `-` has one, and it negates: `(- 5)` is
+-5. Don't write `(+ x)`, `(* x)` or `(/ x)` — the current compiler
+evaluates each of them to 0 instead of rejecting it.
+
+### Comparison
 
 ```lisp
-(== 1 1)           ; true   (structural equality)
+(== 1 1)           ; true   (= is the same operator)
 (!= 1 2)           ; true
 (< 1 2)            ; true
 (> 2 1)            ; true
@@ -250,7 +331,12 @@ surprise.
 (>= 1 2)           ; false
 ```
 
-Works on: `Int`, `Float`, `Bool`, `String`, and **structurally** on `Vec`, `Map`, `Struct`, `ADT`, `Tuple`.
+The ordering operators work on `Int` and `Float`. `==` and `!=` also
+compare structs and ADT values **structurally, one level deep**:
+`(== (Some 1) (Some 1))` is true, and two structs with equal field
+values are equal. A field that is itself a struct or ADT value is
+compared by address, so two separately built lists
+`(Cons 1 (Cons 2 Nil))` are *not* `==`. For strings, see §2.2.
 
 ### Boolean Logic (short-circuiting)
 
@@ -260,85 +346,68 @@ Works on: `Int`, `Float`, `Bool`, `String`, and **structurally** on `Vec`, `Map`
 (not true)                ; false
 ```
 
-`and`/`or` are **macros** that expand to `if` — they don't evaluate all arguments.
+`and` and `or` are desugared to `if` by the parser, so they evaluate
+only as many arguments as they need.
 
-### Type Predicates (runtime checks)
+### Bitwise Operations
 
 ```lisp
-(int? 42)           ; true
-(float? 3.14)       ; true
-(bool? true)        ; true
-(string? "hi")      ; true
-(struct? (make-Point 1 2))  ; true (requires struct in scope)
-(alias? (MyAlias 42))        ; true (requires alias in scope)
+(bit-and 12 10)    ; 8
+(bit-or 12 10)     ; 14
+(bit-xor 12 10)    ; 6
+(bit-not 0)        ; -1
+(shl 1 4)          ; 16
+(shr -1 60)        ; 15   (logical shift)
+(ashr -16 2)       ; -4   (arithmetic shift)
 ```
+
+### Predicates
+
+There are no runtime type predicates such as `int?` — types are known
+at compile time. The core library does provide a few numeric
+predicates: `is-zero`, `is-even` and `is-odd`.
 
 ## 2.7 Core Data Structures
 
-### Vectors (`Vec<T>`) — via `stdlib/collections/vec.zyl`
+This is a preview; Chapter 4 covers each in detail.
 
-Growable contiguous arrays. O(1) indexing (bounds-checked at runtime).
+### Option, Result and List
 
-```lisp
-(use collections/vec { vec-create vec-push vec-get vec-len vec-cap })
-
-(def v (vec-create 0 10))   ; Create empty vec with capacity 10
-(vec-push v 42)             ; Add element, returns new vec
-(vec-get v 0)               ; Get element at index (returns -1 if OOB)
-(vec-len v)                 ; Number of elements
-(vec-cap v)                 ; Allocated capacity
-```
-
-**No literal syntax** — build programmatically. Literal syntax is planned.
-
-### Maps (`Map<K,V>`) — via `stdlib/collections/map.zyl`
-
-Hash maps with **deterministic iteration order** (sorted by key hash).
+Three ADTs are defined in the core library, which every program gets
+without a `use`:
 
 ```lisp
-(use collections/map { map-create map-put map-get map-len map-has map-remove })
-
-(def m (map-create 0 10))   ; Create empty map with capacity 10
-(map-put m "key" 42)        ; Insert, returns new map
-(map-get m "key" 0)         ; Get value (returns default 0 if missing)
-(map-has m "key")           ; true if key exists
-(map-remove m "key")        ; Remove key, returns new map
+(Some 42)               ; Option: a value is present
+None                    ; Option: no value
+(Ok 42)                 ; Result: success
+(Err "file not found")  ; Result: failure
+(Cons 1 (Cons 2 Nil))   ; List: 1, 2
 ```
 
-### Tuples (`Tuple<T...>`)
+Because they are already defined, don't declare your own `Option`,
+`Result` or `List` — a second `deftype` with the same name is an
+`E_DUPLICATE_DEFINITION` error.
 
-Anonymous fixed-size product types.
+### Vectors and Maps
+
+`Vec` and `Map` are library types, imported with `use`. Both hold
+`Int` elements and keys in the current library.
 
 ```lisp
-(tuple 1 "hello" 3.14)     ; Tuple<Int, String, Float>
-(tuple)                    ; Same as unit
+(use collections/vec)
+(use collections/map)
+
+(defn main ()
+  (let v (vec-push (vec-push (vec-create 0 10) 42) 7)
+    (begin
+      (print (vec-len v))           ; 2
+      (print (vec-get v 0))))       ; 42
+  (let m (map-put (map-create 0 10) 1 100)
+    (print (map-get m 1 0))))       ; 100
 ```
 
-Access via pattern matching (Chapter 6).
-
-### Result Type — `Result<T, E>`
-
-Error handling without exceptions. Defined in `stdlib/core/result.zyl`:
-
-```lisp
-(Ok 42)                 ; Success containing 42
-(Err "file not found")  ; Failure containing error message
-```
-
-Built-ins that can fail return `Result`:
-- `read-line` → `Result<String, String>`
-- `file-open` → `Result<Handle, String>`
-
-Handle with `try/catch` (Chapter 3) or `match` (Chapter 6).
-
-### Option Type — `Option<T>`
-
-Represents optional values. Defined in `stdlib/core/option.zyl`:
-
-```lisp
-(Some 42)    ; Value present
-None        ; No value
-```
+There is no literal syntax for either. Tuples are in the specification
+but are not implemented; use a struct.
 
 ## 2.8 The `begin` Form — Sequencing
 
@@ -349,75 +418,70 @@ None        ; No value
   42)                    ; Returns value of LAST expression
 ```
 
-Use `begin` whenever you need multiple expressions where only one is allowed (function body, `if` branch, `let` body, etc.).
+Use `begin` whenever you need several expressions where one is
+expected — an `if` branch, a `match` arm — and around any multi-form
+body (see the note on shadowing in §2.5).
 
-## 2.9 Quoting — Data vs Code
+## 2.9 Special-Form Names
 
-```lisp
-'(+ 1 2)        ; List data: three elements [symbol '+, int 1, int 2]
-(+ 1 2)         ; Code: evaluates to 3
-```
+Words such as `defn`, `let`, `if`, `match`, `begin`, `while`, `for`,
+`cond`, `try`, `fn`, `lambda`, `deftype`, `defstruct`, `trait`, `impl`,
+`use`, `spawn`, `send` and `ffi-call` are recognized when they appear at
+the head of a list. The complete set is what `:doc` answers for in the
+REPL.
 
-Quoting prevents evaluation. Essential for macros (Chapter 10).
+The compiler does not stop you from using one as a variable name —
+`(let begin 5 begin)` compiles — but code that does is hard to read,
+and some names (such as `when`) are also core library functions. Treat
+them as reserved.
 
-## 2.10 Reserved Keywords (Cannot Be Used as Identifiers)
+The error code `E_RESERVED_KEYWORD` exists for names that are reserved
+for future forms: the 16-, 32- and 64-bit byte loads and stores
+(`load-u16`, `store-u32` and so on) are rejected with it today.
 
-These words are reserved and cause **compile error `E_RESERVED_KEYWORD`** if used as variable names, function names, or type names:
-
-```
-def, defn, defun, let, let-mut, if, try, catch, spawn, send,
-ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda,
-while, for, cond, begin, pub, use, export, requires, ensures,
-invariant, recover, checkpoint, contracts, defmacro, alias,
-defstruct, defstruct+, with-resource, derive, unwrap, error,
-Ok, Err, match, struct-get, make-, test-suite, test,
-assert-equal, assert-fail, assert-true, assert-false,
-test-property, setup, teardown, run-tests, test-compile
-```
-
-## 2.11 Style Conventions
+## 2.10 Style Conventions
 
 | Category | Convention | Example |
 |----------|------------|---------|
 | Functions | `kebab-case` | `factorial`, `read-file` |
 | Types (structs, ADTs) | `PascalCase` | `Point`, `Result`, `MyType` |
 | ADT Variants | `PascalCase` | `Some`, `None`, `Ok`, `Err` |
-| Constants | `UPPER_SNAKE` | `MAX_SIZE`, `DEFAULT_TIMEOUT` |
+| Constants | nullary function, `kebab-case` | `(defn max-size () 1000)` |
 | Variables/params | `kebab-case` | `user-count`, `file-handle` |
-| Type parameters | `UpperCase` | `T`, `K`, `V`, `Element` |
+| Predicates | `?` suffix | `even?`, `origin?` |
+| Unused names | `_` or a `_` prefix | `_`, `_rest` |
 
-**Indentation**: 2 spaces. For complex forms, put each open paren on its own line at the correct indent (C-style block formatting — see `skills/zyl/SKILL.md`).
+**Indentation**: 2 spaces.
 
-## 2.12 Quick Reference Card
+## 2.11 Quick Reference Card
 
 ```lisp
 ;; Literals
-42              ; Int
+42  0xff        ; Int
 3.14            ; Float
 true / false    ; Bool
 "hello"         ; String
-unit            ; Unit
 
 ;; Bindings
-(def name expr)                 ; Top-level -- see the note below
-(let name expr body)            ; Local immutable (Stack)
-(let (name expr) body)          ; The same, with a binding list
-(let-mut name expr body)        ; Local mutable (Stack, use set!)
+(defn name () expr)             ; Constant (top-level def is REPL-only)
+(let name expr body...)         ; Local immutable
+(let (name expr) body)          ; The same, one body form only
+(let-mut name expr body...)     ; Local mutable (use set!)
 
 ;; Control (details in Chapter 3)
 (if cond then else)
 (cond (cond1 body1) (cond2 body2) (else body))
-(while cond body)
-(for (bindings) cond body)
+(while cond body...)
+(for ((var init) ...) cond body)
 
 ;; Functions (details in Chapter 3)
 (defn name (params) body)
-(fn (params) body)              ; Anonymous closure
+(fn (params) body)              ; Anonymous function
 (lambda (params) body)          ; The same form, other name
 
 ;; Data structures
-(vec-create init cap)           ; Vec (via collections/vec)
-(map-create init cap)           ; Map (via collections/map)
+(vec-create 0 cap)              ; Vec (use collections/vec)
+(map-create 0 cap)              ; Map (use collections/map)
 (Ok val) / (Err err)            ; Result
 (Some val) / None               ; Option
 (Cons head tail) / Nil          ; List
@@ -427,15 +491,13 @@ unit            ; Unit
 (== != < > <= >=)               ; Comparison
 (and or not)                    ; Boolean
 (set! var value)                ; Rebinding (let-mut only)
-(print expr...)                 ; Output to stdout
+(print expr)                    ; One value and a newline to stdout
+(print-string s) (print-float f); When print cannot see the type
 (struct-get struct "field")     ; Struct field access
 (bit-and bit-or bit-xor bit-not); Bitwise (Chapter 32)
 (shl shr ashr)                  ; Shifts -- shr logical, ashr arithmetic
+(str-concat str-length str-substring str-eq)  ; Strings
 ```
-
-A note on `def`: a top-level `(def name expr)` does not currently
-become a readable global — every reference to one compiles to 0. Use a
-nullary `(defn name () expr)` for a constant until that is fixed.
 
 ---
 
@@ -443,34 +505,37 @@ nullary `(defn name () expr)` for a constant until that is fixed.
 
 ### Representation
 
-| Type | Representation | Region |
-|------|----------------|--------|
-| `Int` | 64-bit tagged (LSB=1) | Stack/Heap |
-| `Float` | 64-bit IEEE-754 (boxed) | Stack/Heap |
-| `Bool` | Tagged immediate | Stack/Heap |
-| `String` | Ref-counted ptr to UTF-8 bytes | Global (const) / Heap |
-| `Vec<T>` | `{ ptr, len, cap }` | Heap |
-| `Map<K,V>` | Hash array + metadata | Heap |
-| `Struct` | Contiguous fields | Stack/Heap |
-| `ADT` | Tag + payload (variant-dependent) | Stack/Heap |
-| `Closure` | `{ fn_ptr, env_ptr, capture_map }` | Heap (if escaping) |
+Every value is one 64-bit machine word.
+
+| Type | Representation |
+|------|----------------|
+| `Int` | 64-bit two's-complement integer, untagged |
+| `Float` | The IEEE-754 bit pattern, held in the same 64-bit word (not boxed) |
+| `Bool` | 1 or 0 |
+| `String` | Pointer to NUL-terminated UTF-8 bytes |
+| Struct / ADT value | Pointer to a block: a hidden header, the variant tag, then one 8-byte word per field |
+| `Vec` | A struct: buffer pointer, length, capacity, arena |
+| `Map` | A struct: parallel key and value arrays, length, capacity, arena |
+
+Because a field is always one word, a struct or variant block's layout
+is fully determined by its field count. A struct is a single-variant
+ADT whose variant name is the struct's name.
 
 ### Determinism Guarantees
 
-- All collections use **FNV-1a hashed ordered maps** (`deterministic.rs`)
-- Map iteration: sorted by key hash (not insertion order)
-- No `HashMap`/`HashSet` with random seeds — ever
-- Same source → identical memory layout → identical binary
+- The compiler's own tables are ordered structures; nothing depends on hash-seed or allocation order
+- `Map` keeps its entries in insertion order and searches them linearly, so iteration order is deterministic by construction
+- Same source → identical binary, which `./boot.sh` checks for the compiler itself on every build
 
-### Region Assignment (Preview)
+### Where Values Live (Preview)
 
-| Value | Default Region | Can Escape To |
-|-------|----------------|---------------|
-| Local `let` | Stack | Heap (if captured/returned) |
-| `def` constant | Global | Never |
-| `vec-create` | Heap | Heap |
-| Closure | Stack (if non-escaping) | Heap (if escaping) |
-| FFI arg | Pin (via `ffi-pin`) | Pin only |
+| Value | Where |
+|-------|-------|
+| `let`-bound Int, Float, Bool | The function's stack frame |
+| String literal | Read-only data in the binary |
+| Struct or ADT value that provably never escapes | The function's stack frame |
+| Any other struct or ADT value | The runtime's heap arena |
+| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create` (0 creates a private one) |
 
 Details in [Chapter 5](ch05-ownership-regions-capabilities.md).
 

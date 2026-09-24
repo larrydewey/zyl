@@ -1,5 +1,346 @@
 # Zyl Progress Tracker
 
+This file has two parts. The sections down to **Session log** describe the
+project as it stands and what is still open; they are kept current. The
+session log below them is history, newest first: each entry records what
+was true when it was written. Where a later session changed something an
+entry reports as open, the entry carries a short *Status (date)* note
+rather than a rewrite.
+
+## Current State (verified 2026-09-23, HEAD `3e65944`)
+
+Every claim in this section was checked against the source tree, the git
+history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
+
+### Build and verification
+
+- The compiler is self-hosted: `stdlib/compiler/*.zyl` (37 modules) plus
+  `selfhost/` (`driver.zyl`, `lsp_main.zyl`, `assemble.py`, and the
+  assembled `zyl_selfhost_compiler.zyl`). `./boot.sh` builds with nothing
+  but `cc` and verifies the stage2 == stage3 fixed point;
+  `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
+  frozen in `archive/rust-bootstrap-2026/` as a fallback for a syntax
+  change the current seed cannot parse.
+- `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
+  zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. It still prints
+  many non-fatal `W_UNUSED_PARAMETER` and `W_SHADOWED_BINDING` warnings.
+- `./run_regression_tests.sh --full --no-boot` passes **121/121**:
+  regression 52, interpreter 34, compile-fail 12, integration 7,
+  packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1,
+  unit_test 1. The interpreter category runs the regression and smoke
+  tests both through the ICNF interpreter and as compiled binaries and
+  diffs the output.
+- The specification is `zyl_specification.txt` **v5.0** (§0–§31, §31 being
+  the package system); `spec/` is the structured copy, including
+  `spec/16-package-system.md`.
+
+### Compiler
+
+- Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse,
+  module resolution and qualification, macro expansion, the checks
+  (capability, duplicate definition, arity, mutability/aliasing,
+  exhaustiveness, unused, secret), type inference, monomorphization,
+  trait dispatch, closure lifting, assert lowering, ICNF lowering,
+  optimization (constant folding and dead-branch elimination), region
+  inference (a provably non-escaping variant becomes `IStackVariant`),
+  x86_64 code generation, and linking with `cc`.
+- Covered by the suite: structs, ADTs with per-ADT exhaustiveness
+  checking, literal/OR/range/guard patterns, `_` and `_`-prefixed names
+  as discards, generics through monomorphization, traits and derive,
+  closures with free-variable capture, `try`/`catch`, macros, actors
+  (`spawn`, `send`, `actor-wait`), FFI with pinning and timeouts, the
+  bitwise operators, 8-bit byte loads and stores, byte slices, atomics,
+  `align-check`, and the `Secret` capability's constant-time checks.
+- Located diagnostics (`error[CODE]`, `--> file:line:col`, the source
+  line, a caret and a `= help:` line) for the four balance errors,
+  `E_MALFORMED_PARAMETER`, `E_ARITY_MISMATCH`, `E_NON_EXHAUSTIVE_MATCH`,
+  `E_UNREACHABLE_MATCH_ARM`, `E_DUPLICATE_DEFINITION` and
+  `E_UNBOUND_VARIABLE`.
+- An allocation failure reports `E_OUT_OF_MEMORY`; the budget is
+  `ZYL_MAX_MEMORY` when set, otherwise 80% of available memory.
+
+### Package system (spec §31)
+
+- Implemented: manifests (`zyl.pkg`), canonical symbol keys with
+  injective mangling, `pub` visibility, Minimal Version Selection,
+  `zyl.lock`, the content-addressed store, the index with mandatory
+  Ed25519 verification, capabilities, features, native dependencies,
+  workspaces, and `zyl new/add/fetch/build/test/update/vendor/audit/
+  publish/key`. Modules: `stdlib/compiler/{package,qualify,store,
+  workspace,lock,index,mvs,cli,capability_check,module_resolver}.zyl`.
+- A git dependency is cloned, archived into the store, locked by hash and
+  built: verified with a local `file://` repository (`zyl fetch`, then
+  `zyl build --locked`, then running the binary).
+- The standard library is the implicit package `zyl/std` and has no
+  manifest; a lone file compiles as `local/main`@0.
+
+### Tools
+
+- `zyl` CLI: `zyl <file.zyl> [-o out] [--emit-asm]`, the package
+  subcommands above, `zyl repl`, and `zyl eval <file.zyl>`, which runs a
+  program through the ICNF interpreter without linking. The installed
+  `zyl` wrapper (`install.sh`) starts the REPL when given no arguments;
+  `build/boot/zyl-self` with no arguments still runs the legacy
+  `/tmp/zyl_boot_in.zyl` boot path.
+- REPL (`stdlib/repl/`, documented in `docs/repl.md`): raw-mode line
+  editor, persistent history with reverse search, highlighting,
+  completion, an ICNF interpreter that keeps `def` bindings as live
+  values, structural value printing, `:type`, `:time`, `:load`, `:save`,
+  `:reset`, and a per-directory `.zyl-session` file. `tools/repl.zyl` is a
+  thin `main` over these modules.
+- Language server: `stdlib/lsp/`, entry `selfhost/lsp_main.zyl`, binary
+  `build/boot/zyl-lsp`. VS Code extension 0.3.0 in `editors/vscode/`.
+  `install.sh` installs the compiler, REPL and server into `~/.zyl` (or
+  `$ZYL_HOME`); `--with-vscode` adds the extension; `uninstall.sh`
+  removes it.
+- Standard library directories: actor, allocator, atomic, collections,
+  compiler, core, ffi, io, lsp, math (bits, words, bignum, hashes,
+  symmetric and asymmetric cryptography, KDFs, RNG, secret), mlib, repl,
+  testing.
+- Book: `book/` (mdBook), with a runnable example project in
+  `book/examples/log-processor/`.
+
+### Open limitations (each confirmed still open on 2026-09-23)
+
+Compiler:
+
+- Several name lookups in `type_inference.zyl` compare strings with `=`,
+  which is a pointer comparison when the operand kinds are unknown, so a
+  builtin operator is never recognized by name. REPL `:type (+ 1 2)`
+  answers *unresolved*. The fix is a type-inference change; see the
+  header of `stdlib/lsp/compiler_bridge.zyl`.
+- Codegen binds every variant field as an Int and has no return-type
+  inference, so `print` of a struct or of a computed String prints an
+  address, and `==` on Strings built at runtime compares addresses in
+  compiled code. Derivable `Show` (spec §5.6) is not implemented.
+- No phase before linking resolves call targets. A call to an undefined
+  function, including the unimplemented `(list ...)` literal, fails as a
+  linker error (`undefined reference to _ZYL_list`), not as a located
+  diagnostic.
+- A top-level `(def name value)` in a compiled file does not create a
+  global; a use of the name fails with `E_UNBOUND_VARIABLE`. Only the REPL
+  gives top-level `def` a meaning.
+- Diagnostics still reported as a bare `PANIC:` with no location:
+  `mutability_check`, `capability_check`, `unused_check`, `secret_check`,
+  and the remaining errors in `expr_inner`.
+- Contract injection (spec §23) is not in the pipeline.
+  `contract_injection.zyl` is not in the bundle, and `requires`,
+  `ensures`, `invariant`, `recover` and `checkpoint` parse as no-op
+  passthroughs.
+- Hash finalization: `zyl.buildinfo` records the compiler, graph,
+  native-object and assembly hashes, but the graph hash is not mixed into
+  the binary's own hash.
+- Only 8-bit byte loads and stores exist. The 16-, 32- and 64-bit forms
+  are reserved and rejected with `E_RESERVED_KEYWORD`. A byte-buffer
+  handle is an integer, so passing a non-buffer where one is expected is
+  not a type error.
+- `Secret`: no zeroization on scope exit, no `print` redaction, no
+  `Secret` trait for user-defined types. Taint crosses a call boundary
+  only where the callee's parameters are annotated.
+- C calls of arity 7 or more do not get the rsp realignment that
+  `cg-fire-ext` gives every C call of arity 6 or less.
+- `codegen.zyl` performs no tail-call optimization. `assemble.py` still
+  collapses whitespace in the bundle so that `lexer.zyl`'s mutually
+  recursive whitespace skip stays within the stack.
+- `assemble.py` checks the paren depth of the whole bundle, not of each
+  file.
+
+Package system:
+
+- The index URL `https://github.com/zyl-lang/index` is a placeholder; no
+  index repository exists, so the registry fetch path is tested through
+  its pure parts (entry parsing, signing, verification, sharding).
+- No build cache (§31.4): every build recompiles the whole graph.
+- `deny-capabilities` and the capability pass apply only to packages that
+  have a manifest.
+- Paths and URLs containing characters outside `store-safe`'s set (a
+  space or a quote, for example) are refused rather than quoted.
+- A nested `feature-gate` is not rejected; it is treated as an ordinary
+  form.
+- Ed25519 still ships inside the compiler bundle rather than the runtime.
+  The boot cost that motivated moving it went away when the
+  type-inference exponential was fixed (`./boot.sh` now takes about 23 s).
+
+REPL and interpreter:
+
+- Actors are compile-only; the interpreter reports
+  `E_UNSUPPORTED_INTERPRETED`.
+- Heavy numeric work allocates per operation and is slow and
+  memory-hungry when interpreted.
+- A definition entered at the prompt cannot refer to a `def` binding:
+  after `(def k 5)`, `(defn f (x) (+ x k))` is accepted but `(f 1)` fails
+  with `E_UNBOUND_VARIABLE`.
+
+Tooling and library:
+
+- The language server does not run `unused_check` or type inference's
+  `collect-definitions`, and reports one diagnostic at a time.
+- The VS Code extension is not bundled (no esbuild step) and has no
+  problem matcher, although CLI diagnostics now carry `file:line:col`.
+- There is no `zyl doc` generator. The REPL's `:doc` covers only built-ins
+  and special forms, from `stdlib/lsp/builtins.zyl`.
+- There is no `receive` form. `tests/integration/actor-message.zyl` checks
+  only that spawn, send and wait complete.
+- BLAKE3 uses the portable compression function (no SIMD). There is no
+  ctgrind or valgrind instrumentation; `verify/timing.py` is the
+  statistical substitute.
+
+## Open Work (prioritized)
+
+Drawn from the old roadmap, the deferred-work list, and the gaps recorded
+by recent sessions. The completed roadmap items are kept, annotated, under
+**Roadmap history** near the end of this file.
+
+### P1: Diagnostics
+
+- [ ] Locate the remaining diagnostics (the checks listed above): thread
+      the offending node to the failure and call `err-at`.
+- [ ] Resolve call targets before linking, so an undefined function is a
+      located error.
+- [ ] Fix the `=`-on-strings name comparisons in `type_inference.zyl`;
+      this is also the root of "cannot determine the type of this
+      match's scrutinee" and of REPL `:type` answering *unresolved*.
+- [ ] Labelled secondary spans (for capability and region errors),
+      "did you mean" suggestions (no edit-distance code exists yet), and
+      structured JSON output for tools. None of these is started.
+- [ ] Sweep the warnings `./boot.sh` prints.
+
+### P2: Code generation correctness
+
+- [ ] Field and return kinds in codegen, so compiled `print` and `==`
+      agree with the interpreter; then derivable `Show`.
+- [ ] rsp realignment for C calls of arity 7 or more.
+- [ ] Tail-call optimization in `codegen.zyl`, or a self-tail-recursive
+      whitespace skip in `lexer.zyl`, so `assemble.py` no longer needs to
+      collapse whitespace.
+- [ ] A per-file paren-depth check in `assemble.py`.
+
+### P3: Language features
+
+- [ ] Contract injection (spec §23) against the real `expr_inner.zyl`
+      shapes, and back into the pipeline.
+- [ ] 16-, 32- and 64-bit byte loads and stores; a distinct type for
+      byte-buffer handles.
+- [ ] `Secret`: zeroization on scope exit, `print` redaction, a `Secret`
+      trait.
+- [ ] A `receive` form and a runnable structured-message actor example.
+- [ ] Top-level `def` in compiled programs.
+- [ ] Hash finalization that mixes the graph hash into the binary.
+
+### P4: Tooling and packages
+
+- [ ] A `zyl doc` generator over the `;|`/`;;` doc-comment convention.
+- [ ] A real package index; a build cache keyed by content hash;
+      rejection of a nested `feature-gate`.
+- [ ] Unused-binding warnings in the language server (the check must
+      return them instead of printing them).
+- [ ] Bundle the VS Code extension; add a problem matcher.
+- [ ] REPL: let a definition entered at the prompt capture a `def`
+      binding.
+
+### Deferred design work (not started unless noted)
+
+- **Byte-level primitives:** partly done. 8-bit `load`/`store` with
+  explicit endianness, `bytebuf`, `byteslice`/`byteslice-sub`, the atomic
+  family and `align-check` landed on 2026-09-19 (commits `44bb05f`,
+  `88ba6e4`). Still open: the wider widths, and views that provably
+  cannot outlive their backing buffer.
+- **Deterministic region extension:** a closed registry of additional
+  audited region kinds (fixed growth, alignment, policy) that user code
+  selects among, with no raw alloc/free function pointers; any kind that
+  touches the OS must be deterministic for a given request sequence.
+- **Capability-mediated sharing:** a shared region holding only TCap or
+  atomic values, mutation only through atomics or a temporary exclusive
+  upgrade, typed bounded channels with explicit ownership transfer,
+  read-only pages shared between actors. The `TCAtomic` and
+  `TCAtomicByte` capability kinds and the atomic byte-buffer operations
+  exist; the sharing model does not.
+- **Inline assembly:** a capability- and region-aware interface in which
+  pointer-carrying registers respect the type and region rules.
+- **Ergonomic zero-copy views:** short-lived region views over
+  longer-lived data (parsing, substrings, array slices) without
+  Rust-style lifetime parameters. `byteslice` is the only form so far.
+
+## Constraints for Compiler Source Written in Zyl
+
+The full list, with examples, is `skills/zyl/SKILL.md` §2. Its constraint
+3 still tells you to name wildcards `d1`, `d2`, ...; that is superseded,
+as recorded below.
+
+1. ~~Keep function arities <= 6~~ Lifted 2026-08-25: stack-passed
+   arguments work.
+2. ~~A `match` may appear only as the entire body of a defn~~ Lifted
+   2026-08-25.
+3. Exhaustiveness is checked per ADT (`E_NON_EXHAUSTIVE_MATCH`, since
+   2026-09-17). A catch-all arm is allowed and must come last
+   (`E_UNREACHABLE_MATCH_ARM`). An arm head that names no constructor is
+   a catch-all binding, so a misspelled constructor is not reported as
+   unknown; it becomes a catch-all, which is an error only if more arms
+   follow it.
+4. ~~Pattern wildcards must be named dummies (`dN`), never bare `_`~~
+   Reversed 2026-09-23: `_` is the discard, may repeat, and `_`-prefixed
+   names are exempt from the unused, shadowing and duplicate-parameter
+   checks.
+5. Prefer flat `begin` sequences and recursion over deep nesting.
+6. `buf-append` appends at `strlen(dst)` (true append); start from fresh
+   buffers.
+7. Parens must balance per top-level form. The compiler now rejects
+   unbalanced source with a located error (`sexp_balance.zyl`), but
+   `assemble.py` checks only the whole bundle, so a per-file deficit that
+   another file cancels is still invisible there.
+8. Binops with two call operands: the skill file still says these compute
+   0 in stage >= 2 binaries. On 2026-09-23 `(+ (f 1) (g 3))`,
+   `(- (f a) (g b))` and an arm body `(+ (f r) (g r))` all computed the
+   right values with the current compiler; the shape in which an arm body
+   combines a constant with two or more calls is still rejected with
+   `E_MATCH_ARM_COMPLEX`. Binding calls to `let`s first remains the safe
+   style in compiler source.
+
+## Pointers
+
+- Self-hosting history and the fixed-point invariant:
+  `docs/rust-eviction-plan.md`
+- Architecture decisions: `docs/architecture-decisions.md`
+- Design rationale: `docs/design-rationale.md`
+- Codebase map: `docs/codebase-map.md`; pipeline:
+  `docs/compiler-pipeline.md`; developer guide: `docs/developer-guide.md`
+- Regression infrastructure: `docs/regression-tests.md`
+- Error codes: `docs/errors.md`, `docs/error-system-architecture.md`
+- Package system: `docs/package-management-design.md`
+- REPL: `docs/repl.md`; cryptography library: `docs/math-crypto.md`
+- Historical phase details: `docs/implementation-status.md`
+- Specifications: `zyl_specification.txt` (v5.0, canonical), `spec/`
+  (structured copy), `specifications/` (v1.0 to v4.1, historical)
+
+## Milestone History
+
+| Milestone | Date | Notes |
+|-----------|------|-------|
+| All 9 phases + linking | 2026-08 | structs, ADTs, floats, actors, closures, FFI, try/catch, I/O |
+| Clean-room self-host front end | 2026-08-24 | recursive ADTs + structural match end-to-end |
+| stage1 compiles own source | 2026-08-24 | first boot build |
+| **Self-hosting fixed point** | **2026-08-25** | **stage1→stage2→stage3, deterministic** (stage1 built by the Rust bootstrap) |
+| r15-align SIGSEGV fix (codegen) | 2026-09-06 | rsp-stash frame slot replaces r15 save/restore; option-flatmap green |
+| `_t_` constructor lowering fix (ast) | 2026-09-06 | underscore-prefixed ADT variants lower to MakeVariant; regression/types green |
+| **selfhost-codegen test fixed** | **2026-09-06** | **passes with self-hosted compiler; Rust bootstrap too slow for test runner** |
+| Contract injection (Phase 10) | 2026-09-09 | parser + contract_injection.rs + pipeline integration complete (Rust bootstrap) |
+| Contract injection (Zyl) | 2026-09-09 | stdlib/compiler/contract_injection.zyl written; taken out of the self-hosted pipeline on 2026-09-15 because it did not match the real AST shapes |
+| **Type inference ported to Zyl** | **2026-09-10** | **Hindley-Milner + capability types + trait resolution + occurs-check** |
+| **Monomorphization ported to Zyl** | **2026-09-10** | **Full monomorphization using type inference data; all regression tests pass** |
+| **P3.5 complete: Zyl self-hosts all phases** | **2026-09-10** | **boot.sh fixed point holds; Zyl compiler compiles itself end-to-end** |
+| Book documentation verity pass | 2026-09-10 | ch13 rewritten from runtime-verified constructs; appendix B braces fixed; ch11 §11.3 corrected; book.toml builds with zero warnings |
+| stage2.bin fixed point from self-generated code | 2026-09-15 | stage2 == stage3 with the self-hosted codegen; real argv CLI |
+| **Rust evicted** | **2026-09-17** | feature-parity survey closed at 43/43; `--bootstrap-from-self`; Rust archived |
+| Language server | 2026-09-19 | `stdlib/lsp/`, `zyl-lsp` |
+| `stdlib/math` and the `Secret` capability | 2026-09-22 | cryptography library; constant-time checker |
+| **Package system (spec §31)** | **2026-09-23** | MVS, lock, store, signed index, capabilities, `zyl` subcommands |
+| Located diagnostics; type-inference exponential fixed | 2026-09-23 | `./boot.sh` from about ten minutes per stage to 23 s total |
+| REPL with an ICNF interpreter | 2026-09-23 | live bindings, structural printing, per-project sessions; interpreter checked against codegen by the suite |
+
+---
+
+# Session log (newest first)
+
 ## Current Session (2026-09-23) — a first-class REPL, stages 3 and 4: values, types, and state that survives
 
 **A result prints as the value it is, `:type` and `:time` answer
@@ -75,7 +416,7 @@ projects, what you defined is not.
   has no return-type inference), so the REPL writes its own output with
   `term-write` throughout.
 
-## Current Session (2026-09-23) — a first-class REPL, stage 2: the ICNF interpreter
+## Session (2026-09-23) — a first-class REPL, stage 2: the ICNF interpreter
 
 **A binding entered at the prompt is now a live value, not a line of
 text that gets recompiled: `zyl repl` evaluates each entry by running
@@ -177,7 +518,10 @@ for what the compiled suite covers in seconds).
 - Values still print as `#<variant tag=N at …>`; a derivable `Show` is
   stage 3.
 
-## Current Session (2026-09-23) — a first-class REPL, stage 1: the line editor
+*Status (2026-09-23):* structural value printing landed in stages 3 and 4
+(without a derivable `Show`). The other three limitations are still open.
+
+## Session (2026-09-23) — a first-class REPL, stage 1: the line editor
 
 **`zyl repl` is a real interactive session now: raw-mode line editing
 with arrows and word motion, persistent history with reverse search,
@@ -257,7 +601,13 @@ is 88/88.
 - Values print through `print`, so an ADT or struct shows as a pointer.
   A derivable `Show` is stage 3.
 
-## Current Session (2026-09-23) — VS Code extension 0.3.0 and package-aware LSP
+*Status (2026-09-23):* all four resolved by stages 2 to 4. Bindings are
+live interpreter values, each entry compiles only itself, a session
+starts with `core/core`, `core/list`, `core/option`, `core/result` and
+`allocator/allocator` and accepts `(use ...)`, and REPL results print
+structurally. Compiled `print` of a struct still shows an address.
+
+## Session (2026-09-23) — VS Code extension 0.3.0 and package-aware LSP
 
 **The extension is on current tooling, actually installs, and no longer
 collides with its own server; the server understands the package forms.**
@@ -303,7 +653,7 @@ collides with its own server; the server understands the package forms.**
 Known limit: the extension is not bundled (vsce warns about 182 JS files
 from the client library); an esbuild step would fix that.
 
-## Current Session (2026-09-23) — `_` as the only discard, located diagnostics, and the end of an exponential
+## Session (2026-09-23) — `_` as the only discard, located diagnostics, and the end of an exponential
 
 **`_` is now the catch-all everywhere, a dropped `)` can no longer drive
 the compiler into an allocation runaway, and every diagnostic that has a
@@ -426,7 +776,7 @@ seconds rehashing. Full suite: 30s before spans, 38s now. `./boot.sh`:
 
 ---
 
-## Current Session (2026-09-23) — spec v5.0 §31: the package system, implemented
+## Session (2026-09-23) — spec v5.0 §31: the package system, implemented
 
 **The package system is implemented, from canonical symbol keys through
 Minimal Version Selection, the lock, the content store, the index and its
@@ -564,6 +914,10 @@ are bound.
 - `zyl fetch` downloads registry archives over HTTPS; a `git` dependency
   is recognised, pinned by revision and resolvable from the store, but
   the clone-archive-install path is not wired into `fetch` yet.
+  *Status (2026-09-23):* this is out of date. `mvs-git-fetch`
+  (`mvs.zyl`) clones, archives and installs a git dependency during an
+  online resolution, and a probe with a local `file://` repository
+  fetched, locked, built and ran correctly.
 - The index URL in the examples (`github.com/zyl-lang/index`) is still a
   placeholder; no index repository exists, so the fetch path is covered
   by unit tests over its pure parts (entry parsing, signing, verification,
@@ -600,6 +954,10 @@ previous size. That is a few hundred lines of field arithmetic in C with
 RFC 8032 vectors to check it against, and it is not something to write
 in the same change as the package system itself.
 
+*Status (2026-09-23):* the slowdown was mostly the type-inference
+exponential fixed in the next session; `./boot.sh` now takes about 23
+seconds. Ed25519 has not moved into the runtime.
+
 ### Tests
 
 - `tests/regression/package-system.zyl` — 37 assertions over versions,
@@ -613,7 +971,7 @@ in the same change as the package system itself.
 
 ---
 
-## Current Session (2026-09-23) — spec v5.0: package system design
+## Session (2026-09-23) — spec v5.0: package system design
 
 **The specification is now v5.0. Its centrepiece, §31 Package System, is
 fully specified and deliberately unimplemented; the design behind it,
@@ -690,6 +1048,9 @@ Modified:
   doc while still saying not to build it unasked.
 
 ### Known limitations
+
+*Status (2026-09-23):* superseded the same day; the package system was
+implemented in the session above.
 
 - Nothing here is implemented. There is no manifest reader, no lock, no
   resolver, no store, no index, no signing, no capability pass, and no
@@ -833,6 +1194,8 @@ was removed and the two merged. Compiles clean with `tsc`.
 
 A problem matcher was deliberately NOT added: the compiler's CLI errors
 carry no file or line, so one could not locate anything.
+*Status (2026-09-23):* located diagnostics now print `file:line:col`, but
+no problem matcher has been added.
 
 ### install.sh
 
@@ -966,93 +1329,7 @@ is misaligned.
 
 ---
 
-## Current Session (2026-09-22)
-
-**Implemented `stdlib/math/` — the cryptography and number library from
-`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` — plus the four compiler fixes it
-turned out to need. Full suite 65/65; the math group is 17/17.**
-
-### Compiler and runtime changes (all required by the library)
-
-1. **Bitwise operators did not exist** (`icnf.zyl`, `codegen.zyl`,
-   `optimization.zyl`, `type_inference.zyl`). `bit-and`, `bit-or`,
-   `bit-xor`, `bit-not`, `shl`, `shr` (logical) and `ashr` are new
-   opcodes 11-17 lowering to single instructions. Shift counts outside
-   0..63 are DEFINED rather than left to x86's mod-64 masking: logical
-   shifts give 0, `ashr` saturates to the sign bit. Constant folding
-   deliberately does not cover them — folding a `bit-and` inside the
-   compiler would need the compiler's own source to use `bit-and`,
-   which the previous-generation seed cannot compile — and the `op > 10`
-   guard added to `opt-fold-binop` is load-bearing: without it a
-   constant `bit-and` folded to an inequality test.
-2. **`for` silently ignored a non-zero initializer** (`expr_inner.zyl`).
-   `(for (i 16) ...)` was parsed as two bindings — `i` with no
-   initializer, and an unnamed `16` — so the loop started at 0. Every
-   `for` in the corpus happens to start at 0, which is why this had
-   never surfaced. `parse-for-bindings` now distinguishes the
-   single-binding shorthand from a real binding list by whether the
-   first element is an identifier.
-3. **`print` truncated every Int to 32 bits** (`codegen.zyl`): the
-   format string was `"%d\n"` for a 64-bit value. Now `%lld`.
-4. **AES-NI FFI needed stack realignment** (`actor_runtime.c`):
-   generated code does not guarantee the SysV 16-byte alignment at a
-   call, and the key expansion keeps `__m128i` on its stack, so
-   reaching it through one call depth rather than another segfaulted.
-   `__attribute__((force_align_arg_pointer))` on the FFI entry point.
-5. Runtime additions: `zyl_zeroize` (volatile, survives dead-store
-   elimination), `zyl_mlock`, `zyl_random_fill`/`zyl_random_words`
-   (getrandom(2) with a /dev/urandom fallback), `zyl_cpuid_features`,
-   `zyl_aesni_available`, `zyl_aes_encrypt_block`. `zyl_pin_alloc` now
-   mlocks what it hands out, best-effort.
-6. `--filter` in `run_regression_tests.sh` was compared backwards (the
-   test name was matched against the filter text), so `--filter math`
-   selected nothing. It is now a substring of the test's own name.
-7. `car`/`cdr`/`cadr`/`caddr`/`cddr`/`list-rest` added to
-   `core/list.zyl` as plain functions — each takes one argument and
-   evaluates it once, so a macro would buy nothing, and a function can
-   be passed to a higher-order function.
-
-### The library (`stdlib/math/`, ~7,500 lines)
-
-Hashes (SHA-256/512, SHA3-256/512, SHAKE128/256, BLAKE2b, BLAKE3,
-HMAC-SHA256), symmetric (ChaCha20, Poly1305, ChaCha20-Poly1305,
-AES-GCM via AES-NI), asymmetric (X25519, Ed25519, ECDSA over P-256 /
-secp256k1 / P-384 with RFC 6979 nonces, RSA-PSS and RSA-OAEP), KDFs
-(HKDF, PBKDF2, Argon2id), big numbers (fixed-width naturals,
-Montgomery, Barrett, Miller-Rabin), RNG (getrandom, seeded ChaCha20),
-and the constant-time primitives everything else is built on. See
-`docs/math-crypto.md` for the representation conventions and the
-deliberate omissions (no PKCS#1 v1.5, no software AES, no RSA key
-generation, no randomized ECDSA nonces).
-
-### Verification
-
-- 16 new `tests/regression/math-*.zyl` files of published vectors
-  (NIST, FIPS, RFC) plus `tests/integration/math-protocol.zyl`, a
-  miniature authenticated key exchange across four modules.
-- `verify/sha2.py` and `verify/crypto.py` cross-check randomized inputs
-  against Python's `hashlib` and `cryptography` — 414 SHA digests over
-  lengths 0..1000, plus AEAD, curve and KDF cases.
-- `verify/timing.py` is a dudect-style leakage harness with a
-  deliberately leaky comparison as a positive control; it fails if it
-  cannot detect that control. Run it with `--filter timing`.
-- Every algorithm was first mirrored in Python against its reference
-  (CIOS Montgomery, Keccak's index conventions, the RCB complete
-  addition formulas, Argon2's addressing, BLAKE3's tree) before being
-  written in Zyl, which is why the first compile-and-run cycle found
-  compiler bugs rather than algorithm bugs.
-
-### Not done (from the plan)
-
-- BLAKE3's SIMD backend; the portable compression function is used.
-- ctgrind/valgrind instrumentation (`verify/timing.py` is the
-  statistical substitute).
-
-**The seed was re-cut twice** (`./boot.sh --bootstrap-from-self`,
-converging in 2 and 3 rounds); `build/boot/stage2.s`/`stage2.bin` are
-modified and not yet committed.
-
-## Current Session (2026-09-22, continued) — Phase 0: the Secret capability
+## Session (2026-09-22, continued) — Phase 0: the Secret capability
 
 **`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0's enforcement half is
 implemented and the library is annotated. Full suite 73/73, fixed point
@@ -1144,7 +1421,93 @@ Zeroization on scope exit and `print` redaction both need codegen hooks
 on the rest of `stdlib/math`'s entry points; the `Secret` trait for
 user-defined secret types, which waits on trait dispatch.
 
-## Current Session (2026-09-19)
+## Session (2026-09-22) — `stdlib/math`: the cryptography and number library
+
+**Implemented `stdlib/math/` — the cryptography and number library from
+`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` — plus the four compiler fixes it
+turned out to need. Full suite 65/65; the math group is 17/17.**
+
+### Compiler and runtime changes (all required by the library)
+
+1. **Bitwise operators did not exist** (`icnf.zyl`, `codegen.zyl`,
+   `optimization.zyl`, `type_inference.zyl`). `bit-and`, `bit-or`,
+   `bit-xor`, `bit-not`, `shl`, `shr` (logical) and `ashr` are new
+   opcodes 11-17 lowering to single instructions. Shift counts outside
+   0..63 are DEFINED rather than left to x86's mod-64 masking: logical
+   shifts give 0, `ashr` saturates to the sign bit. Constant folding
+   deliberately does not cover them — folding a `bit-and` inside the
+   compiler would need the compiler's own source to use `bit-and`,
+   which the previous-generation seed cannot compile — and the `op > 10`
+   guard added to `opt-fold-binop` is load-bearing: without it a
+   constant `bit-and` folded to an inequality test.
+2. **`for` silently ignored a non-zero initializer** (`expr_inner.zyl`).
+   `(for (i 16) ...)` was parsed as two bindings — `i` with no
+   initializer, and an unnamed `16` — so the loop started at 0. Every
+   `for` in the corpus happens to start at 0, which is why this had
+   never surfaced. `parse-for-bindings` now distinguishes the
+   single-binding shorthand from a real binding list by whether the
+   first element is an identifier.
+3. **`print` truncated every Int to 32 bits** (`codegen.zyl`): the
+   format string was `"%d\n"` for a 64-bit value. Now `%lld`.
+4. **AES-NI FFI needed stack realignment** (`actor_runtime.c`):
+   generated code does not guarantee the SysV 16-byte alignment at a
+   call, and the key expansion keeps `__m128i` on its stack, so
+   reaching it through one call depth rather than another segfaulted.
+   `__attribute__((force_align_arg_pointer))` on the FFI entry point.
+5. Runtime additions: `zyl_zeroize` (volatile, survives dead-store
+   elimination), `zyl_mlock`, `zyl_random_fill`/`zyl_random_words`
+   (getrandom(2) with a /dev/urandom fallback), `zyl_cpuid_features`,
+   `zyl_aesni_available`, `zyl_aes_encrypt_block`. `zyl_pin_alloc` now
+   mlocks what it hands out, best-effort.
+6. `--filter` in `run_regression_tests.sh` was compared backwards (the
+   test name was matched against the filter text), so `--filter math`
+   selected nothing. It is now a substring of the test's own name.
+7. `car`/`cdr`/`cadr`/`caddr`/`cddr`/`list-rest` added to
+   `core/list.zyl` as plain functions — each takes one argument and
+   evaluates it once, so a macro would buy nothing, and a function can
+   be passed to a higher-order function.
+
+### The library (`stdlib/math/`, ~7,500 lines)
+
+Hashes (SHA-256/512, SHA3-256/512, SHAKE128/256, BLAKE2b, BLAKE3,
+HMAC-SHA256), symmetric (ChaCha20, Poly1305, ChaCha20-Poly1305,
+AES-GCM via AES-NI), asymmetric (X25519, Ed25519, ECDSA over P-256 /
+secp256k1 / P-384 with RFC 6979 nonces, RSA-PSS and RSA-OAEP), KDFs
+(HKDF, PBKDF2, Argon2id), big numbers (fixed-width naturals,
+Montgomery, Barrett, Miller-Rabin), RNG (getrandom, seeded ChaCha20),
+and the constant-time primitives everything else is built on. See
+`docs/math-crypto.md` for the representation conventions and the
+deliberate omissions (no PKCS#1 v1.5, no software AES, no RSA key
+generation, no randomized ECDSA nonces).
+
+### Verification
+
+- 16 new `tests/regression/math-*.zyl` files of published vectors
+  (NIST, FIPS, RFC) plus `tests/integration/math-protocol.zyl`, a
+  miniature authenticated key exchange across four modules.
+- `verify/sha2.py` and `verify/crypto.py` cross-check randomized inputs
+  against Python's `hashlib` and `cryptography` — 414 SHA digests over
+  lengths 0..1000, plus AEAD, curve and KDF cases.
+- `verify/timing.py` is a dudect-style leakage harness with a
+  deliberately leaky comparison as a positive control; it fails if it
+  cannot detect that control. Run it with `--filter timing`.
+- Every algorithm was first mirrored in Python against its reference
+  (CIOS Montgomery, Keccak's index conventions, the RCB complete
+  addition formulas, Argon2's addressing, BLAKE3's tree) before being
+  written in Zyl, which is why the first compile-and-run cycle found
+  compiler bugs rather than algorithm bugs.
+
+### Not done (from the plan)
+
+- BLAKE3's SIMD backend; the portable compression function is used.
+- ctgrind/valgrind instrumentation (`verify/timing.py` is the
+  statistical substitute).
+
+**The seed was re-cut twice** (`./boot.sh --bootstrap-from-self`,
+converging in 2 and 3 rounds); `build/boot/stage2.s`/`stage2.bin` are
+modified and not yet committed.
+
+## Session (2026-09-19) — native balance validator wired into the compile path
 
 **Wired the native paren/bracket balance validator into the real compile path; fixed a latent paren-deficit bug in error_codes.zyl found along the way.**
 
@@ -1223,9 +1586,101 @@ of it sitting latent. LSP integration (this session's validator is the
 prerequisite) and the rest of `error_report.zyl` (colorized output,
 snippets) are still open — see `docs/error-system-architecture.md`.
 
-## Current Session (2026-09-15, final)
+*Status (2026-09-23):* the language server landed later on 2026-09-19
+(`7c25a65`); source snippets with a caret landed on 2026-09-23
+(`error_report.zyl`). Still open: the per-file depth check in
+`assemble.py` and colorized output.
+
+## Session (2026-09-17) — feature-parity survey closed, Rust evicted
+
+Picked up from the 17-item self-hosted-compiler feature-parity survey
+(`docs/rust-eviction-plan.md`, added 2026-09-16 once the fixed point
+above was finally solid). Fixed every remaining item:
+
+- Cross-deftype variant shadowing, trait-dispatch compiler crash,
+  contracts passthrough forms, with-resource/control-flow-ext/derive —
+  fixed earlier in this arc (see rust-eviction-plan.md for each).
+- **`boot.sh`'s `build/boot/stdlib` mirror was stale on every run after
+  the first** (`cp -R stdlib OUT/stdlib` nests instead of updating an
+  already-existing target dir) — silently froze the module-resolution
+  path any program `use`-ing compiler-internal modules actually read,
+  which is why `integration/selfhost-codegen` failed with a nonsensical
+  `E_UNBALANCED_PARENS`. `rm -rf` before the `cp -R` fixed it; also
+  found and fixed a duplicate `resolve-nominal` definition it exposed.
+- **Real per-ADT match exhaustiveness**: added a `gid` field to
+  `VTEntry` grouping a deftype's variants regardless of `tag` (which
+  restarts at 0 per deftype); guarded against a parser surface-form
+  ambiguity (`region_inference.zyl`'s nested-Cons-destructuring arms)
+  that would have produced false positives.
+- **Real closures (free-variable capture)**: `fn` referencing an
+  enclosing name now works. Heap `[tag,code,env]` triples, a new
+  `ICallClosure` call path, two independent VTable marks (`VTClosureFn`
+  vs `VTClosureReturn` — "this value is a closure" vs "calling this
+  hands one back" are different questions, conflating them was the
+  first bug found bringing this up).
+- **Real `try`/`catch`**: turned out the runtime already had a working
+  panic/longjmp mechanism (built for the test harness's own panic
+  recovery, never wired to anything else) — `error` needed to call it,
+  and a new `ITryCatch` codegen path calls `setjmp` inline in generated
+  code (not through an FFI wrapper, which would `ret` and become an
+  invalid longjmp target).
+
+**Result: `./run_regression_tests.sh --full` passes 43/43 through the
+self-hosted compiler** — up from 26/43 when the survey started, 0 known
+gaps left.
+
+Then went further than the survey: verified empirically that Rust
+isn't needed for **reseeding** either, not just the default build.
+Took a self-hosted seed many commits stale (predating all of the above)
+and fed it the current compiler source through the existing argv CLI,
+iterating stage1->stage2->stage3->... — round 1 differs from round 2
+(a compiler doesn't yet behave per source it JUST compiled, only source
+its own compiled predecessor already reflects), but round 2 and round 3
+were byte-identical, and matched what Rust had actually produced for
+the same source. Added `./boot.sh --bootstrap-from-self`, which does
+exactly this (up to 10 rounds), and it's now the normal reseed path.
+
+With that proven, executed Phase D: `git mv src archive/rust-bootstrap-
+2026` (with its own README explaining when it's still needed — only a
+change so large the previous seed's compiler can't even PARSE the new
+source, which no amount of self-iteration can solve), moved
+`Cargo.toml`/`Cargo.lock` alongside it, deleted `target/`, deleted
+`run_regression_tests_self.sh` (fully superseded by
+`run_regression_tests.sh` since it switched to `zyl-self`), deleted a
+pile of untracked/stray root junk (`a.out.*`, `--emit-*.s`,
+`larry_test.*`, `test_*.zyl`, `output.zyl`, etc.), and updated
+README.md/AGENTS.md/`.gitignore`/`docs/regression-tests.md` to stop
+referencing Cargo/`target/release`/`src/*.rs`.
+
+**Rust is no longer part of the active build, test, or use path.**
+`./boot.sh` (verify) and `./boot.sh --bootstrap-from-self` (reseed)
+both build with nothing but `cc`. `archive/rust-bootstrap-2026/` is
+preserved, self-contained and (with one path fix to `runtime.rs`) still
+buildable in place, purely as a fallback.
+
+**Not done / explicitly out of scope for this session**: Phase B
+(region inference's own result is still computed and discarded, never
+fed into codegen; `optimization.zyl` is still never called — both
+compile and are exercised by every self-hosted build, neither affects
+compiled output) and Phase C (`tools/repl.zyl` compiles and links now
+but has at least two known bugs — dropped `main` for trivial programs,
+an arena-corruption crash — treat it as an unfinished skeleton, not a
+working REPL).
+
+*Status (2026-09-23):* both were done later the same day. Region
+inference now rewrites non-escaping variants to stack allocation
+(`a2649e2`) and `optimization.zyl` does real constant folding and
+dead-branch elimination (`7872a63`), both wired into the pipeline. The
+REPL was made to run (`25092d1`, `6221eaa`) and was later replaced by the
+`stdlib/repl/` implementation (2026-09-23).
+
+## Session (2026-09-15, final) — stage2 segfault, CLI argv, deterministic helper names
 
 **Stage2 segfault FIXED. CLI working. Self-hosted fixed point blocked by pre-existing codegen bug.**
+
+(This entry restates the stage2 fix from the entry below it; the
+commit that added it also deleted that entry's first paragraphs,
+which have been restored from `50d6b6f`.)
 
 **Fixed (this session):**
 1. **Type inference segfault** (`type_inference.zyl`): `infer-expr-if` match arm had 9 stray tokens between bind-name and body → OOB read on `UOk` (1 field). Deleted stray tokens.
@@ -1242,10 +1697,59 @@ snippets) are still open — see `docs/error-system-architecture.md`.
 
 **Known gap (pre-existing, not fixed this session):**
 - Self-hosted compiler's `codegen.zyl` has a bug: `ffi-call` in `main` (or `if` at top level) causes missing `f_main` in output → self-hosted fixed point blocked. Rust compiler works; self-hosted compiler fails. Documented in rust-eviction-plan.md Phase A as known gap.
+  *Status (2026-09-23):* resolved; the fixed point holds, and `ffi-call`
+  inside an `if` in `main` compiles and runs.
 
 **Files changed:** `stdlib/compiler/type_inference.zyl`, `stdlib/compiler/region_inference.zyl`, `stdlib/compiler/icnf.zyl`, `selfhost/driver.zyl`, `stdlib/compiler/codegen.zyl`, `stdlib/compiler/icnf.zyl`, `runtime/actor_runtime.c`, `build/boot/stage2.s` (reseeded), `PROGRESS.md`.
 
-## Current Session (2026-09-15, continued further)
+## Session (2026-09-15, continued further) — stage2.bin segfault fixed, fixed point reached
+
+**stage2.bin segfault FIXED — true self-hosting fixed point reached (stage1 reproduces committed seed byte-for-byte; stage2==stage3).**
+
+Root-caused and fixed the "stage2.bin itself has a distinct bug" blocker from
+the previous entry below (`Expr.inner` null-deref reached through deep
+recursion in `collect-definitions`). Two separate bugs found via `gdb`
+(breakpoint on the crashing instruction, inspect `rdi`, walk back through
+`bt` to the miscompiled call site, then diff against the actual `deftype`
+arities in `expr_inner.zyl`/`icnf.zyl`):
+
+1. **`infer-expr-if` in `type_inference.zyl`**: its `(match unified (UOk
+   new-s ...))` arm had **9 stray literal tokens** (`Nil Nil Nil Nil Nil
+   (tc-new) Nil Nil Nil`) sitting between the bound name `new-s` and the
+   real body — leftover corruption from some earlier edit. Per the match-arm
+   grammar (`parse-match-arm` in `expr_inner.zyl`: *only the last form is the
+   body; everything else is treated as an additional bound field name*),
+   these 9 extra tokens were compiled as 9 *more* field-destructures off
+   `UOk` — which really has exactly 1 field (`(deftype UnifyResult (UOk
+   Subst) ...)` in `type_system.zyl`) — an out-of-bounds heap read every
+   time an `if` got type-checked. Fixed by deleting the stray tokens.
+2. **Seven arms in `region_inference.zyl`'s `ri-infer-expr`** (`ICall`,
+   `IFfi`, `IPrint`, `IIf`, `IWhile`, `IVariant`, `IMatch`) wrote *correct,
+   intentional* 2-statement bodies (a side-effecting call, then the real
+   result) directly as two trailing forms — e.g. `(IPrint d7 (ri-infer-expr
+   ri d7) (RR RStack None))` — without realizing the same grammar rule above
+   applies: `d7` binds fine, but the first body statement `(ri-infer-expr ri
+   d7)` (a call — i.e. "nested pattern" shaped) got treated as a *second
+   bound field* of `IPrint`, which per `icnf.zyl`'s `deftype Icnf` really
+   has only 1 payload field. Same OOB-read-off-the-end-of-the-struct bug,
+   this time additionally **misdirecting** which value gets passed to the
+   arm's (correctly, separately) lifted `_npmatch_NNN` helper — the bogus
+   OOB-read value stood in for the real last-bound field. Fixed by wrapping
+   each arm's 2-statement body in `(begin ...)` so the grammar sees exactly
+   one trailing body form, matching the working convention used everywhere
+   else in this file (`ISet`, `ILet`, etc., which already had single-body-form
+   arms and were never affected).
+
+After both fixes: `stage2.bin` (self-hosted-codegen'd machine code) compiles
+the trivial `(defn main () (print "hi"))` repro to completion (no crash),
+and — far more importantly — compiling its own full bundled source no
+longer segfaults either.
+
+**Bonus fix, found while verifying the actual self-hosting fixed point**:
+`icnf.zyl`'s `ic-fresh-id` (used to name lifted match-arm/lambda helper
+functions, e.g. `_npmatch_<id>`) returned a raw heap pointer
+(`arena-alloc-zeroed arena 1`) as the "unique id". Pointers are **not**
+deterministic across process runs (heap/arena base address varies), which
 broke run-to-run reproducibility of `stage2.bin`'s own output — confirmed by
 running the identical binary on the identical input twice and diffing
 (`f__npmatch_<pointer1>` vs `f__npmatch_<pointer2>`, otherwise byte-identical).
@@ -1280,783 +1784,12 @@ all silently ignored; it always reads `/tmp/zyl_boot_in.zyl` and writes
 `/tmp/zyl_boot_out.s`), so `boot.sh`'s normal (non-`--bootstrap-from-rust`)
 flow still can't run end-to-end yet. Worth a follow-up session — this is
 purely a missing-feature gap in `driver.zyl`, not a correctness bug.
+*Status:* argv CLI support landed in the next entry (`4231955`).
 
-## Current Session (2026-09-15, continued)
+## Session (2026-09-15) — stage1.bin self-compiles its own bundled source
 
-**stage1.bin self-hosted segfault: root-caused two duplicate-symbol collisions and one more deep-match codegen bug; bootstrap now gets much further.**
-
-Followed up on the "remaining blocker" from the previous entry below
-(`build/boot/stage1.bin` segfaulting nondeterministically) by bisecting
-with `gdb` down to a **minimal repro**: `(defn main () (print "hi"))`
-segfaults `stage1.bin` deterministically and immediately (the earlier
-"nondeterminism" was illusory — different inputs just die at different
-points in the same broken pipeline, not true memory corruption).
-
-Root causes found via gdb (breakpoint on the crashing call target, inspect
-register/tag values, cross-reference against the source's `match` arms
-and `deftype` declarations):
-
-1. **`stdlib/compiler/contract_injection.zyl` was never added to
-   `selfhost/assemble.py`'s bundle file list** (missed when the module was
-   ported — commit `33235c4`). It independently defines
-   `ci-expand-program(exprs)` (1-arg), which collides by name with
-   `closure_inline.zyl`'s unrelated `ci-expand-program(arena, prog)`
-   (2-arg). `driver.zyl`'s contract-injection pipeline step called
-   `(ci-expand-program exprs)` expecting the 1-arg version, but since that
-   module was never assembled in, it silently linked against
-   closure_inline's 2-arg function instead — an arity-mismatched call
-   feeding garbage through the unset second argument register. Worse:
-   `contract_injection.zyl` itself doesn't even compile correctly if
-   added — it references accessors/constructors (`d-name`, `t-name`,
-   `TestNode`, ...) that don't match the real `DefnNode`/`TestDecl`/
-   `TestSuiteNode` shapes in `expr_inner.zyl` (written against a stale
-   data model, never finished). Fix: leave it out of the bundle, make
-   `driver.zyl`'s contract-injection step an explicit identity
-   pass-through (`(let ci-exprs exprs ...)`) instead of accidentally
-   calling the wrong function.
-2. **`populate-variant-to-adt` defined in both `monomorphization.zyl`
-   (2-arg) and `type_inference.zyl` (3-arg)** — same collision class.
-   Renamed monomorphization.zyl's copy to `mc-populate-variant-to-adt`.
-3. **`list-nth` defined in both `type_inference.zyl` and
-   `monomorphization.zyl`** with different failure semantics (silent
-   `TVar` sentinel vs. loud `zyl_f_error`/`E_LIST_NTH_OOB`) — same
-   collision class. Renamed type_inference.zyl's copy to `ti-list-nth`.
-4. **`ic-collect-vt-run` (icnf.zyl) and `opt-optimize-fns`
-   (optimization.zyl) both had a 3-level nested match** (matching one
-   value, then a field of it, then a helper call's result) — the same
-   Rust-bootstrap codegen hazard documented in the previous session's
-   entry below (silently returns a bogus `-1` sentinel instead of the real
-   result). Split both into flat top-level helper functions
-   (`ic-collect-vt-inner`/`ic-collect-vt-deftype`,
-   `opt-optimize-fns-ifs`) to dodge it.
-
-**Net effect:** `build/boot/stage1.bin` used to crash inside
-`ic-collect-vt-run` on essentially any input. It now progresses through
-parse → bridge → modules → macros → type-infer → contract-injection →
-mono → trait-dispatch → closure-inline → assert-lowering → lower →
-optimize before crashing during region-infer, in a **currently
-undiagnosed tag-mismatch** inside `opt-optimize-fns`'s dispatch on
-`ICNFFuncSig` (a single-constructor type — its sole arm didn't match at
-runtime, tag was neither the expected `Cons`/`Nil` values for the
-enclosing `List` either; suspect a monomorphized `List` instantiation
-getting a different tag numbering than the hardcoded `cmp` immediates
-expect, but not yet confirmed). This is a new, narrower, and much better
-understood problem than the vague "nondeterministic segfault" reported
-previously — worth another dedicated debugging pass.
-
-Verification after each fix: `./target/release/zyl
-selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes all 9
-phases cleanly, and `./run_regression_tests.sh --full --no-boot` is still
-green through every test up to the already-known-slow
-`integration/selfhost-codegen` (which the runner's timeout doesn't reach —
-matches pre-existing documented behavior, not a new regression).
-
-Given how many of these bugs stem from *silent* same-name/different-arity
-collisions across `stdlib/compiler/*.zyl` files that only bite once every
-file is bundled together, a standing lint (`grep`-based duplicate-`defn`-name
-scan across `selfhost/assemble.py`'s file list, ignoring string/comment
-false positives) would be worth adding to catch the next one before it
-costs another multi-hour bisection.
-
-**Follow-up (same session): two more bugs found, `stage1.bin` now runs to
-completion on the minimal repro but still emits incomplete output.**
-
-Kept bisecting past the `opt-optimize-fns`/`ICNFFuncSig` tag-mismatch
-noted above:
-
-5. **The `-1` sentinel was itself a red herring from a *third* collision**:
-   `opt-optimize`'s `(match fns (IP fns2 stmts ...) (d1 ...))` dispatches
-   purely on the tag byte at offset 0 with no runtime type identity. `IP`
-   (`ICNFProgram`'s only constructor) always has tag 0 — which is *also*
-   `List`'s `Cons` tag (`(deftype List (Cons T (List T)) Nil)` — Cons
-   declared first). `driver.zyl`'s only caller of `opt-optimize` always
-   passes the raw `(List IFn)` from `ic-program`, never an actual `IP`
-   value, so any non-empty list was silently misinterpreted as an `IP`
-   struct (its head/tail cells reinterpreted as `fns2`/`stmts`) — the real
-   source of the `ic-collect-vt-run`/`opt-optimize-fns` crashes chased
-   above. Fixed by always calling `opt-optimize-fns` directly (see commit
-   after `b29e2c6`).
-6. **`opt-optimize-fns-ifs` (the split introduced to dodge the deep-match
-   codegen bug) took 7 arguments** (`os rest name params ret_type
-   opt-body result_id`). The bootstrap has a documented arity <= 6 limit
-   (see `lexer.zyl`'s own comments: "arity <= 6"). Exceeding it silently
-   miscompiled the function — no error, but the whole functions list
-   collapsed to `Nil` by the time it reached codegen. `stage1.bin` would
-   run to completion and report success while emitting an assembly file
-   missing every function body. Fixed by pre-building the `IFS` struct
-   once in the caller and passing it as a single argument (3 args total).
-
-After both fixes, `stage1.bin` runs the minimal `(defn main () (print
-"hi"))` repro **to completion (exit 0)** instead of segfaulting, and
-writes `/tmp/zyl_boot_out.s` — real forward progress. But the output is
-still missing the function body (just the `main` -> `zyl_call_on_big_stack`
-entry stub, no `f_main`). Root cause, confirmed via gdb inspecting the
-actual heap struct tags: **`ic-program` (icnf.zyl) produces a `(List
-IFn)`** — `IFn` = `(String, List String, Icnf)`, 3 fields, tag varies
-(observed tag 15 in one instance) — **but `opt-optimize-fns` pattern-matches
-for `IFS`/`ICNFFuncSig`** (`type_system.zyl`) — `(String, List (Pair
-String Type), Option Type, List ICNFNode, Int)`, 5 fields, single
-constructor always tag 0. These are two completely different, unrelated
-data shapes from different modules that happen to share a superficial
-"function record" role. Since a real `IFn`'s tag never equals 0, it never
-matches `opt-optimize-fns`'s `IFS` pattern, so every function silently
-fails to match, falls through the recursion, and the list winds up empty
-by the time codegen runs. **This means `optimization.zyl`'s
-`opt-optimize`/`opt-optimize-fns` has probably never correctly processed
-real pipeline output** — masked all along by the tag-collision bug fixed
-in item 5 above (which meant this code path was never actually reached
-for non-trivial input before now). Needs a proper fix — either rewrite
-`opt-optimize-fns` against the real `IFn`/`Icnf` shapes, or add an
-explicit `IFn` -> `IFS` conversion step in the driver pipeline before
-optimization — rather than another quick patch. This is the next concrete
-blocker for a working self-hosted `stage1.bin`.
-
-Verified after every fix in this follow-up: `./target/release/zyl
-selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes cleanly
-(takes ~2 minutes now — this is pre-existing Rust-bootstrap slowness on
-the ~690KB self-host source, not a regression; see the already-documented
-"Rust bootstrap too slow for test runner" note elsewhere in this file),
-and `./run_regression_tests.sh --full --no-boot` is still green through
-every test up to the already-known-slow `integration/selfhost-codegen`.
-
-## Current Session (2026-09-15)
-
-**Paren-imbalance corruption sweep: `--emit-asm` via Rust bootstrap now works end-to-end again.**
-
-`./target/release/zyl selfhost/zyl_selfhost_compiler.zyl -o out --emit-asm` had
-regressed to failing partway through with undefined-symbol link errors
-(`_ZYL_d1`, `_ZYL_eq`, etc.). Root cause was **not** a Rust codegen
-regression as first suspected, but function-level paren mis-nesting inside
-several `stdlib/compiler/*.zyl` files, present since the Hindley-Milner port
-(`452e016`) and invisible to `selfhost/assemble.py`'s per-file global
-depth-zero check (individual function errors can cancel out file-wide).
-Wrote a per-defn-boundary paren-depth-drift analyzer to find them.
-
-Fixed in `stdlib/compiler/type_inference.zyl`, `type_system.zyl`,
-`monomorphization.zyl`, `codegen.zyl`, `region_inference.zyl`,
-`optimization.zyl`, `selfhost/driver.zyl` (see commit `50c6a97` for the full
-list). Notable non-paren bugs found along the way:
-
-- Duplicate hyphen/underscore-case `extract_constructor_mapping` /
-  `extract_mapping_loop` definitions in `type_inference.zyl` — `sanitize_name()`
-  collapses both to one symbol → dup-symbol link error.
-- `/=` used as "not equal" in `optimization.zyl` BNeq const-folding (real
-  operator is `!=`), 3 occurrences.
-- `ri-union-regions` in `region_inference.zyl`: unwrapped match arms + wrong
-  `Pair` arity — genuine logic bug.
-- `opt-dce-recurse-loop` had a redundant `(if (eq inner ICBegin) ...)` wrapper
-  around an already-exhaustive match; `eq` isn't a defined function here.
-- **Confirmed real Rust codegen bug** in `src/icnf.rs` (near commits
-  `282df18`/`a509882`): a catch-all match arm shaped `(d1 BODY)` with a bare
-  literal `BODY`, nested 3+ levels deep inside other matches, miscompiles into
-  `call _ZYL_<boundvar>` instead of treating the binding as unused. Not fixed
-  at the source — worked around per-callsite by refactoring deep match chains
-  into separate top-level helper functions (`params-equal`,
-  `extract_mapping_loop`, `opt-optimize-program`). Other unaudited deep
-  matches may hit this later; a real fix belongs in `src/icnf.rs`'s
-  catch-all/`is_catch_all` codegen path.
-
-Result: `--emit-asm` completes all 9 phases and links a valid ELF binary with
-the Rust-built `zyl`, with no undefined-symbol errors. `cargo build --release`
-confirmed clean.
-
-**Remaining blocker (not fixed): self-hosted bootstrap still fails.**
-`./boot.sh --bootstrap-from-rust` builds stage1 fine (Rust-compiled), but
-running `build/boot/stage1.bin` on `selfhost/zyl_selfhost_compiler.zyl` (the
-self-hosted compiler compiling itself) **segfaults nondeterministically** —
-crash point varies between runs (sometimes progresses through
-parse/bridge/modules/macros/type-infer/contract-injection per `/tmp/dbg`
-before crashing, sometimes crashes right after "parse"). This points to
-memory corruption / uninitialized memory / an allocator bug in the
-self-hosted runtime, distinct from the paren-imbalance issues above and not
-yet root-caused. Until this is fixed, stage2.s/stage2.bin cannot be rebuilt
-via self-hosting and the self-hosting fixed point cannot be re-verified.
-
-## Current Session (2026-09-13)
-
-**Native error system Phase 1 modules landed (`error_codes.zyl`, `error_report.zyl`).**
-
-`stdlib/compiler/error_codes.zyl`: 52-code catalog (`ErrorCode` = `(EC name
-String phase Int severity Int message String)`), `error-codes`, `ec-name` /
-`ec-phase` / `ec-severity` / `ec-message`, `ec-contains`, `ec-lookup`
-(`ErrorFind found/code`), `ec-count`. Mirrors `src/error.rs` + self-hosted
-extras (`E_UNBALANCED_PARENS`, `E_MATCH_ARM_COMPLEX`, `E_DUPLICATE_VARIANT`,
-`E_CODEGEN_BUFFER_LIMIT`, `E_LIST_NTH_OOB`,
-`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`). Verified: count 52, lookups resolve,
-bogus name → found 0, phases/severities correct.
-
-`stdlib/compiler/error_report.zyl`: `ErrorLocation` (Int-first field order),
-`ErrorSnippet`, `int-to-str` (table-slice digits, zero-ffi/arena), `space-run`,
-`pointer-line`, `make-loc`, `el-path`/`el-line`/`el-col`, `loc-string`,
-`err-header`, `make-snippet`, `es-col`/`es-line`, `arrow-line`. Verified via
-str-eq probes: `int-to-str` 0/7/52/1024, pointer-line cols 1/3, loc-string
-`tests/example.zyl:12:4`, header, arrow — all correct.
-
-Two more Rust-bootstrap codegen constraints discovered and encoded in
-`error_report.zyl`:
-
-- **Inline `zyl_cstr_concat` with a call operand (especially 2nd position)
-  miscompiles**; nested concat chains too. Rule: every `str-concat` takes only
-  pre-bound lets/literals; all intermediate values go through `let`. (The
-  self-hosted compiler calls the real `str-concat` body, so this is
-  belt-and-braces — but it keeps every result provable via `str-eq`.)
-- **String-first fields in a `make-variant` record mis-layout** — reading a
-  later Int field yields garbage. Put Int fields first (like `CheckState` in
-  `sexp_balance.zyl`); `EL` is `(line Int col Int file-path String)`.
-
-## Current Session (2026-09-13)
-
-**Native S-expression balance validator works (Rust bootstrap, `stdlib/compiler/sexp_balance.zyl`).**
-
-The phase A.8 error-system first milestone: `sexp_balance.zyl` now correctly
-classifies all nine smoke cases (`(` unbalanced; `(a (b (c)))` balanced; `)`
-unbalanced; `(]` mismatched; `()`/`[]{}`/`; (comment (`/`(a(b)())` balanced;
-`(a (b c)` unbalanced). Compiles clean (Phases 1-9) via the Rust bootstrap and
-verifies through the `/tmp/sbtest.zyl` module harness.
-
-Root causes found and fixed in the rewrite:
-
-- **Duplicate variant names break `match` dispatch** — all four `BalanceResult`
-  variants were named `BR`, so the first arm always matched and every input
-  reported "balanced". Distinct variant names (`Balanced`, `UnbalancedOpenString`,
-  `UnbalancedClose`, `MismatchedPair`) required.
-- **Rust-bootstrap Bool fields in record ctors mis-store** — `False`/`True`
-  literals in a 9-field `CheckState` ctor compiled to non-zero box pointers, so
-  every flag read back truthy (everything entered "in-string").  Flag fields
-  converted to `Int` 0/1; literal `0`/`1` store correctly (line/col Ints always
-  did). Rule: prefer `Int` 0/1 over `True`/`False` in record fields.
-- **ffi-call results type as fresh type vars** (`src/type_inference.rs:1513`) —
-  a `zyl_cstr_from_int` result is typed `Int`, so `print` emits the int path and
-  prints a raw pointer. CLI reports must print string literals + Int values only.
-- **`zyl_cstr_byte_at(ptr, i)`** (not `ffi-call "zyl_cstr_to_int"`) is the correct
-  char-byte primitive; `zyl_cstr_from_int` segfaults with a null arena.
-- **ffi-call trailing `1000`** is the FFI timeout parameter (mirrors
-  `icnf.rs timeout: 1000`).
-
-Known Rust-bootstrap gaps recorded for the driver work: `zyl_argc()` always
-returns 0 (`zyl_save_args` defined in `runtime/actor_runtime.c` but never
-called), so CLI `main` argument reading is dead under the Rust bootstrap; the
-self-hosted driver must consume `BalanceResult` fields directly instead of
-relying on `zyl_arg_str`.
-
-## Current Session (2026-09-12)
-
-**Match exhaustiveness enforced at compile time (Rust bootstrap).**
-
-`src/icnf.rs` now checks, at ICNF generation, that every variant of the
-matched ADT has an arm (`check_match_exhaustive`, called from the
-`ExprInner::Match` handler). A match missing a constructor fails with
-`E_MATCH_NONEXHAUSTIVE` listing the absent variant(s); a catch-all arm
-(`(_ body)` wildcard, or any arm whose head names no constructor of any
-deftype, e.g. the `(d2 ...)` fallback) explicitly satisfies the check.
-Monomorphized scrutinee names (e.g. `Shape_Float`) fall back to whichever
-deftype's variant list covers every arm. Nested-desugar matches (generated
-by `desugar_arm_raw`) enumerate all variants and remain green.
-
-New harness capability: `tests/compile-fail/*.zyl` are "must-fail"
-regressions — compilation must fail or the test is marked failed
-(`run_fail_test`). Added `match-non-exhaustive.zyl` (missing `Triangle`
-arm) and `match-nested-non-exhaustive.zyl` (nested match omitting `Rect`).
-Positive coverage in `regression/match-exhaustive.zyl` unchanged.
-
-Full suite: **43/44** (only the pre-existing `integration/selfhost-codegen`
-Rust-bootstrap timeout fails; it passes under the self-hosted compiler and
-`boot/fixed-point` stays green).
-
-Note: the earlier in-flight refactor (restructured `MatchPattern`, added
-`MatchPattern::Identifier`, reworked arm parsing) was a regression against
-a green baseline — combined-syntax arms like `(Circle r (* r r))` already
-functioned via `decompose_match_arm`. It remains preserved in `stash@{0}`
-but is not needed for exhaustiveness.
-
-## Current Session (2026-09-11)
-
-**Compiler library packaging fixed.** The Rust compiler now embeds all
-stdlib modules and the actor runtime/header at build time. Installed `zyl` and
-`zyl-repl` no longer depend on the repository checkout or the caller's
-working directory for standard-library resolution or runtime linking. Core
-(`core/core`, including Option, Result, and List) is an automatic prelude;
-testing and other non-core libraries remain explicit imports.
-
-The self-hosted `zyl-self` wrapper now packages its own `stdlib/` bundle and
-actor runtime, runs from that bundle directory, and works outside the
-repository. The bootstrap fixed-point check and an external self-hosted
-allocator test both pass. Its resolver also injects the core prelude by
-default while recognizing the bundled bootstrap marker to avoid duplicate
-definitions during self-compilation.
-
-Verified with a compiler invoked from `/tmp`, embedded `core` and
-`allocator` programs, and `./run_regression_tests.sh --quick --no-boot`
-(6/6).
-
-## Current State (2026-09-06)
-
-**Self-hosting: COMPLETE, deterministic, verified. Regression suite: 27/27**
-**in `--full` (all tests pass; `integration/selfhost-codegen` passes when**
-**compiled with the self-hosted compiler — Rust bootstrap is too slow to**
-**compile it within test timeout).**
-
-```
-./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
-```
-
-**Latest session (2026-09-06): two Rust-compiler codegen fixes, two tests green.**
-
-1. **`unit_test` option-flatmap SIGSEGV (exit 139) fixed** — root cause:
-   codegen's C-helper alignment pattern `mov r15, rsp / and rsp,-16 / call /
-   mov rsp, r15` assumed r15 survives the call. It survives pure C helpers
-   (SysV callee-saved) but `zyl_callN` dispatches into Zyl-generated code,
-   whose own nested align block uses r15 as scratch, clobbering the outer
-   save. Verified in gdb: after `zyl_call1` rsp was correct but r15 had been
-   overwritten with the inner dispatch's frame offset; `mov rsp,r15` tore the
-   stack and the match join's `add rsp,+pop rbp;ret` jumped to 0xa.
-   Fix in `src/codegen.rs`: every align site now stashes the pre-call rsp in
-   a dedicated **rsp-stash slot at the bottom of every frame**,
-   `[rbp-(spill_frame.max(256)+8)]`, instead of r15. All frames (main, user
-   fns, closures) extended uniformly by 8 bytes to reserve the slot — TCO's
-   uniform-frame invariant is preserved. Wrapper frames (`_ZYL_actor_*`,
-   spawn/send) use `wrapper_stack+8` via a temporary `spill_frame` override
-   so their bodies' align sites point at their own slot. Slots are LIFO-safe
-   (callee frames grow strictly below the current rsp and can never
-   underflow the stash) and spill/param slots never collide with it.
-2. **`regression/types` link failure (`_ZYL__t_Some` undefined) fixed** —
-   constructor calls to underscore-prefixed ADT variants (`_t_Some`,
-   `_t_None`) were never lowered to `MakeVariant`: the PostProcessor's
-   constructor-detection guards required `is_uppercase_ident` (first char),
-   which fails for `_t_*` names even though they are registered, known
-   variants. Relaxed the three guards (`Call`, bare-ident unit variants,
-   `Apply`) in `src/ast.rs` to also fire when `find_adt_for_variant` matches,
-   matching the documented "Priority 1: known ADT variant converts regardless
-   of builtin exclusion".
-
-**Verified (with `ulimit -c 0`):** `unit_test`, all of `regression/*`,
-`stress/*` (incl. deep-recursion, balanced-parens), `integration/*` (incl.
-selfhost-codegen with self-hosted compiler), and `boot/fixed-point` all pass.
-Selfhosted compiler unchanged (`stdlib/compiler/codegen.zyl`, `selfhost/` have
-no r15 pattern).
-
-### Known Limitations
-- **`integration/selfhost-codegen` (pre-existing, now fixed)** — the test runs the
-  selfhosted parser+icnf+codegen on a tiny in-memory source; it passes when
-  compiled with the self-hosted compiler (`build/boot/zyl-self`) but the Rust
-  bootstrap is too slow to compile it within the test runner's timeout. This
-  is a Rust bootstrap performance issue, not a correctness bug.
-  `boot/fixed-point` exercises the same path and remains green.
-
-**Latest session (2026-09-10): Book documentation verity pass.**
-
-1. **`book/src/part1/ch13-project-walkthrough.md` rewritten from scratch** — the
-   old walkthrough used non-existent APIs (`string-split`, `vec-slice`,
-   `string-join`, `list-literal`, struct-carrying `ProcessorMsg` actors) and
-   would not compile. The new chapter is a single-file **log processor** built
-   exclusively from constructs verified at runtime against `./target/debug/zyl`
-   (recursive tokenizer over `str-substring` + arena `str-intern`, recursion
-   with 4 Int accumulator args, `Stats` struct assembled once at the end,
-   built-in `file-open`/`file-read`, built-in test harness). Every code block
-   was re-extracted from the chapter text and recompiled, reproducing the real
-   output (`Total:4 Error:2 Warn:1 Info:1` on `sample2.log`).
-2. **New runnable example project**: `book/examples/log-processor/`
-   (`log-processor.zyl`, `log-processor-tests.zyl` — 4/4 tests pass,
-   `sample.log`).
-3. **Verified current-bootstrap behaviors documented honestly** (ch13 notes):
-   modules resolve relative to the compiler's CWD (build from repo root);
-   user modules outside stdlib are not resolvable (single-file programs only);
-   `{ }` brace blocks in `use` are invalid; `str-eq` returns `Int` 0/1;
-   `print` writes each argument on its own line; `str-substring` returns
-   scratch-buffer pointers (must `str-intern`); `struct-get` requires a
-   pre-bound struct; structs passed through stacked recursion mis-stage
-   (counts double) — use Int args; `(list ...)` literal is unimplemented
-   (`_ZYL_list` link error); `vec-push` in `while`+`set!` segfaults;
-   `(run-tests)` suppresses `main`; the test harness mis-stages the *first*
-   token-operations run under it (order tests so simple ones run first);
-   actor `spawn`/`send` value staging is broken (actor variant presented as
-   a design sketch, not runnable code).
-4. **`book/src/appendix/appendix-b-stdlib.md` recovered and fixed** — the
-   working-tree copy (richer uncommitted revision) was accidentally reverted
-   during this session (`git checkout`); no git object held it, so it was
-   reconstructed from the in-session read, then re-synced. All `(use core {
-   ... })` brace blocks converted to bare `(use core)` + `;` comment
-   inventories (brace form is a parse error).
-5. **`book/src/part1/ch11-testing.md` §11.3** — build command corrected to
-   `zyl test-file.zyl -o test-file` then `./test-file.bin` (no `-o` yields
-   `a.out.s` / `a.out.bin`, not `test-file.bin`); notes CWD-relative module
-   resolution.
-6. **`book/book.toml` fixed for the installed mdbook** — removed unknown keys
-   (`copy-fonts`, `theme`, `curly-quotes`, old `[output.html.css]` section,
-   `fa-github` icon) that failed the whole HTML backend; `mdbook build` now
-   completes with zero warnings (also fixed `<t>`/`<mutex>` HTML-tag warnings
-   in ch17/ch21 by backticking `TCap<T>` headings and `Arc<Mutex>`).
-
-**Known limitations recorded in the book (2026-09-10):**
-- Runnable actor example blocked on `spawn`/`send` message-staging fix.
-- Multi-file user modules blocked (confirmed unsupported).
-- Test-harness first-use token-operation mis-staging: keep harness tests free
-  of token ops, or order simple tests first.
-
-**Self-hosting: COMPLETE, deterministic, verified. Regression suite 182/182 (unit_test) + 6/6 smoke.**
-
-```
-./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
-```
-
-The Zyl compiler written in Zyl compiles itself end-to-end with a strict
-byte-identical fixed point. Generic ADTs instantiate correctly with any
-concrete type (per-site instantiation, positional instance naming);
-per-site polymorphic functions work cross-module (shared list helpers
-replacing per-module duplicates).
-
-**Latest session (2026-08-27):**
-- **Phase 1: Type system ADTs + core operations ported to Zyl** (`stdlib/compiler/type_system.zyl`):
-  Type ADT (TInt, TBool, TString, TFun, TList, TArray, TCap, TMut, TStruct, TVar),
-  Subst map (TypeBind), TypeVarGen, TypeEnv (EnvBind), TraitContext, TypeInferer,
-  UnifyResult, subst-lookup/insert/apply/union, type-free-vars, unify/unify-terms/unify-var/unify-args.
-  All 15 functions compile and emit correct ICNF. Workaround applied for ICNF bug
-  (see Research below): split recursive lambdas into helper functions
-  (subst_apply_type/list, type_free_vars_list) to avoid the closure-in-let bug.
-- **ICNF bug discovered:** `let` bindings of lambdas inside functions lose their
-  Assign nodes — codegen emits direct calls (`call _ZYL_f`) instead of indirect
-  calls through the closure value. Root cause in `src/icnf.rs` line 2612:
-  Call handler always emits `ICNFInner::Call(func_name, ...)` without checking
-  if func_name is a local variable in `current_scope`. Affects any Zyl code that
-  stores lambdas in `let` bindings and invokes them. Filed as research note
-  `research/icnf-closure-call-bug.md`.
-- **C-style block formatting discipline** — S-expression formatting rule
-  adopted for `stdlib/compiler/` and `selfhost/` files: each open paren on
-  its own line at the correct indent, each close aligned with its matching
-  open. This makes paren balance trivial to verify visually and eliminates
-  an entire class of boot-pipeline regressions. Documented in
-  `skills/zyl/SKILL.md`.
-- **`not` operator fixed** — `f_not` linker errors from the ICNF generator
-  treating `not` as a function call. Added explicit `(IIf ... (IConst 0)
-  (IConst 1))` handling in `ic-special` for both `stdlib/compiler/icnf.zyl`
-     and `selfhost/zyl_selfhost_compiler.zyl`.
-- **`icnf-closure-call-bug` fixed** — `CallIndirect` emitted for non-function
-  local bindings caused `rdi` to receive integer values instead of closure
-  function pointers (SIGSEGV). Root cause: `current_scope` contains ALL
-  bindings, but `convert_apply_call` and `ExprInner::Call` handler emitted
-  `CallIndirect` for any name found in scope, without verifying the value
-  is a closure. Fix: added `closure_ssa_ids: HashSet<usize>` to
-  `IcnfConverter`; registered at every `ICNFInner::Closure` emission site;
-  call handlers now check `closure_ssa_ids.contains(callee_ssa)` before
-  emitting `CallIndirect`, falling back to `ICNFInner::Call` for non-callable
-  locals. Regression: `option-map some` (closure call via let binding) now
-  passes; full unit_test suite: 182/182 passed.
-- **`stl` and `module-items-for` helpers** — added to both `resolver.zyl`
-  and the selfhost compiler to support missing stdlib operations.
-- **`cg-load-unresolved-name` fix** — emit `mov rax, 0` instead of
-  `[rbp0]` for unresolved names; replaced `str-eq-cstr` with `str-eq` to
-  eliminate linker errors.
-
-### How the last two gaps were closed:
-1. **Rust bootstrap runtime nondeterminism** — std HashMap/HashSet use a
-   per-process random seed; iteration order leaked into compilation
-   decisions (flaky "unknown variant" failures across identical runs).
-   Fixed: src/deterministic.rs provides FNV-1a-hashed HashMap/HashSet;
-   all of src/ uses them. Same input -> same output, every run.
-2. **Match-arm multi-call miscompilation** — an arm body combining a
-   constant with TWO calls loses its computation ("bind fields; store 0").
-   Confirmed instance: icnf-arm-size returned 0 because its body was
-   `(+ 1 (icnf-size body) (icnf-count-arms rest))`. Rule: match-arm bodies
-   contain at most ONE call; sums nest through icnf-add2/add3 helpers.
-   After fixing the last instance (icnf-arm-size), the fixed point holds.
-
-**Details:** `docs/implementation-status.md`, `docs/regression-tests.md`.
-
----
-
-## Roadmap (prioritized)
-
-### P0 — Consolidate the self-hosted toolchain
-- [x] **Boot build automation**: `boot.sh` runs the full loop (Rust `zyl`
-      → stage1 → stage2 → stage3) and verifies the fixed point. *(done
-      2026-08-25 — it immediately exposed that the earlier determinism
-      check was vacuous; see Current State.)* Still to do: wire it into
-      `run_regression_tests.sh --full`.
-- [x] **Determinism gap CLOSED (2026-08-25)**: TWO root causes found and
-      fixed:
-      (a) The Zyl lowering's `ic-binop` handled only 1-2 arguments — any
-      3+-argument binop (`(+ 3 x y)`) silently lowered to `(IConst 0)` in
-      stage>=2 binaries, zeroing out size computations. Fixed with a
-      left-associative n-ary fold (`ic-binop-fold`), matching the Rust
-      bootstrap's convert_nary_fold.
-      (b) `icnf-arm-size`'s `(+ 1 (sz body) (count rest))` shape needed
-      icnf-add2 nesting (match-arm bodies: at most ONE call).
-      `./boot.sh` reports the fixed point holds; verified end-to-end with
-      nested-variant and multi-call programs through stage2.
-- [x] **E_MATCH_ARM_COMPLEX guard (Rust side)**: src/icnf.rs now rejects,
-      at ICNF-generation time, any match arm whose BinOp directly combines
-      2+ call operands AND a constant operand — the confirmed-failing
-      shape. Bare call+call sums are allowed (verified working through
-      stage1->stage2). Note: the Rust n-ary fold emits chained binops so
-      most multi-call sums never present this shape; the guard is
-      defense-in-depth for future lowering changes.
-- [x] **Lexer fix**: ';' inside string literals no longer starts a
-      comment (src/lexer.rs strip_comments is now string-aware). Strings
-      containing semicolons previously truncated at the ';' — this was
-      corrupting boot sources that used ';' in message strings.
-- [x] **Rust bootstrap nondeterminism FIXED**: src/deterministic.rs
-      FNV-1a HashMap/HashSet across all of src/.
-- [x] **Enforce the one-call rule in the compiler** *(done 2026-08-25)*:
-      the self-hosted lowering now rejects the confirmed-failing shape at
-      AST level (`ic-arm-guard` in icnf.zyl: arm-body binop combining a
-      constant with 2+ calls -> E_MATCH_ARM_COMPLEX), mirroring the Rust
-      ICNF-level guard. Also added `ic-binop-fold` (left-associative n-ary
-      binop lowering) so 3+-argument binops no longer silently become
-      `(IConst 0)`; verified `(- 10 2 3)` = 5 through stage2.
-      Generalisation discovered while landing stack args: ANY binop whose
-      direct operands are TWO calls miscompiles in stage>=2, not just
-      match arms — code must bind calls to lets before combining. Documented
-      in skills/zyl/SKILL.md constraint 8.
-- [x] **Wire fixed-point check into default regressions** *(done
-      2026-08-25)*: `run_regression_tests.sh --full` now runs the boot
-      fixed-point check by default; opt out with `--no-boot`, force in any
-      mode with `--boot`. Suite: 25/25.
-- [x] **Compile errors for known-fragile shapes** instead of silent
-      miscompiles *(done 2026-08-25, commit c9b5c69)*:
-    - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
-      `zyl-parse` (parser.zyl).
-    - `E_TOO_MANY_PARAMS` — defns with >6 params rejected at lowering.
-    - `E_DUPLICATE_VARIANT` — variant names shared across deftypes
-      rejected in `vt-from-variants` (icnf.zyl).
-- [x] **Codegen buffer headroom**: `cg-new` bumped to a 64MB zeroed text
-      buffer and the driver now fails loudly (E_CODEGEN_BUFFER_FULL) if
-      output comes within 1MB of capacity, instead of silently corrupting
-      the arena. True growth-on-demand deferred until the compiler source
-      approaches ~20MB of generated asm.
-- [x] **AI language skill** (`skills/zyl/SKILL.md`): expert-level Zyl
-      knowledge for AI agents — syntax, the bootstrap constraint list
-      (arity≤6, match-as-body, paren discipline, buf-append append
-      semantics, FFI patterns, tag/match pitfalls), idioms, debugging
-      recipes. Higher priority than most items: a robust skill file
-      multiplies the effectiveness of every subsequent AI-assisted task.
-      **(created 2026-08-25; keep updated as constraints are lifted)**
-
-### P1 — Developer experience: diagnostics & editing
-- [x] **Errors index**: docs/errors.md — all 45 ZylError variants with
-      their formatted messages + the five lowering-guard diagnostics.
-      *(done 2026-08-25)*
-- [x] **Match-type diagnostics**: unresolved-scrutinee matches now say
-      "cannot determine the type of this match's scrutinee" with
-      remediation hints; unknown variants list the resolved type's known
-      variants. *(done 2026-08-25)*
-- [ ] **Compiler error system overhaul** — remaining items toward
-      Rust-class diagnostics:
-    - primary span + labeled secondary spans ("borrowed here", "moved
-      here" analogues for capability types TMut/TCap and regions);
-    - machine-applicable suggestion snippets (`did you mean` via edit
-      distance over in-scope names, missing arm suggestions from the vt);
-    - fix the root inference limitations behind "cannot determine the
-      type of this match's scrutinee" (call-site -> defn param ADT
-      unification before match lowering);
-    - structured (JSON) error output so the LSP and tools can consume it.
-- [x] **VS Code language definition**: TextMate grammar, language
-      configuration, package manifest under editors/vscode/.*
-      *(done 2026-08-25)*
-- [ ] **Doc comments → documentation**: standardize `;|`/`;;` doc-comment
-      convention already used across stdlib, then a `zyl doc` generator
-      (modules → variants/functions → params/results/examples) emitting
-      Markdown. The stdlib is already consistently documented — formalize
-      it.
-
-### P2 — Language services
-- [ ] **LSP server** (depends on P1 structured diagnostics): initialize /
-      hover (types from inference) / go-to-definition / document symbols /
-      diagnostics publish / completion over env + module exports.
-      Incremental plan: JSON-RPC stdio loop in Rust reusing src/parser.rs,
-      then a Zyl-written LSP once the self-hosted one is trusted.
-
-### P3 — Bootstrap correctness & performance
-- [x] **map-remove / for-loop value corruption RESOLVED** *(2026-08-25,
-      suite 27/27)*. Two independent codegen defects:
-      (1) For-loop supply-node leak — fixed via ICNFFuncSig.result_id +
-      epilogue re-materialization, function-wide embed-first dedup,
-      recursive For-init hoisting, and branch emitters that skip past
-      their final node.
-      (2) MakeStruct field computation clobbered r10 — emit_load_into's
-      MakeStruct path computed field values (which may contain calls whose
-      arg staging uses r10) while r10 held the new struct's base pointer;
-      fields landed in the wrong object (map-remove returned its input).
-      Fixed by computing all fields first (push), then allocating and
-      popping into place.
-      Suite 27/27, boot fixed point holds.
-
-### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
-The Rust bootstrap gained significant inference/codegen semantics during
-the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
-(stdlib/compiler/*.zyl) does not yet mirror:
-- [x] **Session 2026-08-27: Rust eviction plan defined** — goal is to port
-      type inference + monomorphization to Zyl and remove Rust bootstrap
-      entirely. Plan: `stdlib/compiler/type_inference.zyl` (~2000 loc),
-      `stdlib/compiler/monomorphization.zyl` (~1882 loc), wire into
-      `selfhost/driver.zyl`, verify fixed point, archive `src/`.
-- [x] **2026-08-27: Adjacent-type duplicate deftype conflict resolved** —
-      `TypeInferer` was defined in BOTH `type_system.zyl` (Phase-1 4-field)
-      and `type_inference.zyl` (11-field), a duplicate-deftype violation that
-      creates incompatible constructor identities and breaks the combined
-      boot build. Per decision, consolidated all type-system ADTs into
-      `type_system.zyl` (the single owner): the 11-field `TypeInferer` plus
-      `FnSig`/`ParamType`/`FnReturn`/`AdtDef`/`Variant`/`Field`/`BodyCache`/
-      `VarPair` moved from `type_inference.zyl`; the outdated 4-field
-      `TypeInferer` and placeholder `infer-expr`/`infer-type` stubs removed.
-      Both files remain paren-balanced (depth 0), no duplicate deftypes/defns,
-      and the combined source parses, type-infers, and monomorphizes identically
-      to before. Regression suite: 6/6 pass.
-- [x] **2026-08-27: Type-inference stub compile blocker fixed** — the combined
-      source failed Phase 6 with `match: non-exhaustive ... variant Some cannot
-      be resolved`. Root cause: placeholder functions matched `Some`/`None`
-      against lookups that actually return a plain `List` (`lookup-adt-def` →
-      `Nil`/variants), plus `apply-to-nominal` used a fake `"___scrutinee_dummy"`
-       lookup and dropped the subject type. Fixed: threaded the real match
-       `subject-type` through `infer-lookup-arm-field-types`/`-scrutinee-adt`;
-       replaced `apply-to-nominal` with a faithful `resolve-nominal` (mirrors Rust
-       `resolve_nominal`: `subst-apply` then `TStruct` name, else `None`);
-       rewrote `infer-lookup-variant-fields`/`infer-get-variant-fields` to walk
-       the real `TIAdtDefs` via `lookup-adt-def` + new `infer-find-variant-fields`,
-       threading the inferer. Combined source now completes Phases 1–9 (parse →
-       assembly). Regression suite: 6/6 pass. Remaining non-blocking warning:
-       `subst-lookup-binds` (type_system.zyl:119) codegen warning re unbound
-       `None` — compiles; investigate later.
-- [x] **2026-08-27: Type-ADT restructured + unification threaded + "Core" ported** —
-       (a) `Type` ADT gained `TFloat`/`TUnit`/`TMap`/`TResult`; `TCap` changed from
-       1-field to `(TCap CapKind Type)`; removed standalone `TMut` Type variant
-       (now a CapKind). Added `CapKind` ADT: `TCCap`/`TCMut`/`TCAtomic`/`TCBox`/`TCPin`.
-       (b) `subst-apply-type` and `type-free-vars` updated for all new variants.
-       (c) **Unification chain fixed**: `unify` threads accumulated subst through
-       `unify-terms`/`unify-var` (was restarting with `subst-empty` at every
-       primitive match); `unify-var` now takes the current subst `s` and threads
-       it (was creating empty subst); `unify-terms` returns `(UOk s)` instead of
-       `(UOk (subst-empty))` so bindings accumulate. (d) **`collect-definitions`
-       ported** — the declared "Core" that was skeleton/missing: iterates exprs,
-       registers `Defn`/`Call(defn)`/`Apply(defn)` in `TIKnownFns` +
-       `TIFuncReturns`, handles `Deftype`/`StructDef`. (e) `finalize-param-types`
-       ported (resolves type vars from call-site evidence). (f) `infer-program`
-       entry point added (collect → infer each expr → finalize). (g) Updated
-       TCap/TMut/TBox/TPin → TCap/TCMut/TCBox/TCPin in all inference usages.
-       Both files compile through Phases 1–9; regression suite 6/6 pass.
-- [x] **2026-09-10: Type inference engine ported to Zyl** — Hindley-Milner with
-      capability types (TCap/TMut), trait resolution, ADT instantiation tracking,
-      occurs-check unification, struct field lookup. All regression suites pass
-      (structs 34, types 46, adts 8, functions 17, control-flow 17, arithmetic
-      53, collections 28, concurrency 6, ffi 4, macros 7, io 4, deep-recursion
-      15, balanced-parens 6, match-value-position, generics-multi-type).
-- [x] **2026-09-10: Monomorphization ported to Zyl** — full monomorphization
-      pipeline using type inference data: variant_to_adt for constructor
-      recognition, adt_param_order for positional instance naming, adt_defs,
-      adt_instantiations, known_functions, function_returns, known_types,
-      struct_defs, trait_impls. All regression suites pass.
-- [x] **Per-call-site polymorphism for untyped params** — body_infer_cache keyed by
-      call-site signature, inferring_functions for recursion guard, finalize_param_types
-      for consistent-site refinement. Verified by generics-multi-type test.
-- [x] **Match pattern-var shadowing + arm-scoped env** — env_bind_param used in
-      inferer_bind_pattern_vars_atom; each arm gets fresh env snapshot.
-- [x] **Epilogue result materialization** — Zyl codegen uses IFn directly; last
-      expression value in rax via standard epilogue (mov rsp,rbp; pop rbp; ret).
-      No separate result_id needed; verified by all regression tests.
-
-**Self-hosting gap analysis (2026-08-27, UPDATED 2026-09-10):**
-
-The Zyl-written compiler (`selfhost/zyl_selfhost_compiler.zyl`) now handles
-Phases 1–11 (parsing → region inference → type inference → monomorphization
-→ ICNF lowering → codegen → assembly) for the self-hosted compilation path.
-The boot fixed point holds:
-
-```
-./boot.sh        # stage1 (Rust) -> stage2 (Zyl) -> stage3 (Zyl)
-                 # stage2.asm == stage3.asm (deterministic)
-```
-
-The Zyl compiler written in Zyl compiles itself through all phases.
-The Rust bootstrap is now only needed for the initial stage1 build.
-All P3.5 items complete.
-
-Until full Rust eviction, selfhost sources must respect the stricter-of-the-two
-constraints; the boot fixed point is the arbiter.
-
-### P4 — Feature completeness & polish
-- [x] Contract injection overlay (spec §23, Phase 10) — implemented
-      in Rust → Zyl; integrated into selfhost driver.
-- [ ] Fix top-level `(def Name Expr)` misprint noted in REPL limitations.
-- [ ] Warnings sweep (~160 → 0).
-- [ ] Boot-binary CLI parity (`-o`, `--emit-asm`) and error messages with
-      spans from the Zyl front end.
-
----
-
-## Bootstrap Constraints (for code written in Zyl — see skills/zyl/SKILL.md)
-
-1. ~~Keep function arities <=6~~ LIFTED (2026-08-25): stack-passed args work.
-2. ~~A `match` may appear only as the entire body of a defn~~ LIFTED
-   (2026-08-25): match works in value position; keep nesting moderate.
-3. Match arms must enumerate every constructor (no wildcard fallback;
-   unknown arms map to discriminant 0).
-4. Pattern wildcards must be named dummies (`dN`), never bare `_`.
-5. Prefer flat `begin` sequences and recursion over deep nesting.
-6. `buf-append` appends at strlen(dst) (true append); fresh buffers only.
-7. Parens must balance per top-level form — a missing closer silently
-   nests subsequent defns inside the broken form.
-8. No binop may directly combine TWO call operands — anywhere, not just
-   match arms (stage>=2 miscompile: computes 0). Bind calls to `let`s
-   first; in arm bodies keep ONE call and nest via icnf-add2.
-
----
-
-## Milestone History
-
-| Milestone | Date | Notes |
-|-----------|------|-------|
-| All 9 phases + linking | 2026-08 | structs, ADTs, floats, actors, closures, FFI, try/catch, I/O |
-| Clean-room self-host front end | 2026-08-24 | recursive ADTs + structural match end-to-end |
-| stage1 compiles own source | 2026-08-24 | first boot build |
-| **Self-hosting fixed point** | **2026-08-25** | **stage1→stage2→stage3, deterministic** |
-| r15-align SIGSEGV fix (codegen) | 2026-09-06 | rsp-stash frame slot replaces r15 save/restore; option-flatmap green |
-| `_t_` constructor lowering fix (ast) | 2026-09-06 | underscore-prefixed ADT variants lower to MakeVariant; regression/types green |
-| **selfhost-codegen test fixed** | **2026-09-06** | **passes with self-hosted compiler; Rust bootstrap too slow for test runner** |
-| Contract injection (Phase 10) | 2026-09-09 | parser + contract_injection.rs + pipeline integration complete |
-| Contract injection (Zyl) | 2026-09-09 | stdlib/compiler/contract_injection.zyl in structural form; used by selfhost driver |
-| **Type inference ported to Zyl** | **2026-09-10** | **Hindley-Milner + capability types + trait resolution + occurs-check** |
-| **Monomorphization ported to Zyl** | **2026-09-10** | **Full monomorphization using type inference data; all regression tests pass** |
-| **P3.5 complete: Zyl self-hosts all phases** | **2026-09-10** | **boot.sh fixed point holds; Zyl compiler compiles itself end-to-end** |
-| Book documentation verity pass | 2026-09-10 | ch13 rewritten from runtime-verified constructs; appendix B braces fixed; ch11 §11.3 corrected; book.toml builds with zero warnings |
-
-### Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
-
-Each item below was a distinct blocker discovered by bisecting the
-stage1→stage2 pipeline; kept here because the failure signatures recur
-whenever new code enters the boot source.
-
-1. **icnf `ic-ffi` never built an IFfi node** — returned a bare arg list
-   and dropped the C symbol, so every `(ffi-call ...)` lowered to garbage
-   constants in stage≥2 binaries. Fix: `(IFfi (atom-text sym) args)`.
-   Use `atom-text`, not `ident-name` (the latter intentionally falls back
-   for string atoms).
-2. **codegen `cg-fn-check-head` returned instead of recursing** — only the
-   first collected fn name ever matched. Plus **duplicate `FnName`
-   deftypes**: duplicate deftypes create incompatible constructor
-   identities and pattern matches silently fail.
-3. **Call alignment pad after pushes** — odd-arg calls popped garbage.
-   Pad must be emitted before pushes; unified direct/indirect fire path.
-4. **HOF support added**: `lea rip+offset` loads for fn values, indirect
-   `call r10` through local bindings.
-5. **Rem without `cqo`** — stale rdx overflowed idiv (SIGFPE on every `%`).
-6. **Arity>6 functions eliminated** (lexer merges, cg-if-parts takes CGP
-   carrier, match-arm pipeline rewritten as cg-arm-one/cg-arm-match —
-   mind CGP field order on construction vs destructuring).
-7. **Entry stub runs f_main via zyl_call_on_big_stack** — generated
-   binaries previously ran on the 8MB main thread.
-8. **`buf-append` overwrite bug (final blocker)**: allocator called
-   zyl_strcpy (overwrites dst from 0). Rust bootstrap treats buf-append as
-   a StringBuffer special form with a cursor, hiding the discrepancy. Fix:
-   `zyl_str_append` C primitive + true-append semantics.
-9. **file-open `"a"` mode truncated** in both Rust codegen (syscall flags)
-   and the C helper — wiped logs/output each open and masqueraded as
-   "dropped statements" during debugging.
-10. **Unbalanced assembled source** — cg-function missing a closer +
-    cg-entry-stub extra closer silently nested 12 defns inside one form.
-
----
-
-## Session N+1: stage1.bin now correctly self-compiles its own bundled
-source end-to-end (major milestone). Full list of bugs found and fixed,
+stage1.bin now correctly self-compiles its own bundled source end-to-end
+(major milestone; commit `8ad47c5`). Full list of bugs found and fixed,
 roughly in the order hit:
 
 1. **`region_inference.zyl` had systematic `IFn`/`IIf`/`IWhile`/`ISet`/
@@ -2196,121 +1929,783 @@ compiles itself" (now working) and full self-hosting fixed point
 (stage2 producing byte-identical-behavior stage3 output, `boot.sh`'s
 actual pass condition).
 
-## Current Session (2026-09-17): feature-parity survey closed, Rust evicted
+*Status:* the stage2.bin crash was fixed in the "continued further"
+entry above (`50d6b6f`). The lexer whitespace root fix (item 8) is still
+open; `assemble.py` still collapses whitespace.
 
-Picked up from the 17-item self-hosted-compiler feature-parity survey
-(`docs/rust-eviction-plan.md`, added 2026-09-16 once the fixed point
-above was finally solid). Fixed every remaining item:
+## Session (2026-09-15, continued) — duplicate-symbol collisions and the IFn/IFS mismatch
 
-- Cross-deftype variant shadowing, trait-dispatch compiler crash,
-  contracts passthrough forms, with-resource/control-flow-ext/derive —
-  fixed earlier in this arc (see rust-eviction-plan.md for each).
-- **`boot.sh`'s `build/boot/stdlib` mirror was stale on every run after
-  the first** (`cp -R stdlib OUT/stdlib` nests instead of updating an
-  already-existing target dir) — silently froze the module-resolution
-  path any program `use`-ing compiler-internal modules actually read,
-  which is why `integration/selfhost-codegen` failed with a nonsensical
-  `E_UNBALANCED_PARENS`. `rm -rf` before the `cp -R` fixed it; also
-  found and fixed a duplicate `resolve-nominal` definition it exposed.
-- **Real per-ADT match exhaustiveness**: added a `gid` field to
-  `VTEntry` grouping a deftype's variants regardless of `tag` (which
-  restarts at 0 per deftype); guarded against a parser surface-form
-  ambiguity (`region_inference.zyl`'s nested-Cons-destructuring arms)
-  that would have produced false positives.
-- **Real closures (free-variable capture)**: `fn` referencing an
-  enclosing name now works. Heap `[tag,code,env]` triples, a new
-  `ICallClosure` call path, two independent VTable marks (`VTClosureFn`
-  vs `VTClosureReturn` — "this value is a closure" vs "calling this
-  hands one back" are different questions, conflating them was the
-  first bug found bringing this up).
-- **Real `try`/`catch`**: turned out the runtime already had a working
-  panic/longjmp mechanism (built for the test harness's own panic
-  recovery, never wired to anything else) — `error` needed to call it,
-  and a new `ITryCatch` codegen path calls `setjmp` inline in generated
-  code (not through an FFI wrapper, which would `ret` and become an
-  invalid longjmp target).
+**stage1.bin self-hosted segfault: root-caused two duplicate-symbol collisions and one more deep-match codegen bug; bootstrap now gets much further.**
 
-**Result: `./run_regression_tests.sh --full` passes 43/43 through the
-self-hosted compiler** — up from 26/43 when the survey started, 0 known
-gaps left.
+Followed up on the "remaining blocker" from the previous entry below
+(`build/boot/stage1.bin` segfaulting nondeterministically) by bisecting
+with `gdb` down to a **minimal repro**: `(defn main () (print "hi"))`
+segfaults `stage1.bin` deterministically and immediately (the earlier
+"nondeterminism" was illusory — different inputs just die at different
+points in the same broken pipeline, not true memory corruption).
 
-Then went further than the survey: verified empirically that Rust
-isn't needed for **reseeding** either, not just the default build.
-Took a self-hosted seed many commits stale (predating all of the above)
-and fed it the current compiler source through the existing argv CLI,
-iterating stage1->stage2->stage3->... — round 1 differs from round 2
-(a compiler doesn't yet behave per source it JUST compiled, only source
-its own compiled predecessor already reflects), but round 2 and round 3
-were byte-identical, and matched what Rust had actually produced for
-the same source. Added `./boot.sh --bootstrap-from-self`, which does
-exactly this (up to 10 rounds), and it's now the normal reseed path.
+Root causes found via gdb (breakpoint on the crashing call target, inspect
+register/tag values, cross-reference against the source's `match` arms
+and `deftype` declarations):
 
-With that proven, executed Phase D: `git mv src archive/rust-bootstrap-
-2026` (with its own README explaining when it's still needed — only a
-change so large the previous seed's compiler can't even PARSE the new
-source, which no amount of self-iteration can solve), moved
-`Cargo.toml`/`Cargo.lock` alongside it, deleted `target/`, deleted
-`run_regression_tests_self.sh` (fully superseded by
-`run_regression_tests.sh` since it switched to `zyl-self`), deleted a
-pile of untracked/stray root junk (`a.out.*`, `--emit-*.s`,
-`larry_test.*`, `test_*.zyl`, `output.zyl`, etc.), and updated
-README.md/AGENTS.md/`.gitignore`/`docs/regression-tests.md` to stop
-referencing Cargo/`target/release`/`src/*.rs`.
+1. **`stdlib/compiler/contract_injection.zyl` was never added to
+   `selfhost/assemble.py`'s bundle file list** (missed when the module was
+   ported — commit `33235c4`). It independently defines
+   `ci-expand-program(exprs)` (1-arg), which collides by name with
+   `closure_inline.zyl`'s unrelated `ci-expand-program(arena, prog)`
+   (2-arg). `driver.zyl`'s contract-injection pipeline step called
+   `(ci-expand-program exprs)` expecting the 1-arg version, but since that
+   module was never assembled in, it silently linked against
+   closure_inline's 2-arg function instead — an arity-mismatched call
+   feeding garbage through the unset second argument register. Worse:
+   `contract_injection.zyl` itself doesn't even compile correctly if
+   added — it references accessors/constructors (`d-name`, `t-name`,
+   `TestNode`, ...) that don't match the real `DefnNode`/`TestDecl`/
+   `TestSuiteNode` shapes in `expr_inner.zyl` (written against a stale
+   data model, never finished). Fix: leave it out of the bundle, make
+   `driver.zyl`'s contract-injection step an explicit identity
+   pass-through (`(let ci-exprs exprs ...)`) instead of accidentally
+   calling the wrong function.
+2. **`populate-variant-to-adt` defined in both `monomorphization.zyl`
+   (2-arg) and `type_inference.zyl` (3-arg)** — same collision class.
+   Renamed monomorphization.zyl's copy to `mc-populate-variant-to-adt`.
+3. **`list-nth` defined in both `type_inference.zyl` and
+   `monomorphization.zyl`** with different failure semantics (silent
+   `TVar` sentinel vs. loud `zyl_f_error`/`E_LIST_NTH_OOB`) — same
+   collision class. Renamed type_inference.zyl's copy to `ti-list-nth`.
+4. **`ic-collect-vt-run` (icnf.zyl) and `opt-optimize-fns`
+   (optimization.zyl) both had a 3-level nested match** (matching one
+   value, then a field of it, then a helper call's result) — the same
+   Rust-bootstrap codegen hazard documented in the previous session's
+   entry below (silently returns a bogus `-1` sentinel instead of the real
+   result). Split both into flat top-level helper functions
+   (`ic-collect-vt-inner`/`ic-collect-vt-deftype`,
+   `opt-optimize-fns-ifs`) to dodge it.
 
-**Rust is no longer part of the active build, test, or use path.**
-`./boot.sh` (verify) and `./boot.sh --bootstrap-from-self` (reseed)
-both build with nothing but `cc`. `archive/rust-bootstrap-2026/` is
-preserved, self-contained and (with one path fix to `runtime.rs`) still
-buildable in place, purely as a fallback.
+**Net effect:** `build/boot/stage1.bin` used to crash inside
+`ic-collect-vt-run` on essentially any input. It now progresses through
+parse → bridge → modules → macros → type-infer → contract-injection →
+mono → trait-dispatch → closure-inline → assert-lowering → lower →
+optimize before crashing during region-infer, in a **currently
+undiagnosed tag-mismatch** inside `opt-optimize-fns`'s dispatch on
+`ICNFFuncSig` (a single-constructor type — its sole arm didn't match at
+runtime, tag was neither the expected `Cons`/`Nil` values for the
+enclosing `List` either; suspect a monomorphized `List` instantiation
+getting a different tag numbering than the hardcoded `cmp` immediates
+expect, but not yet confirmed). This is a new, narrower, and much better
+understood problem than the vague "nondeterministic segfault" reported
+previously — worth another dedicated debugging pass.
 
-**Not done / explicitly out of scope for this session**: Phase B
-(region inference's own result is still computed and discarded, never
-fed into codegen; `optimization.zyl` is still never called — both
-compile and are exercised by every self-hosted build, neither affects
-compiled output) and Phase C (`tools/repl.zyl` compiles and links now
-but has at least two known bugs — dropped `main` for trivial programs,
-an arena-corruption crash — treat it as an unfinished skeleton, not a
-working REPL).
+Verification after each fix: `./target/release/zyl
+selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes all 9
+phases cleanly, and `./run_regression_tests.sh --full --no-boot` is still
+green through every test up to the already-known-slow
+`integration/selfhost-codegen` (which the runner's timeout doesn't reach —
+matches pre-existing documented behavior, not a new regression).
 
-## Pointers
+Given how many of these bugs stem from *silent* same-name/different-arity
+collisions across `stdlib/compiler/*.zyl` files that only bite once every
+file is bundled together, a standing lint (`grep`-based duplicate-`defn`-name
+scan across `selfhost/assemble.py`'s file list, ignoring string/comment
+false positives) would be worth adding to catch the next one before it
+costs another multi-hour bisection.
 
-- Architecture decisions: `docs/architecture-decisions.md`
-- Design rationale: `docs/design-rationale.md`
-- Codebase map: `docs/codebase-map.md`
-- Regression infrastructure: `docs/regression-tests.md`
-- Historical phase details: `docs/implementation-status.md`
-- Specifications: `specifications/` (v1.0–v4.1), `zyl_specification.txt` (v4.2)
+**Follow-up (same session): two more bugs found, `stage1.bin` now runs to
+completion on the minimal repro but still emits incomplete output.**
+
+Kept bisecting past the `opt-optimize-fns`/`ICNFFuncSig` tag-mismatch
+noted above:
+
+5. **The `-1` sentinel was itself a red herring from a *third* collision**:
+   `opt-optimize`'s `(match fns (IP fns2 stmts ...) (d1 ...))` dispatches
+   purely on the tag byte at offset 0 with no runtime type identity. `IP`
+   (`ICNFProgram`'s only constructor) always has tag 0 — which is *also*
+   `List`'s `Cons` tag (`(deftype List (Cons T (List T)) Nil)` — Cons
+   declared first). `driver.zyl`'s only caller of `opt-optimize` always
+   passes the raw `(List IFn)` from `ic-program`, never an actual `IP`
+   value, so any non-empty list was silently misinterpreted as an `IP`
+   struct (its head/tail cells reinterpreted as `fns2`/`stmts`) — the real
+   source of the `ic-collect-vt-run`/`opt-optimize-fns` crashes chased
+   above. Fixed by always calling `opt-optimize-fns` directly (see commit
+   after `b29e2c6`).
+6. **`opt-optimize-fns-ifs` (the split introduced to dodge the deep-match
+   codegen bug) took 7 arguments** (`os rest name params ret_type
+   opt-body result_id`). The bootstrap has a documented arity <= 6 limit
+   (see `lexer.zyl`'s own comments: "arity <= 6"). Exceeding it silently
+   miscompiled the function — no error, but the whole functions list
+   collapsed to `Nil` by the time it reached codegen. `stage1.bin` would
+   run to completion and report success while emitting an assembly file
+   missing every function body. Fixed by pre-building the `IFS` struct
+   once in the caller and passing it as a single argument (3 args total).
+
+After both fixes, `stage1.bin` runs the minimal `(defn main () (print
+"hi"))` repro **to completion (exit 0)** instead of segfaulting, and
+writes `/tmp/zyl_boot_out.s` — real forward progress. But the output is
+still missing the function body (just the `main` -> `zyl_call_on_big_stack`
+entry stub, no `f_main`). Root cause, confirmed via gdb inspecting the
+actual heap struct tags: **`ic-program` (icnf.zyl) produces a `(List
+IFn)`** — `IFn` = `(String, List String, Icnf)`, 3 fields, tag varies
+(observed tag 15 in one instance) — **but `opt-optimize-fns` pattern-matches
+for `IFS`/`ICNFFuncSig`** (`type_system.zyl`) — `(String, List (Pair
+String Type), Option Type, List ICNFNode, Int)`, 5 fields, single
+constructor always tag 0. These are two completely different, unrelated
+data shapes from different modules that happen to share a superficial
+"function record" role. Since a real `IFn`'s tag never equals 0, it never
+matches `opt-optimize-fns`'s `IFS` pattern, so every function silently
+fails to match, falls through the recursion, and the list winds up empty
+by the time codegen runs. **This means `optimization.zyl`'s
+`opt-optimize`/`opt-optimize-fns` has probably never correctly processed
+real pipeline output** — masked all along by the tag-collision bug fixed
+in item 5 above (which meant this code path was never actually reached
+for non-trivial input before now). Needs a proper fix — either rewrite
+`opt-optimize-fns` against the real `IFn`/`Icnf` shapes, or add an
+explicit `IFn` -> `IFS` conversion step in the driver pipeline before
+optimization — rather than another quick patch. This is the next concrete
+blocker for a working self-hosted `stage1.bin`.
+*Status (2026-09-23):* `optimization.zyl` was rewritten against the real
+tree-shaped Icnf on 2026-09-17 (`7872a63`) and is in the pipeline. For
+duplicate names, `assemble.py` now drops repeated `defn`s
+(`deduplicate_defns`), `duplicate_check.zyl` rejects duplicates within one
+program (`E_DUPLICATE_DEFINITION`), and the package system gives
+same-named definitions in different modules distinct keys.
+
+Verified after every fix in this follow-up: `./target/release/zyl
+selfhost/zyl_selfhost_compiler.zyl --emit-asm` still completes cleanly
+(takes ~2 minutes now — this is pre-existing Rust-bootstrap slowness on
+the ~690KB self-host source, not a regression; see the already-documented
+"Rust bootstrap too slow for test runner" note elsewhere in this file),
+and `./run_regression_tests.sh --full --no-boot` is still green through
+every test up to the already-known-slow `integration/selfhost-codegen`.
+
+## Session (2026-09-15) — paren-imbalance corruption sweep
+
+**Paren-imbalance corruption sweep: `--emit-asm` via Rust bootstrap now works end-to-end again.**
+
+`./target/release/zyl selfhost/zyl_selfhost_compiler.zyl -o out --emit-asm` had
+regressed to failing partway through with undefined-symbol link errors
+(`_ZYL_d1`, `_ZYL_eq`, etc.). Root cause was **not** a Rust codegen
+regression as first suspected, but function-level paren mis-nesting inside
+several `stdlib/compiler/*.zyl` files, present since the Hindley-Milner port
+(`452e016`) and invisible to `selfhost/assemble.py`'s per-file global
+depth-zero check (individual function errors can cancel out file-wide).
+Wrote a per-defn-boundary paren-depth-drift analyzer to find them.
+
+Fixed in `stdlib/compiler/type_inference.zyl`, `type_system.zyl`,
+`monomorphization.zyl`, `codegen.zyl`, `region_inference.zyl`,
+`optimization.zyl`, `selfhost/driver.zyl` (see commit `50c6a97` for the full
+list). Notable non-paren bugs found along the way:
+
+- Duplicate hyphen/underscore-case `extract_constructor_mapping` /
+  `extract_mapping_loop` definitions in `type_inference.zyl` — `sanitize_name()`
+  collapses both to one symbol → dup-symbol link error.
+- `/=` used as "not equal" in `optimization.zyl` BNeq const-folding (real
+  operator is `!=`), 3 occurrences.
+- `ri-union-regions` in `region_inference.zyl`: unwrapped match arms + wrong
+  `Pair` arity — genuine logic bug.
+- `opt-dce-recurse-loop` had a redundant `(if (eq inner ICBegin) ...)` wrapper
+  around an already-exhaustive match; `eq` isn't a defined function here.
+- **Confirmed real Rust codegen bug** in `src/icnf.rs` (near commits
+  `282df18`/`a509882`): a catch-all match arm shaped `(d1 BODY)` with a bare
+  literal `BODY`, nested 3+ levels deep inside other matches, miscompiles into
+  `call _ZYL_<boundvar>` instead of treating the binding as unused. Not fixed
+  at the source — worked around per-callsite by refactoring deep match chains
+  into separate top-level helper functions (`params-equal`,
+  `extract_mapping_loop`, `opt-optimize-program`). Other unaudited deep
+  matches may hit this later; a real fix belongs in `src/icnf.rs`'s
+  catch-all/`is_catch_all` codegen path.
+
+Result: `--emit-asm` completes all 9 phases and links a valid ELF binary with
+the Rust-built `zyl`, with no undefined-symbol errors. `cargo build --release`
+confirmed clean.
+
+**Remaining blocker (not fixed): self-hosted bootstrap still fails.**
+`./boot.sh --bootstrap-from-rust` builds stage1 fine (Rust-compiled), but
+running `build/boot/stage1.bin` on `selfhost/zyl_selfhost_compiler.zyl` (the
+self-hosted compiler compiling itself) **segfaults nondeterministically** —
+crash point varies between runs (sometimes progresses through
+parse/bridge/modules/macros/type-infer/contract-injection per `/tmp/dbg`
+before crashing, sometimes crashes right after "parse"). This points to
+memory corruption / uninitialized memory / an allocator bug in the
+self-hosted runtime, distinct from the paren-imbalance issues above and not
+yet root-caused. Until this is fixed, stage2.s/stage2.bin cannot be rebuilt
+via self-hosting and the self-hosting fixed point cannot be re-verified.
+*Status:* resolved by the later 2026-09-15 entries above.
+
+## Session (2026-09-13) — error system Phase 1: error codes and reports
+
+**Native error system Phase 1 modules landed (`error_codes.zyl`, `error_report.zyl`).**
+
+`stdlib/compiler/error_codes.zyl`: 52-code catalog (`ErrorCode` = `(EC name
+String phase Int severity Int message String)`), `error-codes`, `ec-name` /
+`ec-phase` / `ec-severity` / `ec-message`, `ec-contains`, `ec-lookup`
+(`ErrorFind found/code`), `ec-count`. Mirrors `src/error.rs` + self-hosted
+extras (`E_UNBALANCED_PARENS`, `E_MATCH_ARM_COMPLEX`, `E_DUPLICATE_VARIANT`,
+`E_CODEGEN_BUFFER_LIMIT`, `E_LIST_NTH_OOB`,
+`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`). Verified: count 52, lookups resolve,
+bogus name → found 0, phases/severities correct.
+
+`stdlib/compiler/error_report.zyl`: `ErrorLocation` (Int-first field order),
+`ErrorSnippet`, `int-to-str` (table-slice digits, zero-ffi/arena), `space-run`,
+`pointer-line`, `make-loc`, `el-path`/`el-line`/`el-col`, `loc-string`,
+`err-header`, `make-snippet`, `es-col`/`es-line`, `arrow-line`. Verified via
+str-eq probes: `int-to-str` 0/7/52/1024, pointer-line cols 1/3, loc-string
+`tests/example.zyl:12:4`, header, arrow — all correct.
+
+Two more Rust-bootstrap codegen constraints discovered and encoded in
+`error_report.zyl`:
+
+- **Inline `zyl_cstr_concat` with a call operand (especially 2nd position)
+  miscompiles**; nested concat chains too. Rule: every `str-concat` takes only
+  pre-bound lets/literals; all intermediate values go through `let`. (The
+  self-hosted compiler calls the real `str-concat` body, so this is
+  belt-and-braces — but it keeps every result provable via `str-eq`.)
+- **String-first fields in a `make-variant` record mis-layout** — reading a
+  later Int field yields garbage. Put Int fields first (like `CheckState` in
+  `sexp_balance.zyl`); `EL` is `(line Int col Int file-path String)`.
+
+## Session (2026-09-13) — native S-expression balance validator
+
+**Native S-expression balance validator works (Rust bootstrap, `stdlib/compiler/sexp_balance.zyl`).**
+
+The phase A.8 error-system first milestone: `sexp_balance.zyl` now correctly
+classifies all nine smoke cases (`(` unbalanced; `(a (b (c)))` balanced; `)`
+unbalanced; `(]` mismatched; `()`/`[]{}`/`; (comment (`/`(a(b)())` balanced;
+`(a (b c)` unbalanced). Compiles clean (Phases 1-9) via the Rust bootstrap and
+verifies through the `/tmp/sbtest.zyl` module harness.
+
+Root causes found and fixed in the rewrite:
+
+- **Duplicate variant names break `match` dispatch** — all four `BalanceResult`
+  variants were named `BR`, so the first arm always matched and every input
+  reported "balanced". Distinct variant names (`Balanced`, `UnbalancedOpenString`,
+  `UnbalancedClose`, `MismatchedPair`) required.
+- **Rust-bootstrap Bool fields in record ctors mis-store** — `False`/`True`
+  literals in a 9-field `CheckState` ctor compiled to non-zero box pointers, so
+  every flag read back truthy (everything entered "in-string").  Flag fields
+  converted to `Int` 0/1; literal `0`/`1` store correctly (line/col Ints always
+  did). Rule: prefer `Int` 0/1 over `True`/`False` in record fields.
+- **ffi-call results type as fresh type vars** (`src/type_inference.rs:1513`) —
+  a `zyl_cstr_from_int` result is typed `Int`, so `print` emits the int path and
+  prints a raw pointer. CLI reports must print string literals + Int values only.
+- **`zyl_cstr_byte_at(ptr, i)`** (not `ffi-call "zyl_cstr_to_int"`) is the correct
+  char-byte primitive; `zyl_cstr_from_int` segfaults with a null arena.
+- **ffi-call trailing `1000`** is the FFI timeout parameter (mirrors
+  `icnf.rs timeout: 1000`).
+
+Known Rust-bootstrap gaps recorded for the driver work: `zyl_argc()` always
+returns 0 (`zyl_save_args` defined in `runtime/actor_runtime.c` but never
+called), so CLI `main` argument reading is dead under the Rust bootstrap; the
+self-hosted driver must consume `BalanceResult` fields directly instead of
+relying on `zyl_arg_str`.
+*Status:* the entry stub calls `zyl_save_args` since 2026-09-15
+(`4231955`), and the Rust bootstrap is no longer in the build path.
+
+## Session (2026-09-12) — match exhaustiveness in the Rust bootstrap
+
+**Match exhaustiveness enforced at compile time (Rust bootstrap).**
+
+`src/icnf.rs` now checks, at ICNF generation, that every variant of the
+matched ADT has an arm (`check_match_exhaustive`, called from the
+`ExprInner::Match` handler). A match missing a constructor fails with
+`E_MATCH_NONEXHAUSTIVE` listing the absent variant(s); a catch-all arm
+(`(_ body)` wildcard, or any arm whose head names no constructor of any
+deftype, e.g. the `(d2 ...)` fallback) explicitly satisfies the check.
+Monomorphized scrutinee names (e.g. `Shape_Float`) fall back to whichever
+deftype's variant list covers every arm. Nested-desugar matches (generated
+by `desugar_arm_raw`) enumerate all variants and remain green.
+
+New harness capability: `tests/compile-fail/*.zyl` are "must-fail"
+regressions — compilation must fail or the test is marked failed
+(`run_fail_test`). Added `match-non-exhaustive.zyl` (missing `Triangle`
+arm) and `match-nested-non-exhaustive.zyl` (nested match omitting `Rect`).
+Positive coverage in `regression/match-exhaustive.zyl` unchanged.
+
+Full suite: **43/44** (only the pre-existing `integration/selfhost-codegen`
+Rust-bootstrap timeout fails; it passes under the self-hosted compiler and
+`boot/fixed-point` stays green).
+
+Note: the earlier in-flight refactor (restructured `MatchPattern`, added
+`MatchPattern::Identifier`, reworked arm parsing) was a regression against
+a green baseline — combined-syntax arms like `(Circle r (* r r))` already
+functioned via `decompose_match_arm`. It remains preserved in `stash@{0}`
+but is not needed for exhaustiveness.
+
+## Session (2026-09-11) — compiler library packaging
+
+**Compiler library packaging fixed.** The Rust compiler now embeds all
+stdlib modules and the actor runtime/header at build time. Installed `zyl` and
+`zyl-repl` no longer depend on the repository checkout or the caller's
+working directory for standard-library resolution or runtime linking. Core
+(`core/core`, including Option, Result, and List) is an automatic prelude;
+testing and other non-core libraries remain explicit imports.
+
+The self-hosted `zyl-self` wrapper now packages its own `stdlib/` bundle and
+actor runtime, runs from that bundle directory, and works outside the
+repository. The bootstrap fixed-point check and an external self-hosted
+allocator test both pass. Its resolver also injects the core prelude by
+default while recognizing the bundled bootstrap marker to avoid duplicate
+definitions during self-compilation.
+
+Verified with a compiler invoked from `/tmp`, embedded `core` and
+`allocator` programs, and `./run_regression_tests.sh --quick --no-boot`
+(6/6).
 
 ---
 
-## Future Work (deferred)
+## State snapshot (2026-08-27 to 2026-09-10, historical)
 
-### Byte-level primitives (layout / zero-copy)
-- `load-u8/u16/u32/u64` + `store-…` with explicit endianness
-- `ByteSlice` / `ByteBuf` in tracked region
-- Checked offset+length views that cannot outlive backing data
-- Optional alignment assertions (static or runtime panic)
-- Goal: common serialization/FFI/buffer work without general unsafe
+This was the "Current State" section until 2026-09-11. It describes the
+Rust-bootstrapped build of that time; see **Current State** at the top
+for today.
 
-### Deterministic region extension
-- Closed registry of additional region kinds (fixed growth, alignment, policy)
-- User code selects among audited kinds; no raw alloc/free function pointers
-- Any OS-touching kind must be deterministic for given request sequence
-- Goal: specialized allocation without breaking determinism
+**Self-hosting: COMPLETE, deterministic, verified. Regression suite: 27/27**
+**in `--full` (all tests pass; `integration/selfhost-codegen` passes when**
+**compiled with the self-hosted compiler — Rust bootstrap is too slow to**
+**compile it within test timeout).**
 
-### Capability-mediated sharing (concurrency)
-- Shared region holding only TCap (or new TAtomic) values
-- Mutation only via atomics or temporary exclusive upgrade
-- Typed/bounded channels with explicit ownership transfer
-- Read-only shared pages for multiple actors
-- Goal: high-performance patterns without unrestricted shared mutability
+```
+./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
+```
 
-### Inline assembly (future)
-- Capability- and region-aware asm interface
-- Pointer-carrying registers respect existing type/region rules
-- Goal: architecture-specific kernels that cannot manufacture illegal capabilities
+**Session (2026-09-06): two Rust-compiler codegen fixes, two tests green.**
 
-### Ergonomic zero-copy views (regions)
-- Short-lived region views over longer-lived data convenient
-- Cover parsing, substrings, temporary array slices without full ownership transfer
-- Goal: common zero-copy cases without Rust-style lifetime parameters
+1. **`unit_test` option-flatmap SIGSEGV (exit 139) fixed** — root cause:
+   codegen's C-helper alignment pattern `mov r15, rsp / and rsp,-16 / call /
+   mov rsp, r15` assumed r15 survives the call. It survives pure C helpers
+   (SysV callee-saved) but `zyl_callN` dispatches into Zyl-generated code,
+   whose own nested align block uses r15 as scratch, clobbering the outer
+   save. Verified in gdb: after `zyl_call1` rsp was correct but r15 had been
+   overwritten with the inner dispatch's frame offset; `mov rsp,r15` tore the
+   stack and the match join's `add rsp,+pop rbp;ret` jumped to 0xa.
+   Fix in `src/codegen.rs`: every align site now stashes the pre-call rsp in
+   a dedicated **rsp-stash slot at the bottom of every frame**,
+   `[rbp-(spill_frame.max(256)+8)]`, instead of r15. All frames (main, user
+   fns, closures) extended uniformly by 8 bytes to reserve the slot — TCO's
+   uniform-frame invariant is preserved. Wrapper frames (`_ZYL_actor_*`,
+   spawn/send) use `wrapper_stack+8` via a temporary `spill_frame` override
+   so their bodies' align sites point at their own slot. Slots are LIFO-safe
+   (callee frames grow strictly below the current rsp and can never
+   underflow the stash) and spill/param slots never collide with it.
+2. **`regression/types` link failure (`_ZYL__t_Some` undefined) fixed** —
+   constructor calls to underscore-prefixed ADT variants (`_t_Some`,
+   `_t_None`) were never lowered to `MakeVariant`: the PostProcessor's
+   constructor-detection guards required `is_uppercase_ident` (first char),
+   which fails for `_t_*` names even though they are registered, known
+   variants. Relaxed the three guards (`Call`, bare-ident unit variants,
+   `Apply`) in `src/ast.rs` to also fire when `find_adt_for_variant` matches,
+   matching the documented "Priority 1: known ADT variant converts regardless
+   of builtin exclusion".
+
+**Verified (with `ulimit -c 0`):** `unit_test`, all of `regression/*`,
+`stress/*` (incl. deep-recursion, balanced-parens), `integration/*` (incl.
+selfhost-codegen with self-hosted compiler), and `boot/fixed-point` all pass.
+Selfhosted compiler unchanged (`stdlib/compiler/codegen.zyl`, `selfhost/` have
+no r15 pattern).
+
+### Known Limitations
+- **`integration/selfhost-codegen` (pre-existing, now fixed)** — the test runs the
+  selfhosted parser+icnf+codegen on a tiny in-memory source; it passes when
+  compiled with the self-hosted compiler (`build/boot/zyl-self`) but the Rust
+  bootstrap is too slow to compile it within the test runner's timeout. This
+  is a Rust bootstrap performance issue, not a correctness bug.
+  `boot/fixed-point` exercises the same path and remains green.
+
+**Session (2026-09-10): Book documentation verity pass.**
+
+1. **`book/src/part1/ch13-project-walkthrough.md` rewritten from scratch** — the
+   old walkthrough used non-existent APIs (`string-split`, `vec-slice`,
+   `string-join`, `list-literal`, struct-carrying `ProcessorMsg` actors) and
+   would not compile. The new chapter is a single-file **log processor** built
+   exclusively from constructs verified at runtime against `./target/debug/zyl`
+   (recursive tokenizer over `str-substring` + arena `str-intern`, recursion
+   with 4 Int accumulator args, `Stats` struct assembled once at the end,
+   built-in `file-open`/`file-read`, built-in test harness). Every code block
+   was re-extracted from the chapter text and recompiled, reproducing the real
+   output (`Total:4 Error:2 Warn:1 Info:1` on `sample2.log`).
+2. **New runnable example project**: `book/examples/log-processor/`
+   (`log-processor.zyl`, `log-processor-tests.zyl` — 4/4 tests pass,
+   `sample.log`).
+3. **Verified current-bootstrap behaviors documented honestly** (ch13 notes):
+   modules resolve relative to the compiler's CWD (build from repo root);
+   user modules outside stdlib are not resolvable (single-file programs only);
+   `{ }` brace blocks in `use` are invalid; `str-eq` returns `Int` 0/1;
+   `print` writes each argument on its own line; `str-substring` returns
+   scratch-buffer pointers (must `str-intern`); `struct-get` requires a
+   pre-bound struct; structs passed through stacked recursion mis-stage
+   (counts double) — use Int args; `(list ...)` literal is unimplemented
+   (`_ZYL_list` link error); `vec-push` in `while`+`set!` segfaults;
+   `(run-tests)` suppresses `main`; the test harness mis-stages the *first*
+   token-operations run under it (order tests so simple ones run first);
+   actor `spawn`/`send` value staging is broken (actor variant presented as
+   a design sketch, not runnable code).
+4. **`book/src/appendix/appendix-b-stdlib.md` recovered and fixed** — the
+   working-tree copy (richer uncommitted revision) was accidentally reverted
+   during this session (`git checkout`); no git object held it, so it was
+   reconstructed from the in-session read, then re-synced. All `(use core {
+   ... })` brace blocks converted to bare `(use core)` + `;` comment
+   inventories (brace form is a parse error).
+5. **`book/src/part1/ch11-testing.md` §11.3** — build command corrected to
+   `zyl test-file.zyl -o test-file` then `./test-file.bin` (no `-o` yields
+   `a.out.s` / `a.out.bin`, not `test-file.bin`); notes CWD-relative module
+   resolution.
+6. **`book/book.toml` fixed for the installed mdbook** — removed unknown keys
+   (`copy-fonts`, `theme`, `curly-quotes`, old `[output.html.css]` section,
+   `fa-github` icon) that failed the whole HTML backend; `mdbook build` now
+   completes with zero warnings (also fixed `<t>`/`<mutex>` HTML-tag warnings
+   in ch17/ch21 by backticking `TCap<T>` headings and `Arc<Mutex>`).
+
+**Known limitations recorded in the book (2026-09-10):**
+- Runnable actor example blocked on `spawn`/`send` message-staging fix.
+- Multi-file user modules blocked (confirmed unsupported).
+- Test-harness first-use token-operation mis-staging: keep harness tests free
+  of token ops, or order simple tests first.
+
+*Status (2026-09-23):* multi-file user programs are supported through the
+package system (spec §31, `tests/packages/`). There is still no `receive`
+form, and the `(list ...)` literal is still unimplemented (it fails at
+link time). The other book notes were recorded against the Rust
+bootstrap and have not been re-checked individually.
+
+**Self-hosting: COMPLETE, deterministic, verified. Regression suite 182/182 (unit_test) + 6/6 smoke.**
+
+```
+./boot.sh    # stage1 -> stage2 -> stage3; stage2 output == stage3 output
+```
+
+The Zyl compiler written in Zyl compiles itself end-to-end with a strict
+byte-identical fixed point. Generic ADTs instantiate correctly with any
+concrete type (per-site instantiation, positional instance naming);
+per-site polymorphic functions work cross-module (shared list helpers
+replacing per-module duplicates).
+
+**Session (2026-08-27):**
+- **Phase 1: Type system ADTs + core operations ported to Zyl** (`stdlib/compiler/type_system.zyl`):
+  Type ADT (TInt, TBool, TString, TFun, TList, TArray, TCap, TMut, TStruct, TVar),
+  Subst map (TypeBind), TypeVarGen, TypeEnv (EnvBind), TraitContext, TypeInferer,
+  UnifyResult, subst-lookup/insert/apply/union, type-free-vars, unify/unify-terms/unify-var/unify-args.
+  All 15 functions compile and emit correct ICNF. Workaround applied for ICNF bug
+  (see Research below): split recursive lambdas into helper functions
+  (subst_apply_type/list, type_free_vars_list) to avoid the closure-in-let bug.
+- **ICNF bug discovered:** `let` bindings of lambdas inside functions lose their
+  Assign nodes — codegen emits direct calls (`call _ZYL_f`) instead of indirect
+  calls through the closure value. Root cause in `src/icnf.rs` line 2612:
+  Call handler always emits `ICNFInner::Call(func_name, ...)` without checking
+  if func_name is a local variable in `current_scope`. Affects any Zyl code that
+  stores lambdas in `let` bindings and invokes them. Filed as research note
+  `research/icnf-closure-call-bug.md`.
+- **C-style block formatting discipline** — S-expression formatting rule
+  adopted for `stdlib/compiler/` and `selfhost/` files: each open paren on
+  its own line at the correct indent, each close aligned with its matching
+  open. This makes paren balance trivial to verify visually and eliminates
+  an entire class of boot-pipeline regressions. Documented in
+  `skills/zyl/SKILL.md`.
+- **`not` operator fixed** — `f_not` linker errors from the ICNF generator
+  treating `not` as a function call. Added explicit `(IIf ... (IConst 0)
+  (IConst 1))` handling in `ic-special` for both `stdlib/compiler/icnf.zyl`
+     and `selfhost/zyl_selfhost_compiler.zyl`.
+- **`icnf-closure-call-bug` fixed** — `CallIndirect` emitted for non-function
+  local bindings caused `rdi` to receive integer values instead of closure
+  function pointers (SIGSEGV). Root cause: `current_scope` contains ALL
+  bindings, but `convert_apply_call` and `ExprInner::Call` handler emitted
+  `CallIndirect` for any name found in scope, without verifying the value
+  is a closure. Fix: added `closure_ssa_ids: HashSet<usize>` to
+  `IcnfConverter`; registered at every `ICNFInner::Closure` emission site;
+  call handlers now check `closure_ssa_ids.contains(callee_ssa)` before
+  emitting `CallIndirect`, falling back to `ICNFInner::Call` for non-callable
+  locals. Regression: `option-map some` (closure call via let binding) now
+  passes; full unit_test suite: 182/182 passed.
+- **`stl` and `module-items-for` helpers** — added to both `resolver.zyl`
+  and the selfhost compiler to support missing stdlib operations.
+- **`cg-load-unresolved-name` fix** — emit `mov rax, 0` instead of
+  `[rbp0]` for unresolved names; replaced `str-eq-cstr` with `str-eq` to
+  eliminate linker errors.
+
+### How the last two gaps were closed:
+1. **Rust bootstrap runtime nondeterminism** — std HashMap/HashSet use a
+   per-process random seed; iteration order leaked into compilation
+   decisions (flaky "unknown variant" failures across identical runs).
+   Fixed: src/deterministic.rs provides FNV-1a-hashed HashMap/HashSet;
+   all of src/ uses them. Same input -> same output, every run.
+2. **Match-arm multi-call miscompilation** — an arm body combining a
+   constant with TWO calls loses its computation ("bind fields; store 0").
+   Confirmed instance: icnf-arm-size returned 0 because its body was
+   `(+ 1 (icnf-size body) (icnf-count-arms rest))`. Rule: match-arm bodies
+   contain at most ONE call; sums nest through icnf-add2/add3 helpers.
+   After fixing the last instance (icnf-arm-size), the fixed point holds.
+
+**Details:** `docs/implementation-status.md`, `docs/regression-tests.md`.
+
+---
+
+## Roadmap history (2026-08-25 to 2026-09-10, annotated 2026-09-23)
+
+The prioritized roadmap as it stood before the Rust eviction. Items
+still open have moved to **Open Work** at the top of this file; the
+annotations here record what became of the rest.
+
+### P0 — Consolidate the self-hosted toolchain
+- [x] **Boot build automation**: `boot.sh` runs the full loop (Rust `zyl`
+      → stage1 → stage2 → stage3) and verifies the fixed point. *(done
+      2026-08-25 — it immediately exposed that the earlier determinism
+      check was vacuous; see Current State.)* Still to do: wire it into
+      `run_regression_tests.sh --full`. *(Done 2026-08-25, below. Since
+      2026-09-17 the loop needs no Rust: `./boot.sh` verifies from the
+      committed seed and `--bootstrap-from-self` reseeds.)*
+- [x] **Determinism gap CLOSED (2026-08-25)**: TWO root causes found and
+      fixed:
+      (a) The Zyl lowering's `ic-binop` handled only 1-2 arguments — any
+      3+-argument binop (`(+ 3 x y)`) silently lowered to `(IConst 0)` in
+      stage>=2 binaries, zeroing out size computations. Fixed with a
+      left-associative n-ary fold (`ic-binop-fold`), matching the Rust
+      bootstrap's convert_nary_fold.
+      (b) `icnf-arm-size`'s `(+ 1 (sz body) (count rest))` shape needed
+      icnf-add2 nesting (match-arm bodies: at most ONE call).
+      `./boot.sh` reports the fixed point holds; verified end-to-end with
+      nested-variant and multi-call programs through stage2.
+- [x] **E_MATCH_ARM_COMPLEX guard (Rust side)**: src/icnf.rs now rejects,
+      at ICNF-generation time, any match arm whose BinOp directly combines
+      2+ call operands AND a constant operand — the confirmed-failing
+      shape. Bare call+call sums are allowed (verified working through
+      stage1->stage2). Note: the Rust n-ary fold emits chained binops so
+      most multi-call sums never present this shape; the guard is
+      defense-in-depth for future lowering changes.
+- [x] **Lexer fix**: ';' inside string literals no longer starts a
+      comment (src/lexer.rs strip_comments is now string-aware). Strings
+      containing semicolons previously truncated at the ';' — this was
+      corrupting boot sources that used ';' in message strings.
+- [x] **Rust bootstrap nondeterminism FIXED**: src/deterministic.rs
+      FNV-1a HashMap/HashSet across all of src/.
+- [x] **Enforce the one-call rule in the compiler** *(done 2026-08-25)*:
+      the self-hosted lowering now rejects the confirmed-failing shape at
+      AST level (`ic-arm-guard` in icnf.zyl: arm-body binop combining a
+      constant with 2+ calls -> E_MATCH_ARM_COMPLEX), mirroring the Rust
+      ICNF-level guard. Also added `ic-binop-fold` (left-associative n-ary
+      binop lowering) so 3+-argument binops no longer silently become
+      `(IConst 0)`; verified `(- 10 2 3)` = 5 through stage2.
+      Generalisation discovered while landing stack args: ANY binop whose
+      direct operands are TWO calls miscompiles in stage>=2, not just
+      match arms — code must bind calls to lets before combining. Documented
+      in skills/zyl/SKILL.md constraint 8.
+- [x] **Wire fixed-point check into default regressions** *(done
+      2026-08-25)*: `run_regression_tests.sh --full` now runs the boot
+      fixed-point check by default; opt out with `--no-boot`, force in any
+      mode with `--boot`. Suite: 25/25.
+- [x] **Compile errors for known-fragile shapes** instead of silent
+      miscompiles *(done 2026-08-25, commit c9b5c69)*:
+    - `E_UNBALANCED_PARENS` — whole-token-stream balance check in
+      `zyl-parse` (parser.zyl).
+    - `E_TOO_MANY_PARAMS` — defns with >6 params rejected at lowering.
+    - `E_DUPLICATE_VARIANT` — variant names shared across deftypes
+      rejected in `vt-from-variants` (icnf.zyl).
+- [x] **Codegen buffer headroom**: `cg-new` bumped to a 64MB zeroed text
+      buffer and the driver now fails loudly (E_CODEGEN_BUFFER_FULL) if
+      output comes within 1MB of capacity, instead of silently corrupting
+      the arena. True growth-on-demand deferred until the compiler source
+      approaches ~20MB of generated asm.
+- [x] **AI language skill** (`skills/zyl/SKILL.md`): expert-level Zyl
+      knowledge for AI agents — syntax, the bootstrap constraint list
+      (arity≤6, match-as-body, paren discipline, buf-append append
+      semantics, FFI patterns, tag/match pitfalls), idioms, debugging
+      recipes. Higher priority than most items: a robust skill file
+      multiplies the effectiveness of every subsequent AI-assisted task.
+      **(created 2026-08-25; keep updated as constraints are lifted)**
+
+### P1 — Developer experience: diagnostics & editing
+- [x] **Errors index**: docs/errors.md — all 45 ZylError variants with
+      their formatted messages + the five lowering-guard diagnostics.
+      *(done 2026-08-25)*
+- [x] **Match-type diagnostics**: unresolved-scrutinee matches now say
+      "cannot determine the type of this match's scrutinee" with
+      remediation hints; unknown variants list the resolved type's known
+      variants. *(done 2026-08-25)*
+- [ ] **Compiler error system overhaul** — remaining items toward
+      Rust-class diagnostics. *(Partly done 2026-09-23: a primary span
+      with file:line:col, source line, caret and help text for the
+      diagnostics listed under Current State. Secondary spans, "did you
+      mean", the inference fix and JSON output are still open.)*
+    - primary span + labeled secondary spans ("borrowed here", "moved
+      here" analogues for capability types TMut/TCap and regions);
+    - machine-applicable suggestion snippets (`did you mean` via edit
+      distance over in-scope names, missing arm suggestions from the vt);
+    - fix the root inference limitations behind "cannot determine the
+      type of this match's scrutinee" (call-site -> defn param ADT
+      unification before match lowering);
+    - structured (JSON) error output so the LSP and tools can consume it.
+- [x] **VS Code language definition**: TextMate grammar, language
+      configuration, package manifest under editors/vscode/.*
+      *(done 2026-08-25)*
+- [ ] **Doc comments → documentation** *(still open: no `zyl doc`
+      subcommand exists)*: standardize `;|`/`;;` doc-comment
+      convention already used across stdlib, then a `zyl doc` generator
+      (modules → variants/functions → params/results/examples) emitting
+      Markdown. The stdlib is already consistently documented — formalize
+      it.
+
+### P2 — Language services
+- [x] **LSP server** (depends on P1 structured diagnostics): initialize /
+      hover (types from inference) / go-to-definition / document symbols /
+      diagnostics publish / completion over env + module exports.
+      Incremental plan: JSON-RPC stdio loop in Rust reusing src/parser.rs,
+      then a Zyl-written LSP once the self-hosted one is trusted.
+      *(Done 2026-09-19 directly in Zyl, `stdlib/lsp/` (`7c25a65`);
+      extended to the whole language and to packages on 2026-09-23.)*
+
+### P3 — Bootstrap correctness & performance
+- [x] **map-remove / for-loop value corruption RESOLVED** *(2026-08-25,
+      suite 27/27)*. Two independent codegen defects:
+      (1) For-loop supply-node leak — fixed via ICNFFuncSig.result_id +
+      epilogue re-materialization, function-wide embed-first dedup,
+      recursive For-init hoisting, and branch emitters that skip past
+      their final node.
+      (2) MakeStruct field computation clobbered r10 — emit_load_into's
+      MakeStruct path computed field values (which may contain calls whose
+      arg staging uses r10) while r10 held the new struct's base pointer;
+      fields landed in the wrong object (map-remove returned its input).
+      Fixed by computing all fields first (push), then allocating and
+      popping into place.
+      Suite 27/27, boot fixed point holds.
+
+### P3.5 — Self-host parity (port bootstrap type-system work to Zyl)
+The Rust bootstrap gained significant inference/codegen semantics during
+the generic-ADT rewrite (2026-08-25) that the Zyl-written compiler
+(stdlib/compiler/*.zyl) does not yet mirror:
+- [x] **Session 2026-08-27: Rust eviction plan defined** — goal is to port
+      type inference + monomorphization to Zyl and remove Rust bootstrap
+      entirely. Plan: `stdlib/compiler/type_inference.zyl` (~2000 loc),
+      `stdlib/compiler/monomorphization.zyl` (~1882 loc), wire into
+      `selfhost/driver.zyl`, verify fixed point, archive `src/`.
+- [x] **2026-08-27: Adjacent-type duplicate deftype conflict resolved** —
+      `TypeInferer` was defined in BOTH `type_system.zyl` (Phase-1 4-field)
+      and `type_inference.zyl` (11-field), a duplicate-deftype violation that
+      creates incompatible constructor identities and breaks the combined
+      boot build. Per decision, consolidated all type-system ADTs into
+      `type_system.zyl` (the single owner): the 11-field `TypeInferer` plus
+      `FnSig`/`ParamType`/`FnReturn`/`AdtDef`/`Variant`/`Field`/`BodyCache`/
+      `VarPair` moved from `type_inference.zyl`; the outdated 4-field
+      `TypeInferer` and placeholder `infer-expr`/`infer-type` stubs removed.
+      Both files remain paren-balanced (depth 0), no duplicate deftypes/defns,
+      and the combined source parses, type-infers, and monomorphizes identically
+      to before. Regression suite: 6/6 pass.
+- [x] **2026-08-27: Type-inference stub compile blocker fixed** — the combined
+      source failed Phase 6 with `match: non-exhaustive ... variant Some cannot
+      be resolved`. Root cause: placeholder functions matched `Some`/`None`
+      against lookups that actually return a plain `List` (`lookup-adt-def` →
+      `Nil`/variants), plus `apply-to-nominal` used a fake `"___scrutinee_dummy"`
+       lookup and dropped the subject type. Fixed: threaded the real match
+       `subject-type` through `infer-lookup-arm-field-types`/`-scrutinee-adt`;
+       replaced `apply-to-nominal` with a faithful `resolve-nominal` (mirrors Rust
+       `resolve_nominal`: `subst-apply` then `TStruct` name, else `None`);
+       rewrote `infer-lookup-variant-fields`/`infer-get-variant-fields` to walk
+       the real `TIAdtDefs` via `lookup-adt-def` + new `infer-find-variant-fields`,
+       threading the inferer. Combined source now completes Phases 1–9 (parse →
+       assembly). Regression suite: 6/6 pass. Remaining non-blocking warning:
+       `subst-lookup-binds` (type_system.zyl:119) codegen warning re unbound
+       `None` — compiles; investigate later.
+- [x] **2026-08-27: Type-ADT restructured + unification threaded + "Core" ported** —
+       (a) `Type` ADT gained `TFloat`/`TUnit`/`TMap`/`TResult`; `TCap` changed from
+       1-field to `(TCap CapKind Type)`; removed standalone `TMut` Type variant
+       (now a CapKind). Added `CapKind` ADT: `TCCap`/`TCMut`/`TCAtomic`/`TCBox`/`TCPin`.
+       (b) `subst-apply-type` and `type-free-vars` updated for all new variants.
+       (c) **Unification chain fixed**: `unify` threads accumulated subst through
+       `unify-terms`/`unify-var` (was restarting with `subst-empty` at every
+       primitive match); `unify-var` now takes the current subst `s` and threads
+       it (was creating empty subst); `unify-terms` returns `(UOk s)` instead of
+       `(UOk (subst-empty))` so bindings accumulate. (d) **`collect-definitions`
+       ported** — the declared "Core" that was skeleton/missing: iterates exprs,
+       registers `Defn`/`Call(defn)`/`Apply(defn)` in `TIKnownFns` +
+       `TIFuncReturns`, handles `Deftype`/`StructDef`. (e) `finalize-param-types`
+       ported (resolves type vars from call-site evidence). (f) `infer-program`
+       entry point added (collect → infer each expr → finalize). (g) Updated
+       TCap/TMut/TBox/TPin → TCap/TCMut/TCBox/TCPin in all inference usages.
+       Both files compile through Phases 1–9; regression suite 6/6 pass.
+- [x] **2026-09-10: Type inference engine ported to Zyl** — Hindley-Milner with
+      capability types (TCap/TMut), trait resolution, ADT instantiation tracking,
+      occurs-check unification, struct field lookup. All regression suites pass
+      (structs 34, types 46, adts 8, functions 17, control-flow 17, arithmetic
+      53, collections 28, concurrency 6, ffi 4, macros 7, io 4, deep-recursion
+      15, balanced-parens 6, match-value-position, generics-multi-type).
+- [x] **2026-09-10: Monomorphization ported to Zyl** — full monomorphization
+      pipeline using type inference data: variant_to_adt for constructor
+      recognition, adt_param_order for positional instance naming, adt_defs,
+      adt_instantiations, known_functions, function_returns, known_types,
+      struct_defs, trait_impls. All regression suites pass.
+- [x] **Per-call-site polymorphism for untyped params** — body_infer_cache keyed by
+      call-site signature, inferring_functions for recursion guard, finalize_param_types
+      for consistent-site refinement. Verified by generics-multi-type test.
+- [x] **Match pattern-var shadowing + arm-scoped env** — env_bind_param used in
+      inferer_bind_pattern_vars_atom; each arm gets fresh env snapshot.
+- [x] **Epilogue result materialization** — Zyl codegen uses IFn directly; last
+      expression value in rax via standard epilogue (mov rsp,rbp; pop rbp; ret).
+      No separate result_id needed; verified by all regression tests.
+
+**Self-hosting gap analysis (2026-08-27, UPDATED 2026-09-10):**
+
+The Zyl-written compiler (`selfhost/zyl_selfhost_compiler.zyl`) now handles
+Phases 1–11 (parsing → region inference → type inference → monomorphization
+→ ICNF lowering → codegen → assembly) for the self-hosted compilation path.
+The boot fixed point holds:
+
+```
+./boot.sh        # stage1 (Rust) -> stage2 (Zyl) -> stage3 (Zyl)
+                 # stage2.asm == stage3.asm (deterministic)
+```
+
+The Zyl compiler written in Zyl compiles itself through all phases.
+The Rust bootstrap is now only needed for the initial stage1 build.
+All P3.5 items complete.
+
+Until full Rust eviction, selfhost sources must respect the stricter-of-the-two
+constraints; the boot fixed point is the arbiter.
+
+### P4 — Feature completeness & polish
+- [ ] Contract injection overlay (spec §23, Phase 10) — implemented
+      in Rust → Zyl; integrated into selfhost driver. *(Reopened: on
+      2026-09-15 the self-hosted pipeline's contract-injection step became
+      an identity pass-through because `contract_injection.zyl` did not
+      match the real AST shapes, and the module is not in the bundle.
+      Contract forms parse as no-ops.)*
+- [ ] Fix top-level `(def Name Expr)` misprint noted in REPL limitations.
+      *(Superseded: the old REPL is gone, and the current REPL gives `def`
+      a meaning. In a compiled file a top-level `def` still does not
+      create a global.)*
+- [ ] Warnings sweep (~160 → 0). *(Still open.)*
+- [x] Boot-binary CLI parity (`-o`, `--emit-asm`) and error messages with
+      spans from the Zyl front end. *(CLI done 2026-09-15, `4231955`;
+      spans partly done 2026-09-23.)*
+
+---
+
+## Appendix: Bootstrap bug sweep that reached the fixed point (2026-08-24/25)
+
+Each item below was a distinct blocker discovered by bisecting the
+stage1→stage2 pipeline; kept here because the failure signatures recur
+whenever new code enters the boot source.
+
+1. **icnf `ic-ffi` never built an IFfi node** — returned a bare arg list
+   and dropped the C symbol, so every `(ffi-call ...)` lowered to garbage
+   constants in stage≥2 binaries. Fix: `(IFfi (atom-text sym) args)`.
+   Use `atom-text`, not `ident-name` (the latter intentionally falls back
+   for string atoms).
+2. **codegen `cg-fn-check-head` returned instead of recursing** — only the
+   first collected fn name ever matched. Plus **duplicate `FnName`
+   deftypes**: duplicate deftypes create incompatible constructor
+   identities and pattern matches silently fail.
+3. **Call alignment pad after pushes** — odd-arg calls popped garbage.
+   Pad must be emitted before pushes; unified direct/indirect fire path.
+4. **HOF support added**: `lea rip+offset` loads for fn values, indirect
+   `call r10` through local bindings.
+5. **Rem without `cqo`** — stale rdx overflowed idiv (SIGFPE on every `%`).
+6. **Arity>6 functions eliminated** (lexer merges, cg-if-parts takes CGP
+   carrier, match-arm pipeline rewritten as cg-arm-one/cg-arm-match —
+   mind CGP field order on construction vs destructuring).
+7. **Entry stub runs f_main via zyl_call_on_big_stack** — generated
+   binaries previously ran on the 8MB main thread.
+8. **`buf-append` overwrite bug (final blocker)**: allocator called
+   zyl_strcpy (overwrites dst from 0). Rust bootstrap treats buf-append as
+   a StringBuffer special form with a cursor, hiding the discrepancy. Fix:
+   `zyl_str_append` C primitive + true-append semantics.
+9. **file-open `"a"` mode truncated** in both Rust codegen (syscall flags)
+   and the C helper — wiped logs/output each open and masqueraded as
+   "dropped statements" during debugging.
+10. **Unbalanced assembled source** — cg-function missing a closer +
+    cg-entry-stub extra closer silently nested 12 defns inside one form.

@@ -1,8 +1,12 @@
 # stdlib/math — cryptography and number libraries
 
-Everything under `stdlib/math/` is pure Zyl, with two exceptions that
-call into `runtime/actor_runtime.c`: AES (hardware AES-NI only) and
-system entropy (`getrandom(2)`).
+Every algorithm under `stdlib/math/` is pure Zyl, with two exceptions
+that call into `runtime/actor_runtime.c`: AES (hardware AES-NI only,
+`zyl_aesni_available` / `zyl_aes_encrypt_block`) and system entropy
+(`zyl_random_words`, which uses `getrandom(2)`). Beyond those, the
+library calls the runtime only for plumbing: `math/words` reads string
+bytes through `zyl_cstr_len` / `zyl_cstr_byte_at`, and `zeroize` erases
+memory through `zyl_zeroize`.
 
 `(use math/math)` imports the whole tree; importing only the modules a
 program uses keeps its compile time and binary smaller.
@@ -37,18 +41,19 @@ mebibytes cannot afford an 8x expansion.
 | `math/bignum/montgomery` | Montgomery multiplication, constant-time `mont-exp` |
 | `math/bignum/barrett` | reduction of a wide value by a fixed modulus |
 | `math/bignum/modular` | modular add/sub, Fermat inverse, Miller-Rabin |
-| `math/rand/crypto` | `getrandom(2)` entropy, fork-safe by construction |
-| `math/rand/deterministic` | seeded ChaCha20 generator for tests and simulations |
+| `math/rand/rand` | shared generator helpers (`rand-u64-from-bytes`, `rand-below`); `Rng` is a naming convention, not yet a trait |
+| `math/rand/crypto` | `getrandom(2)` entropy (`sysrng-*`), fork-safe by construction |
+| `math/rand/deterministic` | seeded ChaCha20 generator (`chacharng-*`) for tests and simulations |
 | `math/hash/sha2` | SHA-256 |
 | `math/hash/sha512` | SHA-512 |
 | `math/hash/sha3` | SHA3-256, SHA3-512, SHAKE128, SHAKE256 |
 | `math/hash/blake2b` | BLAKE2b, keyed or unkeyed |
 | `math/hash/blake3` | BLAKE3 with extendable output |
-| `math/hash/hmac` | HMAC-SHA256 |
+| `math/hash/hmac` | HMAC-SHA256, with a constant-time `hmac-sha256-verify` |
 | `math/crypto/symmetric/chacha20` | ChaCha20 |
-| `math/crypto/symmetric/poly1305` | Poly1305 |
+| `math/crypto/symmetric/poly1305` | Poly1305, with a constant-time `poly1305-verify` |
 | `math/crypto/symmetric/chacha20poly` | ChaCha20-Poly1305 AEAD |
-| `math/crypto/symmetric/aesgcm` | AES-128/256-GCM (AES-NI only) |
+| `math/crypto/symmetric/aesgcm` | AES-128/256-GCM (AES-NI only; GHASH in constant-time Zyl, not PCLMULQDQ) |
 | `math/crypto/asymmetric/x25519` | X25519 |
 | `math/crypto/asymmetric/ed25519` | Ed25519 |
 | `math/crypto/asymmetric/ecdsa` | ECDSA over P-256, secp256k1, P-384 |
@@ -102,6 +107,7 @@ call with a comment saying why the verdict is public:
 | Site | Why it is public |
 |------|------------------|
 | `chacha20poly` / `aesgcm` tag check | the AEAD verdict itself (via `ct-eq-words-bool`) |
+| `poly1305-verify` / `hmac-sha256-verify` | the MAC verdict itself (via `ct-eq-words-bool`) |
 | `modular`'s Miller-Rabin rounds | a composite candidate is rejected and redrawn |
 | `ecdsa` r/s zero tests, RFC 6979 rejection | RFC 6979 3.2's own retry loop |
 | `ecdsa` verification | runs entirely on public inputs |
@@ -123,14 +129,23 @@ python3 verify/sha2.py                                      # vs hashlib
 python3 verify/crypto.py                                    # vs hashlib + pyca
 ```
 
-- `tests/regression/math-*.zyl` hold published test vectors (NIST, RFC,
-  FIPS) embedded as S-expressions.
+- `tests/regression/math-*.zyl` (16 files: aesgcm, argon2, bignum, bits,
+  blake2b, blake3, chacha, ecdsa, ed25519, kdf, rsa, secret, sha2, sha3,
+  sha512, x25519) hold published test vectors (NIST, RFC, FIPS) embedded
+  as S-expressions. They are excluded from the suite's
+  interpreter-agreement section, which would take minutes of interpreted
+  arithmetic.
+- `tests/compile-fail/secret-*.zyl` (7 files) are programs the Secret
+  checker must reject; `tests/regression/secret-capability.zyl` is the
+  accepting side.
 - `tests/integration/math-protocol.zyl` runs a miniature authenticated
   key exchange across X25519, HKDF, ChaCha20-Poly1305 and Ed25519.
-- `verify/crypto.py` cross-checks randomized inputs against Python's
-  `hashlib` and `cryptography`, which catches the block-boundary and
-  carry bugs a fixed vector list walks past.
-- `verify/timing.py` is a dudect-style leakage check. It carries a
+- `verify/sha2.py` and `verify/crypto.py` cross-check randomized inputs
+  against Python's `hashlib` and (for `crypto.py`) pyca `cryptography`,
+  which catches the block-boundary and carry bugs a fixed vector list
+  walks past. They are run by hand, not by the regression runner.
+- `verify/timing.py` is a dudect-style leakage check, run by the
+  regression runner only under `--filter timing`. It carries a
   deliberately leaky comparison as a POSITIVE CONTROL and fails if it
   cannot detect it, so a clean result means the measurement worked.
 

@@ -1,8 +1,8 @@
 # Zyl Specification — Evaluation Semantics
 
-**Canonical authority:** `zyl_specification.txt` §3, §11
-**Related:** `spec/12-control-flow.md`
-**Implementation:** All phases (evaluation order enforced throughout)
+**Canonical authority:** `zyl_specification.txt` §3, §7, §11, §12, §20.5
+**Related:** `spec/02-syntax-and-forms.md`, `spec/10-structs-and-data-types.md` (pattern matching)
+**Implementation:** all phases (evaluation order); `stdlib/compiler/icnf.zyl` and `stdlib/compiler/codegen.zyl` (lowering); `runtime/actor_runtime.c` (`zyl_panic`, try frames, test runner)
 
 ---
 
@@ -34,6 +34,37 @@ Mutation requires rebinding the entire struct instance.
 Represents success (Ok) or failure (Err).
 `error "msg"` returns `(Err "msg")`.
 `try` is sugar for matching on Result.
+
+---
+
+## 7. Closures (Explicit Syntax Only)
+
+### 7.1 Closure Syntax
+
+```lisp
+(fn (param*) body)
+(lambda (param*) body)
+```
+
+No implicit sugar: `((x) body)` is rejected.
+
+### 7.2 Capture Inference
+
+Read-only capture → `TCap`. Mutated capture → `TMut`. Escaping closure → Heap.
+
+### 7.3 Closure Value
+
+```
+(Closure Environment Expr CaptureMap)
+```
+
+### 7.4 Closure and Concurrency
+
+Spawned closures must only capture Send-capable variables (`TCap`/`TAtomic`).
+
+### 7.5 Closure and Effects
+
+The effect set of a closure is the union of its body's effects.
 
 ---
 
@@ -91,7 +122,8 @@ Function application: evaluate function then arguments sequentially.
 if true-branch else-branch
 ```
 
-If the else branch is omitted, the expression produces Unit (`___skip_`).
+The canonical grammar (§2) requires both branches. The implementation also
+accepts `(if c t)`, which evaluates to Unit when `c` is false.
 
 ### 12.2 TRY/CATCH (Result Sugar)
 
@@ -192,3 +224,116 @@ Returns value of `expr-n`.
 ```
 
 Returns `(Err msg)`. Does not throw.
+
+---
+
+## 20.5 Testing Framework (Core Language Built-In)
+
+### 20.5.1 Test Registration
+
+```lisp
+(test-suite "name" (TestOrSuite*) ...)
+(test "name" Body ...)
+```
+
+### 20.5.2 Assertions
+
+```lisp
+(assert-equal Expr Expr)    ; fails if !=
+(assert-fail Expr String?)  ; fails if Expr does not raise an error
+(assert-true Expr String?)  ; fails if Expr is false
+(assert-false Expr String?) ; fails if Expr is true
+```
+
+### 20.5.3 Test Fixtures
+
+```lisp
+(setup Body+)     ; run before each test in the suite
+(teardown Body+)  ; run after each test in the suite
+```
+
+### 20.5.4 Property-Based Testing
+
+```lisp
+(test-property "name" Generator PropertyFn)
+```
+
+Generators: `gen-int`, `gen-bool`, `gen-string`, `gen-float`.
+
+### 20.5.5 Test Runner
+
+```lisp
+(run-tests (:parallel Bool) (:filter String) ...)
+```
+
+Default: parallel execution with deterministic ordering.
+
+### 20.5.6 Compile-Time Tests
+
+```lisp
+(test-compile Expr (:expect-error Bool))
+```
+
+Verifies that `Expr` compiles, or fails to compile, as expected.
+
+---
+
+## Implementation Notes
+
+Not normative. These record how the self-hosted compiler and runtime
+behave where it matters to §11, §12 and §20.5.
+
+### Evaluation order
+
+Arguments are evaluated left to right into stack slots before a call;
+the optimizer folds constants and drops constant-false branches but does
+not reorder anything.
+
+### Errors: `error`, `try`, `unwrap`
+
+- **`(error msg)` aborts; it does not return `(Err msg)`.** It is a library
+  function (`stdlib/allocator/allocator.zyl`) that calls the runtime's
+  `zyl_panic`. `zyl_panic` unwinds to the innermost `try` if there is one,
+  otherwise to the test runner if a test is running, otherwise it prints
+  `PANIC: msg` to stderr and exits with status 1. This contradicts §3,
+  §12.10 and §21.8.
+- **`try`/`catch`** is implemented with `setjmp` and a runtime stack of try
+  frames. `(try body (catch e handler))` evaluates `body`; if anything in
+  it panics (including `error`), `e` is bound to the panic message and
+  `handler` is evaluated. It does not inspect a `Result` value, so an
+  `Err` returned normally from `body` passes through unchanged. §12.2
+  describes `try` as sugar for matching on `Result`.
+- **`(unwrap x)`** is parsed but not lowered; it evaluates to `0`.
+  `stdlib/core/result.zyl` and `stdlib/core/option.zyl` provide
+  `result-unwrap` and `option-unwrap`, which take a default.
+
+### `with-resource`
+
+`(with-resource (name init) body)` lowers to a plain `let`. Neither
+`close` nor a `Drop` method is called on exit, so §12.9 steps 4 and 5
+and guarantee G11 are not met.
+
+### Assertions
+
+`assert`, `assert-equal`, `assert-true` and `assert-false` abort through
+`zyl_panic` with a fixed message (`assert-equal failed` and so on) and no
+error code; `E_ASSERT_FAIL` is catalogued but not printed.
+`assert-equal` on ADT or struct values compares them with the runtime's
+shallow `zyl_variant_eq`. `assert-fail` evaluates its argument and checks
+nothing.
+
+### Testing framework
+
+- `(test "name" body)` becomes a function registered with the runtime, and
+  `(run-tests)` runs every registered test, each under its own panic
+  handler, printing `test: name ... ok` or `FAIL` and a summary line.
+  Tests run sequentially in registration order; there is no parallel
+  runner, and no fresh environment beyond each test being its own
+  function.
+- `test-suite`, `setup`, `teardown`, `test-property` and `test-compile`
+  are parsed and then dropped; only definitions, tests and `run-tests`
+  survive to code generation at top level.
+- `stdlib/testing/testing.zyl` provides wrappers (`test-run`,
+  `assert-equal-values`, `property-int` and similar). Its
+  `run-tests-parallel`, `run-tests-filtered` and `run-tests-with-timeout`
+  are placeholders that call `error`.

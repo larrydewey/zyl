@@ -1,5 +1,44 @@
 # Zyl LSP Server — Architecture Plan
 
+## Current Status (verified against the code, 2026-09-23)
+
+**The server is implemented and ships.** Source is `stdlib/lsp/` (plus
+`stdlib/lsp/services/`), the entry point is `selfhost/lsp_main.zyl`, and
+`./boot.sh` builds it directly to `build/boot/zyl-lsp` (it is not part of
+the `assemble.py` compiler bundle; only `stdlib/lsp/builtins.zyl` is, for
+the REPL). `./install.sh` installs it as `~/.zyl/bin/zyl-lsp`. The VS Code
+extension is `editors/vscode/` at version 0.3.0. End-to-end coverage is
+`tests/lsp/lsp_protocol_test.py` (96/96 checks), run by
+`./run_regression_tests.sh --filter lsp`. The Status section at the end of
+this document lists every request the server answers.
+
+**Deviations from the plan below:** analysis is name-based over the raw
+text (`stdlib/lsp/source_index.zyl`) rather than driven by type inference;
+there is no incremental per-phase cache (each change re-runs the front end
+and checks on the whole document); diagnostics are produced in
+`compiler_bridge.zyl`/`document_manager.zyl`, not a `services/diagnostics.zyl`;
+the built-in table `stdlib/lsp/builtins.zyl` and `services/signature_help.zyl`,
+`services/inlay_hints.zyl`, `services/call_hierarchy.zyl` are additions.
+
+**Not done:** inference-driven hover and type inlay hints; local-variable
+completion; region-aware hover and region diagnostics; structured
+capability-conflict data on diagnostics; cross-file navigation for files
+that are not open; a workspace-wide package graph (`zyl.pkg` workspaces
+exist in the compiler since spec v5.0 §31, but the LSP does not load
+them); fix-its beyond bracket balance; `zyl lsp --repl`; latency
+measurement against the targets listed below.
+
+**Position data.** "Wall 1" below (no source positions in the compiler) was
+true when the LSP was built. Since then tokens carry a byte offset and the
+reader records each node's offset in a span table in
+`runtime/actor_runtime.c`, which the command-line compiler uses for
+`file:line:col` diagnostics. The LSP does not use that table yet: it still
+locates a checker diagnostic by searching the document for the first
+backticked name in the message, and falls back to (0,0) when there is none.
+
+The sections below are the plan as written, annotated where the built
+server differs.
+
 ## Executive Summary
 
 Build a **native Zyl LSP server** (`stdlib/lsp/lsp_server.zyl`) that reuses the existing self-hosted compiler pipeline, providing rust-analyzer parity (diagnostics, hover, go-to-def, completion, document symbols, semantic tokens, code actions) with Zyl's unique strengths: deterministic incremental compilation, region/capability-aware diagnostics, and macro-expansion-aware navigation.
@@ -37,7 +76,7 @@ Build a **native Zyl LSP server** (`stdlib/lsp/lsp_server.zyl`) that reuses the 
 ### 1. Native Zyl Implementation (Not Rust)
 - **Why**: Full dogfooding, self-hosted consistency, no Cargo dependency
 - **Transport**: JSON-RPC 2.0 over stdio (same as rust-analyzer)
-- **Entry point**: New `lsp-server` binary built via `./boot.sh`
+- **Entry point**: New `lsp-server` binary built via `./boot.sh` (built as `zyl-lsp`, from `selfhost/lsp_main.zyl`)
 
 ### 2. Reuse Compiler Pipeline — No Duplication
 | LSP Feature | Compiler Phase Reused |
@@ -70,6 +109,13 @@ Key insight: Zyl's **pure functional pipeline** (no mutation, deterministic) mak
 
 ## Module Structure
 
+Planned layout. As built there is no `services/diagnostics.zyl`,
+`services/hover.zyl` is a 33-line wrapper over the symbol table and
+`builtins.zyl`, `repl_integration.zyl` implements the `zyl.evalDocument`
+command (compile and run via the `zyl` CLI), and the extra files
+`builtins.zyl`, `source_index.zyl`, `services/signature_help.zyl`,
+`services/inlay_hints.zyl` and `services/call_hierarchy.zyl` exist.
+
 ```
 stdlib/lsp/
 ├── lsp_types.zyl           # LSP protocol types (InitializeParams, TextDocumentItem, etc.)
@@ -91,17 +137,21 @@ stdlib/lsp/
 └── repl_integration.zyl    # REPL as LSP client
 ```
 
+(`zyl.toml` was never adopted. The package manifest is `zyl.pkg`, spec
+v5.0 §31.)
+
 ---
 
 ## Phase Plan
 
 ## Two facts that reshaped every phase below
 
-Discovered during implementation, both confirmed by direct testing, both
-now load-bearing design constraints rather than surprises:
+Discovered during implementation, both confirmed by direct testing. Wall 2
+is resolved; Wall 1 has since been partly lifted in the compiler (see the
+Current Status section) but the LSP has not been changed to use it:
 
-- **Wall 1 — no source position tracking exists anywhere in the real
-  compiler.** `Token`/`Ast`/`Expr`/`ExprInner` (lexer.zyl/ast.zyl/
+- **Wall 1 — no source position tracking existed anywhere in the real
+  compiler (at the time).** `Token`/`Ast`/`Expr`/`ExprInner` (lexer.zyl/ast.zyl/
   expr_inner.zyl) carry zero line/col fields. Only `sexp_balance.zyl`
   tracks position, via its own private byte-scan. So "type at this
   exact cursor position" (real inference-driven hover, inlay hints) is
@@ -143,11 +193,13 @@ chains); the native string-escape decoder (`zyl_cstr_decode` in
 (and any escape besides `\n`/`\t`/`\"`/`\\`) — broke this server's own
 Content-Length/CRLF framing until fixed. `zyl_system_cmd` (used by
 `repl_integration.zyl`) crashes inside libc's `system()` on this
-runtime (pthread worker thread + vfork interaction) — that one is
-flagged, not fixed; see repl_integration.zyl's header comment.
+runtime (pthread worker thread + vfork interaction) — flagged at the
+time, and later fixed by reimplementing it with `posix_spawn` (see
+Phase 5); `repl_integration.zyl`'s header now says so.
 
 ### Phase 0: Foundation ✅ COMPLETE (real, verified)
-- [x] `lsp_types.zyl` — LSP 3.17 type definitions, 643 lines covering the
+- [x] `lsp_types.zyl` — LSP 3.17 type definitions, 643 lines at the time
+  (681 now) covering the
   full surface this server actually uses (not the originally-estimated
   ~2500; that estimate assumed exhaustive coverage of features with no
   implementation here, e.g. semantic-highlighting-range edge cases)
@@ -156,7 +208,8 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] `vfs.zyl` — open-document store, real incremental text-edit
   application (multi-line insert/delete tested)
 - [x] `document_manager.zyl` — per-document analysis: balance check,
-  then parse/resolve/macro-expand/mutability-check inside `try`/`catch`
+  then parse/resolve/macro-expand/mutability-check (now also duplicate,
+  arity, exhaustiveness and secret checks; see Status) inside `try`/`catch`
   (Wall 2), then a flat `SymTable` built directly from the
   macro-expanded exprs (NOT `collect-definitions` / full type
   inference — see compiler_bridge.zyl's header for why: that path's
@@ -174,11 +227,12 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] `initialize` → `initialized` → request handling, end-to-end
   tested over real stdio against the built `zyl-lsp` binary
 
-### Phase 1: Diagnostics ✅ COMPLETE (real, verified)
+### Phase 1: Diagnostics — DONE for balance and checker errors; no type-inference or region errors
 - [x] `sexp_balance.zyl` → `PublishDiagnostics`, real line/col
 - [x] Parse / mutability-check / capability errors → one Diagnostic via
-  the Wall-2 `try`/`catch` path (message text real, position is start-
-  of-file — Wall 1 means a caught panic has no position to report)
+  the Wall-2 `try`/`catch` path (message text real; originally reported
+  at start-of-file, now placed at the first occurrence of the message's
+  backticked name, with (0,0) as the fallback)
 - [x] E_MUT_CONFLICT / E_CAPABILITY_LEAK / E_INVALID_CAPABILITY are
   REAL, load-bearing checks (mutability_check.zyl) — genuinely Zyl-
   specific value, confirmed firing correctly through the LSP path
@@ -192,25 +246,29 @@ flagged, not fixed; see repl_integration.zyl's header comment.
   scan
 - [x] **Document Symbols**: real, from `source_index`'s top-level-form
   scan (function/deftype/defstruct/trait, with real line/col)
-- [x] **Rename** (Phase 6 originally): renames the declaration site
-  only, not call sites (no reference tracking without Wall 1); prepareRename included
+- [x] **Rename** (Phase 6 originally): originally the declaration site
+  only; now the declaration plus every whole-word reference in the file.
+  prepareRename included
 
 ### Phase 3: Intelligence ✅ COMPLETE (reduced scope — see Wall 1)
 - [x] **Completion**: keywords (static) + known function names + known
   ADT type names + known variant constructors, all from `SymTable`.
-  Dropped from the original plan: in-scope local variables (`Env` is a
+  (Later extended: module paths inside `(use ...)`, and every built-in
+  from `builtins.zyl` with signature and documentation, plus struct
+  names and fields.) Dropped from the original plan: in-scope local variables (`Env` is a
   codegen-time construct, not tied to a source position — nothing to
   query "at the cursor"), trait methods, module-exports-as-a-separate-
   category (already covered by the flat function list)
 - [x] **Semantic Tokens**: real token classification via a byte scan
   (`services/semantic_tokens.zyl`) — comments, strings, numbers,
-  keywords. Dropped: per-identifier function/variant coloring (needs a
-  word-at-range lookup per token; not wired yet) and the originally-
+  keywords. Per-identifier function/type/variant/field colouring has
+  since been added (classified against `builtins.zyl` and the document's
+  SymTable). Still dropped: the originally-
   planned Zyl-specific categories (`capability`, `region`, `ffi-call`,
   ...) — those need real capability/region data this compiler doesn't
   expose per-expression (see Wall 1)
 
-### Phase 4: Code Actions ✅ COMPLETE (reduced scope)
+### Phase 4: Code Actions — PARTIAL (bracket-balance quick-fixes only)
 - [x] Quick-fixes for balance errors, built from the SAME `fixIt` text
   `sexp_balance.zyl`'s `sb-hint` already computes — one real quickfix
   per unclosed/unexpected/mismatched-bracket diagnostic
@@ -230,7 +288,7 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - [x] `error_fixit.zyl` was never a real file in this codebase; not
   integrated (nothing to integrate)
 
-### Phase 5: REPL Integration + Workspace ✅ COMPLETE (workspace symbols reduced scope, see below)
+### Phase 5: REPL Integration + Workspace — PARTIAL (eval command and open-document workspace symbols done; no package graph)
 - [x] `repl_integration.zyl` — wired into `lsp_server.zyl` as the
   `workspace/executeCommand` command `zyl.evalDocument` (compile+run the
   document's current buffer, return captured stdout+stderr). Was
@@ -240,10 +298,19 @@ flagged, not fixed; see repl_integration.zyl's header comment.
   `runtime/actor_runtime.c`, the same fix `zyl_cc_compile`/`zyl_run_bin`
   already had. Verified end-to-end over real stdio: evaluating a 4-line
   document returns the correct computed output. VS Code command:
-  `zyl.evalDocument`, output shown in a dedicated "Zyl Eval" channel.
+  originally `zyl.evalDocument`; since extension 0.3.0 it is
+  `zyl.runCurrentFile` (Run Current File), which sends `zyl.evalDocument`
+  to the server.
 - [x] `workspace.zyl` — multi-root folder tracking + real workspace/symbol
   search across every currently-open document
-- [ ] `zyl.toml` DAG parsing: intentionally NOT implemented. `zyl.toml`
+- [ ] Workspace package graph: not implemented. The paragraph below was
+  written before the package system existed. Since then spec v5.0 §31
+  defined the manifest as `zyl.pkg` (not `zyl.toml`), and the compiler
+  implements manifests and workspaces (`stdlib/compiler/package.zyl`,
+  `stdlib/compiler/workspace.zyl`). The LSP resolves each open document's
+  own package through `mr-resolve-program`, so qualified names are right,
+  but it does not load a workspace's package graph or index unopened
+  files. Original reasoning: `zyl.toml`
   isn't a real format yet anywhere in this language — it's listed as
   "planned v5.0" in `book/src/part2/ch25-modules.md`, this compiler has
   no TOML parser, and no project anywhere in this repo uses one. Inventing
@@ -253,7 +320,7 @@ flagged, not fixed; see repl_integration.zyl's header comment.
   Workspace symbol search across every currently-OPEN document (above)
   is real and already covers the interactive case.
 
-### Phase 6: Polish ✅ MOSTLY COMPLETE (folded into existing services, reduced scope per Wall 1)
+### Phase 6: Polish — DONE with reduced scope (parameter-name inlay hints only; per-document call hierarchy)
 - [x] Folding Ranges — one per top-level form (`document_symbols.zyl`)
 - [x] Selection Ranges — one expansion step to the enclosing top-level
   form (no token-level innermost range — Wall 1)
@@ -287,17 +354,26 @@ flagged, not fixed; see repl_integration.zyl's header comment.
   give); a reference used only as a value (not a direct call) is still
   counted as an edge, since telling the two apart needs type
   information this compiler doesn't have.
-- [x] VS Code extension v0.1.0 — `editors/vscode/`: fixed real bugs in
+- [x] VS Code extension v0.1.0 (now 0.3.0, see Status) — `editors/vscode/`: fixed real bugs in
   the pre-existing draft (`vscode.LanguageClient` doesn't exist — the
   language client comes from the separate `vscode-languageclient`
   package, not the `vscode` module; added it as a real dependency,
   fixed the `onReady()` call removed in v8+, added the missing
   `zyl.restartLSP` command contribution, added `zyl.evalDocument`).
-  Compiles clean with `tsc`.
+  Compiles clean with `tsc`. In 0.3.0 the user-facing command was renamed
+  `zyl.runCurrentFile` (it still sends `zyl.evalDocument` to the server),
+  because the client library already registers the server's command name.
 
 ---
 
 ## Critical Integration Points
+
+Design sketches from the plan. None of the four was built in this form:
+`compiler_bridge.zyl` converts balance results and caught panics to
+Diagnostics and builds the SymTable; there are no type- or env-based hover
+or completion functions, no per-phase invalidation (`dm-on-change` applies
+the edits and re-analyses the whole document), no `capabilityConflict`
+data on diagnostics, and no region information in hover.
 
 ### 1. Compiler Bridge (`compiler_bridge.zyl`)
 ```zyl
@@ -352,12 +428,12 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 ## Bootstrap Integration
 
 ### Build Process
-```bash
-# 1. Add lsp modules to assemble.py bundle (DONE)
-# 2. Add lsp_server binary target to boot.sh (DONE)
-# 3. ./boot.sh --bootstrap-from-self (reseed)
-# 4. ./install.sh → ~/.zyl/bin/zyl-lsp
-```
+As built, the LSP modules are not in the `assemble.py` bundle (only
+`stdlib/lsp/builtins.zyl` is, because the REPL uses it). `boot.sh` compiles
+`selfhost/lsp_main.zyl` with the freshly built `stage2.bin` into
+`build/boot/zyl-lsp`, so a change under `stdlib/lsp/` does not alter the
+compiler's own output or require reseeding. `./install.sh` builds
+`~/.zyl/bin/zyl-lsp-bin` and a `zyl-lsp` wrapper script that execs it.
 
 ### Server Entry Point
 ```zyl
@@ -371,15 +447,15 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 
 ## Unique Zyl LSP Advantages (vs rust-analyzer)
 
-| Feature | rust-analyzer | Zyl LSP (Planned) |
-|---------|---------------|-------------------|
-| Deterministic diagnostics | ❌ (query cache non-determinism) | ✅ **Guaranteed** |
-| Region/capability diagnostics | ❌ | ✅ **Native** |
-| Macro-expansion-aware goto | Limited | ✅ **Full** (innermost-first hygiene tracked) |
-| Actor message type checking | N/A | ✅ **Send-capability aware** |
-| FFI pinning diagnostics | N/A | ✅ **Pin region + timeout** |
-| Contract overlay diagnostics | N/A | ✅ **Separate layer** |
-| Self-hosted compiler as library | ❌ | ✅ **First-class** |
+| Feature | rust-analyzer | Zyl LSP (Planned) | Status |
+|---------|---------------|-------------------|--------|
+| Deterministic diagnostics | ❌ (query cache non-determinism) | ✅ **Guaranteed** | Done (no caches, same input gives same output) |
+| Region/capability diagnostics | ❌ | ✅ **Native** | Capability/mutability errors yes (via `mutability_check`); region diagnostics no |
+| Macro-expansion-aware goto | Limited | ✅ **Full** (innermost-first hygiene tracked) | Not done: go-to-definition is a text scan of top-level forms |
+| Actor message type checking | N/A | ✅ **Send-capability aware** | Not done |
+| FFI pinning diagnostics | N/A | ✅ **Pin region + timeout** | Only `E_FFI_PIN_REQUIRED` for Secret arguments, via `secret_check` |
+| Contract overlay diagnostics | N/A | ✅ **Separate layer** | Not done |
+| Self-hosted compiler as library | ❌ | ✅ **First-class** | Done: the server links the compiler's own front end and checks |
 
 ---
 
@@ -399,6 +475,12 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 - Integration test via JSON-RPC replay (recorded sessions)
 - Regression: `run_regression_tests.sh --filter lsp`
 
+As built: there is no `tests/regression/lsp.zyl` and no recorded-session
+replay. `tests/lsp/lsp_protocol_test.py` starts `build/boot/zyl-lsp`,
+drives it over JSON-RPC on stdio and asserts on the responses (96 checks);
+`run_regression_tests.sh` runs it when the filter matches `lsp` or is
+empty. The latency targets below have never been measured.
+
 **Latency targets:**
 - Diagnostics (incremental): <50ms for 5K LOC
 - Hover: <30ms
@@ -409,6 +491,19 @@ flagged, not fixed; see repl_integration.zyl's header comment.
 ---
 
 ## File Tree (New Files)
+
+Planned tree with line estimates. Actual line counts (2026-09-23):
+`lsp_types` 681, `json_rpc` 509, `vfs` 155, `document_manager` 172,
+`compiler_bridge` 463, `capability_registry` 69, `workspace` 49,
+`repl_integration` 69, `lsp_server` 1029, `builtins` 408, `source_index`
+402; services: `hover` 33, `goto_definition` 198, `completion` 168,
+`document_symbols` 120, `semantic_tokens` 244, `code_action` 142,
+`signature_help` 67, `inlay_hints` 222, `call_hierarchy` 207. No
+`services/diagnostics.zyl`. `tools/repl.zyl` was not refactored onto the
+LSP; the REPL is now `stdlib/repl/` with its own ICNF interpreter, and
+shares only `lsp/builtins.zyl`. `tests/lsp/` holds only
+`lsp_protocol_test.py`. The VS Code extension also has `snippets/`,
+`syntaxes/zyl-pkg.tmLanguage.json`, `eslint.config.mjs` and a `LICENSE`.
 
 ```
 stdlib/lsp/
@@ -460,15 +555,15 @@ tests/lsp/
 
 ## Definition of Done (Per Phase)
 
-| Phase | Criteria |
-|-------|----------|
-| **0** | `zyl-lsp` binary builds, responds to `initialize`, `shutdown`, `exit` |
-| **1** | `textDocument/didOpen` → `publishDiagnostics` with balance + type + region errors |
-| **2** | `textDocument/hover`, `textDocument/definition`, `textDocument/documentSymbol` work on test corpus |
-| **3** | `textDocument/completion` (all 5 sources), `textDocument/semanticTokens` (with Zyl legend) |
-| **4** | `textDocument/codeAction` with ≥10 fix-its; `workspace/executeCommand` for refactors |
-| **5** | `zyl lsp --repl` works; multi-root workspace loads `zyl.toml` DAG; workspace symbols |
-| **6** | Inlay hints, folding, selection ranges, call hierarchy, rename, format; VS Code extension v0.1.0 |
+| Phase | Criteria | Met? |
+|-------|----------|------|
+| **0** | `zyl-lsp` binary builds, responds to `initialize`, `shutdown`, `exit` | Yes |
+| **1** | `textDocument/didOpen` → `publishDiagnostics` with balance + type + region errors | Partly: balance and checker errors; no type-inference or region errors |
+| **2** | `textDocument/hover`, `textDocument/definition`, `textDocument/documentSymbol` work on test corpus | Yes (name-based) |
+| **3** | `textDocument/completion` (all 5 sources), `textDocument/semanticTokens` (with Zyl legend) | Partly: no local variables or trait methods; standard legend, no Zyl-specific token types |
+| **4** | `textDocument/codeAction` with ≥10 fix-its; `workspace/executeCommand` for refactors | No: balance quick-fixes only; the one command is `zyl.evalDocument` |
+| **5** | `zyl lsp --repl` works; multi-root workspace loads `zyl.toml` DAG; workspace symbols | Partly: workspace symbols across open documents; no `zyl lsp` subcommand, no package graph |
+| **6** | Inlay hints, folding, selection ranges, call hierarchy, rename, format; VS Code extension v0.1.0 | Yes (parameter-name hints only; extension now 0.3.0) |
 
 ---
 
@@ -488,23 +583,23 @@ tests/lsp/
 
 ## Status
 
-**Complete for the language as it stands today.** `zyl-lsp` builds via
-`./boot.sh` and is exercised end-to-end by `tests/lsp/lsp_protocol_test.py`,
-which drives the real binary over real JSON-RPC on stdio and asserts on
-the responses (`./run_regression_tests.sh --filter lsp`, in both quick
-and full mode). Full regression suite: 77/77 including the self-hosting
-fixed point.
+**Complete for the language as it stands today, within the limits listed
+below.** `zyl-lsp` builds via `./boot.sh` and is exercised end-to-end by
+`tests/lsp/lsp_protocol_test.py`, which drives the real binary over real
+JSON-RPC on stdio and asserts on the responses (96/96 checks;
+`./run_regression_tests.sh --filter lsp`, in both quick and full mode). The
+full suite is 121/121.
 
 ### What the server answers today
 
-`initialize` (with every provider below advertised), `shutdown`,
-`exit`; `didOpen`, `didChange`, `didSave` (with text), `didClose`;
-`publishDiagnostics`; and the requests:
+`initialize` (with every provider below advertised), `initialized`,
+`shutdown`, `exit`; `didOpen`, `didChange`, `didSave` (with text),
+`didClose`; `publishDiagnostics`; and the requests:
 
 | Request | Notes |
 |---|---|
 | `hover` | MarkupContent, with a range; resolves the document's own definitions first, then the built-in table |
-| `definition` | Functions, types, structs, traits, macros, constants; a variant resolves to its `deftype`, a field to its `defstruct` |
+| `definition` | Functions, types, structs, traits, macros, constants; a variant resolves to its `deftype`, a field to its `defstruct`. Sees through `pub` and `feature-gate` wrappers |
 | `typeDefinition` | Variant to ADT, field to struct |
 | `implementation` | Every `impl` naming the trait under the cursor |
 | `references` | Whole-word occurrences, honouring `context.includeDeclaration` |
@@ -521,17 +616,23 @@ fixed point.
 | `formatting` / `rangeFormatting` | Re-indent by paren depth |
 | `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls` | Per-document |
 | `inlayHint` | Parameter names at call sites |
-| `workspace/executeCommand` | `zyl.evalDocument` |
+| `workspace/executeCommand` | `zyl.evalDocument`: writes the buffer to `/tmp/zyl_lsp_eval.zyl`, compiles it with the `zyl` on `PATH`, runs it, returns captured output |
 
 ### Diagnostics
 
-`document_manager.zyl` runs the same checks `selfhost/driver.zyl` runs,
-in the same order — `dc-check-program`, `ac-check-program`,
-`mc-check-program`, `ec-check-program`, `sc-check-program` — inside
-`try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead
-of killing the server. Each diagnostic carries its `E_*` code in the
-LSP `code` field and a range located by finding the message's
-backticked name in the document text.
+`document_manager.zyl` parses the document, resolves modules with the
+document's path (so it finds the package the file belongs to, spec v5.0
+§31.3), expands macros, then runs `dc-check-program`, `ac-check-program`,
+`mc-check-program`, `ec-check-program` and `sc-check-program` — the order
+`compile-run-checks` in `stdlib/compiler/pipeline.zyl` uses — inside
+`try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead of
+killing the server. Each diagnostic carries its `E_*` code in the LSP
+`code` field and a range located by finding the message's backticked name
+in the document text.
+
+Two of the pipeline's checks are not run: `cc-check-program` (package
+capability enforcement, §31.9, which needs the resolver's grant/deny sets)
+and `uc-check-program` (see below). Type inference does not run at all.
 
 The symbol table is built BEFORE the checks run and kept whatever they
 say, so a document that fails exhaustiveness still offers hover,
@@ -540,41 +641,49 @@ completion and go-to-definition for the names it declares.
 ### Coverage of the language
 
 `stdlib/lsp/builtins.zyl` is the single table behind hover, completion,
-signature help and token colouring. It holds every head symbol
-`dispatch-special` recognises, every operator `icnf.zyl` lowers to an
-instruction — including the bitwise family and the byte/atomic
-primitives — and every type, region and capability name, each with a
-signature and a one-line description. Keep it in step when
+signature help and token colouring, and the REPL's Tab completion
+uses it too. It holds every head symbol `dispatch-special`
+recognises (including `pub` and `feature-gate`), every operator `icnf.zyl`
+lowers to an instruction — including the bitwise family and the
+byte/atomic primitives — and every type, region and capability name, each
+with a signature and a one-line description. Keep it in step when
 `expr_inner.zyl` gains a form; a form missing from it appears in the
 editor as an ordinary unresolved identifier.
 
-### Honest gaps, unchanged
-
-Both remain blocked on the same missing data (Wall 1: nothing in the
-compiler's AST carries a source position):
+### Known gaps
 
 - **Type inlay hints** and **inference-driven hover**. Hover shows the
-  declared annotation, not an inferred type.
+  declared annotation, not an inferred type. The compiler now records
+  node positions (see Current Status), but type inference's name lookups
+  are unreliable (several compare strings with `=`; see
+  `compiler_bridge.zyl`'s header), so position data alone would not
+  produce trustworthy types.
 - **Local-variable completion**. There is no scope to read at a cursor.
-
-Three further limits are stated rather than worked around:
-
+- **Diagnostic positions** come from a name search in the text, not from
+  the compiler's span table.
 - **One diagnostic at a time**, because each checker stops at its first
   problem — the same behaviour as a command-line build.
 - **`unused_check` is not run**, because it reports by printing to
   stdout, which is the server's JSON-RPC channel. Surfacing those
   warnings needs the check to return them rather than print them.
 - **Navigation is per-document.** Workspace symbol search covers open
-  documents only; `zyl.toml` DAG parsing stays deferred because the
-  format does not exist yet.
+  documents only; the server does not load a `zyl.pkg` workspace's
+  package graph.
 
 ### Editor integration
 
-`editors/vscode/` v0.2.0: the language client above, a TextMate grammar
-covering every special form, bitwise and byte operation, atomic, region
-and capability name, 17 snippets, a `zyl` build task, a status bar item
-wired to the server log, configuration for the server path, arguments,
-trace and inlay hints, and a **Run Current File** command
-(`Ctrl+Shift+Enter`). `./install.sh --with-vscode` builds and installs
-it. Chapter 35 of the book documents per-editor setup for Neovim, Emacs
-and Helix as well.
+`editors/vscode/` v0.3.0 (vscode-languageclient 10.1, VS Code engine
+^1.91.0): two languages, `zyl` and `zyl-pkg` (manifests get their own
+grammar so the server never compiles one as a program); a TextMate
+grammar covering every special form, bitwise and byte operation, atomic,
+region and capability name, plus `pub` and `feature-gate`; 17 snippets;
+a `zyl` task type for single-file builds and for `build`/`test`/`fetch`
+in every `zyl.pkg` directory; commands `zyl.restartLSP`, `zyl.stopLSP`,
+`zyl.showServerLog` and **Run Current File** (`zyl.runCurrentFile`,
+`Ctrl+Shift+Enter`, which sends `zyl.evalDocument`); settings
+`zyl.lsp.enable`, `zyl.lsp.path`, `zyl.lsp.arguments`,
+`zyl.lsp.trace.server`, `zyl.inlayHints.parameterNames` (applied in
+client middleware) and `zyl.compiler.path` (falls back to
+`build/boot/zyl-self`). `./install.sh --with-vscode` builds and installs
+it. Chapter 35 of the book (`book/src/part5/ch35-tooling.md`) documents
+per-editor setup for Neovim, Emacs and Helix as well.

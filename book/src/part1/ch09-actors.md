@@ -1,64 +1,82 @@
 # Chapter 9: Concurrency with Actors
 
-Zyl's concurrency model is based on **actors** — isolated, single-threaded entities that communicate via message passing. No shared mutable state, no locks, no data races.
+Zyl's concurrency model is based on **actors**: isolated entities that communicate by message passing, with no shared mutable state (Spec §15). This chapter describes the model, then what the current compiler and runtime implement. The runtime is still a subset of the design, and the gaps (most importantly, there is no way for an actor to receive a message yet) are called out where they matter. Every runnable example was compiled with `zyl` and run.
 
 ## 9.1 Actor Model Basics
 
-An actor has:
+In the specification, an actor has:
+
 - **Private state** (only it can access)
 - **Mailbox** (FIFO queue of messages)
-- **Behavior** (function processing messages)
+- **Behavior** (code that runs on its own, isolated from other actors)
 
 ```
 ┌─────────────────────────────────────┐
 │           Actor                     │
-│  ┌─────────────────────────────┐   │
-│  │      Mailbox (FIFO)         │   │
-│  │  [Msg1] [Msg2] [Msg3] ...   │   │
-│  └──────────────┬──────────────┘   │
-│                 ▼                  │
-│  ┌─────────────────────────────┐   │
-│  │   Behavior Function         │   │
-│  │   (msg, state) → new_state  │   │
-│  └──────────────┬──────────────┘   │
-│                 ▼                  │
-│  ┌─────────────────────────────┐   │
-│  │   Private State             │   │
-│  └─────────────────────────────┘   │
+│  ┌─────────────────────────────┐    │
+│  │      Mailbox (FIFO)         │    │
+│  │  [Msg1] [Msg2] [Msg3] ...   │    │
+│  └──────────────┬──────────────┘    │
+│                 ▼                   │
+│  ┌─────────────────────────────┐    │
+│  │   Behavior                  │    │
+│  └──────────────┬──────────────┘    │
+│                 ▼                   │
+│  ┌─────────────────────────────┐    │
+│  │   Private State             │    │
+│  └─────────────────────────────┘    │
 └─────────────────────────────────────┘
 ```
 
-**Key guarantees:**
-- Messages processed **sequentially** (one at a time)
-- **FIFO ordering** per actor (deterministic)
-- **No shared memory** between actors
-- **Type-safe** message passing
+**Rules from Spec §15:**
+
+- No shared mutable state between actors
+- Messages must be **Send-capable**
+- **FIFO ordering** per actor
+- Actors are isolated; no direct memory sharing
+
+The specification defines two operations, `spawn` and `send`. Everything else in this chapter (waiting for, stopping, and querying actors) comes from the standard library module `actor/actor`.
 
 ## 9.2 Spawning Actors
 
 ```lisp
-(spawn behavior-fn)
+(spawn (fn () body))
+(spawn entry-fn)          ; a named zero-argument function also works
 ```
 
-Returns an `ActorRef` — opaque handle to send messages to.
+`spawn` starts a new actor running `body` on its own thread and returns immediately with an **actor reference**, an `Int` handle used by `send` and the `actor/actor` functions.
 
 ```lisp
-;; Simple actor: prints messages
-(def printer-actor
-  (spawn (fn (msg)
-    (print "Got: " msg))))
+(use actor/actor)
 
-;; Actor with state (using closure capture)
-(def counter-actor
-  (spawn
-    (let-mut (count 0)
-      (fn (msg)
-        (match msg
-          (Inc (set! count (+ count 1)))
-          (Get (print "Count: " count)))))))
+(defn crunch (n)
+  (if (<= n 1) 1 (* n (crunch (- n 1)))))
+
+(defn report-a () (print (crunch 5)))
+(defn report-b () (print (crunch 6)))
+
+(defn main ()
+  (let a (spawn (fn () (report-a)))
+    (begin
+      (actor-wait a)
+      (let b (spawn (fn () (report-b)))
+        (begin
+          (actor-wait b)
+          (print "both done"))))))
 ```
 
-**Behavior function signature:** `(fn (message) body)` — takes one argument (the message).
+Output:
+
+```
+120
+720
+both done
+```
+
+Two rules for the closure passed to `spawn` in the current compiler:
+
+1. **Capture nothing.** The actor's entry point is given no environment, so a spawned closure that reads a variable from the enclosing scope crashes at run time. A closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (Chapter 8, §8.6). Put the work in a top-level function and have the closure call it, as above.
+2. **Take no parameters.** There is no message argument: an actor's body cannot read its mailbox (§9.3). A parameter, if declared, receives 0.
 
 ## 9.3 Sending Messages
 
@@ -66,282 +84,236 @@ Returns an `ActorRef` — opaque handle to send messages to.
 (send actor-ref message)
 ```
 
-- **Asynchronous** — returns immediately (`unit`)
-- **FIFO** — messages processed in send order
-- **Type-checked** — message must be Send-capable
+- **Asynchronous**: returns immediately
+- **FIFO**: messages are queued in send order
+- **Checked**: a message that references a `let-mut` variable is rejected
 
 ```lisp
-(send printer-actor "hello")
-(send counter-actor (Inc))
-(send counter-actor (Get))
+(use actor/actor)
+
+(defn main ()
+  (let a (spawn (fn () 0))
+    (begin
+      (send a 1)
+      (send a 2)
+      (send a 3)
+      (actor-wait a)
+      (print "sent three messages"))))
 ```
+
+**Current limitation: messages cannot be received.** There is no `receive` form yet, and a spawned body has no parameter through which a message could arrive. The runtime queues each message in the actor's mailbox and discards it when it is dequeued. `send` is therefore useful today only for exercising the send path and its compile-time checks. The one way to deliver work to a running actor is a **closure message**: the runtime routine `zyl_actor_send_closure`, called through `ffi-call`, queues a call to a named one-parameter function on the actor's thread (Chapter 21, §21.4). Also avoid sending to an actor that has already been waited on or terminated: the runtime then tries to free the message as if it were a heap pointer, which aborts the program when the message is a plain `Int`.
 
 ### Send-Capable Types
 
+The specification's Send rules:
+
 | Type | Send? | Notes |
 |------|-------|-------|
-| `Int`, `Float`, `Bool`, `String` | ✅ | Immutable primitives |
-| `TCap<T>` | ✅ | Shared immutable |
-| `TAtomic<T>` | ✅ | Thread-safe mutation |
-| `Vec<T>`, `Map<K,V>` (T, K, V Send) | ✅ | Deeply immutable |
-| ADTs with Send fields | ✅ | Recursive check |
-| `TMut<T>` | ❌ | Exclusive — can't share |
-| `TBox<T>` | ❌ | Owned — would violate exclusivity |
-| `TPin<T>` | ❌ | FFI-pinned — not for actors |
-| Closures capturing TMut | ❌ | Leaks mutable state |
+| `Int`, `Float`, `Bool`, `String` | Yes | Immutable primitives |
+| `TCap<T>` | Yes | Shared immutable |
+| `TAtomic<T>` | Yes | Thread-safe mutation |
+| ADTs and structs with Send fields | Yes | Checked recursively |
+| `TMut<T>` | No | Exclusive; cannot be shared |
+| `TBox<T>` | No | Owned; would violate exclusivity |
+| `TPin<T>` | No | FFI-pinned; not for actors |
+| Closures capturing `TMut` | No | Would leak mutable state |
+
+The compiler currently enforces the `TMut` rows, for both a sent message and a spawned closure's captures:
 
 ```lisp
-;; ✅ OK
-(send actor 42)
-(send actor (Some "hi"))
-(send actor (vec-create 0 10))
+(use actor/actor)
 
-;; ❌ COMPILE ERROR: E_CAPABILITY_LEAK
-(let-mut (x 10)
-  (send actor x))  ; x is TMut
+(defn main ()
+  (let-mut x 10
+    (let a (spawn (fn () 0))
+      (begin
+        (send a x)
+        (actor-wait a)))))
 ```
 
-## 9.4 Actor State Patterns
+```
+PANIC: E_CAPABILITY_LEAK: message sent to an actor references a let-mut (TMut) variable from the enclosing scope -- messages must be Send-capable
+```
 
-### Pattern 1: Closure with `let-mut`
+## 9.4 Structuring Actor Code Today
+
+Because a spawned closure cannot capture values and `send` messages are never observed, everything an actor does has to be reachable from top-level functions. The practical pattern is:
+
+1. Write the real logic as ordinary, pure functions (easy to test; see Chapter 11).
+2. Give each actor a small entry function that calls that logic and reports its result (for example, by printing it or writing a file).
+3. Spawn one closure per entry function, and wait for each actor before relying on its effects.
+
+To hand an already running actor more work, use closure messages through `ffi-call` (Chapter 21, §21.4); each one runs a named handler with a single argument, in FIFO order. Stateful behaviors written in the model's own terms (a counter that handles `Inc`/`Get` messages with `receive`, a connection state machine) need `receive` and are not expressible yet.
+
+## 9.5 Request-Response
+
+In the design, an actor replies by sending to a reference it was given in the request. With `send` and `receive` that is not possible yet. It can be built from closure messages instead: the request carries the requester's actor reference, and the handler replies with a closure message to it. Chapter 21 (§21.4) has a complete, working example, including the ordering caveat it depends on.
+
+## 9.6 Waiting for Actors
+
+The `actor/actor` module provides:
+
+| Function | Meaning |
+|----------|---------|
+| `(actor-wait a)` | Block until actor `a` has finished its body, then stop it and join its thread |
+| `(actor-terminate a)` | Stop actor `a`'s mailbox loop and join its thread |
+| `(actor-is-alive a)` | `true` until the actor has been waited on or terminated |
+| `(actor-spawn f)`, `(actor-send a m)` | Function wrappers around `spawn` and `send` |
+
+`actor-wait` does not drain the mailbox: messages still queued when the actor is stopped are dropped. To let every actor finish its queued closure messages first, call the runtime directly with `(ffi-call "zyl_actor_wait_all" 1000)`, which waits until every mailbox is empty and then stops and joins every actor (Chapter 21, §21.5).
+
+There is no `wait_all` language form, and the compiler does not call `zyl_actor_wait_all` when `main` returns, so an actor that has not been waited on may be killed before it finishes. This program:
 
 ```lisp
-(defn make-counter ()
-  (spawn
-    (let-mut (count 0)
-      (fn (msg)
-        (match msg
-          (Inc (set! count (+ count 1)))
-          (Dec (set! count (- count 1)))
-          (Get (print count)))))))
+(defn main ()
+  (let a (spawn (fn () (print "hi from actor")))
+    (print "main exits")))
 ```
 
-### Pattern 2: State in Message (Stateless Actors)
-
-```lisp
-(defn stateless-processor ()
-  (spawn (fn (msg)
-    (match msg
-      (Process data (print "Processing: " data))))))
-```
-
-### Pattern 3: Actor with Multiple Behaviors (State Machine)
-
-```lisp
-(deftype ConnectionMsg
-  (Connect)
-  (Data String)
-  (Disconnect))
-
-(defn connection-actor ()
-  (spawn
-    (let-mut (state Disconnected)
-      (fn (msg)
-        (match msg
-          (Connect
-            (if (== state Disconnected)
-              (set! state Connected)
-              (print "Already connected")))
-          (Data d
-            (if (== state Connected)
-              (print "Received: " d)
-              (print "Not connected")))
-          (Disconnect (set! state Disconnected)))))))
-```
-
-## 9.5 Request-Response Pattern
-
-Actors often need to reply. Pass a reply-to actor:
-
-```lisp
-(deftype Request
-  (Get (reply ActorRef))
-  (Set Int (reply ActorRef)))
-
-(defn key-value-store ()
-  (spawn
-    (let-mut (store (map-create 0 10))
-      (fn (msg)
-        (match msg
-          (Get key reply
-            (send reply (map-get store key "NOT_FOUND")))
-          (Set key value reply
-            (set! store (map-put store key value))
-            (send reply (Ok unit))))))))
-
-;; Client usage:
-(let reply-actor (spawn (fn (response) (print "Reply: " response))))
-(send store (Get "key" reply-actor))
-```
-
-## 9.6 `wait_all` — Synchronization
-
-```lisp
-(wait_all actor-ref1 actor-ref2 ...)
-```
-
-Blocks until all actors have processed their current mailbox. Returns `unit`.
-
-```lisp
-(let a1 (spawn ...))
-(let a2 (spawn ...))
-(send a1 (Work))
-(send a2 (Work))
-(wait_all a1 a2)  ; Wait for both to finish
-(print "Both done")
-```
-
-**Use sparingly** — prefer async message passing. `wait_all` is for test/benchmark synchronization.
+printed `hi from actor` in only 186 of 200 runs on the machine used for this book. Always wait for every actor you spawn.
 
 ## 9.7 Actor Lifecycle
 
 ```
-spawn → ActorRef created, thread started
-    ↓
-Message received → behavior runs, state updated
-    ↓
-... more messages ...
-    ↓
-Actor stops when:
-  - Behavior function returns (finishes)
-  - Program exits
-  - (No explicit "stop" — just stop sending messages)
+spawn
+  │  actor slot allocated, thread started
+  ▼
+body runs
+  │
+  ▼
+mailbox loop: dequeue messages in FIFO order
+  │  (data messages are discarded; closure messages run their handler)
+  │
+  ▼
+actor-wait or actor-terminate
+  │  actor marked dead, thread joined
+  ▼
+actor-is-alive returns false
 ```
 
-No graceful shutdown protocol built-in — design your own with a `Shutdown` message if needed.
+An actor also ends when the process exits, whether or not it has finished. There is no built-in shutdown protocol beyond `actor-wait` and `actor-terminate`.
 
-## 9.8 Determinism Guarantees
+## 9.8 Determinism
 
-Zyl's actor system is **fully deterministic**:
+The specification requires deterministic FIFO delivery per actor, and the runtime keeps each mailbox in send order. Scheduling, however, is done by the operating system: each actor is a POSIX thread, and output from actors that run at the same time can interleave differently from run to run (see §9.9). To keep a program's observable output deterministic today:
 
-1. **FIFO per actor** — messages processed in send order
-2. **Deterministic scheduling** — round-robin or similar (no randomness)
-3. **No shared state** — no race conditions possible
-4. **Same inputs → same message order → same outputs**
-
-This means: **actor programs are reproducible**. Run twice, get identical results.
+- wait for an actor before starting work whose output must come after it, or
+- let only one actor (usually `main`) produce the output that must be ordered.
 
 ## 9.9 Common Patterns
 
-### Worker Pool
+### Fan-Out and Join
+
+Spawn several independent workers, then wait for all of them:
 
 ```lisp
-(defn make-workers (n task-handler)
-  (let workers (vec-create 0 n))
-  (for (i 0) (< i n)
-    (set! workers (vec-push workers (spawn task-handler))))
-  workers)
+(use actor/actor)
 
-(defn dispatch (workers task)
-  (let idx (% (hash task) (vec-len workers)))
-  (send (vec-get workers idx) task))
+(defn sum-to (n acc)
+  (if (= n 0) acc (sum-to (- n 1) (+ acc n))))
+
+(defn job-a () (print (sum-to 100 0)))
+(defn job-b () (print (sum-to 1000 0)))
+(defn job-c () (print (sum-to 10000 0)))
+
+(defn main ()
+  (let a (spawn (fn () (job-a)))
+  (let b (spawn (fn () (job-b)))
+  (let c (spawn (fn () (job-c)))
+    (begin
+      (actor-wait a)
+      (actor-wait b)
+      (actor-wait c)
+      (print "all workers finished"))))))
 ```
 
-### Pipeline
+Typical output:
 
-```lisp
-;; Stage 1: read → Stage 2: process → Stage 3: write
-(let reader (spawn (fn (msg) ...)))
-(let processor (spawn (fn (msg) ...)))
-(let writer (spawn (fn (msg) ...)))
-
-(send reader (ReadFile "input.txt"))
-;; Reader sends to processor, processor sends to writer
+```
+5050
+500500
+50005000
+all workers finished
 ```
 
-### Supervision (Error Handling)
+The final line always comes last, because `main` prints it after joining every worker. The three worker lines can appear in any order; in 100 runs, one printed `500500` before `5050`. If the order matters, wait for each worker before spawning the next, as in §9.2.
 
-```lisp
-(deftype SupervisorMsg
-  (Start (child ActorRef))
-  (ChildFailed (child ActorRef) (err String)))
+### Pipelines, Worker Pools, and Supervision
 
-(defn supervisor ()
-  (spawn
-    (let-mut (children Nil)
-      (fn (msg)
-        (match msg
-          (Start child
-            (set! children (Cons child children)))
-          (ChildFailed child err
-            (print "Child failed: " err)
-            (let new-child (spawn ...)
-              (set! children (Cons new-child (remove child children)))))))))
-```
+These patterns pass messages between actors. Pipelines and pools can be approximated with closure messages (Chapter 21); supervision also needs failure notifications, which the runtime does not provide.
 
-## 9.10 Mailbox Overflow
+## 9.10 Mailboxes and Limits
 
-Mailboxes are **unbounded** (heap-allocated queue). If producer outruns consumer, memory grows. For bounded mailboxes, implement backpressure in your protocol:
-
-```lisp
-;; Sender checks credit
-(send worker (Work data (reply-to credit-actor)))
-
-;; Worker returns credit when done
-(send credit-actor (Credit))
-```
+Mailboxes are **unbounded** linked lists on the heap: if a producer outruns its consumer, memory grows. A program can have at most 1024 actors over its lifetime (`ZYL_MAX_ACTORS` in `runtime/actor_runtime.h`). Actor ids are never reused, and once the limit is reached `spawn` prints `zyl: actor limit reached (1024)` and returns an invalid reference.
 
 ## 9.11 Testing Actors
 
-Use `wait_all` in tests:
+Test what the runtime guarantees (lifecycle and the send path) and keep the logic itself in plain functions tested directly. This is the style of `tests/regression/actors.zyl`:
 
 ```lisp
-(test "actor-counter"
-  (let counter (make-counter)
-    (send counter (Inc))
-    (send counter (Inc))
-    (send counter (Get))
-    (wait_all counter)
-    (assert-equal (get-output) "Count: 2")))
+(use actor/actor)
+
+(test "spawned-actor-is-alive"
+  (let a (spawn (fn () 42))
+    (assert-true (actor-is-alive a))))
+
+(test "waited-actor-is-not-alive"
+  (let a (spawn (fn () 0))
+    (begin
+      (send a 1)
+      (actor-wait a)
+      (assert-false (actor-is-alive a)))))
+
+(run-tests)
 ```
+
+```
+test: spawned-actor-is-alive ... ok
+test: waited-actor-is-not-alive ... ok
+
+test result: 2 passed, 0 failed, 2 total
+```
+
+### Actors in Packages
+
+Inside a package (a directory with a `zyl.pkg`, Spec §31.9), `spawn`, `send`, and any use of the `actor/` modules require the `actor` capability. Declare it in the manifest with `(capabilities actor)`; without it, compilation stops with `E_PKG_CAPABILITY_VIOLATION`:
+
+```
+PANIC: E_PKG_CAPABILITY_VIOLATION: capability: package book/actdemo uses actor in book/actdemo@0::actdemo::go without declaring it in zyl.pkg
+```
+
+A single file compiled directly is not capability-checked. (The current checker also skips the body of the root package's `main`, so a `spawn` written directly in `main` goes unreported; declare the capability anyway.)
 
 ---
 
 ## For Experts: Under the Hood
 
-### Runtime Implementation (`src/runtime/actor_runtime.c`)
+### Runtime Implementation (`runtime/actor_runtime.c`)
 
-- **pthread per actor** (configurable: M:N threading planned)
-- **Lock-free mailbox** (MPSC queue)
-- **Work-stealing scheduler** (planned)
-- **Deterministic scheduling**: fixed round-robin quantum
+- **One POSIX thread per actor**, created by `zyl_actor_spawn`, which receives the spawned closure's code pointer and a state pointer. The compiler passes 0 for the state, which is why a spawned closure cannot capture anything.
+- **Mailbox**: a singly linked FIFO list protected by a per-actor mutex, with a condition variable to wake the actor thread.
+- **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; discarded) or a *closure* message (`zyl_actor_send_closure`, which runs a function in the actor's thread). No language form produces a closure message yet; the runtime routine is reachable only through a raw `ffi-call`, which is the one way code can currently be delivered to an actor after it starts.
 
 ### Message Representation
 
 ```c
-struct Message {
-    void* payload;      // TCap<T> or TAtomic<T> (Send-capable)
-    size_t size;
-    ActorRef* sender;   // For reply
-};
+typedef struct ZylMessage {
+    int kind;                  /* ZYL_MSG_DATA or ZYL_MSG_CLOSURE */
+    void* data;                /* the sent word, or a ZylClosureMsg* */
+    struct ZylMessage* next;   /* FIFO link */
+} ZylMessage;
 ```
 
-### Send Capability Check (Compile-Time)
+`(send a m)` lowers to `zyl_actor_send(a, m)`: the value `m` is passed through as an opaque 64-bit word, never copied or boxed.
 
-During type inference (Phase 3):
-1. Infer type of message expression
-2. Check `Send` trait implementation
-3. `Send` auto-derived for:
-   - Primitives
-   - `TCap<T>` where T: Send
-   - ADTs/Structs where all fields: Send
-   - `TAtomic<T>`
-4. Reject `TMut`, `TBox`, `TPin`, closures with TMut captures
+### Send Capability Check (Compile Time)
 
-### Deterministic Scheduling
+The check lives in `stdlib/compiler/mutability_check.zyl`. It reports `E_CAPABILITY_LEAK` when a `send` message, or the body of a spawned closure, refers to a `let-mut` variable of the enclosing scope. The rest of the Send table in §9.3 (rejecting `TBox`, `TPin`, and non-Send ADT fields) is specified but not yet checked.
 
-```c
-// Simplified scheduler loop
-while (1) {
-    for (actor in actors) {
-        Message* msg = mailbox_pop(actor);
-        if (msg) behavior(actor, msg);
-    }
-}
-```
+### Scheduling
 
-No randomness, no priority inversion — pure round-robin.
+There is no scheduler of Zyl's own. Actor threads are scheduled by the kernel, which is why cross-actor ordering is not deterministic (§9.8). A deterministic scheduler is part of the design but not implemented.
 
 ---
 
-**Next:** [Chapter 10: Macros and Metaprogramming](ch10-macros.md) — hygienic macros, pattern matching, and compile-time code generation.
+**Next:** [Chapter 10: Macros and Metaprogramming](ch10-macros.md) covers `defmacro`, expansion order, and what the current macro expander does and does not do.

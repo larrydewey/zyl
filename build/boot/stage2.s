@@ -304274,7 +304274,7 @@ main:
 .L10647:
     .string "(when cond body)"
 .L10648:
-    .string "One-armed conditional; the absent arm yields unit."
+    .string "One-armed conditional; the absent arm yields unit. A core/core function, not a special form, so `body` is evaluated before the test. Written `(when cond)` before a match arm's body, it is a guard."
 .L10649:
     .string "while"
 .L10650:
@@ -304298,7 +304298,7 @@ main:
 .L10659:
     .string "(match subject (Variant binding ... body) ...)"
 .L10660:
-    .string "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `dN` arm is the wildcard convention."
+    .string "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `_` arm matches anything."
 .L10661:
     .string "begin"
 .L10662:
@@ -304346,7 +304346,7 @@ main:
 .L10683:
     .string "(range start end)"
 .L10684:
-    .string "Integer range, used by loop forms."
+    .string "Match pattern for an integer range, inclusive at both ends: `((range 1 9) body)` as a match arm."
 .L10685:
     .string "with-resource"
 .L10686:
@@ -304832,9 +304832,9 @@ main:
 .L10926:
     .string "special-form"
 .L10927:
-    .string "(bytebuf-append buf byte)"
+    .string "(bytebuf-append buf slice)"
 .L10928:
-    .string "Append one byte, growing the length."
+    .string "Append a byte slice's contents, growing the length. Capacity is fixed: a slice that does not fit leaves the buffer unchanged."
 .L10929:
     .string "bytebuf-len"
 .L10930:

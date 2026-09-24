@@ -26,8 +26,9 @@
 ;   CGR = state + int + string  (fresh labels / slot offsets)
 ;   CGE = state + env           (match-binding sequences)
 ;
-; Bootstrap constraint note: pattern wildcards must be named dummies
-; (`dN`) because the Rust bootstrap miscompiles bare `_` patterns.
+; Pattern wildcards are written `_`, which may repeat within one
+; pattern. (Named dummies `d1`, `d2`, ... were used while the Rust
+; bootstrap, now archived, miscompiled bare `_`.)
 
 (use allocator/allocator)
 (use compiler/ast)
@@ -421,7 +422,7 @@
 ; reference to an undefined symbol named `rbp0` (no register+immediate
 ; syntax without a +/- between them), not as [rbp+0]. A plain immediate
 ; load avoids the memory-operand text construction entirely, matching
-; what the Rust bootstrap already does for the same case.
+; what the archived Rust bootstrap did for the same case.
 (defn cg-load-unresolved (st)
   (cg-nl (cg-emit st "    mov rax, 0")))
 
@@ -474,8 +475,8 @@
 ; was false from the start) — used directly by `for`'s desugaring into a
 ; plain while (ic-for in icnf.zyl), which some regression tests assert
 ; on (e.g. control-flow.zyl's "for-loop-early-exit"). Used to hardcode
-; `xor eax, eax` after the loop regardless, matching a Rust bootstrap
-; that instead threads the last body value through a dedicated slot.
+; `xor eax, eax` after the loop regardless, unlike the archived Rust
+; bootstrap, which threads the last body value through a dedicated slot.
 (defn cg-while-parts (st env c body lstart lend)
   (match (cg-new-slot st)
     (CGR st0 off _ (cg-while-body st0 env c body lstart lend off))))
@@ -994,7 +995,7 @@
 
 ; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
 ; (not raw malloc) so the runtime's hidden qword-count header lands
-; before the block — the same mechanism the Rust bootstrap already uses,
+; before the block — the same mechanism the archived Rust bootstrap used,
 ; which zyl_variant_eq (actor_runtime.c) reads to do structural equality
 ; on two separately-allocated ADT/struct values without a runtime type
 ; tag. Fields are evaluated and pushed, then popped into the block
@@ -1131,7 +1132,7 @@
 ; in p) is where a failed tag check goes; lend is the match join label.
 ;
 ; A wildcard/catch-all arm (any pattern name that doesn't resolve to a
-; real variant, e.g. this codebase's pervasive dummy names d1/d2/...)
+; real variant, e.g. `_`)
 ; gets sentinel tag -1 from vt-tag-of ("not found"). Unconditionally
 ; emitting a tag check for it — `cmp rax, -1` — can never actually match
 ; a real scrutinee's tag, so the wildcard arm's own body was NEVER
@@ -1140,7 +1141,7 @@
 ; was supposed to compute. This is the single mechanism behind the
 ; entire "rbp0"/wildcard-arm-returns-0 bug class chased through this
 ; session once cg-load-unresolved stopped being the direct culprit — the
-; Rust bootstrap's codegen.rs already special-cases this (skips cmp/je
+; archived Rust bootstrap's codegen.rs special-cased this (skips cmp/je
 ; for the wildcard arm, routes the no-match fallthrough straight to its
 ; body); this mirrors that: skip the tag check entirely and match
 ; unconditionally when tag is the sentinel.
@@ -1306,9 +1307,10 @@
 ; recursion in the compiler stays within the machine stack.
 
 ; NOTE: match-arm bodies must stay SINGLE expressions (one call or one
-; binop-with-one-call). The Rust bootstrap drops computations when a
-; match-arm body combines a constant with MULTIPLE calls (seen as frames
-; collapsing to minimum size in stage>=2 binaries). Hence these helpers.
+; binop-with-one-call). The Rust bootstrap (now archived) dropped
+; computations when a match-arm body combined a constant with MULTIPLE
+; calls (seen as frames collapsing to minimum size in stage>=2
+; binaries). Hence these helpers.
 (defn icnf-add2 (a b) (+ a b))
 (defn icnf-add3 (a b c) (+ a (+ b c)))
 
@@ -1607,9 +1609,11 @@
   ; first time this zeroing was removed without also fixing print. Now
   ; that cg-print always leaves a clean 0 (see its own comment), a
   ; `main` whose tail is print exits 0 as expected, and one whose tail
-  ; is (run-tests) genuinely propagates zyl_run_tests' pass/fail result
-  ; (actor_runtime.c: 0 if all passed, 1 if any failed) as the process
-  ; exit code for the first time.
+  ; returns a nonzero Int exits with it. Top-level (run-tests) does NOT
+  ; get this: the implicit `main` icnf.zyl's ic-finish-program builds
+  ; around top-level statements ends in a constant 0, so zyl_run_tests'
+  ; pass/fail result (actor_runtime.c: 0 if all passed, 1 if any failed)
+  ; is discarded and a failing test file still exits 0.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")

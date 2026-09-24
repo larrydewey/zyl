@@ -1,341 +1,354 @@
 # Compiler Pipeline
 
-> **Note (2026-09-17):** this document predates the Rust eviction (see `docs/rust-eviction-plan.md`) and may still reference `src/*.rs` or Cargo. The active compiler implementation is `stdlib/compiler/*.zyl` + `selfhost/`; the Rust bootstrap it describes is archived at `archive/rust-bootstrap-2026/`. See `AGENTS.md` for current build commands.
-
 ## Overview
 
-The Zyl compiler is a deterministic, multi-phase compiler from S-expression source to x86_64 native binary. All phases execute in strict order; no phase may depend on output from a later phase.
+The Zyl compiler is a deterministic, multi-phase compiler from
+S-expression source to an x86_64 native binary. It is written in Zyl:
+the phases live in `stdlib/compiler/*.zyl`, and
+`stdlib/compiler/pipeline.zyl` is the one place that fixes their order.
+Every front end calls it: the CLI (`selfhost/driver.zyl`), `zyl eval`,
+and the REPL. No phase depends on output from a later phase.
 
 **Canonical reference:** `zyl_specification.txt` §22
 **Navigation:** `spec/11-icnf-ir.md`, `spec/13-code-generation.md`
+**File-level map:** `docs/codebase-map.md`
 
-**Note on type inference ordering:** The actual implementation runs monomorphization (Phase 6) before full type inference (Phase 5), while type inference's `collect()` phase runs first to gather function definitions. This preserves AST structure for monomorphization. The canonical phase order is preserved in documentation.
+`pipeline.zyl` exposes three entry points:
 
----
+| Function | Runs | Used by |
+|---|---|---|
+| `compile-to-exprs` | Balance check through the checks; returns checked `ExprInner` | `compile-to-fns` |
+| `compile-to-fns` | Everything through region inference; returns `(List Icnf)` | `zyl eval`, the REPL |
+| `compile-to-asm` | `compile-to-fns` plus code generation; returns assembly text | the CLI, `zyl build`, `zyl test` |
 
-## Phase 1: Parsing
+Errors are raised with `zyl_panic` and a located `error[CODE]` message.
+The REPL catches them with `try`; the CLI lets them end the process.
+Setting `ZYL_DEBUG_STAGES` makes each stage append its name to
+`/tmp/dbg` as it starts.
 
-**Input:** `.zyl` source file (UTF-8 text)
-**Output:** AST (Expr tree)
-**Implementation:** `src/lexer.rs`, `src/parser.rs`, `src/ast.rs`
+### Where the implementation departs from the spec's phase list
 
-**Process:**
-1. Lexer tokenizes source into tokens (IDENTIFIER, INTEGER, FLOAT, STRING, BOOLEAN, SYMBOL, KEYWORD, parentheses, brackets)
-2. Strips line comments (`;`)
-3. Parser produces raw S-expressions as Call/Apply nodes (no-dispatch mode)
-4. PostProcessor converts raw nodes to specialized ExprInner variants
+The spec's §22 lists eleven phases. The self-hosted compiler runs them
+in a different shape, and this document describes what the code does:
 
-**Invariants:**
-- All expressions are strict left-to-right
-- Reserved keywords cannot be used as identifiers (E_RESERVED_KEYWORD)
-- Location tracking for all syntax errors
-
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/lexer.rs` | ~457 | Tokenizer |
-| `src/parser.rs` | ~1823 | Recursive descent parser |
-| `src/ast.rs` | ~2005 | AST + PostProcessor |
-
----
-
-## Phase 2: Macro Expansion
-
-**Input:** AST from Phase 1
-**Output:** Expanded AST (macros replaced with their templates)
-**Implementation:** `src/macro_expander.rs`
-
-**Process:**
-1. Macro registration: Collect all defmacro definitions
-2. Post-order traversal (innermost-first): Expand macros recursively
-3. Gensym hygiene: All macro-introduced variables renamed to unique symbols
-4. `___skip_` placeholder: Omitted if branches produce Unit type
-
-**Invariants:**
-- Expansion is deterministic (innermost-first order)
-- Hygiene prevents variable capture
-- Macros cannot access runtime values (E_MACRO_ILLEGAL_ACCESS)
-
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/macro_expander.rs` | ~1427 | Macro expansion engine |
+- **Module resolution** is its own step between parsing and macro
+  expansion, and it rewrites every name to a canonical key (§31.2).
+- **A block of checks** runs after macro expansion and before type
+  inference.
+- **Type inference** is best-effort. It records function signatures and
+  return types that monomorphization consumes, but a type mismatch does
+  not stop the compile (see Phase 5).
+- **Region inference** runs on the lowered IR after optimization, not
+  on the AST before type inference.
+- **Trait dispatch, closure inlining and assert lowering** are
+  source-to-source rewrites between monomorphization and ICNF lowering.
+- **Contract injection** is not wired in, and **hash finalization**
+  happens only for package builds, as a `zyl.buildinfo` file.
 
 ---
 
-## Phase 3: Region Inference + Capture Analysis
+## Phase 1: Balance check
 
-**Input:** Expanded AST
-**Output:** Region-annotated AST
-**Implementation:** `src/region_inference.rs`
+**Input:** source buffer
+**Implementation:** `sexp_balance.zyl` (`sb-check-string`), called from
+`compile-check-balance`
 
-**Process:**
-1. Two-pass algorithm with region lattice:
-   - Pass 1: Collect region constraints from expression structure
-   - Pass 2: Solve constraints via region lattice (least fixed point)
-2. Capture analysis for closures
-3. Escape promotion (Stack → Heap) for values that outlive scope
+A single pass tracks a stack of expected closers. The first unexpected
+closer, mismatched pair or unclosed opener is reported with its
+position before the parser runs, because the parser only knows that it
+ran out of input.
 
-**Region rules (R1–R8):**
-| Rule | Condition | Region |
-|------|-----------|--------|
-| R1 | Local, no escape | Stack |
-| R2 | Escapes (returned, captured by escaping closure, sent to actor) | Heap |
-| R3 | Actor transfer (spawn/send) | Heap |
-| R4 | FFI | Pin |
-| R5 | Closure capture promotion | Heap |
-| R6 | Cyclic structures | Circular |
-| R7 | Global constant | Global |
-| R8 | Explicit pin | Pin |
+## Phase 2: Lexing and parsing
 
-**Invariants:**
-- No value escapes its region
-- Struct instances default to Heap
-- FFI values pinned for non-moving access
+**Output:** a `(List Ast)`
+**Implementation:** `lexer.zyl`, `parser.zyl`, `ast.zyl`
+(`zyl-parse-file`)
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/region_inference.rs` | ~1132 | Region inference engine |
+1. The lexer produces a `(List Token)`: identifiers, integers, floats,
+   strings, booleans, symbols, keywords, and the three bracket pairs.
+   `;` comments are skipped. Every token carries its byte offset.
+2. The reader is dispatch-free: every parenthesized form becomes an
+   `AList`, and no special form is recognized here.
+3. The reader records each node's offset in the runtime's span table,
+   keyed by the node's address. Every later rewriting pass copies the
+   span onto its replacement (`zyl_span_copy`), which is how a
+   codegen-stage error still reports `file:line:col`.
 
----
+## Phase 3: Module resolution and qualification
 
-## Phase 4: Type Inference + Trait Resolution
+**Implementation:** `module_resolver.zyl`
+(`mr-resolve-program-full`), `qualify.zyl`, `package.zyl`, `mvs.zyl`,
+`lock.zyl`, `store.zyl`
 
-**Input:** Region-annotated AST
-**Output:** Typed AST (types assigned to all expressions)
-**Implementation:** `src/type_system.rs`, `src/type_inference.rs`
+Resolution works on the raw `Ast`, in two passes:
 
-**Process:**
-1. Two-pass algorithm:
-   - Pass 1: `collect_definitions()` — register all def/defn/defstruct definitions
-   - Pass 2: `infer_expr()` — infer types for all expressions
-2. Hindley-Milner unification with occurs check
-3. Trait resolution with transitive bound checking
-4. Derive validation (Eq, Ord, Debug, Clone, Hash)
-5. Struct field type lookup from struct_defs
-6. Capability type inference (TCap/TMut)
+1. **Discovery** walks the `use` graph depth-first from the root
+   module, parsing each file once and detecting cycles
+   (`E_MODULE_CYCLE` within a package, `E_PKG_CYCLE` across packages).
+   `stdlib/` is found relative to the bundle directory the compiler
+   runs from.
+2. **Qualification** rewrites every top-level name to its canonical key
+   `<package>@<major>::<module>::<symbol>`, using a table built from the
+   whole discovered graph so the result does not depend on traversal
+   order. Visibility is enforced here (`E_PKG_PRIVATE_SYMBOL`).
 
-**Invariants:**
-- All expressions are well-typed or produce a type error
-- TMut/TCap aliasing constraints enforced
-- Capability types govern aliasing (TMut exclusive, TCap shared)
+The result is converted to `ExprInner` by `expr_inner.zyl`'s
+`convert-ast`, which is where special forms (`defn`, `let`, `match`,
+`for`, `spawn`, ...) are recognized. Resolution also returns the
+package's capability grants for Phase 5.
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/type_system.rs` | ~612 | Type definitions |
-| `src/type_inference.rs` | ~1836 | HM inference engine |
+## Phase 4: Macro expansion
 
----
+**Implementation:** `macro_expand.zyl` (`me-expand-program`)
 
-## Phase 5: Monomorphization
+1. Every top-level `defmacro` (or `macro`) is collected into a table and
+   removed from the program.
+2. At each call to a known macro, the arguments are rewritten first, so
+   a nested macro call inside an argument expands before the outer one.
+   The macro body is then rewritten with each formal parameter replaced
+   by the unevaluated argument expression. The result is walked again,
+   so a macro whose body calls another macro expands fully.
 
-**Input:** Region-annotated typed AST
-**Output:** Monomorphized AST (no generic types)
-**Implementation:** `src/monomorphization.rs`
+Two limits, both current behavior:
 
-**Process:**
-1. Detect generic functions (uppercase parameter convention)
-2. For each concrete type instantiation:
-   - Sort type parameters alphabetically (canonical naming)
-   - Generate specialization name
-   - Substitute type variables
-3. Verify trait bounds for each instantiation
-4. Instantiate generic ADTs
+- **No hygiene.** Names the macro body introduces are not renamed, so a
+  `let` inside a macro body can capture a caller's variable of the same
+  name. The spec's gensym hygiene is not implemented.
+- The walk covers calls, `let`/`let-mut`, `if`, `while`, `set!`,
+  `begin`, `print`, the asserts, `struct-get`, `defn` bodies and `test`
+  bodies. A macro call inside any other form (a `match` arm, for
+  example) is not expanded.
 
-**Invariants:**
-- Naming is deterministic (alphabetical sort of types)
-- No generic types remain in output
-- Trait bounds verified before instantiation
+## Phase 5: Checks
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/monomorphization.rs` | ~1459 | Monomorphization engine |
+**Implementation:** `compile-run-checks` in `pipeline.zyl`
 
----
+All of these walk the macro-expanded `ExprInner` program, in this
+order. Each is conservative: a shape it does not walk misses a
+diagnostic rather than rejecting a valid program.
 
-## Phase 6: ICNF Generation (SSA IR)
+| Order | File | Reports |
+|---|---|---|
+| 1 | `capability_check.zyl` | A package using `io`, `ffi`, `actor`, `secret`, `native` or `unsafe` without declaring it (§31.9). The implicit stdlib and a lone file with no `zyl.pkg` are not policed |
+| 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name |
+| 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count |
+| 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
+| 5 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
+| 6 | `unused_check.zyl` | `W_UNUSED_FUNCTION`, `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
+| 7 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
 
-**Input:** Monomorphized AST
-**Output:** ICNFProgram (SSA IR with region annotations)
-**Implementation:** `src/icnf.rs`
+Literal-pattern matches never reach the exhaustiveness check: the
+parser requires a trailing `_` arm for them and lowers them to an `if`
+chain.
 
-**IR structure:**
+## Phase 6: Type inference
+
+**Implementation:** `type_system.zyl`, `type_inference.zyl`
+(`collect-definitions`)
+
+`collect-definitions` walks the top-level forms once. For each `defn`
+it infers the body's type and records the function's parameter and
+return types; it also records deftypes, structs, traits, impl blocks,
+aliases and `derive` declarations. The resulting `TypeInferer` is what
+monomorphization is built from (`mono-context-new`).
+
+Inference is best-effort. A mismatch such as `(+ 1 "a")` degrades to
+`TUnit` rather than failing, so it compiles. The errors this phase does
+raise are FFI-related: `E_INVALID_CAPABILITY` for a non-pinnable FFI
+argument and `E_BYTEBUF_NOT_PIN`. Several name lookups in this module
+compare strings with `=`, which is a pointer comparison, so some
+lookups never match; `stdlib/lsp/compiler_bridge.zyl`'s header
+documents the problem.
+
+## Phase 7: Monomorphization and trait dispatch
+
+**Implementation:** `monomorphization.zyl` (`monomorphize`),
+`trait_dispatch.zyl` (`td-expand-program`)
+
+1. Each generic function is instantiated per concrete use. A
+   specialization's name is the base name plus its type names, sorted
+   and joined with `_` (`canonical-name-from-type-map`), so naming is
+   deterministic.
+2. Impl method bodies are lifted to top-level functions named
+   `Trait.method_Type` (for example `OutputStream.write_Stdout`).
+3. Trait dispatch rewrites each call `(Trait.method recv args...)` into
+   a `match` on the receiver that calls the `Trait.method_Type` for the
+   receiver's runtime tag. No static type information is needed.
+
+## Phase 8: Source-level lowering
+
+**Implementation:** `closure_inline.zyl` (`ci-expand-program`),
+`assert_lowering.zyl` (`al-expand-program`)
+
+- **Closure inlining:** `(let NAME (fn params body) LETBODY)` where
+  `NAME` is only ever called directly in `LETBODY` is replaced by
+  `LETBODY` with each call beta-reduced. A lambda that escapes is left
+  alone; ICNF lowering gives it a heap closure value instead.
+- **Assert lowering:** `(assert-equal l r)` where either side looks like
+  an ADT or struct value becomes a `zyl_variant_eq` call. That
+  comparison is shallow: tag plus each field as a raw word.
+
+## Phase 9: ICNF lowering
+
+**Output:** `(List Icnf)`, one `IFn` per function
+**Implementation:** `icnf.zyl` (`ic-program`)
+
+ICNF here is a tree-shaped instruction language, not SSA: nodes refer
+to variables by name, and `ISet` mutates them. The node set is:
+
 ```
-ICNFProgram {
-  functions: [ICNFFuncSig, ...]
-  statements: [ICNFNode, ...]
-  closure_bodies: HashMap<usize, [ICNFNode]>
-  closures: HashMap<usize, (String, Vec<CaptureField>)>
-}
-
-ICNFFuncSig {
-  name: String,
-  params: [(String, Type)],
-  body: [ICNFNode, ...]
-}
-
-ICNFNode {
-  id: SSA_ID,
-  region: Region,
-  node: ICNFInner
-}
+IConst IStr IFlt ILoad IBinop ICall IFfi IPrint IIf IWhile ISet ILet
+ISeq IVariant IMatch IFn ICallClosure ITryCatch IStackVariant
 ```
 
-**ICNFInner operations:**
-- Constant, Load, Store, BinOp, UnOp
-- If, While, For, Match (embedded branch bodies)
-- Call, Return
-- MakeStruct, StructGet
-- Phi (join points)
-- FFI, Spawn, Send, SendClosure
-- ReadLine
+- `for` lowers to `IWhile`; `spawn` and `send` lower to `IFfi` calls to
+  `zyl_actor_spawn` and `zyl_actor_send`.
+- A lambda whose body is closed is hoisted to a top-level function. A
+  capturing lambda becomes a heap `[tag, code, env]` value called
+  through `ICallClosure`.
+- `try`/`catch` lowers to `ITryCatch`, which uses the runtime's
+  `zyl_try_push`/`zyl_try_pop` frames and `setjmp`; `zyl_panic` unwinds
+  to the nearest one.
+- `IFn` carries each parameter's representation kind (Int/pointer,
+  String, Float) so codegen can print and compare it correctly.
+- Top-level `test` and `run-tests` forms are gathered into a generated
+  `main`; mixing them with an explicit `(defn main ...)` is
+  `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
 
-**Invariants:**
-- Each variable assigned exactly once (SSA)
-- Region annotations preserved from Phase 3
-- Control flow embedded (not labeled jumps)
-- Phi nodes at join points for values with multiple definitions
+## Phase 10: Optimization
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/icnf.rs` | ~2862 | SSA IR generation |
+**Implementation:** `optimization.zyl` (`opt-optimize-fns`)
 
----
+One bottom-up walk performs two safe rewrites:
 
-## Phase 7: Optimization
+1. **Constant folding** of `IBinop` arithmetic (opcodes 0-4) and
+   comparisons (5-10) whose operands are both integer constants.
+   Bitwise operators, floats, and division or remainder by a constant
+   zero are not folded, so a division by zero still fails at run time.
+2. **Dead-branch elimination:** an `IIf` whose condition folds to a
+   constant keeps only the taken branch.
 
-**Input:** ICNFProgram
-**Output:** Optimized ICNFProgram (safe optimizations only)
-**Implementation:** `src/optimization.rs`
+Nothing is reordered and no side effect is removed.
 
-**Optimizations:**
-1. **Constant Folding (CF):** Fold BinOp/UnOp with compile-time constants. Fixed-point iteration until no more folds.
-2. **Dead Code Elimination (DCE):** BFS-based transitive dependency collection from function returns.
+## Phase 11: Region inference
 
-**Invariants:**
-- Only safe optimizations (no reordering, no spec-breaking transforms)
-- Control flow structures (If/While/For/Match) preserved in DCE
-- Struct nodes preserved
-- Evaluation order never changed
-- Spawn/Send/ReadLine exempt from reordering
+**Implementation:** `region_inference.zyl` (`ri-transform-fns`)
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/optimization.rs` | ~514 | ICNF optimizer |
+A narrow escape analysis on ICNF. In `(let x (Variant ...) body)`, if
+every use of `x` in `body` is either the scrutinee of a `match` or an
+argument to `print`, the `IVariant` becomes `IStackVariant` and is
+allocated in the function's own frame. Every other value keeps the
+heap path. No other region (Global, Circular, Pin) is inferred here;
+Pin allocation comes from `ffi-pin` and the Pin arena in the runtime,
+and `E_REGION_ESCAPE` is defined but never raised.
 
----
+## Phase 12: Code generation
 
-## Phase 8: Code Generation
+**Output:** GAS assembly, `.intel_syntax noprefix`
+**Implementation:** `codegen.zyl` (`cg-program`, via `codegen-fns`)
 
-**Input:** Optimized ICNFProgram
-**Output:** x86_64 assembly (.s file)
-**Implementation:** `src/codegen.rs`
+- **Stack-machine discipline:** every expression leaves its value in
+  `rax`; a binary operator pushes its left operand while the right is
+  evaluated. There is no register allocator.
+- **Calls:** up to six arguments in the SysV registers (`rdi rsi rdx
+  rcx r8 r9`), spilled to `[rbp-8*(i+1)]` in the prologue. Arguments
+  are evaluated left to right. Every C call of arity six or less aligns
+  `rsp` to 16 bytes first.
+- **Floats** travel as bit patterns in `rax` and move to `xmm0`/`xmm1`
+  for SSE arithmetic. `print` chooses `%lld`, `%f` or `%s` from the
+  operand's kind.
+- **Heap values:** variants and structs are allocated with
+  `zyl_heap_alloc`, which writes a hidden field-count header that
+  `zyl_variant_eq` reads.
+- **Symbols:** user functions get a `_ZYL_` prefix; canonical keys go
+  through the runtime's `zyl_mangle_key`.
+- **Entry stub:** `main` calls `zyl_save_args` and
+  `zyl_ensure_arenas`, then runs `_ZYL_main` through
+  `zyl_call_on_big_stack`, whose result becomes the exit code.
+- An unbound identifier is reported here as `E_UNBOUND_VARIABLE`, and
+  output larger than the codegen buffer is `E_CODEGEN_BUFFER_FULL`.
 
-**Process:**
-1. Linear-scan register allocator (caller-saved registers only)
-2. System V AMD64 ABI compliance:
-   - Arguments: edi, esi, edx, ecx, r8d, r9d
-   - Float args: XMM0–XMM5
-   - Return: eax (64-bit), rax (pointer)
-3. Stack frame: `[rbp - offset]` for local variables
-4. String literals → .rodata section
-5. hexbuf (for int-to-string) → .bss section
-6. Float constants → .rodata section
+## Phase 13: Linking
 
-**Instructions emitted:**
-- `mov` (64-bit and 32-bit)
-- `add`, `sub`, `imul`, `idiv`
-- `cvtsi2sd`, `cvtss2sd`, `adds`, `sub`, `mul`, `div` (SSE float)
-- `cmp` + `setcc` for comparisons
-- `jmp`, `jl`, `jg`, `je`, `jne` etc.
-- `call`, `ret`
-- `malloc` for struct allocation
-- `printf` for output
-- `sys_read` for read-line
+**Implementation:** `cli-link-command` in `selfhost/driver.zyl`, `cc`
 
-**Output format:** Intel syntax (`.intel_syntax noprefix`)
+The CLI writes `<out>.s` and runs:
 
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/codegen.rs` | ~4738 | x86_64 code generator |
+```
+cc -no-pie <out>.s actor_runtime.c -o <out> -lpthread
+```
 
----
+from the bundle directory, where `actor_runtime.c` sits. A package
+build appends its native objects and libraries (§31.10). With
+`--emit-asm`, the assembly is written to the output path and nothing is
+linked.
 
-## Phase 9: Linking
-
-**Input:** Assembly file (.s) + actor_runtime.c
-**Output:** Native binary (.bin)
-**Implementation:** `src/main.rs` (orchestration), `cc` (external toolchain)
-
-**Process:**
-1. Compile with `cc -no-pie -lpthread -o <bin> <asm> actor_runtime.c`
-2. Actor runtime C file included for spawn/send support
-3. `zyl_actor_init()` and `zyl_actor_wait_all()` linked in
-
-**External dependency:** GNU C compiler (cc)
-
-**Files:**
-| File | Lines | Description |
-|------|-------|-------------|
-| `src/runtime.rs` | 2 | Runtime path re-export |
-| `src/runtime/actor_runtime.c` | 156 | pthread-based actor runtime |
-| `src/runtime/actor_runtime.h` | 52 | Actor runtime API header |
-
----
-
-## Phases Not Yet Implemented
-
-### Phase 10: Contract Injection (Optional)
+## Phase 14: Contract injection (not wired in)
 
 **Spec reference:** `zyl_specification.txt` §23
-**Status:** Contracts defined in spec but not implemented. Contracts are an optional overlay that never alter core semantics.
 
-### Phase 11: Hash Finalization
+`contract_injection.zyl` exists but is not in the bundle and is not
+called; its accessors do not match the real `ExprInner` shapes (see the
+comment above `lower-exprs` in `pipeline.zyl`). `requires`, `ensures`,
+`checkpoint` and `recover` parse and lower to their inner expression,
+which is evaluated and not checked.
 
-**Spec reference:** `zyl_specification.txt` §27
-**Status:** `sha2` crate is a dependency but hash finalization is not yet integrated into the pipeline.
+## Phase 15: Hash finalization (package builds only)
+
+**Spec reference:** `zyl_specification.txt` §31.12
+
+`zyl build` and `zyl test` write `<out>.buildinfo` next to the binary:
+the compiler's own hash, the graph hash from `zyl.lock`, a native-object
+list, and the BLAKE3 hash of the emitted assembly. The assembly hash
+stands in for an ICNF hash because ICNF has no serialized form; this is
+a recorded deviation. A single-file compile writes no buildinfo, and
+the graph hash is not mixed into the binary.
 
 ---
 
-## Pipeline Summary
+## Pipeline summary
 
 ```
 Source (.zyl)
-  → [1] Lexer → Tokens
-  → [1] Parser → Raw S-expressions
-  → [1] PostProcessor → AST
-  → [2] Macro Expansion → Expanded AST
-  → [3] Region Inference → Region-annotated AST
-  → [4] Type Inference → Typed AST
-  → [5] Monomorphization → Monomorphized AST
-  → [6] ICNF Generation → ICNFProgram
-  → [7] Optimization → Optimized ICNFProgram
-  → [8] Code Generation → x86_64 assembly (.s)
-  → [9] Linking → Native binary (.bin)
-  → [10] Contract Injection (optional, not yet implemented)
-  → [11] Hash Finalization (not yet implemented)
+  -> [1]  Balance check                 sexp_balance
+  -> [2]  Lex, read                     lexer, parser        -> (List Ast)
+  -> [3]  Resolve modules, qualify      module_resolver, qualify
+          convert-ast                   expr_inner           -> ExprInner
+  -> [4]  Macro expansion               macro_expand
+  -> [5]  Checks: capability, duplicate, arity, mutability,
+          exhaustiveness, unused, secret
+  -> [6]  Type inference                type_inference       -> TypeInferer
+  -> [7]  Monomorphization, trait dispatch
+  -> [8]  Closure inlining, assert lowering
+  -> [9]  ICNF lowering                 icnf                 -> (List Icnf)
+  -> [10] Optimization                  optimization
+  -> [11] Region inference              region_inference
+          (compile-to-fns stops here; zyl eval and the REPL interpret this)
+  -> [12] Code generation               codegen              -> assembly
+  -> [13] Linking                       cc + actor_runtime.c -> binary
+  -> [15] zyl.buildinfo                 package builds only
 ```
 
 ---
 
-## Phase Ordering Constraints
+## Phase ordering constraints
 
-| Phase | Depends On | Must Not Depend On |
-|-------|-----------|-------------------|
-| 1 (Parsing) | — | 2–11 |
-| 2 (Macro Expansion) | 1 | 3–11 |
-| 3 (Region Inference) | 2 | 4–11 |
-| 4 (Type Inference) | 3 | 5–11 |
-| 5 (Monomorphization) | 4 | 6–11 |
-| 6 (ICNF) | 5 | 7–11 |
-| 7 (Optimization) | 6 | 8–11 |
-| 8 (Code Generation) | 7 | 9–11 |
-| 9 (Linking) | 8 | — |
+Each step consumes only the output of the steps above it:
 
-**Rule:** No phase may depend on a later phase. Determinism is required at every step.
+| Step | Consumes | Must not depend on |
+|---|---|---|
+| Balance check | source text | everything after it |
+| Parsing | source text | module resolution onward |
+| Module resolution | raw `Ast` | macro expansion onward |
+| Macro expansion | qualified `ExprInner` | the checks onward |
+| Checks | expanded `ExprInner` | type inference onward |
+| Type inference | checked `ExprInner` | monomorphization onward |
+| Monomorphization, trait dispatch | `ExprInner` + `TypeInferer` | lowering onward |
+| Closure inlining, assert lowering | monomorphized `ExprInner` | ICNF onward |
+| ICNF lowering | lowered `ExprInner` | optimization onward |
+| Optimization | ICNF | region inference onward |
+| Region inference | optimized ICNF | codegen |
+| Code generation | region-annotated ICNF | linking |
+
+**Rule:** no phase may depend on a later phase. Determinism is required
+at every step.

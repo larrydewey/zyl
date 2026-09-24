@@ -1,11 +1,11 @@
 ; === Zyl LSP — Workspace ===
 ; Module: lsp/workspace
 ; Multi-root workspace folder tracking + workspace-wide symbol search
-; across every currently-open document. Does not parse zyl.toml's
-; module DAG: given no position tracking exists anywhere in this
-; compiler's real Ast/Expr (LSP_ARCHITECTURE_PLAN.md's "Wall 1"), a
+; across every currently-open document. Does not walk the package
+; graph from zyl.pkg: the LSP locates names by scanning document text
+; (lsp/source_index), not from the compiler's own positions, so a
 ; workspace-wide symbol index built from files NOT open in the editor
-; would need to invoke the parser standalone per file anyway (real,
+; would need to read and scan each file standalone anyway (real,
 ; buildable) -- deferred here for time, not architecture; workspace
 ; symbol search below already works correctly across every document the
 ; client HAS open, which is what actually gets used interactively.
