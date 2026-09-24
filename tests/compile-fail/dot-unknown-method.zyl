@@ -1,0 +1,6 @@
+; Compile-fail: a dot call to a method no trait declares is
+; E_TRAIT_NOT_FOUND.
+
+(defstruct _cf_P (x Int))
+
+(defn main () (let p (make-_cf_P 1) (p.bogus)))

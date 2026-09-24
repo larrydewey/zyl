@@ -47,7 +47,12 @@ IdentCont  ::= IdentStart | [0-9] | "."
 - Cannot start with a digit. A `-` immediately followed by a digit starts
   a negative number instead; `-x` is an identifier.
 - `.` may appear after the first character. This is what makes
-  `Trait.method` a single identifier (Chapter 20).
+  `Trait.method` a single identifier (Chapter 20). A name whose first
+  segment is lowercase (after any leading `_`) is dot syntax instead:
+  `p.x` reads a field and `(p.m args)` calls a method (Chapter 4,
+  Chapter 20).
+- A token `.name` (a dot followed by a letter) is the method part of
+  `((expr).name args)`.
 - Operators are ordinary identifiers: `+`, `<=`, `set!`, `str-concat`,
   `=>` all lex the same way.
 - `@` is not an identifier character. The module resolver relies on this:

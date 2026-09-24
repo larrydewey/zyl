@@ -910,7 +910,7 @@
     (let ptab (st-make arena (mr-unit-table-pairs units u (mrp-features pkg)))
       (let itab (st-make arena (mr-import-pairs disc units pkg (mru2-uses u)))
         (let qualified (qf-forms (QT itab ptab) Nil
-                         (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))
+                         (dot-rewrite-forms (mr-strip-module-forms (mrp-features pkg) (mru2-forms u))))
           (let _ (mr-check-coherence qualified (mrp-name pkg))
             qualified))))))
 

@@ -373,6 +373,110 @@
         (contract-strip-list t)
         (Cons (contract-strip h) (contract-strip-list t))))))
 
+;; Dot syntax, rewritten before qualification: `p.x.y` reads fields,
+;; `(p.m args)` calls trait method m on p (resolved by type, type_annotate.zyl).
+(defn dot-rewrite-forms (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest (Cons (dot-rewrite f) (dot-rewrite-forms rest)))))
+
+(defn dot-rewrite (a)
+  (match a
+    (AstIdent s (if (dot-name-p s) (dot-chain a (dot-split s 0 0)) a))
+    (AList xs
+      (match xs
+        (Cons h t
+          (match h
+            (AstIdent s
+              (if (dot-name-p s)
+                (dot-spanned (AList (Cons (AstIdent "zyl-method") (dot-method-args h (dot-split s 0 0) t))) a)
+                (dot-spanned (AList (Cons h (dot-rewrite-rest s t))) a)))
+            (AList _ (dot-rewrite-call a h t))
+            (_ (dot-spanned (AList (dot-rewrite-list xs)) a))))
+        (Nil a)))
+    (_ a)))
+
+; ((expr).m args...): a method on an expression receiver.
+(defn dot-rewrite-call (a h t)
+  (match t
+    (Cons m more
+      (match m
+        (AstIdent s
+          (if (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 46)
+            (dot-spanned (AList (Cons (AstIdent "zyl-method") (Cons (AString (str-substring s 1 (- (str-length s) 1)))
+              (Cons (dot-rewrite h) (dot-rewrite-list more))))) a)
+            (dot-spanned (AList (dot-rewrite-list (Cons h t))) a)))
+        (_ (dot-spanned (AList (dot-rewrite-list (Cons h t))) a))))
+    (Nil (dot-spanned (AList (Cons (dot-rewrite h) Nil)) a))))
+
+(defn dot-spanned (r a) (let _ (ffi-call "zyl_span_copy" r a 1000) r))
+
+; A definition's name slot is never rewritten.
+(defn dot-rewrite-rest (head t)
+  (if (dot-binder-head-p head)
+    (match t (Cons n more (Cons n (dot-rewrite-list more))) (Nil Nil))
+    (dot-rewrite-list t)))
+
+(defn dot-binder-head-p (h)
+  (or (> (str-eq h "defn") 0) (or (> (str-eq h "def") 0) (or (> (str-eq h "defmacro") 0)
+    (or (> (str-eq h "deftype") 0) (> (str-eq h "defstruct") 0))))))
+
+(defn dot-rewrite-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (dot-rewrite h) (dot-rewrite-list t)))))
+
+; A local-looking name with dots: lowercase first (after any `_`), no '@' or ':', no empty segment.
+(defn dot-name-p (s)
+  (let n (str-length s)
+    (if (< n 3) false
+      (if (dot-lower-p (ffi-call "zyl_cstr_byte_at" s (dot-skip-under s 0) 1000))
+        (dot-name-scan s 1 n false 0)
+        false))))
+
+(defn dot-skip-under (s i)
+  (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 95) (dot-skip-under s (+ i 1)) i))
+
+(defn dot-lower-p (c) (and (>= c 97) (<= c 122)))
+
+(defn dot-name-scan (s i n seen prev)
+  (if (>= i n)
+    (and seen (!= prev 46))
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (or (= c 64) (= c 58)) false
+        (if (= c 46)
+          (if (= prev 46) false (dot-name-scan s (+ i 1) n true c))
+          (dot-name-scan s (+ i 1) n seen c))))))
+
+; Segments of `s` from byte `start`, scanning at `i`.
+(defn dot-split (s start i)
+  (if (>= i (str-length s))
+    (Cons (str-substring s start (- i start)) Nil)
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 46)
+      (Cons (str-substring s start (- i start)) (dot-split s (+ i 1) (+ i 1)))
+      (dot-split s start (+ i 1)))))
+
+; p.a.b = (struct-get (struct-get p "a") "b")
+(defn dot-chain (site segs)
+  (match segs
+    (Cons h t (dot-chain-from site (dot-spanned (AstIdent h) site) t))
+    (Nil site)))
+
+(defn dot-chain-from (site acc segs)
+  (match segs
+    (Nil acc)
+    (Cons h t (dot-chain-from site (dot-spanned (ast-call2 "struct-get" acc (AString h)) site) t))))
+
+; ("m" recv args...) for (recv.m args...): the last segment is the method.
+(defn dot-method-args (site segs t)
+  (Cons (AString (dot-last segs)) (Cons (dot-chain site (dot-butlast segs)) (dot-rewrite-list t))))
+
+(defn dot-last (xs)
+  (match xs (Cons h t (if (nil? t) h (dot-last t))) (Nil "")))
+
+(defn dot-butlast (xs)
+  (match xs (Cons h t (if (nil? t) Nil (Cons h (dot-butlast t)))) (Nil Nil)))
+
 ;; Top-level defs (spec R7: immutable, eager): each becomes a getter that
 ;; caches its value by canonical key; uses become calls; main runs them first.
 (defn def-table () (ffi-call "zyl_smap_global" 2 1000))

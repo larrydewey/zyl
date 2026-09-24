@@ -1,0 +1,45 @@
+; Dot Syntax Regression Tests — `v.field` reads a struct field (chained),
+; `(v.method args)` and `((expr).method args)` call a trait method picked by
+; the receiver's type.
+
+(defstruct DsPt (x Int) (y Int))
+(defstruct DsSeg (a DsPt) (b DsPt) (name String))
+(deftype DsShape (DsSq Int))
+
+(trait DsNorm (norm (self) Int))
+(trait DsScale (scale (self) (k Int) DsPt))
+(trait DsArea (area (self) Int))
+(trait DsSize (area (self) Int))
+
+(impl DsNorm DsPt (defn norm (self) (+ self.x self.y)))
+(impl DsScale DsPt (defn scale (self k) (make-DsPt (* self.x k) (* self.y k))))
+(impl DsArea DsPt (defn area (self) (* self.x self.y)))
+(impl DsSize DsShape (defn area (self) (match self (DsSq s (* s s)))))
+
+(def ds-origin (make-DsPt 0 0))
+
+(defn ds-sum-norms (a b) (+ (a.norm) (b.norm)))
+
+(test "dot-fields"
+  (let s (make-DsSeg (make-DsPt 3 4) (make-DsPt 1 2) "seg")
+    (begin
+      (assert-equal s.a.x 3)
+      (assert-equal s.b.y 2)
+      (assert-true (str-eq s.name "seg"))
+      (assert-equal ds-origin.x 0))))
+
+(test "dot-methods"
+  (let p (make-DsPt 3 4)
+    (begin
+      (assert-equal (p.norm) 7)
+      (assert-equal (let q (p.scale 2) q.y) 8)
+      (assert-equal ((p.scale 3).norm) 21)
+      (assert-equal (((make-DsPt 1 1).scale 5).norm) 10)
+      (assert-equal (ds-sum-norms p (make-DsPt 1 1)) 9))))
+
+(test "dot-same-name-different-traits"
+  (begin
+    (assert-equal (let p (make-DsPt 2 5) (p.area)) 10)
+    (assert-equal ((DsSq 6).area) 36)))
+
+(run-tests)

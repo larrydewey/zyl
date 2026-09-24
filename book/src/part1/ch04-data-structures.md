@@ -50,9 +50,15 @@ Arguments are evaluated left-to-right, matched to fields in declaration order.
         (print (struct-get alice "name"))))))  ; Alice
 ```
 
-**Field names are strings** — not symbols, not bare identifiers. A
-field's declared type follows it out: `(struct-get alice "name")` is a
-String and prints as text.
+**Field names are strings** in `struct-get`. A field's declared type
+follows it out: `(struct-get alice "name")` is a String and prints as
+text.
+
+**Dot syntax** is the short form: `alice.name` means
+`(struct-get alice "name")`, and it chains: `seg.start.x`. It applies
+when the part before the first dot is a lowercase name (a local, a
+parameter or a `def`). Reading a field a known struct does not have is
+an error, `E_TYPE_MISMATCH: no field `z` on struct `Point``.
 
 ### Immutability by Default (Critical!)
 

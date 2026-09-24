@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **153/153**
-  (updated 2026-09-24): regression 61, interpreter 41, compile-fail 25,
+- `./run_regression_tests.sh --full --no-boot` passes **158/158**
+  (updated 2026-09-24): regression 62, interpreter 42, compile-fail 28,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -376,7 +376,24 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — top-level def
+## Session (2026-09-24, latest) — dot syntax
+
+**Fields and methods through dots.** `dot-rewrite-forms`
+(`expr_inner.zyl`, called by the module resolver before qualification)
+turns a name whose first segment is lowercase into `struct-get` chains
+(`s.a.x`), and a list headed by one into `(zyl-method "m" recv args...)`;
+`((expr).m args)` works too (the lexer now reads `.name` as a token). The
+type pass (`ta-method-call`) picks the trait: the only one declaring `m`,
+else the one with an impl for the receiver's known type; it then types
+and resolves the call like `(Trait.m recv ...)`, and ICNF lowers it
+through the chosen name. `E_TRAIT_NOT_FOUND` for an undeclared method, a
+type without the impl, or an ambiguous call on an unknown-type receiver.
+`struct-get` of a field a known struct lacks is now `E_TYPE_MISMATCH`
+(`ta-no-field`), for both spellings. Tests: `dot-syntax.zyl` and three
+compile-fail cases. Open: dot on a receiver of unknown type with several
+candidate traits needs the qualified name.
+
+## Session (2026-09-24, earlier) — top-level def
 
 **Top-level `def` in compiled programs** (spec R7: immutable, eager).
 After qualification, `convert-program` (`expr_inner.zyl`, called by the

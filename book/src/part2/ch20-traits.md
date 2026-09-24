@@ -77,10 +77,15 @@ There are no default method bodies.
     0))
 ```
 
-- **Methods are called by their qualified name**, `(Trait.method receiver
-  args...)`. The dot is part of the identifier (Chapter 14). A bare
-  `(area r)` does not find the method; it is an undefined function at
-  link time.
+- **Methods are called with dot syntax**, `(r.area)`, `(r.scale 3)`,
+  `((make-Circle 2).area)`, or by qualified name, `(Trait.method receiver
+  args...)`. A dot call is rewritten to `(zyl-method "area" r)` before
+  qualification, and the type pass picks the trait whose impl matches
+  the receiver's type: the only trait declaring the method, or, when
+  several do, the one with an impl for the receiver's known type.
+  `E_TRAIT_NOT_FOUND` reports a method no trait declares, a type with no
+  such impl, and an ambiguous call on a receiver of unknown type. A bare
+  `(area r)` does not find the method.
 - **The receiver is the first argument.** Naming it `self` is convention.
 - **Parameters are not checked** against the declaration. They are
   whatever the `defn` inside the `impl` says.

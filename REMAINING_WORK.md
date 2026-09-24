@@ -13,6 +13,7 @@
 - [x] `print` on `Result`: the prelude impl already existed; the real bug was a payload without `Show` (garbage or segfault via the runtime trait dispatch), now printed raw; open: explicit `Show.show` on a type without an impl still falls into that dispatch
 
 ## P3: Language Features
+- [x] Dot syntax: `v.field` (chained) and `(v.method args)` / `((expr).method args)` resolved by receiver type; open: ambiguous method names on unknown-type receivers need the qualified name
 - [x] Contract injection (spec §23): lowered in `expr_inner.zyl`; open: profiles, `checkpoint` rollback, typed `recover` arms
 - [x] `try` around an even-arity call segfaulted or hung (frame pointer overwritten)
 - [x] Trait method with a compound (or no) return type: `print` of the call printed an address

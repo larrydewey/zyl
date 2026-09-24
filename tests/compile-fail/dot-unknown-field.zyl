@@ -1,0 +1,6 @@
+; Compile-fail: reading a field a known struct does not have is
+; E_TYPE_MISMATCH.
+
+(defstruct _cf_P (x Int))
+
+(defn main () (let p (make-_cf_P 1) p.z))

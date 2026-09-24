@@ -158,12 +158,17 @@ in one case, the orphan rule (§7.4).
     0))
 ```
 
-- **Call a method by its qualified name**, `(Trait.method receiver
-  args...)`. A bare `(area r)` does not find it: it fails at link time
-  with an undefined reference.
-- **The receiver is the first argument.** Calling it `self` is
+- **Call a method with dot syntax**, `(r.area)` or `(r.scale 3)`, or by
+  its qualified name, `(Area.area r)` / `(Scale.scale r 3)`. A dot call
+  picks the trait from the receiver's type, so two traits may share a
+  method name; when the receiver's type is not known where the call is
+  written (an unannotated parameter) and several traits declare the
+  method, it is `E_TRAIT_NOT_FOUND`: use the qualified name there. For
+  an expression receiver, write `((make-Rect 2 3).area)`. A bare
+  `(area r)` does not find the method.
+- **The receiver is the first parameter.** Calling it `self` is
   convention. Further parameters follow it as usual:
-  `(defn scale (self k) ...)`, called as `(Scale.scale r 3)`.
+  `(defn scale (self k) ...)`.
 - The method's parameters are whatever the `defn` inside the `impl`
   says; there are no default method bodies.
 

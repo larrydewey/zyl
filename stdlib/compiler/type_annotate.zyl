@@ -499,6 +499,7 @@
             (TaGen t seen
               (begin
                 (ta-sput (ta-traits st) dotted (TaSc (list-length seen) t))
+                (ta-mtab-add dotted)
                 (if (ta-key-is dotted "Show.show") (ta-sput (ta-specs st) "!show" dotted) 0)))))))))
 
 (defn ta-is-struct (sm)
@@ -651,7 +652,7 @@
     (EAssertFalse x _ (ta-walk-int st ctx env (Cons x Nil)))
     (EAssertFail x _ (ta-walk-int st ctx env (Cons x Nil)))
     (EUnwrap x (ta-unwrap st ctx env x))
-    (EStructGet se field (ta-struct-get st ctx env se field))
+    (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
     (EFfiPin x (ta-seq (ta-ffi-args st ctx env (Cons x Nil)) (ta-int)))
     (EFfiUnpin x (ta-walk-int st ctx env (Cons x Nil)))
@@ -799,6 +800,94 @@
   0))))))))))))))))))))
 
 (defn ta-call (st ctx env e n args)
+  (if (ta-streq n "zyl-method")
+    (ta-method-call st ctx env e args)
+    (ta-call-go st ctx env e n args)))
+
+;; Dot method calls: `m` -> the trait methods named m ("m" count, "m#i" dotted).
+(defn ta-mtab () (ffi-call "zyl_smap_global" 3 1000))
+
+(defn ta-mshort (d i)
+  (if (= i 0) d
+    (if (= (ffi-call "zyl_cstr_byte_at" d (- i 1) 1000) 46)
+      (str-substring d i (- (str-length d) i))
+      (ta-mshort d (- i 1)))))
+
+(defn ta-mkey (m i) (str-concat m (str-concat "#" (ffi-call "zyl_int_text" i 1000))))
+
+(defn ta-mtab-add (dotted)
+  (let m (ta-mshort dotted (str-length dotted))
+    (let c (ffi-call "zyl_smap_get" (ta-mtab) m 1000)
+      (begin
+        (ffi-call "zyl_smap_put" (ta-mtab) (ta-mkey m c) dotted 1000)
+        (ffi-call "zyl_smap_put" (ta-mtab) m (+ c 1) 1000)))))
+
+(defn ta-method-call (st ctx env e args)
+  (match args
+    (Cons mexp rest
+      (match rest
+        (Cons recv more
+          (let m (ta-str-lit mexp)
+            (let tr (ta-expr st ctx env recv)
+              (let dotted (ta-pick-method st e m (ta-resolve st tr))
+                (let _ (ta-set-name e 2 dotted)
+                  (let ts (Cons tr (ta-list st ctx env more))
+                    (let r (ta-fresh st)
+                      (let ct (TaF ts r)
+                        (let sc (ta-sget (ta-traits st) dotted)
+                          (let _ (if (= sc 0) 0 (ta-unify st (ta-inst st sc) ct))
+                            (ta-seq (ta-note st ctx e 0 dotted ct -1) r)))))))))))
+        (Nil (ta-fresh st))))
+    (Nil (ta-fresh st))))
+
+(defn ta-str-lit (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AStr t t) (_ "")))
+    (_ "")))
+
+; One trait method: the only one named m, or the one with an impl for the receiver's type.
+(defn ta-pick-method (st e m tr)
+  (let c (ffi-call "zyl_smap_get" (ta-mtab) m 1000)
+    (if (= c 0)
+      (ta-method-fail e (str-concat "no trait declares a method `" (str-concat m "`")) "declare it in a trait and implement the trait for the receiver's type")
+      (match tr
+        (TaC n _
+          (let hits (ta-method-hits st m n 0 c)
+            (if (= (list-length hits) 1)
+              (match hits (Cons h _ h) (Nil ""))
+              (if (nil? hits)
+                (ta-method-fail e (str-concat "no method `" (str-concat m (str-concat "` for type `" (str-concat (err-name n) "`"))))
+                  (str-concat "implement a trait that declares `" (str-concat m "` for this type")))
+                (ta-method-ambiguous e m hits)))))
+        (_ (if (= c 1)
+             (ffi-call "zyl_smap_get" (ta-mtab) (ta-mkey m 0) 1000)
+             (ta-method-ambiguous e m (ta-method-all m 0 c))))))))
+
+(defn ta-method-hits (st m n i c)
+  (if (>= i c) Nil
+    (let d (ffi-call "zyl_smap_get" (ta-mtab) (ta-mkey m i) 1000)
+      (if (>= (ta-impl-fn st d n) 0)
+        (Cons d (ta-method-hits st m n (+ i 1) c))
+        (ta-method-hits st m n (+ i 1) c)))))
+
+(defn ta-method-all (m i c)
+  (if (>= i c) Nil (Cons (ffi-call "zyl_smap_get" (ta-mtab) (ta-mkey m i) 1000) (ta-method-all m (+ i 1) c))))
+
+(defn ta-method-ambiguous (e m ds)
+  (ta-method-fail e (str-concat "method `" (str-concat m (str-concat "` is declared by more than one trait: " (ta-method-names ds))))
+    "call it as (Trait.method receiver ...), or give the receiver a known type"))
+
+(defn ta-method-names (ds)
+  (match ds
+    (Nil "")
+    (Cons h t (let hn (err-name h) (if (nil? t) hn (str-concat hn (str-concat ", " (ta-method-names t))))))))
+
+(defn ta-method-fail (node msg help)
+  (let fid (ffi-call "zyl_span_file" node 1000)
+    (let off (ffi-call "zyl_span_off" node 1000)
+      (ffi-call "zyl_panic" (err-at "E_TRAIT_NOT_FOUND" msg fid off help) 1000))))
+
+(defn ta-call-go (st ctx env e n args)
   (if (ta-streq n "ffi-call")
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
@@ -1114,25 +1203,25 @@
               (ta-nth fts 0 (ta-fresh st))))
           (_ (ta-fresh st)))))))
 
-(deftype TaPend (TaPend Int TaTy String TaTy))
+(deftype TaPend (TaPend Int TaTy String TaTy Int))
 
-(defn ta-struct-get (st ctx env se field)
+(defn ta-struct-get (st ctx env se field node)
   (let ts (ta-expr st ctx env se)
     (let r (ta-fresh st)
-      (let done (ta-sg-try st ts field r)
+      (let done (ta-sg-try st ts field r node)
         (if (> done 0)
           r
-          (let _ (ta-wpush (ta-pending st) (TaPend ctx ts field r))
+          (let _ (ta-wpush (ta-pending st) (TaPend ctx ts field r node))
             r))))))
 
 ; 1 when resolved (or impossible), 0 when it must wait.
-(defn ta-sg-try (st ts field r)
+(defn ta-sg-try (st ts field r node)
   (match (ta-resolve st ts)
-    (TaC n args (ta-sg-struct st n args field r))
-    (TaV i (if (< i 0) 1 (if (ta-poisoned st i) 1 (ta-sg-guess st ts field r))))
+    (TaC n args (ta-sg-struct st n args field r node))
+    (TaV i (if (< i 0) 1 (if (ta-poisoned st i) 1 (ta-sg-guess st ts field r node))))
     (_ 1)))
 
-(defn ta-sg-struct (st n args field r)
+(defn ta-sg-struct (st n args field r node)
   (let vd (ta-sget (ta-variants st) n)
     (if (= vd 0)
       1
@@ -1140,7 +1229,7 @@
         (TaVd _ nq t names isst np
           (let idx (if (> isst 0) (ta-str-index names field 0) -1)
             (if (< idx 0)
-              1
+              (if (> isst 0) (ta-no-field node n field names) 1)
               (match (ta-subst st t (ta-slots-with st args nq))
                 (TaF fts _ (ta-seq (ta-unify st r (ta-nth fts idx (ta-fresh st))) 1))
                 (_ 1)))))))))
@@ -1151,13 +1240,25 @@
     (Cons h t (if (ta-streq h s) i (ta-str-index t s (+ i 1))))))
 
 ; Unresolved receiver: commit when exactly one struct has the field.
-(defn ta-sg-guess (st ts field r)
+; A known struct without the field: a definite error.
+(defn ta-no-field (node n field names)
+  (let msg (str-concat "no field `" (str-concat field (str-concat "` on struct `" (str-concat (err-name n) "`"))))
+    (let fid (ffi-call "zyl_span_file" node 1000)
+      (let off (ffi-call "zyl_span_off" node 1000)
+        (ffi-call "zyl_panic" (err-at "E_TYPE_MISMATCH" msg fid off (str-concat "its fields are: " (ta-join-names names))) 1000)))))
+
+(defn ta-join-names (xs)
+  (match xs
+    (Nil "")
+    (Cons h t (if (nil? t) h (str-concat h (str-concat ", " (ta-join-names t)))))))
+
+(defn ta-sg-guess (st ts field r node)
   (let sn (ta-sole-struct-with st field)
     (if (= sn 0)
       0
       (let vd (ta-sget (ta-variants st) sn)
         (match (ta-ctor-inst st vd)
-          (TaF _ rt (ta-seq (ta-unify st ts rt) (ta-sg-try st ts field r)))
+          (TaF _ rt (ta-seq (ta-unify st ts rt) (ta-sg-try st ts field r node)))
           (_ 1))))))
 
 (defn ta-sole-struct-with (st field)
@@ -1178,7 +1279,7 @@
   (if (>= i n)
     0
     (match (ta-wget pv i)
-      (TaPend _ ts field r (ta-seq (ta-sg-try st ts field r) (ta-flush-loop st pv (+ i 1) n))))))
+      (TaPend _ ts field r node (ta-seq (ta-sg-try st ts field r node) (ta-flush-loop st pv (+ i 1) n))))))
 
 (defn ta-int-in (x xs)
   (match xs
@@ -1430,6 +1531,7 @@
     (ffi-call "zyl_attr_clear" 3 1000)
     (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 0 1000) 0 1000)
     (ffi-call "zyl_smap_clear" (ffi-call "zyl_smap_global" 1 1000) 1000)
+    (ffi-call "zyl_smap_clear" (ta-mtab) 1000)
     (let st (ta-st-new)
       (begin
         (ta-collect-a st exprs)

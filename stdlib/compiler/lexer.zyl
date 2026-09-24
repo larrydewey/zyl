@@ -302,8 +302,14 @@
             (lex-minus-e arena src len i acc)
             (if (= (chr-ident-start-p c) 1)
               (lex-ident-e arena src len i acc (scan-ident-end src len i))
-              ; unrecognized character: terminate the stream
-              (Cons (TkEof i) acc))))))))
+              ; `.name`: the method part of ((expr).name args)
+              (if (= (lex-dot-name-p src c i) 1)
+                (lex-ident-e arena src len i acc (scan-ident-end src len i))
+                ; unrecognized character: terminate the stream
+                (Cons (TkEof i) acc)))))))))
+
+(defn lex-dot-name-p (src c i)
+  (if (= c 46) (chr-alpha-p (byte-at src (+ i 1))) 0))
 
 (defn lex-minus-e (arena src len i acc)
   (if (= (chr-digit-p (byte-at src (+ i 1))) 1)

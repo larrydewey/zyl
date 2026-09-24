@@ -1093,7 +1093,15 @@
 
 (defn ic-apply-renamed (arena expr fname args vt)
   (let nm (ta-renamed expr)
-    (if (= nm 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt))))
+    (if (> (str-eq fname "zyl-method") 0)
+      (ic-method-call arena nm args vt)
+      (if (= nm 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt)))))
+
+; (zyl-method "m" recv args...): the type pass named the trait method or its impl.
+(defn ic-method-call (arena nm args vt)
+  (match args
+    (Cons _ rest (if (= nm 0) (IConst 0) (ic-apply arena nm rest vt)))
+    (Nil (IConst 0))))
 
 (defn ic-renamed-call (arena nm fname args vt)
   (let c (ICall (str-intern arena nm) (ic-expr-list arena args vt))

@@ -212,7 +212,7 @@ constructor patterns cannot be mixed in one `match`.
 | `deftype` | `(deftype Name (Variant Field ...) ...)` | |
 | `defstruct` | `(defstruct Name (field Type) ...)` | also defines the constructor `make-Name` |
 | `defstruct+` | `(defstruct+ Name (field Type) ...)` | parsed the same way as `defstruct` |
-| `struct-get` | `(struct-get value "field")` | |
+| `struct-get` | `(struct-get value "field")`, or `value.field` | dot form chains: `v.a.b` |
 | `make-struct` | `(make-struct Name field ...)` | **not lowered**; use `(make-Name field ...)` |
 | `make-variant` | `(make-variant (Type) Variant field ...)` | **not lowered**; call the constructor, `(Variant field ...)` |
 | `trait` | `(trait Name (method (param ...) ReturnType) ...)` | |

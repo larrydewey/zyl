@@ -1,0 +1,11 @@
+; Compile-fail: a dot call on a receiver of unknown type is ambiguous when
+; two traits declare the method (E_TRAIT_NOT_FOUND).
+
+(deftype _cf_Sq (CfSq Int))
+(trait _cf_A (area (self) Int))
+(trait _cf_B (area (self) Int))
+(impl _cf_A _cf_Sq (defn area (self) 1))
+
+(defn _cf_f (q) (q.area))
+
+(defn main () (_cf_f (CfSq 1)))
