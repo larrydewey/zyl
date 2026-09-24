@@ -35,7 +35,7 @@
 - [x] Hash finalization: ICNF hash from a canonical ICNF printer (`icnf_print.zyl`), resolved graph recorded in `.buildinfo`
 
 ## P4: Tooling & Packages
-- [ ] Documentation: what arenas are, and which values the arena/capacity arguments of `vec-create` and similar constructors accept (0 = private default arena, handles from `arena-create`, ...)
+- [x] Documentation: arenas and the `arena`/`cap` arguments of `vec-create`, `map-create`, `set-create` (book §4.3 "Arenas"); a negative `cap` now means 0 instead of a null write
 - [ ] `zyl doc` generator over `;|`/`;;` doc-comment convention
 - [ ] Real package index; content-hash build cache; reject nested `feature-gate`
 - [ ] LSP: return unused-binding warnings instead of printing them

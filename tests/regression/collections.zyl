@@ -106,4 +106,14 @@
       (assert-equal (alloc-strlen p) 5)
       0)))
 
+; A capacity of 0 or below is fine: the first push allocates room.
+(test "collections-accept-zero-and-negative-capacity"
+  (let a (arena-create 0)
+    (begin
+      (assert-equal (vec-get (vec-push (vec-create a 0) 5) 0) 5)
+      (assert-equal (vec-get (vec-push (vec-create 0 -3) 7) 0) 7)
+      (assert-equal (vec-len (vec-push (vec-push (vec-create a -1) 1) 2)) 2)
+      (arena-destroy a)
+      0)))
+
 (run-tests)

@@ -369,7 +369,20 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — ICNF hash and recorded graph
+## Session (2026-09-24, latest) — arena documentation
+
+Book §4.3 gains *Arenas: where collections keep their elements*: what an
+arena is, the `allocator/allocator` API, exactly which values the `arena`
+argument of `vec-create`/`map-create`/`set-create` accepts (a handle from
+`arena-create`, or any value <= 0 for a new private arena that is never
+freed), what `cap` means, and the rules that follow (collections die with
+their arena, updates may share storage, sending shares, ADTs use the
+runtime heap). A negative `cap` used to end in a null write and a lost
+element; it now means 0, and growth from a capacity <= 0 starts at 16.
+`*-create-default` delegate to `*-create 0`. Test added to
+`collections.zyl`.
+
+## Session (2026-09-24, earlier) — ICNF hash and recorded graph
 
 New `compiler/icnf_print.zyl` (`icnf-text`) prints lowered ICNF as
 canonical s-expressions with each node's codegen kind. `drv-compile-file`

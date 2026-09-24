@@ -288,7 +288,7 @@ Growable arrays with O(1) indexing, generic in their element type:
 
 | Function | Result |
 |----------|--------|
-| `(vec-create arena cap)` | Empty Vec with room for `cap` elements; arena 0 means "make a private one" |
+| `(vec-create arena cap)` | Empty Vec with room for `cap` elements, in `arena` (a handle, or 0 for a private one; see *Arenas* below) |
 | `(vec-push v x)` | The Vec with `x` appended (grows as needed) |
 | `(vec-pop v)` | The Vec without its last element |
 | `(vec-get v i)` | Element `i`, or the word -1 if `i` is out of bounds |
@@ -385,6 +385,79 @@ For lists, `collections/collections` has `list-map`, `list-filter`,
 `list-fold`, `list-nth`, `list-take`, `list-drop` and more, and an
 immutable association list (`assoc-put`, `assoc-get`, ...) that can
 hold any value type.
+
+### Arenas: where collections keep their elements
+
+`Vec`, `collections/map`, `collections/set`, `str-intern` and every entry
+point in `stdlib/math` take an **arena** argument. An arena is a region
+of memory you own: a bump allocator (`allocator/allocator`) that hands
+out 16-byte-aligned chunks from growable blocks and frees them only all
+at once. It is represented as an `Int` handle.
+
+| Function | What it does |
+|----------|--------------|
+| `(arena-create block-size)` | A new arena; `block-size` is the bytes per block (below 16 means the 64 KiB default). Returns the handle, or 0 if memory is exhausted |
+| `(arena-alloc a n)` / `(arena-alloc-zeroed a n)` | `n` bytes from `a` (zeroed for the second); 0 on failure |
+| `(arena-used a)` / `(arena-capacity a)` | Bytes handed out / bytes of blocks held |
+| `(arena-reset a)` | Frees every block at once; `a` stays usable |
+| `(arena-destroy a)` | Frees everything; `a` must not be used again |
+
+**The `arena` argument** of `vec-create`, `map-create` and `set-create`
+accepts exactly two kinds of value:
+
+- **a handle from `arena-create`**: the collection's storage, and every
+  reallocation as it grows, comes from that arena. Several collections
+  may share one arena, and freeing it (`arena-reset`/`arena-destroy`)
+  frees them all together.
+- **0, or any value at or below 0**: the call creates a new private
+  arena for this one collection. `vec-create-default`,
+  `map-create-default` and `set-create-default` do the same. A private
+  arena is never freed: that is fine for a few long-lived collections,
+  but inside a loop it leaks one arena per call.
+
+Any other positive `Int` (an address, a count, a handle already
+destroyed) is not an arena. The runtime does not check it, and the
+first allocation reads garbage or crashes.
+
+**The `cap` argument** is the initial capacity in elements. 0 is fine
+(the first push allocates room for 16); a negative value means 0; a
+larger value avoids reallocations. Growth doubles the capacity and
+copies into new storage from the same arena; the old storage stays
+allocated until the arena is reset.
+
+```lisp
+(use collections/vec)
+
+(defn last-square (n)
+  (let a (arena-create 0)               ; one arena for this computation
+    (let-mut v (vec-create a n)          ; room for n elements up front
+      (begin
+        (for (i 0) (< i n) (begin (set! v (vec-push v (* i i))) (set! i (+ i 1))))
+        (let last (vec-get v (- n 1))    ; read what we need first
+          (begin
+            (arena-destroy a)            ; frees v's storage; v must not be used after this
+            last))))))
+```
+
+Rules that follow from this design:
+
+- **A collection is only valid while its arena lives.** After
+  `arena-reset` or `arena-destroy`, every collection built in that arena
+  dangles. Return or keep a collection only if its arena outlives the use.
+- **An update may share storage with the old value.** `vec-set` and a
+  `vec-push` with spare capacity write into the same storage, so the
+  previous value sees the change. Rebind to the result (`let-mut` +
+  `set!`) and treat the old value as used up.
+- **Sending a collection to an actor shares it; it is not copied.**
+  Allocation from one arena is locked, so two actors may allocate from
+  it safely, but writing to one collection from two actors is a race.
+  Give each actor its own arena, or send immutable data.
+- **ADT and struct values do not use your arenas.** A constructor like
+  `(Some 1)` or `(make-Point 1 2)` allocates from the runtime's
+  process-wide heap, which lives until the program exits (§5.5). Only
+  the functions that take an arena argument allocate from one.
+- **`core/map` needs no arena.** It is a persistent association list on
+  the runtime heap.
 
 ## 4.4 Option and Result — Standard ADTs
 

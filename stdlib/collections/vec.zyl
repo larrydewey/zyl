@@ -25,18 +25,19 @@
 
 (defn vec-with (v ptr len cap) (match v (VecC _ _ _ a ph (VecC ptr len cap a ph))))
 
-; Create an empty Vec with the given initial capacity on the given arena.
+; Create an empty Vec with room for `cap` elements, stored in `arena`: a
+; handle from `arena-create`, or 0 (any value <= 0) for a new private arena.
+; A negative `cap` means 0; the Vec grows by doubling, in the same arena.
 ; Returns: Vec
 (defn vec-create ((arena Int) (cap Int))
-  ; arena <= 0 means "create a private default arena".
   (let a (if (> arena 0) arena (arena-create 0))
-    (vec-make (arena-alloc a (* cap 8)) 0 cap a)))
+    (let c (if (< cap 0) 0 cap)
+      (vec-make (arena-alloc a (* c 8)) 0 c a))))
 
-; Create an empty Vec with the given initial capacity using the default arena.
+; Create an empty Vec with room for `cap` elements in a new private arena.
 ; Returns: Vec
 (defn vec-create-default ((cap Int))
-  (let a (arena-create 0)
-    (vec-make (arena-alloc a (* cap 8)) 0 cap a)))
+  (vec-create 0 cap))
 
 ; Get the length of the Vec.
 ; Returns: Int
@@ -70,7 +71,7 @@
   (let current-len (vec-len v)
     (let current-cap (vec-cap v)
       (if (>= current-len current-cap)
-        (let new-cap (if (== current-cap 0) 16 (* current-cap 2))
+        (let new-cap (if (<= current-cap 0) 16 (* current-cap 2))
           (let new-ptr (arena-alloc (vec-arena v) (* new-cap 8))
             (let old-ptr (vec-ptr v)
               (begin

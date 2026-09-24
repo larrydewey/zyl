@@ -11,13 +11,13 @@
 ; arena <= 0 means "create a private default arena".
 (defn map-create ((arena Int) (cap Int))
   (let a (if (> arena 0) arena (arena-create 0))
-    (make-Map (arena-alloc a (* cap 8)) (arena-alloc a (* cap 8)) 0 cap a)))
+    (let c (if (< cap 0) 0 cap)
+      (make-Map (arena-alloc a (* c 8)) (arena-alloc a (* c 8)) 0 c a))))
 
 ; Create an empty Map with the given initial capacity using the default arena.
 ; Returns: Map
 (defn map-create-default ((cap Int))
-  (let a (arena-create 0)
-    (make-Map (arena-alloc a (* cap 8)) (arena-alloc a (* cap 8)) 0 cap a)))
+  (map-create 0 cap))
 
 ; Get the number of entries.
 ; Returns: Int
@@ -68,7 +68,7 @@
   (let len (map-len m)
     (let cap (map-cap m)
       (if (>= len cap)
-        (let new-cap (if (== cap 0) 16 (* cap 2))
+        (let new-cap (if (<= cap 0) 16 (* cap 2))
           (let new-kptr (arena-alloc (struct-get m "arena") (* new-cap 8))
             (let new-vptr (arena-alloc (struct-get m "arena") (* new-cap 8))
               (let old-kptr (struct-get m "kptr")

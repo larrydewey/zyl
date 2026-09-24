@@ -12,7 +12,8 @@
 ; arena <= 0 means "create a private default arena".
 (defn set-create ((arena Int) (cap Int))
   (let a (if (> arena 0) arena (arena-create 0))
-    (make-Set (arena-alloc a (* cap 8)) 0 cap a)))
+    (let c (if (< cap 0) 0 cap)
+      (make-Set (arena-alloc a (* c 8)) 0 c a))))
 
 ; Get the number of distinct elements.
 ; Returns: Int
@@ -45,7 +46,7 @@
     s
     (let len (set-len s)
       (if (>= len (set-cap s))
-        (let new-cap (if (== (set-cap s) 0) 16 (* (set-cap s) 2))
+        (let new-cap (if (<= (set-cap s) 0) 16 (* (set-cap s) 2))
           (let new-ptr (arena-alloc (struct-get s "arena") (* new-cap 8))
             (let old-ptr (struct-get s "ptr")
               (begin
